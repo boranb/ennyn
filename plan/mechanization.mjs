@@ -86,29 +86,47 @@ export function scoreNode(node, config) {
 }
 
 /**
+ * A node's `needs` as a list (a single id is allowed).
+ * @param {GraphNode} node
+ * @param {any} config
+ * @returns {unknown[]}
+ */
+export function needsOf(node, config) {
+  const raw = node[config.graph.fields.needs] ?? [];
+  return Array.isArray(raw) ? raw : [raw];
+}
+
+/**
+ * Open nodes that can start now (not done, gate open, every need done), best first.
  * @param {Graph} graph
  * @param {any} config
- * @returns {GraphNode[]} ready mechanization nodes, best first
+ * @returns {GraphNode[]}
  */
-export function readyMechanization(graph, config) {
+export function readyNodes(graph, config) {
   const f = config.graph.fields;
   const { doneStatus, openGateValue } = config.graph;
   const doneIds = new Set(graph.done.map((n) => n[f.id]));
   for (const n of graph.open) if (n[f.status] === doneStatus) doneIds.add(n[f.id]);
 
   const ready = graph.open.filter((n) => {
-    if (n[f.mechanization] !== true) return false;
     if (n[f.status] === doneStatus) return false;
     const gate = n[f.gate];
     if (gate !== undefined && gate !== openGateValue) return false;
-    const raw = n[f.needs] ?? [];
-    const needs = Array.isArray(raw) ? raw : [raw];
-    return needs.every((id) => doneIds.has(id));
+    return needsOf(n, config).every((id) => doneIds.has(id));
   });
 
   const scored = ready.map((node) => ({ node, score: scoreNode(node, config), id: String(node[f.id]) }));
   scored.sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   return scored.map((s) => s.node);
+}
+
+/**
+ * @param {Graph} graph
+ * @param {any} config
+ * @returns {GraphNode[]} ready mechanization nodes, best first
+ */
+export function readyMechanization(graph, config) {
+  return readyNodes(graph, config).filter((n) => n[config.graph.fields.mechanization] === true);
 }
 
 /**

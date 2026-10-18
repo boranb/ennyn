@@ -22,6 +22,7 @@ Sayılar, sınırları ve karşılaştırıldıkları yayımlanmış araştırma
 
 | Adım | Döngü ne yapar | Araç |
 |---|---|---|
+| Kurulum | Önce depoyu okur: düzeltmeler nasıl etiketleniyor, commit'lerin çoğu hangi dosyaları yeniden yazıyor (üretilmiş çıktı), test düzeni, riskli yollar, yol haritası dosyaları ve issue'lar. Sonra en çok beş soru sorar; ayarı, başlangıç iş grafiğini ve bir devir taslağını yazar; `ennyn doctor` bunları denetler. | `/ennyn:init`, `ennyn init-scan`, `ennyn doctor` |
 | Yazmadan önce | Beş satırlık etki tablosu, her satır bir komutla cevaplanır: bu kararı başka kim okuyor · bu duruma başka hangi yoldan varılıyor · hangi girdiler yeni kabul ya da ret ediliyor · tavanda ya da ölçüm başarısız olunca ne oluyor · sahteler nereden geliyor. Sezgisel kurallarda önce kabul ve ret örnekli bir derlem ile kırmızı bir test gelir. | `ennyn impact` |
 | İnceleme | En çok iki tur; ikinci tur yalnız birinci turun düzeltmelerinin diff'ine bakar. Üçüncü tur ancak bağımsız bir sinyalle (test, kırma, gerçek ölçüm) açılır. Her bulgu bir alıntı, sınıf, kaynak, güven ve nasıl doğrulandığını taşır. | `agents/`, `skills/cycle/finding-schema.md` |
 | Commit | Kısa konu ve gövde; inceleme turları ve etki özeti yapısal satırlar olarak yazılır. Pahalı kanca koşmadan önce denetlenir. | `ennyn commit-check` |
@@ -38,13 +39,15 @@ claude plugin marketplace add boranb/ennyn
 claude plugin install ennyn@ennyn
 ```
 
+Ardından projede: `/ennyn:init`.
+
 Depo herkese açılmadan önce yerel bir kopyadan kurun: `claude plugin marketplace add ./ennyn`.
 
 [Agent Skills](https://agentskills.io) biçimini okuyan başka ajanlar `skills/cycle/` dizinini doğrudan kullanabilir. CLI, Node 20 ya da üstünü ister ve bağımlılığı yoktur: `node scripts/ennyn.mjs --help`.
 
 ## Ayar
 
-Her projede tek dosya: `.ennyn/config.json`. Yalnız varsayılandan farklı olanı yazın. Bilinmeyen anahtarlar ve tür uyuşmazlıkları birlikte raporlanır; bir yazım hatası bir denetimi sessizce kapatamaz.
+Her projede tek dosya: `.ennyn/config.json`; `/ennyn:init` yazar. Yalnız varsayılandan farklı olanı yazın. Bilinmeyen anahtarlar ve tür uyuşmazlıkları birlikte raporlanır; bir yazım hatası bir denetimi sessizce kapatamaz.
 
 ```json
 {
@@ -61,8 +64,8 @@ Anahtarların tam tablosu [DESIGN.md](DESIGN.md)'de (İngilizce). Raporlar ve co
 
 ## Durum ve yol haritası
 
-- **0.1**: çekirdek modüller ve Claude Code eklentisi.
-- **0.2**: yeni bir projede küçük bir başlangıç grafiğini ve ayarı kuran `/init` görüşmesi (projenin kendi geçmişine uyan bir `metrics.fixSubject` dahil), mevcut bir yol haritasından ya da issue listesinden grafik çıkarma, Codex manifesti ve döngüyü eklentili ve eklentisiz karşılaştıran `claude plugin eval` vakaları.
+- **0.1**: çekirdek modüller, Claude Code eklentisi ve `/ennyn:init`: ayarı ve başlangıç grafiğini (bir yol haritası dosyasından, issue'lardan ya da kullanıcının kendi sözlerinden) yazan bir tarama ve kısa bir görüşme; `metrics.fixSubject` projenin kendi geçmişine göre seçilir.
+- **0.2**: Codex manifesti, döngüyü eklentili ve eklentisiz karşılaştıran `claude plugin eval` vakaları ve döngünün ikinci bir projede ölçülmesi.
 - **1.0**: kararlı ayar şeması.
 
 ## Lisans

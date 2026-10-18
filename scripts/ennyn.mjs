@@ -15,10 +15,14 @@ import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
 import { reworkRate } from "../metrics/szz.mjs";
 import { gateLogPath, readAttempts, recordAttempt, summarizeAttempts, KINDS } from "../metrics/gate-log.mjs";
 import { loadGraph, pickMechanization, scoreNode, GraphError } from "../plan/mechanization.mjs";
+import { scanProject, MIN_HISTORY } from "../setup/scan.mjs";
+import { checkSetup } from "../setup/doctor.mjs";
 
 export const USAGE = `Usage: ennyn <command> [options]
 
 Commands:
+  init-scan [--json]                                survey the repository for /init: fix label, churn, tests, risky paths, work sources
+  doctor                                            check config, work graph and fix label; exit 1 on a problem
   commit-check <message-file>                       check commit message shape (commit-msg hook)
   impact --symbol <s> [--files a,b]                 five-row impact table (markdown)
   rework [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--days N] [--json]
@@ -85,6 +89,17 @@ const out = (s) => process.stdout.write(s.endsWith("\n") ? s : s + "\n");
 /** @param {string} s */
 const err = (s) => process.stderr.write(s.endsWith("\n") ? s : s + "\n");
 
+/**
+ * Up to 60 characters of `s` around the first match of `re`, so a match deep in a long subject stays visible.
+ * @param {string} s @param {RegExp | null} re
+ */
+function excerpt(s, re) {
+  if (s.length <= 60) return s;
+  const at = re ? Math.max(0, (re.exec(s)?.index ?? 0) - 20) : 0;
+  const start = Math.min(at, s.length - 57);
+  return (start > 0 ? "…" : "") + s.slice(start, start + 57) + (start + 57 < s.length ? "…" : "");
+}
+
 /** @param {string | true | undefined} v @param {string} name */
 function dateOpt(v, name) {
   if (v === undefined) return undefined;
@@ -108,8 +123,66 @@ const strOpt = (v) => (typeof v === "string" && v !== "" ? v : null);
 /** @param {number | null} sec */
 const minutes = (sec) => (sec === null ? "—" : (sec / 60).toFixed(1));
 
+/** @param {number | null} share @param {string} lang */
+const percent = (share, lang) => (share === null ? "—" : lang === "tr" ? `%${Math.round(share * 100)}` : `${Math.round(share * 100)}%`);
+
 /** @type {Record<string, (args: string[]) => Promise<number> | number>} */
 const COMMANDS = {
+  "init-scan"(args) {
+    const { opts, help } = parseArgs(args, { flags: ["json"] });
+    if (help) return (out(USAGE), 0);
+    const cwd = projectDir();
+    const res = scanProject({ cwd });
+    if (opts.json) return (out(JSON.stringify(res, null, 2)), 0);
+    // A broken config is part of the report, not a reason to stop.
+    let lang = "en";
+    try {
+      lang = config(cwd).language;
+    } catch {
+      // English until the config loads.
+    }
+    const say = (/** @type {string} */ key, /** @type {Record<string, string | number>} */ vars = {}) => out(t(key, vars, lang));
+    if (!res.config.path) say("scan.configNone");
+    else if (res.config.problems.length) say("scan.configProblems", { path: res.config.path, problems: res.config.problems.join("; ") });
+    else say("scan.configOk", { path: res.config.path });
+    say(res.graph.exists ? "scan.graphOk" : "scan.graphNone", { path: res.graph.path });
+    if (!res.repository) say("scan.noRepo");
+    else {
+      const fx = res.fixSubject;
+      if (fx.commits) say("scan.conventional", { commits: fx.commits, pct: percent(fx.conventionalShare, lang) });
+      const pick = fx.candidates.find((c) => c.id === fx.pick);
+      const vars = { commits: fx.commits, min: MIN_HISTORY, pattern: pick?.pattern ?? "", matches: pick?.matches ?? 0, pct: percent(pick?.share ?? null, lang) };
+      const examples = (pick?.examples ?? []).map((e) => `"${excerpt(e, pick ? new RegExp(pick.pattern) : null)}"`).join(", ");
+      say({ ok: "scan.fixOk", majority: "scan.fixMajority", weak: "scan.fixWeak", none: "scan.fixNone", tooFew: "scan.fixTooFew" }[fx.reason], { ...vars, examples });
+      if (res.churn.paths.length) {
+        say("scan.churn", { min: res.churn.min ?? 0, commits: res.churn.commits });
+        for (const p of res.churn.paths) say("scan.churnItem", { path: p.path, n: p.commits, marker: p.generatedMarker ? t("scan.generatedMarker", {}, lang) : "" });
+      }
+    }
+    say("scan.tests", { n: res.tests.matched });
+    if (res.tests.proposal) say("scan.testsProposal", { examples: res.tests.alternatives.flatMap((a) => a.examples).slice(0, 3).join(", "), pattern: res.tests.proposal });
+    if (res.risky.length) say("scan.risky", { list: res.risky.map((r) => r.glob).join(", ") });
+    if (res.roadmap.length) say("scan.roadmap", { list: res.roadmap.map((r) => (r.open + r.done ? t("scan.roadmapItem", { path: r.path, open: r.open, done: r.done }, lang) : t("scan.roadmapItemLines", { path: r.path, lines: r.lines }, lang))).join(" · ") });
+    if (res.github) say("scan.github", { repo: res.github });
+    if (res.commands.length) say("scan.commands", { list: res.commands.join(" · ") });
+    else say("scan.commandsNone");
+    if (res.mutation) say("scan.mutation", { command: res.mutation });
+    else say("scan.mutationNone");
+    if (res.pathScopedRules) say("scan.rules", { n: res.pathScopedRules });
+    return 0;
+  },
+
+  async doctor(args) {
+    const { help } = parseArgs(args, {});
+    if (help) return (out(USAGE), 0);
+    const res = await checkSetup({ cwd: projectDir() });
+    const mark = { ok: "✓", warn: "!", fail: "✗" };
+    for (const i of res.items) out(`${mark[i.level]} ${t(i.key, i.vars, res.language)}`);
+    const count = (/** @type {string} */ level) => res.items.filter((i) => i.level === level).length;
+    out(t("doctor.summary", { fail: count("fail"), warn: count("warn") }, res.language));
+    return res.ok ? 0 : 1;
+  },
+
   "commit-check"(args) {
     const { positional, help } = parseArgs(args, { positional: 1 });
     if (help) return (out(USAGE), 0);

@@ -22,6 +22,7 @@ Numbers, limits and the published research they were checked against: [docs/evid
 
 | Step | What the loop does | Tooling |
 |---|---|---|
+| Setup | Reads the repository first: how fixes are labelled, which files most commits rewrite (generated output), the test layout, risky paths, roadmap files and issues. Then it asks at most five questions and writes the config, a starting work graph and a handoff stub; `ennyn doctor` checks them. | `/ennyn:init`, `ennyn init-scan`, `ennyn doctor` |
 | Before writing | Five-row impact table, each row answered by a command: who else reads this decision · other paths to this state · newly accepted/rejected inputs · behaviour at the ceiling or when measurement fails · where the fakes come from. For heuristic rules, an accept + reject corpus and a failing test come first. | `ennyn impact` |
 | Review | At most two rounds; round two looks only at the diff of round-one fixes. A third round needs an independent signal (test, mutation run, real measurement). Every finding carries a quote, class, source, confidence and how it was checked. | `agents/`, `skills/cycle/finding-schema.md` |
 | Commit | Short subject and body; review rounds and impact summary as structured lines. Checked before the expensive hook runs. | `ennyn commit-check` |
@@ -38,13 +39,15 @@ claude plugin marketplace add boranb/ennyn
 claude plugin install ennyn@ennyn
 ```
 
+Then, in the project: `/ennyn:init`.
+
 Before the repository is public, install from a local clone: `claude plugin marketplace add ./ennyn`.
 
 Other agents that read [Agent Skills](https://agentskills.io) can use `skills/cycle/` directly. The CLI needs Node 20 or later and has no dependencies: `node scripts/ennyn.mjs --help`.
 
 ## Configure
 
-One file per project, `.ennyn/config.json`. Override only what differs from the defaults. Unknown keys and type mismatches are reported together, so a typo cannot silently disable a check.
+One file per project, `.ennyn/config.json`, written by `/ennyn:init`. Override only what differs from the defaults. Unknown keys and type mismatches are reported together, so a typo cannot silently disable a check.
 
 ```json
 {
@@ -61,8 +64,8 @@ The work graph is a JSON file (or an ES module) with two arrays, open and done n
 
 ## Status and roadmap
 
-- **0.1**: core modules and Claude Code plugin.
-- **0.2**: `/init` interview that builds a small starting graph and config for a new project (including a `metrics.fixSubject` that fits the project's own history), a graph built from an existing roadmap or issue list, a Codex manifest, and `claude plugin eval` cases that compare the loop with and without the plugin.
+- **0.1**: core modules, Claude Code plugin and `/ennyn:init`: a survey and a short interview that write the config and a starting graph (from a roadmap file, issues or the user's words), with a `metrics.fixSubject` that fits the project's own history.
+- **0.2**: a Codex manifest, `claude plugin eval` cases that compare the loop with and without the plugin, and the loop measured on a second project.
 - **1.0**: stable config schema.
 
 ## License
