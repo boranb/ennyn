@@ -33,6 +33,7 @@ plan/                               mechanization slot selection over the work g
 setup/                              /ennyn:init survey (init-scan) and setup check (doctor)
 adapters/claude-code/               rules index (paths: front matter), hook entry points
 i18n/{en,tr}.json                   message catalogs; output language comes from config
+styles/<style>.<lang>.md            conversation style rules (focused, terse), injected at session start
 schema/config.schema.json           config schema
 test/                               node:test suites
 docs/                               method guide, evidence, adoption guide
@@ -44,7 +45,8 @@ One file per project: `.ennyn/config.json` (override with `ENNYN_CONFIG`). Unkno
 
 | Key | Default | Meaning |
 |---|---|---|
-| `language` | `"en"` | language of messages and generated reports (`en`, `tr`) |
+| `language` | `"en"` | language of reports, CLI output and the conversation during a cycle (`en`, `tr`) |
+| `conversation.style` | `"normal"` | `normal`, `focused` or `terse`; a SessionStart hook injects `styles/<style>.<language>.md`. Conversation only, never files or commits |
 | `paths.handoff` | `"HANDOFF.md"` | cycle handoff document |
 | `paths.changelog` | `"CHANGELOG.md"` | |
 | `paths.graph` | `".ennyn/graph.json"` | work graph (JSON, or a `.mjs` module exporting arrays) |
@@ -57,6 +59,10 @@ One file per project: `.ennyn/config.json` (override with `ENNYN_CONFIG`). Unkno
 | `graph.valueScale` | `{ "high": 3, "medium": 2, "low": 1 }` | categorical value → weight (numbers are used as-is) |
 | `graph.costScale` | `{ "S": 1, "M": 2, "L": 3, "XL": 5 }` | categorical cost → weight |
 | `planner.mechanizationSlots` | `1` | |
+| `commitMsg.language` | `null` | language of commit text; `null` follows `language` |
+| `commitMsg.types` | `[]` | subject types, `type(scope): text`, enforced by `commit-check`; empty = free subject; chosen at `/ennyn:init` |
+| `commitMsg.fixType` | `"fix"` | type of a commit that repairs an earlier one; must be one of `types`; `metrics.fixSubject` must match it (`doctor` checks) |
+| `commitMsg.style` | `"normal"` | `terse`: no prose in the body, only structured lines and trailers (`commit-check`) |
 | `commitMsg.subjectMax` | `120` | |
 | `commitMsg.bodyMaxLines` | `8` | structured lines and trailers excluded |
 | `commitMsg.bodyMaxChars` | `800` | |
@@ -86,6 +92,10 @@ One file per project: `.ennyn/config.json` (override with `ENNYN_CONFIG`). Unkno
 | `metrics.maxFixFiles` | `15` | a fix touching more production files is a sweep and names no origin |
 | `metrics.moveSubject` | refactor / rename / move / split / extract / codemod / reformat | origins whose subject says they moved code are skipped |
 
+### Conversation style
+
+`focused` follows the rules of i-have-adhd: the result or next action first, numbered steps, one next step, no preamble. `terse` follows the base voice of caveman, adapted for Turkish: suffixes are never trimmed, because negation lives in one (*sil* / *silme*). There is no "ultra" level. caveman's 3.1.0 release notes (10 questions, one run, length only) put its base voice 3% below a plain "Answer concisely." and its ultra level 35% below, the latter by dropping grammar; its rules cost about 1,160 input tokens per request. The gain is readability more than tokens. Both projects leave commits, code and documents alone, and so does this one: commit brevity is `commitMsg.style`, which removes prose, never grammar.
+
 ## Module contracts
 
 All modules are ES modules, zero dependencies, JSDoc-typed, pure where possible. Functions that touch git or the file system take an explicit `cwd`.
@@ -104,6 +114,7 @@ All modules are ES modules, zero dependencies, JSDoc-typed, pure where possible.
 - `metrics/convergence.mjs` — `parseConvergence(handoffText, config) → { realEscape, fixIntroduced, preExisting, gateCaught, perRound }`.
 - `plan/mechanization.mjs` — `loadGraph({ cwd, config }) → { open, done }`; `readyNodes(graph, config) → node[]` (not done, gate open, every `needs` id done; best value/cost first), `readyMechanization` (the flagged ones); `pickMechanization({ open, done }, config) → node | null` (the best ready flagged node; ties by id). A node that is not an object, or a module graph that fails to load, is a `GraphError`. Projects that block nodes in more ways than one gate field (the origin project has four) select in their own planner and use this only for scoring.
 - `setup/scan.mjs` — `scanProject({ cwd, env }) → { repository, config, metrics, graph, handoff, fixSubject, churn, tests, risky, roadmap, github, pathScopedRules, commands, mutation }`. Read-only; a config that does not load or a path pattern that does not compile is listed in `config.problems` and the default is used; `config.loaded` is false when the config did not load, so no value in the scan is the project's. The fix label is chosen from the last 300 commits that touch a production path (the rework rate's denominator): every pattern anchored at the subject start that matches, minus those another one covers (the more specific one on equal sets), joined into one alternation, so `fix(ui):` and `düzeltme:` are both counted; more than half matching → `majority` (the rework rate would count churn); only mentions inside subjects → `weak`, nothing proposed. `risky` lists the top-most directory named like auth, migrations, payments, ledger…, or the file itself in a flat layout; `roadmap` includes a roadmap split into a `roadmap/` directory. `churn` lists paths rewritten in at least a quarter of recent commits (min. 10) that the rework rate still counts, with a generated-file marker when the file has one and the exact `excludeRe` alternative for it; paths are read with `-z`, so quotes and tabs in names survive.
+- `core/style.mjs` — `styleRules(style, lang) → string | null` (`null` for `normal`). `adapters/claude-code/hooks/conversation-style.mjs` (SessionStart, `startup|resume|clear|compact`) prints it as `additionalContext`; no config, a config that does not load, or `normal` → nothing; exit 0 on every path.
 - `setup/doctor.mjs` — `checkSetup({ cwd, env }) → { ok, items: [{ level: ok | warn | fail, key, vars }], language }`: config loads, its patterns compile, the graph loads with unique ids and known `needs`, something is ready, and the fix label is neither absent nor a majority. Message keys, rendered by the CLI.
 
 ## Phases

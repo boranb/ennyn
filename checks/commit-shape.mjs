@@ -14,6 +14,9 @@ import { t } from "../core/i18n.mjs";
 /** @param {string} s */
 const len = (s) => [...s].length;
 
+/** @param {string} s */
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 /**
  * The text git will store, so the check measures what lands in history. git's
  * cleanup depends on how the message was given: with `-m` / `-F` (git sets
@@ -70,6 +73,11 @@ export function checkCommitShape(message, { config, stagedPaths = [], cleanup = 
 
   const errors = [];
   if (len(subject) > cm.subjectMax) errors.push(t("shape.subjectTooLong", { len: len(subject), max: cm.subjectMax }, lang));
+  // The project's chosen types (/ennyn:init); the rework rate finds repairs by the fix type.
+  if (cm.types.length) {
+    const typeRe = new RegExp(`^(${cm.types.map(escapeRe).join("|")})(\\([^)]*\\))?!?: \\S`);
+    if (!typeRe.test(subject)) errors.push(t("shape.typeMissing", { types: cm.types.join(", "), example: cm.fixType }, lang));
+  }
 
   // Structured lines (rounds, impact, root cause) may sit in the body or in the
   // trailer paragraph; only prose is counted, and the trailer paragraph is never prose.
@@ -83,7 +91,9 @@ export function checkCommitShape(message, { config, stagedPaths = [], cleanup = 
   const structuredPrefixes = [...cm.structuredLines, rv.roundsLine, rv.thirdRoundLine, rv.impactLine];
   const isStructured = (/** @type {string} */ l) => structuredPrefixes.some((p) => l.trimStart().startsWith(p));
   const prose = proseCandidates.filter((l) => l.trim() !== "" && !isStructured(l));
-  if (prose.length > cm.bodyMaxLines) errors.push(t("shape.bodyTooManyLines", { n: prose.length, max: cm.bodyMaxLines }, lang));
+  // Terse commits: the subject says what changed; measurements stay as structured lines; detail lives in the graph.
+  if (cm.style === "terse" && prose.length) errors.push(t("shape.terseBody", { n: prose.length }, lang));
+  else if (prose.length > cm.bodyMaxLines) errors.push(t("shape.bodyTooManyLines", { n: prose.length, max: cm.bodyMaxLines }, lang));
   const proseChars = prose.reduce((n, l) => n + len(l), 0);
   if (proseChars > cm.bodyMaxChars) errors.push(t("shape.bodyTooLong", { n: proseChars, max: cm.bodyMaxChars }, lang));
 

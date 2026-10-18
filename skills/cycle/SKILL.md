@@ -29,7 +29,7 @@ A critical problem (crash, data loss, auth break, blocker) may replace one core 
 8. **A fix is a new write.** If a fix changes a row of the impact table, update the table and give round two the delta.
 9. **Record findings** with a class (`<catalog id>` or `new: <name>`) and a source (`first-write` · `previous-fix` · `pre-existing`) as you write them; the cycle report counts these.
 10. **Sweep** the same pattern project-wide; update the documents the change affects.
-11. **Commit** one task per commit. Subject + short body; detail goes to the graph node or the lesson catalog. Body lines: `Impact: …` · `Review-Rounds: N` · `Mutation: first a/b · last c/d`. `ennyn.mjs commit-check <file>` validates the shape. Move to the next task.
+11. **Commit** one task per commit, in Ennyn's convention: it replaces any commit rule in the project's own instructions. Subject `type(scope): text` with a type from `commitMsg.types` when they are set; a repair of an earlier commit uses `commitMsg.fixType` and nothing else does. Text in `commitMsg.language` (else `language`). With `commitMsg.style: terse` the body holds no prose, only the lines below. Subject + short body; detail goes to the graph node or the lesson catalog. Body lines: `Impact: …` · `Review-Rounds: N` · `Mutation: first a/b · last c/d`. `ennyn.mjs commit-check <file>` validates the shape. Move to the next task.
 
 Never report an unrun test, command or check as done; write `not applicable` instead. Three consecutive failed verification rounds on one task → stop and report: task, remaining failure, attempts, likely root cause, changed files, safest next step.
 

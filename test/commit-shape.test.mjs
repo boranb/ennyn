@@ -116,3 +116,18 @@ test("impact: a change touching only tests next to a guarded path needs no impac
   assert.ok(checkCommitShape("s", { config: c, stagedPaths: ["src/auth/login.test.ts"] }).ok);
   assert.equal(checkCommitShape("s", { config: c, stagedPaths: ["src/auth/login.ts", "src/auth/login.test.ts"] }).ok, false);
 });
+
+test("types: with commitMsg.types set, the subject must start with one; scope and ! are allowed", () => {
+  const c = cfg({ commitMsg: { types: ["özellik", "düzeltme", "belge"], fixType: "düzeltme" } });
+  for (const ok of ["düzeltme: liste boş kalıyordu", "özellik(grafik): eksen", "belge!: yeni biçim"]) assert.deepEqual(checkCommitShape(ok, { config: c }).errors, [], ok);
+  for (const bad of ["fix: liste", "düzeltme liste", "düzeltme:liste", "Düzeltme: liste", "düzeltmeler: liste", "liste düzeltildi"]) {
+    const r = checkCommitShape(bad, { config: c });
+    assert.equal(r.ok, false, bad);
+    assert.match(r.errors.join(), /commitMsg\.types \(özellik, düzeltme, belge\)/);
+  }
+  // Merge / Revert subjects and the allow marker still pass.
+  assert.ok(checkCommitShape("Merge branch 'x'", { config: c }).ok);
+  assert.ok(checkCommitShape("liste [commit-shape-allow: imported history]", { config: c }).ok);
+  // No types: any subject.
+  assert.ok(checkCommitShape("liste düzeltildi", { config: cfg() }).ok);
+});

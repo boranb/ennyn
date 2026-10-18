@@ -150,6 +150,9 @@ const COMMANDS = {
     else {
       const fx = res.fixSubject;
       if (fx.commits) say("scan.conventional", { commits: fx.commits, pct: percent(fx.conventionalShare, lang) });
+      const cs = res.commitStyle;
+      if (cs.language.guess) say("scan.commitLanguage", { guess: cs.language.guess, tr: cs.language.tr, en: cs.language.en });
+      if (cs.types.length) say("scan.subjectTypes", { list: cs.types.map((x) => `${x.type} ${x.n}`).join(" · ") });
       // A weak result proposes nothing; its examples show the mentions.
       const pattern = fx.proposal ?? fx.candidates.find((c) => c.id === fx.pick)?.pattern ?? null;
       const vars = { commits: fx.commits, min: MIN_HISTORY, pattern: pattern ?? "", matches: fx.matches, pct: percent(fx.share, lang) };

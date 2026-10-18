@@ -1,5 +1,5 @@
 {
-  "description": "ennyn: inject path-scoped project rules when a file tool touches a side copy (git worktree or plain copy) of the project; forget them after compaction so they come back",
+  "description": "ennyn: inject path-scoped project rules when a file tool touches a side copy (git worktree or plain copy) of the project; forget them after compaction so they come back; give each session the project's conversation style",
   "hooks": {
     "PostToolUse": [
       {
@@ -20,6 +20,16 @@
           {
             "type": "command",
             "command": "node \"${CLAUDE_PLUGIN_ROOT}/adapters/claude-code/hooks/side-copy-reset.mjs\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/adapters/claude-code/hooks/conversation-style.mjs\"",
             "timeout": 10
           }
         ]

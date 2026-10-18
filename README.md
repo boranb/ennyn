@@ -27,6 +27,7 @@ Numbers, limits and the published research they were checked against: [docs/evid
 | Review | At most two rounds; round two looks only at the diff of round-one fixes. A third round needs an independent signal (test, mutation run, real measurement). Every finding carries a quote, class, source, confidence and how it was checked. | `agents/`, `skills/cycle/finding-schema.md` |
 | Commit | Short subject and body; review rounds and impact summary as structured lines. Checked before the expensive hook runs. | `ennyn commit-check` |
 | Gate attempts | The commit wrapper records every gate attempt (duration, result, files, failing step when known) in machine-local state; a summary gives the wait, the failure rate and the time spent in failed attempts. Recording never changes the commit's exit code. | `ennyn gate-record`, `ennyn gate-stats` |
+| Voice | The conversation can be `focused` (result or next action first, numbered steps) or `terse` (answer first, short sentences); the rules reach each session at start. Commits can be `terse`: subject and structured lines, no prose. Numbers, paths, commands, negations and money or data-loss warnings are never shortened. | `conversation.style`, `commitMsg.style` |
 | Side copies | A worktree or plain copy of the project gets the path-scoped rules the main tree would load. | Claude Code hook |
 | End of cycle | Convergence in four numbers: real escapes, fix-introduced, pre-existing, gate-caught. The most recurring class becomes a work-graph node flagged `mechanization: true`. One lesson file is pruned. Push approval is asked, with the unpushed count. | `ennyn mechanization`, `ennyn push-check`, `ennyn rework` |
 
@@ -53,12 +54,13 @@ One file per project, `.ennyn/config.json`, written by `/ennyn:init`. Override o
 {
   "language": "en",
   "paths": { "graph": ".ennyn/graph.json" },
+  "commitMsg": { "types": ["feat", "fix", "docs", "test", "refactor", "chore"], "fixType": "fix" },
   "review": { "impactRequiredGlobs": ["src/auth/**", "migrations/**"] },
   "impact": { "twins": [["src/lib/engine", "server/src/lib"]] }
 }
 ```
 
-The full table of keys is in [DESIGN.md](DESIGN.md). Reports and commit lines follow `language` (`en` or `tr`).
+The full table of keys is in [DESIGN.md](DESIGN.md). Reports and the conversation follow `language` (`en` or `tr`); commit text follows `commitMsg.language`, which can differ (Turkish conversation, English commits). `commitMsg.types` sets the subject types `commit-check` enforces, and `commitMsg.fixType` is the one type for repairs of earlier commits, so the rework rate counts repairs, not churn. Both are chosen at `/ennyn:init` and replace any commit rule in the project's own instructions.
 
 The work graph is a JSON file (or an ES module) with two arrays, open and done nodes. Field names are configurable, so an existing graph can be used as it is.
 

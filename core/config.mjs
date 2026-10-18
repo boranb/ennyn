@@ -10,6 +10,8 @@ import { join, isAbsolute } from "node:path";
 
 export const DEFAULTS = Object.freeze({
   language: "en",
+  // How the agent talks: normal | focused | terse (styles/). Never files or commits.
+  conversation: { style: "normal" },
   paths: {
     handoff: "HANDOFF.md",
     changelog: "CHANGELOG.md",
@@ -37,6 +39,14 @@ export const DEFAULTS = Object.freeze({
   },
   planner: { mechanizationSlots: 1 },
   commitMsg: {
+    // Language of commit text; null follows `language` (reports and conversation).
+    language: null,
+    // Subject types, `type(scope): text`; empty = free subject. Chosen at /ennyn:init.
+    types: [],
+    // Type of a commit that repairs an earlier one; metrics.fixSubject must match it.
+    fixType: "fix",
+    // normal | terse: terse leaves no prose in the body, only structured lines and trailers.
+    style: "normal",
     subjectMax: 120,
     bodyMaxLines: 8,
     bodyMaxChars: 800,
@@ -82,6 +92,9 @@ export const DEFAULTS = Object.freeze({
   },
 });
 
+/** Conversation styles; every one but "normal" has rules in styles/<style>.<lang>.md. */
+export const CONVERSATION_STYLES = ["normal", "focused", "terse"];
+
 export class ConfigError extends Error {
   /** @param {string[]} problems */
   constructor(problems) {
@@ -102,6 +115,7 @@ function kind(v) {
 const OPEN_MAPS = new Set(["graph.exports", "graph.fields", "graph.valueScale", "graph.costScale"]);
 // Keys whose default is null but accept a value of this kind.
 const NULLABLE = new Map([
+  ["commitMsg.language", ["string"]],
   ["graph.openGateValue", ["string", "boolean", "number"]],
   ["impact.referenceCommand", ["string"]],
   ["impact.ceilingRegistry", ["string"]],
@@ -170,6 +184,16 @@ export function loadConfig({ cwd, env = process.env, override }) {
   let cfg = merge(/** @type {any} */ (DEFAULTS), user, "", problems);
   if (override) cfg = merge(cfg, override, "", problems);
   if (!["en", "tr"].includes(/** @type {string} */ (cfg.language))) problems.push(`"language" must be "en" or "tr"`);
+  const cm = /** @type {any} */ (cfg).commitMsg;
+  if (cm.language !== null && !["en", "tr"].includes(cm.language)) problems.push(`"commitMsg.language" must be "en", "tr" or null`);
+  if (!["normal", "terse"].includes(cm.style)) problems.push(`"commitMsg.style" must be "normal" or "terse"`);
+  const style = /** @type {any} */ (cfg).conversation.style;
+  if (!CONVERSATION_STYLES.includes(style)) problems.push(`"conversation.style" must be ${CONVERSATION_STYLES.map((s) => `"${s}"`).join(", ")}`);
+  // A type is the word before "(scope):" or ":"; spaces, colons and brackets would never match a subject.
+  const badTypes = cm.types.filter((/** @type {unknown} */ t) => typeof t !== "string" || !/^[^\s:()!]+$/.test(t));
+  if (badTypes.length) problems.push(`"commitMsg.types" entries must be single words without ":", "(", ")" or "!": ${badTypes.map(String).join(", ")}`);
+  if (!/^[^\s:()!]+$/.test(cm.fixType)) problems.push(`"commitMsg.fixType" must be a single word without ":", "(", ")" or "!"`);
+  else if (cm.types.length && !cm.types.includes(cm.fixType)) problems.push(`"commitMsg.fixType" "${cm.fixType}" must be one of commitMsg.types (${cm.types.join(", ")})`);
   if (problems.length) throw new ConfigError(problems);
   return /** @type {any} */ ({ ...cfg, projectDir: cwd, configPath: found });
 }

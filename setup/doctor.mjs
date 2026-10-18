@@ -84,8 +84,17 @@ export async function checkSetup({ cwd, env = process.env }) {
     else add("ok", "doctor.ready", { core, mech });
   }
 
+  const cm = config.commitMsg;
+  const commitLanguage = cm.language ?? config.language;
+  if (cm.types.length) add("ok", "doctor.commitStyle", { language: commitLanguage, types: cm.types.join(", "), type: cm.fixType });
+  else add("ok", "doctor.commitStyleFree", { language: commitLanguage });
+
   // Same denominator as the rework rate: recent commits touching a production path.
   const fixRe = compiled["metrics.fixSubject"];
+  // With declared types, a repair is written "<fixType>: …"; a label that misses it hides every new repair.
+  if (fixRe && cm.types.length && !(fixRe.test(`${cm.fixType}: x`) && fixRe.test(`${cm.fixType}(x): x`))) {
+    add("warn", "doctor.fixTypeUnseen", { pattern: config.metrics.fixSubject, type: cm.fixType });
+  }
   const exclude = compiled["metrics.excludeRe"];
   const test = compiled["metrics.testRe"];
   if (fixRe && exclude && test) {

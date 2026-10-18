@@ -27,6 +27,7 @@ Sayılar, sınırları ve karşılaştırıldıkları yayımlanmış araştırma
 | İnceleme | En çok iki tur; ikinci tur yalnız birinci turun düzeltmelerinin diff'ine bakar. Üçüncü tur ancak bağımsız bir sinyalle (test, kırma, gerçek ölçüm) açılır. Her bulgu bir alıntı, sınıf, kaynak, güven ve nasıl doğrulandığını taşır. | `agents/`, `skills/cycle/finding-schema.md` |
 | Commit | Kısa konu ve gövde; inceleme turları ve etki özeti yapısal satırlar olarak yazılır. Pahalı kanca koşmadan önce denetlenir. | `ennyn commit-check` |
 | Kapı denemeleri | Commit sarmalayıcısı her kapı denemesini (süre, sonuç, dosyalar, biliniyorsa düşen adım) makineye özel duruma kaydeder; özet bekleme süresini, başarısızlık oranını ve başarısız denemelerde geçen süreyi verir. Kayıt commit'in çıkış kodunu hiç değiştirmez. | `ennyn gate-record`, `ennyn gate-stats` |
+| Üslup | Konuşma `focused` (önce sonuç ya da sıradaki adım, numaralı adımlar) ya da `terse` (önce cevap, kısa cümleler) olabilir; kurallar her oturumun başında verilir. Commit'ler `terse` olabilir: konu ve yapısal satırlar, düzyazı yok. Sayılar, yollar, komutlar, olumsuzluklar ve para ya da veri kaybı uyarıları hiç kısaltılmaz. | `conversation.style`, `commitMsg.style` |
 | Yan kopyalar | Projenin worktree'si ya da düz kopyası, ana ağacın yükleyeceği yol kapsamlı kuralları alır. | Claude Code kancası |
 | Döngü sonu | Dört sayılı yakınsama: gerçek kaçak, düzeltmenin açtığı, eski, kapının yakaladığı. En çok tekrar eden sınıf, `mechanization: true` işaretli bir iş grafiği düğümü olur. Bir ders dosyası budanır. Gönderilmemiş commit sayısıyla birlikte push onayı istenir. | `ennyn mechanization`, `ennyn push-check`, `ennyn rework` |
 
@@ -53,12 +54,13 @@ Her projede tek dosya: `.ennyn/config.json`; `/ennyn:init` yazar. Yalnız varsay
 {
   "language": "tr",
   "paths": { "graph": ".ennyn/graph.json" },
+  "commitMsg": { "types": ["feat", "fix", "docs", "test", "refactor", "chore"], "fixType": "fix" },
   "review": { "impactRequiredGlobs": ["src/auth/**", "migrations/**"] },
   "impact": { "twins": [["src/lib/engine", "server/src/lib"]] }
 }
 ```
 
-Anahtarların tam tablosu [DESIGN.md](DESIGN.md)'de (İngilizce). Raporlar ve commit satırları `language` ayarına uyar (`en` ya da `tr`).
+Anahtarların tam tablosu [DESIGN.md](DESIGN.md)'de (İngilizce). Raporlar ve konuşma `language` ayarına uyar (`en` ya da `tr`); commit metni `commitMsg.language` ayarına uyar ve farklı olabilir (Türkçe konuşma, İngilizce commit). `commitMsg.types`, `commit-check`'in zorunlu tuttuğu konu türlerini belirler; `commitMsg.fixType` önceki commit'lerin onarımına ayrılmış tek türdür, böylece yeniden iş oranı değişim sıklığını değil onarımı sayar. İkisi de `/ennyn:init`'te seçilir ve projenin kendi talimatlarındaki commit kuralının yerine geçer.
 
 İş grafiği, açık ve tamamlanmış düğümlerden oluşan iki dizili bir JSON dosyası (ya da ES modülü). Alan adları ayarlanabilir; mevcut bir grafik olduğu gibi kullanılabilir.
 

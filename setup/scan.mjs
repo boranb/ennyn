@@ -63,6 +63,37 @@ const COMMAND_SCRIPT = /^(test|lint|typecheck|type-check|check|verify|validate)(
 /** @param {string} s */
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/** `type(scope)!: ` in any language; the word must not hold spaces, so "faz 8:" is not a type. */
+const TYPE_PREFIX = /^([^\s:()!]{1,24})(\([^)]*\))?!?:\s/;
+const TR_LETTER = /[çğıöşüÇĞİÖŞÜ]/;
+// Frequent Turkish words, also as typed without diacritics ("icin", "artik").
+const TR_WORD = new RegExp(`(?<![${L}])(ve|ile|için|icin|artık|artik|değil|degil|yok|bir|bu|olarak|gibi|daha|çok|cok|sonra|önce|once|yeni|eski|ama|her|hiç|hic|yalnız|yalniz)(?![${L}])`, "i");
+const EN_WORD = /\b(the|and|for|with|to|of|in|is|on|from|when|now|not|an?)\b/i;
+
+/**
+ * How the project writes commits now: the language of recent subjects and the
+ * types in front of them. A guess for /ennyn:init to offer, not a rule.
+ * @param {string[]} subjects
+ */
+export function commitStyle(subjects) {
+  let tr = 0;
+  let en = 0;
+  /** @type {Map<string, number>} */
+  const types = new Map();
+  for (const s of subjects) {
+    if (TR_LETTER.test(s) || TR_WORD.test(s)) tr++;
+    else if (EN_WORD.test(s)) en++;
+    const m = TYPE_PREFIX.exec(s);
+    if (m) types.set(m[1], (types.get(m[1]) ?? 0) + 1);
+  }
+  const typed = [...types.values()].reduce((a, b) => a + b, 0);
+  return {
+    language: { guess: tr + en < 5 ? null : tr > en ? "tr" : "en", tr, en },
+    types: [...types].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).slice(0, MAX_LISTED).map(([type, n]) => ({ type, n })),
+    typedShare: subjects.length ? typed / subjects.length : null,
+  };
+}
+
 /**
  * @typedef {{ subject: string, paths: string[] }} RecentCommit
  * @typedef {{ exclude: RegExp, test: RegExp }} PathPatterns
@@ -363,6 +394,7 @@ export function scanProject({ cwd, env = process.env }) {
     graph: { path: graphPath, exists: existsSync(graphPath), exports: config.graph.exports },
     handoff: { path: handoffPath, exists: existsSync(handoffPath) },
     fixSubject: { current: config.metrics.fixSubject, ...proposeFixSubject(productionSubjects(commits, patterns.re)) },
+    commitStyle: commitStyle(commits.map((c) => c.subject)),
     churn: churnPaths(commits, cwd, patterns.re),
     tests: testLayout(files, patterns.testRe),
     risky: riskyPaths(files, patterns.re),

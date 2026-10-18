@@ -132,5 +132,12 @@
   "doctor.fixTooFew": "fix label: {commits} commits, too few to judge",
   "doctor.summary": "problems: {fail} · warnings: {warn}",
   "scan.fixWeak": "Fix label: no subject starts with a fix label; {matches} of {commits} only mention one (e.g. {examples}). A mention is not a repair, so the default stays: start repairs of earlier commits with fix: from now on.",
-  "scan.roadmapItemLines": "{path} ({lines} lines, no checkboxes)"
+  "scan.roadmapItemLines": "{path} ({lines} lines, no checkboxes)",
+  "shape.typeMissing": "Subject must start with a type from commitMsg.types ({types}), as \"type: text\" or \"type(scope): text\"; a repair of an earlier commit uses \"{example}\".",
+  "doctor.fixTypeUnseen": "fix label: {pattern} does not match \"{type}: …\", so the rework rate will not see new repairs; add the fix type to metrics.fixSubject",
+  "doctor.commitStyle": "commits: {language}, types {types}, repairs \"{type}\"",
+  "doctor.commitStyleFree": "commits: {language}, free subject",
+  "scan.commitLanguage": "Commit language: {guess} ({tr} subjects read as Turkish, {en} as English).",
+  "scan.subjectTypes": "Subject types in use: {list}",
+  "shape.terseBody": "commitMsg.style is terse: the body holds structured lines and trailers only, but has {n} prose lines. Say what changed in the subject; put the detail in the graph node."
 }

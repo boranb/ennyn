@@ -86,6 +86,22 @@ test("config: open maps accept new keys, nullable fields accept their kind", () 
   assert.throws(() => loadConfig({ cwd: dir, env: {}, override: { language: "de" } }), ConfigError);
 });
 
+test("config: commit language, types and fix type are checked together", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pl-cfg-commit-"));
+  const load = (/** @type {Record<string, unknown>} */ commitMsg) => loadConfig({ cwd: dir, env: {}, override: { commitMsg } });
+  const tr = load({ language: "tr", types: ["özellik", "düzeltme"], fixType: "düzeltme" });
+  assert.deepEqual([tr.commitMsg.language, tr.commitMsg.fixType], ["tr", "düzeltme"]);
+  assert.equal(load({}).commitMsg.language, null, "null follows the top-level language");
+  /** @param {Record<string, unknown>} commitMsg @param {RegExp} re */
+  const bad = (commitMsg, re) => assert.throws(() => load(commitMsg), (e) => e instanceof ConfigError && re.test(e.message), JSON.stringify(commitMsg));
+  bad({ language: "de" }, /"commitMsg\.language" must be "en", "tr" or null/);
+  bad({ types: ["özellik", "faz 8"] }, /entries must be single words.*faz 8/);
+  bad({ types: ["feat", "fix:"] }, /entries must be single words.*fix:/);
+  // Turkish types with the default fix type: the repair type would never match a subject.
+  bad({ types: ["özellik", "düzeltme"] }, /"commitMsg\.fixType" "fix" must be one of commitMsg\.types \(özellik, düzeltme\)/);
+  bad({ fixType: "fix it" }, /"commitMsg\.fixType" must be a single word/);
+});
+
 test("config: ENNYN_CONFIG points elsewhere; broken JSON is a ConfigError", () => {
   const dir = mkdtempSync(join(tmpdir(), "pl-cfg-"));
   writeFileSync(join(dir, "alt.json"), JSON.stringify({ language: "tr" }));

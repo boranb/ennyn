@@ -132,5 +132,12 @@
   "doctor.fixTooFew": "fix etiketi: {commits} commit, yargı için az",
   "doctor.summary": "sorun: {fail} · uyarı: {warn}",
   "scan.fixWeak": "Fix etiketi: hiçbir konu bir fix etiketiyle başlamıyor; {commits} commit'in {matches} tanesi yalnız bir düzeltmeden söz ediyor (örnek: {examples}). Söz etmek onarım değildir, varsayılan kalıyor: bundan sonra önceki commit'lerin onarımlarını fix: ile başlatın.",
-  "scan.roadmapItemLines": "{path} ({lines} satır, checkbox yok)"
+  "scan.roadmapItemLines": "{path} ({lines} satır, checkbox yok)",
+  "shape.typeMissing": "Konu commitMsg.types içinden bir türle başlamalı ({types}): \"tür: metin\" ya da \"tür(kapsam): metin\"; önceki bir commit'in onarımı \"{example}\" kullanır.",
+  "doctor.fixTypeUnseen": "fix etiketi: {pattern}, \"{type}: …\" konularına uymuyor; yeniden iş oranı yeni onarımları görmez. Onarım türünü metrics.fixSubject'e ekle",
+  "doctor.commitStyle": "commit'ler: {language}, türler {types}, onarım \"{type}\"",
+  "doctor.commitStyleFree": "commit'ler: {language}, serbest konu",
+  "scan.commitLanguage": "Commit dili: {guess} (Türkçe okunan konu {tr}, İngilizce okunan {en}).",
+  "scan.subjectTypes": "Kullanılan konu türleri: {list}",
+  "shape.terseBody": "commitMsg.style kısa (terse): gövdede yalnız yapısal satırlar ve trailer'lar olur, ama {n} düzyazı satırı var. Neyin değiştiğini konuda söyle; ayrıntıyı grafik düğümüne yaz."
 }

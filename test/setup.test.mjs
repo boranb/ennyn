@@ -19,6 +19,7 @@ import {
   riskyPaths,
   roadmapFiles,
   projectCommands,
+  commitStyle,
   scanProject,
 } from "../setup/scan.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
@@ -328,4 +329,37 @@ test("cli: init-scan --json is the scan; doctor prints marks and exits 1 on a pr
   assert.equal(doc.status, 1);
   assert.match(doc.stdout, /^✗ work graph: duplicate ids: a$/m);
   assert.match(doc.stdout, /^problems: 1 · warnings: 0$/m);
+});
+
+test("commit style: language guessed from subjects, also Turkish typed without diacritics; types counted, 'faz 8:' is not one", () => {
+  const tr = commitStyle([
+    "fix(grafik): mum zamani iki kez bolunuyordu, eksen 1970 diyordu",
+    "faz 8: fren artik dugme",
+    "devir: HANDOFF guncel",
+    "devir: ara kayit ve yeni not",
+    "düzeltme: komisyon okunmuyor",
+    "kapi: islem tablosuna sekiz olcum",
+    "denetim: bulgu yok, kapi icin olcum",
+    "temizlik: olu oznitelik artik yok",
+  ]);
+  assert.deepEqual([tr.language.guess, tr.language.tr, tr.language.en], ["tr", 5, 0]);
+  assert.deepEqual(tr.types.slice(0, 2), [{ type: "devir", n: 2 }, { type: "denetim", n: 1 }]);
+  assert.ok(!tr.types.some((t) => t.type.startsWith("faz")));
+  const en = commitStyle(["feat: add the parser", "fix: crash when the list is empty", "docs: note on config", "Add a page for users", "Fix the build"]);
+  assert.deepEqual([en.language.guess, en.typedShare], ["en", 0.6]);
+  assert.equal(commitStyle(["feat: x", "fix: y"]).language.guess, null, "too few readable subjects to guess");
+});
+
+test("doctor: declared commit types are reported; a fix label that misses the fix type warns", async () => {
+  const types = { types: ["özellik", "düzeltme"], fixType: "düzeltme" };
+  const misses = setup({ language: "tr", commitMsg: types }, { nodes: [{ id: "a" }] });
+  const res = await checkSetup({ cwd: misses.dir, env: {} });
+  assert.deepEqual(res.items.find((i) => i.key === "doctor.commitStyle")?.vars, { language: "tr", types: "özellik, düzeltme", type: "düzeltme" });
+  assert.ok(keys(res).includes("warn doctor.fixTypeUnseen"));
+  const sees = setup({ language: "tr", commitMsg: { ...types, language: "en" }, metrics: { fixSubject: "^düzeltme(\\(|:)" } }, { nodes: [{ id: "a" }] });
+  const ok = await checkSetup({ cwd: sees.dir, env: {} });
+  assert.ok(!keys(ok).includes("warn doctor.fixTypeUnseen"));
+  assert.equal(ok.items.find((i) => i.key === "doctor.commitStyle")?.vars.language, "en", "commit language overrides the report language");
+  const free = await checkSetup({ cwd: setup({}, { nodes: [{ id: "a" }] }).dir, env: {} });
+  assert.ok(keys(free).includes("ok doctor.commitStyleFree"));
 });
