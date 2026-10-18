@@ -1,0 +1,32 @@
+{
+  "name": "ennyn",
+  "version": "0.0.1",
+  "private": true,
+  "description": "A measured development loop for coding agents: impact tables before writing, bounded review, lessons turned into gates, convergence measured every cycle.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Berkay Boran",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "typecheck": "tsc -p jsconfig.json"
+  },
+  "files": [
+    "core",
+    "checks",
+    "side-copy",
+    "impact",
+    "metrics",
+    "plan",
+    "adapters",
+    "i18n",
+    "schema",
+    "scripts",
+    "skills",
+    "agents",
+    "hooks",
+    ".claude-plugin"
+  ]
+}

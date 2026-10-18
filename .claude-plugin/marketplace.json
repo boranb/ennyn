@@ -1,0 +1,11 @@
+{
+  "name": "ennyn",
+  "owner": { "name": "Berkay Boran" },
+  "plugins": [
+    {
+      "name": "ennyn",
+      "source": "./",
+      "description": "A measured development loop for coding agents."
+    }
+  ]
+}

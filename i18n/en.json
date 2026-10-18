@@ -1,0 +1,14 @@
+{
+  "shape.subjectTooLong": "Subject is {len} characters; the limit is {max}. Put detail in the work-graph node or the lesson catalog.",
+  "shape.bodyTooManyLines": "Body has {n} prose lines; the limit is {max} (structured lines and trailers are not counted).",
+  "shape.bodyTooLong": "Body prose is {n} characters; the limit is {max}.",
+  "shape.structuredTooLong": "\"{prefix}\" line is {n} characters; the limit is {max}.",
+  "shape.roundsNotInteger": "\"{line}\" must be a whole number, got \"{value}\".",
+  "shape.thirdRoundMissing": "{rounds} review rounds exceed the limit of {max}; add \"{line} <signal> — <reason>\" naming the independent signal (test, mutation run, real measurement) that justified it.",
+  "shape.impactMissing": "Staged paths need an impact table ({paths}); add a \"{line}\" line, or \"{line} not needed — <reason>\".",
+  "shape.allowNoReason": "\"{marker}\" needs a reason of at least 8 characters before the closing bracket.",
+  "sidecopy.header": "Rules that apply to {relPath} in the project (you are working in a side copy, where path-scoped rules do not load):",
+  "sidecopy.tooLarge": "Rules that apply to {relPath} in the project (too large to inline; read them with the Read tool):",
+  "push.warn": "{n} commits are waiting to be pushed (threshold {max}). Ask for push approval; large batches hide which change broke what.",
+  "push.unmeasured": "Unpushed commit count could not be measured (no upstream branch)."
+}

@@ -1,0 +1,8 @@
+{
+  "name": "ennyn",
+  "version": "0.0.1",
+  "description": "A measured development loop for coding agents: impact tables before writing, bounded review, lessons turned into gates, convergence measured every cycle.",
+  "author": { "name": "Berkay Boran" },
+  "license": "MIT",
+  "keywords": ["workflow", "code-review", "mutation-testing", "agent-loop", "methodology"]
+}

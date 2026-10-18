@@ -1,0 +1,108 @@
+# ennyn — design
+
+> Working name. The final name is chosen before the first public release (plugin names are permanent once published).
+
+## What this is
+
+A development method for coding agents, packaged so any project can adopt it. The method runs in **cycles of four tasks** picked from a **work graph**: two core tasks, one **mechanization** task (turns a recurring defect class into a gate, test, type or lint), and one **legacy audit** (re-checks a finished feature). Every task follows the same protocol: read → impact table (for risky changes) → implement → test → mutation pass → bounded adversarial review → commit. Every cycle ends with a **convergence** report (how many findings were real escapes, fix-introduced, pre-existing, or caught by a gate) and a handoff.
+
+The method was extracted from a production project where it was measured (2026-10): see `docs/evidence.md`.
+
+## Principles (each one is a measured decision, not a preference)
+
+1. **Answer the risky questions before writing, with commands.** Shared decision / gate / accept-reject changes get a five-row impact table (who else reads this · which other paths reach this state · what is newly accepted or rejected · what happens at the ceiling or when measurement fails · where fakes come from). Each row is answered by a command, not by the model's guess.
+2. **Review is bounded.** At most two review rounds, correctness and requirements only; round two looks only at the diff of round-one fixes. A third round needs an independent signal (test, mutation run, real measurement).
+3. **Lessons become mechanisms, then the prose is deleted.** A recurring defect class becomes a graph node with `mechanization: true`; one slot per cycle is reserved for it. A lesson whose rationale lives in a test is retired from instruction files.
+4. **Instruction text is a budget.** Always-loaded instructions are measured in tokens and only shrink.
+5. **Small batches.** The cycle ends by asking for push approval; a warning fires above a threshold of unpushed commits.
+6. **Measure the loop itself.** Findings carry a class and a source when they are written; convergence, rework (SZZ-style) and review-round yield are computed by scripts, not estimated.
+
+## Layout
+
+```
+.claude-plugin/plugin.json          Claude Code plugin manifest
+.claude-plugin/marketplace.json     single-repo marketplace (source "./")
+skills/                             the method (SKILL.md files, < 8 KB each)
+agents/                             reviewer agents sharing one finding schema
+hooks/hooks.json                    Claude Code hooks (side-copy rule bridge)
+scripts/ennyn.mjs              CLI entry (no top-level bin/ — claude.ai/Cowork reject it)
+core/                               config, glob, git, i18n (zero dependencies, Node >= 20)
+checks/                             commit-shape, closeout (later)
+side-copy/                          map a side-copy path back to the project path
+impact/                             impact table runner
+metrics/                            rework (SZZ-style), convergence, mutation ledger
+plan/                               mechanization slot selection over the work graph
+adapters/claude-code/               rules index (paths: front matter), hook entry points
+i18n/{en,tr}.json                   message catalogs; output language comes from config
+schema/config.schema.json           config schema
+test/                               node:test suites
+docs/                               method guide, evidence, adoption guide
+```
+
+## Project config
+
+One file per project: `.ennyn/config.json` (override with `ENNYN_CONFIG`). Unknown keys are errors. Every field has an English default; a project overrides only what differs.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `language` | `"en"` | language of messages and generated reports (`en`, `tr`) |
+| `paths.handoff` | `"HANDOFF.md"` | cycle handoff document |
+| `paths.changelog` | `"CHANGELOG.md"` | |
+| `paths.graph` | `".ennyn/graph.json"` | work graph (JSON, or a `.mjs` module exporting arrays) |
+| `paths.metricsLog` | `".ennyn/metrics.jsonl"` | per-cycle metrics |
+| `paths.stateDir` | `".git/ennyn"` | machine-local state (never committed) |
+| `graph.exports` | `{ "open": "nodes", "done": "done" }` | export names when the graph is a module |
+| `graph.fields` | `{ "id": "id", "status": "status", "needs": "needs", "gate": "gate", "value": "value", "cost": "cost", "cluster": "cluster", "mechanization": "mechanization", "source": "source" }` | field names in the graph |
+| `graph.openGateValue` | `null` | value of `gate` meaning "no gate" |
+| `graph.doneStatus` | `"done"` | |
+| `graph.valueScale` | `{ "high": 3, "medium": 2, "low": 1 }` | categorical value → weight (numbers are used as-is) |
+| `graph.costScale` | `{ "S": 1, "M": 2, "L": 3, "XL": 5 }` | categorical cost → weight |
+| `planner.mechanizationSlots` | `1` | |
+| `commitMsg.subjectMax` | `120` | |
+| `commitMsg.bodyMaxLines` | `8` | structured lines and trailers excluded |
+| `commitMsg.bodyMaxChars` | `800` | |
+| `commitMsg.structuredLines` | `["Root cause:", "Prevention added:", "Node:"]` | prefixes not counted toward the body limit |
+| `commitMsg.structuredLineMax` | `300` | |
+| `commitMsg.skipSubjects` | `["^Merge ", "^Revert "]` | regexes |
+| `commitMsg.allowMarker` | `"[commit-shape-allow:"` | bypass marker; must carry a reason |
+| `review.maxRounds` | `2` | |
+| `review.roundsLine` | `"Review-Rounds:"` | body line carrying the round count |
+| `review.thirdRoundLine` | `"Third-round:"` | required when rounds > max |
+| `review.impactLine` | `"Impact:"` | body line carrying the impact summary |
+| `review.impactRequiredGlobs` | `[]` | staged paths that require an impact line |
+| `push.warnAtUnpushed` | `20` | |
+| `sideCopy.roots` | `[]` | absolute directories where side copies live (e.g. a scratch dir) |
+| `sideCopy.maxInjectBytes` | `24000` | above this, the hook lists rule paths instead of inlining them |
+| `impact.referenceCommand` | `null` | e.g. `node scripts/code-impact.mjs {symbol} --json` |
+| `impact.twins` | `[]` | pairs of roots that mirror each other, e.g. `[["src/lib/engine", "server/src/lib"]]` |
+| `impact.coChangeMin` | `3` | |
+| `impact.ceilingRegistry` | `null` | path to a registry of ceilings/quotas |
+| `impact.fakeGlobs` | `["**/*.test.*"]` | where fakes live |
+| `impact.fixtureGlobs` | `["**/__fixtures__/**"]` | recorded real outputs |
+| `metrics.reworkDays` | `7` | |
+| `metrics.fixSubject` | `"^fix(\\(|:)"` | |
+| `metrics.excludeRe` | `"(^docs/|\\.md$|^\\.)"` | paths excluded from rework attribution |
+| `metrics.testRe` | `"(\\.test\\.|\\.spec\\.|/test/|/__tests__/)"` | |
+
+## Module contracts
+
+All modules are ES modules, zero dependencies, JSDoc-typed, pure where possible. Functions that touch git or the file system take an explicit `cwd`.
+
+- `core/config.mjs` — `loadConfig({ cwd, env }) → config` (defaults deep-merged; throws `ConfigError` listing every unknown key and every type mismatch).
+- `core/glob.mjs` — `globToRegExp(pattern) → RegExp`, `matchAny(path, patterns) → boolean`. Supports `**`, `*`, `?`, `{a,b}`, `[...]`. Paths use `/`.
+- `core/git.mjs` — `git(args, { cwd }) → string` via `execFileSync`, with `GIT_DIR`, `GIT_INDEX_FILE`, `GIT_WORK_TREE`, `GIT_PREFIX` removed from the environment; `stagedPaths`, `unpushedCount` (returns `null` when there is no upstream), `parseTrailers`.
+- `core/i18n.mjs` — `t(key, vars, lang)`; missing key in `lang` falls back to `en`; a test asserts every `en` key exists in every catalog.
+- `checks/commit-shape.mjs` — `checkCommitShape(message, { config, stagedPaths }) → { ok, errors[] }`.
+- `side-copy/map-path.mjs` — `mapSideCopyPath(absPath, { projectDir, roots }) → { root, relPath } | null` (git worktree: same `--git-common-dir`; plain copy: a root under `sideCopy.roots` whose `package.json` `name` equals the project's).
+- `adapters/claude-code/rules-index.mjs` — `loadPathScopedRules(projectDir) → [{ file, patterns[] }]` from `.claude/rules/**/*.md` front matter `paths:`.
+- `adapters/claude-code/hooks/side-copy-rules.mjs` — PostToolUse hook: for Read/Edit/Write on a side-copy path, emits the matching rules as `hookSpecificOutput.additionalContext`, once per rule per session; exits 0 on every path (never 2; 1 only when it cannot run).
+- `impact/table.mjs` — `buildImpactTable({ cwd, config, symbol?, files? }) → rows[5]`; a row that cannot be answered says `unmeasured: <reason>`, never empty.
+- `metrics/szz.mjs` — `reworkRate({ cwd, since, until, days, config }) → { commits, reworked, rate, pairs[] }`.
+- `metrics/convergence.mjs` — `parseConvergence(handoffText, config) → { realEscape, fixIntroduced, preExisting, gateCaught, perRound }`.
+- `plan/mechanization.mjs` — `pickMechanization(nodes, config) → node | null` (open, ungated, all `needs` done, `mechanization: true`; highest value/cost).
+
+## Phases
+
+- **v0.1** — core modules + Claude Code plugin skeleton; consumed by the origin project as a vendored copy.
+- **v0.2** — `/init` interview that bootstraps the graph and config for a new project; Codex manifest; `claude plugin eval` suites.
+- **v1.0** — stable config, official directory submission.

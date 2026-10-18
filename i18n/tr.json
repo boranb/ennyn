@@ -1,0 +1,14 @@
+{
+  "shape.subjectTooLong": "Konu satırı {len} karakter; sınır {max}. Ayrıntıyı grafik düğümüne ya da ders kataloğuna yaz.",
+  "shape.bodyTooManyLines": "Gövdede {n} düzyazı satırı var; sınır {max} (yapısal satırlar ve trailer'lar sayılmaz).",
+  "shape.bodyTooLong": "Gövde düzyazısı {n} karakter; sınır {max}.",
+  "shape.structuredTooLong": "\"{prefix}\" satırı {n} karakter; sınır {max}.",
+  "shape.roundsNotInteger": "\"{line}\" tam sayı olmalı, \"{value}\" yazılmış.",
+  "shape.thirdRoundMissing": "{rounds} inceleme turu {max} sınırını aşıyor; turu gerekçelendiren bağımsız sinyali (test, kırma, gerçek ölçüm) \"{line} <sinyal> — <neden>\" satırıyla yaz.",
+  "shape.impactMissing": "Stage'deki yollar etki tablosu istiyor ({paths}); \"{line}\" satırı ekle ya da \"{line} gerekmez — <neden>\" yaz.",
+  "shape.allowNoReason": "\"{marker}\" kapanış köşeli parantezinden önce en az 8 karakterlik bir gerekçe ister.",
+  "sidecopy.header": "Projede {relPath} için geçerli kurallar (yan kopyada çalışıyorsun; yol kapsamlı kurallar burada yüklenmez):",
+  "sidecopy.tooLarge": "Projede {relPath} için geçerli kurallar (satır içine sığmayacak kadar büyük; Read aracıyla oku):",
+  "push.warn": "{n} commit gönderilmeyi bekliyor (eşik {max}). Push onayı iste; büyük parti hangi değişikliğin neyi bozduğunu gizler.",
+  "push.unmeasured": "Gönderilmemiş commit sayısı ölçülemedi (upstream dal yok)."
+}

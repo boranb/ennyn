@@ -1,0 +1,94 @@
+/**
+ * Commit message shape: a short subject, a short body, and the structured lines
+ * the loop measures (review rounds, impact summary). Detail belongs in one
+ * place (the work-graph node or the lesson catalog), not in three.
+ *
+ * Measured origin: commit messages grew from ~950 to ~1,700 characters per task
+ * while production code per task stayed flat; the extra prose bought nothing.
+ */
+
+import { matchAny } from "../core/glob.mjs";
+import { parseTrailers } from "../core/git.mjs";
+import { t } from "../core/i18n.mjs";
+
+/** @param {string} s */
+const len = (s) => [...s].length;
+
+/**
+ * @param {string} message raw commit message (as given to a commit-msg hook)
+ * @param {{ config: any, stagedPaths?: string[] }} opts
+ * @returns {{ ok: boolean, errors: string[], skipped?: string }}
+ */
+export function checkCommitShape(message, { config, stagedPaths = [] }) {
+  const lang = config.language;
+  const cm = config.commitMsg;
+  const rv = config.review;
+  const text = message
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .filter((l) => !l.startsWith("#"))
+    .join("\n")
+    .trim();
+  const lines = text.split("\n");
+  const subject = lines[0] ?? "";
+
+  if (cm.skipSubjects.some((/** @type {string} */ re) => new RegExp(re).test(subject))) {
+    return { ok: true, errors: [], skipped: "subject" };
+  }
+
+  const markerAt = text.indexOf(cm.allowMarker);
+  if (markerAt !== -1) {
+    const close = text.indexOf("]", markerAt);
+    const reason = close === -1 ? "" : text.slice(markerAt + cm.allowMarker.length, close).trim();
+    if (reason.length < 8) return { ok: false, errors: [t("shape.allowNoReason", { marker: cm.allowMarker }, lang)] };
+    return { ok: true, errors: [], skipped: "marker" };
+  }
+
+  const errors = [];
+  if (len(subject) > cm.subjectMax) errors.push(t("shape.subjectTooLong", { len: len(subject), max: cm.subjectMax }, lang));
+
+  // Structured lines (rounds, impact, root cause) may sit in the body or in the
+  // trailer paragraph; only prose is counted, and the trailer paragraph is never prose.
+  const bodyLines = lines.slice(1);
+  let proseCandidates = bodyLines;
+  if (parseTrailers(text).size) {
+    const lastBlank = bodyLines.map((l) => l.trim() === "").lastIndexOf(true);
+    proseCandidates = lastBlank === -1 ? [] : bodyLines.slice(0, lastBlank);
+  }
+
+  const structuredPrefixes = [...cm.structuredLines, rv.roundsLine, rv.thirdRoundLine, rv.impactLine];
+  const isStructured = (/** @type {string} */ l) => structuredPrefixes.some((p) => l.trimStart().startsWith(p));
+  const prose = proseCandidates.filter((l) => l.trim() !== "" && !isStructured(l));
+  if (prose.length > cm.bodyMaxLines) errors.push(t("shape.bodyTooManyLines", { n: prose.length, max: cm.bodyMaxLines }, lang));
+  const proseChars = prose.reduce((n, l) => n + len(l), 0);
+  if (proseChars > cm.bodyMaxChars) errors.push(t("shape.bodyTooLong", { n: proseChars, max: cm.bodyMaxChars }, lang));
+
+  for (const l of bodyLines) {
+    if (isStructured(l) && len(l) > cm.structuredLineMax) {
+      const prefix = structuredPrefixes.find((p) => l.trimStart().startsWith(p));
+      errors.push(t("shape.structuredTooLong", { prefix: String(prefix), n: len(l), max: cm.structuredLineMax }, lang));
+    }
+  }
+
+  const roundsLine = bodyLines.find((l) => l.trimStart().startsWith(rv.roundsLine));
+  if (roundsLine) {
+    const raw = roundsLine.trimStart().slice(rv.roundsLine.length).trim();
+    if (!/^\d+$/.test(raw)) errors.push(t("shape.roundsNotInteger", { line: rv.roundsLine, value: raw }, lang));
+    else if (Number(raw) > rv.maxRounds) {
+      const third = bodyLines.find((l) => l.trimStart().startsWith(rv.thirdRoundLine));
+      const reason = third ? third.trimStart().slice(rv.thirdRoundLine.length).trim() : "";
+      if (reason.length < 8) {
+        errors.push(t("shape.thirdRoundMissing", { rounds: raw, max: rv.maxRounds, line: rv.thirdRoundLine }, lang));
+      }
+    }
+  }
+
+  if (rv.impactRequiredGlobs.length) {
+    const hits = stagedPaths.filter((p) => matchAny(p, rv.impactRequiredGlobs));
+    if (hits.length && !bodyLines.some((l) => l.trimStart().startsWith(rv.impactLine))) {
+      errors.push(t("shape.impactMissing", { line: rv.impactLine, paths: hits.slice(0, 3).join(", ") }, lang));
+    }
+  }
+
+  return { ok: errors.length === 0, errors };
+}
