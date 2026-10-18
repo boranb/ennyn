@@ -80,9 +80,12 @@ One file per project: `.ennyn/config.json` (override with `ENNYN_CONFIG`). Unkno
 | `impact.fakeGlobs` | `["**/*.test.*"]` | where fakes live |
 | `impact.fixtureGlobs` | `["**/__fixtures__/**"]` | recorded real outputs |
 | `metrics.reworkDays` | `7` | |
-| `metrics.fixSubject` | `"^fix(\\(|:)"` | |
-| `metrics.excludeRe` | `"(^docs/|\\.md$|^\\.)"` | paths excluded from rework attribution |
-| `metrics.testRe` | `"(\\.test\\.|\\.spec\\.|/test/|/__tests__/)"` | |
+| `metrics.fixSubject` | `"^fix(\\(|:)"` | a fix commit; if most commits match, the rate leans toward churn (the CLI says so) |
+| `metrics.excludeRe` | docs, `.md`, dot-paths, `generated/` `dist/` `build/` `vendor/`, lockfiles | paths excluded from rework attribution; generated output rewritten by ordinary commits measures churn |
+| `metrics.testRe` | `.test.` `.spec.` `/test/` `/__tests__/` `/__fixtures__/` | |
+| `metrics.minLines` / `minShare` | `3` / `0.1` | strong link: the origin owns at least this many meaningful deleted lines and this share of the fix's deleted lines (or the fix message names its hash) |
+| `metrics.maxFixFiles` | `15` | a fix touching more production files is a sweep and names no origin |
+| `metrics.moveSubject` | refactor / rename / move / split / extract / codemod / reformat | origins whose subject says they moved code are skipped |
 
 ## Module contracts
 
@@ -96,10 +99,10 @@ All modules are ES modules, zero dependencies, JSDoc-typed, pure where possible.
 - `side-copy/map-path.mjs` — `mapSideCopyPath(absPath, { projectDir, roots }) → { root, relPath } | null` (git worktree: same `--git-common-dir`; plain copy: a root under `sideCopy.roots` whose `package.json` `name` equals the project's).
 - `adapters/claude-code/rules-index.mjs` — `loadPathScopedRules(projectDir) → [{ file, patterns[] }]` from `.claude/rules/**/*.md` front matter `paths:`.
 - `adapters/claude-code/hooks/side-copy-rules.mjs` — PostToolUse hook: for Read/Edit/Write on a side-copy path, emits the matching rules as `hookSpecificOutput.additionalContext`, once per rule per session; exits 0 on every path (never 2; 1 only when it cannot run).
-- `impact/table.mjs` — `buildImpactTable({ cwd, config, symbol?, files? }) → rows[5]`; a row that cannot be answered says `unmeasured: <reason>`, never empty.
-- `metrics/szz.mjs` — `reworkRate({ cwd, since, until, days, config }) → { commits, reworked, rate, pairs[] }`.
+- `impact/table.mjs` — `buildImpactTable({ cwd, config, symbol?, files? }) → { rows }` (five rows, S1-S5); a row that cannot be answered says `unmeasured: <reason>`, never empty. `formatImpactTable(table, config) → markdown`.
+- `metrics/szz.mjs` — `reworkRate({ cwd, since, until, days, config, now? }) → { commits, reworked, rate, fixCommits, censored, pairs[] }`. Commits whose window has not closed by `now` are censored, not counted as clean. Checked against the origin project's Python measurement on the same range: September 46/306 vs 46/317, October 30/135 vs 33/141 (the denominators differ in documentation commits and author vs committer time).
 - `metrics/convergence.mjs` — `parseConvergence(handoffText, config) → { realEscape, fixIntroduced, preExisting, gateCaught, perRound }`.
-- `plan/mechanization.mjs` — `pickMechanization(nodes, config) → node | null` (open, ungated, all `needs` done, `mechanization: true`; highest value/cost).
+- `plan/mechanization.mjs` — `loadGraph({ cwd, config }) → { open, done }`; `pickMechanization({ open, done }, config) → node | null` (flagged `mechanization: true`, not done, gate open, every `needs` id done; highest value/cost, ties by id). Projects that block nodes in more ways than one gate field (the origin project has four) select in their own planner and use this only for scoring.
 
 ## Phases
 

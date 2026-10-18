@@ -1,0 +1,236 @@
+#!/usr/bin/env node
+/**
+ * ennyn CLI.
+ *
+ * Exit codes: 0 ok · 1 check failed, config error or runtime error · 2 usage error.
+ */
+
+import { readFileSync, realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { loadConfig, ConfigError } from "../core/config.mjs";
+import { git, stagedPaths, unpushedCount } from "../core/git.mjs";
+import { t } from "../core/i18n.mjs";
+import { checkCommitShape } from "../checks/commit-shape.mjs";
+import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
+import { reworkRate } from "../metrics/szz.mjs";
+import { loadGraph, pickMechanization, scoreNode, GraphError } from "../plan/mechanization.mjs";
+
+export const USAGE = `Usage: ennyn <command> [options]
+
+Commands:
+  commit-check <message-file>                       check commit message shape (commit-msg hook)
+  impact --symbol <s> [--files a,b]                 five-row impact table (markdown)
+  rework [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--days N] [--json]
+                                                    SZZ-style rework rate
+  mechanization [--json]                            best ready mechanization node
+  push-check                                        warn when too many commits are unpushed
+
+Options:
+  -h, --help                                        show this help
+
+Config: .ennyn/config.json in the repository root (override with ENNYN_CONFIG).`;
+
+class UsageError extends Error {}
+
+/**
+ * @param {string[]} args
+ * @param {{ options?: string[], flags?: string[], positional?: number }} spec
+ * @returns {{ positional: string[], opts: Record<string, string | true>, help: boolean }}
+ */
+function parseArgs(args, { options = [], flags = [], positional = 0 }) {
+  /** @type {Record<string, string | true>} */
+  const opts = {};
+  const pos = [];
+  let help = false;
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === "-h" || a === "--help") {
+      help = true;
+      continue;
+    }
+    if (a.startsWith("--")) {
+      const eq = a.indexOf("=");
+      const name = eq === -1 ? a.slice(2) : a.slice(2, eq);
+      if (flags.includes(name)) {
+        if (eq !== -1) throw new UsageError(`--${name} takes no value`);
+        opts[name] = true;
+      } else if (options.includes(name)) {
+        const value = eq === -1 ? args[++i] : a.slice(eq + 1);
+        if (value === undefined || (eq === -1 && value.startsWith("--"))) throw new UsageError(`--${name} needs a value`);
+        opts[name] = value;
+      } else throw new UsageError(`unknown option --${name}`);
+      continue;
+    }
+    pos.push(a);
+  }
+  if (!help && pos.length > positional) throw new UsageError(`unexpected argument "${pos[positional]}"`);
+  return { positional: pos, opts, help };
+}
+
+/** Repository root when inside one, else the working directory. */
+function projectDir() {
+  return git(["rev-parse", "--show-toplevel"], { cwd: process.cwd(), allowFail: true }) || process.cwd();
+}
+
+/** @param {string} cwd */
+const config = (cwd) => loadConfig({ cwd });
+
+/** @param {string} s */
+const out = (s) => process.stdout.write(s.endsWith("\n") ? s : s + "\n");
+/** @param {string} s */
+const err = (s) => process.stderr.write(s.endsWith("\n") ? s : s + "\n");
+
+/** @param {string | true | undefined} v @param {string} name */
+function dateOpt(v, name) {
+  if (v === undefined) return undefined;
+  if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new UsageError(`--${name} must be YYYY-MM-DD`);
+  const [y, m, d] = v.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) throw new UsageError(`--${name} is not a calendar date: ${v}`);
+  return v;
+}
+
+/** @type {Record<string, (args: string[]) => Promise<number> | number>} */
+const COMMANDS = {
+  "commit-check"(args) {
+    const { positional, help } = parseArgs(args, { positional: 1 });
+    if (help) return (out(USAGE), 0);
+    if (!positional[0]) throw new UsageError("commit-check needs a message file");
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    let message;
+    try {
+      message = readFileSync(positional[0], "utf8");
+    } catch (e) {
+      err(t("cli.cannotRead", { path: positional[0], error: /** @type {Error} */ (e).message }, cfg.language));
+      return 1;
+    }
+    /** @type {string[]} */
+    let staged = [];
+    try {
+      staged = stagedPaths(cwd);
+    } catch (e) {
+      err(t("cli.stagedUnmeasured", { error: String(/** @type {Error} */ (e).message).split("\n")[0] }, cfg.language));
+    }
+    const res = checkCommitShape(message, { config: cfg, stagedPaths: staged });
+    for (const e of res.errors) err(e);
+    return res.ok ? 0 : 1;
+  },
+
+  impact(args) {
+    const { opts, help } = parseArgs(args, { options: ["symbol", "files"] });
+    if (help) return (out(USAGE), 0);
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    const files = typeof opts.files === "string" ? opts.files.split(",").map((s) => s.trim()).filter(Boolean) : [];
+    const symbol = typeof opts.symbol === "string" ? opts.symbol : null;
+    out(formatImpactTable(buildImpactTable({ cwd, config: cfg, symbol, files }), cfg));
+    return 0;
+  },
+
+  rework(args) {
+    const { opts, help } = parseArgs(args, { options: ["since", "until", "days"], flags: ["json"] });
+    if (help) return (out(USAGE), 0);
+    const since = dateOpt(opts.since, "since");
+    const until = dateOpt(opts.until, "until");
+    let days;
+    if (opts.days !== undefined) {
+      if (typeof opts.days !== "string" || !/^\d+$/.test(opts.days)) throw new UsageError("--days must be a whole number");
+      days = Number(opts.days);
+    }
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    const windowDays = days ?? cfg.metrics.reworkDays;
+    const res = reworkRate({ cwd, since, until, days: windowDays, config: cfg });
+    if (opts.json) return (out(JSON.stringify({ ...res, days: windowDays }, null, 2)), 0);
+    const lang = cfg.language;
+    if (res.rate === null) out(t("rework.none", {}, lang));
+    else {
+      const pct = `${(res.rate * 100).toFixed(1)}%`;
+      out(t("rework.summary", { reworked: res.reworked, commits: res.commits, pct, days: windowDays }, lang));
+      if (res.fixCommits * 2 > res.commits) out(t("rework.fixMajority", { fixes: res.fixCommits, commits: res.commits }, lang));
+    }
+    if (res.censored) out(t("rework.censored", { n: res.censored, days: windowDays }, lang));
+    for (const p of res.pairs) {
+      out(t("rework.pair", { origin: p.origin.slice(0, 10), fix: p.fix.slice(0, 10), files: p.files.join(", "), lines: p.lines, days: p.days }, lang));
+    }
+    return 0;
+  },
+
+  async mechanization(args) {
+    const { opts, help } = parseArgs(args, { flags: ["json"] });
+    if (help) return (out(USAGE), 0);
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    const graph = await loadGraph({ cwd, config: cfg });
+    const node = pickMechanization(graph, cfg);
+    const score = node ? scoreNode(node, cfg) : null;
+    if (opts.json) return (out(JSON.stringify(node ? { node, score } : null, null, 2)), 0);
+    if (!node) out(t("mechanization.none", {}, cfg.language));
+    else out(t("mechanization.pick", { id: String(node[cfg.graph.fields.id]), score: Number(score).toFixed(2) }, cfg.language));
+    return 0;
+  },
+
+  "push-check"(args) {
+    const { help } = parseArgs(args, {});
+    if (help) return (out(USAGE), 0);
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    const n = unpushedCount(cwd);
+    const max = cfg.push.warnAtUnpushed;
+    if (n === null) out(t("push.unmeasured", {}, cfg.language));
+    else if (n > max) out(t("push.warn", { n, max }, cfg.language));
+    else out(t("push.ok", { n, max }, cfg.language));
+    return 0;
+  },
+};
+
+/**
+ * @param {string[]} argv
+ * @returns {Promise<number>}
+ */
+export async function main(argv) {
+  const [cmd, ...rest] = argv;
+  if (cmd === "-h" || cmd === "--help" || cmd === "help") {
+    out(USAGE);
+    return 0;
+  }
+  if (!cmd || !Object.hasOwn(COMMANDS, cmd)) {
+    err(cmd ? `unknown command "${cmd}"\n\n${USAGE}` : USAGE);
+    return 2;
+  }
+  try {
+    return await COMMANDS[cmd](rest);
+  } catch (e) {
+    if (e instanceof UsageError) {
+      err(`${e.message}\n\n${USAGE}`);
+      return 2;
+    }
+    if (e instanceof ConfigError || e instanceof GraphError) {
+      err(e.message);
+      return 1;
+    }
+    const error = /** @type {Error & { stderr?: unknown }} */ (e);
+    err(`ennyn ${cmd}: ${error.stderr ? String(error.stderr).trim() : error.message}`);
+    return 1;
+  }
+}
+
+const invokedDirectly = (() => {
+  try {
+    return realpathSync(process.argv[1] ?? "") === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+})();
+
+if (invokedDirectly) {
+  // A closed pipe (`ennyn rework | head`) ends the output, not the process with a stack trace.
+  process.stdout.on("error", (e) => {
+    if (/** @type {NodeJS.ErrnoException} */ (e).code === "EPIPE") process.exit(0);
+    throw e;
+  });
+  main(process.argv.slice(2)).then((code) => {
+    process.exitCode = code;
+  });
+}
