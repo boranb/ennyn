@@ -286,3 +286,21 @@ test("szz: meaningful lines exclude imports, bracket-only lines and comments", (
     assert.equal(isCodeLine(line), true, line);
   }
 });
+
+test("convergence: a round that is not written is null, not 0; trailing punctuation after a count is accepted", () => {
+  const c = parseConvergence("Findings: real escape 1 · fix-introduced 2 · pre-existing 3 · gate-caught 4.\nNew classes per round: round 2 → 1", cfg());
+  assert.equal(c?.gateCaught, 4);
+  assert.deepEqual(c?.perRound, [null, 1]);
+});
+
+test("convergence: Turkish upper-case labels match (dotted and dotless i)", () => {
+  const text = "BULGULAR: GERÇEK KAÇAK 1 · DÜZELTMENİN AÇTIĞI 2 · ESKİ 3 · KAPININ YAKALADIĞI 4";
+  assert.deepEqual(parseConvergence(text, cfg({ language: "tr" })), { realEscape: 1, fixIntroduced: 2, preExisting: 3, gateCaught: 4, perRound: [] });
+});
+
+test("convergence: an explicit `?` round stays as null at the end too (round-trip keeps the length)", () => {
+  const c = parseConvergence("Findings: real escape 1 · fix-introduced 0 · pre-existing 0 · gate-caught 0\nNew classes per round: round 1 → 2 · round 2 → ?", cfg());
+  assert.deepEqual(c?.perRound, [2, null]);
+  const again = parseConvergence(formatConvergence({ realEscape: 1, fixIntroduced: 0, preExisting: 0, gateCaught: 0, perRound: [1, null] }, cfg()), cfg());
+  assert.deepEqual(again?.perRound, [1, null]);
+});

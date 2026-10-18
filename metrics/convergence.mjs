@@ -18,7 +18,7 @@ import { t } from "../core/i18n.mjs";
  *   fixIntroduced: number | null,
  *   preExisting: number | null,
  *   gateCaught: number | null,
- *   perRound: number[],
+ *   perRound: (number | null)[],
  * }} Convergence
  */
 
@@ -34,24 +34,29 @@ function labels(lang) {
   };
 }
 
-/** @param {string} s */
-const norm = (s) => s.replace(/\s+/g, " ").trim().toLocaleLowerCase();
+/** Lower case in the catalog's language: Turkish "İ" / "I" lower to "i" / "ı", not "i̇" / "i". */
+const lower = (/** @type {string} */ s, /** @type {string} */ lang) => s.toLocaleLowerCase(lang === "tr" ? "tr" : "en");
+
+/** @param {string} s @param {string} lang */
+const norm = (s, lang) => lower(s.replace(/\s+/g, " ").trim(), lang);
 
 /** @param {string} s */
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * Text after "<label>:" on the first line carrying it, with markdown emphasis
- * stripped; the line index is returned so a later search can start there.
+ * stripped and lowered in the catalog's language (so an upper-case "BULGULAR:"
+ * matches); the line index is returned so a later search can start there.
  * @param {string[]} lines
  * @param {string} label
+ * @param {string} lang
  * @param {number} from
  * @returns {{ index: number, rest: string } | null}
  */
-function findLabeled(lines, label, from = 0) {
-  const re = new RegExp(`(?:^|[^\\p{L}])${escapeRe(label)}\\s*:`, "iu");
+function findLabeled(lines, label, lang, from = 0) {
+  const re = new RegExp(`(?:^|[^\\p{L}])${escapeRe(lower(label, lang))}\\s*:`, "u");
   for (let i = from; i < lines.length; i++) {
-    const line = lines[i].replace(/[*_`]/g, "");
+    const line = lower(lines[i].replace(/[*_`]/g, ""), lang);
     const m = re.exec(line);
     if (m) return { index: i, rest: line.slice(m.index + m[0].length) };
   }
@@ -68,29 +73,34 @@ const segments = (rest) =>
 /**
  * @param {string[]} lines
  * @param {ReturnType<typeof labels>} L
+ * @param {string} lang
  * @returns {Convergence | null}
  */
-function parseWith(lines, L) {
-  const found = findLabeled(lines, L.findings);
+function parseWith(lines, L, lang) {
+  const found = findLabeled(lines, L.findings, lang);
   if (!found) return null;
   /** @type {Convergence} */
   const out = { realEscape: null, fixIntroduced: null, preExisting: null, gateCaught: null, perRound: [] };
   for (const seg of segments(found.rest)) {
     const m = /^(.*?)\s*[:=]?\s*(\S+)$/u.exec(seg);
     if (!m) continue;
-    const key = COUNT_KEYS.find((k) => norm(L.counts[k]) === norm(m[1]));
-    if (key && /^\d+$/.test(m[2])) out[key] = Number(m[2]);
+    const key = COUNT_KEYS.find((k) => norm(L.counts[k], lang) === norm(m[1], lang));
+    // A sentence-ending "." or ";" after the last count is punctuation, not part of the number.
+    const n = m[2].replace(/[.;,]+$/, "");
+    if (key && /^\d+$/.test(n)) out[key] = Number(n);
   }
-  const roundLine = findLabeled(lines, L.perRound, found.index) ?? findLabeled(lines, L.perRound);
+  const roundLine = findLabeled(lines, L.perRound, lang, found.index) ?? findLabeled(lines, L.perRound, lang);
   if (roundLine) {
-    const re = new RegExp(`^${escapeRe(L.round)}\\s+(\\d+)\\+?\\s*(?:→|->|:|=)\\s*(\\d+)$`, "iu");
-    /** @type {number[]} */
+    // `?` is an explicit "unmeasured" round (formatConvergence writes it for null); it keeps its place.
+    const re = new RegExp(`^${escapeRe(lower(L.round, lang))}\\s+(\\d+)\\+?\\s*(?:→|->|:|=)\\s*(\\d+|\\?)[.;,]*$`, "u");
+    /** @type {(number | null)[]} */
     const rounds = [];
     for (const seg of segments(roundLine.rest)) {
       const m = re.exec(seg);
-      if (m && Number(m[1]) >= 1) rounds[Number(m[1]) - 1] = Number(m[2]);
+      if (m && Number(m[1]) >= 1) rounds[Number(m[1]) - 1] = m[2] === "?" ? null : Number(m[2]);
     }
-    out.perRound = Array.from(rounds, (n) => n ?? 0);
+    // A round that is not written is unmeasured, not zero (same rule as the four counts).
+    out.perRound = Array.from(rounds, (n) => n ?? null);
   }
   return out;
 }
@@ -107,7 +117,7 @@ export function parseConvergence(text, config) {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   const langs = config.language === "en" ? ["en"] : [config.language, "en"];
   for (const lang of langs) {
-    const parsed = parseWith(lines, labels(lang));
+    const parsed = parseWith(lines, labels(lang), lang);
     if (parsed) return parsed;
   }
   return null;
@@ -128,7 +138,7 @@ export function formatConvergence(counts, config) {
   if (rounds.length) {
     const parts = rounds.map((n, i) => {
       const plus = i === rounds.length - 1 && i >= 2 ? "+" : "";
-      return `${L.round} ${i + 1}${plus} → ${n}`;
+      return `${L.round} ${i + 1}${plus} → ${show(n)}`;
     });
     lines.push(`${L.perRound}: ${parts.join(" · ")}`);
   }
