@@ -11,7 +11,7 @@
  * attempts had no readable outcome.
  */
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { git, resolveStateDir, stagedPaths } from "../core/git.mjs";
 import { parseBound } from "./szz.mjs";
@@ -49,6 +49,30 @@ export function commitPaths(cwd, rev) {
 const iso = (sec) => new Date(sec * 1000).toISOString();
 
 /**
+ * True when the log exists, is not empty and does not end with a newline: an
+ * earlier write was cut off (disk full, killed process). Appending right after
+ * it would glue the next attempt to the fragment and lose both.
+ * @param {string} path
+ */
+function endsTorn(path) {
+  let fd;
+  try {
+    fd = openSync(path, "r");
+  } catch {
+    return false;
+  }
+  try {
+    const size = fstatSync(fd).size;
+    if (size === 0) return false;
+    const last = Buffer.alloc(1);
+    readSync(fd, last, 0, 1, size - 1);
+    return last[0] !== 0x0a;
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
  * Append one attempt. Files come from the commit when one is given (the attempt
  * passed), otherwise from the index (a failed commit leaves its files staged).
  * @param {{ cwd: string, config: any, start: number, end?: number, exit: number, kind?: string,
@@ -82,8 +106,9 @@ export function recordAttempt({ cwd, config, start, end = Math.floor(Date.now() 
   };
   const path = gateLogPath(cwd, config.paths.stateDir);
   mkdirSync(dirname(path), { recursive: true });
-  // One write call per line: two sessions committing at once append whole lines.
-  appendFileSync(path, JSON.stringify(entry) + "\n");
+  // One write call per line: two sessions committing at once append whole lines. A torn last line is closed
+  // first, so it stays one skipped line instead of swallowing this attempt.
+  appendFileSync(path, (endsTorn(path) ? "\n" : "") + JSON.stringify(entry) + "\n");
   return { path, entry };
 }
 

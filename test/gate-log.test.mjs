@@ -138,6 +138,33 @@ test("gate-log: no log is not the same as no attempts; unreadable lines are coun
   assert.equal(log.skipped, 2);
 });
 
+test("gate-log: a torn last line (no newline) stays one skipped line; the next attempt is kept", () => {
+  const r = repo();
+  r.commit({ "a.txt": "a\n" }, "first");
+  const config = cfgFor(r.dir);
+  const path = gateLogPath(r.dir, config.paths.stateDir);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, '{"v":1,"kind":"full","start":"2026');
+  recordAttempt({ cwd: r.dir, config, start: 100, end: 160, exit: 0, commit: "HEAD" });
+  recordAttempt({ cwd: r.dir, config, start: 200, end: 230, exit: 1 });
+  const log = readAttempts(path);
+  assert.deepEqual(
+    { results: log.attempts.map((a) => a.result), skipped: log.skipped },
+    { results: ["pass", "fail"], skipped: 1 },
+  );
+});
+
+test("gate-log: an existing empty log gets no leading blank line", () => {
+  const r = repo();
+  r.commit({ "a.txt": "a\n" }, "first");
+  const config = cfgFor(r.dir);
+  const path = gateLogPath(r.dir, config.paths.stateDir);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, "");
+  recordAttempt({ cwd: r.dir, config, start: 100, end: 160, exit: 1 });
+  assert.equal(readFileSync(path, "utf8")[0], "{");
+});
+
 test("gate-log: isAttempt rejects each missing or mistyped field", () => {
   const good = { v: 1, kind: "full", start: "2026-01-01T00:00:00.000Z", end: "2026-01-01T00:01:00.000Z", seconds: 60, exit: 1, result: "fail", commit: null, files: ["a"], step: null, runner: null };
   assert.equal(isAttempt(good), true);
