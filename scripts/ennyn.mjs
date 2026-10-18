@@ -13,6 +13,7 @@ import { t } from "../core/i18n.mjs";
 import { checkCommitShape } from "../checks/commit-shape.mjs";
 import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
 import { reworkRate } from "../metrics/szz.mjs";
+import { gateLogPath, readAttempts, recordAttempt, summarizeAttempts, KINDS } from "../metrics/gate-log.mjs";
 import { loadGraph, pickMechanization, scoreNode, GraphError } from "../plan/mechanization.mjs";
 
 export const USAGE = `Usage: ennyn <command> [options]
@@ -24,6 +25,10 @@ Commands:
                                                     SZZ-style rework rate
   mechanization [--json]                            best ready mechanization node
   push-check                                        warn when too many commits are unpushed
+  gate-record --start <epoch-s> --exit <code> [--kind full|message] [--commit <rev>] [--step <name>] [--runner <name>]
+                                                    record one commit-gate attempt (called by the commit wrapper)
+  gate-stats [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--json]
+                                                    commit-gate wait, failures and time spent in failed attempts
 
 Options:
   -h, --help                                        show this help
@@ -89,6 +94,19 @@ function dateOpt(v, name) {
   if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) throw new UsageError(`--${name} is not a calendar date: ${v}`);
   return v;
 }
+
+/** @param {string | true | undefined} v @param {string} name */
+function intOpt(v, name) {
+  if (v === undefined) throw new UsageError(`--${name} is required`);
+  if (typeof v !== "string" || !/^\d+$/.test(v)) throw new UsageError(`--${name} must be a whole number`);
+  return Number(v);
+}
+
+/** @param {string | true | undefined} v */
+const strOpt = (v) => (typeof v === "string" && v !== "" ? v : null);
+
+/** @param {number | null} sec */
+const minutes = (sec) => (sec === null ? "—" : (sec / 60).toFixed(1));
 
 /** @type {Record<string, (args: string[]) => Promise<number> | number>} */
 const COMMANDS = {
@@ -183,6 +201,51 @@ const COMMANDS = {
     if (n === null) out(t("push.unmeasured", {}, cfg.language));
     else if (n > max) out(t("push.warn", { n, max }, cfg.language));
     else out(t("push.ok", { n, max }, cfg.language));
+    return 0;
+  },
+
+  "gate-record"(args) {
+    const { opts, help } = parseArgs(args, { options: ["start", "exit", "kind", "commit", "step", "runner"] });
+    if (help) return (out(USAGE), 0);
+    const start = intOpt(opts.start, "start");
+    const exit = intOpt(opts.exit, "exit");
+    const kind = strOpt(opts.kind) ?? "full";
+    if (!(/** @type {readonly string[]} */ (KINDS)).includes(kind)) throw new UsageError(`--kind must be ${KINDS.join(" | ")}`);
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    let res;
+    try {
+      res = recordAttempt({ cwd, config: cfg, start, exit, kind, commit: strOpt(opts.commit), step: strOpt(opts.step), runner: strOpt(opts.runner) });
+    } catch (e) {
+      if (!(e instanceof RangeError)) throw e;
+      err(t("gate.recordFailed", { error: e.message }, cfg.language));
+      return 1;
+    }
+    out(t("gate.recorded", { result: t(`gate.result.${res.entry.result}`, {}, cfg.language), path: res.path }, cfg.language));
+    return 0;
+  },
+
+  "gate-stats"(args) {
+    const { opts, help } = parseArgs(args, { options: ["since", "until"], flags: ["json"] });
+    if (help) return (out(USAGE), 0);
+    const since = dateOpt(opts.since, "since");
+    const until = dateOpt(opts.until, "until");
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    const lang = cfg.language;
+    const path = gateLogPath(cwd, cfg.paths.stateDir);
+    const log = readAttempts(path);
+    const sum = summarizeAttempts(log.attempts, { since, until });
+    if (opts.json) return (out(JSON.stringify({ path, exists: log.exists, skipped: log.skipped, ...sum }, null, 2)), 0);
+    if (!log.exists) return (out(t("gate.none", { path }, lang)), 0);
+    if (log.skipped) out(t("gate.skipped", { n: log.skipped, path }, lang));
+    if (!sum.attempts) return (out(t("gate.emptyWindow", {}, lang)), 0);
+    const pct = sum.failRate === null ? "—" : `${(sum.failRate * 100).toFixed(0)}%`;
+    out(t("gate.summary", { full: sum.full, passed: sum.passed, failed: sum.failed, pct, message: sum.message }, lang));
+    if (sum.pass.n) out(t("gate.passTime", { median: minutes(sum.pass.median), p90: minutes(sum.pass.p90) }, lang));
+    if (sum.fail.n) out(t("gate.failTime", { median: minutes(sum.fail.median), p90: minutes(sum.fail.p90), wasted: minutes(sum.wastedSeconds) }, lang));
+    if (sum.steps.length) out(t("gate.steps", { list: sum.steps.map((s) => `${s.step} ${s.n}`).join(" · ") }, lang));
+    if (sum.unmeasuredSteps) out(t("gate.stepsUnmeasured", { n: sum.unmeasuredSteps }, lang));
     return 0;
   },
 };

@@ -77,5 +77,17 @@
   "impact.s5.noFakes": "no test builds fakes of the input files",
   "rework.fixMajority": "Note: {fixes} of {commits} candidate commits are fixes. When most work is labelled fix, this rate measures churn, not defect rework; narrow metrics.fixSubject.",
   "sidecopy.cannotRun": "ennyn side-copy rule hook cannot run: {reason}",
-  "rework.censored": "{n} commits newer than {days} days were left out: their window has not closed."
+  "rework.censored": "{n} commits newer than {days} days were left out: their window has not closed.",
+  "gate.recorded": "Gate attempt recorded ({result}) in {path}.",
+  "gate.recordFailed": "Gate attempt not recorded: {error}",
+  "gate.result.pass": "passed",
+  "gate.result.fail": "failed",
+  "gate.none": "No gate attempts recorded yet ({path}). The commit wrapper records them with `ennyn gate-record`.",
+  "gate.skipped": "{n} lines in {path} are not gate attempts and were skipped.",
+  "gate.emptyWindow": "No gate attempts in this range.",
+  "gate.summary": "Gate: {full} attempts, {passed} passed, {failed} failed ({pct}); {message} messages rejected before the gate.",
+  "gate.passTime": "Passing attempts: median {median} min, p90 {p90} min.",
+  "gate.failTime": "Failed attempts: median {median} min, p90 {p90} min; {wasted} min spent in failed attempts.",
+  "gate.steps": "Failing steps: {list}.",
+  "gate.stepsUnmeasured": "{n} failed attempts did not name the failing step (unmeasured, not clean)."
 }

@@ -77,5 +77,17 @@
   "impact.s5.noFakes": "hiçbir test girdi dosyaları için sahte kurmuyor",
   "rework.fixMajority": "Not: {commits} aday commit'in {fixes} tanesi düzeltme. İşin çoğu fix diye etiketlenince bu oran hata kaynaklı yeniden işi değil değişim sıklığını ölçer; metrics.fixSubject desenini daralt.",
   "sidecopy.cannotRun": "ennyn yan kopya kural kancası çalışamıyor: {reason}",
-  "rework.censored": "{days} günden yeni {n} commit dışarıda kaldı: penceresi henüz kapanmadı."
+  "rework.censored": "{days} günden yeni {n} commit dışarıda kaldı: penceresi henüz kapanmadı.",
+  "gate.recorded": "Kapı denemesi kaydedildi ({result}): {path}.",
+  "gate.recordFailed": "Kapı denemesi kaydedilmedi: {error}",
+  "gate.result.pass": "geçti",
+  "gate.result.fail": "düştü",
+  "gate.none": "Henüz kapı denemesi kaydı yok ({path}). Commit sarmalayıcısı `ennyn gate-record` ile kaydeder.",
+  "gate.skipped": "{path} içindeki {n} satır kapı denemesi değil, atlandı.",
+  "gate.emptyWindow": "Bu aralıkta kapı denemesi yok.",
+  "gate.summary": "Kapı: {full} deneme, {passed} geçti, {failed} düştü ({pct}); {message} mesaj kapıdan önce reddedildi.",
+  "gate.passTime": "Geçen denemeler: medyan {median} dk, p90 {p90} dk.",
+  "gate.failTime": "Düşen denemeler: medyan {median} dk, p90 {p90} dk; düşen denemelerde {wasted} dk harcandı.",
+  "gate.steps": "Düşen adımlar: {list}.",
+  "gate.stepsUnmeasured": "Düşen {n} deneme düşen adımı bildirmedi (ölçülmedi, temiz değil)."
 }

@@ -30,7 +30,7 @@ core/                               config, glob, git, i18n (zero dependencies, 
 checks/                             commit-shape, closeout (later)
 side-copy/                          map a side-copy path back to the project path
 impact/                             impact table runner
-metrics/                            rework (SZZ-style), convergence, mutation ledger
+metrics/                            rework (SZZ-style), convergence, gate-attempt log, mutation ledger
 plan/                               mechanization slot selection over the work graph
 adapters/claude-code/               rules index (paths: front matter), hook entry points
 i18n/{en,tr}.json                   message catalogs; output language comes from config
@@ -50,7 +50,7 @@ One file per project: `.ennyn/config.json` (override with `ENNYN_CONFIG`). Unkno
 | `paths.changelog` | `"CHANGELOG.md"` | |
 | `paths.graph` | `".ennyn/graph.json"` | work graph (JSON, or a `.mjs` module exporting arrays) |
 | `paths.metricsLog` | `".ennyn/metrics.jsonl"` | per-cycle metrics |
-| `paths.stateDir` | `".git/ennyn"` | machine-local state (never committed) |
+| `paths.stateDir` | `".git/ennyn"` | machine-local state (never committed): side-copy injection lists, `gate-attempts.jsonl`; a `.git/…` value resolves through the common git dir, so linked worktrees share it |
 | `graph.exports` | `{ "open": "nodes", "done": "done" }` | export names when the graph is a module |
 | `graph.fields` | `{ "id": "id", "status": "status", "needs": "needs", "gate": "gate", "value": "value", "cost": "cost", "cluster": "cluster", "mechanization": "mechanization", "source": "source" }` | field names in the graph |
 | `graph.openGateValue` | `null` | value of `gate` meaning "no gate" |
@@ -101,6 +101,7 @@ All modules are ES modules, zero dependencies, JSDoc-typed, pure where possible.
 - `adapters/claude-code/hooks/side-copy-rules.mjs` — PostToolUse hook: for Read/Edit/Write on a side-copy path, emits the matching rules as `hookSpecificOutput.additionalContext`, once per rule per session; exits 0 on every path (never 2; 1 only when it cannot run). `side-copy-reset.mjs` (SessionStart, `compact|clear`) forgets the session's injected list so the rules come back after the context is compacted.
 - `impact/table.mjs` — `buildImpactTable({ cwd, config, symbol?, files? }) → { rows }` (five rows, S1-S5); a row that cannot be answered says `unmeasured: <reason>`, never empty. `formatImpactTable(table, config) → markdown`.
 - `metrics/szz.mjs` — `reworkRate({ cwd, since, until, days, config, now? }) → { commits, reworked, rate, fixCommits, censored, pairs[] }`. Commits whose window has not closed by `now` are censored, not counted as clean. Checked against the origin project's Python measurement on the same range: September 46/306 vs 46/317, October 30/135 vs 33/141 (the denominators differ in documentation commits and author vs committer time).
+- `metrics/gate-log.mjs` — `recordAttempt({ cwd, config, start, end?, exit, kind?, commit?, step?, runner? }) → { path, entry }` appends one JSON line to `<stateDir>/gate-attempts.jsonl` (files from the commit when it passed, from the index when it failed; exit 0 without a commit is a failure; contradictory input throws `RangeError` and writes nothing). `readAttempts(path) → { exists, attempts, skipped }` (no log is reported as such, not as zero attempts; unreadable lines are counted). `summarizeAttempts(attempts, { since?, until? })` → counts, failure rate, nearest-rank median / p90 for passing and failed attempts, time spent in failed attempts, failing steps and how many failures did not name one. Only attempts that go through the wrapper are recorded.
 - `metrics/convergence.mjs` — `parseConvergence(handoffText, config) → { realEscape, fixIntroduced, preExisting, gateCaught, perRound }`.
 - `plan/mechanization.mjs` — `loadGraph({ cwd, config }) → { open, done }`; `pickMechanization({ open, done }, config) → node | null` (flagged `mechanization: true`, not done, gate open, every `needs` id done; highest value/cost, ties by id). Projects that block nodes in more ways than one gate field (the origin project has four) select in their own planner and use this only for scoring.
 

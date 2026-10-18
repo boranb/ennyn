@@ -9,4 +9,5 @@
 - `impact`: five-row impact table, each row answered by a command or marked unmeasured.
 - `rework`: SZZ strong-link rework rate (owned lines and share, sweep fixes and move commits skipped, open windows censored).
 - `mechanization`, `push-check`, convergence parser and formatter.
+- `gate-record` / `gate-stats`: one line per commit-gate attempt in machine-local state (duration, result, files, failing step when the wrapper knows it); the summary separates "nothing recorded" from "no attempts" and counts failures without a named step as unmeasured. The origin project had to scrape its gate cost from agent transcripts, where 16% of attempts had no readable outcome.
 - Method: cycle skill, finding schema, impact table guide, report formats, three reviewer agents.
