@@ -45,7 +45,11 @@ export async function loadGraph({ cwd, config }) {
     // The mtime query defeats the module cache when a long-lived process reloads an edited graph.
     const url = pathToFileURL(path);
     url.searchParams.set("mtime", String(statSync(path).mtimeMs));
-    data = await import(url.href);
+    try {
+      data = await import(url.href);
+    } catch (err) {
+      throw new GraphError(`cannot load ${path}: ${/** @type {Error} */ (err).message}`);
+    }
   } else {
     throw new GraphError(`work graph must be .json, .mjs or .js: ${path}`);
   }
@@ -53,6 +57,11 @@ export async function loadGraph({ cwd, config }) {
   if (!Array.isArray(open)) throw new GraphError(`work graph ${path} has no "${openName}" array (graph.exports.open)`);
   const done = data[doneName] ?? [];
   if (!Array.isArray(done)) throw new GraphError(`work graph ${path}: "${doneName}" must be an array (graph.exports.done)`);
+  // A null or a string where a node belongs would crash every reader later; say where it is now.
+  for (const [name, list] of [[openName, open], [doneName, done]]) {
+    const at = list.findIndex((/** @type {unknown} */ n) => n === null || typeof n !== "object" || Array.isArray(n));
+    if (at !== -1) throw new GraphError(`work graph ${path}: "${name}"[${at}] is not an object`);
+  }
   return { open: /** @type {GraphNode[]} */ (open), done: /** @type {GraphNode[]} */ (done) };
 }
 

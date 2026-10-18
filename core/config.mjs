@@ -163,6 +163,7 @@ export function loadConfig({ cwd, env = process.env, override }) {
     } catch (err) {
       throw new ConfigError([`cannot parse ${configPath}: ${/** @type {Error} */ (err).message}`]);
     }
+    if (user === null || typeof user !== "object" || Array.isArray(user)) throw new ConfigError([`${configPath} must hold a JSON object`]);
   }
   /** @type {string[]} */
   const problems = [];

@@ -95,3 +95,14 @@ test("loadGraph: missing file, missing open export, bad JSON are errors, not an 
   const noDone = await loadGraph({ cwd: graphFile("graph.json", JSON.stringify({ nodes: [] })), config: cfg() });
   assert.deepEqual(noDone, { open: [], done: [] });
 });
+
+test("loadGraph: a node that is not an object and a module that does not load are GraphErrors", async () => {
+  // A null node crashed every reader; a string node was skipped without a word.
+  for (const [nodes, done, where] of [[[{ id: "a" }, null], [], /"nodes"\[1\]/], [[{ id: "a" }], ["d"], /"done"\[0\]/], [[[1]], [], /"nodes"\[0\]/]]) {
+    const dir = graphFile("graph.json", JSON.stringify({ nodes, done }));
+    await assert.rejects(loadGraph({ cwd: dir, config: cfg() }), (e) => e instanceof GraphError && where.test(e.message) && /is not an object/.test(e.message));
+  }
+  const mod = graphFile("graph.mjs", "export const nodes = [\n");
+  const c = cfg({ paths: { graph: ".ennyn/graph.mjs" } });
+  await assert.rejects(loadGraph({ cwd: mod, config: c }), (e) => e instanceof GraphError && /cannot load .*graph\.mjs/.test(e.message));
+});

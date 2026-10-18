@@ -92,6 +92,11 @@ test("config: ENNYN_CONFIG points elsewhere; broken JSON is a ConfigError", () =
   assert.equal(loadConfig({ cwd: dir, env: { ENNYN_CONFIG: "alt.json" } }).language, "tr");
   writeFileSync(join(dir, "bad.json"), "{");
   assert.throws(() => loadConfig({ cwd: dir, env: { ENNYN_CONFIG: "bad.json" } }), ConfigError);
+  // A root that is not an object was a TypeError (null) or silently the defaults ([], 3).
+  for (const root of ["null", "[]", "3"]) {
+    writeFileSync(join(dir, "root.json"), root);
+    assert.throws(() => loadConfig({ cwd: dir, env: { ENNYN_CONFIG: "root.json" } }), (e) => e instanceof ConfigError && /must hold a JSON object/.test(e.message), root);
+  }
 });
 
 test("git: hook environment does not leak into helpers", () => {
