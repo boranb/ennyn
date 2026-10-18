@@ -1,0 +1,17 @@
+{
+  "description": "ennyn: inject path-scoped project rules when a file tool touches a side copy (git worktree or plain copy) of the project",
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Read|Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/adapters/claude-code/hooks/side-copy-rules.mjs\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

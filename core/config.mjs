@@ -65,8 +65,18 @@ export const DEFAULTS = Object.freeze({
   metrics: {
     reworkDays: 7,
     fixSubject: "^fix(\\(|:)",
-    excludeRe: "(^docs/|\\.md$|^\\.)",
-    testRe: "(\\.test\\.|\\.spec\\.|/test/|/__tests__/)",
+    // Generated output and lockfiles are rewritten by ordinary commits; counting them measures churn.
+    excludeRe: "(^docs/|\\.md$|^\\.|(^|/)(generated|dist|build|vendor)/|(^|/)(package-lock\\.json|pnpm-lock\\.yaml|yarn\\.lock)$)",
+    testRe: "(\\.test\\.|\\.spec\\.|/test/|/__tests__/|/__fixtures__/)",
+    // Strong link (the SZZ variant the origin project validated by hand, 60-67% precision):
+    // the origin owns >= minLines meaningful deleted lines AND >= minShare of the fix's
+    // deleted lines, or the fix message names the origin's hash.
+    minLines: 3,
+    minShare: 0.1,
+    // A fix touching more production files than this is a sweep, not a defect repair.
+    maxFixFiles: 15,
+    // Origins whose subject says they moved code: blame names them for lines they did not write.
+    moveSubject: "^refactor|\\b(rename[ds]?|move[ds]?|split|extract(ed)?|codemod|prettier|reformat(ted)?)\\b",
   },
 });
 
@@ -152,6 +162,7 @@ export function loadConfig({ cwd, env = process.env, override }) {
       throw new ConfigError([`cannot parse ${configPath}: ${/** @type {Error} */ (err).message}`]);
     }
   }
+  /** @type {string[]} */
   const problems = [];
   let cfg = merge(/** @type {any} */ (DEFAULTS), user, "", problems);
   if (override) cfg = merge(cfg, override, "", problems);

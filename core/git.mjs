@@ -5,6 +5,8 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { isAbsolute, join, resolve } from "node:path";
+import { realpathSync } from "node:fs";
 
 const LEAKY_ENV = ["GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_PREFIX", "GIT_COMMON_DIR"];
 
@@ -71,4 +73,38 @@ export function parseTrailers(message) {
     out.set(key, [...(out.get(key) ?? []), val]);
   }
   return out;
+}
+
+/**
+ * The repository's common git dir (shared by every worktree), absolute.
+ * @param {string} cwd
+ * @returns {string | null}
+ */
+export function commonDir(cwd) {
+  const out = git(["rev-parse", "--git-common-dir"], { cwd, allowFail: true });
+  if (!out) return null;
+  const abs = resolve(cwd, out);
+  try {
+    return realpathSync(abs); // macOS: /var is a symlink to /private/var
+  } catch {
+    return abs;
+  }
+}
+
+/**
+ * Resolve the machine-local state directory. A value under ".git/" is resolved
+ * through the common git dir: in a linked worktree ".git" is a file, and a
+ * state dir under it cannot be created.
+ * @param {string} projectDir
+ * @param {string} stateDir config `paths.stateDir`
+ * @returns {string}
+ */
+export function resolveStateDir(projectDir, stateDir) {
+  if (isAbsolute(stateDir)) return stateDir;
+  const norm = stateDir.replace(/\\/g, "/");
+  if (norm === ".git" || norm.startsWith(".git/")) {
+    const common = commonDir(projectDir);
+    if (common) return join(common, norm.slice(".git".length));
+  }
+  return resolve(projectDir, stateDir);
 }

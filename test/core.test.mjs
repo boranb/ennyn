@@ -140,3 +140,19 @@ test("i18n: every English key exists in every catalog, vars interpolate, fallbac
   assert.match(t("shape.subjectTooLong", { len: 130, max: 120 }, "tr"), /130 karakter; sınır 120/);
   assert.throws(() => t("no.such.key"));
 });
+
+test("git: state dir under .git resolves through the common dir in a linked worktree", async () => {
+  const { resolveStateDir, commonDir } = await import("../core/git.mjs");
+  const repo = mkdtempSync(join(tmpdir(), "pl-sd-"));
+  git(["init", "-q", "-b", "main"], { cwd: repo });
+  writeFileSync(join(repo, "a.txt"), "a");
+  git(["add", "."], { cwd: repo });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "a"], { cwd: repo });
+  const wt = join(mkdtempSync(join(tmpdir(), "pl-sd-wt-")), "wt");
+  git(["worktree", "add", "-q", wt], { cwd: repo });
+  const fromWorktree = resolveStateDir(wt, ".git/ennyn");
+  assert.equal(fromWorktree, join(commonDir(repo), "ennyn"));
+  assert.ok(!fromWorktree.startsWith(join(wt, ".git") + "/"));
+  assert.equal(resolveStateDir(repo, "state/x"), join(repo, "state/x"));
+  assert.equal(resolveStateDir(repo, "/abs/dir"), "/abs/dir");
+});
