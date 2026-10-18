@@ -61,7 +61,7 @@ One file per project: `.ennyn/config.json` (override with `ENNYN_CONFIG`). Unkno
 | `commitMsg.subjectMax` | `120` | |
 | `commitMsg.bodyMaxLines` | `8` | structured lines and trailers excluded |
 | `commitMsg.bodyMaxChars` | `800` | |
-| `commitMsg.structuredLines` | `["Root cause:", "Prevention added:", "Node:"]` | prefixes not counted toward the body limit |
+| `commitMsg.structuredLines` | `["Root cause:", "Prevention added:", "Node:", "Mutation:"]` | prefixes not counted toward the body limit |
 | `commitMsg.structuredLineMax` | `300` | |
 | `commitMsg.skipSubjects` | `["^Merge ", "^Revert "]` | regexes |
 | `commitMsg.allowMarker` | `"[commit-shape-allow:"` | bypass marker; must carry a reason |

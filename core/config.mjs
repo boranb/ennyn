@@ -40,7 +40,7 @@ export const DEFAULTS = Object.freeze({
     subjectMax: 120,
     bodyMaxLines: 8,
     bodyMaxChars: 800,
-    structuredLines: ["Root cause:", "Prevention added:", "Node:"],
+    structuredLines: ["Root cause:", "Prevention added:", "Node:", "Mutation:"],
     structuredLineMax: 300,
     skipSubjects: ["^Merge ", "^Revert "],
     allowMarker: "[commit-shape-allow:",
