@@ -14,6 +14,8 @@ We measured 21 cycles (539 review findings, 398 product defects) of the origin p
 - **Most risky questions were already known but not answered before the code was written.** Review prompts asked them, and the author answered them only after review. Two independent raters judged nearly all new serious defects at least partly answerable before writing.
 - **Lessons written as prose did not stop recurrence; lessons turned into gates did.** A class with a gate stayed at zero for 11 cycles. A class with only a written rule came back in 13 of 14 cycles. Proposals that became work-graph nodes got done 8 times out of 11; proposals without a node got done 0 times out of 5.
 
+Numbers, limits and the published research they were checked against: [docs/evidence.md](docs/evidence.md).
+
 ## What it does
 
 | Step | What the loop does | Tooling |
@@ -25,7 +27,7 @@ We measured 21 cycles (539 review findings, 398 product defects) of the origin p
 | Side copies | A worktree or plain copy of the project gets the path-scoped rules the main tree would load. | Claude Code hook |
 | End of cycle | Convergence in four numbers: real escapes, fix-introduced, pre-existing, gate-caught. The most recurring class becomes a work-graph node flagged `mechanization: true`. One lesson file is pruned. Push approval is asked, with the unpushed count. | `ennyn mechanization`, `ennyn push-check`, `ennyn rework` |
 
-`ennyn rework` measures how many commits had lines changed by a fix within N days (an SZZ variant). On the origin project it matched an independent Python implementation: September 46/306 vs 46/317, October 30/135 vs 33/141.
+`ennyn rework` measures how many commits had lines changed by a fix within N days (an SZZ variant). On the origin project it matched an independent Python implementation: September 46/306 vs 46/317, October 30/135 vs 33/141. The rate is only as good as the project's fix label: when most commits are labelled fix it counts churn, not defect rework, and the tool says so. Set `metrics.fixSubject` to match real repairs; see [docs/evidence.md](docs/evidence.md#speed-and-rework).
 
 ## Install (Claude Code)
 
@@ -58,7 +60,7 @@ The work graph is a JSON file (or an ES module) with two arrays, open and done n
 ## Status and roadmap
 
 - **0.1**: core modules and Claude Code plugin.
-- **0.2**: `/init` interview that builds a small starting graph and config for a new project, a graph built from an existing roadmap or issue list, a Codex manifest, and `claude plugin eval` cases that compare the loop with and without the plugin.
+- **0.2**: `/init` interview that builds a small starting graph and config for a new project (including a `metrics.fixSubject` that fits the project's own history), a graph built from an existing roadmap or issue list, a Codex manifest, and `claude plugin eval` cases that compare the loop with and without the plugin.
 - **1.0**: stable config schema.
 
 ## License

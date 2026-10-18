@@ -106,5 +106,5 @@ All modules are ES modules, zero dependencies, JSDoc-typed, pure where possible.
 ## Phases
 
 - **v0.1** — core modules + Claude Code plugin skeleton.
-- **v0.2** — `/init` interview that bootstraps the graph and config for a new project; Codex manifest; `claude plugin eval` suites.
+- **v0.2** — `/init` interview that bootstraps the graph and config for a new project (`metrics.fixSubject` set from the project's history); Codex manifest; `claude plugin eval` suites.
 - **v1.0** — stable config, official directory submission.
