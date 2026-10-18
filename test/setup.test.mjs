@@ -216,8 +216,11 @@ test("work sources: checkbox counts; a roadmap split into a directory counts; ar
 test("commands: entry points and fast variants only; mutation from a stryker script or go/cargo markers", () => {
   const dir = mkdtempSync(join(tmpdir(), "en-cmd-"));
   const scripts = { test: "node --test", "test:watch": "x", "validate:fast": "x", lint: "x", "check:foo": "x", mut: "stryker run" };
-  put(dir, { "package.json": JSON.stringify({ scripts }), "go.mod": "module x\n" });
-  assert.deepEqual(projectCommands(dir), { commands: ["npm run lint", "npm test", "npm run validate:fast", "go test ./..."], mutation: "npm run mut" });
+  put(dir, { "package.json": JSON.stringify({ scripts }), "go.mod": "module x\n", "scripts/validate.sh": "#!/bin/sh\n" });
+  assert.deepEqual(projectCommands(dir), {
+    commands: ["npm run lint", "npm test", "npm run validate:fast", "./scripts/validate.sh", "go test ./..."],
+    mutation: "npm run mut",
+  });
   const empty = mkdtempSync(join(tmpdir(), "en-cmd0-"));
   put(empty, { "package.json": "{ broken" });
   assert.deepEqual(projectCommands(empty), { commands: [], mutation: null });

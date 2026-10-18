@@ -315,6 +315,8 @@ export function projectCommands(cwd) {
   }
   const make = read("Makefile");
   if (make) for (const m of make.matchAll(/^(test|check|lint)\s*:/gm)) commands.push(`make ${m[1]}`);
+  // A project's own gate script often runs everything the commands above run, and more.
+  for (const name of ["validate", "test", "check", "ci"]) if (existsSync(join(cwd, "scripts", `${name}.sh`))) commands.push(`./scripts/${name}.sh`);
   const py = (read("pyproject.toml") ?? "") + (read("pytest.ini") ?? "") + (read("setup.cfg") ?? "");
   if (/pytest/.test(py)) commands.push("pytest");
   if (/\[tool\.mutmut\]|\[mutmut\]/.test(py)) mutation ??= "mutmut run";

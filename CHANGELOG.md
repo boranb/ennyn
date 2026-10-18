@@ -11,7 +11,7 @@
 - `mechanization`, `push-check`, convergence parser and formatter.
 - `gate-record` / `gate-stats`: one line per commit-gate attempt in machine-local state (duration, result, files, failing step when the wrapper knows it); the summary separates "nothing recorded" from "no attempts" and counts failures without a named step as unmeasured. The origin project had to scrape its gate cost from agent transcripts, where 16% of attempts had no readable outcome.
 - Method: cycle skill, finding schema, impact table guide, report formats, three reviewer agents.
-- `/ennyn:init` (`skills/init/`): surveys the repository, asks at most five questions, writes `.ennyn/config.json`, a starting work graph and a handoff stub, then runs `doctor`.
-- `init-scan`: fix label from the last 300 subjects (only a label at the subject start is proposed; a majority or mere mentions are flagged), paths most commits rewrite, test layouts the default `testRe` misses, risky directories, roadmap files, GitHub remote, test and mutation commands.
+- `/ennyn:init` (`skills/init/`): surveys the repository, asks at most five questions, writes `.ennyn/config.json`, a starting work graph and a handoff stub, then runs `doctor`. A roadmap the project already keeps in files is read by a small graph module, not copied.
+- `init-scan`: fix label from the last 300 subjects (only a label at the subject start is proposed; a majority or mere mentions are flagged), paths most commits rewrite, test layouts the default `testRe` misses, risky directories, roadmap files and roadmap directories, GitHub remote, test commands (including a `scripts/validate.sh`-style gate script) and the mutation tool.
 - `doctor`: config loads, patterns compile, graph ids are unique and `needs` exist, something is ready, the fix label separates repairs.
 - A config whose root is not an object, a graph node that is not an object and a module graph that fails to load are reported as config or graph errors.
