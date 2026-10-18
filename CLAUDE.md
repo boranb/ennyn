@@ -9,6 +9,10 @@ A development loop for coding agents, shipped as a Claude Code plugin and a zero
 - `fix:` only for repairing an earlier commit: `ennyn rework` counts those subjects.
 - Nothing about the projects that use Ennyn goes into this repository: no names, paths or data. Evidence is written anonymously, as "the origin project".
 
+## Docs
+
+- README.md and README.tr.md say the same thing; change both in the same commit. DESIGN.md and docs/ are English only.
+
 ## Tests
 
 - `npm test` and `npm run typecheck` both pass before every commit.

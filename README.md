@@ -1,5 +1,7 @@
 # Ennyn
 
+**English** · [Türkçe](README.tr.md)
+
 *Ennyn* (pronounced *EN-nin*) is Sindarin for "gates": the Doors of Durin in Tolkien's *The Lord of the Rings*, which open only to the right word. Ennyn turns each recurring lesson into a gate your code has to pass.
 
 A development loop for coding agents that measures itself. Each cycle takes four tasks from the project's work graph: two core tasks, one task that turns a recurring defect class into a gate, and one audit of a finished feature. It ends by counting where the defects came from.
