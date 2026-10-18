@@ -1,6 +1,11 @@
 {
   "name": "ennyn",
-  "owner": { "name": "Berkay Boran" },
+  "owner": {
+    "name": "Berkay Boran"
+  },
+  "metadata": {
+    "description": "ennyn: a measured development loop for coding agents (one plugin)."
+  },
   "plugins": [
     {
       "name": "ennyn",
