@@ -108,11 +108,13 @@ const COMMANDS = {
     /** @type {string[]} */
     let staged = [];
     try {
-      staged = stagedPaths(cwd);
+      staged = stagedPaths(cwd, { env: process.env });
     } catch (e) {
       err(t("cli.stagedUnmeasured", { error: String(/** @type {Error} */ (e).message).split("\n")[0] }, cfg.language));
     }
-    const res = checkCommitShape(message, { config: cfg, stagedPaths: staged });
+    // git sets GIT_EDITOR=":" for hooks when the message came from -m / -F: then `#` lines are kept.
+    const cleanup = process.env.GIT_EDITOR === ":" ? "whitespace" : "strip";
+    const res = checkCommitShape(message, { config: cfg, stagedPaths: staged, cleanup });
     for (const e of res.errors) err(e);
     return res.ok ? 0 : 1;
   },

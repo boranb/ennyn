@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -155,4 +156,31 @@ test("git: state dir under .git resolves through the common dir in a linked work
   assert.ok(!fromWorktree.startsWith(join(wt, ".git") + "/"));
   assert.equal(resolveStateDir(repo, "state/x"), join(repo, "state/x"));
   assert.equal(resolveStateDir(repo, "/abs/dir"), "/abs/dir");
+});
+
+test("git: stagedPaths reads the index a hook was given, but only from the same repository", async () => {
+  const { hookIndexFile } = await import("../core/git.mjs");
+  const repo = mkdtempSync(join(tmpdir(), "pl-idx-"));
+  git(["init", "-q", "-b", "main"], { cwd: repo });
+  writeFileSync(join(repo, "base.txt"), "x");
+  git(["add", "."], { cwd: repo });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "base"], { cwd: repo });
+  writeFileSync(join(repo, "a.txt"), "a");
+  git(["add", "a.txt"], { cwd: repo });
+  // `git commit -- b.txt` builds a temporary index from HEAD plus the named path and exports it to hooks.
+  const tmpIndex = join(repo, ".git", "next-index-1.lock");
+  writeFileSync(join(repo, "b.txt"), "b");
+  const env = { ...process.env, GIT_INDEX_FILE: tmpIndex };
+  execFileSync("git", ["read-tree", "HEAD"], { cwd: repo, env });
+  execFileSync("git", ["add", "b.txt"], { cwd: repo, env });
+  assert.deepEqual(stagedPaths(repo), ["a.txt"], "without the hook env: the main index");
+  assert.deepEqual(stagedPaths(repo, { env: { GIT_INDEX_FILE: tmpIndex } }), ["b.txt"], "absolute temporary index");
+  assert.deepEqual(stagedPaths(repo, { env: { GIT_INDEX_FILE: ".git/index" } }), ["a.txt"], "relative main index");
+  const other = mkdtempSync(join(tmpdir(), "pl-idx-other-"));
+  git(["init", "-q"], { cwd: other });
+  assert.equal(hookIndexFile(repo, { GIT_INDEX_FILE: join(other, ".git", "index") }), null, "another repository's index is ignored");
+  assert.deepEqual(stagedPaths(repo, { env: { GIT_INDEX_FILE: join(other, ".git", "index") } }), ["a.txt"]);
+  // A linked worktree's index lives under the main git dir but belongs to the worktree.
+  mkdirSync(join(repo, ".git", "worktrees", "w1"), { recursive: true });
+  assert.equal(hookIndexFile(repo, { GIT_INDEX_FILE: join(repo, ".git", "worktrees", "w1", "index") }), null);
 });

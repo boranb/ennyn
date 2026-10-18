@@ -389,6 +389,30 @@ test("hook (k): within the budget as many rules as fit are inlined, the rest lis
   assert.ok(ctx.endsWith(`- ${second}`));
 });
 
+test("reset hook: after compaction or /clear the rules come back; other session starts keep the list", () => {
+  const resetPath = join(pluginRoot, "adapters/claude-code/hooks/side-copy-reset.mjs");
+  const reset = (/** @type {string} */ source) =>
+    spawnSync(process.execPath, [resetPath], {
+      input: JSON.stringify({ session_id: "s-reset", hook_event_name: "SessionStart", source, cwd: project }),
+      env: hookEnv({ CLAUDE_PROJECT_DIR: project }),
+      cwd: neutralCwd,
+      encoding: "utf8",
+    });
+  const read = () => runHook(readInput("s-reset", join(worktree, "src/lib/engine/x.ts")));
+  assert.ok(context(read()).includes("ENGINE-RULE-BODY"));
+  assert.equal(read().stdout, "", "second read in the same session: already given");
+  assert.equal(reset("startup").status, 0);
+  assert.equal(read().stdout, "", "a plain session start keeps the list");
+  assert.equal(reset("compact").status, 0);
+  assert.ok(context(read()).includes("ENGINE-RULE-BODY"), "after compaction the rule is given again");
+  assert.equal(reset("clear").status, 0);
+  assert.ok(context(read()).includes("ENGINE-RULE-BODY"), "after /clear the rule is given again");
+  for (const bad of ["{not json", "", "null"]) {
+    const r = spawnSync(process.execPath, [resetPath], { input: bad, env: hookEnv({ CLAUDE_PROJECT_DIR: project }), encoding: "utf8" });
+    assert.equal(r.status, 0);
+  }
+});
+
 test("hook (j): Turkish output when the project language is tr", () => {
   const r = runHook(readInput("s-j", join(worktree, "src/lib/engine/x.ts")), {
     CLAUDE_PROJECT_DIR: project,

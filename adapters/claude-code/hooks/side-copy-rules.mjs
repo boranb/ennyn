@@ -18,7 +18,8 @@
  */
 
 import { resolveStateDir } from "../../../core/git.mjs";
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { loadConfig } from "../../../core/config.mjs";
 import { t } from "../../../core/i18n.mjs";
@@ -36,11 +37,12 @@ async function readStdin() {
 }
 
 /**
+ * Where a session's "already injected" list lives (shared with side-copy-reset.mjs).
  * @param {string} projectDir
  * @param {string} stateDir
  * @param {unknown} sessionId
  */
-function statePath(projectDir, stateDir, sessionId) {
+export function sideCopyStatePath(projectDir, stateDir, sessionId) {
   const safe = String(sessionId ?? "").replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 200) || "no-session";
   return join(resolveStateDir(projectDir, stateDir), "side-copy", `${safe}.json`);
 }
@@ -135,7 +137,7 @@ async function main() {
   const matching = rulesForPath(loadPathScopedRules(projectDir), mapped.relPath);
   if (!matching.length) return 0;
 
-  const state = statePath(projectDir, config.paths.stateDir, input.session_id);
+  const state = sideCopyStatePath(projectDir, config.paths.stateDir, input.session_id);
   const emitted = readEmitted(state);
   const fresh = [];
   for (const file of matching) {
@@ -153,7 +155,15 @@ async function main() {
   return 0;
 }
 
-main().then(
+const invokedDirectly = (() => {
+  try {
+    return realpathSync(process.argv[1] ?? "") === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+})();
+
+if (invokedDirectly) main().then(
   (code) => {
     process.exitCode = code;
   },

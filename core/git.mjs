@@ -5,28 +5,29 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { realpathSync } from "node:fs";
 
 const LEAKY_ENV = ["GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_PREFIX", "GIT_COMMON_DIR"];
 
-/** @param {NodeJS.ProcessEnv} env */
-function cleanEnv(env) {
+/** @param {NodeJS.ProcessEnv} env @param {boolean} keepIndex */
+function cleanEnv(env, keepIndex) {
   const out = { ...env };
-  for (const k of LEAKY_ENV) delete out[k];
+  for (const k of LEAKY_ENV) if (!(keepIndex && k === "GIT_INDEX_FILE")) delete out[k];
   return out;
 }
 
 /**
  * @param {string[]} args
- * @param {{ cwd: string, env?: NodeJS.ProcessEnv, allowFail?: boolean }} opts
+ * @param {{ cwd: string, env?: NodeJS.ProcessEnv, allowFail?: boolean, keepIndex?: boolean }} opts
+ *   `keepIndex` keeps GIT_INDEX_FILE (only for an index already checked by hookIndexFile).
  * @returns {string} stdout without the trailing newline ("" on allowed failure)
  */
-export function git(args, { cwd, env = process.env, allowFail = false }) {
+export function git(args, { cwd, env = process.env, allowFail = false, keepIndex = false }) {
   try {
     return execFileSync("git", args, {
       cwd,
-      env: cleanEnv(env),
+      env: cleanEnv(env, keepIndex),
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
       maxBuffer: 64 * 1024 * 1024,
@@ -37,9 +38,47 @@ export function git(args, { cwd, env = process.env, allowFail = false }) {
   }
 }
 
-/** @param {string} cwd @returns {string[]} */
-export function stagedPaths(cwd) {
-  const out = git(["diff", "--cached", "--name-only", "-z"], { cwd });
+/**
+ * The index a running hook was given, when it belongs to the repository at
+ * `cwd`. `git commit -- <path>` hands its hooks a temporary index through
+ * GIT_INDEX_FILE; reading the main index there sees the wrong staged set. An
+ * index from another repository (a leaked hook environment) is ignored.
+ * @param {string} cwd
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {string | null}
+ */
+export function hookIndexFile(cwd, env) {
+  const raw = env.GIT_INDEX_FILE;
+  if (!raw) return null;
+  const gitDir = git(["rev-parse", "--absolute-git-dir"], { cwd, allowFail: true });
+  if (!gitDir) return null;
+  const real = (/** @type {string} */ p) => {
+    try {
+      return realpathSync(p);
+    } catch {
+      return resolve(p);
+    }
+  };
+  const abs = isAbsolute(raw) ? raw : resolve(cwd, raw);
+  const dir = real(gitDir);
+  const parent = real(dirname(abs));
+  // Directly in this repository's git dir: a linked worktree's index (`.git/worktrees/<name>/index`)
+  // sits below the main git dir but belongs to the worktree.
+  return parent === dir ? join(parent, basename(abs)) : null;
+}
+
+/**
+ * @param {string} cwd
+ * @param {{ env?: NodeJS.ProcessEnv }} [opts] pass the hook's environment to read the index it was given
+ * @returns {string[]}
+ */
+export function stagedPaths(cwd, { env } = {}) {
+  const index = env ? hookIndexFile(cwd, env) : null;
+  const out = git(["diff", "--cached", "--name-only", "-z"], {
+    cwd,
+    env: index ? { ...process.env, GIT_INDEX_FILE: index } : process.env,
+    keepIndex: Boolean(index),
+  });
   return out.split("\0").filter(Boolean);
 }
 

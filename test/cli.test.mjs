@@ -9,7 +9,8 @@ import { git } from "../core/git.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
 const ENV = Object.fromEntries(
-  Object.entries(process.env).filter(([k]) => !["ENNYN_CONFIG", "GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE"].includes(k)),
+  // GIT_EDITOR too: inside a commit hook git sets it to ":" and the CLI would read -m mode.
+  Object.entries(process.env).filter(([k]) => !["ENNYN_CONFIG", "GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_EDITOR"].includes(k)),
 );
 
 /** @param {string} cwd @param {string[]} args */
@@ -184,4 +185,17 @@ test("cli: config errors exit 1 with the message; config is found from a subdire
   const sub = run(join(tr.dir, "deep", "er"), "push-check");
   assert.equal(sub.code, 0);
   assert.match(sub.stdout, /Gönderilmemiş commit sayısı ölçülemedi/);
+});
+
+test("cli: commit-check counts kept `#` lines when git says the message came from -m / -F", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pl-cli-ged-"));
+  git(["init", "-q"], { cwd: dir });
+  const msg = join(dir, "MSG");
+  writeFileSync(msg, "s\n\n" + Array.from({ length: 12 }, (_, i) => `# hidden ${i}`).join("\n") + "\n");
+  const r = (/** @type {Record<string, string>} */ extra) =>
+    spawnSync(process.execPath, [CLI, "commit-check", msg], { cwd: dir, env: { ...ENV, ...extra }, encoding: "utf8" });
+  assert.equal(r({}).status, 0, "editor commit: git drops `#` lines");
+  const kept = r({ GIT_EDITOR: ":" });
+  assert.equal(kept.status, 1);
+  assert.match(kept.stderr, /12 prose lines/);
 });

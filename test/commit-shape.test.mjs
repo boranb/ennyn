@@ -88,3 +88,31 @@ test("Turkish line labels via config", () => {
   assert.ok(checkCommitShape("s\n\nTur: 2\nEtki: S1 4 okuyan", { config: c }).ok);
   assert.match(checkCommitShape("s\n\nTur: 3", { config: c }).errors[0], /Üçüncü tur:/);
 });
+
+test("cleanup: with -m / -F git keeps `#` lines, so they count; with the editor they are dropped", () => {
+  const c = cfg({ commitMsg: { bodyMaxLines: 2 } });
+  const msg = "s\n\none\n# hidden 1\n# hidden 2\n# hidden 3";
+  assert.ok(checkCommitShape(msg, { config: c, cleanup: "strip" }).ok);
+  assert.match(checkCommitShape(msg, { config: c, cleanup: "whitespace" }).errors[0], /4 prose lines/);
+});
+
+test("cleanup: a scissors line ends the message only in editor mode; with -m / -F git stores what follows it", () => {
+  const c = cfg({ commitMsg: { bodyMaxLines: 1 } });
+  const msg = "s\n\none\n# ------------------------ >8 ------------------------\ndiff --git a/x b/x\n+a\n+b";
+  assert.ok(checkCommitShape(msg, { config: c, cleanup: "strip" }).ok);
+  const kept = checkCommitShape(msg, { config: c, cleanup: "whitespace" });
+  assert.equal(kept.ok, false, "with -m / -F the scissors line and the lines below it land in history");
+  assert.match(kept.errors[0], /5 prose lines/);
+});
+
+test("cleanup: a whitespace-only line still separates the trailer paragraph, as in the stored message", () => {
+  const c = cfg({ commitMsg: { bodyMaxLines: 1 } });
+  const msg = "s\n\none  \n   \nSigned-off-by: a <a@a>\nAcked-by: b <b@b>\n";
+  assert.deepEqual(checkCommitShape(msg, { config: c, cleanup: "whitespace" }).errors, []);
+});
+
+test("impact: a change touching only tests next to a guarded path needs no impact line", () => {
+  const c = cfg({ review: { impactRequiredGlobs: ["src/auth/**"] } });
+  assert.ok(checkCommitShape("s", { config: c, stagedPaths: ["src/auth/login.test.ts"] }).ok);
+  assert.equal(checkCommitShape("s", { config: c, stagedPaths: ["src/auth/login.ts", "src/auth/login.test.ts"] }).ok, false);
+});

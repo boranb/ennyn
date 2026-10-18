@@ -15,20 +15,44 @@ import { t } from "../core/i18n.mjs";
 const len = (s) => [...s].length;
 
 /**
+ * The text git will store, so the check measures what lands in history. git's
+ * cleanup depends on how the message was given: with `-m` / `-F` (git sets
+ * GIT_EDITOR=":" for the hook) `#` lines and a `git commit -v` scissors line are
+ * kept ("whitespace"); with the editor they are dropped and the scissors line
+ * ends the message ("strip"). A kept line is counted like any other, otherwise
+ * prose could hide behind a `#`. Both modes drop trailing spaces and repeated
+ * and edge blank lines.
+ * @param {string} message
+ * @param {"strip" | "whitespace"} cleanup
+ */
+export function storedMessage(message, cleanup) {
+  let text = message.replace(/\r\n/g, "\n");
+  // The scissors line (`git commit -v`) ends the message only when git strips; with -m / -F it is stored.
+  const scissors = cleanup === "strip" ? text.search(/^# -+ >8 -+$/m) : -1;
+  if (scissors !== -1) text = text.slice(0, scissors);
+  /** @type {string[]} */
+  const out = [];
+  for (const raw of text.split("\n")) {
+    if (cleanup === "strip" && raw.startsWith("#")) continue;
+    const line = raw.replace(/\s+$/, "");
+    if (line === "" && (out.length === 0 || out[out.length - 1] === "")) continue;
+    out.push(line);
+  }
+  while (out.length && out[out.length - 1] === "") out.pop();
+  return out.join("\n");
+}
+
+/**
  * @param {string} message raw commit message (as given to a commit-msg hook)
- * @param {{ config: any, stagedPaths?: string[] }} opts
+ * @param {{ config: any, stagedPaths?: string[], cleanup?: "strip" | "whitespace" }} opts
+ *   `cleanup` is git's mode for this commit: "whitespace" when the message came from `-m` / `-F`.
  * @returns {{ ok: boolean, errors: string[], skipped?: string }}
  */
-export function checkCommitShape(message, { config, stagedPaths = [] }) {
+export function checkCommitShape(message, { config, stagedPaths = [], cleanup = "strip" }) {
   const lang = config.language;
   const cm = config.commitMsg;
   const rv = config.review;
-  const text = message
-    .replace(/\r\n/g, "\n")
-    .split("\n")
-    .filter((l) => !l.startsWith("#"))
-    .join("\n")
-    .trim();
+  const text = storedMessage(message, cleanup);
   const lines = text.split("\n");
   const subject = lines[0] ?? "";
 
@@ -84,7 +108,7 @@ export function checkCommitShape(message, { config, stagedPaths = [] }) {
   }
 
   if (rv.impactRequiredGlobs.length) {
-    const hits = stagedPaths.filter((p) => matchAny(p, rv.impactRequiredGlobs));
+    const hits = stagedPaths.filter((p) => matchAny(p, rv.impactRequiredGlobs) && !matchAny(p, rv.impactIgnoreGlobs));
     if (hits.length && !bodyLines.some((l) => l.trimStart().startsWith(rv.impactLine))) {
       errors.push(t("shape.impactMissing", { line: rv.impactLine, paths: hits.slice(0, 3).join(", ") }, lang));
     }

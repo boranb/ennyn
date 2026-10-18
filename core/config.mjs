@@ -51,6 +51,8 @@ export const DEFAULTS = Object.freeze({
     thirdRoundLine: "Third-round:",
     impactLine: "Impact:",
     impactRequiredGlobs: [],
+    // A change that touches only tests next to a guarded file does not need an impact table.
+    impactIgnoreGlobs: ["**/*.test.*", "**/*.spec.*", "**/__tests__/**", "**/__fixtures__/**"],
   },
   push: { warnAtUnpushed: 20 },
   sideCopy: { roots: [], maxInjectBytes: 24000 },
