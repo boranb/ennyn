@@ -1,7 +1,5 @@
 # ennyn — design
 
-> Working name. The final name is chosen before the first public release (plugin names are permanent once published).
-
 ## What this is
 
 A development method for coding agents, packaged so any project can adopt it. The method runs in **cycles of four tasks** picked from a **work graph**: two core tasks, one **mechanization** task (turns a recurring defect class into a gate, test, type or lint), and one **legacy audit** (re-checks a finished feature). Every task follows the same protocol: read → impact table (for risky changes) → implement → test → mutation pass → bounded adversarial review → commit. Every cycle ends with a **convergence** report (how many findings were real escapes, fix-introduced, pre-existing, or caught by a gate) and a handoff.
@@ -25,7 +23,7 @@ The method was extracted from a production project where it was measured (2026-1
 skills/                             the method (SKILL.md files, < 8 KB each)
 agents/                             reviewer agents sharing one finding schema
 hooks/hooks.json                    Claude Code hooks (side-copy rule bridge)
-scripts/ennyn.mjs              CLI entry (no top-level bin/ — claude.ai/Cowork reject it)
+scripts/ennyn.mjs                   CLI entry (no top-level bin/ — claude.ai/Cowork reject it)
 core/                               config, glob, git, i18n (zero dependencies, Node >= 20)
 checks/                             commit-shape, closeout (later)
 side-copy/                          map a side-copy path back to the project path
@@ -107,6 +105,6 @@ All modules are ES modules, zero dependencies, JSDoc-typed, pure where possible.
 
 ## Phases
 
-- **v0.1** — core modules + Claude Code plugin skeleton; consumed by the origin project as a vendored copy.
+- **v0.1** — core modules + Claude Code plugin skeleton.
 - **v0.2** — `/init` interview that bootstraps the graph and config for a new project; Codex manifest; `claude plugin eval` suites.
 - **v1.0** — stable config, official directory submission.

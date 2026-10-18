@@ -30,7 +30,7 @@ We measured 21 cycles (539 review findings, 398 product defects) of the origin p
 ## Install (Claude Code)
 
 ```sh
-claude plugin marketplace add <owner>/ennyn
+claude plugin marketplace add boranb/ennyn
 claude plugin install ennyn@ennyn
 ```
 
@@ -57,7 +57,7 @@ The work graph is a JSON file (or an ES module) with two arrays, open and done n
 
 ## Status and roadmap
 
-- **0.1**: core modules, Claude Code plugin, used by the origin project as a vendored copy.
+- **0.1**: core modules and Claude Code plugin.
 - **0.2**: `/init` interview that builds a small starting graph and config for a new project, a graph built from an existing roadmap or issue list, a Codex manifest, and `claude plugin eval` cases that compare the loop with and without the plugin.
 - **1.0**: stable config schema.
 
