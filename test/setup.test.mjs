@@ -16,7 +16,7 @@ import {
   pathPatterns,
   churnPaths,
   testLayout,
-  riskyDirs,
+  riskyPaths,
   roadmapFiles,
   projectCommands,
   scanProject,
@@ -95,6 +95,23 @@ test("fix label: outside a conventional history the pattern covering the most fi
   const r = proposeFixSubject(many(100, (i) => (i < 5 ? `fix: a${i}` : i < 45 ? `Fix crash ${i}` : `Add page ${i}`)));
   assert.deepEqual([r.pick, r.reason], ["verb", "ok"]);
   assert.equal(r.candidates.find((c) => c.id === "verb")?.matches, 45);
+  assert.equal(r.matches, 45);
+});
+
+test("fix label: a project writing both fix(…) and düzeltme: gets one pattern covering both, diacritics optional", () => {
+  // Mostly conventional-looking Turkish types; the repairs are spread over two labels.
+  const subjects = many(40, (i) =>
+    i === 0 ? "fix(grafik): eksen 1970 diyordu" : i < 3 ? `düzeltme: komisyon okunmuyordu ${i}` : i === 3 ? "duzeltme: kayit cift yaziliyordu" : `kapi: olcum ${i}`,
+  );
+  const r = proposeFixSubject(subjects);
+  // conventional and verb match the same one subject here, so the narrower conventional stays.
+  assert.deepEqual([r.pick, r.reason, r.matches], ["conventional+turkish", "ok", 4]);
+  const re = new RegExp(/** @type {string} */ (r.proposal));
+  assert.deepEqual(subjects.filter((s) => re.test(s)).length, 4);
+  assert.ok(!re.test("kapi: olcum 9") && !re.test("yol haritasi: ilerleme duzeltildi"));
+  // Neither label alone is a majority; together they are, and that is what the rework rate would count.
+  const both = proposeFixSubject(many(40, (i) => (i < 12 ? `fix: a${i}` : i < 24 ? `düzeltme: b${i}` : `feat: c${i}`)));
+  assert.deepEqual([both.reason, both.matches], ["majority", 24]);
 });
 
 test("fix label: a mention inside a subject is weak, never proposed; 'bugün' is not 'bug'", () => {
@@ -161,7 +178,7 @@ test("tests: layouts the default testRe misses are proposed, and the proposal ma
   assert.equal(testLayout(["src/k8s/JobSpec.ts", "src/api/OpenApiSpec.ts", "src/ab/AbTest.ts"], testRe).proposal, null);
 });
 
-test("risky paths: top-most matching directory, whole segments only, tests and docs left out", () => {
+test("risky paths: top-most matching directory, or the file in a flat layout; whole names only, tests and docs left out", () => {
   const files = [
     "src/auth/login.ts",
     "src/auth/deep/token.ts",
@@ -170,20 +187,29 @@ test("risky paths: top-most matching directory, whole segments only, tests and d
     "test/auth/login.test.ts",
     "docs/security/model.md",
     "README.md",
+    "app/security.py",
+    "app/routers/auth.py",
+    "app/ledger.py",
+    "app/authors.py",
+    "app/riskless.py",
   ];
-  assert.deepEqual(riskyDirs(files, pat()), [
-    { dir: "server/migrations", files: 1, glob: "server/migrations/**" },
-    { dir: "src/auth", files: 2, glob: "src/auth/**" },
+  assert.deepEqual(riskyPaths(files, pat()), [
+    { path: "app/ledger.py", files: 1, glob: "app/ledger.py" },
+    { path: "app/routers/auth.py", files: 1, glob: "app/routers/auth.py" },
+    { path: "app/security.py", files: 1, glob: "app/security.py" },
+    { path: "server/migrations", files: 1, glob: "server/migrations/**" },
+    { path: "src/auth", files: 2, glob: "src/auth/**" },
   ]);
 });
 
-test("work sources: checkbox counts; archived roadmaps and unrelated files are skipped", () => {
+test("work sources: checkbox counts; a roadmap split into a directory counts; archives and unrelated files are skipped", () => {
   const dir = mkdtempSync(join(tmpdir(), "en-road-"));
-  put(dir, { "ROADMAP.md": "# Plan\n- [ ] a\n  - [x] b\n* [ ] c\n- plain\n", "docs/backlog.md": "one\ntwo\n" });
-  const files = ["ROADMAP.md", "docs/backlog.md", "docs/archive/roadmap-old.md", "src/plan.ts", "NOTES.md"];
+  put(dir, { "ROADMAP.md": "# Plan\n- [ ] a\n  - [x] b\n* [ ] c\n- plain\n", "docs/backlog.md": "one\ntwo\n", "docs/roadmap/phase-2.md": "- [ ] x\n- [x] y\n- [x] z\n" });
+  const files = ["ROADMAP.md", "docs/backlog.md", "docs/roadmap/phase-2.md", "docs/archive/roadmap-old.md", "docs/roadmap/archive/phase-0.md", "src/plan.ts", "NOTES.md"];
   assert.deepEqual(roadmapFiles(dir, files), [
     { path: "ROADMAP.md", open: 2, done: 1, lines: 6 },
     { path: "docs/backlog.md", open: 0, done: 0, lines: 3 },
+    { path: "docs/roadmap/phase-2.md", open: 1, done: 2, lines: 4 },
   ]);
 });
 

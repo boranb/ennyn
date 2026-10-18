@@ -150,9 +150,10 @@ const COMMANDS = {
     else {
       const fx = res.fixSubject;
       if (fx.commits) say("scan.conventional", { commits: fx.commits, pct: percent(fx.conventionalShare, lang) });
-      const pick = fx.candidates.find((c) => c.id === fx.pick);
-      const vars = { commits: fx.commits, min: MIN_HISTORY, pattern: pick?.pattern ?? "", matches: pick?.matches ?? 0, pct: percent(pick?.share ?? null, lang) };
-      const examples = (pick?.examples ?? []).map((e) => `"${excerpt(e, pick ? new RegExp(pick.pattern) : null)}"`).join(", ");
+      // A weak result proposes nothing; its examples show the mentions.
+      const pattern = fx.proposal ?? fx.candidates.find((c) => c.id === fx.pick)?.pattern ?? null;
+      const vars = { commits: fx.commits, min: MIN_HISTORY, pattern: pattern ?? "", matches: fx.matches, pct: percent(fx.share, lang) };
+      const examples = fx.examples.map((e) => `"${excerpt(e, pattern ? new RegExp(pattern) : null)}"`).join(", ");
       say({ ok: "scan.fixOk", majority: "scan.fixMajority", weak: "scan.fixWeak", none: "scan.fixNone", tooFew: "scan.fixTooFew" }[fx.reason], { ...vars, examples });
       if (res.churn.paths.length) {
         say("scan.churn", { min: res.churn.min ?? 0, commits: res.churn.commits });
