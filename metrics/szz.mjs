@@ -32,7 +32,7 @@ const DAY = 86400;
  * `censored` counts in-range commits left out because their window has not closed yet.
  * @typedef {{ origin: string, fix: string, files: string[], lines: number, share: number, days: number }} ReworkPair
  * @typedef {{ commits: number, reworked: number, rate: number | null, fixCommits: number, censored: number, pairs: ReworkPair[] }} ReworkResult
- * @typedef {{ hash: string, time: number, subject: string, body: string, changes: { status: string, path: string }[] }} LogCommit
+ * @typedef {{ hash: string, time: number, subject: string, changes: { status: string, path: string }[] }} LogCommit
  */
 
 /**
@@ -84,36 +84,51 @@ export function gitSince(sec) {
  * @returns {LogCommit[]}
  */
 function readLog(cwd, sinceSec) {
-  const args = [
-    "-c",
-    "core.quotePath=false",
-    "log",
-    "--no-merges",
-    "--no-renames",
-    "--root",
-    "--name-status",
-    "--format=%x01%H%x00%ct%x00%s%x00%b%x02",
-  ];
-  if (sinceSec !== null) args.push(gitSince(sinceSec));
+  const scope = ["--no-merges", ...(sinceSec !== null ? [gitSince(sinceSec)] : [])];
   // Throws outside a repository (unmeasured is not zero); an empty repository has no log.
   git(["rev-parse", "--git-dir"], { cwd });
   if (!git(["rev-parse", "--verify", "-q", "HEAD"], { cwd, allowFail: true })) return [];
-  const out = git(args, { cwd });
+  // Hash, committer time, subject: three NUL-terminated fields per commit (no message holds a NUL,
+  // so a control character in a subject cannot shift a field).
+  const head = git(["log", "-z", "--format=%H%x00%ct%x00%s", ...scope], { cwd }).split("\0");
   /** @type {LogCommit[]} */
   const commits = [];
-  for (const chunk of out.split("\x01").slice(1)) {
-    const end = chunk.indexOf("\x02");
-    const header = end === -1 ? chunk : chunk.slice(0, end);
-    const [hash, ct, subject = "", body = ""] = header.split("\0");
-    const changes = [];
-    for (const line of (end === -1 ? "" : chunk.slice(end + 1)).split("\n")) {
-      const tab = line.indexOf("\t");
-      if (tab === -1) continue;
-      changes.push({ status: line.slice(0, tab).charAt(0), path: line.slice(tab + 1) });
-    }
-    commits.push({ hash, time: Number(ct), subject, body, changes });
+  /** @type {Map<string, LogCommit>} */
+  const byHash = new Map();
+  for (let i = 0; i + 2 < head.length; i += 3) {
+    const c = { hash: head[i].replace(/^\n/, ""), time: Number(head[i + 1]), subject: head[i + 2], changes: [] };
+    commits.push(c);
+    byHash.set(c.hash, c);
+  }
+  // Paths, raw (-z): each status and path is its own NUL-terminated field, so a quote or a tab in a
+  // file name survives (unquoted output C-quotes such names and the diff below would find no file).
+  const fields = git(["-c", "core.quotePath=false", "log", "-z", "--no-renames", "--root", "--name-status", "--format=%H", ...scope], { cwd }).split("\0");
+  /** @type {LogCommit | null} */
+  let cur = null;
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i].replace(/^\n/, "");
+    if (cur && /^[A-Z]$/.test(f) && i + 1 < fields.length) cur.changes.push({ status: f, path: fields[++i] });
+    else if (/^[0-9a-f]{40,64}$/.test(f)) cur = byHash.get(f) ?? null;
   }
   return commits;
+}
+
+/**
+ * Full messages of the given commits (only fixes need one: a fix that names its origin's hash links it),
+ * read in chunks so the command line stays short.
+ * @param {string} cwd
+ * @param {string[]} hashes
+ * @param {number} [chunk]
+ * @returns {Map<string, string>}
+ */
+export function commitMessages(cwd, hashes, chunk = 500) {
+  /** @type {Map<string, string>} */
+  const out = new Map();
+  for (let i = 0; i < hashes.length; i += chunk) {
+    const fields = git(["log", "--no-walk=unsorted", "-z", "--format=%H%x00%B", ...hashes.slice(i, i + chunk)], { cwd }).split("\0");
+    for (let j = 0; j + 1 < fields.length; j += 2) out.set(fields[j].replace(/^\n/, ""), fields[j + 1]);
+  }
+  return out;
 }
 
 /**
@@ -207,6 +222,10 @@ export function reworkRate({ cwd, since, until, days, config, now }) {
   const testRe = new RegExp(m.testRe);
   const fixRe = new RegExp(m.fixSubject);
   const moveRe = new RegExp(m.moveSubject, "i");
+  // The i flag folds case by English rules; "İçe aktar…" lowers to "içe" only by Turkish ones. Both are
+  // tried, so an English "SPLIT" (Turkish rules make it "splıt") and a Turkish "İçe" both match.
+  const commitLang = config.commitMsg?.language ?? config.language;
+  const isMove = (/** @type {string} */ s) => moveRe.test(s) || moveRe.test(s.toLocaleLowerCase(commitLang === "tr" ? "tr" : "en"));
   const isProduction = (/** @type {string} */ p) => !exclude.test(p) && !testRe.test(p);
 
   const log = readLog(cwd, sinceSec);
@@ -226,8 +245,9 @@ export function reworkRate({ cwd, since, until, days, config, now }) {
   /** @type {ReworkPair[]} */
   const pairs = [];
   const reworked = new Set();
-  for (const fix of log) {
-    if (!fixRe.test(fix.subject) || !inRange(fix.time, window)) continue;
+  const fixes = log.filter((c) => fixRe.test(c.subject) && inRange(c.time, window));
+  const fixMessages = commitMessages(cwd, fixes.map((c) => c.hash));
+  for (const fix of fixes) {
     const production = fix.changes.filter((ch) => isProduction(ch.path));
     if (production.length > m.maxFixFiles) continue;
     /** @type {Map<string, { lines: number, files: Set<string> }>} */
@@ -246,10 +266,10 @@ export function reworkRate({ cwd, since, until, days, config, now }) {
         owned.set(origin, o);
       }
     }
-    const message = `${fix.subject}\n${fix.body}`;
+    const message = fixMessages.get(fix.hash) ?? fix.subject;
     for (const [origin, { lines, files }] of owned) {
       const o = candidates.get(origin);
-      if (!o || moveRe.test(o.subject)) continue;
+      if (!o || isMove(o.subject)) continue;
       const delta = fix.time - o.time;
       if (delta < 0 || delta > window) continue;
       const share = total ? lines / total : 0;

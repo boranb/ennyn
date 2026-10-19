@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { loadConfig } from "../core/config.mjs";
 import { git } from "../core/git.mjs";
-import { reworkRate, deletedCodeLines, isCodeLine, parseBound } from "../metrics/szz.mjs";
+import { reworkRate, deletedCodeLines, isCodeLine, parseBound, commitMessages } from "../metrics/szz.mjs";
 import { parseConvergence, formatConvergence } from "../metrics/convergence.mjs";
 
 const cfg = (override = {}) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-m-")), env: {}, override });
@@ -303,4 +304,68 @@ test("convergence: an explicit `?` round stays as null at the end too (round-tri
   assert.deepEqual(c?.perRound, [2, null]);
   const again = parseConvergence(formatConvergence({ realEscape: 1, fixIntroduced: 0, preExisting: 0, gateCaught: 0, perRound: [1, null] }, cfg()), cfg());
   assert.deepEqual(again?.perRound, [1, null]);
+});
+
+test("szz audit: a file named with a quote or a tab is reworked like any other (paths are read raw)", () => {
+  for (const name of ['src/a "q".js', "src/t\tb.js"]) {
+    const r = repo();
+    const origin = r.commit(0, "feat: add", { [name]: ORIGIN });
+    const fix = r.commit(3, "fix: add handles strings", { [name]: ORIGIN.replace("return a + b;", "return Number(a) + Number(b);") });
+    const res = reworkRate({ cwd: r.dir, since: "2026-01-01", until: "2026-01-01", days: 7, config: loose() });
+    assert.deepEqual(res.pairs.map((p) => [p.origin, p.fix, p.files]), [[origin, fix, [name]]], JSON.stringify(name));
+  }
+});
+
+test("szz audit: move subjects fold case by the commit language and by English, so İçe and SPLIT both match", () => {
+  const tr = cfg({ commitMsg: { language: "tr" }, metrics: { minLines: 1, moveSubject: "^içe aktar|\\bsplit\\b" } });
+  for (const subject of ["İçe aktarma: add taşındı", "SPLIT the adder out"]) {
+    const r = repo();
+    r.commit(0, subject, { "src/a.js": ORIGIN });
+    r.commit(3, "fix: add handles strings", { "src/a.js": ORIGIN.replace("return a + b;", "return Number(a) + Number(b);") });
+    const res = reworkRate({ cwd: r.dir, since: "2026-01-01", until: "2026-01-01", days: 7, config: tr });
+    assert.deepEqual([res.commits, res.reworked], [1, 0], subject);
+  }
+});
+
+test("szz audit: a control character in a fix message neither invents commits nor hides the hash it names", () => {
+  const r = repo();
+  const origin = r.commit(0, "feat: add", { "src/a.js": ORIGIN });
+  r.commit(3, `fix: a\x01b\x02c\n\nRepairs ${origin.slice(0, 7)}\x01`, { "src/a.js": ORIGIN.replace("return a + b;", "return Number(a) + Number(b);") });
+  // The default floor (3 lines) is not met by a one-line fix: only the named hash links it.
+  const res = reworkRate({ cwd: r.dir, days: 7, config: cfg() });
+  assert.equal(res.commits, 2);
+  assert.deepEqual(res.pairs.map((p) => p.origin), [origin]);
+});
+
+test("szz audit: fix messages are read in chunks, and every chunk counts", () => {
+  const r = repo();
+  const hashes = ["one", "two", "three"].map((w, i) => r.commit(i, `fix: ${w}\n\nbody ${w}`, { [`src/${w}.js`]: `export const ${w} = ${i};\n` }));
+  const all = commitMessages(r.dir, hashes, 1);
+  assert.deepEqual(hashes.map((h) => all.get(h)?.trim()), ["fix: one\n\nbody one", "fix: two\n\nbody two", "fix: three\n\nbody three"]);
+});
+
+test("szz audit: with log.showSignature on, signed commits are read like any other (no text in front of the fields)", (t) => {
+  const keygen = spawnSync("ssh-keygen", ["-V"], { encoding: "utf8" });
+  if (keygen.error) return t.skip("ssh-keygen not available");
+  const r = repo();
+  const key = join(r.dir, "..", `key-${r.dir.split(/[\\/]/).pop()}`);
+  spawnSync("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-f", key]);
+  for (const [k, v] of [["gpg.format", "ssh"], ["user.signingkey", key], ["commit.gpgsign", "true"], ["log.showSignature", "true"]]) git(["config", k, v], { cwd: r.dir });
+  assert.equal(git(["config", "--get", "log.showSignature"], { cwd: r.dir }), "false", "every helper call overrides it");
+  const signed = (/** @type {number} */ day, /** @type {string} */ message, /** @type {Record<string, string>} */ files) => {
+    for (const [path, content] of Object.entries(files)) {
+      mkdirSync(dirname(join(r.dir, path)), { recursive: true });
+      writeFileSync(join(r.dir, path), content);
+    }
+    const date = new Date(Date.UTC(2026, 0, 1 + day, 12, 0, 0)).toISOString();
+    git(["add", "-A"], { cwd: r.dir });
+    git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-S", "-m", message], { cwd: r.dir, env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } });
+    return git(["rev-parse", "HEAD"], { cwd: r.dir });
+  };
+  const origin = signed(0, "feat: add", { "src/a.js": ORIGIN });
+  const fix = signed(3, "fix: add handles strings", { "src/a.js": ORIGIN.replace("return a + b;", "return Number(a) + Number(b);") });
+  // A plain git log here does print signature text: the override is what keeps the parser right.
+  assert.match(spawnSync("git", ["log", "-1"], { cwd: r.dir, encoding: "utf8" }).stdout + spawnSync("git", ["log", "-1"], { cwd: r.dir, encoding: "utf8" }).stderr, /signature|allowedSignersFile/i);
+  const res = reworkRate({ cwd: r.dir, since: "2026-01-01", until: "2026-01-01", days: 7, config: loose() });
+  assert.deepEqual(res.pairs.map((p) => [p.origin, p.fix]), [[origin, fix]]);
 });

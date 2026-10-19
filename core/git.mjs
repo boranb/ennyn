@@ -1,7 +1,10 @@
 /**
  * Git helpers. Every call runs with the repository-locating environment
  * variables removed: a git hook exports GIT_DIR / GIT_INDEX_FILE, and a helper
- * that inherits them silently reads the wrong repository or index.
+ * that inherits them silently reads the wrong repository or index. And every
+ * call overrides the user's config that changes what log and show print:
+ * with log.showSignature, git writes signature text in front of each commit's
+ * format, and a parser reading fields by position reads the wrong ones.
  */
 
 import { execFileSync } from "node:child_process";
@@ -9,6 +12,8 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { realpathSync } from "node:fs";
 
 const LEAKY_ENV = ["GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_PREFIX", "GIT_COMMON_DIR"];
+/** Config that would change parsed output, set back for every call. */
+const FIXED_CONFIG = ["-c", "log.showSignature=false"];
 
 /** @param {NodeJS.ProcessEnv} env @param {boolean} keepIndex */
 function cleanEnv(env, keepIndex) {
@@ -25,7 +30,7 @@ function cleanEnv(env, keepIndex) {
  */
 export function git(args, { cwd, env = process.env, allowFail = false, keepIndex = false }) {
   try {
-    return execFileSync("git", args, {
+    return execFileSync("git", [...FIXED_CONFIG, ...args], {
       cwd,
       env: cleanEnv(env, keepIndex),
       encoding: "utf8",
