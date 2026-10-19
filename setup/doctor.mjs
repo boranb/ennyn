@@ -10,6 +10,8 @@
 import { loadConfig, ConfigError } from "../core/config.mjs";
 import { loadGraph, readyNodes, readyMechanization, needsOf, GraphError } from "../plan/mechanization.mjs";
 import { MIN_HISTORY, recentCommits, productionSubjects } from "./scan.mjs";
+import { hookStatus } from "./hook.mjs";
+import { git } from "../core/git.mjs";
 
 /**
  * @typedef {{ level: "ok" | "warn" | "fail", key: string, vars: Record<string, string | number> }} DoctorItem
@@ -88,6 +90,15 @@ export async function checkSetup({ cwd, env = process.env }) {
   const commitLanguage = cm.language ?? config.language;
   if (cm.types.length) add("ok", "doctor.commitStyle", { language: commitLanguage, types: cm.types.join(", "), type: cm.fixType });
   else add("ok", "doctor.commitStyleFree", { language: commitLanguage });
+
+  // Declared types with no hook to check them are a rule on paper again.
+  if (cm.types.length && git(["rev-parse", "--git-dir"], { cwd, allowFail: true })) {
+    const hook = hookStatus(cwd);
+    if (hook.state === "ennyn" || hook.state === "wired") add("ok", "doctor.hookOk", { path: hook.path });
+    else if (hook.hooksPath) add("warn", "doctor.hookPath", { dir: hook.hooksPath });
+    else if (hook.state === "other") add("warn", "doctor.hookOther", { path: hook.path });
+    else add("warn", "doctor.hookMissing");
+  }
 
   // Same denominator as the rework rate: recent commits touching a production path.
   const fixRe = compiled["metrics.fixSubject"];

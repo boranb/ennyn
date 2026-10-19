@@ -152,5 +152,18 @@
   "scan.hooks": "Claude Code kancaları: {list}.",
   "scan.mcp": "MCP sunucuları: {list}.",
   "scan.unreadable": "Geçerli JSON değil, okunmadı: {list}.",
-  "scan.commitRuleMore": "  …ve {n} commit kuralı satırı daha (init-scan --json hepsini listeler)"
+  "scan.commitRuleMore": "  …ve {n} commit kuralı satırı daha (init-scan --json hepsini listeler)",
+  "hook.installed": "commit-msg kancası kuruldu: {path}. git commit ile yazılan mesajlar artık denetleniyor (cherry-pick, revert ve autosquash katlamaları commit-msg kancası çalıştırmaz).",
+  "hook.updated": "commit-msg kancası güncellendi: {path}.",
+  "hook.unchanged": "commit-msg kancası zaten kurulu: {path}.",
+  "hook.wired": "{path} zaten commit-check çalıştırıyor; yapılacak bir şey yok.",
+  "hook.other": "{path} başka bir kanca; dokunulmadı. Şu satırı ekle: {line}",
+  "doctor.hookOk": "commit-msg kancası: her mesajı denetliyor ({path})",
+  "doctor.hookMissing": "commit-msg kancası: yok, yani commit türleri kâğıt üstünde bir kural; ennyn install-hook çalıştır",
+  "doctor.hookOther": "commit-msg kancası: {path} commit-check çalıştırmıyor; ennyn install-hook ne ekleneceğini söyler",
+  "doctor.hookPath": "commit-msg kancası: core.hooksPath {dir} ve oradaki commit-msg commit-check çalıştırmıyor",
+  "hook.hooksPath.repo": "core.hooksPath {dir}; depo içinde ve genellikle izlenen bir dizin, bu makinenin yolu oraya ait değil. commit-check'i {dir}/commit-msg içinden projenin kendi Ennyn kopyasıyla çağır.",
+  "hook.hooksPath.husky": "Kancaları husky çalıştırıyor ({dir} onun ürettiği dosyaları tutar). commit-check'i .husky/commit-msg içinden projenin kendi Ennyn kopyasıyla çağır.",
+  "hook.hooksPath.global": "core.hooksPath {dir}; depo dışında, bu makinedeki her depoya uygulanıyor. Hepsini denetlemek için {dir}/commit-msg dosyasına şu satırı ekle: {line}",
+  "cli.hookConfigBroken": "ennyn: ayar yüklenemiyor, bu commit mesajı denetlenmedi. Düzelt; istersen bu commit'te.\n{error}"
 }

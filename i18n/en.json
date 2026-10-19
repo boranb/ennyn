@@ -152,5 +152,18 @@
   "scan.hooks": "Claude Code hooks: {list}.",
   "scan.mcp": "MCP servers: {list}.",
   "scan.unreadable": "Not valid JSON, so not read: {list}.",
-  "scan.commitRuleMore": "  …and {n} more commit-rule lines (init-scan --json lists them all)"
+  "scan.commitRuleMore": "  …and {n} more commit-rule lines (init-scan --json lists them all)",
+  "hook.installed": "commit-msg hook installed: {path}. Messages written with git commit are checked now (cherry-pick, revert and autosquash folds do not run commit-msg hooks).",
+  "hook.updated": "commit-msg hook updated: {path}.",
+  "hook.unchanged": "commit-msg hook already installed: {path}.",
+  "hook.wired": "{path} already runs commit-check; nothing to do.",
+  "hook.other": "{path} is another hook; it was not touched. Add this line to it: {line}",
+  "doctor.hookOk": "commit-msg hook: checks every message ({path})",
+  "doctor.hookMissing": "commit-msg hook: none, so the commit types are a rule on paper; run ennyn install-hook",
+  "doctor.hookOther": "commit-msg hook: {path} does not run commit-check; ennyn install-hook says what to add",
+  "doctor.hookPath": "commit-msg hook: core.hooksPath is {dir} and its commit-msg does not run commit-check",
+  "hook.hooksPath.repo": "core.hooksPath is {dir}, a directory in the repository and usually tracked; this machine's path does not belong there. Call commit-check from {dir}/commit-msg through the project's own copy of Ennyn.",
+  "hook.hooksPath.husky": "husky runs the hooks ({dir} holds its generated stubs). Call commit-check from .husky/commit-msg through the project's own copy of Ennyn.",
+  "hook.hooksPath.global": "core.hooksPath is {dir}, outside this repository: it applies to every repository on this machine. To check them all, add this line to {dir}/commit-msg: {line}",
+  "cli.hookConfigBroken": "ennyn: the config does not load, so this commit message was not checked. Fix it, in this commit if you like.\n{error}"
 }

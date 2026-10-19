@@ -18,13 +18,15 @@ import { gateLogPath, readAttempts, recordAttempt, summarizeAttempts, KINDS } fr
 import { loadGraph, pickMechanization, scoreNode, GraphError } from "../plan/mechanization.mjs";
 import { scanProject, MIN_HISTORY } from "../setup/scan.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
+import { installHook } from "../setup/hook.mjs";
 
 export const USAGE = `Usage: ennyn <command> [options]
 
 Commands:
   init-scan [--json]                                survey the repository for /init: fix label, churn, tests, risky paths, work sources
   doctor                                            check config, work graph and fix label; exit 1 on a problem
-  commit-check <message-file>                       check commit message shape (commit-msg hook)
+  install-hook                                      run commit-check as this repository's commit-msg hook (machine-local)
+  commit-check [--hook] <message-file>              check commit message shape (commit-msg hook; --hook: a config that does not load warns instead of failing)
   impact --symbol <s> [--files a,b]                 five-row impact table (markdown)
   rework [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--days N] [--json]
                                                     SZZ-style rework rate
@@ -241,6 +243,17 @@ const COMMANDS = {
     return 0;
   },
 
+  "install-hook"(args) {
+    const { help } = parseArgs(args, {});
+    if (help) return (out(USAGE), 0);
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    const res = installHook({ cwd, cliPath: fileURLToPath(import.meta.url) });
+    const key = res.result === "hooksPath" ? `hook.hooksPath.${res.hooksKind}` : `hook.${res.result}`;
+    out(t(key, { path: res.path, dir: res.hooksPath ?? "", line: res.line }, cfg.language));
+    return res.result === "other" || res.result === "hooksPath" ? 1 : 0;
+  },
+
   async doctor(args) {
     const { help } = parseArgs(args, {});
     if (help) return (out(USAGE), 0);
@@ -253,11 +266,19 @@ const COMMANDS = {
   },
 
   "commit-check"(args) {
-    const { positional, help } = parseArgs(args, { positional: 1 });
+    const { positional, opts, help } = parseArgs(args, { positional: 1, flags: ["hook"] });
     if (help) return (out(USAGE), 0);
     if (!positional[0]) throw new UsageError("commit-check needs a message file");
     const cwd = projectDir();
-    const cfg = config(cwd);
+    let cfg;
+    try {
+      cfg = config(cwd);
+    } catch (e) {
+      // From the commit-msg hook a broken config must not lock every commit, the one that fixes it included.
+      if (!(e instanceof ConfigError) || !opts.hook) throw e;
+      err(t("cli.hookConfigBroken", { error: e.message }, "en"));
+      return 0;
+    }
     let message;
     try {
       message = readFileSync(positional[0], "utf8");
@@ -274,8 +295,16 @@ const COMMANDS = {
     }
     // git sets GIT_EDITOR=":" for hooks when the message came from -m / -F: then `#` lines are kept.
     const cleanup = process.env.GIT_EDITOR === ":" ? "whitespace" : "strip";
-    const comment = commentMarker(cwd, message);
-    const res = checkCommitShape(message, { config: cfg, stagedPaths: staged, cleanup, comment, foldTarget: foldTarget(cwd, message, cleanup, comment) });
+    let res;
+    try {
+      const comment = commentMarker(cwd, message);
+      res = checkCommitShape(message, { config: cfg, stagedPaths: staged, cleanup, comment, foldTarget: foldTarget(cwd, message, cleanup, comment) });
+    } catch (e) {
+      // Any other tool failure (a pattern in the config that does not compile) is no reason to lock commits either.
+      if (!opts.hook) throw e;
+      err(t("cli.hookConfigBroken", { error: /** @type {Error} */ (e).message }, "en"));
+      return 0;
+    }
     for (const e of res.errors) err(e);
     return res.ok ? 0 : 1;
   },
