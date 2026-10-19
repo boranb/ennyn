@@ -1,0 +1,118 @@
+{
+  "nodes": [
+    {
+      "id": "commit-msg-hook",
+      "title": "Install commit-check as a commit-msg hook, offered by /ennyn:init: the commit convention becomes a gate instead of a rule in CLAUDE.md",
+      "status": "planned",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "needs": [],
+      "mechanization": true,
+      "source": "class: commit messages drift from the written convention (2026-10-18: the whole history was rewritten by hand)"
+    },
+    {
+      "id": "cycle-reads-handoff",
+      "title": "The cycle reads the handoff and the config first: test, lint and mutation commands, open risks",
+      "status": "planned",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "cycle",
+      "needs": [],
+      "source": "skills/cycle/SKILL.md step 1 never reads paths.handoff; /ennyn:init writes the commands there"
+    },
+    {
+      "id": "audit-queue",
+      "title": "A source for the legacy-audit slot: oldest or never-audited done nodes, or a queue file the project already keeps",
+      "status": "planned",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "cycle",
+      "needs": [],
+      "source": "skills/cycle/SKILL.md slot table names an audit queue that no config key points at"
+    },
+    {
+      "id": "allow-marker-count",
+      "title": "Count [commit-shape-allow: …] uses per cycle, so frequent use of the bypass is visible",
+      "status": "planned",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "needs": [],
+      "source": "docs/evidence.md, Open questions"
+    },
+    {
+      "id": "side-copy-subagents",
+      "title": "Measure whether subagents receive the side-copy hook in side copies, and what reaches them when rules do not fit the budget",
+      "status": "planned",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "side-copy",
+      "needs": [],
+      "source": "docs/evidence.md, Open questions"
+    },
+    {
+      "id": "second-project-cycles",
+      "title": "Run cycles on a second project from its own session and record the four convergence numbers against the baseline",
+      "status": "planned",
+      "value": "high",
+      "cost": "L",
+      "cluster": "evidence",
+      "needs": [],
+      "gate": "user",
+      "source": "docs/evidence.md, Open questions; set up but not committed in the second project (2026-10-18)"
+    },
+    {
+      "id": "rework-thresholds-check",
+      "title": "Hand-check rework links on a second project: are the strong-link thresholds still 60-67% precise there?",
+      "status": "planned",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "evidence",
+      "needs": ["second-project-cycles"],
+      "source": "docs/evidence.md, Open questions"
+    },
+    {
+      "id": "plugin-eval",
+      "title": "claude plugin eval cases that run the same tasks with and without the plugin and compare the outcome",
+      "status": "planned",
+      "value": "high",
+      "cost": "L",
+      "cluster": "evidence",
+      "needs": [],
+      "source": "README.md, roadmap 0.2"
+    },
+    {
+      "id": "codex-manifest",
+      "title": "Codex plugin manifest, so the skills and the CLI work there too",
+      "status": "planned",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "distribution",
+      "needs": [],
+      "source": "README.md, roadmap 0.2"
+    },
+    {
+      "id": "release-0-1-0",
+      "title": "Release v0.1.0: final read of both READMEs, CHANGELOG section, version in package.json, package-lock.json and plugin.json, tag",
+      "status": "planned",
+      "value": "high",
+      "cost": "S",
+      "cluster": "distribution",
+      "needs": ["second-project-cycles"],
+      "gate": "user",
+      "source": "user plan: open source after the second-project trial; the repository stays private until then"
+    }
+  ],
+  "done": [
+    { "id": "commit-check", "title": "Commit message check: stored message, structured lines, types, terse style", "status": "done" },
+    { "id": "impact-table", "title": "Five-row impact table answered by commands", "status": "done" },
+    { "id": "rework-rate", "title": "SZZ-style rework rate with strong links and censored windows", "status": "done" },
+    { "id": "convergence", "title": "Convergence parser and formatter, en and tr", "status": "done" },
+    { "id": "mechanization-pick", "title": "Work graph loader and mechanization pick", "status": "done" },
+    { "id": "side-copy-hook", "title": "Side-copy rule hook and its reset after compaction", "status": "done" },
+    { "id": "gate-log", "title": "Commit-gate attempt log and summary", "status": "done" },
+    { "id": "init", "title": "/ennyn:init with init-scan and doctor", "status": "done" },
+    { "id": "conversation-style", "title": "Conversation style hook and commit style", "status": "done" }
+  ]
+}

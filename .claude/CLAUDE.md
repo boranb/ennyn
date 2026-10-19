@@ -5,7 +5,7 @@ A development loop for coding agents, shipped as a Claude Code plugin and a zero
 ## Commits
 
 - The only author is Berkay Boran. No `Co-Authored-By` or other trailer that names an assistant.
-- Messages in English, conventional style: `feat:`, `fix:`, `docs:`, `test:`, `refactor:`, `chore:`. Plain words, short body. Check with `node scripts/ennyn.mjs commit-check <message-file>`.
+- Messages follow `commitMsg` in `.ennyn/config.json`: English, types `feat` `fix` `docs` `test` `refactor` `chore`. Plain words, short body; an `Impact:` line when a change touches the paths in `review.impactRequiredGlobs`. Check with `node scripts/ennyn.mjs commit-check <message-file>`.
 - `fix:` only for repairing an earlier commit: `ennyn rework` counts those subjects.
 - Nothing about the projects that use Ennyn goes into this repository: no names, paths or data. Evidence is written anonymously, as "the origin project".
 

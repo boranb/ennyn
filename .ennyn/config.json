@@ -1,0 +1,12 @@
+{
+  "language": "tr",
+  "paths": { "handoff": ".ennyn/handoff.md" },
+  "commitMsg": {
+    "language": "en",
+    "types": ["feat", "fix", "docs", "test", "refactor", "chore"],
+    "fixType": "fix"
+  },
+  "review": {
+    "impactRequiredGlobs": ["checks/**", "core/config.mjs", "metrics/szz.mjs", "setup/scan.mjs"]
+  }
+}
