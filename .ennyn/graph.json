@@ -1,17 +1,6 @@
 {
   "nodes": [
     {
-      "id": "commit-msg-hook",
-      "title": "Install commit-check as a commit-msg hook, offered by /ennyn:init: the commit convention becomes a gate instead of a rule in CLAUDE.md",
-      "status": "planned",
-      "value": "high",
-      "cost": "M",
-      "cluster": "gates",
-      "needs": [],
-      "mechanization": true,
-      "source": "class: commit messages drift from the written convention (2026-10-18: the whole history was rewritten by hand)"
-    },
-    {
       "id": "cycle-reads-handoff",
       "title": "The cycle reads the handoff and the config first: test, lint and mutation commands, open risks",
       "status": "planned",
@@ -30,16 +19,6 @@
       "cluster": "cycle",
       "needs": [],
       "source": "skills/cycle/SKILL.md slot table names an audit queue that no config key points at"
-    },
-    {
-      "id": "allow-marker-count",
-      "title": "Count [commit-shape-allow: …] uses per cycle, so frequent use of the bypass is visible",
-      "status": "planned",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "gates",
-      "needs": [],
-      "source": "docs/evidence.md, Open questions"
     },
     {
       "id": "side-copy-subagents",
@@ -69,7 +48,9 @@
       "value": "medium",
       "cost": "M",
       "cluster": "evidence",
-      "needs": ["second-project-cycles"],
+      "needs": [
+        "second-project-cycles"
+      ],
       "source": "docs/evidence.md, Open questions"
     },
     {
@@ -99,20 +80,170 @@
       "value": "high",
       "cost": "S",
       "cluster": "distribution",
-      "needs": ["second-project-cycles"],
+      "needs": [
+        "second-project-cycles"
+      ],
       "gate": "user",
       "source": "user plan: open source after the second-project trial; the repository stays private until then"
+    },
+    {
+      "id": "prose-rules-to-gates",
+      "title": "init lists \"never X\" lines in the project's instructions that name a literal and offers each as a grep gate with its current matches; on yes the prose line goes",
+      "status": "planned",
+      "value": "high",
+      "cost": "M",
+      "cluster": "init",
+      "needs": [
+        "scan-agent-setup"
+      ],
+      "source": "a public Claude Code repository review, 2026-10-19"
+    },
+    {
+      "id": "instruction-budget",
+      "title": "doctor counts the bytes of always-loaded instructions and the rule lines repeated across files, so \"instruction text only shrinks\" is a number per cycle",
+      "status": "planned",
+      "value": "high",
+      "cost": "S",
+      "cluster": "init",
+      "needs": [
+        "scan-agent-setup"
+      ],
+      "source": "a public Claude Code repository review, 2026-10-19"
+    },
+    {
+      "id": "doc-cochange",
+      "title": "Config map from code globs to docs; commit-check warns when one changes without the other",
+      "status": "planned",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "needs": [],
+      "source": "a public Claude Code repository review, 2026-10-19; cycle 2026-10-19 convergence: class doc-twin (documents lag the code) came back 4 times in two cycles (DESIGN contract line, pick-rule text, question count, CHANGELOG key)",
+      "mechanization": true
+    },
+    {
+      "id": "movesubject-turkish-case",
+      "title": "metrics.moveSubject is compiled with a plain i flag: a Turkish pattern misses İ/ı; fold case in the config language",
+      "status": "planned",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "metrics",
+      "needs": [],
+      "source": "a public Claude Code repository review, 2026-10-19; metrics/szz.mjs:201"
+    },
+    {
+      "id": "mutation-runner",
+      "title": "ennyn mutate <list.json>: hand-picked mutants from JSON, each checked to parse (INVALID is never \"killed\"); the cycle's mutation pass uses it when no tool is configured",
+      "status": "planned",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "needs": [],
+      "mechanization": true,
+      "source": "cycle 2026-10-19: an ad-hoc runner split mutants on \"|\" and counted syntax errors as kills; two commit Mutation lines were rewritten before push"
+    },
+    {
+      "id": "cleanup-mode-config",
+      "title": "commit-check reads git's cleanup mode from commit.cleanup and --cleanup=, not only from GIT_EDITOR",
+      "status": "planned",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "needs": [],
+      "source": "review of task 3-4, low confidence, 2026-10-19"
+    },
+    {
+      "id": "gate-no-project-names",
+      "title": "A test that keeps names, home paths and data of projects using Ennyn out of this repository (a rule in .claude/CLAUDE.md today)",
+      "status": "planned",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "needs": [],
+      "mechanization": true,
+      "source": "lesson retirement, cycle 2026-10-19"
+    },
+    {
+      "id": "gate-readme-twins",
+      "title": "A test that README.md and README.tr.md keep the same sections and table rows (a rule in .claude/CLAUDE.md today)",
+      "status": "planned",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "needs": [],
+      "mechanization": true,
+      "source": "lesson retirement, cycle 2026-10-19"
     }
   ],
   "done": [
-    { "id": "commit-check", "title": "Commit message check: stored message, structured lines, types, terse style", "status": "done" },
-    { "id": "impact-table", "title": "Five-row impact table answered by commands", "status": "done" },
-    { "id": "rework-rate", "title": "SZZ-style rework rate with strong links and censored windows", "status": "done" },
-    { "id": "convergence", "title": "Convergence parser and formatter, en and tr", "status": "done" },
-    { "id": "mechanization-pick", "title": "Work graph loader and mechanization pick", "status": "done" },
-    { "id": "side-copy-hook", "title": "Side-copy rule hook and its reset after compaction", "status": "done" },
-    { "id": "gate-log", "title": "Commit-gate attempt log and summary", "status": "done" },
-    { "id": "init", "title": "/ennyn:init with init-scan and doctor", "status": "done" },
-    { "id": "conversation-style", "title": "Conversation style hook and commit style", "status": "done" }
+    {
+      "id": "commit-check",
+      "title": "Commit message check: stored message, structured lines, types, terse style",
+      "status": "done"
+    },
+    {
+      "id": "impact-table",
+      "title": "Five-row impact table answered by commands",
+      "status": "done"
+    },
+    {
+      "id": "rework-rate",
+      "title": "SZZ-style rework rate with strong links and censored windows",
+      "status": "done"
+    },
+    {
+      "id": "convergence",
+      "title": "Convergence parser and formatter, en and tr",
+      "status": "done"
+    },
+    {
+      "id": "mechanization-pick",
+      "title": "Work graph loader and mechanization pick",
+      "status": "done"
+    },
+    {
+      "id": "side-copy-hook",
+      "title": "Side-copy rule hook and its reset after compaction",
+      "status": "done"
+    },
+    {
+      "id": "gate-log",
+      "title": "Commit-gate attempt log and summary",
+      "status": "done"
+    },
+    {
+      "id": "init",
+      "title": "/ennyn:init with init-scan and doctor",
+      "status": "done"
+    },
+    {
+      "id": "conversation-style",
+      "title": "Conversation style hook and commit style",
+      "status": "done"
+    },
+    {
+      "id": "allow-marker-count",
+      "title": "bypass command: commit-shape bypass uses per cycle (72e4656)",
+      "status": "done",
+      "finished": "2026-10-19"
+    },
+    {
+      "id": "scan-agent-setup",
+      "title": "init-scan reports the project's own agent setup; review.agents (bf7bf00)",
+      "status": "done",
+      "finished": "2026-10-19"
+    },
+    {
+      "id": "commit-msg-hook",
+      "title": "install-hook: the commit convention as a commit-msg hook (3ca5154)",
+      "status": "done",
+      "finished": "2026-10-19"
+    },
+    {
+      "id": "commit-check-audit",
+      "title": "Legacy audit of commit-check: fixup!/amend!/squash!, comment marker, empty message (6b66471)",
+      "status": "done",
+      "finished": "2026-10-19"
+    }
   ]
 }
