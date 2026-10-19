@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { loadConfig, ConfigError } from "../core/config.mjs";
 import { git, stagedPaths, unpushedCount } from "../core/git.mjs";
 import { t } from "../core/i18n.mjs";
-import { checkCommitShape } from "../checks/commit-shape.mjs";
+import { checkCommitShape, storedMessage } from "../checks/commit-shape.mjs";
 import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
 import { reworkRate } from "../metrics/szz.mjs";
 import { bypassUses } from "../metrics/bypass.mjs";
@@ -86,6 +86,42 @@ function projectDir() {
 
 /** @param {string} cwd */
 const config = (cwd) => loadConfig({ cwd });
+
+/**
+ * git's comment marker for commit messages: core.commentString, then core.commentChar, else "#".
+ * "auto": git's own rule (builtin/commit.c, adjust_comment_line_char): "#" unless the message holds one;
+ * otherwise the first of "#;@!$%^&|:" that starts no line. Its template line, when there is one, says
+ * which it chose.
+ * @param {string} cwd @param {string} message
+ */
+function commentMarker(cwd, message) {
+  const set = git(["config", "--get", "core.commentString"], { cwd, allowFail: true }) || git(["config", "--get", "core.commentChar"], { cwd, allowFail: true });
+  if (set && set !== "auto") return set;
+  if (set !== "auto") return "#";
+  const m = /^(\S+) (Please enter the commit message|-+ >8 -+$)/m.exec(message);
+  if (m) return m[1];
+  if (!message.includes("#")) return "#";
+  const starts = new Set(message.split(/\r?\n/).map((l) => l.charAt(0)));
+  return [..."#;@!$%^&|:"].find((c) => !starts.has(c)) ?? "#";
+}
+
+/**
+ * For an amend! / squash! message, the commit it folds into: the newest of the last 500 whose subject is
+ * the one named, with its message and paths. null when there is none (or the message is no fold).
+ * @param {string} cwd @param {string} message @param {"strip" | "whitespace"} cleanup @param {string} comment
+ */
+function foldTarget(cwd, message, cleanup, comment) {
+  const fold = /^(?:amend|squash)! (.*)$/.exec(storedMessage(message, cleanup, comment).split("\n")[0] ?? "");
+  if (!fold) return null;
+  const log = git(["log", "-n500", "--format=%H%x00%s"], { cwd, allowFail: true });
+  const hit = log.split("\n").find((l) => l.slice(l.indexOf("\0") + 1) === fold[1]);
+  if (!hit) return null;
+  const hash = hit.slice(0, hit.indexOf("\0"));
+  return {
+    message: git(["log", "-1", "--format=%B", hash], { cwd }),
+    paths: git(["-c", "core.quotePath=false", "show", "--name-only", "--format=", hash], { cwd }).split("\n").filter(Boolean),
+  };
+}
 
 /** @param {string} s */
 const out = (s) => process.stdout.write(s.endsWith("\n") ? s : s + "\n");
@@ -238,7 +274,8 @@ const COMMANDS = {
     }
     // git sets GIT_EDITOR=":" for hooks when the message came from -m / -F: then `#` lines are kept.
     const cleanup = process.env.GIT_EDITOR === ":" ? "whitespace" : "strip";
-    const res = checkCommitShape(message, { config: cfg, stagedPaths: staged, cleanup });
+    const comment = commentMarker(cwd, message);
+    const res = checkCommitShape(message, { config: cfg, stagedPaths: staged, cleanup, comment, foldTarget: foldTarget(cwd, message, cleanup, comment) });
     for (const e of res.errors) err(e);
     return res.ok ? 0 : 1;
   },

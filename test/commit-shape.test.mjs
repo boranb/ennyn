@@ -4,7 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../core/config.mjs";
-import { checkCommitShape } from "../checks/commit-shape.mjs";
+import { checkCommitShape, storedMessage } from "../checks/commit-shape.mjs";
 
 const cfg = (override = {}) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-cs-")), env: {}, override });
 
@@ -130,4 +130,37 @@ test("types: with commitMsg.types set, the subject must start with one; scope an
   assert.ok(checkCommitShape("liste [commit-shape-allow: imported history]", { config: c }).ok);
   // No types: any subject.
   assert.ok(checkCommitShape("liste düzeltildi", { config: cfg() }).ok);
+});
+
+test("audit: subjects git writes itself pass a typed convention; an empty message is left to git; spaces after the colon are free", () => {
+  const c = cfg({ commitMsg: { types: ["feat", "fix"], style: "terse" } });
+  // A fixup! (and an empty squash!) disappears in autosquash; it is not checked.
+  for (const s of ["fixup! feat: a page", "squash! feat: a page"]) {
+    assert.deepEqual(checkCommitShape(s, { config: c }), { ok: true, errors: [], skipped: "subject" }, s);
+  }
+  // amend! and squash! carry text into history, folded in without the hook: that text is checked now.
+  assert.ok(checkCommitShape("amend! feat: a page\n\nfeat: a better page", { config: c }).ok, "amend!: the body is the new message");
+  assert.equal(checkCommitShape("amend! feat: a page\n\na better page", { config: c }).ok, false, "untyped new message");
+  assert.match(checkCommitShape("amend! feat: a page\n\nfeat: a better page\n\nwhy it changed", { config: c }).errors.join(), /terse/);
+  assert.match(checkCommitShape("squash! feat: a page\n\nwhy it changed", { config: c }).errors.join(), /terse/);
+  assert.ok(checkCommitShape("squash! feat: a page\n\nMutation: first 1/1 · last 1/1", { config: c }).ok, "structured lines may be added");
+  assert.equal(checkCommitShape("fixups: not git's", { config: c }).ok, false);
+  assert.equal(checkCommitShape("fixup!feat: no space", { config: c }).ok, false);
+  // Only comments in editor mode: an empty stored message, which git aborts with its own message.
+  assert.deepEqual(checkCommitShape("# Please enter the commit message\n#\n", { config: c }), { ok: true, errors: [], skipped: "empty" });
+  assert.deepEqual(checkCommitShape("   \n\n", { config: c }), { ok: true, errors: [], skipped: "empty" });
+  // With -m a "#" line is kept, so this is not empty.
+  assert.equal(checkCommitShape("# not a comment with -m", { config: c, cleanup: "whitespace" }).ok, false);
+  assert.ok(checkCommitShape("feat:  two spaces", { config: c }).ok);
+  assert.equal(checkCommitShape("feat:no space", { config: c }).ok, false);
+});
+
+test("cleanup: git's comment marker is core.commentChar, not always #", () => {
+  assert.equal(storedMessage("feat: x\n; Please enter the commit message\n# kept with ;\n", "strip", ";"), "feat: x\n# kept with ;");
+  assert.equal(storedMessage("feat: x\n; ------------------------ >8 ------------------------\ndiff --git a b\n", "strip", ";"), "feat: x");
+  assert.equal(storedMessage("feat: x\n// two-char marker\n", "strip", "//"), "feat: x");
+  const c = cfg({ commitMsg: { types: ["feat", "fix"], style: "terse" } });
+  const template = "feat: x\n\n; Please enter the commit message for your changes.\n; On branch main\n; Changes to be committed:\n;\tmodified: a.txt\n";
+  assert.deepEqual(checkCommitShape(template, { config: c, comment: ";" }).errors, []);
+  assert.equal(checkCommitShape(template, { config: c }).ok, false, "read with # the template is prose");
 });

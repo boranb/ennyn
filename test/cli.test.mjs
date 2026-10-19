@@ -199,3 +199,36 @@ test("cli: commit-check counts kept `#` lines when git says the message came fro
   assert.equal(kept.status, 1);
   assert.match(kept.stderr, /12 prose lines/);
 });
+
+test("cli: commit-check reads git's comment marker (core.commentChar / commentString, auto from the template)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pl-cli-cc-"));
+  git(["init", "-q"], { cwd: dir });
+  const msg = join(dir, "MSG");
+  writeFileSync(msg, "s\n\n" + Array.from({ length: 12 }, (_, i) => `; Please enter the commit message ${i}`).join("\n") + "\n");
+  const run = () => spawnSync(process.execPath, [CLI, "commit-check", msg], { cwd: dir, env: ENV, encoding: "utf8" });
+  assert.equal(run().status, 1, "with # the ; lines are prose");
+  git(["config", "core.commentChar", ";"], { cwd: dir });
+  assert.equal(run().status, 0, run().stderr);
+  git(["config", "core.commentChar", "auto"], { cwd: dir });
+  assert.equal(run().status, 0, "auto: the marker git put before its own template line");
+  git(["config", "--unset", "core.commentChar"], { cwd: dir });
+  git(["config", "core.commentString", ";"], { cwd: dir });
+  assert.equal(run().status, 0, "commentString wins");
+});
+
+test("cli: commit-check with core.commentChar=auto and no template line follows git's choice", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pl-cli-auto-"));
+  git(["init", "-q"], { cwd: dir });
+  mkdirSync(join(dir, ".ennyn"));
+  writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ commitMsg: { style: "terse" } }));
+  git(["config", "core.commentChar", "auto"], { cwd: dir });
+  const msg = join(dir, "MSG");
+  // A line starts with "#", so git picks ";" and stores "#12 referenced" as prose (git commit --no-status).
+  writeFileSync(msg, "s\n\n#12 referenced\n");
+  const r = spawnSync(process.execPath, [CLI, "commit-check", msg], { cwd: dir, env: ENV, encoding: "utf8" });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /terse/);
+  // No "#" anywhere: git keeps "#", and nothing here is a comment either way.
+  writeFileSync(msg, "s\n");
+  assert.equal(spawnSync(process.execPath, [CLI, "commit-check", msg], { cwd: dir, env: ENV }).status, 0);
+});

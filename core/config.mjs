@@ -52,7 +52,9 @@ export const DEFAULTS = Object.freeze({
     bodyMaxChars: 800,
     structuredLines: ["Root cause:", "Prevention added:", "Node:", "Mutation:"],
     structuredLineMax: 300,
-    skipSubjects: ["^Merge ", "^Revert "],
+    // Subjects git writes itself: merges, reverts, and fixup! commits that autosquash folds away whole.
+    // (amend! and squash! carry text into history; commit-check checks that text.)
+    skipSubjects: ["^Merge ", "^Revert ", "^fixup! "],
     allowMarker: "[commit-shape-allow:",
   },
   review: {

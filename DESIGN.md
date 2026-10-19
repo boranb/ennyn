@@ -68,7 +68,7 @@ One file per project: `.ennyn/config.json` (override with `ENNYN_CONFIG`). Unkno
 | `commitMsg.bodyMaxChars` | `800` | |
 | `commitMsg.structuredLines` | `["Root cause:", "Prevention added:", "Node:", "Mutation:"]` | prefixes not counted toward the body limit |
 | `commitMsg.structuredLineMax` | `300` | |
-| `commitMsg.skipSubjects` | `["^Merge ", "^Revert "]` | regexes |
+| `commitMsg.skipSubjects` | `["^Merge ", "^Revert ", "^fixup! "]` | regexes; subjects git writes itself are never checked (merges, reverts, fixup! commits that autosquash folds away whole). amend! and squash! carry text into history: commit-check checks the new message or the added body |
 | `commitMsg.allowMarker` | `"[commit-shape-allow:"` | bypass marker; must carry a reason |
 | `review.agents` | `[]` | reviewer agents the cycle uses (given the finding schema); empty = Ennyn's `code-reviewer`, `security-reviewer`, `data-reviewer` |
 | `review.maxRounds` | `2` | |
@@ -86,7 +86,7 @@ One file per project: `.ennyn/config.json` (override with `ENNYN_CONFIG`). Unkno
 | `impact.fakeGlobs` | `["**/*.test.*"]` | where fakes live |
 | `impact.fixtureGlobs` | `["**/__fixtures__/**"]` | recorded real outputs |
 | `metrics.reworkDays` | `7` | |
-| `metrics.fixSubject` | `"^fix(\\(|:)"` | a fix commit; if most commits match, the rate leans toward churn (the CLI says so) |
+| `metrics.fixSubject` | `"^fix(\\(\|:)"` | a fix commit; if most commits match, the rate leans toward churn (the CLI says so) |
 | `metrics.excludeRe` | docs, `.md`, dot-paths, `generated/` `dist/` `build/` `vendor/`, lockfiles | paths excluded from rework attribution; generated output rewritten by ordinary commits measures churn |
 | `metrics.testRe` | `.test.` `.spec.` `/test/` `/__tests__/` `/__fixtures__/` | |
 | `metrics.minLines` / `minShare` | `3` / `0.1` | strong link: the origin owns at least this many meaningful deleted lines and this share of the fix's deleted lines (or the fix message names its hash) |

@@ -75,3 +75,19 @@ test("plugin: hook commands point at files that exist; manifests agree on name a
   // The plugin root is the repository root, so a root CLAUDE.md would be shipped and ignored.
   assert.ok(!existsSync(join(ROOT, "CLAUDE.md")), "developer notes live in .claude/CLAUDE.md");
 });
+
+test("docs: no table cell holds an unescaped | inside code (GitHub splits the row there)", () => {
+  const tracked = readdirSync(ROOT, { recursive: true })
+    .map(String)
+    .filter((f) => f.endsWith(".md") && !f.startsWith("node_modules") && !f.startsWith(".git"));
+  const bad = [];
+  for (const f of tracked) {
+    read(f)
+      .split("\n")
+      .forEach((line, i) => {
+        if (!line.startsWith("|")) return;
+        for (const span of line.match(/`[^`]*`/g) ?? []) if (/(?<!\\)\|/.test(span)) bad.push(`${f}:${i + 1} ${span}`);
+      });
+  }
+  assert.deepEqual(bad, []);
+});
