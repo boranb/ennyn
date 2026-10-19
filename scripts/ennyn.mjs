@@ -7,6 +7,7 @@
 
 import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { loadConfig, ConfigError } from "../core/config.mjs";
 import { git, stagedPaths, unpushedCount } from "../core/git.mjs";
 import { t } from "../core/i18n.mjs";
@@ -19,6 +20,7 @@ import { loadGraph, pickMechanization, scoreNode, GraphError } from "../plan/mec
 import { scanProject, MIN_HISTORY } from "../setup/scan.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
 import { installHook } from "../setup/hook.mjs";
+import { instructionBudget, readBudgets, recordBudget, previousBudget } from "../setup/budget.mjs";
 
 export const USAGE = `Usage: ennyn <command> [options]
 
@@ -26,6 +28,7 @@ Commands:
   init-scan [--json]                                survey the repository for /init: fix label, churn, tests, risky paths, work sources
   doctor                                            check config, work graph and fix label; exit 1 on a problem
   install-hook                                      run commit-check as this repository's commit-msg hook (machine-local)
+  budget [--json] [--record]                        instruction text loaded every session / by path, rule lines repeated across files; --record appends to paths.metricsLog
   commit-check [--hook] <message-file>              check commit message shape (commit-msg hook; --hook: a config that does not load warns instead of failing)
   impact --symbol <s> [--files a,b]                 five-row impact table (markdown)
   rework [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--days N] [--json]
@@ -164,6 +167,11 @@ const strOpt = (v) => (typeof v === "string" && v !== "" ? v : null);
 /** @param {number | null} sec */
 const minutes = (sec) => (sec === null ? "—" : (sec / 60).toFixed(1));
 
+/** @param {number} b */
+const kb = (b) => `${(b / 1024).toFixed(1)} KB`;
+/** @param {number} b */
+const signedKb = (b) => `${b > 0 ? "+" : b < 0 ? "−" : "±"}${(Math.abs(b) / 1024).toFixed(1)} KB`;
+
 /** @param {number | null} share @param {string} lang */
 const percent = (share, lang) => (share === null ? "—" : lang === "tr" ? `%${Math.round(share * 100)}` : `${Math.round(share * 100)}%`);
 
@@ -252,6 +260,36 @@ const COMMANDS = {
     const key = res.result === "hooksPath" ? `hook.hooksPath.${res.hooksKind}` : `hook.${res.result}`;
     out(t(key, { path: res.path, dir: res.hooksPath ?? "", line: res.line }, cfg.language));
     return res.result === "other" || res.result === "hooksPath" ? 1 : 0;
+  },
+
+  budget(args) {
+    const { opts, help } = parseArgs(args, { flags: ["json", "record"] });
+    if (help) return (out(USAGE), 0);
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    const files = git(["-c", "core.quotePath=false", "ls-files", "-z"], { cwd, allowFail: true }).split("\0").filter(Boolean);
+    const b = instructionBudget(cwd, files);
+    const head = git(["rev-parse", "HEAD"], { cwd, allowFail: true });
+    const log = readBudgets(resolve(cwd, cfg.paths.metricsLog));
+    // Measured against the newest record made at another commit: recording twice in a cycle hides nothing.
+    const previous = previousBudget(log.records, head);
+    const d = new Date();
+    const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const recorded = opts.record ? recordBudget(cwd, cfg.paths.metricsLog, b, { date: today, commit: head }) : null;
+    if (opts.json) return (out(JSON.stringify({ ...b, previous, skipped: log.skipped, recorded: recorded ? { ...recorded.entry, replaced: recorded.replaced } : null }, null, 2)), 0);
+    const lang = cfg.language;
+    const delta = previous
+      ? t("budget.delta", { d: signedKb(b.always - previous.always), bytes: b.always - previous.always, commit: previous.commit.slice(0, 10) || "—" }, lang)
+      : t(recorded ? "budget.first" : "budget.none", {}, lang);
+    out(t("budget.summary", { always: kb(b.always), listings: kb(b.listings), onDemand: kb(b.onDemand), files: b.files, delta }, lang));
+    if (b.repeatedLines) {
+      out(t("budget.repeated", { n: b.repeatedLines, every: b.repeatedEverySession }, lang));
+      for (const r of b.repeated.slice(0, 5)) out(t("budget.repeatedItem", { line: r.line, files: r.files.join(", ") }, lang));
+    }
+    if (b.untracked.length) out(t("budget.untracked", { list: b.untracked.join(", ") }, lang));
+    if (log.skipped) out(t("budget.skipped", { n: log.skipped, path: resolve(cwd, cfg.paths.metricsLog) }, lang));
+    if (recorded) out(t(recorded.replaced ? "budget.replaced" : "budget.recorded", { path: recorded.path, commit: recorded.entry.commit.slice(0, 10) }, lang));
+    return 0;
   },
 
   async doctor(args) {

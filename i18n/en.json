@@ -165,5 +165,18 @@
   "hook.hooksPath.repo": "core.hooksPath is {dir}, a directory in the repository and usually tracked; this machine's path does not belong there. Call commit-check from {dir}/commit-msg through the project's own copy of Ennyn.",
   "hook.hooksPath.husky": "husky runs the hooks ({dir} holds its generated stubs). Call commit-check from .husky/commit-msg through the project's own copy of Ennyn.",
   "hook.hooksPath.global": "core.hooksPath is {dir}, outside this repository: it applies to every repository on this machine. To check them all, add this line to {dir}/commit-msg: {line}",
-  "cli.hookConfigBroken": "ennyn: the config does not load, so this commit message was not checked. Fix it, in this commit if you like.\n{error}"
+  "cli.hookConfigBroken": "ennyn: the config does not load, so this commit message was not checked. Fix it, in this commit if you like.\n{error}",
+  "budget.summary": "Instruction budget: {always} in every session (skill and agent descriptions included: {listings}; {delta}), {onDemand} when a matching path is touched; {files} files.",
+  "budget.first": "first record",
+  "budget.repeated": "{n} rule lines repeat across files; {every} of them have a copy in a file loaded every session:",
+  "budget.repeatedItem": "  \"{line}\" · {files}",
+  "budget.recorded": "Recorded in {path}.",
+  "doctor.budget": "instruction budget: {always} in every session; {repeated} rule lines repeat across files",
+  "doctor.budgetGrew": "instruction budget: {now} in every session, up {bytes} bytes from {before} at {commit}; text loaded every session only shrinks",
+  "budget.delta": "{d}, {bytes} bytes, since {commit}",
+  "budget.none": "no record yet",
+  "budget.untracked": "Not counted, as they are this machine's own (untracked): {list}.",
+  "budget.skipped": "{n} lines in {path} do not parse and were left out.",
+  "doctor.budgetLogBroken": "instruction budget: {n} lines in {path} do not parse; the comparison skips them",
+  "budget.replaced": "Replaced the record for {commit} in {path}."
 }

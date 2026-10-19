@@ -11,7 +11,7 @@
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, resolve, posix } from "node:path";
 import { git } from "../core/git.mjs";
 import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
 import { loadPathScopedRules, splitFrontMatter, parsePaths } from "../adapters/claude-code/rules-index.mjs";
@@ -457,6 +457,28 @@ export function commitRuleLines(text) {
 }
 
 /**
+ * Files a Claude Code instruction file imports with `@path`, outside code blocks and code spans,
+ * resolved against the importing file; a path that leaves the repository (`..`, `~`, absolute) is not
+ * the repository's.
+ * @param {string} text @param {string} from repository-relative path of the importing file
+ * @returns {string[]}
+ */
+export function importsOf(text, from) {
+  const prose = text.replace(/^\s*(```|~~~)[\s\S]*?^\s*\1.*$/gm, "").replace(/`[^`\n]*`/g, "");
+  const dir = posix.dirname(from);
+  /** @type {string[]} */
+  const out = [];
+  for (const m of prose.matchAll(/(?:^|\s)@([^\s`<>]+)/g)) {
+    const raw = m[1].replace(/[.,;:)]+$/, "");
+    if (raw.startsWith("~") || raw.startsWith("/")) continue;
+    const target = posix.normalize(posix.join(dir, raw));
+    if (target.startsWith("..") || out.includes(target)) continue;
+    out.push(target);
+  }
+  return out;
+}
+
+/**
  * The agent setup the project already has. `instructions` lists every
  * instruction and rule file with its size, when it loads ("always": every
  * session; "on-demand": when a matching path is touched; "other": read by
@@ -467,25 +489,41 @@ export function commitRuleLines(text) {
  * @param {string[]} files tracked files (nested CLAUDE.md / AGENTS.md are found there)
  */
 export function agentSetup(cwd, files) {
-  /** @type {Array<{ path: string, loads: "always" | "on-demand" | "other" }>} */
-  const candidates = [
-    ...ALWAYS_FILES.map((path) => ({ path, loads: /** @type {const} */ ("always") })),
-    ...markdownBelow(join(cwd, ".claude", "rules")).map((f) => {
-      const path = `.claude/rules/${f}`;
-      const { frontMatter } = splitFrontMatter(readText(join(cwd, path)) ?? "");
-      const patterns = frontMatter === null ? null : parsePaths(frontMatter);
-      return { path, loads: /** @type {"on-demand" | "always"} */ (patterns && patterns.length ? "on-demand" : "always") };
-    }),
-    ...files
-      .filter((f) => /(^|\/)CLAUDE\.md$/.test(f) && !ALWAYS_FILES.includes(f))
-      .slice(0, MAX_LISTED)
-      .map((path) => ({ path, loads: /** @type {const} */ ("on-demand") })),
-    ...OTHER_FILES.map((path) => ({ path, loads: /** @type {const} */ ("other") })),
-    ...files
-      .filter((f) => /(^|\/)AGENTS\.md$/.test(f) && !OTHER_FILES.includes(f))
-      .slice(0, MAX_LISTED)
-      .map((path) => ({ path, loads: /** @type {const} */ ("other") })),
-  ];
+  /** @type {Map<string, "always" | "on-demand" | "other">} */
+  const kinds = new Map();
+  const rank = { always: 0, "on-demand": 1, other: 2 };
+  // One entry per file, with the widest way it loads.
+  const put = (/** @type {string} */ path, /** @type {"always" | "on-demand" | "other"} */ loads) => {
+    const prev = kinds.get(path);
+    if (!prev || rank[loads] < rank[prev]) kinds.set(path, loads);
+  };
+  for (const path of ALWAYS_FILES) put(path, "always");
+  for (const f of markdownBelow(join(cwd, ".claude", "rules"))) {
+    const path = `.claude/rules/${f}`;
+    const { frontMatter } = splitFrontMatter(readText(join(cwd, path)) ?? "");
+    const patterns = frontMatter === null ? null : parsePaths(frontMatter);
+    put(path, patterns && patterns.length ? "on-demand" : "always");
+  }
+  // A CLAUDE.md inside .claude/rules is already there as a rule; put keeps its wider kind.
+  for (const f of files) if (/(^|\/)CLAUDE\.md$/.test(f) && !ALWAYS_FILES.includes(f)) put(f, "on-demand");
+  for (const path of OTHER_FILES) put(path, "other");
+  for (const f of files) if (/(^|\/)AGENTS\.md$/.test(f)) put(f, "other");
+  // @imports: an imported file loads whenever the file importing it does; Claude Code follows five hops.
+  let frontier = [...kinds].filter(([, k]) => k !== "other").map(([path]) => path);
+  for (let hop = 0; hop < 5 && frontier.length; hop++) {
+    /** @type {string[]} */
+    const next = [];
+    for (const from of frontier) {
+      const loads = /** @type {"always" | "on-demand"} */ (kinds.get(from));
+      for (const target of importsOf(readText(join(cwd, from)) ?? "", from)) {
+        if (!existsSync(join(cwd, target)) || (kinds.get(target) && rank[/** @type {"always" | "on-demand" | "other"} */ (kinds.get(target))] <= rank[loads])) continue;
+        put(target, loads);
+        next.push(target);
+      }
+    }
+    frontier = next;
+  }
+  const candidates = [...kinds].map(([path, loads]) => ({ path, loads }));
   const instructions = candidates.flatMap(({ path, loads }) => {
     const text = readText(join(cwd, path));
     return text === null ? [] : [{ path, loads, bytes: Buffer.byteLength(text, "utf8"), commitLines: commitRuleLines(text) }];

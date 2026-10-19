@@ -11,6 +11,8 @@ import { loadConfig, ConfigError } from "../core/config.mjs";
 import { loadGraph, readyNodes, readyMechanization, needsOf, GraphError } from "../plan/mechanization.mjs";
 import { MIN_HISTORY, recentCommits, productionSubjects } from "./scan.mjs";
 import { hookStatus } from "./hook.mjs";
+import { instructionBudget, readBudgets } from "./budget.mjs";
+import { resolve } from "node:path";
 import { git } from "../core/git.mjs";
 
 /**
@@ -98,6 +100,18 @@ export async function checkSetup({ cwd, env = process.env }) {
     else if (hook.hooksPath) add("warn", "doctor.hookPath", { dir: hook.hooksPath });
     else if (hook.state === "other") add("warn", "doctor.hookOther", { path: hook.path });
     else add("warn", "doctor.hookMissing");
+  }
+
+  // Text loaded in every session only shrinks: growth since the last recorded budget is a warning.
+  if (git(["rev-parse", "--git-dir"], { cwd, allowFail: true })) {
+    const files = git(["-c", "core.quotePath=false", "ls-files", "-z"], { cwd, allowFail: true }).split("\0").filter(Boolean);
+    const b = instructionBudget(cwd, files);
+    const kb = (/** @type {number} */ n) => `${(n / 1024).toFixed(1)} KB`;
+    const log = readBudgets(resolve(cwd, config.paths.metricsLog));
+    const last = log.records.at(-1);
+    if (last && b.always > last.always) add("warn", "doctor.budgetGrew", { now: kb(b.always), before: kb(last.always), bytes: b.always - last.always, commit: last.commit.slice(0, 10) || "—" });
+    else add("ok", "doctor.budget", { always: kb(b.always), repeated: b.repeatedLines });
+    if (log.skipped) add("warn", "doctor.budgetLogBroken", { n: log.skipped, path: config.paths.metricsLog });
   }
 
   // Same denominator as the rework rate: recent commits touching a production path.

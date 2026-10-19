@@ -40,4 +40,5 @@ Never report an unrun test, command or check as done; write `not applicable` ins
 3. **Convergence** in the format of [report-formats.md](report-formats.md): real escapes · fix-introduced · pre-existing · gate-caught, and new classes per review round. The most recurring class becomes a graph node with `mechanization: true` and its source class; if none, write why.
    Count the commit-shape bypasses of this cycle: `ennyn.mjs bypass --from <HEAD when the cycle started>` (note it when you pick the tasks). Each use is listed with its reason; a bypass that recurs is a gate to fix, not a habit.
 4. **Retire lessons:** in one lesson file touched this cycle, mark each lesson keep / update / merge / delete; delete the prose of any lesson whose rationale now lives in a test or gate.
-5. **Push:** `ennyn.mjs push-check`; state the unpushed count and **ask** for push approval.
+5. **Budget:** after the last edit of the cycle, `ennyn.mjs budget --record` (it compares with the previous cycle's record; recording again at the same commit replaces the record). Commit the metrics log with the graph and the handoff. Text loaded in every session that grew needs a reason in the report. A repeated rule keeps one copy, in the narrowest file that loads where it is needed.
+6. **Push:** `ennyn.mjs push-check`; state the unpushed count and **ask** for push approval.

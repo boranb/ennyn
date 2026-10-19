@@ -21,7 +21,7 @@ Write reports in the project's `language`.
 ```md
 ## Cycle complete
 ### Done            → results 1-4
-### Checks          → commit gate / build / viewport checks [result or not applicable] · commit-shape bypass: N (`ennyn.mjs bypass --from <cycle start>`; each use with its reason)
+### Checks          → commit gate / build / viewport checks [result or not applicable] · commit-shape bypass: N (`ennyn.mjs bypass --from <cycle start>`; each use with its reason) · instruction budget: N KB every session (± since the last record), repeated rule lines
 ### Commits         → subjects
 ### Documents       → documents updated
 ### Audit           → feature / why chosen / result / next candidate
