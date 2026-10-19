@@ -22,7 +22,7 @@ A development loop for coding agents, shipped as a Claude Code plugin and a zero
 
 1. Move the `Unreleased` section of CHANGELOG.md under the new version.
 2. Set the version in `package.json`, `package-lock.json` (two places) and `.claude-plugin/plugin.json`.
-3. `npm test && npm run typecheck`.
+3. `npm test && npm run typecheck && npm run validate:plugin` (the last needs the claude CLI; it checks the manifests, agents, skills and hooks as Claude Code loads them).
 4. Commit `chore: release vX.Y.Z`, tag `vX.Y.Z`, push the commit and the tag.
 
 Install: `claude plugin marketplace add boranb/ennyn`. The repository stays private until the public release.

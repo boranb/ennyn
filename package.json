@@ -11,7 +11,8 @@
   },
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "typecheck": "tsc -p jsconfig.json"
+    "typecheck": "tsc -p jsconfig.json",
+    "validate:plugin": "claude plugin validate --strict . && claude plugin validate --strict .claude-plugin/plugin.json"
   },
   "files": [
     "core",
