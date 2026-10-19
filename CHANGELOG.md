@@ -9,6 +9,7 @@
 - `impact`: five-row impact table, each row answered by a command or marked unmeasured.
 - `rework`: SZZ strong-link rework rate (owned lines and share, sweep fixes and move commits skipped, open windows censored).
 - `mechanization`, `push-check`, convergence parser and formatter.
+- `bypass`: commits that used the commit-shape bypass marker, with their reasons, counted as the hook decides (reverts and merges are not uses); `--from <rev>` counts one cycle. Only messages holding the marker are read.
 - `gate-record` / `gate-stats`: one line per commit-gate attempt in machine-local state (duration, result, files, failing step when the wrapper knows it); the summary separates "nothing recorded" from "no attempts" and counts failures without a named step as unmeasured. The origin project had to scrape its gate cost from agent transcripts, where 16% of attempts had no readable outcome.
 - Method: cycle skill, finding schema, impact table guide, report formats, three reviewer agents. Their front matter is checked by a test as a YAML parser reads it (a ": " in the security reviewer's description had dropped its name and description at load).
 - `/ennyn:init` (`skills/init/`): surveys the repository, asks at most five questions, writes `.ennyn/config.json`, a starting work graph and a handoff stub, then runs `doctor`. A roadmap the project already keeps in files is read by a small graph module, not copied.

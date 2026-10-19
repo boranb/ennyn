@@ -139,5 +139,10 @@
   "doctor.commitStyleFree": "commits: {language}, free subject",
   "scan.commitLanguage": "Commit language: {guess} ({tr} subjects read as Turkish, {en} as English).",
   "scan.subjectTypes": "Subject types in use: {list}",
-  "shape.terseBody": "commitMsg.style is terse: the body holds structured lines and trailers only, but has {n} prose lines. Say what changed in the subject; put the detail in the graph node."
+  "shape.terseBody": "commitMsg.style is terse: the body holds structured lines and trailers only, but has {n} prose lines. Say what changed in the subject; put the detail in the graph node.",
+  "bypass.noCommits": "Commit-shape bypass: no commits in the range.",
+  "bypass.none": "Commit-shape bypass: none of {commits} commits used it.",
+  "bypass.summary": "Commit-shape bypass: {n} of {commits} commits used it.",
+  "bypass.item": "  {hash} · {date} · {subject} · reason: {reason}",
+  "bypass.noReason": "(none written)"
 }

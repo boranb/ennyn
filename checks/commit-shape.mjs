@@ -46,6 +46,31 @@ export function storedMessage(message, cleanup) {
 }
 
 /**
+ * The reason written with the bypass marker: "" when the bracket never closes,
+ * null without a marker. The one parser for it; metrics/bypass.mjs counts the
+ * uses in history with the same rule.
+ * @param {string} text the stored message
+ * @param {string} marker `commitMsg.allowMarker`
+ * @returns {string | null}
+ */
+export function allowMarkerReason(text, marker) {
+  const at = text.indexOf(marker);
+  if (at === -1) return null;
+  const close = text.indexOf("]", at);
+  return close === -1 ? "" : text.slice(at + marker.length, close).trim();
+}
+
+/**
+ * Subjects the check never looks at (`commitMsg.skipSubjects`: merges, reverts).
+ * Shared with metrics/bypass.mjs: a revert of a bypass commit is not a bypass.
+ * @param {string} subject
+ * @param {any} config
+ */
+export function skippedSubject(subject, config) {
+  return config.commitMsg.skipSubjects.some((/** @type {string} */ re) => new RegExp(re).test(subject));
+}
+
+/**
  * @param {string} message raw commit message (as given to a commit-msg hook)
  * @param {{ config: any, stagedPaths?: string[], cleanup?: "strip" | "whitespace" }} opts
  *   `cleanup` is git's mode for this commit: "whitespace" when the message came from `-m` / `-F`.
@@ -59,14 +84,12 @@ export function checkCommitShape(message, { config, stagedPaths = [], cleanup = 
   const lines = text.split("\n");
   const subject = lines[0] ?? "";
 
-  if (cm.skipSubjects.some((/** @type {string} */ re) => new RegExp(re).test(subject))) {
+  if (skippedSubject(subject, config)) {
     return { ok: true, errors: [], skipped: "subject" };
   }
 
-  const markerAt = text.indexOf(cm.allowMarker);
-  if (markerAt !== -1) {
-    const close = text.indexOf("]", markerAt);
-    const reason = close === -1 ? "" : text.slice(markerAt + cm.allowMarker.length, close).trim();
+  const reason = allowMarkerReason(text, cm.allowMarker);
+  if (reason !== null) {
     if (reason.length < 8) return { ok: false, errors: [t("shape.allowNoReason", { marker: cm.allowMarker }, lang)] };
     return { ok: true, errors: [], skipped: "marker" };
   }

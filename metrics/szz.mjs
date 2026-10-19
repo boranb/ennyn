@@ -69,6 +69,15 @@ function gitDate(sec) {
 }
 
 /**
+ * `--since` for a lower bound in epoch seconds, one day early: git stops walking at
+ * --since by a date heuristic, so the exact bound is applied to %ct afterwards.
+ * @param {number} sec
+ */
+export function gitSince(sec) {
+  return `--since=${gitDate(sec - DAY)}`;
+}
+
+/**
  * Non-merge commits with their committer time, subject and name-status list.
  * @param {string} cwd
  * @param {number | null} sinceSec
@@ -85,8 +94,7 @@ function readLog(cwd, sinceSec) {
     "--name-status",
     "--format=%x01%H%x00%ct%x00%s%x00%b%x02",
   ];
-  // One day of slack: git stops walking at --since using a date heuristic.
-  if (sinceSec !== null) args.push(`--since=${gitDate(sinceSec - DAY)}`);
+  if (sinceSec !== null) args.push(gitSince(sinceSec));
   // Throws outside a repository (unmeasured is not zero); an empty repository has no log.
   git(["rev-parse", "--git-dir"], { cwd });
   if (!git(["rev-parse", "--verify", "-q", "HEAD"], { cwd, allowFail: true })) return [];

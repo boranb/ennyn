@@ -13,6 +13,7 @@ import { t } from "../core/i18n.mjs";
 import { checkCommitShape } from "../checks/commit-shape.mjs";
 import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
 import { reworkRate } from "../metrics/szz.mjs";
+import { bypassUses } from "../metrics/bypass.mjs";
 import { gateLogPath, readAttempts, recordAttempt, summarizeAttempts, KINDS } from "../metrics/gate-log.mjs";
 import { loadGraph, pickMechanization, scoreNode, GraphError } from "../plan/mechanization.mjs";
 import { scanProject, MIN_HISTORY } from "../setup/scan.mjs";
@@ -28,6 +29,8 @@ Commands:
   rework [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--days N] [--json]
                                                     SZZ-style rework rate
   mechanization [--json]                            best ready mechanization node
+  bypass [--from <rev>] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--json]
+                                                    commits that used the commit-shape bypass marker, with their reasons
   push-check                                        warn when too many commits are unpushed
   gate-record --start <epoch-s> --exit <code> [--kind full|message] [--commit <rev>] [--step <name>] [--runner <name>]
                                                     record one commit-gate attempt (called by the commit wrapper)
@@ -250,6 +253,30 @@ const COMMANDS = {
     if (res.censored) out(t("rework.censored", { n: res.censored, days: windowDays }, lang));
     for (const p of res.pairs) {
       out(t("rework.pair", { origin: p.origin.slice(0, 10), fix: p.fix.slice(0, 10), files: p.files.join(", "), lines: p.lines, days: p.days }, lang));
+    }
+    return 0;
+  },
+
+  bypass(args) {
+    const { opts, help } = parseArgs(args, { options: ["from", "since", "until"], flags: ["json"] });
+    if (help) return (out(USAGE), 0);
+    const since = dateOpt(opts.since, "since");
+    const until = dateOpt(opts.until, "until");
+    // An empty --from (a lost cycle start) must not widen the count to the whole history.
+    if (opts.from !== undefined && strOpt(opts.from) === null) throw new UsageError("--from needs a revision");
+    const from = strOpt(opts.from) ?? undefined;
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    const res = bypassUses({ cwd, config: cfg, since, until, from });
+    if (opts.json) return (out(JSON.stringify(res, null, 2)), 0);
+    const lang = cfg.language;
+    if (!res.commits) return (out(t("bypass.noCommits", {}, lang)), 0);
+    out(t(res.uses.length ? "bypass.summary" : "bypass.none", { n: res.uses.length, commits: res.commits }, lang));
+    for (const u of res.uses) {
+      // The local day, as --since / --until read it.
+      const d = new Date(u.time * 1000);
+      const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      out(t("bypass.item", { hash: u.hash.slice(0, 10), date, subject: u.subject, reason: u.reason || t("bypass.noReason", {}, lang) }, lang));
     }
     return 0;
   },

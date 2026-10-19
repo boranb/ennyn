@@ -139,5 +139,10 @@
   "doctor.commitStyleFree": "commit'ler: {language}, serbest konu",
   "scan.commitLanguage": "Commit dili: {guess} (Türkçe okunan konu {tr}, İngilizce okunan {en}).",
   "scan.subjectTypes": "Kullanılan konu türleri: {list}",
-  "shape.terseBody": "commitMsg.style kısa (terse): gövdede yalnız yapısal satırlar ve trailer'lar olur, ama {n} düzyazı satırı var. Neyin değiştiğini konuda söyle; ayrıntıyı grafik düğümüne yaz."
+  "shape.terseBody": "commitMsg.style kısa (terse): gövdede yalnız yapısal satırlar ve trailer'lar olur, ama {n} düzyazı satırı var. Neyin değiştiğini konuda söyle; ayrıntıyı grafik düğümüne yaz.",
+  "bypass.noCommits": "Commit biçimi atlatması: aralıkta commit yok.",
+  "bypass.none": "Commit biçimi atlatması: {commits} commit'in hiçbiri kullanmadı.",
+  "bypass.summary": "Commit biçimi atlatması: {commits} commit'in {n} tanesi kullandı.",
+  "bypass.item": "  {hash} · {date} · {subject} · gerekçe: {reason}",
+  "bypass.noReason": "(yazılmamış)"
 }
