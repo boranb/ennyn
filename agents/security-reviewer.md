@@ -1,6 +1,6 @@
 ---
 name: security-reviewer
-description: Adversarial security review — "how would an attacker exploit this?". Use for changes to authentication, sessions, permissions, data isolation, input parsing, secrets, or external requests. Starts from the path table: every way to reach the protected state.
+description: Adversarial security review — "how would an attacker exploit this?". Use for changes to authentication, sessions, permissions, data isolation, input parsing, secrets, or external requests. Starts from the path table — every way to reach the protected state.
 tools: Read, Grep, Glob, Bash
 ---
 
