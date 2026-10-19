@@ -10,11 +10,11 @@
  * production path.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { git } from "../core/git.mjs";
 import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
-import { loadPathScopedRules } from "../adapters/claude-code/rules-index.mjs";
+import { loadPathScopedRules, splitFrontMatter, parsePaths } from "../adapters/claude-code/rules-index.mjs";
 
 /** Fewer commits than this and a share says little: the default stays. */
 export const MIN_HISTORY = 30;
@@ -360,6 +360,169 @@ export function projectCommands(cwd) {
   return { commands: [...new Set(commands)].slice(0, 8), mutation };
 }
 
+/** Instruction files Claude Code loads in every session; checked on disk, as CLAUDE.local.md is never tracked. */
+const ALWAYS_FILES = ["CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"];
+/** Files other agents read; Claude Code does not, but a rule in them still contradicts the cycle. */
+const OTHER_FILES = ["AGENTS.md", "GEMINI.md", ".cursorrules", ".github/copilot-instructions.md", "CONTRIBUTING.md"];
+// Names that say "this runs a development loop" or "this reviews a change", in English and Turkish,
+// as whole parts of a hyphenated name ("preview-builder" is not a reviewer).
+export const CYCLE_SKILL = /(^|[-_])(cycle|phase|faz|d[öo]ng[üu]|sprint|loop)([-_]|$)/i;
+export const REVIEWER = /(^|[-_])(review|checker|validator|verif|critic|pentest|audit|inceleme|g[öo]zden-?ge[çc]ir|denet[çc]i|do[ğg]rulay[ıi]c[ıi]|incele[iy]ici)/i;
+// A line that sets a commit rule names the message, its language, its length or a ban (score 2); one
+// that only starts with "commit" (a step heading) scores 1 and fills what is left. A line that only
+// mentions commits, or SQL ("COMMIT;", BEGIN / ROLLBACK), is left out.
+const RULE_START = /^[\s\-*>#`|]*(\d+[.)]\s*)?[\s*`_]*commit/i;
+const RULE_WORDS = /(mesaj|message|konu|subject|format|\bdil\b|language|türkçe|turkish|english|ingilizce|tek satır|one[- ]line|yasak|never|asla|co-authored|no-verify)/i;
+const SQL = /\bCOMMIT\s*;|\b(BEGIN|ROLLBACK)\b/;
+
+/** @param {string} path */
+function readText(path) {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A JSON file's top-level object: `null` when absent, `"unreadable"` when it does not parse.
+ * @param {string} path
+ * @returns {Record<string, any> | null | "unreadable"}
+ */
+function readJson(path) {
+  const text = readText(path);
+  if (text === null) return null;
+  try {
+    const v = JSON.parse(text);
+    return v && typeof v === "object" && !Array.isArray(v) ? v : "unreadable";
+  } catch {
+    return "unreadable";
+  }
+}
+
+/**
+ * Entries of a directory, following symlinks (a linked skill or agent counts), NFC-normalized.
+ * @param {string} dir @param {(name: string) => boolean} keep
+ */
+function names(dir, keep) {
+  let list = [];
+  try {
+    list = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  return list.filter((n) => existsSync(join(dir, n)) && keep(n)).map((n) => n.normalize("NFC")).sort();
+}
+
+/**
+ * Markdown files below a directory, relative, "/"-separated; linked directories followed.
+ * A walk of its own: readdirSync's recursive option is missing in Node 20.0.
+ * @param {string} dir @param {string} [rel] @param {number} [depth]
+ * @returns {string[]}
+ */
+function markdownBelow(dir, rel = "", depth = 0) {
+  let entries = [];
+  try {
+    entries = readdirSync(join(dir, rel));
+  } catch {
+    return [];
+  }
+  /** @type {string[]} */
+  const out = [];
+  for (const name of entries) {
+    const path = rel ? `${rel}/${name}` : name;
+    let st;
+    try {
+      st = statSync(join(dir, path));
+    } catch {
+      continue;
+    }
+    if (st.isDirectory() && depth < 8) out.push(...markdownBelow(dir, path, depth + 1));
+    else if (st.isFile() && name.endsWith(".md")) out.push(path);
+  }
+  return out.sort();
+}
+
+/** @param {string} text */
+export function commitRuleLines(text) {
+  return text
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => /commit/i.test(l) && !SQL.test(l))
+    .map((l) => ({ l, rank: (RULE_WORDS.test(l) ? 2 : 0) + (RULE_START.test(l) ? 1 : 0) }))
+    .filter((x) => x.rank > 0)
+    .sort((a, b) => b.rank - a.rank)
+    .slice(0, 8)
+    .map(({ l }) => (l.length > 160 ? l.slice(0, 157) + "…" : l));
+}
+
+/**
+ * The agent setup the project already has. `instructions` lists every
+ * instruction and rule file with its size, when it loads ("always": every
+ * session; "on-demand": when a matching path is touched; "other": read by
+ * other agents only) and the lines that set a commit rule. /ennyn:init asks how
+ * Ennyn's cycle and reviewers sit next to what is there, and finds every
+ * commit rule it would contradict.
+ * @param {string} cwd
+ * @param {string[]} files tracked files (nested CLAUDE.md / AGENTS.md are found there)
+ */
+export function agentSetup(cwd, files) {
+  /** @type {Array<{ path: string, loads: "always" | "on-demand" | "other" }>} */
+  const candidates = [
+    ...ALWAYS_FILES.map((path) => ({ path, loads: /** @type {const} */ ("always") })),
+    ...markdownBelow(join(cwd, ".claude", "rules")).map((f) => {
+      const path = `.claude/rules/${f}`;
+      const { frontMatter } = splitFrontMatter(readText(join(cwd, path)) ?? "");
+      const patterns = frontMatter === null ? null : parsePaths(frontMatter);
+      return { path, loads: /** @type {"on-demand" | "always"} */ (patterns && patterns.length ? "on-demand" : "always") };
+    }),
+    ...files
+      .filter((f) => /(^|\/)CLAUDE\.md$/.test(f) && !ALWAYS_FILES.includes(f))
+      .slice(0, MAX_LISTED)
+      .map((path) => ({ path, loads: /** @type {const} */ ("on-demand") })),
+    ...OTHER_FILES.map((path) => ({ path, loads: /** @type {const} */ ("other") })),
+    ...files
+      .filter((f) => /(^|\/)AGENTS\.md$/.test(f) && !OTHER_FILES.includes(f))
+      .slice(0, MAX_LISTED)
+      .map((path) => ({ path, loads: /** @type {const} */ ("other") })),
+  ];
+  const instructions = candidates.flatMap(({ path, loads }) => {
+    const text = readText(join(cwd, path));
+    return text === null ? [] : [{ path, loads, bytes: Buffer.byteLength(text, "utf8"), commitLines: commitRuleLines(text) }];
+  });
+  const size = { always: 0, onDemand: 0, other: 0 };
+  for (const i of instructions) size[i.loads === "always" ? "always" : i.loads === "on-demand" ? "onDemand" : "other"] += i.bytes;
+
+  const skills = names(join(cwd, ".claude", "skills"), (n) => existsSync(join(cwd, ".claude", "skills", n, "SKILL.md")));
+  const agents = names(join(cwd, ".claude", "agents"), (n) => n.endsWith(".md")).map((n) => n.replace(/\.md$/, ""));
+  const commands = markdownBelow(join(cwd, ".claude", "commands")).map((f) => f.slice(0, -3).normalize("NFC"));
+  /** @type {string[]} */
+  const unreadable = [];
+  /** @type {Set<string>} */
+  const events = new Set();
+  for (const path of [".claude/settings.json", ".claude/settings.local.json"]) {
+    const json = readJson(join(cwd, path));
+    if (json === "unreadable") unreadable.push(path);
+    else for (const e of Object.keys(json?.hooks ?? {})) events.add(e);
+  }
+  const mcp = readJson(join(cwd, ".mcp.json"));
+  if (mcp === "unreadable") unreadable.push(".mcp.json");
+  return {
+    instructions,
+    size,
+    skills,
+    agents,
+    commands: commands.slice(0, 20),
+    hooks: [...events].sort(),
+    mcpServers: mcp === "unreadable" ? [] : Object.keys(mcp?.mcpServers ?? {}).sort(),
+    unreadable,
+    overlaps: {
+      cycle: [...skills.filter((s) => CYCLE_SKILL.test(s)), ...commands.filter((c) => CYCLE_SKILL.test(c.split("/").pop() ?? "")).map((c) => `/${c}`)],
+      reviewers: agents.filter((a) => REVIEWER.test(a)),
+    },
+  };
+}
+
 /**
  * @param {{ cwd: string, env?: NodeJS.ProcessEnv }} opts
  */
@@ -401,6 +564,7 @@ export function scanProject({ cwd, env = process.env }) {
     roadmap: roadmapFiles(cwd, files),
     github: repo ? githubRepo(cwd) : null,
     pathScopedRules: loadPathScopedRules(cwd).length,
+    agentSetup: agentSetup(cwd, files),
     ...projectCommands(cwd),
   };
 }

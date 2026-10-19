@@ -13,7 +13,7 @@ Run `ennyn init-scan --json`. If `config.path` or `graph.exists` is set, this is
 
 ## 2. Ask once
 
-Send one message with at most five questions. Each question carries the survey's answer as the default, so "ok" accepts all of them. Skip a question when the survey has nothing for it.
+Send one message with at most six questions. Each question carries the survey's answer as the default, so "ok" accepts all of them. Skip a question when the survey has nothing for it.
 
 1. **Languages and voice** (`en` | `tr`):
    - `language`: reports and the conversation during a cycle. Default: the language the user writes in.
@@ -31,6 +31,7 @@ Send one message with at most five questions. Each question carries the survey's
    - the `roadmap` files (with open/done counts);
    - open GitHub issues (`gh issue list --state open --limit 50 --json number,title,labels`, only when `github` is set and `gh` works);
    - or the user's own words: "What should this project do next? Which finished features matter most?"
+6. **What the project already has** (`agentSetup.overlaps`), only when it lists something. A cycle-like skill or command (`overlaps.cycle`): does Ennyn's cycle replace it, or stay beside it for other work? The answer goes into the handoff: in the stub, or, when the handoff exists, as one line added at its end on the user's yes. Reviewer agents (`overlaps.reviewers`): which of them review the cycle's changes (`review.agents`, given the finding schema); none keeps Ennyn's three.
 
 Nothing else is asked; everything else keeps its default.
 
@@ -43,29 +44,20 @@ Write only the keys that differ from the defaults (DESIGN.md has the table). JSO
 - `metrics.fixSubject`: covers the history and the new fix type, `(?:<fixSubject.proposal>)|(?:^<fixType>(\(|:))`, or `^<fixType>(\(|:)` when there is no proposal. Omit it when it equals the default. `doctor` warns when it misses the fix type.
 - `metrics.excludeRe`: the scan's `metrics.excludeRe`, then `|` and the `excludePattern` of each confirmed churn path. Always start from the scan's value: a bare path pattern replaces the default and puts docs, lockfiles and `dist/` back into the rework rate.
 - `metrics.testRe`: `tests.proposal`, when the user confirmed it.
-- `review.impactRequiredGlobs`: the agreed globs.
+- `review.impactRequiredGlobs`: the agreed globs. `review.agents`: the reviewers chosen in question 6.
 - `sideCopy.roots`: only when `pathScopedRules > 0` and the user keeps plain copies outside git worktrees. Ask where.
 
 ## 4. Build the starting graph
 
-Write the graph to the scan's `graph.path`, as a JSON object with two arrays named by `graph.exports`. With the defaults that is `.ennyn/graph.json` holding `{ "nodes": [...], "done": [...] }`.
-
-- **Already kept in files?** When the project keeps its roadmap in files with a fixed line format (checkbox lines with ids, hours and dependencies; a generated status table), do not copy it: a copy goes stale the day the roadmap changes. Write a small `.mjs` module next to the config that reads those files on every load and exports the two arrays, set `paths.graph` to it, and gate the items the roadmap itself postpones, citing where it says so.
-- **5 to 15 open nodes** when the work comes from the user's words or a loose list. Each is a complete, independently verifiable piece of user-visible value. A refactor counts only when it unblocks one.
-  Shape: `{ "id": "short-kebab-id", "title": "…", "status": "planned", "value": "high|medium|low", "cost": "S|M|L|XL", "cluster": "<area>", "needs": [], "source": "…" }`.
-- **From a roadmap file or issues:** one node per item that meets the bar. Merge duplicates. `source` points back to the item, for example `ROADMAP.md:12` or `#42`. Items too vague to verify go into one node per area, titled "Define: …", with value `medium`.
-- **value / cost:** estimate them from the item and say so in the report. The user corrects them later.
-- **needs:** set only when a node truly cannot start before another one.
-- **done:** finished features worth re-checking, as `{ "id", "title", "status": "done" }`. The cycle's legacy audit picks from these.
-- **mechanization: true:** only for a defect class that the user or the history names as recurring. Otherwise there are none; the first cycle's convergence report creates them.
+Follow [graph.md](graph.md): where the graph goes, a module when the roadmap is already kept in files, node shape, value and cost, done nodes and gates.
 
 ## 5. The project's own instructions
 
-The cycle follows Ennyn's convention. When CLAUDE.md, AGENTS.md or CONTRIBUTING.md sets another commit format or language (for example "one-line commits"), show that line and propose replacing it with one that points at `.ennyn/config.json`. Edit it only on the user's yes, so the agent never gets two rules.
+The cycle follows Ennyn's convention. When an instruction or rule file sets another commit format or language (`commitLines` of `agentSetup.instructions`; every-session files first, then on-demand ones, then those of other agents; for example "one-line commits"), show each such line and propose replacing it with one that points at `.ennyn/config.json`. Edit it only on the user's yes, so the agent never gets two rules.
 
 ## 6. Handoff stub
 
-Write this only when `handoff.exists` is false. Never edit an existing handoff. Write it to `paths.handoff`:
+Write this only when `handoff.exists` is false. An existing handoff gets nothing but the one line from question 6, and only on the user's yes. Write it to `paths.handoff`:
 
 - the commands the cycle runs: the fast test command from `commands`, then lint and typecheck when present;
 - the mutation tool from `mutation`, or "none configured: the mutation pass reports not applicable";
@@ -83,6 +75,7 @@ Report in at most twelve lines:
 - the languages, the voice and the commit convention;
 - what was changed in the project's own instructions, or left in conflict and why; an audit queue the project already keeps;
 - node counts: open, done and ready;
+- the instruction text the project loads: `agentSetup.size.always` in every session, `size.onDemand` by path;
 - what was estimated or left at its default;
 - "Next: /ennyn:cycle".
 

@@ -56,6 +56,8 @@ export const DEFAULTS = Object.freeze({
     allowMarker: "[commit-shape-allow:",
   },
   review: {
+    // Reviewer agents the cycle uses, given the finding schema; empty = Ennyn's own three. Chosen at /ennyn:init.
+    agents: [],
     maxRounds: 2,
     roundsLine: "Review-Rounds:",
     thirdRoundLine: "Third-round:",
@@ -192,6 +194,8 @@ export function loadConfig({ cwd, env = process.env, override }) {
   // A type is the word before "(scope):" or ":"; spaces, colons and brackets would never match a subject.
   const badTypes = cm.types.filter((/** @type {unknown} */ t) => typeof t !== "string" || !/^[^\s:()!]+$/.test(t));
   if (badTypes.length) problems.push(`"commitMsg.types" entries must be single words without ":", "(", ")" or "!": ${badTypes.map(String).join(", ")}`);
+  const reviewers = /** @type {any} */ (cfg).review.agents;
+  if (reviewers.some((/** @type {unknown} */ a) => typeof a !== "string" || a === "")) problems.push(`"review.agents" entries must be agent names`);
   if (!/^[^\s:()!]+$/.test(cm.fixType)) problems.push(`"commitMsg.fixType" must be a single word without ":", "(", ")" or "!"`);
   else if (cm.types.length && !cm.types.includes(cm.fixType)) problems.push(`"commitMsg.fixType" "${cm.fixType}" must be one of commitMsg.types (${cm.types.join(", ")})`);
   if (problems.length) throw new ConfigError(problems);

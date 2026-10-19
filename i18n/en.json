@@ -144,5 +144,13 @@
   "bypass.none": "Commit-shape bypass: none of {commits} commits used it.",
   "bypass.summary": "Commit-shape bypass: {n} of {commits} commits used it.",
   "bypass.item": "  {hash} · {date} · {subject} · reason: {reason}",
-  "bypass.noReason": "(none written)"
+  "bypass.noReason": "(none written)",
+  "scan.instructions": "Agent instructions: {always} in every session ({list}), {onDemand} when a matching path is touched, {other} for other agents.",
+  "scan.commitRule": "  commit rule in {path}: \"{line}\"",
+  "scan.agentParts": "Already there: {skills} skills, {agents} agents, {commands} commands.",
+  "scan.overlaps": "Overlaps with Ennyn: cycle-like skill or command {cycle}; reviewer agents {reviewers}.",
+  "scan.hooks": "Claude Code hooks: {list}.",
+  "scan.mcp": "MCP servers: {list}.",
+  "scan.unreadable": "Not valid JSON, so not read: {list}.",
+  "scan.commitRuleMore": "  …and {n} more commit-rule lines (init-scan --json lists them all)"
 }

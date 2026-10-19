@@ -22,7 +22,7 @@ Numbers, limits and the published research they were checked against: [docs/evid
 
 | Step | What the loop does | Tooling |
 |---|---|---|
-| Setup | Reads the repository first: how fixes are labelled, which files most commits rewrite (generated output), the test layout, risky paths, roadmap files and issues. Then it asks at most five questions and writes the config, a starting work graph and a handoff stub; `ennyn doctor` checks them. | `/ennyn:init`, `ennyn init-scan`, `ennyn doctor` |
+| Setup | Reads the repository first: how fixes are labelled, which files most commits rewrite (generated output), the test layout, risky paths, roadmap files and issues. Then it asks at most six questions and writes the config, a starting work graph and a handoff stub; `ennyn doctor` checks them. | `/ennyn:init`, `ennyn init-scan`, `ennyn doctor` |
 | Before writing | Five-row impact table, each row answered by a command: who else reads this decision · other paths to this state · newly accepted/rejected inputs · behaviour at the ceiling or when measurement fails · where the fakes come from. For heuristic rules, an accept + reject corpus and a failing test come first. | `ennyn impact` |
 | Review | At most two rounds; round two looks only at the diff of round-one fixes. A third round needs an independent signal (test, mutation run, real measurement). Every finding carries a quote, class, source, confidence and how it was checked. | `agents/`, `skills/cycle/finding-schema.md` |
 | Commit | Short subject and body; review rounds and impact summary as structured lines. Checked before the expensive hook runs. | `ennyn commit-check` |

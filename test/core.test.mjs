@@ -100,6 +100,10 @@ test("config: commit language, types and fix type are checked together", () => {
   // Turkish types with the default fix type: the repair type would never match a subject.
   bad({ types: ["özellik", "düzeltme"] }, /"commitMsg\.fixType" "fix" must be one of commitMsg\.types \(özellik, düzeltme\)/);
   bad({ fixType: "fix it" }, /"commitMsg\.fixType" must be a single word/);
+  // review.agents names the reviewers the cycle uses; an empty or non-string entry is a typo.
+  const dir2 = mkdtempSync(join(tmpdir(), "pl-cfg-rev-"));
+  assert.deepEqual(loadConfig({ cwd: dir2, env: {}, override: { review: { agents: ["kod-gozden-gecirici"] } } }).review.agents, ["kod-gozden-gecirici"]);
+  assert.throws(() => loadConfig({ cwd: dir2, env: {}, override: { review: { agents: [""] } } }), /"review\.agents" entries must be agent names/);
 });
 
 test("config: ENNYN_CONFIG points elsewhere; broken JSON is a ConfigError", () => {

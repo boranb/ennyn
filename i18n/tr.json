@@ -144,5 +144,13 @@
   "bypass.none": "Commit biçimi atlatması: {commits} commit'in hiçbiri kullanmadı.",
   "bypass.summary": "Commit biçimi atlatması: {commits} commit'in {n} tanesi kullandı.",
   "bypass.item": "  {hash} · {date} · {subject} · gerekçe: {reason}",
-  "bypass.noReason": "(yazılmamış)"
+  "bypass.noReason": "(yazılmamış)",
+  "scan.instructions": "Ajan talimatları: her oturum {always} ({list}), eşleşen yola dokunulunca {onDemand}, başka ajanlar için {other}.",
+  "scan.commitRule": "  {path} içindeki commit kuralı: \"{line}\"",
+  "scan.agentParts": "Zaten olanlar: {skills} beceri, {agents} ajan, {commands} komut.",
+  "scan.overlaps": "Ennyn ile örtüşenler: döngü benzeri beceri ya da komut {cycle}; inceleme ajanları {reviewers}.",
+  "scan.hooks": "Claude Code kancaları: {list}.",
+  "scan.mcp": "MCP sunucuları: {list}.",
+  "scan.unreadable": "Geçerli JSON değil, okunmadı: {list}.",
+  "scan.commitRuleMore": "  …ve {n} commit kuralı satırı daha (init-scan --json hepsini listeler)"
 }

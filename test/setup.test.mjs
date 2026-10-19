@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -362,4 +362,125 @@ test("doctor: declared commit types are reported; a fix label that misses the fi
   assert.equal(ok.items.find((i) => i.key === "doctor.commitStyle")?.vars.language, "en", "commit language overrides the report language");
   const free = await checkSetup({ cwd: setup({}, { nodes: [{ id: "a" }] }).dir, env: {} });
   assert.ok(keys(free).includes("ok doctor.commitStyleFree"));
+});
+
+test("agent setup: cycle-like skills and reviewer agents by name, on a corpus of real names (accept and reject)", async () => {
+  const { CYCLE_SKILL, REVIEWER } = await import("../setup/scan.mjs");
+  const cycleYes = ["phase-run", "cycle", "faz-dongusu", "döngü", "sprint-plan", "dev-loop"];
+  const cycleNo = ["strateji-ekle", "swiftui-engineering", "mobil-dogrulama", "hata-sonrasi", "post-fix", "phaser-game", "fazla", "loophole-scan", "codebase-design"];
+  for (const n of cycleYes) assert.ok(CYCLE_SKILL.test(n), `cycle: ${n}`);
+  for (const n of cycleNo) assert.ok(!CYCLE_SKILL.test(n), `not cycle: ${n}`);
+  const reviewYes = ["code-reviewer", "security-reviewer", "kod-gozden-gecirici", "para-guvenligi-denetcisi", "mobil-ux-denetçisi", "data-correctness-checker", "api-contract-validator", "pentester", "nlq-prompt-auditor", "migration-checker", "veri-dogrulayici", "inceleme-ajani", "security-audit", "spec-verifier", "design-critic"];
+  const reviewNo = ["planlayici", "planner", "architect", "debugger", "doc-updater", "e2e-runner", "refactor-cleaner", "marketing-strategist", "error-tracker", "preview-builder"];
+  for (const n of reviewYes) assert.ok(REVIEWER.test(n), `reviewer: ${n}`);
+  for (const n of reviewNo) assert.ok(!REVIEWER.test(n), `not reviewer: ${n}`);
+});
+
+test("agent setup: every instruction and rule file with size, load kind and commit-rule lines; skills, agents, commands, hooks, MCP", async () => {
+  const { agentSetup } = await import("../setup/scan.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "en-agents-"));
+  const claude = "# Rules\nLanguage: Turkish in chat, commit and docs\n7. Sweep: fix every copy in the same commit\nnothing else\n- **Commit:** one line, Turkish\n9. COMMIT → one commit, Turkish subject\n";
+  put(dir, {
+    "CLAUDE.md": claude,
+    "CLAUDE.local.md": "local notes\n",
+    "server/CLAUDE.md": "await client.query('COMMIT') after the update\n",
+    "AGENTS.md": "Commit messages in English\n",
+    ".claude/rules/common/protocol.md": "9. COMMIT → TEK commit, Türkçe konu\n",
+    ".claude/rules/web/ui.md": "---\npaths:\n  - src/ui/**\n---\nui rule\n",
+    ".claude/skills/phase-run/SKILL.md": "---\nname: phase-run\n---\n",
+    ".claude/skills/strateji-ekle/SKILL.md": "---\nname: strateji-ekle\n---\n",
+    ".claude/skills/not-a-skill/README.md": "no SKILL.md here\n",
+    ".claude/agents/kod-gozden-gecirici.md": "x",
+    ".claude/agents/planlayici.md": "x",
+    ".claude/commands/devir.md": "x",
+    ".claude/commands/team/audit-cycle.md": "x",
+    ".claude/settings.json": JSON.stringify({ hooks: { Stop: [], PreToolUse: [] } }),
+    ".claude/settings.local.json": JSON.stringify({ hooks: { SessionStart: [] } }),
+    ".mcp.json": "{ broken",
+  });
+  // Nested instruction files come from the tracked list; everything under .claude is read from disk.
+  const res = agentSetup(dir, ["CLAUDE.md", "server/CLAUDE.md", "AGENTS.md"]);
+  assert.deepEqual(res.instructions.map((i) => [i.path, i.loads, i.commitLines]), [
+    // A line that is a commit rule comes before one that names commits among other things, whatever the order in the file.
+    ["CLAUDE.md", "always", ["- **Commit:** one line, Turkish", "9. COMMIT → one commit, Turkish subject", "Language: Turkish in chat, commit and docs"]],
+    ["CLAUDE.local.md", "always", []],
+    [".claude/rules/common/protocol.md", "always", ["9. COMMIT → TEK commit, Türkçe konu"]],
+    [".claude/rules/web/ui.md", "on-demand", []],
+    ["server/CLAUDE.md", "on-demand", []],
+    ["AGENTS.md", "other", ["Commit messages in English"]],
+  ]);
+  const bytes = (/** @type {string} */ t) => Buffer.byteLength(t);
+  assert.deepEqual(res.size, {
+    always: bytes(claude) + bytes("local notes\n") + bytes("9. COMMIT → TEK commit, Türkçe konu\n"),
+    onDemand: bytes("---\npaths:\n  - src/ui/**\n---\nui rule\n") + bytes("await client.query('COMMIT') after the update\n"),
+    other: bytes("Commit messages in English\n"),
+  });
+  assert.deepEqual([res.skills, res.agents, res.commands], [["phase-run", "strateji-ekle"], ["kod-gozden-gecirici", "planlayici"], ["devir", "team/audit-cycle"]]);
+  assert.deepEqual([res.hooks, res.mcpServers, res.unreadable], [["PreToolUse", "SessionStart", "Stop"], [], [".mcp.json"]]);
+  assert.deepEqual(res.overlaps, { cycle: ["phase-run", "/team/audit-cycle"], reviewers: ["kod-gozden-gecirici"] });
+  // Valid JSON that is not an object is no settings file either.
+  const arr = mkdtempSync(join(tmpdir(), "en-agents-arr-"));
+  put(arr, { ".claude/settings.json": "[]" });
+  assert.deepEqual(agentSetup(arr, []).unreadable, [".claude/settings.json"]);
+  // Nothing there: empty lists, not errors.
+  const empty = agentSetup(mkdtempSync(join(tmpdir(), "en-agents0-")), []);
+  assert.deepEqual([empty.instructions, empty.skills, empty.hooks, empty.unreadable, empty.size], [[], [], [], [], { always: 0, onDemand: 0, other: 0 }]);
+});
+
+test("agent setup: linked skills and agents count; a decomposed (NFD) name is matched as written", async () => {
+  const { agentSetup } = await import("../setup/scan.mjs");
+  const store = mkdtempSync(join(tmpdir(), "en-agents-store-"));
+  put(store, { "cycle/SKILL.md": "x", "code-reviewer.md": "x" });
+  const dir = mkdtempSync(join(tmpdir(), "en-agents-ln-"));
+  mkdirSync(join(dir, ".claude", "skills"), { recursive: true });
+  mkdirSync(join(dir, ".claude", "agents"), { recursive: true });
+  symlinkSync(join(store, "cycle"), join(dir, ".claude", "skills", "cycle"));
+  symlinkSync(join(store, "code-reviewer.md"), join(dir, ".claude", "agents", "code-reviewer.md"));
+  put(dir, { [".claude/skills/" + "faz-döngü".normalize("NFD") + "/SKILL.md"]: "x" });
+  const res = agentSetup(dir, []);
+  assert.deepEqual(res.skills, ["cycle", "faz-döngü"].sort());
+  assert.deepEqual(res.agents, ["code-reviewer"]);
+  assert.deepEqual(res.overlaps.cycle.sort(), ["cycle", "faz-döngü"].sort());
+});
+
+test("cli: init-scan prints the agent setup: sizes by load kind, the commit rule line and the overlaps", () => {
+  const r = setup({}, { nodes: [{ id: "a" }] });
+  put(r.dir, { "CLAUDE.md": "Commit: one line\n", ".claude/agents/code-reviewer.md": "x", ".claude/skills/phase-run/SKILL.md": "x" });
+  const out = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: r.dir, env: ENV, encoding: "utf8" });
+  assert.equal(out.status, 0, out.stderr);
+  assert.match(out.stdout, /^Agent instructions: 0\.0 KB in every session \(CLAUDE\.md 0\.0 KB\), 0\.0 KB when a matching path is touched, 0\.0 KB for other agents\.$/m);
+  assert.match(out.stdout, /^ {2}commit rule in CLAUDE\.md: "Commit: one line"$/m);
+  assert.match(out.stdout, /^Overlaps with Ennyn: cycle-like skill or command phase-run; reviewer agents code-reviewer\.$/m);
+});
+
+test("agent setup: a real rule beats step headings that only start with commit; SQL is not a rule; nested and linked rule directories are read", async () => {
+  const { commitRuleLines, agentSetup } = await import("../setup/scan.mjs");
+  const steps = Array.from({ length: 8 }, (_, i) => `${i + 1}. Commit öncesi adım ${i + 1}`);
+  const lines = commitRuleLines([...steps, "- İngilizce commit mesajı YASAK (Türkçe)", "BEGIN; UPDATE t SET a = 1; COMMIT;", "COMMIT;"].join("\n"));
+  assert.equal(lines[0], "- İngilizce commit mesajı YASAK (Türkçe)");
+  assert.equal(lines.length, 8);
+  assert.ok(!lines.some((l) => /COMMIT;/.test(l)), "SQL left out");
+  // On their own, too: no cap hides them here.
+  assert.deepEqual(commitRuleLines("COMMIT;\nBEGIN; UPDATE t SET a = 1; COMMIT;\nROLLBACK the commit if the check fails"), []);
+  const store = mkdtempSync(join(tmpdir(), "en-rules-store-"));
+  put(store, { "deep/more/commit.md": "Commit: one line\n" });
+  const dir = mkdtempSync(join(tmpdir(), "en-rules-ln-"));
+  put(dir, { ".claude/rules/a/b/c.md": "plain rule\n" });
+  symlinkSync(store, join(dir, ".claude", "rules", "linked"));
+  assert.deepEqual(agentSetup(dir, []).instructions.map((i) => i.path), [".claude/rules/a/b/c.md", ".claude/rules/linked/deep/more/commit.md"]);
+});
+
+test("cli: init-scan shows at most two commit-rule lines per file and says how many more --json has", () => {
+  const r = setup({}, { nodes: [{ id: "a" }] });
+  put(r.dir, {
+    "CLAUDE.md": "Commit: one line\nCommit language: Turkish\nCommit: no co-author trailer\n",
+    ".claude/rules/protocol.md": "9. COMMIT → one commit, Turkish subject\n",
+  });
+  const out = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: r.dir, env: ENV, encoding: "utf8" }).stdout;
+  assert.deepEqual(out.match(/^ {2}commit rule in .*$/gm), [
+    '  commit rule in CLAUDE.md: "Commit: one line"',
+    '  commit rule in CLAUDE.md: "Commit language: Turkish"',
+    '  commit rule in .claude/rules/protocol.md: "9. COMMIT → one commit, Turkish subject"',
+  ]);
+  assert.match(out, /^ {2}…and 1 more commit-rule lines \(init-scan --json lists them all\)$/m);
 });

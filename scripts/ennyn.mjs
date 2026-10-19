@@ -176,6 +176,32 @@ const COMMANDS = {
     if (res.mutation) say("scan.mutation", { command: res.mutation });
     else say("scan.mutationNone");
     if (res.pathScopedRules) say("scan.rules", { n: res.pathScopedRules });
+    const ag = res.agentSetup;
+    const kb = (/** @type {number} */ b) => `${(b / 1024).toFixed(1)} KB`;
+    if (ag.instructions.length) {
+      const biggest = ag.instructions.filter((i) => i.loads === "always").sort((a, b) => b.bytes - a.bytes).slice(0, 5);
+      say("scan.instructions", {
+        always: kb(ag.size.always),
+        onDemand: kb(ag.size.onDemand),
+        other: kb(ag.size.other),
+        list: biggest.map((i) => `${i.path} ${kb(i.bytes)}`).join(" · ") || "—",
+      });
+      // Every-session files first: those are the rules the cycle would contradict each time.
+      const order = { always: 0, "on-demand": 1, other: 2 };
+      // At most two lines per file, so a rule file is not hidden behind a long CLAUDE.md; --json has them all.
+      const files = [...ag.instructions].sort((a, b) => order[a.loads] - order[b.loads]);
+      const all = files.reduce((n, i) => n + i.commitLines.length, 0);
+      const shown = files.flatMap((i) => i.commitLines.slice(0, 2).map((line) => ({ path: i.path, line }))).slice(0, 8);
+      for (const r of shown) say("scan.commitRule", r);
+      if (all > shown.length) say("scan.commitRuleMore", { n: all - shown.length });
+    }
+    if (ag.skills.length || ag.agents.length || ag.commands.length) say("scan.agentParts", { skills: ag.skills.length, agents: ag.agents.length, commands: ag.commands.length });
+    if (ag.overlaps.cycle.length || ag.overlaps.reviewers.length) {
+      say("scan.overlaps", { cycle: ag.overlaps.cycle.join(", ") || "—", reviewers: ag.overlaps.reviewers.join(", ") || "—" });
+    }
+    if (ag.hooks.length) say("scan.hooks", { list: ag.hooks.join(", ") });
+    if (ag.mcpServers.length) say("scan.mcp", { list: ag.mcpServers.join(", ") });
+    if (ag.unreadable.length) say("scan.unreadable", { list: ag.unreadable.join(", ") });
     return 0;
   },
 

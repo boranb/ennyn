@@ -22,7 +22,7 @@ Sayılar, sınırları ve karşılaştırıldıkları yayımlanmış araştırma
 
 | Adım | Döngü ne yapar | Araç |
 |---|---|---|
-| Kurulum | Önce depoyu okur: düzeltmeler nasıl etiketleniyor, commit'lerin çoğu hangi dosyaları yeniden yazıyor (üretilmiş çıktı), test düzeni, riskli yollar, yol haritası dosyaları ve issue'lar. Sonra en çok beş soru sorar; ayarı, başlangıç iş grafiğini ve bir devir taslağını yazar; `ennyn doctor` bunları denetler. | `/ennyn:init`, `ennyn init-scan`, `ennyn doctor` |
+| Kurulum | Önce depoyu okur: düzeltmeler nasıl etiketleniyor, commit'lerin çoğu hangi dosyaları yeniden yazıyor (üretilmiş çıktı), test düzeni, riskli yollar, yol haritası dosyaları ve issue'lar. Sonra en çok altı soru sorar; ayarı, başlangıç iş grafiğini ve bir devir taslağını yazar; `ennyn doctor` bunları denetler. | `/ennyn:init`, `ennyn init-scan`, `ennyn doctor` |
 | Yazmadan önce | Beş satırlık etki tablosu, her satır bir komutla cevaplanır: bu kararı başka kim okuyor · bu duruma başka hangi yoldan varılıyor · hangi girdiler yeni kabul ya da ret ediliyor · tavanda ya da ölçüm başarısız olunca ne oluyor · sahteler nereden geliyor. Sezgisel kurallarda önce kabul ve ret örnekli bir derlem ile kırmızı bir test gelir. | `ennyn impact` |
 | İnceleme | En çok iki tur; ikinci tur yalnız birinci turun düzeltmelerinin diff'ine bakar. Üçüncü tur ancak bağımsız bir sinyalle (test, kırma, gerçek ölçüm) açılır. Her bulgu bir alıntı, sınıf, kaynak, güven ve nasıl doğrulandığını taşır. | `agents/`, `skills/cycle/finding-schema.md` |
 | Commit | Kısa konu ve gövde; inceleme turları ve etki özeti yapısal satırlar olarak yazılır. Pahalı kanca koşmadan önce denetlenir. | `ennyn commit-check` |
