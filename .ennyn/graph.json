@@ -99,18 +99,6 @@
       "source": "a public Claude Code repository review, 2026-10-19"
     },
     {
-      "id": "instruction-budget",
-      "title": "doctor counts the bytes of always-loaded instructions and the rule lines repeated across files, so \"instruction text only shrinks\" is a number per cycle",
-      "status": "planned",
-      "value": "high",
-      "cost": "S",
-      "cluster": "init",
-      "needs": [
-        "scan-agent-setup"
-      ],
-      "source": "a public Claude Code repository review, 2026-10-19"
-    },
-    {
       "id": "doc-cochange",
       "title": "Config map from code globs to docs; commit-check warns when one changes without the other",
       "status": "planned",
@@ -120,16 +108,6 @@
       "needs": [],
       "source": "a public Claude Code repository review, 2026-10-19; cycle 2026-10-19 convergence: class doc-twin (documents lag the code) came back 4 times in two cycles (DESIGN contract line, pick-rule text, question count, CHANGELOG key)",
       "mechanization": true
-    },
-    {
-      "id": "movesubject-turkish-case",
-      "title": "metrics.moveSubject is compiled with a plain i flag: a Turkish pattern misses İ/ı; fold case in the config language",
-      "status": "planned",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "metrics",
-      "needs": [],
-      "source": "a public Claude Code repository review, 2026-10-19; metrics/szz.mjs:201"
     },
     {
       "id": "mutation-runner",
@@ -143,27 +121,6 @@
       "source": "cycle 2026-10-19: an ad-hoc runner split mutants on \"|\" and counted syntax errors as kills; two commit Mutation lines were rewritten before push"
     },
     {
-      "id": "cleanup-mode-config",
-      "title": "commit-check reads git's cleanup mode from commit.cleanup and --cleanup=, not only from GIT_EDITOR",
-      "status": "planned",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "gates",
-      "needs": [],
-      "source": "review of task 3-4, low confidence, 2026-10-19"
-    },
-    {
-      "id": "gate-no-project-names",
-      "title": "A test that keeps names, home paths and data of projects using Ennyn out of this repository (a rule in .claude/CLAUDE.md today)",
-      "status": "planned",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "gates",
-      "needs": [],
-      "mechanization": true,
-      "source": "lesson retirement, cycle 2026-10-19"
-    },
-    {
       "id": "gate-readme-twins",
       "title": "A test that README.md and README.tr.md keep the same sections and table rows (a rule in .claude/CLAUDE.md today)",
       "status": "planned",
@@ -173,6 +130,48 @@
       "needs": [],
       "mechanization": true,
       "source": "lesson retirement, cycle 2026-10-19"
+    },
+    {
+      "id": "git-oracle-matrix",
+      "title": "A test that commits through real git over a matrix (cleanup modes, -v, -m / editor, comment marker, commit.verbose, signatures) and compares what git stores with storedMessage and the log readers",
+      "status": "planned",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "needs": [],
+      "mechanization": true,
+      "sourceClass": "git-model drift (missing row, cut rule ≠ git, config-shaped log output)",
+      "source": "convergence, cycle 2026-10-19 (2)"
+    },
+    {
+      "id": "bypass-first-parent",
+      "title": "bypass --from counts commits merged in from other branches; count the first-parent line only",
+      "status": "planned",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "needs": [],
+      "source": "review, cycle 2026-10-19"
+    },
+    {
+      "id": "fold-target-depth",
+      "title": "amend! / squash! target is searched in the last 500 commits only; without it only the message itself is checked",
+      "status": "planned",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "needs": [],
+      "source": "review, cycle 2026-10-19"
+    },
+    {
+      "id": "hygiene-gaps",
+      "title": "hygiene test: a Turkish suffix in ASCII letters without an apostrophe is missed; the macOS shared folder and a site's home/ paths are taken for home directories",
+      "status": "planned",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "needs": [],
+      "source": "review, cycle 2026-10-19 (2)"
     }
   ],
   "done": [
@@ -242,6 +241,36 @@
     {
       "id": "commit-check-audit",
       "title": "Legacy audit of commit-check: fixup!/amend!/squash!, comment marker, empty message (6b66471)",
+      "status": "done",
+      "finished": "2026-10-19"
+    },
+    {
+      "id": "instruction-budget",
+      "title": "budget: bytes an agent loads every session and on demand, repeated rule lines, one record per cycle; doctor warns on growth (ff49075)",
+      "status": "done",
+      "finished": "2026-10-19"
+    },
+    {
+      "id": "movesubject-turkish-case",
+      "title": "moveSubject matches Turkish capitals; folded into the rework audit (ae35a59)",
+      "status": "done",
+      "finished": "2026-10-19"
+    },
+    {
+      "id": "cleanup-mode-config",
+      "title": "commit-check follows commit.cleanup and cuts at the scissors line only where git does (58ad2e2)",
+      "status": "done",
+      "finished": "2026-10-19"
+    },
+    {
+      "id": "gate-no-project-names",
+      "title": "test/hygiene.test.mjs: project names (as digests) and home paths kept out of files, paths, symlinks and commit messages (fd79b7f)",
+      "status": "done",
+      "finished": "2026-10-19"
+    },
+    {
+      "id": "rework-audit",
+      "title": "Legacy audit of rework: quoted or tab file names, control characters, signed commits (log.showSignature), Turkish move subjects (ae35a59)",
       "status": "done",
       "finished": "2026-10-19"
     }
