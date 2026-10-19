@@ -11,7 +11,7 @@ import { resolve } from "node:path";
 import { loadConfig, ConfigError } from "../core/config.mjs";
 import { git, stagedPaths, unpushedCount } from "../core/git.mjs";
 import { t } from "../core/i18n.mjs";
-import { checkCommitShape, storedMessage } from "../checks/commit-shape.mjs";
+import { checkCommitShape, storedMessage, gitCuts } from "../checks/commit-shape.mjs";
 import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
 import { reworkRate } from "../metrics/szz.mjs";
 import { bypassUses } from "../metrics/bypass.mjs";
@@ -93,6 +93,20 @@ function projectDir() {
 const config = (cwd) => loadConfig({ cwd });
 
 /**
+ * git's cleanup mode for this commit. commit.cleanup decides when it is set ("scissors" cuts only when
+ * the editor ran: gitCuts); otherwise git strips when the editor ran and only trims whitespace for -m / -F,
+ * and it sets GIT_EDITOR=":" for the hook then.
+ * A --cleanup= option on the command line never reaches a hook: that case is not measured.
+ * @param {string} cwd
+ * @returns {"strip" | "whitespace" | "verbatim" | "scissors"}
+ */
+function cleanupMode(cwd) {
+  const set = git(["config", "--get", "commit.cleanup"], { cwd, allowFail: true });
+  if (set === "strip" || set === "whitespace" || set === "verbatim" || set === "scissors") return set;
+  return process.env.GIT_EDITOR !== ":" ? "strip" : "whitespace";
+}
+
+/**
  * git's comment marker for commit messages: core.commentString, then core.commentChar, else "#".
  * "auto": git's own rule (builtin/commit.c, adjust_comment_line_char): "#" unless the message holds one;
  * otherwise the first of "#;@!$%^&|:" that starts no line. Its template line, when there is one, says
@@ -113,10 +127,10 @@ function commentMarker(cwd, message) {
 /**
  * For an amend! / squash! message, the commit it folds into: the newest of the last 500 whose subject is
  * the one named, with its message and paths. null when there is none (or the message is no fold).
- * @param {string} cwd @param {string} message @param {"strip" | "whitespace"} cleanup @param {string} comment
+ * @param {string} cwd @param {string} message @param {"strip" | "whitespace" | "verbatim" | "scissors"} cleanup @param {string} comment @param {boolean} cut
  */
-function foldTarget(cwd, message, cleanup, comment) {
-  const fold = /^(?:amend|squash)! (.*)$/.exec(storedMessage(message, cleanup, comment).split("\n")[0] ?? "");
+function foldTarget(cwd, message, cleanup, comment, cut) {
+  const fold = /^(?:amend|squash)! (.*)$/.exec(storedMessage(message, cleanup, comment, cut).split("\n")[0] ?? "");
   if (!fold) return null;
   const log = git(["log", "-n500", "--format=%H%x00%s"], { cwd, allowFail: true });
   const hit = log.split("\n").find((l) => l.slice(l.indexOf("\0") + 1) === fold[1]);
@@ -331,12 +345,14 @@ const COMMANDS = {
     } catch (e) {
       err(t("cli.stagedUnmeasured", { error: String(/** @type {Error} */ (e).message).split("\n")[0] }, cfg.language));
     }
-    // git sets GIT_EDITOR=":" for hooks when the message came from -m / -F: then `#` lines are kept.
-    const cleanup = process.env.GIT_EDITOR === ":" ? "whitespace" : "strip";
+    const cleanup = cleanupMode(cwd);
     let res;
     try {
       const comment = commentMarker(cwd, message);
-      res = checkCommitShape(message, { config: cfg, stagedPaths: staged, cleanup, comment, foldTarget: foldTarget(cwd, message, cleanup, comment) });
+      // commit.verbose cuts every message, -m ones too; a -v on the command line is read from the message.
+      const verbose = git(["config", "--type=bool-or-int", "--get", "commit.verbose"], { cwd, allowFail: true });
+      const cut = gitCuts(message, { cleanup, editor: process.env.GIT_EDITOR !== ":", verbose: verbose === "true" || Number(verbose) > 0, comment });
+      res = checkCommitShape(message, { config: cfg, stagedPaths: staged, cleanup, cut, comment, foldTarget: foldTarget(cwd, message, cleanup, comment, cut) });
     } catch (e) {
       // Any other tool failure (a pattern in the config that does not compile) is no reason to lock commits either.
       if (!opts.hook) throw e;

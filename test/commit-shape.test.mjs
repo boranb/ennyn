@@ -4,7 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../core/config.mjs";
-import { checkCommitShape, storedMessage } from "../checks/commit-shape.mjs";
+import { checkCommitShape, storedMessage, gitCuts } from "../checks/commit-shape.mjs";
 
 const cfg = (override = {}) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-cs-")), env: {}, override });
 
@@ -163,4 +163,34 @@ test("cleanup: git's comment marker is core.commentChar, not always #", () => {
   const template = "feat: x\n\n; Please enter the commit message for your changes.\n; On branch main\n; Changes to be committed:\n;\tmodified: a.txt\n";
   assert.deepEqual(checkCommitShape(template, { config: c, comment: ";" }).errors, []);
   assert.equal(checkCommitShape(template, { config: c }).ok, false, "read with # the template is prose");
+});
+
+test("cleanup: commit.cleanup verbatim stores the message as given; scissors cuts at the scissors line but keeps # lines", () => {
+  const msg = "feat: x  \n\n# kept as text\n\n\n# ------------------------ >8 ------------------------\ndiff --git a b\n";
+  assert.equal(storedMessage(msg, "verbatim"), msg);
+  assert.equal(storedMessage(msg, "scissors"), "feat: x\n\n# kept as text");
+  assert.equal(storedMessage(msg, "whitespace"), "feat: x\n\n# kept as text\n\n# ------------------------ >8 ------------------------\ndiff --git a b");
+  assert.equal(storedMessage(msg, "strip"), "feat: x");
+});
+
+test("cleanup: git cuts only at its own scissors line, only with -v or in the scissors mode; a line typed by hand stays", () => {
+  const LINE = "# ------------------------ >8 ------------------------";
+  const typed = `feat: x\n\n${LINE}\nprose under the line\n`;
+  const verbose = `feat: x\n\n${LINE}\n# Do not modify or remove the line above.\ndiff --git a/f b/f\n`;
+  const submodule = `feat: x\n\n${LINE}\n# Everything below it will be ignored.\nSubmodule sub 1e7be83..d7cd6ab:\n`;
+  const editor = { editor: true };
+  // Without -v git keeps a hand-typed line and the prose under it, in every mode.
+  for (const cleanup of /** @type {const} */ (["strip", "whitespace", "verbatim"])) assert.equal(gitCuts(typed, { cleanup, ...editor }), false, cleanup);
+  assert.equal(storedMessage(typed, "strip"), "feat: x\n\nprose under the line");
+  // git commit -v: its diff (or a submodule summary) follows the line; the scissors mode cuts anyway; commit.verbose cuts -m too.
+  assert.deepEqual([gitCuts(verbose, { cleanup: "whitespace", ...editor }), gitCuts(submodule, { cleanup: "strip", ...editor })], [true, true]);
+  // The scissors mode cuts only an edited message: with -m git uses whitespace.
+  assert.deepEqual([gitCuts(typed, { cleanup: "scissors", ...editor }), gitCuts(typed, { cleanup: "scissors", editor: false })], [true, false]);
+  assert.deepEqual([gitCuts(verbose, { cleanup: "whitespace", editor: false }), gitCuts(typed, { cleanup: "whitespace", editor: false, verbose: true })], [false, true]);
+  // Only the exact line: 24 dashes on each side, then a line end (not CRLF, not the end of the text).
+  for (const near of [verbose.replace("------------------------ >8", "---- >8"), verbose.replace(/>8 -+\n/, ">8 ---\r\n"), `feat: x\n${LINE}`]) {
+    assert.equal(gitCuts(near, { cleanup: "strip", ...editor, verbose: true }), false, JSON.stringify(near));
+  }
+  // The line can open the text: then nothing is left and git aborts the commit.
+  assert.equal(storedMessage(verbose.slice(verbose.indexOf(LINE)), "strip"), "");
 });

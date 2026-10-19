@@ -232,3 +232,52 @@ test("cli: commit-check with core.commentChar=auto and no template line follows 
   writeFileSync(msg, "s\n");
   assert.equal(spawnSync(process.execPath, [CLI, "commit-check", msg], { cwd: dir, env: ENV }).status, 0);
 });
+
+test("cli: commit-check follows commit.cleanup (strip, whitespace, verbatim, scissors) over the -m / editor default", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pl-cli-cleanup-"));
+  git(["init", "-q"], { cwd: dir });
+  mkdirSync(join(dir, ".ennyn"));
+  writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ commitMsg: { style: "terse" } }));
+  const msg = join(dir, "MSG");
+  writeFileSync(msg, "s\n\n# a comment line\n# ------------------------ >8 ------------------------\ndiff --git a b\n");
+  const run = (/** @type {Record<string, string>} */ extra) => spawnSync(process.execPath, [CLI, "commit-check", msg], { cwd: dir, env: { ...ENV, ...extra }, encoding: "utf8" }).status;
+  const set = (/** @type {string | null} */ v) => (v ? git(["config", "commit.cleanup", v], { cwd: dir }) : git(["config", "--unset", "commit.cleanup"], { cwd: dir, allowFail: true }));
+  // Default: the editor strips "#" lines and cuts at the scissors line; -m keeps them as text.
+  set(null);
+  assert.deepEqual([run({}), run({ GIT_EDITOR: ":" })], [0, 1]);
+  // strip strips "#" lines even with -m, but only an edited message is cut: the diff line stays with -m.
+  set("strip");
+  assert.deepEqual([run({}), run({ GIT_EDITOR: ":" })], [0, 1]);
+  set("whitespace");
+  assert.deepEqual([run({}), run({ GIT_EDITOR: ":" })], [1, 1]);
+  set("verbatim");
+  assert.equal(run({}), 1);
+  // git commit -v: an edited message is cut at the scissors line in every mode, whitespace and verbatim too.
+  writeFileSync(msg, "s\n\n# ------------------------ >8 ------------------------\ndiff --git a b\n");
+  for (const mode of ["whitespace", "verbatim"]) {
+    set(mode);
+    assert.equal(run({}), 0, mode);
+  }
+  // strip with -m drops the "#" lines but cuts nothing: the diff after it is stored as text.
+  set("strip");
+  assert.equal(run({ GIT_EDITOR: ":" }), 1);
+  writeFileSync(msg, "s\n\n# a comment line\n");
+  assert.equal(run({ GIT_EDITOR: ":" }), 0);
+  // scissors: the cut happens only when the editor ran; the "#" line before it stays text.
+  writeFileSync(msg, "s\n\n# ------------------------ >8 ------------------------\ndiff --git a b\n");
+  set("scissors");
+  assert.deepEqual([run({}), run({ GIT_EDITOR: ":" })], [0, 1]);
+  // Without -v git keeps a scissors line typed by hand and the prose under it, in every mode.
+  writeFileSync(msg, "s\n\n# ------------------------ >8 ------------------------\nprose under the line\n");
+  for (const mode of ["strip", "whitespace", "verbatim"]) {
+    set(mode);
+    assert.equal(run({}), 1, mode);
+  }
+  // The scissors mode cuts it when the editor ran, -v or not.
+  set("scissors");
+  assert.deepEqual([run({}), run({ GIT_EDITOR: ":" })], [0, 1]);
+  // commit.verbose: git cuts a -m message at the line too.
+  set(null);
+  git(["config", "commit.verbose", "true"], { cwd: dir });
+  assert.equal(run({ GIT_EDITOR: ":" }), 0);
+});

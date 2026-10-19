@@ -17,24 +17,53 @@ const len = (s) => [...s].length;
 /** @param {string} s */
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/** git's scissors line after the comment marker and a space (wt-status.c): exactly this, then a line end. */
+const CUT_LINE = "------------------------ >8 ------------------------\n";
+
+/** @param {string} message @param {string} comment */
+function scissorsAt(message, comment) {
+  const line = `${comment} ${CUT_LINE}`;
+  if (message.startsWith(line)) return 0;
+  const at = message.indexOf(`\n${line}`);
+  return at === -1 ? -1 : at + 1;
+}
+
+/**
+ * Whether git cuts the message at its scissors line (builtin/commit.c): with `--verbose` (`-v`,
+ * `commit.verbose`) in any mode, `-m` too, and in the "scissors" mode when the editor ran. A line typed by
+ * hand is otherwise kept. A hook cannot see `-v`: in an edited message, git's diff (or submodule summary)
+ * under the line, after comment lines, tells.
+ * @param {string} message
+ * @param {{ cleanup: "strip" | "whitespace" | "verbatim" | "scissors", editor: boolean, verbose?: boolean, comment?: string }} how
+ */
+export function gitCuts(message, { cleanup, editor, verbose = false, comment = "#" }) {
+  const at = scissorsAt(message, comment);
+  if (at === -1) return false;
+  if (verbose || (editor && cleanup === "scissors")) return true;
+  const next = message.slice(at).split("\n").slice(1).find((l) => !l.startsWith(comment));
+  return editor && next !== undefined && /^(diff --git |Submodule )/.test(next);
+}
+
 /**
  * The text git will store, so the check measures what lands in history. git's
  * cleanup depends on how the message was given: with `-m` / `-F` (git sets
- * GIT_EDITOR=":" for the hook) `#` lines and a `git commit -v` scissors line are
- * kept ("whitespace"); with the editor they are dropped and the scissors line
- * ends the message ("strip"). A kept line is counted like any other, otherwise
- * prose could hide behind a `#`. Both modes drop trailing spaces and repeated
+ * GIT_EDITOR=":" for the hook) `#` lines are kept ("whitespace"); with the
+ * editor they are dropped ("strip"). A kept line is counted like any other,
+ * otherwise prose could hide behind a `#`. Both modes drop trailing spaces and repeated
  * and edge blank lines. The comment marker is git's `core.commentChar` / `core.commentString`
  * (default `#`): with `;` git drops `;` lines and keeps `#` ones.
+ * `commit.cleanup` can set the mode outright: "verbatim" stores the message as given; "scissors" is
+ * "whitespace". Where git cuts at the scissors line is `cut` (gitCuts).
  * @param {string} message
- * @param {"strip" | "whitespace"} cleanup
+ * @param {"strip" | "whitespace" | "verbatim" | "scissors"} cleanup
  * @param {string} [comment] the comment marker
+ * @param {boolean} [cut] git cuts at its scissors line; by default as gitCuts decides, taking strip and scissors for the editor
  */
-export function storedMessage(message, cleanup, comment = "#") {
-  let text = message.replace(/\r\n/g, "\n");
-  // The scissors line (`git commit -v`) ends the message only when git strips; with -m / -F it is stored.
-  const scissors = cleanup === "strip" ? text.search(new RegExp(`^${escapeRe(comment)} -+ >8 -+$`, "m")) : -1;
-  if (scissors !== -1) text = text.slice(0, scissors);
+export function storedMessage(message, cleanup, comment = "#", cut = gitCuts(message, { cleanup, editor: cleanup === "strip" || cleanup === "scissors", comment })) {
+  const at = cut ? scissorsAt(message, comment) : -1;
+  const kept = at === -1 ? message : message.slice(0, at);
+  if (cleanup === "verbatim") return kept;
+  const text = kept.replace(/\r\n/g, "\n");
   /** @type {string[]} */
   const out = [];
   for (const raw of text.split("\n")) {
@@ -74,18 +103,19 @@ export function skippedSubject(subject, config) {
 
 /**
  * @param {string} message raw commit message (as given to a commit-msg hook)
- * @param {{ config: any, stagedPaths?: string[], cleanup?: "strip" | "whitespace", comment?: string, foldTarget?: { message: string, paths: string[] } | null, ownSubject?: boolean }} opts
+ * @param {{ config: any, stagedPaths?: string[], cleanup?: "strip" | "whitespace" | "verbatim" | "scissors", cut?: boolean, comment?: string, foldTarget?: { message: string, paths: string[] } | null, ownSubject?: boolean }} opts
  *   `cleanup` is git's mode for this commit: "whitespace" when the message came from `-m` / `-F`.
+ *   `cut`: git cuts at its scissors line (gitCuts); by default as storedMessage decides.
  *   `comment` is git's comment marker (`core.commentChar`), "#" by default.
  *   `foldTarget`: for an amend! / squash! commit, the commit it folds into (its message and paths).
  *   `ownSubject`: false when the subject is not this commit's to change (it is checked elsewhere).
  * @returns {{ ok: boolean, errors: string[], skipped?: string }}
  */
-export function checkCommitShape(message, { config, stagedPaths = [], cleanup = "strip", comment = "#", foldTarget = null, ownSubject = true }) {
+export function checkCommitShape(message, { config, stagedPaths = [], cleanup = "strip", cut, comment = "#", foldTarget = null, ownSubject = true }) {
   const lang = config.language;
   const cm = config.commitMsg;
   const rv = config.review;
-  const text = storedMessage(message, cleanup, comment);
+  const text = storedMessage(message, cleanup, comment, cut);
   const lines = text.split("\n");
   const subject = lines[0] ?? "";
 
