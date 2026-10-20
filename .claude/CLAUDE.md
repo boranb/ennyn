@@ -11,7 +11,7 @@ A development loop for coding agents, shipped as a Claude Code plugin and a zero
 
 ## Docs
 
-- README.md and README.tr.md say the same thing; change both in the same commit. DESIGN.md and docs/ are English only.
+- README.md and README.tr.md change in the same commit. DESIGN.md and docs/ are English only.
 
 ## Tests
 
