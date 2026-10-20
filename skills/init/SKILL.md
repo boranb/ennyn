@@ -60,7 +60,7 @@ The cycle follows Ennyn's convention. When an instruction or rule file sets anot
 Write this only when `handoff.exists` is false. An existing handoff gets nothing but the one line from question 6, and only on the user's yes. Write it to `paths.handoff`:
 
 - the commands the cycle runs: the fast test command from `commands`, then lint and typecheck when present;
-- the mutation tool from `mutation`, or "none configured: the mutation pass reports not applicable";
+- the mutation tool from `mutation`, or "none configured: hand-picked mutants";
 - where the graph is;
 - "Next: run the cycle skill".
 

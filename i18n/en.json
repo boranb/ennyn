@@ -113,7 +113,7 @@
   "scan.commands": "Commands: {list}",
   "scan.commandsNone": "Commands: no test command found at the root.",
   "scan.mutation": "Mutation: {command}",
-  "scan.mutationNone": "Mutation: no tool configured; the mutation pass reports not applicable until one is.",
+  "scan.mutationNone": "Mutation: no tool configured; the cycle hand-picks mutants until one is.",
   "scan.rules": "{n} path-scoped rule files under .claude/rules: the side-copy hook applies.",
   "doctor.configOk": "config: {path}",
   "doctor.configDefault": "config: {path} not found; defaults apply",

@@ -9,6 +9,8 @@ No `.ennyn/` in the project yet: run the init skill first. Project settings come
 
 ## 1. Pick the four tasks
 
+Read first, in one turn: the config, the handoff (`paths.handoff`; unset → `HANDOFF.md` at the root) and the graph. The handoff names the commands later steps run (fast test, lint, typecheck, the mutation tool; one it does not name → `commands` and `mutation` of `ennyn.mjs init-scan --json`), the previous cycle's next step and its open risks. Note HEAD: the cycle's bypass count starts there.
+
 | Slot | Source | Rule |
 |---|---|---|
 | Core ×2 | work graph (`paths.graph`): open, ungated, all `needs` done | Highest value/cost; prefer nodes sharing a `cluster` (one session opens the same files once). Complete, independently verifiable, user-visible value. |
@@ -23,8 +25,8 @@ A critical problem (crash, data loss, auth break, blocker) may replace one core 
 2. **Design brief** for UI work — [design-brief.md](design-brief.md).
 3. **Impact table** before the first edit when the change touches a shared decision, predicate, gate or accept/reject rule: `ennyn.mjs impact --symbol <name> --files <paths>`, then complete the five rows (S1 who else reads this · S2 other paths to this state · S3 newly accepted/rejected inputs · S4 at the ceiling / when measurement fails · S5 where fakes come from). Each row is answered by a command's output, never by recall. For heuristic rules, dictionaries and thresholds: build an accept **and** reject corpus and a failing test first. Details: [impact-table.md](impact-table.md).
 4. **Implement**, matching existing patterns.
-5. **Test** the changed files (the project's fast test command).
-6. **Mutation pass** on the changed files. Record the first-run result (`killed/total`); write a test for each survivor or justify it as equivalent.
+5. **Test** the changed files with the handoff's fast test command, then its lint and typecheck when it names them.
+6. **Mutation pass** on the changed files with the handoff's mutation tool; with none (or "not applicable"), hand-pick mutants of the changed lines (one that does not parse is invalid, never killed). Record the first-run result (`killed/total`); write a test for each survivor or justify it as equivalent.
 7. **Review** with the reviewer agents that match the change: those in `review.agents` when set, otherwise Ennyn's (correctness, security, data correctness). Give them the changed files, the impact table and [finding-schema.md](finding-schema.md). **At most two rounds**: round two looks only at the diff of round-one fixes; a third round needs an independent signal (test, mutation run, real measurement) showing a new class. For security work the round limit is replaced by the path table: list every way to reach the protected state first. A critical or high finding left after round two is still fixed, and the fix is proven by a failing-then-passing test instead of another round; if no test can prove it, stop and ask the user.
 8. **A fix is a new write.** If a fix changes a row of the impact table, update the table and give round two the delta.
 9. **Record findings** with a class (`<catalog id>` or `new: <name>`) and a source (`first-write` · `previous-fix` · `pre-existing`) as you write them; the cycle report counts these.
@@ -36,9 +38,9 @@ Never report an unrun test, command or check as done; write `not applicable` ins
 ## 3. End of cycle
 
 1. **Graph:** update every node whose status changed; every newly discovered or leftover item becomes a node.
-2. **Handoff** (`paths.handoff`): what was done, what is next, open risks — each risk with a permanent home (a document that does not rotate).
+2. **Handoff** (`paths.handoff`): what was done, what is next, open risks — each risk with a permanent home (a document that does not rotate). Its commands stay for the next cycle.
 3. **Convergence** in the format of [report-formats.md](report-formats.md): real escapes · fix-introduced · pre-existing · gate-caught, and new classes per review round. The most recurring class becomes a graph node with `mechanization: true` and its source class; if none, write why.
-   Count the commit-shape bypasses of this cycle: `ennyn.mjs bypass --from <HEAD when the cycle started>` (note it when you pick the tasks). Each use is listed with its reason; a bypass that recurs is a gate to fix, not a habit.
+   Count the commit-shape bypasses of this cycle: `ennyn.mjs bypass --from <HEAD noted at the start>`. Each use is listed with its reason; a bypass that recurs is a gate to fix, not a habit.
 4. **Retire lessons:** in one lesson file touched this cycle, mark each lesson keep / update / merge / delete; delete the prose of any lesson whose rationale now lives in a test or gate.
 5. **Budget:** after the last edit of the cycle, `ennyn.mjs budget --record` (it compares with the previous cycle's record; recording again at the same commit replaces the record). Commit the metrics log with the graph and the handoff. Text loaded in every session that grew needs a reason in the report. A repeated rule keeps one copy, in the narrowest file that loads where it is needed.
 6. **Push:** `ennyn.mjs push-check`; state the unpushed count and **ask** for push approval.

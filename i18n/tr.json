@@ -113,7 +113,7 @@
   "scan.commands": "Komutlar: {list}",
   "scan.commandsNone": "Komutlar: kökte test komutu bulunamadı.",
   "scan.mutation": "Kırma: {command}",
-  "scan.mutationNone": "Kırma: ayarlı araç yok; biri kurulana kadar kırma adımı \"uygulanamaz\" yazar.",
+  "scan.mutationNone": "Kırma: ayarlı araç yok; biri kurulana kadar döngü mutantları elle seçer.",
   "scan.rules": ".claude/rules altında yol kapsamlı kural dosyası sayısı {n}: yan kopya kancası devrede.",
   "doctor.configOk": "ayar: {path}",
   "doctor.configDefault": "ayar: {path} yok; varsayılanlar geçerli",
