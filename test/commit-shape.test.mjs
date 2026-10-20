@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../core/config.mjs";
-import { checkCommitShape, storedMessage, gitCuts } from "../checks/commit-shape.mjs";
+import { checkCommitShape, storedMessage, gitCuts, commentMarker, hookCommitMode } from "../checks/commit-shape.mjs";
+import { git } from "../core/git.mjs";
 
 const cfg = (override = {}) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-cs-")), env: {}, override });
 
@@ -193,4 +194,31 @@ test("cleanup: git cuts only at its own scissors line, only with -v or in the sc
   }
   // The line can open the text: then nothing is left and git aborts the commit.
   assert.equal(storedMessage(verbose.slice(verbose.indexOf(LINE)), "strip"), "");
+});
+
+test("comment marker auto: only a line git wrote names it; without the editor, git's rule over the message", () => {
+  const HINT = "Please enter the commit message for your changes. Lines starting";
+  // A hint typed by hand above git's template: the last one is git's.
+  assert.equal(commentMarker("auto", `feat: x\n\n# ${HINT}\n\n@ ${HINT}\n@ On branch main\n`, true), "@");
+  // -m / -F: no template, so a hint-like line is just text; "#" starts a line, so git takes ";".
+  assert.equal(commentMarker("auto", `feat: x\n# ${HINT}\n`, false), ";");
+  // A translated template: no English hint, but its lines that are the marker alone; AUTO is auto.
+  assert.equal(commentMarker("AUTO", "feat: x\n\n# typed\n\n; Lütfen bir işleme iletisi girin.\n;\n; Dal main\n;\n", true), ";");
+  assert.deepEqual([commentMarker("", "x", true), commentMarker("%", "x", false)], ["#", "%"]);
+  // commit.status off: no status template, so a commit.template line that is "#" alone names nothing.
+  assert.equal(commentMarker("auto", "# <type>: <subject>\n#\n# Why\nfeat: x\n", true, false), ";");
+});
+
+test("hookCommitMode: the last value of a key wins (git -c over the repository's config), and commit.verbose=2 cuts", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pl-mode-"));
+  // No user config: a commit.verbose in ~/.gitconfig would decide here.
+  const global = join(dir, "..", `${dir.split(/[\\/]/).pop()}.gitconfig`);
+  writeFileSync(global, "");
+  const env = { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_"))), GIT_CONFIG_GLOBAL: global, GIT_CONFIG_NOSYSTEM: "1" };
+  git(["init", "-q"], { cwd: dir, env });
+  git(["config", "commit.cleanup", "verbatim"], { cwd: dir, env });
+  const message = "feat: x\n\n# ------------------------ >8 ------------------------\nprose\n";
+  const mode = (/** @type {string} */ params) => hookCommitMode({ cwd: dir, message, env: { ...env, GIT_EDITOR: ":", GIT_CONFIG_PARAMETERS: params } });
+  assert.deepEqual(mode(""), { cleanup: "verbatim", comment: "#", cut: false });
+  assert.deepEqual(mode("'commit.cleanup'='strip' 'commit.verbose'='2'"), { cleanup: "strip", comment: "#", cut: true });
 });

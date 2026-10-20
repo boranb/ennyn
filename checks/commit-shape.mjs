@@ -8,7 +8,7 @@
  */
 
 import { matchAny } from "../core/glob.mjs";
-import { parseTrailers } from "../core/git.mjs";
+import { git, parseTrailers } from "../core/git.mjs";
 import { t } from "../core/i18n.mjs";
 
 /** @param {string} s */
@@ -29,19 +29,48 @@ function scissorsAt(message, comment) {
 }
 
 /**
- * Whether git cuts the message at its scissors line (builtin/commit.c): with `--verbose` (`-v`,
- * `commit.verbose`) in any mode, `-m` too, and in the "scissors" mode when the editor ran. A line typed by
- * hand is otherwise kept. A hook cannot see `-v`: in an edited message, git's diff (or submodule summary)
- * under the line, after comment lines, tells.
- * @param {string} message
- * @param {{ cleanup: "strip" | "whitespace" | "verbatim" | "scissors", editor: boolean, verbose?: boolean, comment?: string }} how
+ * Whether git wrote one of the scissors lines into the editor's template: under it only comment lines,
+ * then the diff of -v (or a submodule summary), or nothing (the scissors mode, where it replaces the hint;
+ * an empty commit). A line typed by hand, above git's or below it, has the user's text under it.
+ * @param {string} message @param {string} comment
  */
-export function gitCuts(message, { cleanup, editor, verbose = false, comment = "#" }) {
-  const at = scissorsAt(message, comment);
-  if (at === -1) return false;
-  if (verbose || (editor && cleanup === "scissors")) return true;
-  const next = message.slice(at).split("\n").slice(1).find((l) => !l.startsWith(comment));
-  return editor && next !== undefined && /^(diff --git |Submodule )/.test(next);
+function gitCutLine(message, comment) {
+  const line = `${comment} ${CUT_LINE}`;
+  for (let at = scissorsAt(message, comment); at !== -1; ) {
+    const next = message.slice(at + line.length).replace(/\n$/, "").split("\n").find((l) => !l.startsWith(comment));
+    if (next === undefined || /^(diff --git |Submodule )/.test(next)) return true;
+    const i = message.indexOf(`\n${line}`, at);
+    at = i === -1 ? -1 : i + 1;
+  }
+  return false;
+}
+
+/**
+ * Whether the editor showed git's status template: it has lines that are the comment marker alone, in
+ * every language. Without it (--no-status, commit.status false) git wrote neither hint nor -v diff. A
+ * commit.template file can hold such a line too, so this is asked only when commit.status is on.
+ * @param {string} message @param {string} comment
+ */
+function templateShown(message, comment) {
+  return message.split("\n").includes(comment);
+}
+
+/**
+ * Whether git cuts the message at its first scissors line (builtin/commit.c): with `--verbose` (`-v`,
+ * `commit.verbose`) in any mode, `-m` too, and in the "scissors" mode when the editor ran. A line typed by
+ * hand is otherwise kept. A hook cannot see the command line, but an edited message with the status
+ * template shows whether -v was in effect: git's own scissors line (gitCutLine). This outranks
+ * commit.verbose, which `--no-verbose` overrides. Without the editor or the template (`status`:
+ * commit.status), commit.verbose decides.
+ * @param {string} message
+ * @param {{ cleanup: "strip" | "whitespace" | "verbatim" | "scissors", editor: boolean, verbose?: boolean, comment?: string, status?: boolean }} how
+ */
+export function gitCuts(message, { cleanup, editor, verbose = false, comment = "#", status = true }) {
+  if (scissorsAt(message, comment) === -1) return false;
+  if (editor && cleanup === "scissors") return true;
+  if (editor && status && gitCutLine(message, comment)) return true;
+  if (editor && status && templateShown(message, comment)) return false;
+  return verbose;
 }
 
 /**
@@ -74,6 +103,67 @@ export function storedMessage(message, cleanup, comment = "#", cut = gitCuts(mes
   }
   while (out.length && out[out.length - 1] === "") out.pop();
   return out.join("\n");
+}
+
+/**
+ * git's comment marker for commit messages: the last of core.commentChar and core.commentString set,
+ * else "#". "auto" (any case): git's own rule (builtin/commit.c, adjust_comment_line_char), applied to the
+ * message before the editor: "#" unless the message holds one; otherwise the first of "#;@!$%^&|:" that
+ * starts no line (a line starts after "\n" or "\r"). When the editor ran, the last line git wrote says
+ * which it chose: the hint "Please enter the commit message" (English) or a template line that is the
+ * marker alone (any language); only with commit.status on (`status`). A line typed by hand says nothing.
+ * @param {string} set the configured value ("" when unset) @param {string} message @param {boolean} editor
+ * @param {boolean} [status]
+ */
+export function commentMarker(set, message, editor, status = true) {
+  if (set.toLowerCase() !== "auto") return set || "#";
+  if (editor && status) {
+    const own = [...message.matchAll(/^(\S+) Please enter the commit message|^([#;@!$%^&|:])$/gm)].pop();
+    if (own) return own[1] ?? own[2];
+  }
+  if (!message.includes("#")) return "#";
+  const starts = new Set(message.split(/[\r\n]/).map((l) => l.charAt(0)));
+  return [..."#;@!$%^&|:"].find((c) => !starts.has(c)) ?? "#";
+}
+
+/**
+ * How git will clean the message a commit-msg hook was given, read from what the hook can see: the
+ * repository's config (with `git -c` settings, which reach the hook in its environment), GIT_EDITOR
+ * (git sets it to ":" for `-m` / `-F`) and the template in an edited message.
+ * cleanup: commit.cleanup when it is set ("scissors" cuts only when the editor ran: gitCuts); otherwise
+ * git strips when the editor ran and only trims whitespace for -m / -F.
+ * Options on the command line never reach a hook: `--cleanup=`, and `-v` / `--no-verbose` with -m / -F
+ * or without the status template (--no-status, commit.status false), are not measured.
+ * test/git-oracle.test.mjs compares the result with what real git stores.
+ * @param {{ cwd: string, message: string, env: NodeJS.ProcessEnv }} opts
+ * @returns {{ cleanup: "strip" | "whitespace" | "verbatim" | "scissors", comment: string, cut: boolean }}
+ */
+export function hookCommitMode({ cwd, message, env }) {
+  // Two reads (a hook runs on every commit), in config order: the last value wins, as with --get, and
+  // core.commentChar and core.commentString set the same marker. The second one reads the typed keys.
+  let set = "";
+  let marker = "";
+  for (const entry of git(["config", "-z", "--get-regexp", "^(commit\\.cleanup|core\\.comment(char|string))$"], { cwd, env, allowFail: true }).split("\0")) {
+    const nl = entry.indexOf("\n");
+    const [key, value] = nl === -1 ? [entry, ""] : [entry.slice(0, nl), entry.slice(nl + 1)];
+    if (key === "commit.cleanup") set = value;
+    else if (key) marker = value;
+  }
+  /** @type {Map<string, string>} */
+  const typed = new Map();
+  for (const entry of git(["config", "-z", "--type=bool-or-int", "--get-regexp", "^commit\\.(verbose|status)$"], { cwd, env, allowFail: true }).split("\0")) {
+    const nl = entry.indexOf("\n");
+    if (nl !== -1) typed.set(entry.slice(0, nl), entry.slice(nl + 1));
+  }
+  const verbose = typed.get("commit.verbose") ?? "";
+  // bool-or-int prints "false" for false, no, off, and "0" for 0.
+  const off = typed.get("commit.status");
+  const status = !(off === "false" || (off !== undefined && Number(off) === 0));
+  const editor = env.GIT_EDITOR !== ":";
+  const cleanup = set === "strip" || set === "whitespace" || set === "verbatim" || set === "scissors" ? set : editor ? "strip" : "whitespace";
+  const comment = commentMarker(marker, message, editor, status);
+  const cut = gitCuts(message, { cleanup, editor, verbose: verbose === "true" || Number(verbose) > 0, comment, status });
+  return { cleanup, comment, cut };
 }
 
 /**

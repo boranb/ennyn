@@ -2,9 +2,14 @@
  * Git helpers. Every call runs with the repository-locating environment
  * variables removed: a git hook exports GIT_DIR / GIT_INDEX_FILE, and a helper
  * that inherits them silently reads the wrong repository or index. And every
- * call overrides the user's config that changes what log and show print:
- * with log.showSignature, git writes signature text in front of each commit's
- * format, and a parser reading fields by position reads the wrong ones.
+ * call sets back the user's config and environment that change what git
+ * prints or which paths a pathspec names: with log.showSignature, git writes
+ * signature text in front of each commit's format, and a parser reading
+ * fields by position reads the wrong ones; i18n.logOutputEncoding re-encodes
+ * messages that are read as UTF-8; diff.interHunkContext and GIT_DIFF_OPTS
+ * put context lines into a -U0 diff, whose line counts then drift; a
+ * pathspec is a glob ("[id].js" matches "i.js") unless it is literal.
+ * test/git-oracle.test.mjs runs the readers under such a config.
  */
 
 import { execFileSync } from "node:child_process";
@@ -12,13 +17,22 @@ import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { realpathSync } from "node:fs";
 
 const LEAKY_ENV = ["GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_PREFIX", "GIT_COMMON_DIR"];
-/** Config that would change parsed output, set back for every call. */
-const FIXED_CONFIG = ["-c", "log.showSignature=false"];
+/** Environment that changes what git prints or how it reads a path, removed for every call. */
+const SHAPING_ENV = ["GIT_DIFF_OPTS", "GIT_EXTERNAL_DIFF", "GIT_ICASE_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_LITERAL_PATHSPECS"];
+/**
+ * Config that would change parsed output, set back for every call; the defaults of diff.algorithm and
+ * diff.indentHeuristic keep the rework rate the same on every machine. Paths in a pathspec are literal.
+ */
+const FIXED_CONFIG = [
+  "--literal-pathspecs",
+  ...["log.showSignature=false", "i18n.logOutputEncoding=UTF-8", "diff.interHunkContext=0", "diff.algorithm=myers", "diff.indentHeuristic=true", "log.follow=false", "log.showRoot=true"].flatMap((kv) => ["-c", kv]),
+];
 
 /** @param {NodeJS.ProcessEnv} env @param {boolean} keepIndex */
 function cleanEnv(env, keepIndex) {
   const out = { ...env };
   for (const k of LEAKY_ENV) if (!(keepIndex && k === "GIT_INDEX_FILE")) delete out[k];
+  for (const k of SHAPING_ENV) delete out[k];
   return out;
 }
 

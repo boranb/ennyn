@@ -203,6 +203,19 @@ test("hook: amend! and squash! are checked as the message history will hold, wit
   assert.equal(run("-m", "squash! feat: guarded\n\nRoot cause: y").status, 0);
 });
 
+test("hook: an amend! onto a commit whose path holds a quote or a tab still needs that path's Impact line", () => {
+  const dir = repo();
+  writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ commitMsg: { types: ["feat", "fix"] }, review: { impactRequiredGlobs: ["src/**"] } }));
+  installHook({ cwd: dir, cliPath: CLI });
+  mkdirSync(join(dir, "src"));
+  writeFileSync(join(dir, "src", 'we"ird\tname.js'), "1\n");
+  git(["add", "-A"], { cwd: dir, env: ENV });
+  const run = (/** @type {string[]} */ ...args) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", ...args], { cwd: dir, env: ENV, encoding: "utf8" });
+  assert.equal(run("-m", "feat: odd name\n\nImpact: S1 one reader").status, 0);
+  // git quotes such a path unless asked for -z; quoted, it matches no glob and the Impact line was not asked for.
+  assert.notEqual(run("--allow-empty", "-m", "amend! feat: odd name\n\nfeat: odd name, reworded").status, 0);
+});
+
 test("hook: a hooks path inside the repository, named through a link and not created yet, is still the repository's", () => {
   const dir = repo();
   // mkdtemp under /var on macOS: /var is a link to /private/var, and git prints the real top level.

@@ -21,6 +21,8 @@
  * names no origin.
  */
 
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { git } from "../core/git.mjs";
 
 const DAY = 86400;
@@ -188,6 +190,8 @@ function toRanges(lines) {
 /**
  * One blame call per file: git accepts several -L ranges at once. `-M -C` follows
  * lines moved within and across files to the commit that wrote them.
+ * `--ignore-revs-file ""` drops the lists in blame.ignoreRevsFile, so the origins
+ * are the same on every machine (a list naming a missing file still stops git).
  * @param {string} cwd
  * @param {string} fix
  * @param {string} file
@@ -196,7 +200,7 @@ function toRanges(lines) {
  */
 function blameOrigins(cwd, fix, file, ranges) {
   const lineArgs = ranges.flatMap(([a, b]) => ["-L", `${a},${b}`]);
-  const out = git(["blame", "-w", "-M", "-C", "--porcelain", ...lineArgs, `${fix}^`, "--", file], { cwd });
+  const out = git(["blame", "-w", "-M", "-C", "--ignore-revs-file", "", "--porcelain", ...lineArgs, `${fix}^`, "--", file], { cwd });
   /** @type {Map<string, number>} */
   const counts = new Map();
   for (const line of out.split("\n")) {
@@ -204,6 +208,17 @@ function blameOrigins(cwd, fix, file, ranges) {
     if (m) counts.set(m[1], (counts.get(m[1]) ?? 0) + Number(m[2]));
   }
   return counts;
+}
+
+/**
+ * The commits at the edge of a shallow clone: git blames every line older than the clone on them, so
+ * they are censored, neither a candidate nor any line's known origin. Empty in a full clone.
+ * @param {string} cwd
+ * @returns {Set<string>}
+ */
+function shallowEdge(cwd) {
+  const path = resolve(cwd, git(["rev-parse", "--git-path", "shallow"], { cwd }));
+  return new Set(existsSync(path) ? readFileSync(path, "utf8").split("\n").filter(Boolean) : []);
 }
 
 /**
@@ -236,9 +251,11 @@ export function reworkRate({ cwd, since, until, days, config, now }) {
   /** @type {Map<string, LogCommit>} */
   const candidates = new Map();
   let censored = 0;
+  const edge = shallowEdge(cwd);
   for (const c of log) {
     if (!inRange(c.time, 0) || !c.changes.some((ch) => isProduction(ch.path))) continue;
-    if (c.time + window > nowSec) censored += 1;
+    // An edge commit's own lines cannot be told from older ones: unmeasured, like an open window.
+    if (c.time + window > nowSec || edge.has(c.hash)) censored += 1;
     else candidates.set(c.hash, c);
   }
 
@@ -255,7 +272,8 @@ export function reworkRate({ cwd, since, until, days, config, now }) {
     let total = 0;
     for (const { status, path: file } of production) {
       if (status !== "M") continue;
-      const diff = git(["diff", "--no-color", "--no-ext-diff", "-U0", "-w", `${fix.hash}^`, fix.hash, "--", file], { cwd });
+      // On the command line: a diff driver's own algorithm (diff.<driver>.algorithm) outranks the config pin.
+      const diff = git(["diff", "--no-color", "--no-ext-diff", "--diff-algorithm=myers", "--indent-heuristic", "-U0", "-w", `${fix.hash}^`, fix.hash, "--", file], { cwd });
       const deleted = deletedCodeLines(diff);
       if (!deleted.length) continue;
       total += deleted.length;
