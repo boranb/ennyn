@@ -12,7 +12,7 @@
  * test/git-oracle.test.mjs runs the readers under such a config.
  */
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { realpathSync } from "node:fs";
 
@@ -55,6 +55,18 @@ export function git(args, { cwd, env = process.env, allowFail = false, keepIndex
     if (allowFail) return "";
     throw err;
   }
+}
+
+/**
+ * A git call whose exit code and error text the caller reads itself: git grep exits 1 for "no match"
+ * and also when a file cannot be read, and says which on stderr.
+ * @param {string[]} args
+ * @param {{ cwd: string, env?: NodeJS.ProcessEnv }} opts
+ * @returns {{ status: number | null, stdout: string, stderr: string, error?: Error }}
+ */
+export function gitRun(args, { cwd, env = process.env }) {
+  const r = spawnSync("git", [...FIXED_CONFIG, ...args], { cwd, env: cleanEnv(env, false), encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "", ...(r.error ? { error: r.error } : {}) };
 }
 
 /**

@@ -24,6 +24,7 @@ import { allowMarkerReason } from "../checks/commit-shape.mjs";
 import { commitMessages, reworkRate } from "../metrics/szz.mjs";
 import { bypassUses } from "../metrics/bypass.mjs";
 import { recentCommits } from "../setup/scan.mjs";
+import { buildImpactTable } from "../impact/table.mjs";
 
 const run = promisify(execFile);
 const SHAPE = pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "..", "checks", "commit-shape.mjs")).href;
@@ -274,7 +275,7 @@ test("oracle: the log readers return what git stores, under a global config that
   };
   const A = ["export const one = 1;", "export const two = 2;", "export const three = 3;"];
   const a = commit("feat: one to three\n\nTürkçe gövde: ışık, şey, İki", { "src/a.js": [...A, ""].join("\n") });
-  const b = commit("feat: four\r\n\r\ncommit 0123456789abcdef0123456789abcdef01234567\r\n", { "src/a.js": [...A, "export const four = 4;", ""].join("\n") });
+  const b = commit("feat: four\r\n\r\ncommit 0123456789abcdef0123456789abcdef01234567\r\n", { "src/a.js": [...A, "export const four = 4;", ""].join("\n"), "src/use.js": 'import { one } from "./a.js";\nexport const y = one;\n' });
   // A commit a blame.ignoreRevsFile list would skip.
   const fmt = commit("chore: name two", { "src/a.js": [A[0], "export const two = 2; // two", A[2], "export const four = 4;", ""].join("\n") });
   // Two hunks, one unchanged line apart: inter-hunk context would join them.
@@ -299,12 +300,13 @@ test("oracle: the log readers return what git stores, under a global config that
     const text = spawnSync("git", ["cat-file", "commit", h], { cwd: dir, env: ENV, encoding: "utf8" }).stdout;
     return text.slice(text.indexOf("\n\n") + 2);
   };
-  const config = loadConfig({ cwd: mkdtempSync(join(ROOT, "cfg-")), env: {}, override: { metrics: { minLines: 1, fixSubject: "^(fix|düzeltme)(\\(|:)" } } });
+  const config = loadConfig({ cwd: mkdtempSync(join(ROOT, "cfg-")), env: {}, override: { metrics: { minLines: 1, fixSubject: "^(fix|düzeltme)(\\(|:)" }, impact: { coChangeMin: 1 } } });
   const read = () => ({
     messages: Object.fromEntries(commitMessages(dir, hashes)),
     bypass: bypassUses({ cwd: dir, config }).uses.map((u) => [u.hash, u.subject, u.reason]),
     rework: reworkRate({ cwd: dir, days: 7, config }).pairs.map((p) => [p.origin, p.fix, p.lines, Number(p.share.toFixed(3))]),
     scan: recentCommits(dir),
+    impact: buildImpactTable({ cwd: dir, config, symbol: "one", files: ["src/a.js"] }).rows.map((r) => r.answer),
   });
 
   const clean = read();
@@ -316,6 +318,7 @@ test("oracle: the log readers return what git stores, under a global config that
   const third = 0.333;
   assert.deepEqual(new Set(clean.rework.map(pair)), new Set([`${a} ${fix} 1 ${third}`, `${fmt} ${fix} 1 ${third}`, `${b} ${fix} 1 ${third}`, `${c} ${fix2} 1 0.5`, `${d} ${fix2} 1 0.5`, `${g1} ${fix4} 1 1`]));
   assert.deepEqual(clean.scan.at(-1), { subject: "feat: one to three", paths: ["src/a.js"] });
+  assert.match(clean.impact[0], /^references: 2 references in 1 files .*: src\/use\.js:1,2\n.*\nco-change: src\/use\.js \(1 commit/);
 
   const hostile = join(ROOT, "hostile-gitconfig");
   const ignored = join(ROOT, "ignore-revs");

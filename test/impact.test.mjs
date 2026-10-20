@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, chmodSync, realpathSync, appendFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { loadConfig } from "../core/config.mjs";
@@ -162,10 +162,102 @@ test("impact: a missing twin, no adjacent test, and an unconfigured registry are
   const c = cfg({ impact: { twins: [["src/lib/solo", "server/solo"]] } });
   const rows = buildImpactTable({ cwd: dir, config: c, symbol: "lonely", files: ["src/lib/solo/lonely.js"] }).rows;
   assert.match(rows[0].answer, /src\/lib\/solo\/lonely\.js: no twin at server\/solo\/lonely\.js/);
-  assert.match(rows[2].answer, /^no test or corpus next to the input files: build an accept \+ reject corpus/);
+  assert.match(rows[2].answer, /^no test or corpus of the input files: build an accept \+ reject corpus/);
   assert.match(rows[3].answer, /ceiling registry: unmeasured: no ceiling registry configured/);
   assert.match(rows[3].answer, /lonely\.js: 0 catch, 1 fallback returns/);
   assert.equal(rows[4].answer, "no test mocks or imports the input files");
+});
+
+test("impact: a test in a top-level test directory counts for S3 when it imports the file, not when it only sits there", () => {
+  const dir = fixtureRepo();
+  commit(
+    dir,
+    {
+      "lib/rule.mjs": "export function decide(x) { return x > 1; }\n",
+      "lib/other.mjs": "export const other = 1;\n",
+      "test/rule.test.mjs": 'import { decide } from "../lib/rule.mjs";\ndecide(2);\n',
+      // Mocha's layout: no .test. in the name, but under the top-level test directory.
+      "test/rule-more.js": 'const { decide } = require("../lib/rule.mjs");\n',
+      // An import over several lines, and an awaited dynamic import inside a test body.
+      "test/rule-multi.test.mjs": 'import {\n  decide,\n} from "../lib/rule.mjs";\n',
+      "test/rule-dyn.spec.mjs": 'test("x", async () => { await import("../lib/rule.mjs"); });\n',
+      // A helper or a fixture under the test directory imports it without testing it.
+      "test/helpers/factory.mjs": 'import { decide } from "../../lib/rule.mjs";\n',
+      "test/fixtures/app/use.mjs": 'import { decide } from "../../../lib/rule.mjs";\n',
+      "test/other.test.mjs": 'import { other } from "../lib/other.mjs";\n',
+      // Fixture text that quotes an import is not one.
+      "test/quotes.test.mjs": 'const text = `import { decide } from "../lib/rule.mjs";`;\nconst t2 = \'import { decide } from "../lib/rule.mjs";\';\n',
+      // Production code importing it is a reader (S1), not a test; a helper in a nested test/ is not a test of it.
+      "app/use.mjs": 'import { decide } from "../lib/rule.mjs";\nexport const y = decide(2);\n',
+      "app/test/factory.mjs": 'import { decide } from "../../lib/rule.mjs";\n',
+      // Another package's own "@/utils/format": an alias names no file outside the package.
+      "apps/web/src/utils/format.js": "export const format = 1;\n",
+      "apps/admin/src/utils/format.js": "export const format = 2;\n",
+      "apps/admin/test/format.test.js": 'import { format } from "@/utils/format";\n',
+    },
+    "feat: rule",
+  );
+  const s3 = (/** @type {string} */ file) => buildImpactTable({ cwd: dir, config: cfg(), files: [file] }).rows[2].answer;
+  assert.equal(s3("lib/rule.mjs"), "tests and corpora of the input files (next to them, or importing them): test/rule-dyn.spec.mjs, test/rule-more.js, test/rule-multi.test.mjs, test/rule.test.mjs");
+  assert.match(s3("apps/web/src/utils/format.js"), /^no test or corpus of the input files/);
+  writeFileSync(join(dir, "lib", "lonely.mjs"), "export const lonely = 0;\n");
+  commit(dir, {}, "feat: lonely");
+  assert.match(s3("lib/lonely.mjs"), /^no test or corpus of the input files/);
+});
+
+test("impact: color.ui / color.grep = always change no reference, and a git that fails is unmeasured, not 'no references'", () => {
+  const dir = fixtureRepo();
+  const c = cfg();
+  const table = () => buildImpactTable({ cwd: dir, config: c, symbol: "parseRow", files: ["src/lib/engine/parse.js"] }).rows;
+  const plain = table();
+  assert.match(plain[0].answer, /^references: 7 references in 4 files/);
+  for (const key of ["color.ui", "color.grep"]) {
+    git(["config", key, "always"], { cwd: dir });
+    assert.deepEqual(table(), plain, key);
+    git(["config", "--unset", key], { cwd: dir });
+  }
+  // A config git grep cannot read: exit 128, not the "no match" exit 1.
+  git(["config", "grep.threads", "x"], { cwd: dir });
+  const [s1, s2] = table();
+  assert.match(s1.answer, /^references: unmeasured: git could not read the repository: fatal: bad numeric config value 'x' for 'grep\.threads'/);
+  assert.match(s2.answer, /^unmeasured: git could not read the repository: fatal: bad numeric config value/);
+  git(["config", "--unset", "grep.threads"], { cwd: dir });
+  // The same for the co-change log.
+  git(["config", "log.date", "bogus"], { cwd: dir });
+  assert.match(table()[0].answer, /co-change: unmeasured: git could not read the repository: fatal: unknown date format bogus/);
+});
+
+test("impact: an absolute input path reads like the repository's own, and git that cannot read is unmeasured, not empty", (t) => {
+  const dir = fixtureRepo();
+  const c = cfg();
+  const table = (/** @type {string[]} */ files) => buildImpactTable({ cwd: dir, config: c, symbol: "parseRow", files }).rows.map((r) => r.answer);
+  const relative = table(["src/lib/engine/parse.js"]);
+  assert.deepEqual(table([join(dir, "src", "lib", "engine", "parse.js")]), relative);
+  // The repository's root through another name (macOS: /var is /private/var).
+  assert.deepEqual(table([join(realpathSync(dir), "src", "lib", "engine", "parse.js")]), relative);
+  // A sparse checkout leaves readers out of the work tree: they come from the index, and a reader added
+  // in the work tree but not staged still counts.
+  commit(dir, { "src/lib/use.js": "export const q = parseRow;\n" }, "feat: use");
+  const full = table(["src/lib/engine/parse.js"])[0];
+  git(["sparse-checkout", "set", "src/lib"], { cwd: dir });
+  assert.equal(table(["src/lib/engine/parse.js"])[0], full);
+  appendFileSync(join(dir, "src", "lib", "use.js"), "export const p = parseRow;\n");
+  assert.match(table(["src/lib/engine/parse.js"])[0], /^references: 9 references in 5 files .*src\/lib\/use\.js:1,2[;\n]/);
+  git(["sparse-checkout", "disable"], { cwd: dir });
+  git(["checkout", "--", "src/lib/use.js"], { cwd: dir });
+  // A reader git cannot open: exit 1 like "no match", but with an error on stderr.
+  if (process.getuid?.() !== 0) {
+    chmodSync(join(dir, "src", "routes", "rows.js"), 0);
+    try {
+      assert.match(table(["src/lib/engine/parse.js"])[0], /^references: unmeasured: git could not read the repository: .*Permission denied/);
+    } finally {
+      chmodSync(join(dir, "src", "routes", "rows.js"), 0o644);
+    }
+  } else t.diagnostic("running as root: file permissions do not stop reads");
+  // A broken index: every git-based row says so, nothing throws.
+  writeFileSync(join(dir, ".git", "index"), "broken");
+  const broken = table(["src/lib/engine/parse.js"]);
+  for (const i of [0, 2, 4]) assert.match(broken[i], /unmeasured: .*git could not read the repository/, `S${i + 1}`);
 });
 
 test("impact: tests that import without faking do not claim 'every fake is sourced'", () => {

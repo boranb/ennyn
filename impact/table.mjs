@@ -4,7 +4,7 @@
  *
  *   S1 who else reads or decides this     references + twin roots + co-change
  *   S2 which other paths reach this state entry-point files referencing the symbol
- *   S3 what is newly accepted / rejected  tests and corpora next to the files
+ *   S3 what is newly accepted / rejected  tests and corpora next to the files, tests importing them
  *   S4 the ceiling / failed measurement   ceiling registry + catch / fallback returns
  *   S5 where fakes come from              tests mocking the module, fixtures they cite
  *
@@ -13,9 +13,9 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { join, posix } from "node:path";
-import { git } from "../core/git.mjs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { isAbsolute, join, posix, relative } from "node:path";
+import { git, gitRun } from "../core/git.mjs";
 import { matchAny } from "../core/glob.mjs";
 import { t } from "../core/i18n.mjs";
 
@@ -31,6 +31,16 @@ const ENTRY_POINT_RE = /(route|handler|cron|schedul|(?:^|[/._-])cli(?:[/._-]|$)|
 const CATCH_RE = /\bcatch\b\s*[({]/g;
 const FALLBACK_RETURN_RE = /\breturn\s+(?:\[\s*\]|null|0)(?![\w.])/g;
 const SPECIFIER_RE = /(?:\bfrom\s*|\bimport\s*\(\s*|\brequire\s*\(\s*|\bimport\s+)(["'`])([^"'`\n]+)\1/g;
+/**
+ * An import or require statement at the start of a line (its braces may span lines), or an awaited dynamic
+ * import: text quoted inside a string is not one.
+ */
+const STATEMENT_RE = /^[ \t]*(?:(?:import|export)\b[^"'`;]*?(?:\bfrom\s*)?|(?:const|let|var)\b[^\n"'`]*?=\s*(?:await\s+)?(?:require|import)\s*\(\s*|require\s*\(\s*)(["'])([^"'\n]+)\1|(?<![\w"'`])await\s+import\s*\(\s*(["'])([^"'\n]+)\3/gm;
+/**
+ * A test by its name or its place: x.test.js / x.spec.js, or a file under a top-level test directory
+ * that is not a helper, fixture, mock or support file.
+ */
+const TEST_FILE_RE = /\.(?:test|spec)\.[^/]+$|^(?:test|tests|__tests__|spec)\/(?!(?:.*\/)?(?:helpers?|fixtures?|__fixtures__|support|mocks?|__mocks__|utils?|factories)\/)/;
 const MOCK_CALL_RE = /\b(?:(?:vi|jest)\.(?:mock|doMock|unstable_mockModule)|mock\.module|mock)\s*\(\s*(["'`])([^"'`\n]+)\1/g;
 const FAKE_RE = /\b(?:vi|jest)\.(?:mock|doMock|fn|spyOn|stubGlobal)\s*\(|\bmock\.(?:fn|method|module|getter|setter)\s*\(|\bmock\s*\(|\bstub\s*\(|\bsinon\./;
 const CODE_EXT_RE = /\.(?:[mc]?[jt]sx?)$/;
@@ -39,6 +49,28 @@ const CODE_EXT_RE = /\.(?:[mc]?[jt]sx?)$/;
  * @param {string} p
  */
 const normPath = (p) => p.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "");
+
+/**
+ * An input path as the repository names it: an absolute path inside `cwd` becomes relative to it (agents
+ * pass absolute paths; every row compares with git's repository-relative names). The repository root may
+ * be named through a link (macOS: /var is /private/var); a link inside the repository is left as it is,
+ * as git leaves it. One outside stays.
+ * @param {string} cwd @param {string} p
+ */
+function repoPath(cwd, p) {
+  if (!isAbsolute(p)) return normPath(p);
+  const roots = [cwd];
+  try {
+    roots.push(realpathSync(cwd));
+  } catch {
+    // no real path: the name as given
+  }
+  for (const root of roots) {
+    const rel = relative(root, p);
+    if (!rel.startsWith("..") && !isAbsolute(rel)) return normPath(rel);
+  }
+  return normPath(p);
+}
 
 /** @param {string} p */
 const stripExt = (p) => p.replace(CODE_EXT_RE, "");
@@ -94,15 +126,19 @@ class Context {
     this.config = config;
     this.lang = config.language;
     this.symbol = symbol && symbol.trim() ? symbol.trim() : null;
-    this.files = [...new Set(files.map(normPath).filter(Boolean))];
+    this.files = [...new Set(files.map((f) => repoPath(cwd, f)).filter(Boolean))];
     this.testRe = new RegExp(config.metrics.testRe);
     this.excludeRe = new RegExp(config.metrics.excludeRe);
     /** @type {{ ok: true } | { ok: false, error: string } | undefined} */
     this._repo = undefined;
-    /** @type {string[] | undefined} */
+    /** @type {string[] | null | undefined} */
     this._tracked = undefined;
-    /** @type {Map<string, number[]> | undefined} */
+    /** @type {string} */
+    this.trackedError = "";
+    /** @type {Map<string, number[]> | null | undefined} */
     this._refs = undefined;
+    /** @type {string} */
+    this.refsError = "";
   }
 
   /** @param {string} p */
@@ -123,21 +159,39 @@ class Context {
     return this._repo.ok ? null : this._repo.error;
   }
 
-  /** @returns {string[]} */
+  /** @returns {string[] | null} null when git cannot list the files (trackedError says why) */
   tracked() {
-    if (!this._tracked) {
-      this._tracked = git(["-c", "core.quotePath=false", "ls-files", "-z"], { cwd: this.cwd }).split("\0").filter(Boolean);
+    if (this._tracked === undefined) {
+      try {
+        this._tracked = git(["-c", "core.quotePath=false", "ls-files", "-z"], { cwd: this.cwd }).split("\0").filter(Boolean);
+      } catch (err) {
+        this.trackedError = errorLine(err) || "git ls-files failed";
+        this._tracked = null;
+      }
     }
     return this._tracked;
   }
 
   /**
-   * Non-test files referencing the symbol as a whole word, with line numbers.
-   * @returns {Map<string, number[]>}
+   * Non-test files referencing the symbol as a whole word, with line numbers; null when git grep failed
+   * (refsError says why). No match is git grep's exit 1 with nothing on stderr; a file it could not read
+   * (exit 1, or 0 when another file matched) or any other failure is not "no references".
+   * @returns {Map<string, number[]> | null}
    */
   refs() {
-    if (!this._refs) {
-      const out = git(["grep", "-n", "-w", "-F", "-I", "--null", "-e", /** @type {string} */ (this.symbol)], { cwd: this.cwd, allowFail: true });
+    if (this._refs === undefined) {
+      // --no-color: color.ui or color.grep = always would wrap every path and number in escape codes.
+      // A sparse checkout leaves files out of the work tree: those are read from the index.
+      const sparse = git(["config", "--type=bool", "--get", "core.sparseCheckout"], { cwd: this.cwd, allowFail: true }) === "true";
+      const runs = [[], ...(sparse ? [["--cached"]] : [])].map((extra) => gitRun(["grep", "--no-color", ...extra, "-n", "-w", "-F", "-I", "--null", "-e", /** @type {string} */ (this.symbol)], { cwd: this.cwd }));
+      const bad = runs.find((r) => r.error || (r.status !== 0 && r.status !== 1) || r.stderr.trim());
+      if (bad) {
+        this.refsError = (bad.error?.message ?? bad.stderr).trim().split("\n")[0].slice(0, 200) || `git grep exited ${bad.status}`;
+        this._refs = null;
+        return null;
+      }
+      const cachedOnly = (runs[1]?.stdout ?? "").split("\n").filter((l) => l.includes("\0") && !existsSync(join(this.cwd, l.slice(0, l.indexOf("\0")))));
+      const out = [runs[0].stdout, ...cachedOnly].join("\n");
       /** @type {Map<string, number[]>} */
       const refs = new Map();
       for (const line of out.split("\n")) {
@@ -150,7 +204,8 @@ class Context {
         const n = Number(/^\d+/.exec(line.slice(nul + 1))?.[0] ?? NaN);
         refs.set(file, [...(refs.get(file) ?? []), n]);
       }
-      this._refs = refs;
+      // In path order, as git grep prints them, also when lines from the index were added.
+      this._refs = new Map([...refs].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
     }
     return this._refs;
   }
@@ -194,10 +249,13 @@ function rowS1(c) {
     }
   } else if (c.repoError()) {
     parts.push({ label: refLabel, text: t("impact.reason.gitFailed", { error: String(c.repoError()) }, lang), measured: false });
+  } else if (!c.refs()) {
+    commands.push(c.grepCommand());
+    parts.push({ label: refLabel, text: t("impact.reason.gitFailed", { error: c.refsError }, lang), measured: false });
   } else {
     commands.push(c.grepCommand());
     // "Who else": the input files themselves are not readers of their own symbol.
-    const refs = new Map([...c.refs()].filter(([file]) => !c.files.includes(file)));
+    const refs = new Map([.../** @type {Map<string, number[]>} */ (c.refs())].filter(([file]) => !c.files.includes(file)));
     const n = [...refs.values()].reduce((s, l) => s + l.length, 0);
     if (n === 0) parts.push({ label: refLabel, text: t("impact.s1.noRefs", {}, lang), measured: true });
     else {
@@ -235,11 +293,17 @@ function rowS1(c) {
   else {
     /** @type {Map<string, Set<string>>} other file -> commits it shared with an input file */
     const shared = new Map();
+    let failed = "";
     for (const file of c.files) {
       // --full-diff: without it --name-only lists only the pathspec itself and no co-change is ever visible.
       const args = ["-c", "core.quotePath=false", "log", "--no-merges", "--full-diff", "--format=%x01%H", "--name-only", "--", file];
       commands.push(`git log --no-merges --full-diff --format=%H --name-only -- ${file}`);
-      const out = git(args, { cwd: c.cwd, allowFail: true });
+      let out = "";
+      try {
+        out = git(args, { cwd: c.cwd });
+      } catch (err) {
+        failed ||= errorLine(err);
+      }
       for (const chunk of out.split("\x01").slice(1)) {
         const [hash, ...names] = chunk.split("\n").filter(Boolean);
         for (const name of names) {
@@ -249,16 +313,19 @@ function rowS1(c) {
         }
       }
     }
-    const top = [...shared]
-      .map(([name, commits]) => ({ name, n: commits.size }))
-      .filter((x) => x.n >= min)
-      .sort((x, y) => y.n - x.n || (x.name < y.name ? -1 : x.name > y.name ? 1 : 0))
-      .slice(0, 5);
-    parts.push({
-      label: coLabel,
-      text: top.length ? top.map((x) => t("impact.s1.coChange", { file: x.name, n: x.n }, lang)).join(", ") : t("impact.s1.noCoChange", { min }, lang),
-      measured: true,
-    });
+    if (failed) parts.push({ label: coLabel, text: t("impact.reason.gitFailed", { error: failed }, lang), measured: false });
+    else {
+      const top = [...shared]
+        .map(([name, commits]) => ({ name, n: commits.size }))
+        .filter((x) => x.n >= min)
+        .sort((x, y) => y.n - x.n || (x.name < y.name ? -1 : x.name > y.name ? 1 : 0))
+        .slice(0, 5);
+      parts.push({
+        label: coLabel,
+        text: top.length ? top.map((x) => t("impact.s1.coChange", { file: x.name, n: x.n }, lang)).join(", ") : t("impact.s1.noCoChange", { min }, lang),
+        measured: true,
+      });
+    }
   }
 
   return { id: "S1", question: t("impact.q.S1", {}, lang), answer: answerFrom(parts, lang), commands };
@@ -269,9 +336,9 @@ function rowS2(c) {
   const { lang } = c;
   const question = t("impact.q.S2", {}, lang);
   if (!c.symbol) return { id: "S2", question, answer: t("impact.unmeasured", { reason: t("impact.reason.noSymbol", {}, lang) }, lang), commands: [] };
-  const repoErr = c.repoError();
+  const repoErr = c.repoError() ?? (c.refs() ? null : c.refsError);
   if (repoErr) return { id: "S2", question, answer: t("impact.unmeasured", { reason: t("impact.reason.gitFailed", { error: repoErr }, lang) }, lang), commands: [] };
-  const referencing = [...c.refs().keys()].filter((f) => !c.files.includes(f));
+  const referencing = [.../** @type {Map<string, number[]>} */ (c.refs()).keys()].filter((f) => !c.files.includes(f));
   const entries = referencing.filter((f) => ENTRY_POINT_RE.test(f));
   const answer = entries.length
     ? `${t("impact.s2.entries", { symbol: c.symbol }, lang)} ${capList(entries, lang)}`
@@ -285,13 +352,14 @@ function rowS3(c) {
   const question = t("impact.q.S3", {}, lang);
   const un = (/** @type {string} */ reason) => ({ id: "S3", question, answer: t("impact.unmeasured", { reason }, lang), commands: [] });
   if (!c.files.length) return un(t("impact.reason.noFiles", {}, lang));
-  const repoErr = c.repoError();
+  const repoErr = c.repoError() ?? (c.tracked() ? null : c.trackedError);
   if (repoErr) return un(t("impact.reason.gitFailed", { error: repoErr }, lang));
+  const tracked = /** @type {string[]} */ (c.tracked());
   const found = new Set();
   for (const file of c.files) {
     const dir = dirOf(file);
     const stem = stripExt(base(file));
-    const near = c.tracked().filter((p) => {
+    const near = tracked.filter((p) => {
       if (c.files.includes(p)) return false;
       if (dir && !p.startsWith(dir + "/")) return false;
       const rest = dir ? p.slice(dir.length + 1) : p;
@@ -303,10 +371,17 @@ function rowS3(c) {
       const abs = join(c.cwd, p);
       return existsSync(abs) && specifiers(SPECIFIER_RE, readFileSync(abs, "utf8")).some((sp) => specifierRefersTo(sp, p, file));
     });
+    // A test elsewhere (a top-level test/ directory) counts when an import statement names the file by a
+    // relative path; an alias ("@/x") there may be another package's own file.
+    for (const p of tracked) {
+      if (near.includes(p) || c.files.includes(p) || !TEST_FILE_RE.test(p) || !CODE_EXT_RE.test(p)) continue;
+      const abs = join(c.cwd, p);
+      if (existsSync(abs) && specifiers(STATEMENT_RE, readFileSync(abs, "utf8")).some((sp) => sp.startsWith(".") && specifierRefersTo(sp, p, file))) near.push(p);
+    }
     // Fixtures and corpora near the file count when named after it or cited by one of its tests;
     // a shared __fixtures__/ directory holds other modules' recordings too.
     const cited = near.map((p) => (existsSync(join(c.cwd, p)) ? readFileSync(join(c.cwd, p), "utf8") : ""));
-    for (const p of c.tracked()) {
+    for (const p of tracked) {
       if (c.files.includes(p) || (dir && !p.startsWith(dir + "/"))) continue;
       const rest = dir ? p.slice(dir.length + 1) : p;
       const fixture = /(?:^|\/)__fixtures__\//.test(rest) && (!rest.includes("/") || /^__fixtures__\//.test(rest));
@@ -429,11 +504,11 @@ export function specifierRefersTo(spec, fromFile, file) {
 }
 
 /**
- * @param {RegExp} re global regex with the specifier in group 2
+ * @param {RegExp} re global regex with the specifier in group 2 (or 4)
  * @param {string} src
  */
 function specifiers(re, src) {
-  return [...src.matchAll(re)].map((m) => m[2]);
+  return [...src.matchAll(re)].map((m) => m[2] ?? m[4]);
 }
 
 /** @param {Context} c @returns {ImpactRow} */
@@ -442,11 +517,12 @@ function rowS5(c) {
   const question = t("impact.q.S5", {}, lang);
   const un = (/** @type {string} */ reason) => ({ id: "S5", question, answer: t("impact.unmeasured", { reason }, lang), commands: [] });
   if (!c.files.length) return un(t("impact.reason.noFiles", {}, lang));
-  const repoErr = c.repoError();
+  const repoErr = c.repoError() ?? (c.tracked() ? null : c.trackedError);
   if (repoErr) return un(t("impact.reason.gitFailed", { error: repoErr }, lang));
 
-  const tests = c.tracked().filter((p) => matchAny(p, config.impact.fakeGlobs) && !c.files.includes(p));
-  const fixtures = c.tracked().filter((p) => matchAny(p, config.impact.fixtureGlobs));
+  const tracked = /** @type {string[]} */ (c.tracked());
+  const tests = tracked.filter((p) => matchAny(p, config.impact.fakeGlobs) && !c.files.includes(p));
+  const fixtures = tracked.filter((p) => matchAny(p, config.impact.fixtureGlobs));
   const lines = [];
   const unsourced = [];
   let fakeTests = 0;
