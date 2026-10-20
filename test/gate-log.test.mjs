@@ -10,9 +10,6 @@ import { git } from "../core/git.mjs";
 import { recordAttempt, readAttempts, summarizeAttempts, durationStats, gateLogPath, isAttempt } from "../metrics/gate-log.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
-const ENV = Object.fromEntries(
-  Object.entries(process.env).filter(([k]) => !["ENNYN_CONFIG", "GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_EDITOR"].includes(k)),
-);
 
 /** @param {Record<string, unknown>} [config] */
 function repo(config) {
@@ -40,7 +37,7 @@ function repo(config) {
     commit(files, message) {
       write(files);
       git(["add", "-A"], { cwd: dir });
-      git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", message], { cwd: dir, env: ENV });
+      git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", message], { cwd: dir });
       return git(["rev-parse", "HEAD"], { cwd: dir });
     },
   };
@@ -51,7 +48,7 @@ const cfgFor = (cwd) => loadConfig({ cwd, env: {} });
 
 /** @param {string} cwd @param {string[]} args */
 function run(cwd, ...args) {
-  const r = spawnSync(process.execPath, [CLI, ...args], { cwd, env: ENV, encoding: "utf8" });
+  const r = spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: "utf8" });
   return { code: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 

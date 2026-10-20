@@ -10,7 +10,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test test/*.test.mjs",
+    "test": "node --test --import ./test/hostile.mjs --import ./test/hermetic.mjs test/*.test.mjs",
     "typecheck": "tsc -p jsconfig.json",
     "validate:plugin": "claude plugin validate --strict . && claude plugin validate --strict .claude-plugin/plugin.json"
   },

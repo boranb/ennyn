@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../core/config.mjs";
@@ -211,14 +211,10 @@ test("comment marker auto: only a line git wrote names it; without the editor, g
 
 test("hookCommitMode: the last value of a key wins (git -c over the repository's config), and commit.verbose=2 cuts", () => {
   const dir = mkdtempSync(join(tmpdir(), "pl-mode-"));
-  // No user config: a commit.verbose in ~/.gitconfig would decide here.
-  const global = join(dir, "..", `${dir.split(/[\\/]/).pop()}.gitconfig`);
-  writeFileSync(global, "");
-  const env = { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_"))), GIT_CONFIG_GLOBAL: global, GIT_CONFIG_NOSYSTEM: "1" };
-  git(["init", "-q"], { cwd: dir, env });
-  git(["config", "commit.cleanup", "verbatim"], { cwd: dir, env });
+  git(["init", "-q"], { cwd: dir });
+  git(["config", "commit.cleanup", "verbatim"], { cwd: dir });
   const message = "feat: x\n\n# ------------------------ >8 ------------------------\nprose\n";
-  const mode = (/** @type {string} */ params) => hookCommitMode({ cwd: dir, message, env: { ...env, GIT_EDITOR: ":", GIT_CONFIG_PARAMETERS: params } });
+  const mode = (/** @type {string} */ params) => hookCommitMode({ cwd: dir, message, env: { ...process.env, GIT_EDITOR: ":", GIT_CONFIG_PARAMETERS: params } });
   assert.deepEqual(mode(""), { cleanup: "verbatim", comment: "#", cut: false });
   assert.deepEqual(mode("'commit.cleanup'='strip' 'commit.verbose'='2'"), { cleanup: "strip", comment: "#", cut: true });
 });

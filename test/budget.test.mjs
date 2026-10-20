@@ -11,7 +11,6 @@ import { importsOf } from "../setup/scan.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
-const ENV = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== "ENNYN_CONFIG" && !k.startsWith("GIT_")));
 
 /** @param {string} dir @param {Record<string, string>} files */
 function put(dir, files) {
@@ -95,11 +94,11 @@ test("budget: one record per commit; the change is measured against another comm
 
 test("cli and doctor: budget --record keeps a number per cycle; growth warns with its bytes; a broken log line is reported", async () => {
   const dir = mkdtempSync(join(tmpdir(), "en-budget-cli-"));
-  git(["init", "-q", "-b", "main"], { cwd: dir, env: ENV });
+  git(["init", "-q", "-b", "main"], { cwd: dir });
   put(dir, { "CLAUDE.md": `${RULE}\n`, ".ennyn/graph.json": JSON.stringify({ nodes: [{ id: "a" }] }) });
-  git(["add", "-A"], { cwd: dir, env: ENV });
-  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "feat: x"], { cwd: dir, env: ENV });
-  const run = (/** @type {string[]} */ ...args) => spawnSync(process.execPath, [CLI, "budget", ...args], { cwd: dir, env: ENV, encoding: "utf8" });
+  git(["add", "-A"], { cwd: dir });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "feat: x"], { cwd: dir });
+  const run = (/** @type {string[]} */ ...args) => spawnSync(process.execPath, [CLI, "budget", ...args], { cwd: dir, encoding: "utf8" });
   assert.match(run().stdout, /no record yet\)/);
   const first = run("--record");
   assert.match(first.stdout, /first record\)/);
@@ -110,8 +109,8 @@ test("cli and doctor: budget --record keeps a number per cycle; growth warns wit
   const items = async () => (await checkSetup({ cwd: dir, env: {} })).items;
   assert.ok((await items()).some((i) => i.key === "doctor.budget"));
   writeFileSync(join(dir, "CLAUDE.md"), `${RULE}\n${"another rule that someone added to the file ".repeat(30)}\n`);
-  git(["add", "-A"], { cwd: dir, env: ENV });
-  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "feat: y"], { cwd: dir, env: ENV });
+  git(["add", "-A"], { cwd: dir });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "feat: y"], { cwd: dir });
   assert.match(run().stdout, /\+1\.\d KB, 1\d\d\d bytes, since [0-9a-f]+\)/);
   const grew = (await items()).find((i) => i.key === "doctor.budgetGrew");
   assert.ok(grew && Number(grew.vars.bytes) > 1000);

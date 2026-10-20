@@ -8,14 +8,10 @@ import { fileURLToPath } from "node:url";
 import { git } from "../core/git.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
-const ENV = Object.fromEntries(
-  // GIT_EDITOR too: inside a commit hook git sets it to ":" and the CLI would read -m mode.
-  Object.entries(process.env).filter(([k]) => !["ENNYN_CONFIG", "GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_EDITOR"].includes(k)),
-);
 
 /** @param {string} cwd @param {string[]} args */
 function run(cwd, ...args) {
-  const r = spawnSync(process.execPath, [CLI, ...args], { cwd, env: ENV, encoding: "utf8" });
+  const r = spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: "utf8" });
   return { code: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 
@@ -41,7 +37,7 @@ function project(config) {
       git(["add", "-A"], { cwd: dir });
       git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", message], {
         cwd: dir,
-        env: { ...ENV, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+        env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
       });
     },
   };
@@ -193,7 +189,7 @@ test("cli: commit-check counts kept `#` lines when git says the message came fro
   const msg = join(dir, "MSG");
   writeFileSync(msg, "s\n\n" + Array.from({ length: 12 }, (_, i) => `# hidden ${i}`).join("\n") + "\n");
   const r = (/** @type {Record<string, string>} */ extra) =>
-    spawnSync(process.execPath, [CLI, "commit-check", msg], { cwd: dir, env: { ...ENV, ...extra }, encoding: "utf8" });
+    spawnSync(process.execPath, [CLI, "commit-check", msg], { cwd: dir, env: { ...process.env, ...extra }, encoding: "utf8" });
   assert.equal(r({}).status, 0, "editor commit: git drops `#` lines");
   const kept = r({ GIT_EDITOR: ":" });
   assert.equal(kept.status, 1);
@@ -205,7 +201,7 @@ test("cli: commit-check reads git's comment marker (core.commentChar / commentSt
   git(["init", "-q"], { cwd: dir });
   const msg = join(dir, "MSG");
   writeFileSync(msg, "s\n\n" + Array.from({ length: 12 }, (_, i) => `; Please enter the commit message ${i}`).join("\n") + "\n");
-  const run = () => spawnSync(process.execPath, [CLI, "commit-check", msg], { cwd: dir, env: ENV, encoding: "utf8" });
+  const run = () => spawnSync(process.execPath, [CLI, "commit-check", msg], { cwd: dir, encoding: "utf8" });
   assert.equal(run().status, 1, "with # the ; lines are prose");
   git(["config", "core.commentChar", ";"], { cwd: dir });
   assert.equal(run().status, 0, run().stderr);
@@ -225,12 +221,12 @@ test("cli: commit-check with core.commentChar=auto and no template line follows 
   const msg = join(dir, "MSG");
   // A line starts with "#", so git picks ";" and stores "#12 referenced" as prose (git commit --no-status).
   writeFileSync(msg, "s\n\n#12 referenced\n");
-  const r = spawnSync(process.execPath, [CLI, "commit-check", msg], { cwd: dir, env: ENV, encoding: "utf8" });
+  const r = spawnSync(process.execPath, [CLI, "commit-check", msg], { cwd: dir, encoding: "utf8" });
   assert.equal(r.status, 1);
   assert.match(r.stderr, /terse/);
   // No "#" anywhere: git keeps "#", and nothing here is a comment either way.
   writeFileSync(msg, "s\n");
-  assert.equal(spawnSync(process.execPath, [CLI, "commit-check", msg], { cwd: dir, env: ENV }).status, 0);
+  assert.equal(spawnSync(process.execPath, [CLI, "commit-check", msg], { cwd: dir }).status, 0);
 });
 
 test("cli: commit-check follows commit.cleanup (strip, whitespace, verbatim, scissors) over the -m / editor default", () => {
@@ -240,7 +236,7 @@ test("cli: commit-check follows commit.cleanup (strip, whitespace, verbatim, sci
   writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ commitMsg: { style: "terse" } }));
   const msg = join(dir, "MSG");
   writeFileSync(msg, "s\n\n# a comment line\n# ------------------------ >8 ------------------------\ndiff --git a b\n");
-  const run = (/** @type {Record<string, string>} */ extra) => spawnSync(process.execPath, [CLI, "commit-check", msg], { cwd: dir, env: { ...ENV, ...extra }, encoding: "utf8" }).status;
+  const run = (/** @type {Record<string, string>} */ extra) => spawnSync(process.execPath, [CLI, "commit-check", msg], { cwd: dir, env: { ...process.env, ...extra }, encoding: "utf8" }).status;
   const set = (/** @type {string | null} */ v) => (v ? git(["config", "commit.cleanup", v], { cwd: dir }) : git(["config", "--unset", "commit.cleanup"], { cwd: dir, allowFail: true }));
   // Default: the editor strips "#" lines and cuts at the scissors line; -m keeps them as text.
   set(null);

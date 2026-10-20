@@ -56,8 +56,7 @@ function runHook(config, stdin = JSON.stringify({ session_id: "s", source: "star
     mkdirSync(join(project, ".ennyn"));
     writeFileSync(join(project, ".ennyn", "config.json"), typeof config === "string" ? config : JSON.stringify(config));
   }
-  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => k !== "ENNYN_CONFIG" && !k.startsWith("GIT_")));
-  return spawnSync(process.execPath, [HOOK], { input: stdin, env: { ...env, CLAUDE_PROJECT_DIR: project }, encoding: "utf8" });
+  return spawnSync(process.execPath, [HOOK], { input: stdin, env: { ...process.env, CLAUDE_PROJECT_DIR: project }, encoding: "utf8" });
 }
 
 test("hook: injects the style in the config language; nothing for normal, no config or a broken one; exit 0 always", () => {

@@ -121,7 +121,7 @@ const neutralCwd = tmp("pl-sc-cwd-");
 function hookEnv(extra = {}) {
   const env = { ...process.env };
   for (const k of Object.keys(env)) {
-    if (k === "CLAUDE_PROJECT_DIR" || k === "ENNYN_CONFIG" || k.startsWith("GIT_")) delete env[k];
+    if (k === "CLAUDE_PROJECT_DIR" || k === "ENNYN_CONFIG") delete env[k];
   }
   return { ...env, ...extra };
 }

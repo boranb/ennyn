@@ -25,9 +25,6 @@ import {
 import { checkSetup } from "../setup/doctor.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
-const ENV = Object.fromEntries(
-  Object.entries(process.env).filter(([k]) => !["ENNYN_CONFIG", "GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_EDITOR"].includes(k)),
-);
 const cfg = () => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "en-s-")), env: {} });
 const pat = () => pathPatterns(DEFAULTS, []).re;
 
@@ -42,14 +39,14 @@ function put(dir, files) {
 /** Temp repository; `commit` stages everything. */
 function repo() {
   const dir = mkdtempSync(join(tmpdir(), "en-setup-"));
-  git(["init", "-q", "-b", "main"], { cwd: dir, env: ENV });
+  git(["init", "-q", "-b", "main"], { cwd: dir });
   return {
     dir,
     /** @param {string} message @param {Record<string, string>} [files] */
     commit(message, files = {}) {
       put(dir, files);
-      git(["add", "-A"], { cwd: dir, env: ENV });
-      git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", message], { cwd: dir, env: ENV });
+      git(["add", "-A"], { cwd: dir });
+      git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", message], { cwd: dir });
     },
   };
 }
@@ -315,7 +312,7 @@ test("doctor: a null node or a module graph that does not load is a ✗ line, no
 
 test("cli: init-scan --json is the scan; doctor prints marks and exits 1 on a problem", () => {
   const r = setup({}, { nodes: [{ id: "a" }, { id: "a" }] });
-  const run = (/** @type {string[]} */ ...args) => spawnSync(process.execPath, [CLI, ...args], { cwd: r.dir, env: ENV, encoding: "utf8" });
+  const run = (/** @type {string[]} */ ...args) => spawnSync(process.execPath, [CLI, ...args], { cwd: r.dir, encoding: "utf8" });
   const scan = run("init-scan", "--json");
   assert.equal(scan.status, 0, scan.stderr);
   const json = JSON.parse(scan.stdout);
@@ -446,7 +443,7 @@ test("agent setup: linked skills and agents count; a decomposed (NFD) name is ma
 test("cli: init-scan prints the agent setup: sizes by load kind, the commit rule line and the overlaps", () => {
   const r = setup({}, { nodes: [{ id: "a" }] });
   put(r.dir, { "CLAUDE.md": "Commit: one line\n", ".claude/agents/code-reviewer.md": "x", ".claude/skills/phase-run/SKILL.md": "x" });
-  const out = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: r.dir, env: ENV, encoding: "utf8" });
+  const out = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: r.dir, encoding: "utf8" });
   assert.equal(out.status, 0, out.stderr);
   assert.match(out.stdout, /^Agent instructions: 0\.0 KB in every session \(CLAUDE\.md 0\.0 KB\), 0\.0 KB when a matching path is touched, 0\.0 KB for other agents\.$/m);
   assert.match(out.stdout, /^ {2}commit rule in CLAUDE\.md: "Commit: one line"$/m);
@@ -476,7 +473,7 @@ test("cli: init-scan shows at most two commit-rule lines per file and says how m
     "CLAUDE.md": "Commit: one line\nCommit language: Turkish\nCommit: no co-author trailer\n",
     ".claude/rules/protocol.md": "9. COMMIT → one commit, Turkish subject\n",
   });
-  const out = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: r.dir, env: ENV, encoding: "utf8" }).stdout;
+  const out = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: r.dir, encoding: "utf8" }).stdout;
   assert.deepEqual(out.match(/^ {2}commit rule in .*$/gm), [
     '  commit rule in CLAUDE.md: "Commit: one line"',
     '  commit rule in CLAUDE.md: "Commit language: Turkish"',

@@ -33,10 +33,9 @@ const GLOBAL = join(ROOT, "gitconfig");
 writeFileSync(GLOBAL, "");
 mkdirSync(join(ROOT, "xdg"));
 // No user or system config, no global ignore or attributes file, English hints: the matrix sets every
-// value it depends on. The readers take process.env, so it gets the same.
+// value it depends on (test/hermetic.mjs cleared the rest). The readers take process.env, so it gets the same.
 const CLEAN = { GIT_CONFIG_GLOBAL: GLOBAL, GIT_CONFIG_NOSYSTEM: "1", XDG_CONFIG_HOME: join(ROOT, "xdg"), LC_ALL: "C" };
-const ENV = { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_"))), ...CLEAN };
-for (const k of Object.keys(process.env)) if (k.startsWith("GIT_")) delete process.env[k];
+const ENV = { ...process.env, ...CLEAN };
 Object.assign(process.env, CLEAN);
 const [major, minor] = (/(\d+)\.(\d+)/.exec(git(["--version"], { cwd: ROOT, env: ENV })) ?? []).slice(1).map(Number);
 /** core.commentString came with git 2.45; an older git ignores it. */
@@ -165,6 +164,7 @@ async function commitAll(cells) {
   g("add", "f.txt");
   g("commit", "-q", "-m", "base");
   // The hook is the node script itself when the shebang can name node (no space in the path), else sh runs it.
+  // Dynamic imports: Node 20 reads the extensionless hook as CommonJS.
   const hook = join(dir, ".git", "hooks", "commit-msg");
   const direct = !/\s/.test(process.execPath);
   const view = direct ? hook : join(dir, ".git", "view.mjs");
@@ -172,11 +172,11 @@ async function commitAll(cells) {
     view,
     [
       ...(direct ? [`#!${process.execPath}`] : []),
-      `import { readFileSync, writeFileSync } from "node:fs";`,
-      `import { hookCommitMode, storedMessage } from ${JSON.stringify(SHAPE)};`,
-      `const message = readFileSync(process.argv[2], "utf8");`,
-      `const mode = hookCommitMode({ cwd: process.cwd(), message, env: process.env });`,
-      `writeFileSync(process.env.CAPTURE ?? "", JSON.stringify({ mode, stored: storedMessage(message, mode.cleanup, mode.comment, mode.cut) }));`,
+      `Promise.all([import("node:fs"), import(${JSON.stringify(SHAPE)})]).then(([{ readFileSync, writeFileSync }, { hookCommitMode, storedMessage }]) => {`,
+      `  const message = readFileSync(process.argv[2], "utf8");`,
+      `  const mode = hookCommitMode({ cwd: process.cwd(), message, env: process.env });`,
+      `  writeFileSync(process.env.CAPTURE ?? "", JSON.stringify({ mode, stored: storedMessage(message, mode.cleanup, mode.comment, mode.cut) }));`,
+      `});`,
     ].join("\n"),
   );
   if (direct) chmodSync(hook, 0o755);
