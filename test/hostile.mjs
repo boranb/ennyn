@@ -1,5 +1,5 @@
 /**
- * Loaded first by `npm test` (node --import), before test/hermetic.mjs, it stands in for the machine of
+ * Imported by test/hermetic.mjs before that module's own code runs, it stands in for the machine of
  * a user whose setup once broke a test. The user config, the XDG and system config, the ignore and
  * attributes files and GIT_* variables each hold a value that did (signing, verbose commits, a global
  * ignore of "*", hooks that reject every commit, another comment marker, signatures and colour in the

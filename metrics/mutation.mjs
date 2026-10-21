@@ -23,7 +23,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, utimesSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, utimesSync, writeFileSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { commonDir, resolveStateDir } from "../core/git.mjs";
@@ -107,6 +107,27 @@ export function summarizeMutants(results) {
   };
 }
 
+/** This user's own directory under the temporary one, for a journal outside a repository. */
+const userDir = () => join(tmpdir(), `ennyn-${process.getuid?.() ?? "user"}`);
+
+/**
+ * The journal's directory, made if missing. The per-user one sits in a temporary directory other users can
+ * write to: one of them could make it first and plant a journal naming any file, so it must be a directory
+ * this user owns that no one else can write to, before a journal in it is read.
+ * @param {string} path the journal
+ */
+function journalDir(path) {
+  const dir = dirname(path);
+  const own = dir === userDir();
+  mkdirSync(dir, { recursive: true, ...(own ? { mode: 0o700 } : {}) });
+  if (!own) return;
+  if (process.platform === "win32") return;
+  const st = lstatSync(dir);
+  if (!st.isDirectory() || st.uid !== process.getuid?.() || (st.mode & 0o022) !== 0) {
+    throw new MutationError(`${dir} is not this user's alone (owner ${st.uid}, mode ${(st.mode & 0o777).toString(8)}): a journal in it could name any file. Remove it, or point TMPDIR at a directory of your own`);
+  }
+}
+
 /**
  * One journal per working tree: two worktrees share the state dir, and each may run its own pass.
  * @param {string} cwd the project root
@@ -117,7 +138,7 @@ export function journalPath(cwd, stateDir) {
   // Outside a repository a state dir under .git would create a .git directory that is no repository; the
   // temporary directory is shared on a multi-user machine, so the journal goes into one of this user's own.
   const underGit = /^\.git([\\/]|$)/.test(stateDir);
-  const dir = underGit && !commonDir(cwd) ? join(tmpdir(), `ennyn-${process.getuid?.() ?? "user"}`) : resolveStateDir(cwd, stateDir);
+  const dir = underGit && !commonDir(cwd) ? userDir() : resolveStateDir(cwd, stateDir);
   return join(dir, `mutate-${tree}.json`);
 }
 
@@ -276,7 +297,13 @@ function undo(cwd, path, j) {
   /** @type {string | null} */
   let restored = null;
   if (typeof j?.file === "string") {
-    const abs = resolve(cwd, j.file);
+    const root = realpathSync(cwd);
+    const abs = resolve(root, j.file);
+    const rel = relative(root, abs);
+    // A run journals a file inside this tree (prepare checked it); any other path was not written by one.
+    if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+      throw new MutationError(`the mutation journal ${path} names ${j.file}, outside this tree: no run here wrote it. Check it, then delete it`);
+    }
     const original = Buffer.from(String(j.original), "base64");
     const mutated = Buffer.from(String(j.mutated), "base64");
     const now = existsSync(abs) ? readFileSync(abs) : null;
@@ -326,6 +353,7 @@ function readJournal(path) {
  * @returns {{ restored: string | null, found: boolean }}
  */
 export function restoreJournal(cwd, path, { force = false } = {}) {
+  if (dirname(path) === userDir() && existsSync(dirname(path))) journalDir(path);
   if (!existsSync(path)) return { restored: null, found: false };
   const j = readJournal(path);
   if (!force && typeof j?.pid === "number" && j.pid !== process.pid && alive(j.pid)) {
@@ -342,6 +370,7 @@ export function restoreJournal(cwd, path, { force = false } = {}) {
 function takeJournal(cwd, path) {
   /** @type {string | null} */
   let restored = null;
+  journalDir(path);
   if (existsSync(path)) {
     const j = readJournal(path);
     if (typeof j?.pid === "number" && j.pid !== process.pid && alive(j.pid)) {
@@ -350,9 +379,8 @@ function takeJournal(cwd, path) {
     }
     restored = undo(cwd, path, j);
   }
-  // wx: of two runs that start together, one gets the journal. The per-user directory under the temporary
-  // one is this user's alone; a state dir in the repository keeps the repository's own modes.
-  mkdirSync(dirname(path), { recursive: true, ...(dirname(path).startsWith(tmpdir()) ? { mode: 0o700 } : {}) });
+  // wx: of two runs that start together, one gets the journal. A state dir in the repository keeps the
+  // repository's own modes, also when the repository sits under the temporary directory (/tmp on Linux).
   try {
     const fd = openSync(path, "wx");
     writeSync(fd, JSON.stringify({ pid: process.pid }));

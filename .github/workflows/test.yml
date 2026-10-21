@@ -1,0 +1,35 @@
+# The suite on the oldest Node that package.json's engines allows, and on current ones.
+# test/engines.test.mjs keeps the first matrix entry equal to that floor, and holds this text whole.
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["20.0.0", "22", "24"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The hygiene test reads every commit message.
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: node --version && git --version
+      - run: npm test
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npm run typecheck

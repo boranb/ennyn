@@ -1,8 +1,8 @@
 /**
  * Tests that read the user's git config failed on one machine and passed on another four times in one
  * cycle (a unit test reading ~/.gitconfig, a global ignore, ssh-keygen -Y, and the bypass, CLI and hook
- * tests). `npm test` now loads test/hostile.mjs into every test file, a hostile machine, and then
- * test/hermetic.mjs, which clears it. Here: the script still loads both, in that order, and this file,
+ * tests). `npm test` now loads test/hermetic.mjs into every test file: it imports test/hostile.mjs, a
+ * hostile machine, and then clears it. Here: the script still loads it, as one module, and this file,
  * like every other, sees none of the hostile values.
  */
 
@@ -22,7 +22,10 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 test("hermetic: npm test loads the hostile machine, then the setup that clears it, into every test file", () => {
   const script = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).scripts.test;
-  assert.match(script, /^node --test --import \.\/test\/hostile\.mjs --import \.\/test\/hermetic\.mjs test\/\*\.test\.mjs$/);
+  // One --import: Node before 20.11 loads several at once, so their order is not the order written.
+  assert.match(script, /^node --test --import \.\/test\/hermetic\.mjs test\/\*\.test\.mjs$/);
+  const first = readFileSync(join(ROOT, "test", "hermetic.mjs"), "utf8").split("\n").find((l) => l.startsWith("import "));
+  assert.equal(first, 'import "./hostile.mjs";', "the hostile machine is the setup's first import");
   // Started from a git hook, the run has a GIT_DIR of its own; the decoy repository is still made where it is named.
   process.env.GIT_DIR = join(mkdtempSync(join(tmpdir(), "en-hook-run-")), "elsewhere.git");
   let env;
@@ -41,7 +44,7 @@ test("hermetic: npm test loads the hostile machine, then the setup that clears i
 
 test("hermetic: after the hostile machine, git here reads no config but the repository's, and no GIT_* value", () => {
   const hostile = process.env.ENNYN_HOSTILE_HOME;
-  assert.ok(hostile, "run the suite with npm test: it loads test/hostile.mjs and test/hermetic.mjs");
+  assert.ok(hostile, "run the suite with npm test: it loads test/hermetic.mjs, which imports test/hostile.mjs");
   assert.ok(!(process.env.HOME ?? "").startsWith(join(hostile, "home")), "HOME");
   assert.ok(!(process.env.XDG_CONFIG_HOME ?? "").startsWith(join(hostile, "xdg")), "XDG_CONFIG_HOME");
   assert.deepEqual(Object.keys(process.env).filter((k) => k.startsWith("GIT_")).sort(), ["GIT_CEILING_DIRECTORIES", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM"]);
@@ -95,8 +98,7 @@ test("hermetic: a test file whose code swallows a refused call still fails", () 
   ].join("\n"));
   // NODE_TEST_CONTEXT marks a process the runner started; with it the inner run would skip the file.
   const { NODE_TEST_CONTEXT: _, ...env } = process.env;
-  const imports = ["hostile.mjs", "hermetic.mjs"].flatMap((f) => ["--import", pathToFileURL(join(ROOT, "test", f)).href]);
-  const run = spawnSync(process.execPath, ["--test", ...imports, file], { env, encoding: "utf8" });
+  const run = spawnSync(process.execPath, ["--test", "--import", pathToFileURL(join(ROOT, "test", "hermetic.mjs")).href, file], { env, encoding: "utf8" });
   assert.equal(run.status, 1);
   assert.match(run.stdout + run.stderr, /1 child process call\(s\) dropped the test setup/);
 });

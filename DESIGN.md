@@ -35,7 +35,7 @@ adapters/claude-code/               rules index (paths: front matter), hook entr
 i18n/{en,tr}.json                   message catalogs; output language comes from config
 styles/<style>.<lang>.md            conversation style rules (focused, terse), injected at session start
 schema/config.schema.json           config schema
-test/                               node:test suites; npm test loads hostile.mjs (a hostile machine), then hermetic.mjs (clears it) into each
+test/                               node:test suites; npm test loads hermetic.mjs into each: it imports hostile.mjs (a hostile machine), then clears it
 docs/                               method guide, evidence, adoption guide
 ```
 

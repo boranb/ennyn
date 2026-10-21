@@ -11,10 +11,13 @@
  * The time zone is fixed at +05:30 with no daylight saving: fixtures put commits at noon UTC, so their
  * day holds, and a local day still differs from a UTC day. The locale is C, as tests read git's English
  * messages. A test about either sets its own. Git stops looking for a repository at the temporary
- * directory, which may sit inside one. test/hostile.mjs, loaded just before, makes every run a run on a
- * hostile machine.
+ * directory, which may sit inside one. test/hostile.mjs, imported first, makes every run a run on a
+ * hostile machine. It is imported here, not given as a second --import: Node before 20.11 loads
+ * --import modules at the same time, and under load the hostile machine was set up after this setup
+ * cleared it (15 of 60 parallel starts on Node 20.6 and 20.10).
  */
 
+import "./hostile.mjs";
 import childProcess from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";

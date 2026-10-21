@@ -1,7 +1,7 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import childProcess, { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -12,6 +12,43 @@ import { journalPath, MutationError, parseMutants, restoreJournal, runMutants, s
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
 const NODE = JSON.stringify(process.execPath);
 const sleep = (/** @type {number} */ ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Whether a process was killed: gone (signal 0 finds no such process), or a zombie. Killed with its parent,
+ * it waits as a zombie until init reaps it, and signal 0 still finds it: on a loaded machine that took
+ * longer than the test did. A live one gets 2 s for the kill to land, never the time it would take to end
+ * by itself. A pid that is no pid (0 or NaN, from a file read half written) is never "gone".
+ * @param {number} pid
+ */
+async function gone(pid) {
+  if (!(Number.isInteger(pid) && pid > 0)) return false;
+  const deadline = Date.now() + 2000;
+  for (;;) {
+    try {
+      process.kill(pid, 0);
+    } catch (e) {
+      if (/** @type {NodeJS.ErrnoException} */ (e).code === "ESRCH") return true;
+      throw e;
+    }
+    if (spawnSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8" }).stdout.trim().startsWith("Z")) return true;
+    if (Date.now() > deadline) return false;
+    await sleep(50);
+  }
+}
+
+/** A pid file once it holds a pid: the test writes it, and a read can land between create and write. @param {string} path */
+async function pidIn(path) {
+  const deadline = Date.now() + 20_000;
+  for (;;) {
+    const pid = existsSync(path) ? Number(readFileSync(path, "utf8")) : NaN;
+    if ((Number.isInteger(pid) && pid > 0) || Date.now() > deadline) return pid;
+    await sleep(50);
+  }
+}
+
+test("mutate tests: gone() is false for a live process and for a pid that is no pid", async () => {
+  for (const pid of [0, NaN, Number(""), process.pid]) assert.equal(await gone(pid), false, String(pid));
+});
 
 /**
  * A project whose test command is `node check.mjs`: add() and data.json's limit are tested, twice() is not,
@@ -185,6 +222,22 @@ test("mutate: every write gives the file a newer whole-second mtime, so a cache 
   assert.deepEqual(p.snapshot(), p.before);
 });
 
+test("mutate: a repository under the temporary directory keeps its state dir's modes", async () => {
+  // On Linux /tmp is the real path; on macOS /var is a symlink and the paths never matched by accident.
+  const saved = process.env.TMPDIR;
+  process.env.TMPDIR = realpathSync(tmpdir());
+  try {
+    const p = project();
+    assert.ok(p.journal.startsWith(tmpdir()), "the state dir is under the temporary directory, as spelled");
+    await runMutants({ cwd: p.dir, mutants: [m("k1", "src/add.mjs", "a + b", "a - b")], command: `${NODE} check.mjs`, journal: p.journal });
+    assert.notEqual(statSync(dirname(p.journal)).mode & 0o777, 0o700);
+  } finally {
+    // Unset, it stays unset: Node would store the string "undefined".
+    if (saved === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = saved;
+  }
+});
+
 test("mutate: tests that fail without a mutant stop the run before any file changes", async () => {
   const p = project();
   writeFileSync(join(p.dir, "notes.txt"), "no greek letter\n");
@@ -271,6 +324,42 @@ test("mutate: outside a repository the journal is not put under a .git directory
   assert.ok(journalPath(dir, "state").startsWith(join(dir, "state")), "a state dir of the project's own is used as is");
 });
 
+test("mutate: a per-user directory another user could write to is refused before a journal in it is read", async () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "en-mut-norepo-")));
+  writeFileSync(join(dir, "a.mjs"), "export const a = 1;\n");
+  const journal = journalPath(dir, ".git/ennyn");
+  mkdirSync(dirname(journal), { recursive: true });
+  chmodSync(dirname(journal), 0o777);
+  try {
+    await assert.rejects(runMutants({ cwd: dir, mutants: [m("k1", "a.mjs", "= 1", "= 2")], command: `${NODE} -e 0`, journal }), (e) => e instanceof MutationError && /is not this user's alone \(owner \d+, mode 777\)/.test(e.message));
+    assert.throws(() => restoreJournal(dir, journal), /is not this user's alone/);
+  } finally {
+    chmodSync(dirname(journal), 0o700);
+  }
+});
+
+test("mutate: a journal that names a file outside the tree is refused, and that file is left alone", async () => {
+  const p = project();
+  const outside = join(dirname(p.dir), `outside-${Date.now()}.txt`);
+  writeFileSync(outside, "mine\n");
+  mkdirSync(dirname(p.journal), { recursive: true });
+  const planted = { pid: 999999, id: "x", file: outside, original: Buffer.from("planted\n").toString("base64"), mutated: Buffer.from("mine\n").toString("base64") };
+  writeFileSync(p.journal, JSON.stringify(planted));
+  await assert.rejects(runMutants({ cwd: p.dir, mutants: [m("k1", "src/add.mjs", "a + b", "a - b")], command: `${NODE} check.mjs`, journal: p.journal }), /names .*outside this tree: no run here wrote it/);
+  writeFileSync(p.journal, JSON.stringify({ ...planted, file: "../escape.txt" }));
+  assert.throws(() => restoreJournal(p.dir, p.journal), /outside this tree/);
+  assert.equal(readFileSync(outside, "utf8"), "mine\n");
+});
+
+test("mutate: outside a repository the journal's directory is this user's alone (0700)", async () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "en-mut-norepo-")));
+  writeFileSync(join(dir, "a.mjs"), "export const a = 1;\n");
+  const journal = journalPath(dir, ".git/ennyn");
+  const res = await runMutants({ cwd: dir, mutants: [m("k1", "a.mjs", "= 1", "= 2")], command: `${NODE} -e 0`, journal });
+  assert.deepEqual(res.results.map((r) => r.outcome), ["survived"]);
+  assert.equal(statSync(dirname(journal)).mode & 0o777, 0o700);
+});
+
 test("cli: mutate prints each mutant and the count; --json is the result; --restore; usage and list errors", () => {
   const p = project();
   writeFileSync(p.list, JSON.stringify([m("k1", "src/add.mjs", "a + b", "a - b"), m("s1", "src/add.mjs", "x * 2", "x * 3"), m("u1", "notes.txt", "alpha", "beta")]));
@@ -330,7 +419,7 @@ describe("mutate: runs that wait", { concurrency: 4 }, () => {
     assert.ok(Date.now() - started < 45_000, "the run ends at the timeouts, not when the test process would (60 s)");
     assert.deepEqual(res.results.map(said), ["timeout"]);
     assert.deepEqual(summarizeMutants(res.results), { killed: 1, total: 1, timeout: 1, survived: 0, invalid: 0, unapplied: 0, unchecked: 0, uncheckedSurvived: 0 });
-    assert.throws(() => process.kill(Number(readFileSync(join(p.dir, "sleeping"), "utf8")), 0), { code: "ESRCH" }, "the sleeping test process is gone");
+    assert.ok(await gone(Number(readFileSync(join(p.dir, "sleeping"), "utf8"))), "the sleeping test process is gone");
     assert.deepEqual(p.snapshot(), p.before);
   });
 
@@ -388,7 +477,7 @@ test("mutate: what a test run leaves running is stopped before the next mutant",
     const res = await runMutants({ cwd: p.dir, mutants: [m("s1", "src/add.mjs", "x * 2", "x * 3")], command: `sleep 30 & echo $! > leftover.pid; ${NODE} check.mjs`, journal: p.journal });
     assert.equal(res.results[0].outcome, "survived");
     assert.ok(Date.now() - started < 25_000, "the left-behind process holds the pipes; the run does not wait for it (30 s)");
-    assert.throws(() => process.kill(Number(readFileSync(join(p.dir, "leftover.pid"), "utf8")), 0), { code: "ESRCH" });
+    assert.ok(await gone(Number(readFileSync(join(p.dir, "leftover.pid"), "utf8"))));
   });
 
 
@@ -441,14 +530,12 @@ test("mutate: what a test run leaves running is stopped before the next mutant",
     const child = spawn(process.execPath, [CLI, "mutate", p.list, "--command", `${NODE} check.mjs`], { cwd: p.dir, stdio: "ignore" });
     const closed = new Promise((done) => child.on("close", (code, signal) => done({ code, signal })));
     // Wait until the mutant is in place and its test process has started.
-    const deadline = Date.now() + 20_000;
-    while (Date.now() < deadline && !existsSync(join(p.dir, "sleeping"))) await sleep(50);
-    const testPid = Number(readFileSync(join(p.dir, "sleeping"), "utf8"));
+    const testPid = await pidIn(join(p.dir, "sleeping"));
     child.kill("SIGINT");
     assert.deepEqual(await closed, { code: null, signal: "SIGINT" });
     assert.equal(readFileSync(join(p.dir, "notes.txt"), "utf8"), "alpha\n");
     assert.equal(existsSync(p.journal), false);
-    assert.throws(() => process.kill(testPid, 0), { code: "ESRCH" });
+    assert.ok(await gone(testPid));
     assert.deepEqual(readdirSync(dirname(p.journal)), []);
   });
 
