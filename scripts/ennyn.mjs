@@ -21,6 +21,7 @@ import { scanProject, MIN_HISTORY } from "../setup/scan.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
 import { installHook } from "../setup/hook.mjs";
 import { instructionBudget, readBudgets, recordBudget, previousBudget } from "../setup/budget.mjs";
+import { journalPath, MAX_TIMEOUT_MS, MutationError, parseMutants, restoreJournal, runMutants, summarizeMutants } from "../metrics/mutation.mjs";
 
 export const USAGE = `Usage: ennyn <command> [options]
 
@@ -36,6 +37,9 @@ Commands:
   mechanization [--json]                            best ready mechanization node
   bypass [--from <rev>] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--json]
                                                     commits that used the commit-shape bypass marker, with their reasons
+  mutate <list.json> --command <cmd> [--check <cmd>] [--timeout <s>] [--json]
+                                                    run hand-picked mutants one at a time against the tests; one that does not parse is never killed
+  mutate --restore [--force]                        put back a file that a mutate run killed outright left mutated
   push-check                                        warn when too many commits are unpushed
   gate-record --start <epoch-s> --exit <code> [--kind full|message] [--commit <rev>] [--step <name>] [--runner <name>]
                                                     record one commit-gate attempt (called by the commit wrapper)
@@ -405,6 +409,67 @@ const COMMANDS = {
     return 0;
   },
 
+  async mutate(args) {
+    const { positional, opts, help } = parseArgs(args, { positional: 1, options: ["command", "check", "timeout"], flags: ["json", "restore", "force"] });
+    if (help) return (out(USAGE), 0);
+    if (opts.restore) {
+      if (positional[0] || opts.command || opts.check || opts.timeout || opts.json) throw new UsageError("mutate --restore takes no list and no option but --force");
+      const cwd = projectDir();
+      const cfg = config(cwd);
+      const res = restoreJournal(cwd, journalPath(cwd, cfg.paths.stateDir), { force: Boolean(opts.force) });
+      out(res.restored ? t("mutate.restored", { file: res.restored }, cfg.language) : t(res.found ? "mutate.restoreClean" : "mutate.restoreNone", {}, cfg.language));
+      return 0;
+    }
+    if (opts.force) throw new UsageError("--force goes with --restore");
+    if (!positional[0]) throw new UsageError("mutate needs a mutant list (JSON)");
+    const command = strOpt(opts.command);
+    if (!command) throw new UsageError("mutate needs --command <test command>");
+    const timeout = opts.timeout === undefined ? null : intOpt(opts.timeout, "timeout");
+    if (timeout !== null && (timeout === 0 || timeout * 1000 > MAX_TIMEOUT_MS)) throw new UsageError(`--timeout must be from 1 to ${Math.floor(MAX_TIMEOUT_MS / 1000)} seconds`);
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    const lang = cfg.language;
+    let text;
+    try {
+      text = readFileSync(positional[0], "utf8");
+    } catch (e) {
+      err(t("cli.cannotRead", { path: positional[0], error: /** @type {Error} */ (e).message }, lang));
+      return 1;
+    }
+    const { mutants, problems } = parseMutants(text);
+    if (problems.length) return (err(t("mutate.listProblems", { path: positional[0], problems: problems.join("\n- ") }, lang)), 1);
+    const say = (/** @type {string} */ key, /** @type {Record<string, string | number>} */ vars = {}) => (opts.json ? undefined : out(t(key, vars, lang)));
+    const res = await runMutants({
+      cwd,
+      mutants,
+      command,
+      check: strOpt(opts.check),
+      journal: journalPath(cwd, cfg.paths.stateDir),
+      timeoutMs: timeout === null ? null : timeout * 1000,
+      onBaseline: (b, limit) => say("mutate.baseline", { s: (b.ms / 1000).toFixed(1), timeout: Math.ceil(limit / 1000), twice: Math.ceil((2 * limit) / 1000) }),
+      onResult: (r) =>
+        say("mutate.item", {
+          id: r.id,
+          outcome: t(`mutate.outcome.${r.outcome}`, {}, lang),
+          file: r.file,
+          reason: r.reason ? ` — ${t(r.reason.key, r.reason.vars, lang)}` : "",
+        }),
+    });
+    if (res.restored) err(t("mutate.restored", { file: res.restored }, lang));
+    if (res.baseline.exit !== 0) {
+      const how = res.baseline.error ?? (res.baseline.exit === null ? res.baseline.signal : `exit ${res.baseline.exit}`);
+      err(t("mutate.baselineFailed", { how: String(how), tail: res.baseline.tail.trimEnd().split("\n").slice(-15).join("\n") }, lang));
+      return 1;
+    }
+    const sum = summarizeMutants(res.results);
+    if (opts.json) return (out(JSON.stringify({ ...res, summary: sum }, null, 2)), 0);
+    say("mutate.summary", sum);
+    const survived = res.results.filter((r) => r.outcome === "survived").map((r) => r.id);
+    if (survived.length) say("mutate.survivors", { list: survived.join(", ") });
+    if (sum.unchecked || sum.uncheckedSurvived) say("mutate.uncheckedHint", { n: sum.unchecked + sum.uncheckedSurvived });
+    return 0;
+  },
+
   "push-check"(args) {
     const { help } = parseArgs(args, {});
     if (help) return (out(USAGE), 0);
@@ -485,7 +550,7 @@ export async function main(argv) {
       err(`${e.message}\n\n${USAGE}`);
       return 2;
     }
-    if (e instanceof ConfigError || e instanceof GraphError) {
+    if (e instanceof ConfigError || e instanceof GraphError || e instanceof MutationError) {
       err(e.message);
       return 1;
     }
