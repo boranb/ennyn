@@ -89,36 +89,14 @@
       "source": "a public Claude Code repository review, 2026-10-19"
     },
     {
-      "id": "doc-cochange",
-      "title": "Config map from code globs to docs; commit-check warns when one changes without the other",
-      "status": "planned",
-      "value": "high",
-      "cost": "M",
-      "cluster": "gates",
-      "needs": [],
-      "source": "a public Claude Code repository review, 2026-10-19; cycle 2026-10-19 convergence: class doc-twin (documents lag the code) came back 4 times in two cycles (DESIGN contract line, pick-rule text, question count, CHANGELOG key)",
-      "mechanization": true
-    },
-    {
-      "id": "mutation-runner",
-      "title": "ennyn mutate <list.json>: hand-picked mutants from JSON, each checked to parse (INVALID is never \"killed\"); the cycle's mutation pass uses it when no tool is configured",
-      "status": "planned",
-      "value": "high",
-      "cost": "M",
-      "cluster": "gates",
-      "needs": [],
-      "mechanization": true,
-      "source": "cycle 2026-10-19: an ad-hoc runner split mutants on \"|\" and counted syntax errors as kills; two commit Mutation lines were rewritten before push"
-    },
-    {
       "id": "bypass-first-parent",
-      "title": "bypass --from counts commits merged in from other branches; count the first-parent line only",
+      "title": "bypass --from counts commits merged in from other branches (also a start reached only through a merge's second parent); first-parent would count nothing in a PR workflow: decide per project, or report merged-in commits apart",
       "status": "planned",
       "value": "low",
       "cost": "S",
       "cluster": "metrics",
       "needs": [],
-      "source": "review, cycle 2026-10-19"
+      "source": "review, cycle 2026-10-19; data review, cycle 2026-10-20 (4), bypass-audit"
     },
     {
       "id": "fold-target-depth",
@@ -139,18 +117,6 @@
       "cluster": "gates",
       "needs": [],
       "source": "review, cycle 2026-10-19 (2)"
-    },
-    {
-      "id": "tests-hermetic-git",
-      "title": "Every test file runs with an empty global git config and XDG dir (a setup loaded by npm test), and a test checks the suite under a hostile HOME",
-      "status": "planned",
-      "value": "high",
-      "cost": "S",
-      "cluster": "gates",
-      "needs": [],
-      "mechanization": true,
-      "sourceClass": "non-hermetic test (reads the user's ~/.gitconfig or global ignore)",
-      "source": "convergence, cycle 2026-10-20 (3): three findings in task 2, and bypass, cli and hook tests fail under a hostile HOME"
     },
     {
       "id": "hook-unseen-cases",
@@ -201,6 +167,128 @@
       "cluster": "metrics",
       "needs": [],
       "source": "mutation pass, cycle 2026-10-20 (3) (F27, F28 not shown)"
+    },
+    {
+      "id": "fault-injection-matrix",
+      "title": "A test that runs every CLI command with git failing, a child process that cannot start, a timeout and a closed pipe, and asserts each prints unmeasured or fails: never a number",
+      "status": "planned",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "needs": [],
+      "mechanization": true,
+      "sourceClass": "unmeasured read as a measurement",
+      "source": "convergence, cycle 2026-10-20 (4): 11 findings in mutate and bypass (a timeout, a spawn error, a check with no answer, a shallow range read as a result)"
+    },
+    {
+      "id": "szz-since-walk",
+      "title": "rework: git's --since walk stops at a commit dated more than a day early and misses the commits behind it (readLog uses gitSince)",
+      "status": "planned",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "metrics",
+      "needs": [],
+      "source": "data review, cycle 2026-10-20 (4), bypass-audit"
+    },
+    {
+      "id": "hygiene-user-ignores",
+      "title": "hygiene test: under the hermetic setup it scans untracked files the developer's global ignore hides (.vscode/, .idea/); read that developer's excludes for this one scan",
+      "status": "planned",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "needs": [],
+      "source": "review, cycle 2026-10-20 (4), tests-hermetic-git"
+    },
+    {
+      "id": "cochange-amend",
+      "title": "cochange with git commit --amend: only the new changes are staged, so a document the amended commit already holds still warns",
+      "status": "planned",
+      "value": "low",
+      "cost": "M",
+      "cluster": "gates",
+      "needs": [],
+      "source": "review, cycle 2026-10-20 (4), doc-cochange"
+    },
+    {
+      "id": "config-failopen-scope",
+      "title": "A config problem in a key commit-check never reads (impact.fakeGlobs) switches the commit-msg hook off and silences the style hook; check only what each command reads, or name the key in the hook's warning",
+      "status": "planned",
+      "value": "low",
+      "cost": "M",
+      "cluster": "gates",
+      "needs": [],
+      "source": "review, cycle 2026-10-20 (4), doc-cochange"
+    },
+    {
+      "id": "mutate-start-race",
+      "title": "mutate: two runs that start together over a stale journal can both run (one removes the other's fresh journal)",
+      "status": "planned",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "needs": [],
+      "source": "review, cycle 2026-10-20 (4), mutation-runner"
+    },
+    {
+      "id": "mutate-stamp-drift",
+      "title": "mutate: with fast tests each write's newer whole-second mtime runs ahead of the clock (about 2 s a mutant); a make-like tool warns about clock skew",
+      "status": "planned",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "needs": [],
+      "source": "data review, cycle 2026-10-20 (4), mutation-runner"
+    },
+    {
+      "id": "bypass-shallow-edges",
+      "title": "bypass in a shallow clone: the flag also rises when the cut-off parents are ancestors of the start (a complete count), and a git-named merge at the boundary counts as a commit",
+      "status": "planned",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "needs": [],
+      "source": "data review, cycle 2026-10-20 (4), bypass-audit"
+    },
+    {
+      "id": "gate-stats-locale-sort",
+      "title": "gate-stats sorts step names with the machine's default locale (localeCompare without a locale): the order differs by machine",
+      "status": "planned",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "needs": [],
+      "source": "cycle 2026-10-20 (4), seen while pinning the test locale"
+    },
+    {
+      "id": "mutate-node-version",
+      "title": "mutate checks JavaScript with the Node that runs ennyn, not the one the tests use: across versions a mutant that does not parse for the tests can pass the check",
+      "status": "planned",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "needs": [],
+      "source": "review, cycle 2026-10-20 (4), mutation-runner"
+    },
+    {
+      "id": "engine-floor-check",
+      "title": "engines says Node >= 20, but only a hand run checks it: run the suite on the oldest supported Node where the suite runs (CI or an npm script)",
+      "status": "planned",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "needs": [],
+      "source": "review, cycle 2026-10-20 (4), tests-hermetic-git (the oracle failed on Node 20 for a cycle)"
+    },
+    {
+      "id": "suite-unexplained-failure",
+      "title": "One full npm test run of seven failed on a loaded machine and the failing test was not captured; keep the output of every failing run until it is found",
+      "status": "planned",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "needs": [],
+      "source": "cycle 2026-10-20 (4), mutation-runner verification"
     }
   ],
   "done": [
@@ -326,6 +414,30 @@
       "title": "Legacy audit of impact: colored git grep, failed git read as zero, tests in a top-level test/, absolute --files paths, sparse checkout (9f80aa4)",
       "status": "done",
       "finished": "2026-10-20"
+    },
+    {
+      "id": "tests-hermetic-git",
+      "title": "npm test loads a hostile machine (test/hostile.mjs) and then a setup that clears it (test/hermetic.mjs) into every test file; a child process given an env that drops the setup fails its file (5afbee9)",
+      "status": "done",
+      "finished": "2026-10-21"
+    },
+    {
+      "id": "mutation-runner",
+      "title": "ennyn mutate: hand-picked mutants from JSON; parse checked as Node reads JavaScript, JSON.parse, --check for the rest; unchecked kills counted apart; files back on every way out, --restore (9433d58)",
+      "status": "done",
+      "finished": "2026-10-21"
+    },
+    {
+      "id": "doc-cochange",
+      "title": "review.cochange: commit-check warns when a staged path changes without its documents; globs compile at load, renames count under both names, doctor names dead globs (8f1aa91)",
+      "status": "done",
+      "finished": "2026-10-21"
+    },
+    {
+      "id": "bypass-audit",
+      "title": "Legacy audit of bypass: a rewritten --from fails, shallow clones say so, no --since walk, merges the hook checks count, amend! subject is no second use (52a92d6)",
+      "status": "done",
+      "finished": "2026-10-21"
     }
   ]
 }
