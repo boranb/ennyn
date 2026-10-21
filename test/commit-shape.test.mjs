@@ -218,3 +218,87 @@ test("hookCommitMode: the last value of a key wins (git -c over the repository's
   assert.deepEqual(mode(""), { cleanup: "verbatim", comment: "#", cut: false });
   assert.deepEqual(mode("'commit.cleanup'='strip' 'commit.verbose'='2'"), { cleanup: "strip", comment: "#", cut: true });
 });
+
+test("cochange: a staged path whose documents are not staged warns, never fails; a document staged with it is enough", () => {
+  const c = cfg({
+    review: {
+      cochange: [
+        { paths: ["README.md"], docs: ["README.tr.md"], note: "the twins" },
+        { paths: ["src/**"], docs: ["docs/**", "CHANGELOG.md"] },
+      ],
+    },
+  });
+  const check = (/** @type {string[]} */ stagedPaths, message = "feat: x") => checkCommitShape(message, { config: c, stagedPaths });
+  const readme = check(["README.md"]);
+  assert.deepEqual([readme.ok, readme.errors], [true, []]);
+  assert.deepEqual(readme.warnings, ["Warning: README.md changed, but not README.tr.md (the twins). If the change shows there, update it in this commit."]);
+  assert.deepEqual(check(["README.md", "README.tr.md"]).warnings, []);
+  assert.deepEqual(check(["README.tr.md"]).warnings, [], "the rule is one way");
+  assert.deepEqual(check(["src/a.js", "docs/api/b.md"]).warnings, [], "any one document is enough");
+  assert.deepEqual(check(["src/a.js", "CHANGELOG.md"]).warnings, []);
+  assert.deepEqual(check(["lib/a.js", "test/a.test.js"]).warnings, [], "no rule names these");
+  assert.deepEqual(check([]).warnings, []);
+  // Both rules, the list cut at three.
+  const both = check(["README.md", "src/a.js", "src/b.js", "src/c.js", "src/d.js", "src/e.js"]).warnings;
+  assert.equal(both.length, 2);
+  assert.match(both[1], /^Warning: src\/a\.js, src\/b\.js, src\/c\.js and 2 more changed, but not docs\/\*\*, CHANGELOG\.md\. /);
+  assert.match(check(["src/a.js", "src/b.js", "src/c.js"]).warnings?.[0] ?? "", /^Warning: src\/a\.js, src\/b\.js, src\/c\.js changed, /, "three fit");
+  // A failing message keeps its warnings; the bypass marker loosens the shape, not the documents.
+  const long = check(["README.md"], "x".repeat(130));
+  assert.deepEqual([long.ok, long.warnings?.length], [false, 1]);
+  const marked = check(["README.md"], "x".repeat(130) + " [commit-shape-allow: imported upstream file]");
+  assert.deepEqual([marked.ok, marked.skipped, marked.warnings?.length], [true, "marker", 1]);
+  // What git writes itself is not checked at all.
+  assert.equal(check(["README.md"], "Merge branch 'x'").warnings, undefined);
+  // An amend! carries the target's paths: its README change still has no twin.
+  const amend = checkCommitShape("amend! feat: x\n\nfeat: x, reworded", { config: c, stagedPaths: [], foldTarget: { message: "feat: x", paths: ["README.md"] } });
+  assert.equal(amend.warnings?.length, 1);
+  // In the project language.
+  const tr = cfg({ language: "tr", review: { cochange: [{ paths: ["a/**"], docs: ["b.md"] }] } });
+  assert.deepEqual(checkCommitShape("feat: x", { config: tr, stagedPaths: ["a/1", "a/2", "a/3", "a/4"] }).warnings, [
+    "Uyarı: a/1, a/2, a/3 ve 1 tane daha değişti ama b.md değişmedi. Değişiklik orada görünüyorsa bu commit'te güncelle.",
+  ]);
+});
+
+test("cochange: rules are checked when the config loads, every problem at once", () => {
+  const bad = [null, [], { paths: [], docs: ["a.md"] }, { paths: ["a"], docs: "b.md" }, { paths: ["a"], docs: [""] }, { paths: ["a"], docs: ["b"], note: 3 }, { paths: ["a"], docs: ["b"], why: "x" }];
+  assert.throws(
+    () => cfg({ review: { cochange: bad } }),
+    (/** @type {any} */ e) => {
+      assert.deepEqual(e.problems, [
+        '"review.cochange"[0] must be an object { paths, docs, note? }',
+        '"review.cochange"[1] must be an object { paths, docs, note? }',
+        '"review.cochange"[2].paths must be a non-empty list of globs',
+        '"review.cochange"[3].docs must be a non-empty list of globs',
+        '"review.cochange"[4].docs must be a non-empty list of globs',
+        '"review.cochange"[5].note must be a string',
+        '"review.cochange"[6]: unknown key "why"',
+      ]);
+      return true;
+    },
+  );
+  assert.throws(() => cfg({ review: { cochange: {} } }), /"review.cochange" must be array/);
+});
+
+test("cochange: a glob that does not compile is a config problem at load, in every glob list", () => {
+  assert.throws(
+    () => cfg({ review: { impactRequiredGlobs: ["src/{a,b"], cochange: [{ paths: ["[z-a]"], docs: ["ok.md"] }] }, impact: { fakeGlobs: ["{a,{b}}"] } }),
+    (/** @type {any} */ e) => {
+      assert.deepEqual(
+        e.problems.map((/** @type {string} */ p) => p.replace(/ \(.*\)$/, "")),
+        ['"review.impactRequiredGlobs": "src/{a,b" is not a glob that compiles', '"impact.fakeGlobs": "{a,{b}}" is not a glob that compiles', '"review.cochange[0].paths": "[z-a]" is not a glob that compiles'],
+      );
+      return true;
+    },
+  );
+});
+
+test("cochange: a squash! target's documents count; an amend! lists each path once", () => {
+  const c = cfg({ review: { cochange: [{ paths: ["core/**"], docs: ["DESIGN.md"] }] } });
+  const target = { message: "feat: module a", paths: ["core/a.mjs", "DESIGN.md"] };
+  assert.deepEqual(checkCommitShape("squash! feat: module a\n\nand b", { config: c, stagedPaths: ["core/a.mjs"], foldTarget: target }).warnings, []);
+  // The target's code alone does not warn on the squash: it was checked when it was committed.
+  assert.deepEqual(checkCommitShape("squash! feat: module a\n\nand b", { config: c, stagedPaths: ["README.md"], foldTarget: { message: "feat: module a", paths: ["core/a.mjs"] } }).warnings, []);
+  const amend = checkCommitShape("amend! feat: module a\n\nfeat: module a, renamed", { config: c, stagedPaths: ["core/a.mjs", "core/b.mjs"], foldTarget: { message: "feat: module a", paths: ["core/a.mjs"] } });
+  assert.match(amend.warnings?.[0] ?? "", /^Warning: core\/a\.mjs, core\/b\.mjs changed, /);
+});

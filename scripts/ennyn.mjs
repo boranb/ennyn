@@ -98,19 +98,21 @@ const config = (cwd) => loadConfig({ cwd });
 
 /**
  * For an amend! / squash! message, the commit it folds into: the newest of the last 500 whose subject is
- * the one named, with its message and paths. null when there is none (or the message is no fold).
+ * the one named, every leading fold prefix taken off as autosquash does ("squash! squash! x" folds into
+ * x), with its message and paths. null when there is none (or the message is no fold).
  * @param {string} cwd @param {string} message @param {"strip" | "whitespace" | "verbatim" | "scissors"} cleanup @param {string} comment @param {boolean} cut
  */
 function foldTarget(cwd, message, cleanup, comment, cut) {
   const fold = /^(?:amend|squash)! (.*)$/.exec(storedMessage(message, cleanup, comment, cut).split("\n")[0] ?? "");
   if (!fold) return null;
   const log = git(["log", "-n500", "--format=%H%x00%s"], { cwd, allowFail: true });
-  const hit = log.split("\n").find((l) => l.slice(l.indexOf("\0") + 1) === fold[1]);
+  const subject = fold[1].replace(/^(?:(?:amend|squash|fixup)! )+/, "");
+  const hit = log.split("\n").find((l) => l.slice(l.indexOf("\0") + 1) === subject);
   if (!hit) return null;
   const hash = hit.slice(0, hit.indexOf("\0"));
   return {
     message: git(["log", "-1", "--format=%B", hash], { cwd }),
-    paths: git(["show", "-z", "--name-only", "--format=", hash], { cwd }).split("\0").filter(Boolean),
+    paths: git(["show", "-z", "--name-only", "--no-renames", "--format=", hash], { cwd }).split("\0").filter(Boolean),
   };
 }
 
@@ -328,6 +330,7 @@ const COMMANDS = {
       return 0;
     }
     for (const e of res.errors) err(e);
+    for (const w of res.warnings ?? []) err(w);
     return res.ok ? 0 : 1;
   },
 

@@ -193,15 +193,17 @@ export function skippedSubject(subject, config) {
 
 /**
  * @param {string} message raw commit message (as given to a commit-msg hook)
- * @param {{ config: any, stagedPaths?: string[], cleanup?: "strip" | "whitespace" | "verbatim" | "scissors", cut?: boolean, comment?: string, foldTarget?: { message: string, paths: string[] } | null, ownSubject?: boolean }} opts
+ * @param {{ config: any, stagedPaths?: string[], cleanup?: "strip" | "whitespace" | "verbatim" | "scissors", cut?: boolean, comment?: string, foldTarget?: { message: string, paths: string[] } | null, ownSubject?: boolean, alsoChanged?: string[] }} opts
  *   `cleanup` is git's mode for this commit: "whitespace" when the message came from `-m` / `-F`.
  *   `cut`: git cuts at its scissors line (gitCuts); by default as storedMessage decides.
  *   `comment` is git's comment marker (`core.commentChar`), "#" by default.
  *   `foldTarget`: for an amend! / squash! commit, the commit it folds into (its message and paths).
  *   `ownSubject`: false when the subject is not this commit's to change (it is checked elsewhere).
- * @returns {{ ok: boolean, errors: string[], skipped?: string }}
+ *   `alsoChanged`: paths already in history that the fold adds to; a document among them counts as changed.
+ * @returns {{ ok: boolean, errors: string[], warnings?: string[], skipped?: string }} `warnings`: staged paths whose
+ *   documents (review.cochange) are not staged; they never fail the check
  */
-export function checkCommitShape(message, { config, stagedPaths = [], cleanup = "strip", cut, comment = "#", foldTarget = null, ownSubject = true }) {
+export function checkCommitShape(message, { config, stagedPaths = [], cleanup = "strip", cut, comment = "#", foldTarget = null, ownSubject = true, alsoChanged = [] }) {
   const lang = config.language;
   const cm = config.commitMsg;
   const rv = config.review;
@@ -221,19 +223,21 @@ export function checkCommitShape(message, { config, stagedPaths = [], cleanup = 
   if (fold) {
     const rest = lines.slice(1).join("\n").replace(/^\n+/, "");
     if (!rest) return { ok: true, errors: [], skipped: "subject" };
-    const paths = [...stagedPaths, ...(foldTarget?.paths ?? [])];
+    const paths = [...new Set([...stagedPaths, ...(foldTarget?.paths ?? [])])];
     if (fold[1] === "amend") return checkCommitShape(rest, { config, stagedPaths: paths, cleanup: "whitespace", comment });
     const base = foldTarget ? storedMessage(foldTarget.message, "whitespace") : fold[2];
-    return checkCommitShape(`${base}\n\n${rest}`, { config, stagedPaths, cleanup: "whitespace", comment, ownSubject: false });
+    return checkCommitShape(`${base}\n\n${rest}`, { config, stagedPaths, cleanup: "whitespace", comment, ownSubject: false, alsoChanged: foldTarget?.paths ?? [] });
   }
   if (skippedSubject(subject, config)) {
     return { ok: true, errors: [], skipped: "subject" };
   }
 
+  // The bypass marker loosens the shape, not the documents: they are still named.
+  const warnings = cochangeWarnings(stagedPaths, rv.cochange, lang, alsoChanged);
   const reason = allowMarkerReason(text, cm.allowMarker);
   if (reason !== null) {
-    if (reason.length < 8) return { ok: false, errors: [t("shape.allowNoReason", { marker: cm.allowMarker }, lang)] };
-    return { ok: true, errors: [], skipped: "marker" };
+    if (reason.length < 8) return { ok: false, errors: [t("shape.allowNoReason", { marker: cm.allowMarker }, lang)], warnings };
+    return { ok: true, errors: [], warnings, skipped: "marker" };
   }
 
   const errors = [];
@@ -289,5 +293,27 @@ export function checkCommitShape(message, { config, stagedPaths = [], cleanup = 
     }
   }
 
-  return { ok: errors.length === 0, errors };
+  return { ok: errors.length === 0, errors, warnings };
+}
+
+/**
+ * Documents that did not move with their code: for each review.cochange rule, the staged paths it names
+ * when none of its documents is staged. A path that is one of the rule's documents is a document.
+ * @param {string[]} staged
+ * @param {{ paths: string[], docs: string[], note?: string }[]} rules
+ * @param {string} lang
+ * @param {string[]} [alsoChanged] paths a fold adds to (a squash! target's): documents there count, code does not warn
+ * @returns {string[]}
+ */
+export function cochangeWarnings(staged, rules, lang, alsoChanged = []) {
+  /** @type {string[]} */
+  const out = [];
+  for (const rule of rules) {
+    if ([...staged, ...alsoChanged].some((p) => matchAny(p, rule.docs))) continue;
+    const changed = staged.filter((p) => matchAny(p, rule.paths));
+    if (!changed.length) continue;
+    const paths = changed.slice(0, 3).join(", ") + (changed.length > 3 ? t("shape.cochangeMore", { n: changed.length - 3 }, lang) : "");
+    out.push(t("shape.cochange", { paths, docs: rule.docs.join(", "), note: rule.note ? ` (${rule.note})` : "" }, lang));
+  }
+  return out;
 }

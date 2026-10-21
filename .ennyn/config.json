@@ -7,6 +7,13 @@
     "fixType": "fix"
   },
   "review": {
-    "impactRequiredGlobs": ["checks/**", "core/config.mjs", "metrics/szz.mjs", "setup/scan.mjs"]
+    "impactRequiredGlobs": ["checks/**", "core/config.mjs", "metrics/szz.mjs", "setup/scan.mjs"],
+    "cochange": [
+      { "paths": ["README.md"], "docs": ["README.tr.md"], "note": "the twins change together" },
+      { "paths": ["README.tr.md"], "docs": ["README.md"], "note": "the twins change together" },
+      { "paths": ["core/*.mjs", "checks/*.mjs", "metrics/*.mjs", "impact/*.mjs", "plan/*.mjs", "setup/*.mjs", "side-copy/*.mjs", "adapters/**/*.mjs"], "docs": ["DESIGN.md"], "note": "module contracts, the config table" },
+      { "paths": ["i18n/en.json"], "docs": ["i18n/tr.json"] },
+      { "paths": ["core/*.mjs", "checks/*.mjs", "metrics/*.mjs", "impact/*.mjs", "plan/*.mjs", "setup/*.mjs", "side-copy/*.mjs", "scripts/**", "adapters/**", "hooks/**", "skills/**", "agents/**", "styles/**"], "docs": ["CHANGELOG.md"], "note": "user-visible changes" }
+    ]
   }
 }

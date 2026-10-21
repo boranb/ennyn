@@ -7,6 +7,7 @@
 
 import { readFileSync, existsSync } from "node:fs";
 import { join, isAbsolute } from "node:path";
+import { globToRegExp } from "./glob.mjs";
 
 export const DEFAULTS = Object.freeze({
   language: "en",
@@ -65,6 +66,9 @@ export const DEFAULTS = Object.freeze({
     thirdRoundLine: "Third-round:",
     impactLine: "Impact:",
     impactRequiredGlobs: [],
+    // Documents that move with code, [{ paths, docs, note? }]: commit-check warns when one of `paths` is
+    // staged and none of `docs` is. A warning, not an error: not every change shows in its documents.
+    cochange: [],
     // A change that touches only tests next to a guarded file does not need an impact table.
     impactIgnoreGlobs: ["**/*.test.*", "**/*.spec.*", "**/__tests__/**", "**/__fixtures__/**"],
   },
@@ -198,6 +202,38 @@ export function loadConfig({ cwd, env = process.env, override }) {
   if (badTypes.length) problems.push(`"commitMsg.types" entries must be single words without ":", "(", ")" or "!": ${badTypes.map(String).join(", ")}`);
   const reviewers = /** @type {any} */ (cfg).review.agents;
   if (reviewers.some((/** @type {unknown} */ a) => typeof a !== "string" || a === "")) problems.push(`"review.agents" entries must be agent names`);
+  /** @type {unknown[]} */ (/** @type {any} */ (cfg).review.cochange).forEach((r, i) => {
+    const at = `"review.cochange"[${i}]`;
+    if (r === null || typeof r !== "object" || Array.isArray(r)) return problems.push(`${at} must be an object { paths, docs, note? }`);
+    const rule = /** @type {Record<string, unknown>} */ (r);
+    for (const k of Object.keys(rule)) if (!["paths", "docs", "note"].includes(k)) problems.push(`${at}: unknown key "${k}"`);
+    for (const k of ["paths", "docs"]) {
+      const list = rule[k];
+      if (!Array.isArray(list) || !list.length || list.some((g) => typeof g !== "string" || g === "")) problems.push(`${at}.${k} must be a non-empty list of globs`);
+    }
+    if (rule.note !== undefined && typeof rule.note !== "string") problems.push(`${at}.note must be a string`);
+  });
+  // A glob compiles when a path is first matched; one that cannot would fail there, in the hook or in doctor.
+  const c = /** @type {any} */ (cfg);
+  const globLists = [
+    ["review.impactRequiredGlobs", c.review.impactRequiredGlobs],
+    ["review.impactIgnoreGlobs", c.review.impactIgnoreGlobs],
+    ["impact.fakeGlobs", c.impact.fakeGlobs],
+    ["impact.fixtureGlobs", c.impact.fixtureGlobs],
+    ...c.review.cochange.flatMap((/** @type {any} */ r, /** @type {number} */ i) =>
+      r && typeof r === "object" ? [[`review.cochange[${i}].paths`, r.paths], [`review.cochange[${i}].docs`, r.docs]] : [],
+    ),
+  ];
+  for (const [key, list] of globLists) {
+    for (const g of Array.isArray(list) ? list : []) {
+      if (typeof g !== "string") continue;
+      try {
+        globToRegExp(g);
+      } catch (e) {
+        problems.push(`"${key}": "${g}" is not a glob that compiles (${/** @type {Error} */ (e).message})`);
+      }
+    }
+  }
   if (!/^[^\s:()!]+$/.test(cm.fixType)) problems.push(`"commitMsg.fixType" must be a single word without ":", "(", ")" or "!"`);
   else if (cm.types.length && !cm.types.includes(cm.fixType)) problems.push(`"commitMsg.fixType" "${cm.fixType}" must be one of commitMsg.types (${cm.types.join(", ")})`);
   if (problems.length) throw new ConfigError(problems);

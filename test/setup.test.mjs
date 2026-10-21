@@ -23,6 +23,7 @@ import {
   scanProject,
 } from "../setup/scan.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
+import { t } from "../core/i18n.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
 const cfg = () => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "en-s-")), env: {} });
@@ -480,4 +481,31 @@ test("cli: init-scan shows at most two commit-rule lines per file and says how m
     '  commit rule in .claude/rules/protocol.md: "9. COMMIT → one commit, Turkish subject"',
   ]);
   assert.match(out, /^ {2}…and 1 more commit-rule lines \(init-scan --json lists them all\)$/m);
+});
+
+test("doctor: a cochange glob that matches no tracked file warns (a typo would leave the rule silent)", async () => {
+  const cochange = [
+    { paths: ["src/**"], docs: ["README.md"] },
+    { paths: ["scr/**", "src/*.js"], docs: ["DESIGN.md", "docs/**"] },
+  ];
+  const r = setup({ review: { cochange } }, { nodes: [{ id: "a" }] });
+  r.commit("feat: files", { "src/a.js": "x", "README.md": "# x" });
+  const res = await checkSetup({ cwd: r.dir, env: {} });
+  const found = res.items.filter((i) => i.key === "doctor.cochangeUnmatched");
+  assert.deepEqual(found.map((i) => [i.level, i.vars]), [["warn", { rule: 2, globs: "scr/**, DESIGN.md, docs/**" }]]);
+  assert.match(t("doctor.cochangeUnmatched", found[0].vars, "en"), /^review\.cochange rule 2: scr\/\*\*, DESIGN\.md, docs\/\*\* match no tracked file/);
+  const fine = await checkSetup({ cwd: setup({ review: { cochange: [{ paths: [".ennyn/*.json"], docs: [".ennyn/graph.json"] }] } }, { nodes: [{ id: "a" }] }).dir, env: {} });
+  assert.ok(!keys(fine).includes("warn doctor.cochangeUnmatched"));
+});
+
+test("doctor: a cochange rule whose documents are all the files its paths name can never warn; no file list, no verdict", async () => {
+  const r = setup({ review: { cochange: [{ paths: ["docs/**"], docs: ["docs/**"] }, { paths: ["src/**"], docs: ["README.md"] }] } }, { nodes: [{ id: "a" }] });
+  r.commit("feat: files", { "docs/a.md": "x", "src/a.js": "x", "README.md": "# x" });
+  const res = await checkSetup({ cwd: r.dir, env: {} });
+  assert.deepEqual(res.items.filter((i) => i.key.startsWith("doctor.cochange")).map((i) => [i.level, i.key, i.vars]), [["warn", "doctor.cochangeSilent", { rule: 1 }]]);
+  // Nothing tracked yet: no verdict on the globs.
+  const empty = repo();
+  put(empty.dir, { ".ennyn/config.json": JSON.stringify({ review: { cochange: [{ paths: ["src/**"], docs: ["README.md"] }] } }) });
+  const none = await checkSetup({ cwd: empty.dir, env: {} });
+  assert.deepEqual(none.items.filter((i) => i.key.startsWith("doctor.cochange")), []);
 });

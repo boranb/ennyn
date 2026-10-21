@@ -105,7 +105,8 @@ export function hookIndexFile(cwd, env) {
  */
 export function stagedPaths(cwd, { env } = {}) {
   const index = env ? hookIndexFile(cwd, env) : null;
-  const out = git(["diff", "--cached", "--name-only", "-z"], {
+  // Both names of a rename (diff.renames would list only the new one): moving a file out is a change there too.
+  const out = git(["diff", "--cached", "--name-only", "--no-renames", "-z"], {
     cwd,
     env: index ? { ...process.env, GIT_INDEX_FILE: index } : process.env,
     keepIndex: Boolean(index),

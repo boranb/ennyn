@@ -14,6 +14,7 @@ import { hookStatus } from "./hook.mjs";
 import { instructionBudget, readBudgets } from "./budget.mjs";
 import { resolve } from "node:path";
 import { git } from "../core/git.mjs";
+import { matchAny } from "../core/glob.mjs";
 
 /**
  * @typedef {{ level: "ok" | "warn" | "fail", key: string, vars: Record<string, string | number> }} DoctorItem
@@ -112,6 +113,15 @@ export async function checkSetup({ cwd, env = process.env }) {
     if (last && b.always > last.always) add("warn", "doctor.budgetGrew", { now: kb(b.always), before: kb(last.always), bytes: b.always - last.always, commit: last.commit.slice(0, 10) || "—" });
     else add("ok", "doctor.budget", { always: kb(b.always), repeated: b.repeatedLines });
     if (log.skipped) add("warn", "doctor.budgetLogBroken", { n: log.skipped, path: config.paths.metricsLog });
+    // A glob that names no file: in `paths` the rule never warns, in `docs` it warns on every change. A rule whose
+    // documents are all the files its paths name can never warn. No file list (git failed): nothing to judge by.
+    if (files.length) {
+      config.review.cochange.forEach((/** @type {{ paths: string[], docs: string[] }} */ rule, /** @type {number} */ i) => {
+        const unmatched = [...rule.paths, ...rule.docs].filter((g) => !files.some((f) => matchAny(f, [g])));
+        if (unmatched.length) add("warn", "doctor.cochangeUnmatched", { rule: i + 1, globs: unmatched.join(", ") });
+        else if (!files.some((f) => matchAny(f, rule.paths) && !matchAny(f, rule.docs))) add("warn", "doctor.cochangeSilent", { rule: i + 1 });
+      });
+    }
   }
 
   // Same denominator as the rework rate: recent commits touching a production path.

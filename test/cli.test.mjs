@@ -277,3 +277,17 @@ test("cli: commit-check follows commit.cleanup (strip, whitespace, verbatim, sci
   git(["config", "commit.verbose", "true"], { cwd: dir });
   assert.equal(run({ GIT_EDITOR: ":" }), 0);
 });
+
+test("cli: commit-check prints a cochange warning on stderr and still passes", () => {
+  const p = project({ review: { cochange: [{ paths: ["README.md"], docs: ["README.tr.md"] }] } });
+  writeFileSync(join(p.dir, "README.md"), "# x\n");
+  git(["add", "README.md"], { cwd: p.dir });
+  const msg = join(p.dir, ".git", "MSG");
+  writeFileSync(msg, "feat: readme\n");
+  const r = run(p.dir, "commit-check", msg);
+  assert.equal(r.code, 0);
+  assert.match(r.stderr, /^Warning: README\.md changed, but not README\.tr\.md\. /m);
+  writeFileSync(join(p.dir, "README.tr.md"), "# x\n");
+  git(["add", "README.tr.md"], { cwd: p.dir });
+  assert.equal(run(p.dir, "commit-check", msg).stderr, "");
+});

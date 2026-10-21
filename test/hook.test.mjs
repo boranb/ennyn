@@ -221,3 +221,57 @@ test("hook: a hooks path inside the repository, named through a link and not cre
   git(["config", "core.hooksPath", join(dir, ".githooks")], { cwd: dir });
   assert.equal(hookStatus(dir).hooksKind, "repo");
 });
+
+test("hook: a cochange warning shows on the commit, which goes through", () => {
+  const dir = repo();
+  writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ commitMsg: { types: ["feat", "fix"], fixType: "fix" }, review: { cochange: [{ paths: ["a.txt"], docs: ["b.md"] }] } }));
+  installHook({ cwd: dir, cliPath: CLI });
+  const r = commit(dir, "feat: change a");
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /^Warning: a\.txt changed, but not b\.md\. /m);
+});
+
+test("hook: a file moved out of a rule's paths or a guarded path is still a change there, whatever diff.renames says", () => {
+  const dir = repo();
+  writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ commitMsg: { types: ["feat", "fix"], fixType: "fix" }, review: { impactRequiredGlobs: ["core/**"], cochange: [{ paths: ["core/**"], docs: ["DESIGN.md"] }] } }));
+  mkdirSync(join(dir, "core"));
+  writeFileSync(join(dir, "core", "a.mjs"), "export const a = 1;\n".repeat(20));
+  writeFileSync(join(dir, "DESIGN.md"), "# d\n");
+  git(["add", "-A"], { cwd: dir });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "feat: base\n\nImpact: S1 none"], { cwd: dir });
+  installHook({ cwd: dir, cliPath: CLI });
+  git(["config", "diff.renames", "true"], { cwd: dir });
+  mkdirSync(join(dir, "lib"));
+  git(["mv", "core/a.mjs", "lib/a.mjs"], { cwd: dir });
+  const moved = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "feat: move a"], { cwd: dir, encoding: "utf8" });
+  assert.equal(moved.status, 1, "the move out of core/ needs an Impact line");
+  assert.match(moved.stderr, /impact table \(core\/a\.mjs\)/);
+  assert.match(moved.stderr, /^Warning: core\/a\.mjs changed, but not DESIGN\.md\. /m);
+  assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "feat: move a\n\nImpact: S1 none"], { cwd: dir, encoding: "utf8" }).status, 0);
+  // An amend! of the move carries the old name too: rewording it keeps the Impact line.
+  const reword = (/** @type {string} */ body) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", `amend! feat: move a\n\n${body}`], { cwd: dir, encoding: "utf8" });
+  assert.notEqual(reword("feat: move a out of core").status, 0, "the Impact line would vanish at autosquash");
+  assert.equal(reword("feat: move a out of core\n\nImpact: S1 none").status, 0);
+});
+
+test("hook: a chained squash! finds the commit autosquash folds into, and that commit's documents count", () => {
+  const dir = repo();
+  writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ commitMsg: { types: ["feat", "fix"], fixType: "fix" }, review: { cochange: [{ paths: ["core/**"], docs: ["DESIGN.md"] }] } }));
+  mkdirSync(join(dir, "core"));
+  writeFileSync(join(dir, "core", "a.mjs"), "export const a = 1;\n");
+  writeFileSync(join(dir, "DESIGN.md"), "# d\n");
+  git(["add", "-A"], { cwd: dir });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "feat: module a"], { cwd: dir });
+  installHook({ cwd: dir, cliPath: CLI });
+  const squash = (/** @type {string} */ n) => {
+    writeFileSync(join(dir, "core", "a.mjs"), `export const a = ${n};\n`);
+    git(["add", "-A"], { cwd: dir });
+    return spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--squash=HEAD", "-m", `step ${n}`], { cwd: dir, encoding: "utf8" });
+  };
+  const first = squash("2");
+  assert.deepEqual([first.status, first.stderr], [0, ""]);
+  // git writes "squash! squash! feat: module a"; autosquash folds it into feat: module a, which holds DESIGN.md.
+  const second = squash("3");
+  assert.equal(git(["log", "-1", "--format=%s"], { cwd: dir }), "squash! squash! feat: module a");
+  assert.deepEqual([second.status, second.stderr], [0, ""]);
+});
