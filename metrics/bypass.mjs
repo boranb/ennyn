@@ -5,58 +5,90 @@
  * deciding to (docs/evidence.md, Open questions). The cycle reports the count.
  *
  * Counted as the hook decides: a subject the check skips (a revert of a bypass
- * commit, a merge) is not a use. Only the messages that contain the marker are
- * read, NUL-separated (git messages cannot hold NUL), so a long history or a
- * control character in a message cannot break the count.
+ * commit, a merge git named) is not a use, but a merge with a subject of its own
+ * is checked and counts. An amend! uses the marker only in its own body: its
+ * subject repeats the target's and its body replaces the target's message. A
+ * squash! is checked with its target and keeps the subject. Only the messages that contain the
+ * marker are read, NUL-separated (git messages cannot hold NUL), so a long history
+ * or a control character in a message cannot break the count. The range is listed
+ * by commit time alone, a few bytes per commit, and filtered here: git's --since
+ * stops walking at a commit dated older, and a clock off by days hides the newer
+ * commits behind it. A commit with no readable committer time is in no dated
+ * range, and in every range that has no dates.
+ *
+ * `from` must still be an ancestor of HEAD: after the cycle's start commit is
+ * amended or rebased, `<from>..HEAD` reaches back to the merge base and would
+ * count commits from before the cycle. Commits merged in from another line do
+ * count (node bypass-first-parent). A shallow clone has no commits before its
+ * boundary: the result says so when one may be in the range.
  */
 
-import { git } from "../core/git.mjs";
+import { git, gitRun } from "../core/git.mjs";
 import { allowMarkerReason, skippedSubject } from "../checks/commit-shape.mjs";
-import { parseBound, gitSince } from "./szz.mjs";
+import { parseBound, shallowEdge } from "./szz.mjs";
 
 /**
  * @typedef {{ hash: string, time: number, subject: string, reason: string }} BypassUse
  */
 
+/** @param {string} s */
+const timeOf = (s) => (/^\d+$/.test(s) ? Number(s) : NaN);
+
 /**
  * @param {{ cwd: string, config: any, since?: string, until?: string, from?: string }} opts
  *   `since` / `until`: "YYYY-MM-DD" (local days, inclusive) or any Date.parse string; committer time.
  *   `from`: a revision; only commits after it count (`<from>..HEAD`), e.g. the HEAD a cycle started at.
- * @returns {{ commits: number, uses: BypassUse[] }} uses newest first
+ * @returns {{ commits: number, uses: BypassUse[], shallow: boolean }} uses newest first; `shallow`: commits
+ *   before a shallow clone's boundary could be in the range and are not counted
  */
 export function bypassUses({ cwd, config, since, until, from }) {
   const lo = parseBound(since, "start");
   const hi = parseBound(until, "end");
   // Throws outside a repository: unmeasured is not zero.
   git(["rev-parse", "--git-dir"], { cwd });
-  if (!git(["rev-parse", "--verify", "-q", "HEAD"], { cwd, allowFail: true })) return { commits: 0, uses: [] };
+  const isShallow = git(["rev-parse", "--is-shallow-repository"], { cwd }) === "true";
+  if (!git(["rev-parse", "--verify", "-q", "HEAD"], { cwd, allowFail: true })) return { commits: 0, uses: [], shallow: false };
   // A bad revision throws too: a typo must not read as "no bypass since then".
   if (from !== undefined && !from) throw new RangeError("from: empty revision");
-  const range = from ? [`${git(["rev-parse", "--verify", `${from}^{commit}`], { cwd })}..HEAD`] : [];
-  const scope = ["--no-merges", ...(lo !== null ? [gitSince(lo)] : []), ...range];
-
-  /** @type {Map<string, number>} */
-  const inRange = new Map();
-  for (const line of git(["log", "--format=%H %ct", ...scope], { cwd }).split("\n")) {
-    const [hash, ct] = line.split(" ");
-    const time = Number(ct);
-    if (!hash || !Number.isFinite(time) || (lo !== null && time < lo) || (hi !== null && time > hi)) continue;
-    inRange.set(hash, time);
+  /** @type {string[]} */
+  let range = [];
+  let shallow = isShallow;
+  if (from) {
+    const start = git(["rev-parse", "--verify", "-q", `${from}^{commit}`], { cwd, allowFail: true });
+    if (!start) throw new RangeError(`from: "${from}" is not in this repository${isShallow ? "; the clone is shallow, it may lie past the boundary" : ""}`);
+    if (gitRun(["merge-base", "--is-ancestor", start, "HEAD"], { cwd }).status !== 0) {
+      throw new RangeError(`from: "${from}" is not an ancestor of HEAD (amended or rebased since?); the range would count commits from before it`);
+    }
+    range = [`${start}..HEAD`];
+    // Inside the range a merge can still reach past the boundary: then commits of the range are missing.
+    if (isShallow) {
+      const edge = shallowEdge(cwd);
+      shallow = git(["rev-list", ...range], { cwd }).split("\n").some((h) => edge.has(h));
+    }
   }
+  const within = (/** @type {number} */ time) => (lo === null && hi === null) || (Number.isFinite(time) && (lo === null || time >= lo) && (hi === null || time <= hi));
+
+  let commits = 0;
+  // One line per commit, marked: a commit with no committer time prints an empty %ct, an empty range nothing.
+  for (const line of git(["log", "--no-merges", "--format=x%ct", ...range], { cwd }).split("\n")) if (line.startsWith("x") && within(timeOf(line.slice(1)))) commits++;
+  // Merges are few: those the hook checks (a first line of their own) count as commits.
+  const merges = git(["log", "--merges", "-z", "--format=%ct%x00%B", ...range], { cwd }).split("\0");
+  for (let i = 0; i + 1 < merges.length; i += 2) if (within(timeOf(merges[i].replace(/^\n/, ""))) && !skippedSubject(merges[i + 1].split("\n")[0], config)) commits++;
 
   const marker = config.commitMsg.allowMarker;
-  const fields = git(["log", "-z", "-F", `--grep=${marker}`, "--format=%H%x00%B", ...scope], { cwd }).split("\0");
+  const fields = git(["log", "-z", "-F", `--grep=${marker}`, "--format=%H%x00%ct%x00%B", ...range], { cwd }).split("\0");
   /** @type {BypassUse[]} */
   const uses = [];
-  for (let i = 0; i + 1 < fields.length; i += 2) {
+  for (let i = 0; i + 2 < fields.length; i += 3) {
     const hash = fields[i].replace(/^\n/, "");
-    const body = fields[i + 1];
-    const time = inRange.get(hash);
-    if (time === undefined) continue;
+    const time = timeOf(fields[i + 1]);
+    const body = fields[i + 2];
+    if (!within(time)) continue;
     const subject = body.split("\n")[0];
     if (skippedSubject(subject, config)) continue;
-    const reason = allowMarkerReason(body, marker);
+    const own = /^amend! /.test(subject) ? body.slice(subject.length) : body;
+    const reason = allowMarkerReason(own, marker);
     if (reason !== null) uses.push({ hash, time, subject, reason });
   }
-  return { commits: inRange.size, uses };
+  return { commits, uses, shallow };
 }

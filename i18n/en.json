@@ -147,6 +147,7 @@
   "bypass.summary": "Commit-shape bypass: {n} of {commits} commits used it.",
   "bypass.item": "  {hash} · {date} · {subject} · reason: {reason}",
   "bypass.noReason": "(none written)",
+  "bypass.shallow": "This clone is shallow: commits before its boundary are not counted.",
   "scan.instructions": "Agent instructions: {always} in every session ({list}), {onDemand} when a matching path is touched, {other} for other agents.",
   "scan.commitRule": "  commit rule in {path}: \"{line}\"",
   "scan.agentParts": "Already there: {skills} skills, {agents} agents, {commands} commands.",

@@ -387,12 +387,14 @@ const COMMANDS = {
     const res = bypassUses({ cwd, config: cfg, since, until, from });
     if (opts.json) return (out(JSON.stringify(res, null, 2)), 0);
     const lang = cfg.language;
+    if (res.shallow) out(t("bypass.shallow", {}, lang));
     if (!res.commits) return (out(t("bypass.noCommits", {}, lang)), 0);
     out(t(res.uses.length ? "bypass.summary" : "bypass.none", { n: res.uses.length, commits: res.commits }, lang));
     for (const u of res.uses) {
       // The local day, as --since / --until read it.
       const d = new Date(u.time * 1000);
-      const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      // A commit object with no committer time has no day.
+      const date = Number.isFinite(u.time) ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : "—";
       out(t("bypass.item", { hash: u.hash.slice(0, 10), date, subject: u.subject, reason: u.reason || t("bypass.noReason", {}, lang) }, lang));
     }
     return 0;

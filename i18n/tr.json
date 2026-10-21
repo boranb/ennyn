@@ -147,6 +147,7 @@
   "bypass.summary": "Commit biçimi atlatması: {commits} commit'in {n} tanesi kullandı.",
   "bypass.item": "  {hash} · {date} · {subject} · gerekçe: {reason}",
   "bypass.noReason": "(yazılmamış)",
+  "bypass.shallow": "Bu klon sığ: sınırından önceki commit'ler sayılmadı.",
   "scan.instructions": "Ajan talimatları: her oturum {always} ({list}), eşleşen yola dokunulunca {onDemand}, başka ajanlar için {other}.",
   "scan.commitRule": "  {path} içindeki commit kuralı: \"{line}\"",
   "scan.agentParts": "Zaten olanlar: {skills} beceri, {agents} ajan, {commands} komut.",

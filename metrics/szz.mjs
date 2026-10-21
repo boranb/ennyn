@@ -216,7 +216,7 @@ function blameOrigins(cwd, fix, file, ranges) {
  * @param {string} cwd
  * @returns {Set<string>}
  */
-function shallowEdge(cwd) {
+export function shallowEdge(cwd) {
   const path = resolve(cwd, git(["rev-parse", "--git-path", "shallow"], { cwd }));
   return new Set(existsSync(path) ? readFileSync(path, "utf8").split("\n").filter(Boolean) : []);
 }
