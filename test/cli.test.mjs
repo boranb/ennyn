@@ -123,6 +123,21 @@ test("cli: rework reports JSON and text; a bad date is a usage error", () => {
   assert.equal(run(p.dir, "rework", "--days", "seven").code, 2);
 });
 
+test("cli: rework says when a fix is dated before the commit it repairs", () => {
+  const p = project({ metrics: { minLines: 1 } });
+  p.commit({ "src/a.js": SRC }, "feat: add", 5);
+  // A month behind: the project helper dates commits in January, this fix lands in December.
+  writeFileSync(join(p.dir, "src", "a.js"), SRC.replace("a + b", "Number(a) + Number(b)"));
+  git(["add", "-A"], { cwd: p.dir });
+  const date = "2025-12-06 12:00:00 +0000";
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "fix: numbers"], { cwd: p.dir, env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } });
+  const text = run(p.dir, "rework");
+  assert.equal(text.code, 0, text.stderr);
+  assert.match(text.stdout, /^Rework: 0 of 1 commits/, "the origin is left out, not counted clean");
+  assert.match(text.stdout, /^Commits whose fix is dated before them \(a clock was off\): 1\. They are left out unmeasured, not counted as clean\.$/m);
+  assert.doesNotMatch(text.stdout, /shallow/);
+});
+
 test("cli: mechanization picks from the graph; a missing graph is an error", () => {
   const p = project();
   assert.equal(run(p.dir, "mechanization").code, 1, "no graph yet");

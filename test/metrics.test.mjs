@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { loadConfig } from "../core/config.mjs";
 import { git } from "../core/git.mjs";
-import { reworkRate, deletedCodeLines, isCodeLine, parseBound, commitMessages } from "../metrics/szz.mjs";
+import { reworkRate, deletedCodeLines, isCodeLine, parseBound, commitMessages, readLog } from "../metrics/szz.mjs";
 import { parseConvergence, formatConvergence } from "../metrics/convergence.mjs";
 
 const cfg = (override = {}) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-m-")), env: {}, override });
@@ -99,7 +99,7 @@ test("szz: zero candidate commits gives a null rate, not zero", () => {
   const r = repo();
   r.commit(0, "docs: readme", { "README.md": "# x\n" });
   const res = reworkRate({ cwd: r.dir, days: 7, config: cfg() });
-  assert.deepEqual(res, { commits: 0, reworked: 0, rate: null, fixCommits: 0, censored: 0, pairs: [] });
+  assert.deepEqual(res, { commits: 0, reworked: 0, rate: null, fixCommits: 0, censored: 0, skewed: 0, shallow: false, pairs: [] });
   const empty = mkdtempSync(join(tmpdir(), "pl-szz-empty-"));
   git(["init", "-q"], { cwd: empty });
   assert.equal(reworkRate({ cwd: empty, config: cfg() }).rate, null);
@@ -342,6 +342,88 @@ test("szz audit: fix messages are read in chunks, and every chunk counts", () =>
   const hashes = ["one", "two", "three"].map((w, i) => r.commit(i, `fix: ${w}\n\nbody ${w}`, { [`src/${w}.js`]: `export const ${w} = ${i};\n` }));
   const all = commitMessages(r.dir, hashes, 1);
   assert.deepEqual(hashes.map((h) => all.get(h)?.trim()), ["fix: one\n\nbody one", "fix: two\n\nbody two", "fix: three\n\nbody three"]);
+});
+
+test("szz: a commit dated weeks early does not hide the commits behind it (no --since walk)", () => {
+  const r = repo();
+  const origin = r.commit(2, "feat: add", { "src/a.js": ORIGIN });
+  // A clock a month behind: git's --since walk stops here and never reaches the origin.
+  r.commit(-31, "feat: other", { "src/b.js": "export const b = 1;\n" });
+  const fix = r.commit(4, "fix: add handles strings", { "src/a.js": ORIGIN.replace("return a + b;", "return Number(a) + Number(b);") });
+  const res = reworkRate({ cwd: r.dir, since: "2026-01-02", until: "2026-01-03", days: 7, config: loose() });
+  assert.deepEqual([res.commits, res.reworked], [1, 1]);
+  assert.deepEqual(res.pairs.map((p) => [p.origin, p.fix]), [[origin, fix]]);
+  // The early commit itself is outside the range by its own time, behind the origin or not.
+  assert.equal(reworkRate({ cwd: r.dir, since: "2026-01-01", days: 7, config: loose() }).commits, 2);
+  assert.equal(reworkRate({ cwd: r.dir, since: "2025-12-01", until: "2025-12-01", days: 7, config: loose() }).commits, 1);
+});
+
+test("szz: a fix dated before the origin it repairs (a clock off) is said, not read as no rework", () => {
+  const r = repo();
+  r.commit(2, "feat: add", { "src/a.js": ORIGIN });
+  // A child commit whose clock is a month behind: blame still finds the origin behind it.
+  r.commit(-29, "fix: add handles strings", { "src/a.js": ORIGIN.replace("return a + b;", "return Number(a) + Number(b);") });
+  const res = reworkRate({ cwd: r.dir, days: 7, config: loose() });
+  assert.deepEqual([res.commits, res.reworked, res.skewed], [1, 0, 1], "the origin is unmeasured, not a clean commit; the fix is one");
+  // A link below the floor is no pair whatever the clocks say: not counted as skewed either.
+  assert.equal(reworkRate({ cwd: r.dir, days: 7, config: cfg() }).skewed, 0);
+});
+
+test("szz audit: the log keeps what the filter keeps and reads every kept commit's paths, chunk by chunk", () => {
+  const r = repo();
+  const hashes = ["one", "two", "three"].map((w, i) => r.commit(i, `feat: ${w}`, { [`src/${w}.js`]: `export const ${w} = ${i};\n` }));
+  for (const chunk of [1, 2, 500]) {
+    const log = readLog(r.dir, () => true, chunk);
+    assert.deepEqual(log.map((c) => [c.hash, c.subject, c.changes]), [2, 1, 0].map((i) => [hashes[i], `feat: ${["one", "two", "three"][i]}`, [{ status: "A", path: `src/${["one", "two", "three"][i]}.js` }]]), `chunk ${chunk}`);
+  }
+  const two = Date.UTC(2026, 0, 2, 12) / 1000;
+  const kept = readLog(r.dir, (t) => t !== two, 1);
+  assert.deepEqual(kept.map((c) => [c.hash, c.subject, c.changes.length]), [[hashes[2], "feat: three", 1], [hashes[0], "feat: one", 1]]);
+  // A rename is both names (diff.renames is on by default): a status like R100 would read as no change.
+  git(["mv", "src/one.js", "src/uno.js"], { cwd: r.dir });
+  const moved = r.commit(3, "chore: rename", {});
+  assert.deepEqual(readLog(r.dir, (t) => t === two + 2 * 86400).map((c) => [c.hash, c.changes]), [[moved, [{ status: "D", path: "src/one.js" }, { status: "A", path: "src/uno.js" }]]]);
+});
+
+test("szz audit: a file named like a commit's hash does not stop the log (the revisions end at --)", () => {
+  const r = repo();
+  const origin = r.commit(0, "feat: add", { "src/a.js": ORIGIN });
+  const fix = r.commit(3, `fix: add handles strings\n\nRepairs ${origin.slice(0, 7)}`, { "src/a.js": ORIGIN.replace("return a + b;", "return Number(a) + Number(b);") });
+  for (const h of [origin, fix]) writeFileSync(join(r.dir, h), "");
+  const res = reworkRate({ cwd: r.dir, days: 7, config: cfg() });
+  assert.deepEqual(res.pairs.map((p) => [p.origin, p.fix]), [[origin, fix]]);
+  assert.equal(commitMessages(r.dir, [fix]).get(fix)?.split("\n")[0], "fix: add handles strings");
+});
+
+test("szz audit: a commit with no committer time is in no dated range, and unmeasured in a range with none", () => {
+  const r = repo();
+  r.commit(0, "feat: add", { "src/a.js": ORIGIN });
+  writeFileSync(join(r.dir, "src", "b.js"), "export const b = 1;\n");
+  git(["add", "-A"], { cwd: r.dir });
+  const tree = git(["write-tree"], { cwd: r.dir });
+  // git refuses to write one; another tool can (hash-object --literally), and %ct is then empty.
+  const raw = `tree ${tree}\nparent ${git(["rev-parse", "HEAD"], { cwd: r.dir })}\nauthor t <t@t> 1767355200 +0000\ncommitter t <t@t>\n\nfeat: no time\n`;
+  const bare = spawnSync("git", ["hash-object", "-t", "commit", "--literally", "-w", "--stdin"], { cwd: r.dir, input: raw, encoding: "utf8" }).stdout.trim();
+  git(["update-ref", "HEAD", bare], { cwd: r.dir });
+  r.commit(3, "fix: add handles strings", { "src/a.js": ORIGIN.replace("return a + b;", "return Number(a) + Number(b);") });
+  const log = readLog(r.dir, () => true);
+  assert.deepEqual(log.filter((c) => c.hash === bare).map((c) => [Number.isNaN(c.time), c.subject, c.changes]), [[true, "feat: no time", [{ status: "A", path: "src/b.js" }]]]);
+  const none = reworkRate({ cwd: r.dir, days: 7, config: loose() });
+  assert.deepEqual([none.commits, none.censored, none.reworked], [2, 1, 1], "the origin and the fix count; the commit with no time is unmeasured");
+  const dated = reworkRate({ cwd: r.dir, since: "2026-01-01", until: "2026-01-31", days: 7, config: loose() });
+  assert.deepEqual([dated.commits, dated.censored, dated.reworked], [2, 0, 1]);
+});
+
+test("szz audit: a fix with no committer time links to its origin unmeasured, said in skewed", () => {
+  const r = repo();
+  r.commit(0, "feat: add", { "src/a.js": ORIGIN });
+  writeFileSync(join(r.dir, "src", "a.js"), ORIGIN.replace("return a + b;", "return Number(a) + Number(b);"));
+  git(["add", "-A"], { cwd: r.dir });
+  const raw = `tree ${git(["write-tree"], { cwd: r.dir })}\nparent ${git(["rev-parse", "HEAD"], { cwd: r.dir })}\nauthor t <t@t> 1767528000 +0000\ncommitter t <t@t>\n\nfix: add handles strings\n`;
+  git(["update-ref", "HEAD", spawnSync("git", ["hash-object", "-t", "commit", "--literally", "-w", "--stdin"], { cwd: r.dir, input: raw, encoding: "utf8" }).stdout.trim()], { cwd: r.dir });
+  const res = reworkRate({ cwd: r.dir, days: 7, config: loose() });
+  assert.deepEqual([res.commits, res.reworked, res.skewed, res.censored], [0, 0, 1, 1], "the origin is unmeasured, the fix censored");
+  assert.equal(res.rate, null);
 });
 
 test("szz audit: with log.showSignature on, signed commits are read like any other (no text in front of the fields)", (t) => {

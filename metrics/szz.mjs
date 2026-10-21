@@ -31,9 +31,14 @@ const DAY = 86400;
  * `fixCommits` is the number of candidates whose subject matches the fix pattern:
  * when most candidates are fixes, the subject convention does not separate defect
  * repair from ordinary work and the rate measures churn, not rework.
- * `censored` counts in-range commits left out because their window has not closed yet.
+ * `censored` counts in-range commits left out because their window has not closed yet, or has no place
+ * (the edge of a shallow clone, a commit object with no committer time). `skewed` counts candidates left out
+ * the same way: a strong link names them, but its fix is dated before them (blame found the origin behind
+ * the fix, so a clock was wrong) or has no committer time, and no other fix measured them. Only fixes in
+ * the range are read: with `since`, a fix dated before it is never seen (node rework-skew-before-since).
+ * `shallow`: HEAD's history has a shallow boundary; commits before it are not counted.
  * @typedef {{ origin: string, fix: string, files: string[], lines: number, share: number, days: number }} ReworkPair
- * @typedef {{ commits: number, reworked: number, rate: number | null, fixCommits: number, censored: number, pairs: ReworkPair[] }} ReworkResult
+ * @typedef {{ commits: number, reworked: number, rate: number | null, fixCommits: number, censored: number, skewed: number, shallow: boolean, pairs: ReworkPair[] }} ReworkResult
  * @typedef {{ hash: string, time: number, subject: string, changes: { status: string, path: string }[] }} LogCommit
  */
 
@@ -63,56 +68,54 @@ export function parseBound(value, edge) {
   return Math.floor(ms / 1000);
 }
 
-/** @param {number} sec */
-function gitDate(sec) {
-  const d = new Date(sec * 1000);
-  const p = (/** @type {number} */ n) => String(n).padStart(2, "0");
-  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())} +0000`;
-}
-
 /**
- * `--since` for a lower bound in epoch seconds, one day early: git stops walking at
- * --since by a date heuristic, so the exact bound is applied to %ct afterwards.
- * @param {number} sec
- */
-export function gitSince(sec) {
-  return `--since=${gitDate(sec - DAY)}`;
-}
-
-/**
- * Non-merge commits with their committer time, subject and name-status list.
+ * Non-merge commits whose committer time `within` accepts, newest first, with their subject and
+ * name-status list. No date goes to git: its --since walk stops at a commit dated early (a clock off by
+ * days) and never reaches the commits behind it. Every commit's time and hash is listed, about 52 bytes
+ * each (git()'s 64 MB buffer holds some 1.2 million commits; past that it throws, never a short list),
+ * and filtered here; subjects and paths are read for the kept commits only, in chunks so the command
+ * line stays short. A commit object with no committer time has the time NaN: it is in no dated range.
  * @param {string} cwd
- * @param {number | null} sinceSec
+ * @param {(time: number) => boolean} within
+ * @param {number} [chunk]
  * @returns {LogCommit[]}
  */
-function readLog(cwd, sinceSec) {
-  const scope = ["--no-merges", ...(sinceSec !== null ? [gitSince(sinceSec)] : [])];
+export function readLog(cwd, within, chunk = 200) {
+  if (!(Number.isInteger(chunk) && chunk >= 1)) throw new RangeError(`chunk must be a whole number from 1, got ${chunk}`);
   // Throws outside a repository (unmeasured is not zero); an empty repository has no log.
   git(["rev-parse", "--git-dir"], { cwd });
   if (!git(["rev-parse", "--verify", "-q", "HEAD"], { cwd, allowFail: true })) return [];
-  // Hash, committer time, subject: three NUL-terminated fields per commit (no message holds a NUL,
-  // so a control character in a subject cannot shift a field).
-  const head = git(["log", "-z", "--format=%H%x00%ct%x00%s", ...scope], { cwd }).split("\0");
-  /** @type {LogCommit[]} */
-  const commits = [];
   /** @type {Map<string, LogCommit>} */
   const byHash = new Map();
-  for (let i = 0; i + 2 < head.length; i += 3) {
-    const c = { hash: head[i].replace(/^\n/, ""), time: Number(head[i + 1]), subject: head[i + 2], changes: [] };
-    commits.push(c);
-    byHash.set(c.hash, c);
+  // Neither field holds a space or a newline.
+  for (const line of git(["log", "--no-merges", "--format=%ct %H"], { cwd }).split("\n")) {
+    const m = /^(\d*) ([0-9a-f]{40,64})$/.exec(line);
+    if (!m) continue;
+    const time = m[1] === "" ? NaN : Number(m[1]);
+    if (within(time)) byHash.set(m[2], { hash: m[2], time, subject: "", changes: [] });
   }
-  // Paths, raw (-z): each status and path is its own NUL-terminated field, so a quote or a tab in a
-  // file name survives (unquoted output C-quotes such names and the diff below would find no file).
-  const fields = git(["-c", "core.quotePath=false", "log", "-z", "--no-renames", "--root", "--name-status", "--format=%H", ...scope], { cwd }).split("\0");
-  /** @type {LogCommit | null} */
-  let cur = null;
-  for (let i = 0; i < fields.length; i++) {
-    const f = fields[i].replace(/^\n/, "");
-    if (cur && /^[A-Z]$/.test(f) && i + 1 < fields.length) cur.changes.push({ status: f, path: fields[++i] });
-    else if (/^[0-9a-f]{40,64}$/.test(f)) cur = byHash.get(f) ?? null;
+  const hashes = [...byHash.keys()];
+  for (let i = 0; i < hashes.length; i += chunk) {
+    // "--" ends the revisions: a file named like one of them would stop git on an ambiguous argument.
+    const revs = [...hashes.slice(i, i + chunk), "--"];
+    // Hash and subject, NUL-terminated (no message holds a NUL, so a control character cannot shift a field).
+    const subjects = git(["log", "--no-walk=unsorted", "-z", "--format=%H%x00%s", ...revs], { cwd }).split("\0");
+    for (let j = 0; j + 1 < subjects.length; j += 2) {
+      const c = byHash.get(subjects[j].replace(/^\n/, ""));
+      if (c) c.subject = subjects[j + 1];
+    }
+    // Paths, raw (-z): each status and path is its own NUL-terminated field, so a quote or a tab in a
+    // file name survives (unquoted output C-quotes such names and the diff below would find no file).
+    const fields = git(["-c", "core.quotePath=false", "log", "--no-walk=unsorted", "-z", "--no-renames", "--root", "--name-status", "--format=%H", ...revs], { cwd }).split("\0");
+    /** @type {LogCommit | null} */
+    let cur = null;
+    for (let j = 0; j < fields.length; j++) {
+      const f = fields[j].replace(/^\n/, "");
+      if (cur && /^[A-Z]$/.test(f) && j + 1 < fields.length) cur.changes.push({ status: f, path: fields[++j] });
+      else if (/^[0-9a-f]{40,64}$/.test(f)) cur = byHash.get(f) ?? null;
+    }
   }
-  return commits;
+  return [...byHash.values()];
 }
 
 /**
@@ -123,11 +126,12 @@ function readLog(cwd, sinceSec) {
  * @param {number} [chunk]
  * @returns {Map<string, string>}
  */
-export function commitMessages(cwd, hashes, chunk = 500) {
+export function commitMessages(cwd, hashes, chunk = 200) {
+  if (!(Number.isInteger(chunk) && chunk >= 1)) throw new RangeError(`chunk must be a whole number from 1, got ${chunk}`);
   /** @type {Map<string, string>} */
   const out = new Map();
   for (let i = 0; i < hashes.length; i += chunk) {
-    const fields = git(["log", "--no-walk=unsorted", "-z", "--format=%H%x00%B", ...hashes.slice(i, i + chunk)], { cwd }).split("\0");
+    const fields = git(["log", "--no-walk=unsorted", "-z", "--format=%H%x00%B", ...hashes.slice(i, i + chunk), "--"], { cwd }).split("\0");
     for (let j = 0; j + 1 < fields.length; j += 2) out.set(fields[j].replace(/^\n/, ""), fields[j + 1]);
   }
   return out;
@@ -211,6 +215,20 @@ function blameOrigins(cwd, fix, file, ranges) {
 }
 
 /**
+ * Whether `hash` is in HEAD's history: merge-base exits 1 for "no", and any other failure throws.
+ * @param {string} cwd @param {string} hash
+ */
+function reaches(cwd, hash) {
+  try {
+    git(["merge-base", "--is-ancestor", hash, "HEAD"], { cwd });
+    return true;
+  } catch (e) {
+    if (/** @type {{ status?: number }} */ (e).status === 1) return false;
+    throw e;
+  }
+}
+
+/**
  * The commits at the edge of a shallow clone: git blames every line older than the clone on them, so
  * they are censored, neither a candidate nor any line's known origin. Empty in a full clone.
  * @param {string} cwd
@@ -243,10 +261,11 @@ export function reworkRate({ cwd, since, until, days, config, now }) {
   const isMove = (/** @type {string} */ s) => moveRe.test(s) || moveRe.test(s.toLocaleLowerCase(commitLang === "tr" ? "tr" : "en"));
   const isProduction = (/** @type {string} */ p) => !exclude.test(p) && !testRe.test(p);
 
-  const log = readLog(cwd, sinceSec);
   const window = windowDays * DAY;
   const inRange = (/** @type {number} */ t, /** @type {number} */ extra) =>
     (sinceSec === null || t >= sinceSec) && (untilSec === null || t <= untilSec + extra);
+  // A candidate is in [since, until]; a fix may come up to a window after it.
+  const log = readLog(cwd, (t) => inRange(t, window));
 
   /** @type {Map<string, LogCommit>} */
   const candidates = new Map();
@@ -254,14 +273,17 @@ export function reworkRate({ cwd, since, until, days, config, now }) {
   const edge = shallowEdge(cwd);
   for (const c of log) {
     if (!inRange(c.time, 0) || !c.changes.some((ch) => isProduction(ch.path))) continue;
-    // An edge commit's own lines cannot be told from older ones: unmeasured, like an open window.
-    if (c.time + window > nowSec || edge.has(c.hash)) censored += 1;
+    // An edge commit's own lines cannot be told from older ones: unmeasured, like an open window, and like
+    // a commit with no time (in a range with no dates), whose window has no place.
+    if (!(c.time + window <= nowSec) || edge.has(c.hash)) censored += 1;
     else candidates.set(c.hash, c);
   }
 
   /** @type {ReworkPair[]} */
   const pairs = [];
   const reworked = new Set();
+  /** @type {Set<string>} origins a link names whose window cannot be measured */
+  const skewedOrigins = new Set();
   const fixes = log.filter((c) => fixRe.test(c.subject) && inRange(c.time, window));
   const fixMessages = commitMessages(cwd, fixes.map((c) => c.hash));
   for (const fix of fixes) {
@@ -288,11 +310,17 @@ export function reworkRate({ cwd, since, until, days, config, now }) {
     for (const [origin, { lines, files }] of owned) {
       const o = candidates.get(origin);
       if (!o || isMove(o.subject)) continue;
-      const delta = fix.time - o.time;
-      if (delta < 0 || delta > window) continue;
       const share = total ? lines / total : 0;
       const named = message.includes(origin.slice(0, 7));
       if (!named && !(lines >= m.minLines && share >= m.minShare)) continue;
+      const delta = fix.time - o.time;
+      // Blame walks back from the fix, so a fix dated before its origin means a wrong clock, and a fix with no
+      // time (NaN) has no window: unmeasured, said.
+      if (!(delta >= 0)) {
+        skewedOrigins.add(origin);
+        continue;
+      }
+      if (delta > window) continue;
       reworked.add(origin);
       pairs.push({
         origin,
@@ -305,7 +333,12 @@ export function reworkRate({ cwd, since, until, days, config, now }) {
     }
   }
 
+  // Such an origin is unmeasured, like an open window: out of the count, unless another fix measured it.
+  const unmeasured = [...skewedOrigins].filter((h) => !reworked.has(h));
+  for (const h of unmeasured) candidates.delete(h);
   const commits = candidates.size;
   const fixCommits = [...candidates.values()].filter((c) => fixRe.test(c.subject)).length;
-  return { commits, reworked: reworked.size, rate: commits === 0 ? null : reworked.size / commits, fixCommits, censored, pairs };
+  // Only a boundary in HEAD's history holds commits back: a branch fetched shallow elsewhere does not.
+  const shallow = [...edge].some((h) => reaches(cwd, h));
+  return { commits, reworked: reworked.size, rate: commits === 0 ? null : reworked.size / commits, fixCommits, censored, skewed: unmeasured.length, shallow, pairs };
 }

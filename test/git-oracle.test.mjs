@@ -359,5 +359,15 @@ test("oracle: in a shallow clone the rework rate blames no commit at its edge", 
   const shallow = join(mkdtempSync(join(ROOT, "shallow-")), "clone");
   git(["clone", "-q", "--depth", "2", pathToFileURL(src).href, shallow], { cwd: ROOT, env: ENV });
   const res = reworkRate({ cwd: shallow, days: 7, config });
-  assert.deepEqual([res.pairs, res.commits, res.censored], [[], 1, 1]);
+  assert.deepEqual([res.pairs, res.commits, res.censored, res.shallow], [[], 1, 1, true], "the result says the clone is shallow");
+  assert.equal(reworkRate({ cwd: src, days: 7, config }).shallow, false);
+  // A full clone of main with another branch fetched one commit deep: HEAD's history is whole.
+  g(src, "checkout", "-q", "-b", "side");
+  commit(3, "feat: side", { "side.js": "export const s = 1;\n" });
+  g(src, "checkout", "-q", "-");
+  const mixed = join(mkdtempSync(join(ROOT, "mixed-")), "clone");
+  git(["clone", "-q", "--single-branch", pathToFileURL(src).href, mixed], { cwd: ROOT, env: ENV });
+  git(["fetch", "-q", "--depth", "1", "origin", "side:side"], { cwd: mixed, env: ENV });
+  assert.ok(readFileSync(join(mixed, ".git", "shallow"), "utf8").trim(), "the side branch is shallow");
+  assert.equal(reworkRate({ cwd: mixed, days: 7, config }).shallow, false);
 });

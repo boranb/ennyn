@@ -111,8 +111,8 @@ function foldTarget(cwd, message, cleanup, comment, cut) {
   if (!hit) return null;
   const hash = hit.slice(0, hit.indexOf("\0"));
   return {
-    message: git(["log", "-1", "--format=%B", hash], { cwd }),
-    paths: git(["show", "-z", "--name-only", "--no-renames", "--format=", hash], { cwd }).split("\0").filter(Boolean),
+    message: git(["log", "-1", "--format=%B", hash, "--"], { cwd }),
+    paths: git(["show", "-z", "--name-only", "--no-renames", "--format=", hash, "--"], { cwd }).split("\0").filter(Boolean),
   };
 }
 
@@ -368,6 +368,8 @@ const COMMANDS = {
       if (res.fixCommits * 2 > res.commits) out(t("rework.fixMajority", { fixes: res.fixCommits, commits: res.commits }, lang));
     }
     if (res.censored) out(t("rework.censored", { n: res.censored, days: windowDays }, lang));
+    if (res.skewed) out(t("rework.skewed", { n: res.skewed }, lang));
+    if (res.shallow) out(t("rework.shallow", {}, lang));
     for (const p of res.pairs) {
       out(t("rework.pair", { origin: p.origin.slice(0, 10), fix: p.fix.slice(0, 10), files: p.files.join(", "), lines: p.lines, days: p.days }, lang));
     }

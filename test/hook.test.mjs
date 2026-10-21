@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -191,8 +191,12 @@ test("hook: amend! and squash! are checked as the message history will hold, wit
   const guarded = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "feat: guarded\n\nImpact: S1 one reader"], { cwd: dir, encoding: "utf8" });
   assert.equal(guarded.status, 0, guarded.stderr);
   const run = (/** @type {string[]} */ ...args) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", ...args], { cwd: dir, encoding: "utf8" });
-  // An empty amend! that rewords the guarded commit must keep its Impact line.
+  // An empty amend! that rewords the guarded commit must keep its Impact line, also next to a file named
+  // like the target's hash (git stops on an ambiguous argument unless the revision ends at --).
+  const named = join(dir, git(["rev-parse", "HEAD"], { cwd: dir }));
+  writeFileSync(named, "");
   assert.notEqual(run("--allow-empty", "-m", "amend! feat: guarded\n\nfeat: guarded, reworded").status, 0, "the Impact line would vanish at autosquash");
+  rmSync(named);
   assert.equal(run("--allow-empty", "-m", "amend! feat: guarded\n\nfeat: guarded, reworded\n\nImpact: S1 one reader").status, 0);
   // A squash! onto the old untyped commit is not blamed for the old subject.
   assert.equal(run("--allow-empty", "-m", "squash! old untyped work\n\nRoot cause: z").status, 0);

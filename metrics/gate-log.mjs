@@ -42,7 +42,8 @@ export function gateLogPath(projectDir, stateDir) {
  * @returns {string[]}
  */
 export function commitPaths(cwd, rev) {
-  return git(["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-z", rev], { cwd }).split("\0").filter(Boolean);
+  // "--" ends the revision: a file named like it would stop git on an ambiguous argument.
+  return git(["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-z", rev, "--"], { cwd }).split("\0").filter(Boolean);
 }
 
 /** @param {number} sec */

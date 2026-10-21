@@ -68,6 +68,14 @@ test("gate-log: a passing attempt takes its files from the commit and lands in t
   assert.deepEqual(JSON.parse(lines[0]), entry);
 });
 
+test("gate-log: a file named like the commit's hash does not stop the file list (the revision ends at --)", () => {
+  const r = repo();
+  const hash = r.commit({ "a.txt": "a\n" }, "first");
+  r.write({ [hash]: "" });
+  const { entry } = recordAttempt({ cwd: r.dir, config: cfgFor(r.dir), start: 1_800_000_000, end: 1_800_000_010, exit: 0, commit: "HEAD" });
+  assert.deepEqual([entry.commit, entry.files], [hash, ["a.txt"]]);
+});
+
 test("gate-log: the root commit's files are listed too", () => {
   const r = repo();
   r.commit({ "a.txt": "a\n" }, "root");
