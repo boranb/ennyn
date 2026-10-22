@@ -289,6 +289,16 @@ test("doctor: bad regex, missing id, duplicate id and unknown need fail; nothing
   assert.ok(!k.some((x) => x.includes("doctor.fix")), "no fix-label check with a broken pattern");
 });
 
+test("doctor audit: outside a repository the git checks are skipped and the fix label says unmeasured", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pl-doc-out-"));
+  put(dir, { ".ennyn/config.json": "{}", ".ennyn/graph.json": JSON.stringify({ nodes: [{ id: "a", mechanization: true }], done: [] }) });
+  const res = await checkSetup({ cwd: dir, env: {} });
+  const k = keys(res);
+  assert.ok(k.includes("warn doctor.fixNoRepo"), k.join("\n"));
+  assert.ok(k.includes("ok doctor.ready"));
+  assert.ok(!k.some((x) => /doctor\.(fixTooFew|fixOk|fixNone|hook|budget)/.test(x)), "no git-based verdict outside a repository");
+});
+
 test("doctor: a missing graph and a broken config fail; a fix-label majority warns", async () => {
   const noGraph = setup({}, undefined);
   assert.ok(keys(await checkSetup({ cwd: noGraph.dir, env: {} })).includes("fail doctor.graphBad"));

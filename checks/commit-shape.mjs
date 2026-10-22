@@ -8,7 +8,7 @@
  */
 
 import { matchAny } from "../core/glob.mjs";
-import { git, parseTrailers } from "../core/git.mjs";
+import { gitMaybe, parseTrailers } from "../core/git.mjs";
 import { t } from "../core/i18n.mjs";
 
 /** @param {string} s */
@@ -143,7 +143,8 @@ export function hookCommitMode({ cwd, message, env }) {
   // core.commentChar and core.commentString set the same marker. The second one reads the typed keys.
   let set = "";
   let marker = "";
-  for (const entry of git(["config", "-z", "--get-regexp", "^(commit\\.cleanup|core\\.comment(char|string))$"], { cwd, env, allowFail: true }).split("\0")) {
+  // Exit 1: none of the keys is set. Any other failure throws: unread is not unset.
+  for (const entry of (gitMaybe(["config", "-z", "--get-regexp", "^(commit\\.cleanup|core\\.comment(char|string))$"], { cwd, env, absent: [1] }) ?? "").split("\0")) {
     const nl = entry.indexOf("\n");
     const [key, value] = nl === -1 ? [entry, ""] : [entry.slice(0, nl), entry.slice(nl + 1)];
     if (key === "commit.cleanup") set = value;
@@ -151,7 +152,7 @@ export function hookCommitMode({ cwd, message, env }) {
   }
   /** @type {Map<string, string>} */
   const typed = new Map();
-  for (const entry of git(["config", "-z", "--type=bool-or-int", "--get-regexp", "^commit\\.(verbose|status)$"], { cwd, env, allowFail: true }).split("\0")) {
+  for (const entry of (gitMaybe(["config", "-z", "--type=bool-or-int", "--get-regexp", "^commit\\.(verbose|status)$"], { cwd, env, absent: [1] }) ?? "").split("\0")) {
     const nl = entry.indexOf("\n");
     if (nl !== -1) typed.set(entry.slice(0, nl), entry.slice(nl + 1));
   }

@@ -13,7 +13,7 @@
 
 import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { git } from "../core/git.mjs";
+import { repoPath } from "../core/git.mjs";
 
 /**
  * Real path of `p`; for a path that does not exist yet (a file about to be
@@ -83,7 +83,10 @@ const commonDirCache = new Map();
  */
 function commonDir(dir) {
   if (commonDirCache.has(dir)) return commonDirCache.get(dir) ?? null;
-  const out = git(["rev-parse", "--git-common-dir"], { cwd: dir, allowFail: true });
+  // A directory that is not there is in no repository; git would not even start in it.
+  if (!isDir(dir)) return null;
+  // Outside a repository: null. A git that fails throws, and the hook says it cannot run.
+  const out = repoPath("--git-common-dir", { cwd: dir });
   const value = out ? resolveReal(resolve(dir, out)) : null;
   commonDirCache.set(dir, value);
   return value;
@@ -109,9 +112,19 @@ function packageName(dir) {
  * @returns {{ root: string, relPath: string } | null}
  */
 function matchWorktree(top, file, project) {
+  // The project's own answer must come: without it nothing can be told. Another repository that git
+  // refuses to open (exit 128: a newer format, a refused owner) is no worktree of a project it opens; a git
+  // that did not start or was killed is no answer at all.
   const mine = commonDir(project);
-  if (!mine || commonDir(top) !== mine) return null;
-  return { root: top, relPath: toSlash(relative(top, file)) };
+  if (!mine) return null;
+  let theirs;
+  try {
+    theirs = commonDir(top);
+  } catch (e) {
+    if (/** @type {{ status?: number | null }} */ (e).status !== 128) throw e;
+    return null;
+  }
+  return theirs === mine ? { root: top, relPath: toSlash(relative(top, file)) } : null;
 }
 
 /**
@@ -167,7 +180,10 @@ export function mapSideCopyPath(absPath, { projectDir, roots = [] }) {
     const wt = top ? matchWorktree(top, file, project) : null;
     if (wt) return wt;
     return matchPlainCopy(file, start, project, Array.isArray(roots) ? roots : []);
-  } catch {
+  } catch (e) {
+    // A path the file system cannot resolve is in no side copy; a git that fails is no answer, and the
+    // hook says it cannot run.
+    if (typeof (/** @type {{ stderr?: unknown }} */ (e)).stderr === "string") throw e;
     return null;
   }
 }

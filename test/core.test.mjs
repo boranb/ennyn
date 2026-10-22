@@ -7,7 +7,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { globToRegExp, matchAny } from "../core/glob.mjs";
 import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
-import { git, parseTrailers, stagedPaths, unpushedCount } from "../core/git.mjs";
+import { git, headCommit, parseTrailers, repoPath, stagedPaths, unpushedCount } from "../core/git.mjs";
 import { t } from "../core/i18n.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -130,6 +130,22 @@ test("git: hook environment does not leak into helpers", () => {
   const leaky = { ...process.env, GIT_DIR: join(b, ".git"), GIT_INDEX_FILE: join(b, ".git", "index") };
   assert.deepEqual(git(["diff", "--cached", "--name-only"], { cwd: a, env: leaky }).split("\n"), ["only-a.txt"]);
   assert.deepEqual(stagedPaths(a), ["only-a.txt"]);
+});
+
+test("git audit: headCommit is null with no commit or no repository, and throws for a branch git cannot read", () => {
+  const outside = mkdtempSync(join(tmpdir(), "pl-head-out-"));
+  assert.equal(headCommit(outside), null);
+  assert.equal(repoPath("--show-toplevel", { cwd: outside }), null);
+  const dir = mkdtempSync(join(tmpdir(), "pl-head-"));
+  git(["init", "-q", "-b", "main"], { cwd: dir });
+  assert.equal(headCommit(dir), null, "no commit yet");
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x"], { cwd: dir });
+  assert.equal(headCommit(dir), git(["rev-parse", "HEAD"], { cwd: dir }));
+  // Inside .git there is no work tree: no project directory, not "outside a repository".
+  assert.throws(() => repoPath("--show-toplevel", { cwd: join(dir, ".git") }), /must be run in a work tree/);
+  // rev-parse --verify -q exits 1 here as for a branch with no commit; it is no "no commits".
+  writeFileSync(join(dir, ".git", "refs", "heads", "main"), "garbage\n");
+  assert.throws(() => headCommit(dir), /appears to be broken/);
 });
 
 test("git: unpushedCount is null without upstream, counts commits with one", () => {

@@ -463,3 +463,26 @@ test("hook (i): every exit code observed is 0 or 1, never 2", () => {
   assert.ok(exitCodes.includes(0) && exitCodes.includes(1));
   for (const code of exitCodes) assert.ok(code === 0 || code === 1, `exit code ${code}`);
 });
+
+test("side-copy audit: a git that cannot run is no 'not a side copy': the hook says it cannot run", () => {
+  // A worktree of its own: the common-dir answer for the others is cached.
+  const fresh = join(tmp("pl-sc-wt-nogit-"), "wt");
+  git(["worktree", "add", "-q", "--detach", fresh], { cwd: project });
+  const saved = process.env.PATH;
+  process.env.PATH = tmp("pl-sc-nogit-");
+  try {
+    assert.throws(() => mapSideCopyPath(join(fresh, "src", "lib", "engine", "x.ts"), { projectDir: project }), /git did not start/);
+  } finally {
+    process.env.PATH = saved;
+  }
+});
+
+test("side-copy audit: another repository this git cannot open is no worktree of the project, and no failure", () => {
+  const other = tmp("pl-sc-newer-");
+  git(["init", "-q"], { cwd: other });
+  // A repository a newer git made: this git refuses to open it.
+  git(["config", "core.repositoryformatversion", "1"], { cwd: other });
+  git(["config", "extensions.fromthefuture", "true"], { cwd: other });
+  put(join(other, "src/lib/engine/x.ts"), "export const x = 1;\n");
+  assert.equal(mapSideCopyPath(join(other, "src/lib/engine/x.ts"), { projectDir: project }), null);
+});

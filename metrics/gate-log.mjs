@@ -13,7 +13,7 @@
 
 import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { git, resolveStateDir, stagedPaths } from "../core/git.mjs";
+import { git, gitMaybe, resolveStateDir, stagedPaths } from "../core/git.mjs";
 import { parseBound } from "./szz.mjs";
 
 export const GATE_LOG_FILE = "gate-attempts.jsonl";
@@ -88,7 +88,7 @@ export function recordAttempt({ cwd, config, start, end = Math.floor(Date.now() 
   if (!(/** @type {readonly string[]} */ (KINDS)).includes(kind)) throw new RangeError(`kind must be ${KINDS.join(" | ")}, got ${kind}`);
   if (kind === "message" && (exit === 0 || commit)) throw new RangeError("a message attempt is a rejection: non-zero exit and no commit");
   if (commit && exit !== 0) throw new RangeError("a commit was given but the exit code is not 0");
-  const hash = commit ? git(["rev-parse", "--verify", "--quiet", `${commit}^{commit}`], { cwd, allowFail: true }) || null : null;
+  const hash = commit ? gitMaybe(["rev-parse", "--verify", "--quiet", `${commit}^{commit}`], { cwd, absent: [1] }) : null;
   if (commit && !hash) throw new RangeError(`not a commit: ${commit}`);
   /** @type {GateAttempt} */
   const entry = {

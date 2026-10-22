@@ -15,7 +15,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, posix, relative } from "node:path";
-import { git, gitRun } from "../core/git.mjs";
+import { git, gitMaybe, gitRun } from "../core/git.mjs";
 import { matchAny } from "../core/glob.mjs";
 import { t } from "../core/i18n.mjs";
 
@@ -182,11 +182,18 @@ class Context {
     if (this._refs === undefined) {
       // --no-color: color.ui or color.grep = always would wrap every path and number in escape codes.
       // A sparse checkout leaves files out of the work tree: those are read from the index.
-      const sparse = git(["config", "--type=bool", "--get", "core.sparseCheckout"], { cwd: this.cwd, allowFail: true }) === "true";
+      let sparse;
+      try {
+        sparse = gitMaybe(["config", "--type=bool", "--get", "core.sparseCheckout"], { cwd: this.cwd, absent: [1] }) === "true";
+      } catch (err) {
+        this.refsError = errorLine(err) || "git config failed";
+        this._refs = null;
+        return null;
+      }
       const runs = [[], ...(sparse ? [["--cached"]] : [])].map((extra) => gitRun(["grep", "--no-color", ...extra, "-n", "-w", "-F", "-I", "--null", "-e", /** @type {string} */ (this.symbol)], { cwd: this.cwd }));
       const bad = runs.find((r) => r.error || (r.status !== 0 && r.status !== 1) || r.stderr.trim());
       if (bad) {
-        this.refsError = (bad.error?.message ?? bad.stderr).trim().split("\n")[0].slice(0, 200) || `git grep exited ${bad.status}`;
+        this.refsError = (bad.error?.message ?? bad.stderr).trim().split("\n")[0].slice(0, 200) || (bad.signal ? `git grep was killed (${bad.signal})` : `git grep exited ${bad.status}`);
         this._refs = null;
         return null;
       }

@@ -5,7 +5,7 @@ import { readFileSync, lstatSync, readlinkSync, mkdtempSync, mkdirSync, writeFil
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { git } from "../core/git.mjs";
+import { git, gitMaybe } from "../core/git.mjs";
 
 // No names, paths or data of the projects that use Ennyn go into this repository (.claude/CLAUDE.md).
 // The names are listed as SHA-256 digests, so this list does not name them either. EXACT holds a word
@@ -73,7 +73,7 @@ export function scanRepo(root) {
     read++;
     for (const what of findings(text)) bad.push(`${f}: ${what}`);
   }
-  const head = git(["rev-parse", "--verify", "-q", "HEAD"], { cwd: root, allowFail: true });
+  const head = gitMaybe(["rev-parse", "--verify", "-q", "HEAD"], { cwd: root, absent: [1] });
   const log = head ? git(["log", "-z", "--format=%H%x00%B"], { cwd: root }).split("\0") : [];
   for (let i = 0; i + 1 < log.length; i += 2) for (const what of findings(log[i + 1])) bad.push(`commit ${log[i].replace(/^\n/, "").slice(0, 10)}: ${what}`);
   return { bad, read, commits: log.length / 2 };

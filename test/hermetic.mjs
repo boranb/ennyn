@@ -43,7 +43,7 @@ Object.assign(process.env, {
 
 /** What a child's own environment must still hold; a test about the time zone or locale sets another value. */
 const KEPT = ["HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL", "GIT_CEILING_DIRECTORIES", "TZ", "LC_ALL"];
-/** Refused calls, kept: the code under test may catch the throw (git's allowFail) and carry on. */
+/** Refused calls, kept: the code under test may catch the throw and carry on. */
 const refused = /** @type {string[]} */ ([]);
 process.on("exit", () => {
   if (!refused.length) return;

@@ -38,8 +38,11 @@ export function ruleKey(raw) {
 function readOrNull(path) {
   try {
     return readFileSync(path, "utf8");
-  } catch {
-    return null;
+  } catch (e) {
+    // No such file is nothing to count; one that could not be read is no empty file.
+    const code = /** @type {NodeJS.ErrnoException} */ (e).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return null;
+    throw e;
   }
 }
 

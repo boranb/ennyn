@@ -2,14 +2,15 @@
 /**
  * ennyn CLI.
  *
- * Exit codes: 0 ok · 1 check failed, config error or runtime error · 2 usage error.
+ * Exit codes: 0 ok · 1 check failed, config error or runtime error (a git call that failed included) ·
+ * 2 usage error · 141 stdout closed before the output was written, as for a process ended by SIGPIPE.
  */
 
 import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { loadConfig, ConfigError } from "../core/config.mjs";
-import { git, stagedPaths, unpushedCount } from "../core/git.mjs";
+import { git, headCommit, repoPath, stagedPaths, unpushedCount } from "../core/git.mjs";
 import { t } from "../core/i18n.mjs";
 import { checkCommitShape, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
 import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
@@ -88,9 +89,9 @@ function parseArgs(args, { options = [], flags = [], positional = 0 }) {
   return { positional: pos, opts, help };
 }
 
-/** Repository root when inside one, else the working directory. */
+/** Repository root when inside one, else the working directory; a git that fails stops the command. */
 function projectDir() {
-  return git(["rev-parse", "--show-toplevel"], { cwd: process.cwd(), allowFail: true }) || process.cwd();
+  return repoPath("--show-toplevel", { cwd: process.cwd() }) ?? process.cwd();
 }
 
 /** @param {string} cwd */
@@ -99,20 +100,33 @@ const config = (cwd) => loadConfig({ cwd });
 /**
  * For an amend! / squash! message, the commit it folds into: the newest of the last 500 whose subject is
  * the one named, every leading fold prefix taken off as autosquash does ("squash! squash! x" folds into
- * x), with its message and paths. null when there is none (or the message is no fold).
+ * x), with its message and paths; null when there is none (or the message is no fold). `missed`: no target
+ * was found but the search did not see the whole history (500 commits read, or a shallow clone), so what
+ * the target would require goes unchecked, and the caller says so.
  * @param {string} cwd @param {string} message @param {"strip" | "whitespace" | "verbatim" | "scissors"} cleanup @param {string} comment @param {boolean} cut
+ * @returns {{ target: { message: string, paths: string[] } | null, missed: "depth" | "shallow" | null, subject: string }}
  */
 function foldTarget(cwd, message, cleanup, comment, cut) {
   const fold = /^(?:amend|squash)! (.*)$/.exec(storedMessage(message, cleanup, comment, cut).split("\n")[0] ?? "");
-  if (!fold) return null;
-  const log = git(["log", "-n500", "--format=%H%x00%s"], { cwd, allowFail: true });
+  if (!fold) return { target: null, missed: null, subject: "" };
   const subject = fold[1].replace(/^(?:(?:amend|squash|fixup)! )+/, "");
-  const hit = log.split("\n").find((l) => l.slice(l.indexOf("\0") + 1) === subject);
-  if (!hit) return null;
+  // No commit yet, or no repository: nothing to fold into. A git that fails is no "no target".
+  if (!headCommit(cwd)) return { target: null, missed: null, subject };
+  // One more than the search: 501 lines say the history goes on, 500 or fewer that it was all read.
+  const log = git(["log", "-n501", "--format=%H%x00%s"], { cwd }).split("\n");
+  const hit = log.slice(0, 500).find((l) => l.slice(l.indexOf("\0") + 1) === subject);
+  if (!hit) {
+    const missed = log.length > 500 ? "depth" : git(["rev-parse", "--is-shallow-repository"], { cwd }) === "true" ? "shallow" : null;
+    return { target: null, missed, subject };
+  }
   const hash = hit.slice(0, hit.indexOf("\0"));
   return {
-    message: git(["log", "-1", "--format=%B", hash, "--"], { cwd }),
-    paths: git(["show", "-z", "--name-only", "--no-renames", "--format=", hash, "--"], { cwd }).split("\0").filter(Boolean),
+    target: {
+      message: git(["log", "-1", "--format=%B", hash, "--"], { cwd }),
+      paths: git(["show", "-z", "--name-only", "--no-renames", "--format=", hash, "--"], { cwd }).split("\0").filter(Boolean),
+    },
+    missed: null,
+    subject,
   };
 }
 
@@ -255,9 +269,10 @@ const COMMANDS = {
     if (help) return (out(USAGE), 0);
     const cwd = projectDir();
     const cfg = config(cwd);
-    const files = git(["-c", "core.quotePath=false", "ls-files", "-z"], { cwd, allowFail: true }).split("\0").filter(Boolean);
+    const files = git(["-c", "core.quotePath=false", "ls-files", "-z"], { cwd }).split("\0").filter(Boolean);
     const b = instructionBudget(cwd, files);
-    const head = git(["rev-parse", "HEAD"], { cwd, allowFail: true });
+    // No commit yet: the record has no commit. A git that fails stops here, before anything is recorded.
+    const head = headCommit(cwd) ?? "";
     const log = readBudgets(resolve(cwd, cfg.paths.metricsLog));
     // Measured against the newest record made at another commit: recording twice in a cycle hides nothing.
     const previous = previousBudget(log.records, head);
@@ -295,7 +310,16 @@ const COMMANDS = {
     const { positional, opts, help } = parseArgs(args, { positional: 1, flags: ["hook"] });
     if (help) return (out(USAGE), 0);
     if (!positional[0]) throw new UsageError("commit-check needs a message file");
-    const cwd = projectDir();
+    let cwd;
+    try {
+      cwd = projectDir();
+    } catch (e) {
+      // From the commit-msg hook a git that fails lets the commit through, saying so.
+      if (!opts.hook) throw e;
+      const error = /** @type {Error & { stderr?: unknown }} */ (e);
+      err(t("cli.hookGitFailed", { error: String(error.stderr ?? error.message).trim().split("\n")[0] }, "en"));
+      return 0;
+    }
     let cfg;
     try {
       cfg = config(cwd);
@@ -322,11 +346,16 @@ const COMMANDS = {
     let res;
     try {
       const { cleanup, comment, cut } = hookCommitMode({ cwd, message, env: process.env });
-      res = checkCommitShape(message, { config: cfg, stagedPaths: staged, cleanup, cut, comment, foldTarget: foldTarget(cwd, message, cleanup, comment, cut) });
+      const fold = foldTarget(cwd, message, cleanup, comment, cut);
+      if (fold.missed) err(t("cli.foldNotFound", { subject: fold.subject, where: t(`cli.foldWhere.${fold.missed}`, {}, cfg.language) }, cfg.language));
+      res = checkCommitShape(message, { config: cfg, stagedPaths: staged, cleanup, cut, comment, foldTarget: fold.target });
     } catch (e) {
-      // Any other tool failure (a pattern in the config that does not compile) is no reason to lock commits either.
+      // A git that fails, or a pattern in the config that does not compile, is no reason to lock commits either:
+      // the commit goes through, and the message says it was not checked.
       if (!opts.hook) throw e;
-      err(t("cli.hookConfigBroken", { error: /** @type {Error} */ (e).message }, "en"));
+      const error = /** @type {Error & { stderr?: unknown }} */ (e);
+      if (typeof error.stderr === "string") err(t("cli.hookGitFailed", { error: error.stderr.trim().split("\n")[0] }, cfg.language));
+      else err(t("cli.hookConfigBroken", { error: error.message }, "en"));
       return 0;
     }
     for (const e of res.errors) err(e);
@@ -576,9 +605,10 @@ const invokedDirectly = (() => {
 })();
 
 if (invokedDirectly) {
-  // A closed pipe (`ennyn rework | head`) ends the output, not the process with a stack trace.
+  // A closed pipe (`ennyn rework | head`) ends the process without a stack trace, and with 141 as a process
+  // ended by SIGPIPE has (git log | head): output that did not arrive, or a run cut short, is no pass.
   process.stdout.on("error", (e) => {
-    if (/** @type {NodeJS.ErrnoException} */ (e).code === "EPIPE") process.exit(0);
+    if (/** @type {NodeJS.ErrnoException} */ (e).code === "EPIPE") process.exit(141);
     throw e;
   });
   main(process.argv.slice(2)).then((code) => {

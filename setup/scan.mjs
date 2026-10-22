@@ -12,7 +12,7 @@
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve, posix } from "node:path";
-import { git } from "../core/git.mjs";
+import { git, gitMaybe, headCommit, repoPath } from "../core/git.mjs";
 import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
 import { loadPathScopedRules, splitFrontMatter, parsePaths } from "../adapters/claude-code/rules-index.mjs";
 
@@ -111,7 +111,8 @@ export function commitStyle(subjects) {
  * @returns {RecentCommit[]} newest first; [] outside a repository or without commits
  */
 export function recentCommits(cwd, limit = RECENT_COMMITS) {
-  if (!git(["rev-parse", "--verify", "-q", "HEAD"], { cwd, allowFail: true })) return [];
+  // Outside a repository, or no commit yet: none. A broken HEAD throws.
+  if (!headCommit(cwd)) return [];
   const out = git(["log", "-z", "--no-merges", "--no-renames", `-n${limit}`, "--name-only", "--format=%x01%s"], { cwd });
   return out
     .split("\x01")
@@ -197,8 +198,7 @@ export function proposeFixSubject(subjects) {
 
 /** @param {string} cwd */
 function trackedFiles(cwd) {
-  const out = git(["-c", "core.quotePath=false", "ls-files", "-z"], { cwd, allowFail: true });
-  return out.split("\0").filter(Boolean);
+  return git(["-c", "core.quotePath=false", "ls-files", "-z"], { cwd }).split("\0").filter(Boolean);
 }
 
 /** @param {string} path */
@@ -309,7 +309,7 @@ export function roadmapFiles(cwd, files) {
 
 /** @param {string} cwd */
 function githubRepo(cwd) {
-  const url = git(["remote", "get-url", "origin"], { cwd, allowFail: true });
+  const url = gitMaybe(["remote", "get-url", "origin"], { cwd, absent: [2] }) ?? "";
   const m = /github\.com[:/]([^/\s]+)\/([^/\s]+?)(\.git)?\/?$/.exec(url);
   return m ? `${m[1]}/${m[2]}` : null;
 }
@@ -376,11 +376,26 @@ const RULE_WORDS = /(mesaj|message|konu|subject|format|\bdil\b|language|türkçe
 const SQL = /\bCOMMIT\s*;|\b(BEGIN|ROLLBACK)\b/;
 
 /** @param {string} path */
+function isFile(path) {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A file's text; null when there is no such file. Any other error (no permission, a directory) throws: a
+ * file that could not be read is no empty file.
+ * @param {string} path
+ */
 function readText(path) {
   try {
     return readFileSync(path, "utf8");
-  } catch {
-    return null;
+  } catch (e) {
+    const code = /** @type {NodeJS.ErrnoException} */ (e).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return null;
+    throw e;
   }
 }
 
@@ -516,7 +531,8 @@ export function agentSetup(cwd, files) {
     for (const from of frontier) {
       const loads = /** @type {"always" | "on-demand"} */ (kinds.get(from));
       for (const target of importsOf(readText(join(cwd, from)) ?? "", from)) {
-        if (!existsSync(join(cwd, target)) || (kinds.get(target) && rank[/** @type {"always" | "on-demand" | "other"} */ (kinds.get(target))] <= rank[loads])) continue;
+        // Claude Code imports files: an @ that names a directory (@docs/) imports nothing.
+        if (!isFile(join(cwd, target)) || (kinds.get(target) && rank[/** @type {"always" | "on-demand" | "other"} */ (kinds.get(target))] <= rank[loads])) continue;
         put(target, loads);
         next.push(target);
       }
@@ -583,7 +599,8 @@ export function scanProject({ cwd, env = process.env }) {
     problems.push(...e.problems);
   }
   const patterns = pathPatterns(config, problems);
-  const repo = git(["rev-parse", "--git-dir"], { cwd, allowFail: true }) !== "";
+  // Outside a repository the history rows are unmeasured; a git that fails stops the scan.
+  const repo = repoPath("--git-dir", { cwd }) !== null;
   const files = repo ? trackedFiles(cwd) : [];
   const commits = repo ? recentCommits(cwd) : [];
   const graphPath = resolve(cwd, config.paths.graph);

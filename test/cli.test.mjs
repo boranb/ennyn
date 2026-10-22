@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { chmodSync, mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { git } from "../core/git.mjs";
+import { git, gitMaybe } from "../core/git.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
 
@@ -121,6 +121,52 @@ test("cli: rework reports JSON and text; a bad date is a usage error", () => {
   assert.equal(bad.code, 2);
   assert.match(bad.stderr, /--since is not a calendar date/);
   assert.equal(run(p.dir, "rework", "--days", "seven").code, 2);
+});
+
+test("cli audit: an amend! whose target is past a shallow boundary says what went unchecked", () => {
+  const p = project({ review: { impactRequiredGlobs: ["src/**"] } });
+  p.commit({ "src/a.js": SRC }, "feat: add", 0);
+  p.commit({ "README.md": "# x\n" }, "feat: docs", 1);
+  const msg = join(p.dir, ".git", "MSG");
+  writeFileSync(msg, "amend! feat: add\n\nfeat: add, reworded\n");
+  // The whole history: the target is found, and the Impact line it needs is missing.
+  const full = run(p.dir, "commit-check", "--hook", msg);
+  assert.equal(full.code, 1);
+  assert.match(full.stderr, /impact table/);
+  writeFileSync(join(p.dir, ".git", "shallow"), `${git(["rev-parse", "HEAD"], { cwd: p.dir })}\n`);
+  const cut = run(p.dir, "commit-check", "--hook", msg);
+  assert.equal(cut.code, 0);
+  assert.match(cut.stderr, /^ennyn: "feat: add" was not found in this shallow clone, so what that commit requires was not checked\.$/m);
+  rmSync(join(p.dir, ".git", "shallow"));
+});
+
+test("cli audit: a fold target absent from a history of exactly 500 commits is no unchecked part; of 501, it is", () => {
+  const p = project();
+  const stream = (/** @type {number} */ n) =>
+    Array.from({ length: n }, (_, i) => [`commit refs/heads/main`, `committer t <t@t> ${1767268800 + i} +0000`, `data <<EOF`, `chore: c${i + 1}`, "EOF", i ? "" : "deleteall", ""].join("\n")).join("\n");
+  spawnSync("git", ["fast-import", "--quiet"], { cwd: p.dir, input: stream(500), encoding: "utf8" });
+  const msg = join(p.dir, ".git", "MSG");
+  writeFileSync(msg, "amend! chore: never was\n\nchore: never was, reworded\n");
+  assert.equal(git(["rev-list", "--count", "HEAD"], { cwd: p.dir }), "500");
+  assert.doesNotMatch(run(p.dir, "commit-check", "--hook", msg).stderr, /was not checked/, "the whole history was read");
+  writeFileSync(join(p.dir, "f.txt"), "x\n");
+  git(["add", "f.txt"], { cwd: p.dir });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "chore: one more"], { cwd: p.dir });
+  assert.match(run(p.dir, "commit-check", "--hook", msg).stderr, /"chore: never was" was not found in the last 500 commits, so what that commit requires was not checked\./);
+});
+
+test("cli audit: a tracked instruction file that cannot be read fails budget; inside .git is no project", (t) => {
+  const p = project();
+  p.commit({ "CLAUDE.md": "# Rules\n\n- Every change keeps the tests green before it is committed.\n" }, "docs: rules", 0);
+  const inside = run(join(p.dir, ".git"), "budget");
+  assert.equal(inside.code, 1);
+  assert.match(inside.stderr, /must be run in a work tree/);
+  if (process.getuid?.() === 0) return t.skip("root reads any file");
+  chmodSync(join(p.dir, "CLAUDE.md"), 0o000);
+  const locked = run(p.dir, "budget");
+  chmodSync(join(p.dir, "CLAUDE.md"), 0o644);
+  assert.equal(locked.code, 1, "0.0 KB would be a number read from nothing");
+  assert.match(locked.stderr, /EACCES/);
 });
 
 test("cli: rework says when a fix is dated before the commit it repairs", () => {
@@ -252,7 +298,7 @@ test("cli: commit-check follows commit.cleanup (strip, whitespace, verbatim, sci
   const msg = join(dir, "MSG");
   writeFileSync(msg, "s\n\n# a comment line\n# ------------------------ >8 ------------------------\ndiff --git a b\n");
   const run = (/** @type {Record<string, string>} */ extra) => spawnSync(process.execPath, [CLI, "commit-check", msg], { cwd: dir, env: { ...process.env, ...extra }, encoding: "utf8" }).status;
-  const set = (/** @type {string | null} */ v) => (v ? git(["config", "commit.cleanup", v], { cwd: dir }) : git(["config", "--unset", "commit.cleanup"], { cwd: dir, allowFail: true }));
+  const set = (/** @type {string | null} */ v) => (v ? git(["config", "commit.cleanup", v], { cwd: dir }) : gitMaybe(["config", "--unset", "commit.cleanup"], { cwd: dir, absent: [5] }));
   // Default: the editor strips "#" lines and cuts at the scissors line; -m keeps them as text.
   set(null);
   assert.deepEqual([run({}), run({ GIT_EDITOR: ":" })], [0, 1]);

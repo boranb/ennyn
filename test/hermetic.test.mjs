@@ -76,11 +76,17 @@ test("hermetic: a child given its own environment that drops the setup is refuse
   assert.throws(() => spawnSync("git", ["--version"], { env: { ...process.env, GIT_CONFIG_NOSYSTEM: "0" } }), refused);
   const { TZ: __, ...noZone } = process.env;
   assert.throws(() => spawnSync("date", [], { env: noZone }), /without TZ;/);
-  // Caught by the code under test (git's allowFail) it is still on record, and would fail this file at exit.
+  // Caught where it is made (code under test may catch a git failure and carry on) it is still on record,
+  // and would fail this file at exit.
   const dir = mkdtempSync(join(tmpdir(), "en-herm-swallow-"));
   spawnSync("git", ["init", "-q"], { cwd: dir });
-  assert.deepEqual(hookCommitMode({ cwd: dir, message: "feat: x\n", env: { PATH: process.env.PATH, GIT_EDITOR: ":" } }), { cleanup: "whitespace", comment: "#", cut: false });
-  assert.equal(takeRefused().length, 6 + 2, "the six refused calls above, and both git calls inside hookCommitMode");
+  try {
+    hookCommitMode({ cwd: dir, message: "feat: x\n", env: { PATH: process.env.PATH, GIT_EDITOR: ":" } });
+    assert.fail("a refused git call is no unset key");
+  } catch (e) {
+    assert.match(String(/** @type {Error} */ (e).message), /got an env without GIT_CONFIG_NOSYSTEM=1, HOME/);
+  }
+  assert.equal(takeRefused().length, 6 + 1, "the six refused calls above, and the first git call inside hookCommitMode");
   // An inherited environment, or one built from process.env, runs.
   assert.equal(spawnSync("git", ["--version"]).status, 0);
   assert.equal(spawnSync("git", ["--version"], { env: { ...process.env, LC_ALL: "C" } }).status, 0);

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -50,6 +50,28 @@ test("budget: sizes by load kind; repeats across loaded files, marked when a cop
   assert.deepEqual([b.repeatedLines, b.repeatedEverySession], [2, 1]);
   const empty = instructionBudget(mkdtempSync(join(tmpdir(), "en-budget0-")), []);
   assert.deepEqual([empty.always, empty.repeatedLines], [0, 0]);
+});
+
+test("budget audit: a metrics log that cannot be read is no empty log", (t) => {
+  if (process.getuid?.() === 0) return t.skip("root reads any file");
+  const dir = mkdtempSync(join(tmpdir(), "en-budget-log-"));
+  const log = join(dir, "metrics.jsonl");
+  writeFileSync(log, `${JSON.stringify({ kind: "budget", date: "2026-10-01", commit: "a".repeat(40), always: 1 })}\n`);
+  chmodSync(log, 0o000);
+  try {
+    assert.throws(() => readBudgets(log), /EACCES/);
+  } finally {
+    chmodSync(log, 0o644);
+  }
+  assert.deepEqual(readBudgets(join(dir, "none.jsonl")), { records: [], skipped: 0 }, "no log is still no records");
+});
+
+test("budget audit: an @ that names a directory imports nothing, and is no file it cannot read", () => {
+  const dir = mkdtempSync(join(tmpdir(), "en-budget-dir-"));
+  const claude = "# Rules\n\nRead @docs/ and @src before a change.\n";
+  put(dir, { "CLAUDE.md": claude, "docs/guide.md": "# Guide\n", "src/a.js": "export const a = 1;\n" });
+  const b = instructionBudget(dir, ["CLAUDE.md", "docs/guide.md", "src/a.js"]);
+  assert.deepEqual([b.always, b.files], [Buffer.byteLength(claude), 1]);
 });
 
 test("budget: imported files load with their importer; untracked files are this machine's; skill and agent descriptions count; a rule-dir CLAUDE.md counts once", () => {

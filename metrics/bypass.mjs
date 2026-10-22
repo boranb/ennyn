@@ -23,7 +23,7 @@
  * boundary: the result says so when one may be in the range.
  */
 
-import { git, gitRun } from "../core/git.mjs";
+import { git, gitMaybe, headCommit } from "../core/git.mjs";
 import { allowMarkerReason, skippedSubject } from "../checks/commit-shape.mjs";
 import { parseBound, shallowEdge } from "./szz.mjs";
 
@@ -47,16 +47,16 @@ export function bypassUses({ cwd, config, since, until, from }) {
   // Throws outside a repository: unmeasured is not zero.
   git(["rev-parse", "--git-dir"], { cwd });
   const isShallow = git(["rev-parse", "--is-shallow-repository"], { cwd }) === "true";
-  if (!git(["rev-parse", "--verify", "-q", "HEAD"], { cwd, allowFail: true })) return { commits: 0, uses: [], shallow: false };
+  if (!headCommit(cwd)) return { commits: 0, uses: [], shallow: false };
   // A bad revision throws too: a typo must not read as "no bypass since then".
   if (from !== undefined && !from) throw new RangeError("from: empty revision");
   /** @type {string[]} */
   let range = [];
   let shallow = isShallow;
   if (from) {
-    const start = git(["rev-parse", "--verify", "-q", `${from}^{commit}`], { cwd, allowFail: true });
+    const start = gitMaybe(["rev-parse", "--verify", "-q", `${from}^{commit}`], { cwd, absent: [1] });
     if (!start) throw new RangeError(`from: "${from}" is not in this repository${isShallow ? "; the clone is shallow, it may lie past the boundary" : ""}`);
-    if (gitRun(["merge-base", "--is-ancestor", start, "HEAD"], { cwd }).status !== 0) {
+    if (gitMaybe(["merge-base", "--is-ancestor", start, "HEAD"], { cwd, absent: [1] }) === null) {
       throw new RangeError(`from: "${from}" is not an ancestor of HEAD (amended or rebased since?); the range would count commits from before it`);
     }
     range = [`${start}..HEAD`];

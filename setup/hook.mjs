@@ -11,7 +11,7 @@
 
 import { readFileSync, writeFileSync, mkdirSync, chmodSync, realpathSync } from "node:fs";
 import { join, resolve, dirname, basename, relative, isAbsolute } from "node:path";
-import { git } from "../core/git.mjs";
+import { git, gitMaybe, repoPath } from "../core/git.mjs";
 
 export const HOOK_MARKER = "# ennyn commit-msg hook";
 
@@ -87,14 +87,14 @@ function readOrNull(path) {
  *   stub directory ("husky"), or outside it ("global", every repository on this machine).
  */
 export function hookStatus(cwd) {
-  const hooksPath = git(["config", "--get", "core.hooksPath"], { cwd, allowFail: true }) || null;
+  const hooksPath = gitMaybe(["config", "--get", "core.hooksPath"], { cwd, absent: [1] }) || null;
   const dir = resolve(cwd, git(["rev-parse", "--git-path", "hooks"], { cwd }));
   const path = join(dir, "commit-msg");
   const text = readOrNull(path);
   /** @type {"repo" | "husky" | "global" | null} */
   let hooksKind = null;
   if (hooksPath) {
-    const top = git(["rev-parse", "--show-toplevel"], { cwd, allowFail: true }) || cwd;
+    const top = repoPath("--show-toplevel", { cwd }) ?? cwd;
     // Both sides as real paths: git prints the real top level, while dir came through cwd (a link, /var → /private/var).
     const rel = relative(real(top), real(dir));
     hooksKind = rel.startsWith("..") || isAbsolute(rel) ? "global" : basename(dir) === "_" && basename(dirname(dir)) === ".husky" ? "husky" : "repo";

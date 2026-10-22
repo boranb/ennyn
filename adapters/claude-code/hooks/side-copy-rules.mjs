@@ -168,7 +168,8 @@ if (invokedDirectly) main().then(
     process.exitCode = code;
   },
   (err) => {
-    const reason = err instanceof Error ? err.stack || err.message : String(err);
+    // The message, not a stack trace: this runs on every edit, and says why it cannot.
+    const reason = err instanceof Error ? err.message : String(err);
     process.stderr.write(`${t("sidecopy.cannotRun", { reason }, "en")}\n`);
     process.exitCode = 1;
   },

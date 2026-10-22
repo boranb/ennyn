@@ -13,7 +13,7 @@ import { MIN_HISTORY, recentCommits, productionSubjects } from "./scan.mjs";
 import { hookStatus } from "./hook.mjs";
 import { instructionBudget, readBudgets } from "./budget.mjs";
 import { resolve } from "node:path";
-import { git } from "../core/git.mjs";
+import { git, repoPath } from "../core/git.mjs";
 import { matchAny } from "../core/glob.mjs";
 
 /**
@@ -95,7 +95,8 @@ export async function checkSetup({ cwd, env = process.env }) {
   else add("ok", "doctor.commitStyleFree", { language: commitLanguage });
 
   // Declared types with no hook to check them are a rule on paper again.
-  if (cm.types.length && git(["rev-parse", "--git-dir"], { cwd, allowFail: true })) {
+  const repo = repoPath("--git-dir", { cwd }) !== null;
+  if (cm.types.length && repo) {
     const hook = hookStatus(cwd);
     if (hook.state === "ennyn" || hook.state === "wired") add("ok", "doctor.hookOk", { path: hook.path });
     else if (hook.hooksPath) add("warn", "doctor.hookPath", { dir: hook.hooksPath });
@@ -104,8 +105,8 @@ export async function checkSetup({ cwd, env = process.env }) {
   }
 
   // Text loaded in every session only shrinks: growth since the last recorded budget is a warning.
-  if (git(["rev-parse", "--git-dir"], { cwd, allowFail: true })) {
-    const files = git(["-c", "core.quotePath=false", "ls-files", "-z"], { cwd, allowFail: true }).split("\0").filter(Boolean);
+  if (repo) {
+    const files = git(["-c", "core.quotePath=false", "ls-files", "-z"], { cwd }).split("\0").filter(Boolean);
     const b = instructionBudget(cwd, files);
     const kb = (/** @type {number} */ n) => `${(n / 1024).toFixed(1)} KB`;
     const log = readBudgets(resolve(cwd, config.paths.metricsLog));
@@ -132,7 +133,8 @@ export async function checkSetup({ cwd, env = process.env }) {
   }
   const exclude = compiled["metrics.excludeRe"];
   const test = compiled["metrics.testRe"];
-  if (fixRe && exclude && test) {
+  if (fixRe && exclude && test && !repo) add("warn", "doctor.fixNoRepo");
+  else if (fixRe && exclude && test) {
     const subjects = productionSubjects(recentCommits(cwd), { exclude, test });
     const matches = subjects.filter((s) => fixRe.test(s)).length;
     const vars = { pattern: config.metrics.fixSubject, matches, commits: subjects.length };

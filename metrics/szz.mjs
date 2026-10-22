@@ -23,7 +23,7 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { git } from "../core/git.mjs";
+import { git, headCommit } from "../core/git.mjs";
 
 const DAY = 86400;
 
@@ -84,7 +84,7 @@ export function readLog(cwd, within, chunk = 200) {
   if (!(Number.isInteger(chunk) && chunk >= 1)) throw new RangeError(`chunk must be a whole number from 1, got ${chunk}`);
   // Throws outside a repository (unmeasured is not zero); an empty repository has no log.
   git(["rev-parse", "--git-dir"], { cwd });
-  if (!git(["rev-parse", "--verify", "-q", "HEAD"], { cwd, allowFail: true })) return [];
+  if (!headCommit(cwd)) return [];
   /** @type {Map<string, LogCommit>} */
   const byHash = new Map();
   // Neither field holds a space or a newline.

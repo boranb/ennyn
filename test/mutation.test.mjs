@@ -518,7 +518,7 @@ test("mutate: what a test run leaves running is stopped before the next mutant",
     const closed = new Promise((done) => child.on("close", (code, signal) => done({ code, signal })));
     await new Promise((done) => child.stdout.once("data", done));
     child.stdout.destroy();
-    assert.deepEqual(await closed, { code: 0, signal: null });
+    assert.deepEqual(await closed, { code: 141, signal: null }, "a run cut short is no pass");
     assert.deepEqual(p.snapshot(), p.before);
     assert.equal(existsSync(p.journal), false);
   });

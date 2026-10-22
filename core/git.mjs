@@ -10,6 +10,11 @@
  * put context lines into a -U0 diff, whose line counts then drift; a
  * pathspec is a glob ("[id].js" matches "i.js") unless it is literal.
  * test/git-oracle.test.mjs runs the readers under such a config.
+ *
+ * A git call that fails throws. Where git answers "nothing there" with an exit code of its own (an unset
+ * key, a missing ref, no repository), gitMaybe and repoPath return null for that answer and throw for any
+ * other: a failed, killed or missing git is never read as "nothing there". test/fault-injection.test.mjs
+ * runs every CLI command with each of its git calls failing.
  */
 
 import { execFileSync, spawnSync } from "node:child_process";
@@ -28,6 +33,9 @@ const FIXED_CONFIG = [
   ...["log.showSignature=false", "i18n.logOutputEncoding=UTF-8", "diff.interHunkContext=0", "diff.algorithm=myers", "diff.indentHeuristic=true", "log.follow=false", "log.showRoot=true"].flatMap((kv) => ["-c", kv]),
 ];
 
+/** ENOENT from spawn: no git on PATH, or the working directory is not there. */
+const NO_START = "git did not start (no git on PATH, or no such directory)";
+
 /** @param {NodeJS.ProcessEnv} env @param {boolean} keepIndex */
 function cleanEnv(env, keepIndex) {
   const out = { ...env };
@@ -38,11 +46,11 @@ function cleanEnv(env, keepIndex) {
 
 /**
  * @param {string[]} args
- * @param {{ cwd: string, env?: NodeJS.ProcessEnv, allowFail?: boolean, keepIndex?: boolean }} opts
+ * @param {{ cwd: string, env?: NodeJS.ProcessEnv, keepIndex?: boolean }} opts
  *   `keepIndex` keeps GIT_INDEX_FILE (only for an index already checked by hookIndexFile).
- * @returns {string} stdout without the trailing newline ("" on allowed failure)
+ * @returns {string} stdout without the trailing newline; a failure throws, with git's message as `stderr`
  */
-export function git(args, { cwd, env = process.env, allowFail = false, keepIndex = false }) {
+export function git(args, { cwd, env = process.env, keepIndex = false }) {
   try {
     return execFileSync("git", [...FIXED_CONFIG, ...args], {
       cwd,
@@ -52,8 +60,10 @@ export function git(args, { cwd, env = process.env, allowFail = false, keepIndex
       maxBuffer: 64 * 1024 * 1024,
     }).replace(/\n$/, "");
   } catch (err) {
-    if (allowFail) return "";
-    throw err;
+    // A killed git or one that did not start says nothing on stderr: say what happened instead.
+    const e = /** @type {Error & { stderr?: string, signal?: string | null, code?: string }} */ (err);
+    if (!String(e.stderr ?? "").trim()) e.stderr = `git ${args[0]}: ${e.signal ? `killed by ${e.signal}` : e.code === "ENOENT" ? NO_START : e.message}`;
+    throw e;
   }
 }
 
@@ -62,11 +72,76 @@ export function git(args, { cwd, env = process.env, allowFail = false, keepIndex
  * and also when a file cannot be read, and says which on stderr.
  * @param {string[]} args
  * @param {{ cwd: string, env?: NodeJS.ProcessEnv }} opts
- * @returns {{ status: number | null, stdout: string, stderr: string, error?: Error }}
+ * @returns {GitRun}
+ * @typedef {{ status: number | null, signal: string | null, stdout: string, stderr: string, error?: Error }} GitRun
  */
 export function gitRun(args, { cwd, env = process.env }) {
   const r = spawnSync("git", [...FIXED_CONFIG, ...args], { cwd, env: cleanEnv(env, false), encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-  return { status: r.status, stdout: r.stdout ?? "", stderr: r.stderr ?? "", ...(r.error ? { error: r.error } : {}) };
+  return { status: r.status, signal: r.signal, stdout: r.stdout ?? "", stderr: r.stderr ?? "", ...(r.error ? { error: r.error } : {}) };
+}
+
+/**
+ * The error for a git call that failed: git's own message, else how it ended (a signal, no git at all).
+ * @param {string[]} args @param {GitRun} r
+ */
+export function gitError(args, r) {
+  const how = r.error ? (/** @type {NodeJS.ErrnoException} */ (r.error).code === "ENOENT" ? NO_START : r.error.message) : r.signal ? `killed by ${r.signal}` : `exit ${r.status}`;
+  const said = r.stderr.trim();
+  const err = /** @type {Error & { stderr: string, status: number | null }} */ (new Error(`git ${args.join(" ")}: ${said.split("\n")[0] || how}`));
+  err.stderr = said || `git ${args[0]}: ${how}`;
+  err.status = r.status;
+  return err;
+}
+
+/**
+ * A git question whose "nothing there" answer is an exit code: `config --get` and `--get-regexp` exit 1
+ * for no such key, `rev-parse --verify -q` 1 for no such revision, `remote get-url` 2 for no such remote,
+ * `merge-base --is-ancestor` 1 for "no". null for those codes, stdout otherwise. Any other exit, a signal
+ * (a killed git) or a git that cannot start throws.
+ * @param {string[]} args
+ * @param {{ cwd: string, env?: NodeJS.ProcessEnv, absent: number[] }} opts
+ * @returns {string | null}
+ */
+export function gitMaybe(args, { cwd, env = process.env, absent }) {
+  const r = gitRun(args, { cwd, env });
+  if (!r.error && r.status !== null && r.status !== 0 && absent.includes(r.status)) return null;
+  if (r.error || r.status !== 0) throw gitError(args, r);
+  return r.stdout.replace(/\n$/, "");
+}
+
+/**
+ * A `git rev-parse <flag>` path for the repository at `cwd` (--show-toplevel, --git-dir, --git-common-dir,
+ * --absolute-git-dir); null when `cwd` is in no repository, as git says it. Its message is read in the C
+ * locale (a Turkish git words it otherwise); any other failure throws: a repository git refuses
+ * (safe.directory), no work tree for --show-toplevel (inside .git, a bare repository: a fallback to the
+ * working directory there read .git as the project), a killed git, no git at all.
+ * @param {string} flag
+ * @param {{ cwd: string, env?: NodeJS.ProcessEnv }} opts
+ * @returns {string | null}
+ */
+export function repoPath(flag, { cwd, env = process.env }) {
+  const args = ["rev-parse", flag];
+  const r = gitRun(args, { cwd, env: { ...env, LC_ALL: "C", LANGUAGE: "C" } });
+  if (!r.error && r.status === 0) return r.stdout.replace(/\n$/, "");
+  if (!r.error && r.status === 128 && /^fatal: not a git repository/m.test(r.stderr)) return null;
+  throw gitError(args, r);
+}
+
+/**
+ * HEAD's commit; null when the repository has no commit yet, or `cwd` is in no repository. A branch ref git
+ * cannot read (garbage, no permission) makes `rev-parse --verify -q HEAD` exit 1 like a branch with no
+ * commit; git log tells the two apart, in the C locale, and a broken one throws.
+ * @param {string} cwd
+ * @returns {string | null}
+ */
+export function headCommit(cwd) {
+  if (repoPath("--git-dir", { cwd }) === null) return null;
+  const hash = gitMaybe(["rev-parse", "--verify", "-q", "HEAD"], { cwd, absent: [1] });
+  if (hash) return hash;
+  const args = ["log", "-1", "--format=%H"];
+  const r = gitRun(args, { cwd, env: { ...process.env, LC_ALL: "C", LANGUAGE: "C" } });
+  if (!r.error && r.status === 128 && /does not have any commits yet/.test(r.stderr)) return null;
+  throw gitError(args, r.status === 0 ? { ...r, status: 1, stderr: "HEAD did not verify, yet git log found a commit" } : r);
 }
 
 /**
@@ -81,7 +156,7 @@ export function gitRun(args, { cwd, env = process.env }) {
 export function hookIndexFile(cwd, env) {
   const raw = env.GIT_INDEX_FILE;
   if (!raw) return null;
-  const gitDir = git(["rev-parse", "--absolute-git-dir"], { cwd, allowFail: true });
+  const gitDir = repoPath("--absolute-git-dir", { cwd });
   if (!gitDir) return null;
   const real = (/** @type {string} */ p) => {
     try {
@@ -117,13 +192,18 @@ export function stagedPaths(cwd, { env } = {}) {
 /**
  * Commits on HEAD that the upstream branch does not have.
  * @param {string} cwd
- * @returns {number | null} null when there is no upstream (cannot measure)
+ * @returns {number | null} null when there is nothing to count against (a detached HEAD, no upstream, an
+ *   upstream never fetched); a git that fails throws
  */
 export function unpushedCount(cwd) {
-  const upstream = git(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"], { cwd, allowFail: true });
-  if (!upstream) return null;
-  const n = git(["rev-list", "--count", `${upstream}..HEAD`], { cwd, allowFail: true });
-  return n === "" ? null : Number(n);
+  const branch = gitMaybe(["symbolic-ref", "-q", "HEAD"], { cwd, absent: [1] });
+  if (!branch) return null;
+  // "@{u}" fails the same way for "no upstream" and for a broken git; for-each-ref prints nothing for the first.
+  const upstream = git(["for-each-ref", "--format=%(upstream)", branch], { cwd });
+  if (!upstream || !gitMaybe(["rev-parse", "--verify", "-q", upstream], { cwd, absent: [1] })) return null;
+  const n = git(["rev-list", "--count", `${upstream}..HEAD`], { cwd });
+  if (!/^\d+$/.test(n)) throw new Error(`git rev-list --count printed no count: ${JSON.stringify(n.slice(0, 80))}`);
+  return Number(n);
 }
 
 /**
@@ -149,10 +229,10 @@ export function parseTrailers(message) {
 /**
  * The repository's common git dir (shared by every worktree), absolute.
  * @param {string} cwd
- * @returns {string | null}
+ * @returns {string | null} null outside a repository
  */
 export function commonDir(cwd) {
-  const out = git(["rev-parse", "--git-common-dir"], { cwd, allowFail: true });
+  const out = repoPath("--git-common-dir", { cwd });
   if (!out) return null;
   const abs = resolve(cwd, out);
   try {
