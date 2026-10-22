@@ -121,6 +121,8 @@ function kind(v) {
 
 // Keys whose value is a free-form map (any key allowed below them).
 const OPEN_MAPS = new Set(["graph.exports", "graph.fields", "graph.valueScale", "graph.costScale"]);
+/** A scale the project gives replaces the default one: a default name left in it (XL: 5) would outrank its own. */
+const REPLACED_MAPS = new Set(["graph.valueScale", "graph.costScale"]);
 // Keys whose default is null but accept a value of this kind.
 const NULLABLE = new Map([
   ["commitMsg.language", ["string"]],
@@ -149,6 +151,12 @@ function merge(base, over, prefix, problems) {
     }
     const bk = kind(base[k]);
     const vk = kind(v);
+    if (bk === "object" && vk === "object" && REPLACED_MAPS.has(path)) {
+      // Replaced, and still checked: each weight is a number, as each default one is.
+      for (const [sk, sv] of Object.entries(/** @type {Record<string, unknown>} */ (v))) if (kind(sv) !== "number") problems.push(`"${path}.${sk}" must be number, got ${kind(sv)}`);
+      out[k] = { .../** @type {object} */ (v) };
+      continue;
+    }
     if (bk === "object" && vk === "object") {
       out[k] = merge(/** @type {any} */ (base[k]), /** @type {any} */ (v), path, problems);
       continue;
@@ -181,7 +189,8 @@ export function loadConfig({ cwd, env = process.env, override }) {
   if (existsSync(configPath)) {
     found = configPath;
     try {
-      user = JSON.parse(readFileSync(configPath, "utf8"));
+      // A byte order mark some editors write is no part of the JSON.
+      user = JSON.parse(readFileSync(configPath, "utf8").replace(/^\uFEFF/, ""));
     } catch (err) {
       throw new ConfigError([`cannot parse ${configPath}: ${/** @type {Error} */ (err).message}`]);
     }

@@ -59,7 +59,7 @@ const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[
 export function parseMutants(text) {
   let data;
   try {
-    data = JSON.parse(text);
+    data = JSON.parse(text.replace(/^\uFEFF/, ""));
   } catch (e) {
     return { mutants: [], problems: [`not JSON: ${/** @type {Error} */ (e).message}`] };
   }
@@ -251,7 +251,8 @@ function parseCheck(abs, rel, original, { cwd, check, limit, onChild }) {
   if (ext === ".json") {
     return async () => {
       try {
-        JSON.parse(readFileSync(abs, "utf8"));
+        // A byte order mark is no part of the JSON, for this check as for Ennyn's own readers.
+        JSON.parse(readFileSync(abs, "utf8").replace(/^\uFEFF/, ""));
         return true;
       } catch {
         return false;

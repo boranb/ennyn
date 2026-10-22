@@ -14,7 +14,7 @@ Read first, in one turn: the config, the handoff (`paths.handoff`; unset → `HA
 | Slot | Source | Rule |
 |---|---|---|
 | Core ×2 | work graph (`paths.graph`): open, ungated, all `needs` done | Highest value/cost; prefer nodes sharing a `cluster` (one session opens the same files once). Complete, independently verifiable, user-visible value. |
-| Mechanization ×1 | `ennyn.mjs mechanization` | A node with `mechanization: true`: turn a recurring defect class into a gate, test, type or lint, then delete the matching prose rule. None ready → the slot becomes a third core task. |
+| Mechanization ×1 | `ennyn.mjs mechanization` | A node with `mechanization: true`: turn a recurring defect class into a gate, test, type or lint, then delete the matching prose rule. None ready → the slot becomes a third core task. A graph it refuses (exit 1, the reasons on stderr) is fixed first: the core slots read the same graph. |
 | Legacy audit ×1 | audit queue (oldest / never audited / recently affected by a shared change) | Re-check a finished feature: invalid/empty/max input, permission denied, network failure, repeated action, refresh, stale data. Small findings are fixed in the same task with a regression test; large ones become graph nodes. |
 
 A critical problem (crash, data loss, auth break, blocker) may replace one core slot. Do not wait for approval between tasks; push only with the user's approval.

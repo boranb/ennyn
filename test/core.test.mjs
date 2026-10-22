@@ -47,6 +47,21 @@ test("config: defaults when no file", () => {
   assert.equal(cfg.configPath, null);
 });
 
+test("config audit: a scale the project gives replaces the default one", () => {
+  const c = loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-cfg-scale-")), env: {}, override: { graph: { costScale: { S: 1, M: 3, L: 8 } } } });
+  assert.deepEqual(c.graph.costScale, { S: 1, M: 3, L: 8 }, "no XL: 5 left from the default to outrank L");
+  assert.deepEqual(c.graph.valueScale, DEFAULTS.graph.valueScale, "a scale not given stays the default");
+  // Replaced, still checked.
+  assert.throws(() => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-cfg-scale-")), env: {}, override: { graph: { valueScale: { high: "3", low: null } } } }), (e) => e instanceof ConfigError && /"graph\.valueScale\.high" must be number, got string/.test(e.message) && /"graph\.valueScale\.low" must be number, got null/.test(e.message));
+});
+
+test("config audit: a byte order mark before the JSON is no parse error", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pl-cfg-bom-"));
+  mkdirSync(join(dir, ".ennyn"));
+  writeFileSync(join(dir, ".ennyn", "config.json"), '\uFEFF{ "language": "tr" }');
+  assert.equal(loadConfig({ cwd: dir, env: {} }).language, "tr");
+});
+
 test("config: overrides merge, unknown keys and type mismatches all reported", () => {
   const dir = mkdtempSync(join(tmpdir(), "pl-cfg-"));
   mkdirSync(join(dir, ".ennyn"));

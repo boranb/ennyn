@@ -110,6 +110,7 @@ const said = (r) => `${r.outcome}${r.reason ? ` ${r.reason.key}${r.reason.vars ?
 
 test("mutate: the list loads whole or not at all, with every problem named", () => {
   assert.deepEqual(parseMutants("[{").problems.length, 1);
+  assert.deepEqual(parseMutants('\uFEFF[{ "id": "a", "file": "f", "old": "x", "new": "y" }]'), { mutants: [{ id: "a", file: "f", old: "x", new: "y" }], problems: [] }, "a byte order mark is no part of the list");
   assert.match(parseMutants("{}").problems[0], /JSON array/);
   assert.match(parseMutants("[]").problems[0], /no mutant/);
   const { mutants, problems } = parseMutants(

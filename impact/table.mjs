@@ -453,7 +453,8 @@ function rowS4(c) {
   } else {
     commands.push(`grep -F -e ${c.files.join(" -e ")} ${regPath}`);
     try {
-      const entries = registryEntries(JSON.parse(readFileSync(join(c.cwd, regPath), "utf8")));
+      // A byte order mark some editors write is no part of the JSON.
+      const entries = registryEntries(JSON.parse(readFileSync(join(c.cwd, regPath), "utf8").replace(/^\uFEFF/, "")));
       const hits = entries
         .filter(([key, value]) => {
           const text = key + "\n" + JSON.stringify(value);

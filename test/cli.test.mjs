@@ -184,6 +184,28 @@ test("cli: rework says when a fix is dated before the commit it repairs", () => 
   assert.doesNotMatch(text.stdout, /shallow/);
 });
 
+test("cli: mechanization refuses a graph doctor fails, and says what it picks on a guess", () => {
+  const p = project();
+  mkdirSync(join(p.dir, ".ennyn"));
+  const write = (/** @type {unknown} */ graph) => writeFileSync(join(p.dir, ".ennyn", "graph.json"), JSON.stringify(graph));
+  // A finished node left in the open list was picked again.
+  write({ nodes: [{ id: "G1", mechanization: true, status: "planned" }], done: [{ id: "G1", status: "done" }] });
+  const twice = run(p.dir, "mechanization");
+  assert.deepEqual([twice.code, twice.stdout], [1, ""]);
+  assert.match(twice.stderr, /^✗ work graph: duplicate ids: G1$/m);
+  assert.match(twice.stderr, /nothing is picked from it/);
+  assert.equal(run(p.dir, "mechanization", "--json").code, 1);
+  // A node with no id was printed as "undefined".
+  write({ nodes: [{ mechanization: true }], done: [] });
+  assert.doesNotMatch(run(p.dir, "mechanization").stdout, /undefined/);
+  // A value the scale does not know is scored as 1, and the pick says so.
+  write({ nodes: [{ id: "G1", mechanization: true, value: "hgih", cost: "S" }, { id: "G2", mechanization: true, value: "low", cost: "M" }], done: [] });
+  const guess = run(p.dir, "mechanization");
+  assert.equal(guess.code, 0);
+  assert.equal(guess.stdout.trim(), "G1 (score 1.00)");
+  assert.match(guess.stderr, /^! work graph: G1 has value "hgih", which graph\.valueScale does not know; it is scored as 1$/m);
+});
+
 test("cli: mechanization picks from the graph; a missing graph is an error", () => {
   const p = project();
   assert.equal(run(p.dir, "mechanization").code, 1, "no graph yet");

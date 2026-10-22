@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { chmodSync, mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../core/config.mjs";
-import { loadGraph, pickMechanization, readyMechanization, scoreNode, GraphError } from "../plan/mechanization.mjs";
+import { graphProblems, loadGraph, pickMechanization, readyMechanization, scoreNode, GraphError } from "../plan/mechanization.mjs";
 
 const cfg = (override = {}) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-p-")), env: {}, override });
 
@@ -105,4 +105,84 @@ test("loadGraph: a node that is not an object and a module that does not load ar
   const mod = graphFile("graph.mjs", "export const nodes = [\n");
   const c = cfg({ paths: { graph: ".ennyn/graph.mjs" } });
   await assert.rejects(loadGraph({ cwd: mod, config: c }), (e) => e instanceof GraphError && /cannot load .*graph\.mjs/.test(e.message));
+});
+
+test("loadGraph audit: a byte order mark, an unreadable file, and arrays in a module's default export", async (t) => {
+  // An editor that writes a BOM made the graph "cannot parse".
+  const bom = await loadGraph({ cwd: graphFile("graph.json", `﻿${JSON.stringify({ nodes: [{ id: "a" }], done: [] })}`), config: cfg() });
+  assert.deepEqual(bom.open, [{ id: "a" }]);
+  // export default, and module.exports in a CommonJS package: Node gives no named "nodes" for either.
+  for (const [name, text] of [["graph.mjs", 'export default { nodes: [{ id: "a" }], done: [{ id: "d" }] };\n'], ["graph.js", 'module.exports = { nodes: [{ id: "a" }], done: [{ id: "d" }] };\n']]) {
+    const g = await loadGraph({ cwd: graphFile(name, text), config: cfg({ paths: { graph: `.ennyn/${name}` } }) });
+    assert.deepEqual([g.open, g.done], [[{ id: "a" }], [{ id: "d" }]], name);
+  }
+  if (process.getuid?.() === 0) return t.skip("root reads any file");
+  const locked = graphFile("graph.json", "{}");
+  chmodSync(join(locked, ".ennyn", "graph.json"), 0o000);
+  await assert.rejects(loadGraph({ cwd: locked, config: cfg() }), (e) => e instanceof GraphError && /^cannot read .*EACCES/.test(e.message));
+});
+
+test("graphProblems audit: what doctor fails and warns on, and the pick refuses", () => {
+  const c = cfg();
+  const keys = (/** @type {{ open: any[], done: any[] }} */ g, config = c) => graphProblems(g, config).map((p) => `${p.level} ${p.key}`);
+  assert.deepEqual(keys({ open: OPEN, done: DONE }), ["warn doctor.weightUnknown", "warn doctor.weightUnknown"], "OPEN's M-unknown has value huge and cost ?");
+  // A finished node left in the open list: its id twice, and the pick could take it.
+  assert.deepEqual(keys({ open: [{ id: "a", status: "planned", mechanization: true }], done: [{ id: "a" }] }), ["fail doctor.idDuplicate"]);
+  // Twice among finished nodes only: said, but it cannot change the pick.
+  assert.deepEqual(keys({ open: [{ id: "a", status: "done" }, { id: "b" }], done: [{ id: "a" }, { id: "c" }, { id: "c" }] }), ["warn doctor.idDuplicate"]);
+  assert.deepEqual(graphProblems({ open: [{ mechanization: true }, { id: "" }, { id: " " }], done: [{ title: "old" }] }, c), [
+    { level: "fail", key: "doctor.idMissing", vars: { n: 3, field: "id" } },
+    { level: "warn", key: "doctor.idMissing", vars: { n: 1, field: "id" } },
+  ], "an empty or blank id is no id");
+  assert.deepEqual(graphProblems({ open: [{ id: "a", needs: ["b"] }, { id: "b", needs: "c" }, { id: "c", needs: ["a"] }, { id: "d", needs: ["d"], status: "done" }], done: [] }, c).map((p) => p.vars.cycle ?? p.key), ["a → b → c → a"]);
+  assert.deepEqual(keys({ open: [{ id: "a", needs: ["ghost"] }], done: [] }), ["fail doctor.needsUnknown"]);
+  // A finished node's stale need changes no pick.
+  assert.deepEqual(keys({ open: [{ id: "old", status: "done", needs: ["gone"] }, { id: "m", mechanization: true }], done: [] }), []);
+  // Two nodes that need the same one are no cycle.
+  assert.deepEqual(keys({ open: [{ id: "a", needs: ["c"] }, { id: "b", needs: ["c", "a"] }, { id: "c" }], done: [] }), []);
+  const warns = graphProblems({ open: [{ id: "a", value: "hgih", cost: 0 }, { id: "b", mechanization: "true", value: "low", cost: "S" }, { id: "c", gate: false, value: "low", cost: "S" }, { id: "e", value: "high", cost: "XL" }, { id: "f", mechanization: false, value: "low", cost: "S" }], done: [] }, c);
+  assert.deepEqual(warns.map((p) => [p.level, p.key, p.vars.id ?? p.vars.field, p.vars.value ?? ""]), [
+    ["warn", "doctor.weightUnknown", "a", "hgih"],
+    ["warn", "doctor.weightUnknown", "a", "0"],
+    ["warn", "doctor.flagNotBoolean", "b", '"true"'],
+    ["warn", "doctor.gateFalse", "c", "false"],
+  ]);
+  // A cost on one node and none on another: the second is scored as cost 1, a guess. No cost anywhere: none.
+  assert.deepEqual(graphProblems({ open: [{ id: "a", value: "high" }, { id: "b", value: "high", cost: "M" }], done: [] }, c), [{ level: "warn", key: "doctor.weightAbsent", vars: { n: 1, field: "cost" } }]);
+  assert.deepEqual(keys({ open: [{ id: "a", value: "high" }, { id: "b", value: "low" }], done: [] }), []);
+  // What reads as "no gate" to a person and closes the node; where true is open, false is the plain closed value.
+  for (const gate of ["", 0, "false"]) assert.deepEqual(keys({ open: [{ id: "a", gate }], done: [] }), ["warn doctor.gateFalse"], JSON.stringify(gate));
+  assert.deepEqual(keys({ open: [{ id: "a", gate: false }, { id: "b", gate: "demand" }], done: [] }, cfg({ graph: { openGateValue: true } })), []);
+  // Where the open value is a word, false and null are no word for it.
+  assert.deepEqual(keys({ open: [{ id: "a", gate: false }, { id: "b", gate: null }, { id: "c", gate: "open" }, { id: "d", gate: "demand" }], done: [] }, cfg({ graph: { openGateValue: "open" } })), ["warn doctor.gateFalse", "warn doctor.gateFalse"]);
+  // Done nodes are not judged by weight or flags.
+  assert.deepEqual(keys({ open: [{ id: "a", status: "done", value: "x", mechanization: 1 }], done: [] }), []);
+});
+
+test("graphProblems audit: a needs chain thousands long is walked without the call stack, and its cycle found", () => {
+  const n = 20_000;
+  const open = Array.from({ length: n }, (_, i) => ({ id: `n${i}`, needs: i + 1 < n ? [`n${i + 1}`] : [] }));
+  assert.deepEqual(graphProblems({ open, done: [] }, cfg()), []);
+  open[n - 1].needs = ["n0"];
+  const [p] = graphProblems({ open, done: [] }, cfg());
+  assert.equal(p.key, "doctor.needsCycle");
+  assert.match(String(p.vars.cycle), /^n0 → n1 → .* → n19999 → n0$/);
+  // The cycle, not the path that led to it.
+  assert.deepEqual(graphProblems({ open: [{ id: "x", needs: ["a"] }, { id: "a", needs: ["b"] }, { id: "b", needs: ["a"] }], done: [] }, cfg()).map((q) => q.vars.cycle), ["a → b → a"]);
+  // Each node needs the two before it: a node already walked is not walked again (that would be 2^60 paths).
+  const dense = Array.from({ length: 60 }, (_, i) => ({ id: `d${i}`, needs: i ? [`d${i - 1}`, ...(i > 1 ? [`d${i - 2}`] : [])] : [] }));
+  assert.deepEqual(graphProblems({ open: dense, done: [] }, cfg()), []);
+});
+
+test("loadGraph audit: a module whose names Node detects only in part keeps every array", async () => {
+  // Node turns `nodes` (a name it can see) into an export, and stops at `done: [`.
+  const cjs = graphFile("graph.js", 'const nodes = [{ id: "m", mechanization: true, needs: ["d"] }];\nmodule.exports = { nodes, done: [{ id: "d" }] };\n');
+  const g = await loadGraph({ cwd: cjs, config: cfg({ paths: { graph: ".ennyn/graph.js" } }) });
+  assert.deepEqual([g.open.map((n) => n.id), g.done.map((n) => n.id)], [["m"], ["d"]]);
+  const esm = graphFile("graph.mjs", 'export const nodes = [{ id: "m" }];\nexport default { nodes, done: [{ id: "d" }] };\n');
+  const e = await loadGraph({ cwd: esm, config: cfg({ paths: { graph: ".ennyn/graph.mjs" } }) });
+  assert.deepEqual(e.done, [{ id: "d" }], "the named export first, then the default, for each array");
+  // A default export about something else is not the graph's done list.
+  const other = graphFile("graph.mjs", 'export const nodes = [{ id: "m" }];\nexport default { title: "roadmap", done: 3 };\n');
+  assert.deepEqual((await loadGraph({ cwd: other, config: cfg({ paths: { graph: ".ennyn/graph.mjs" } }) })).done, []);
 });

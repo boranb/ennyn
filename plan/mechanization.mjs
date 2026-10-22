@@ -16,6 +16,9 @@ import { pathToFileURL } from "node:url";
 /** @typedef {Record<string, unknown>} GraphNode */
 /** @typedef {{ open: GraphNode[], done: GraphNode[] }} Graph */
 
+/** A byte order mark some editors write at the start of a file; JSON.parse rejects it. */
+const BOM = /^\uFEFF/;
+
 export class GraphError extends Error {
   /** @param {string} message */
   constructor(message) {
@@ -36,8 +39,14 @@ export async function loadGraph({ cwd, config }) {
   let data;
   const ext = extname(path);
   if (ext === ".json") {
+    let text;
     try {
-      data = JSON.parse(readFileSync(path, "utf8"));
+      text = readFileSync(path, "utf8");
+    } catch (err) {
+      throw new GraphError(`cannot read ${path}: ${/** @type {Error} */ (err).message}`);
+    }
+    try {
+      data = JSON.parse(text.replace(BOM, ""));
     } catch (err) {
       throw new GraphError(`cannot parse ${path}: ${/** @type {Error} */ (err).message}`);
     }
@@ -49,6 +58,16 @@ export async function loadGraph({ cwd, config }) {
       data = await import(url.href);
     } catch (err) {
       throw new GraphError(`cannot load ${path}: ${/** @type {Error} */ (err).message}`);
+    }
+    // Each array from its named export, else from the default export: `export default { … }`, or
+    // module.exports in a CommonJS package, whose names Node detects only in part (`nodes` but not `done`).
+    const fallback = /** @type {Record<string, unknown>} */ (data).default;
+    if (fallback !== null && typeof fallback === "object" && !Array.isArray(fallback)) {
+      const own = /** @type {Record<string, unknown>} */ (data);
+      const def = /** @type {Record<string, unknown>} */ (fallback);
+      // An array only: a default export about something else (a title, a count) is not read as the graph.
+      const pick = (/** @type {string} */ name) => own[name] ?? (Array.isArray(def[name]) ? def[name] : undefined);
+      data = { [openName]: pick(openName), [doneName]: pick(doneName) };
     }
   } else {
     throw new GraphError(`work graph must be .json, .mjs or .js: ${path}`);
@@ -66,17 +85,21 @@ export async function loadGraph({ cwd, config }) {
 }
 
 /**
+ * A value or cost as a positive weight; null when it is neither a positive number nor a name the scale gives one.
  * @param {unknown} v
  * @param {Record<string, number>} scale
- * @returns {number}
+ * @returns {number | null}
  */
-function weight(v, scale) {
-  const n = typeof v === "number" ? v : typeof v === "string" && Object.hasOwn(scale, v) ? scale[v] : 1;
-  return Number.isFinite(n) && n > 0 ? n : 1;
+function known(v, scale) {
+  const n = typeof v === "number" ? v : typeof v === "string" && Object.hasOwn(scale, v) ? scale[v] : NaN;
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+/** @param {unknown} v @param {Record<string, number>} scale */
+const weight = (v, scale) => known(v, scale) ?? 1;
+
 /**
- * value / cost. Unknown or non-positive weights count as 1.
+ * value / cost. Unknown or non-positive weights count as 1 (graphProblems warns about each).
  * @param {GraphNode} node
  * @param {any} config
  */
@@ -118,6 +141,104 @@ export function readyNodes(graph, config) {
   const scored = ready.map((node) => ({ node, score: scoreNode(node, config), id: String(node[f.id]) }));
   scored.sort((a, b) => b.score - a.score || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   return scored.map((s) => s.node);
+}
+
+/**
+ * @typedef {{ level: "fail" | "warn", key: string, vars: Record<string, string | number> }} GraphProblem
+ */
+
+/**
+ * What makes the graph unfit to pick from, and what the pick reads on a guess. The pick reads the open
+ * nodes that are not done: a problem there that could change it is a `fail` (a node with no id, an id
+ * twice, as when a finished node stays open, a need no node has, needs that wait on each other). The same
+ * kind of problem among finished nodes only is a `warn`, and so is a guess: a value or cost the scales do
+ * not know, or a node with no value or cost where others have one (each scored as 1), a mechanization flag
+ * that is not a boolean, and a gate that looks like "no gate" (null, false, "", 0, "false") but is not the
+ * open value, unless the open value is a boolean (then false is that project's closed value). doctor lists every one; the mechanization command refuses a graph with a fail, so the two never
+ * disagree on what can be picked. Message keys, rendered by the caller.
+ * @param {Graph} graph
+ * @param {any} config
+ * @returns {GraphProblem[]}
+ */
+export function graphProblems(graph, config) {
+  const f = config.graph.fields;
+  const { doneStatus, openGateValue, valueScale, costScale } = config.graph;
+  /** @type {GraphProblem[]} */
+  const out = [];
+  const named = (/** @type {GraphNode} */ n) => {
+    const id = n[f.id];
+    return (typeof id === "string" && id.trim() !== "") || (typeof id === "number" && Number.isFinite(id));
+  };
+  const waitingNodes = graph.open.filter((n) => n[f.status] !== doneStatus);
+  const finished = [...graph.done, ...graph.open.filter((n) => n[f.status] === doneStatus)];
+  for (const [list, level] of /** @type {const} */ ([[waitingNodes, "fail"], [finished, "warn"]])) {
+    const missing = list.filter((n) => !named(n)).length;
+    if (missing) out.push({ level, key: "doctor.idMissing", vars: { n: missing, field: f.id } });
+  }
+  /** @type {Map<unknown, number>} */
+  const seen = new Map();
+  for (const n of [...waitingNodes, ...finished]) if (named(n)) seen.set(n[f.id], (seen.get(n[f.id]) ?? 0) + 1);
+  const waitingIds = new Set(waitingNodes.filter(named).map((n) => n[f.id]));
+  const dupes = [...seen].filter(([, c]) => c > 1).map(([id]) => id);
+  for (const [ids, level] of /** @type {const} */ ([[dupes.filter((id) => waitingIds.has(id)), "fail"], [dupes.filter((id) => !waitingIds.has(id)), "warn"]])) {
+    if (ids.length) out.push({ level, key: "doctor.idDuplicate", vars: { list: ids.map(String).join(", ") } });
+  }
+  for (const n of waitingNodes) {
+    const unknown = needsOf(n, config).filter((id) => !seen.has(id));
+    if (unknown.length) out.push({ level: "fail", key: "doctor.needsUnknown", vars: { id: String(n[f.id]), list: unknown.map(String).join(", ") } });
+  }
+  // A cycle among waiting nodes never opens. Depth first with a stack of its own: a needs chain thousands
+  // long would overflow the call stack.
+  const waiting = new Map(waitingNodes.filter(named).map((n) => [n[f.id], n]));
+  /** @type {Map<unknown, "open" | "closed">} */
+  const state = new Map();
+  /** @type {unknown[] | null} */
+  let cycle = null;
+  for (const root of waiting.keys()) {
+    if (cycle || state.has(root)) continue;
+    /** @type {{ id: unknown, needs: unknown[], next: number }[]} */
+    const stack = [{ id: root, needs: needsOf(/** @type {GraphNode} */ (waiting.get(root)), config), next: 0 }];
+    state.set(root, "open");
+    while (stack.length && !cycle) {
+      const top = stack[stack.length - 1];
+      if (top.next >= top.needs.length) {
+        state.set(top.id, "closed");
+        stack.pop();
+        continue;
+      }
+      const need = top.needs[top.next++];
+      // A done node, or one that is not there, ends the path.
+      if (!waiting.has(need) || state.get(need) === "closed") continue;
+      if (state.get(need) === "open") {
+        cycle = [...stack.slice(stack.findIndex((s) => s.id === need)).map((s) => s.id), need];
+        break;
+      }
+      state.set(need, "open");
+      stack.push({ id: need, needs: needsOf(/** @type {GraphNode} */ (waiting.get(need)), config), next: 0 });
+    }
+  }
+  if (cycle) out.push({ level: "fail", key: "doctor.needsCycle", vars: { cycle: cycle.map(String).join(" → ") } });
+  for (const [field, scale, name] of /** @type {const} */ ([[f.value, valueScale, "valueScale"], [f.cost, costScale, "costScale"]])) {
+    for (const n of waitingNodes) {
+      const v = n[field];
+      if (v !== undefined && known(v, scale) === null) out.push({ level: "warn", key: "doctor.weightUnknown", vars: { id: String(n[f.id]), field, value: String(v), scale: name } });
+    }
+    // A graph that never names a cost compares values alone; one that names it for some nodes guesses for the rest.
+    const absent = waitingNodes.filter((n) => n[field] === undefined).length;
+    if (absent && absent < waitingNodes.length) out.push({ level: "warn", key: "doctor.weightAbsent", vars: { n: absent, field } });
+  }
+  for (const n of waitingNodes) {
+    if (f.mechanization in n && typeof n[f.mechanization] !== "boolean") {
+      out.push({ level: "warn", key: "doctor.flagNotBoolean", vars: { id: String(n[f.id]), field: f.mechanization, value: JSON.stringify(n[f.mechanization]) } });
+    }
+    // These read as "no gate" to a person and as a closed gate to the pick. Where the open value is a
+    // boolean, false is that project's plain closed value.
+    const gate = n[f.gate];
+    if (typeof openGateValue !== "boolean" && gate !== openGateValue && (gate === null || gate === false || gate === "" || gate === 0 || gate === "false")) {
+      out.push({ level: "warn", key: "doctor.gateFalse", vars: { id: String(n[f.id]), field: f.gate, value: JSON.stringify(gate), open: JSON.stringify(openGateValue) } });
+    }
+  }
+  return out;
 }
 
 /**

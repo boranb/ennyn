@@ -8,7 +8,7 @@
  */
 
 import { loadConfig, ConfigError } from "../core/config.mjs";
-import { loadGraph, readyNodes, readyMechanization, needsOf, GraphError } from "../plan/mechanization.mjs";
+import { loadGraph, readyNodes, readyMechanization, graphProblems, GraphError } from "../plan/mechanization.mjs";
 import { MIN_HISTORY, recentCommits, productionSubjects } from "./scan.mjs";
 import { hookStatus } from "./hook.mjs";
 import { instructionBudget, readBudgets } from "./budget.mjs";
@@ -71,18 +71,8 @@ export async function checkSetup({ cwd, env = process.env }) {
   if (graph) {
     add("ok", "doctor.graphOk", { open: graph.open.length, done: graph.done.length, path: config.paths.graph });
     const f = config.graph.fields;
-    const all = [...graph.open, ...graph.done];
-    const missing = all.filter((n) => typeof n[f.id] !== "string" && typeof n[f.id] !== "number").length;
-    if (missing) add("fail", "doctor.idMissing", { n: missing, field: f.id });
-    /** @type {Map<unknown, number>} */
-    const seen = new Map();
-    for (const n of all) if (n[f.id] !== undefined) seen.set(n[f.id], (seen.get(n[f.id]) ?? 0) + 1);
-    const dupes = [...seen].filter(([, c]) => c > 1).map(([id]) => String(id));
-    if (dupes.length) add("fail", "doctor.idDuplicate", { list: dupes.join(", ") });
-    for (const n of graph.open) {
-      const unknown = needsOf(n, config).filter((id) => !seen.has(id));
-      if (unknown.length) add("fail", "doctor.needsUnknown", { id: String(n[f.id]), list: unknown.map(String).join(", ") });
-    }
+    // The same list the mechanization command refuses a graph by.
+    for (const p of graphProblems(graph, config)) add(p.level, p.key, p.vars);
     const core = readyNodes(graph, config).filter((n) => n[f.mechanization] !== true).length;
     const mech = readyMechanization(graph, config).length;
     if (core + mech === 0) add("warn", "doctor.readyNone");

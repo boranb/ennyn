@@ -17,7 +17,7 @@ import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
 import { reworkRate } from "../metrics/szz.mjs";
 import { bypassUses } from "../metrics/bypass.mjs";
 import { gateLogPath, readAttempts, recordAttempt, summarizeAttempts, KINDS } from "../metrics/gate-log.mjs";
-import { loadGraph, pickMechanization, scoreNode, GraphError } from "../plan/mechanization.mjs";
+import { graphProblems, loadGraph, pickMechanization, scoreNode, GraphError } from "../plan/mechanization.mjs";
 import { scanProject, MIN_HISTORY } from "../setup/scan.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
 import { installHook } from "../setup/hook.mjs";
@@ -437,6 +437,10 @@ const COMMANDS = {
     const cwd = projectDir();
     const cfg = config(cwd);
     const graph = await loadGraph({ cwd, config: cfg });
+    // What doctor fails on, this refuses: a pick from a graph with a node twice or no id is a guess.
+    const problems = graphProblems(graph, cfg);
+    for (const p of problems) err(`${p.level === "fail" ? "✗" : "!"} ${t(p.key, p.vars, cfg.language)}`);
+    if (problems.some((p) => p.level === "fail")) return (err(t("mechanization.refused", {}, cfg.language)), 1);
     const node = pickMechanization(graph, cfg);
     const score = node ? scoreNode(node, cfg) : null;
     if (opts.json) return (out(JSON.stringify(node ? { node, score } : null, null, 2)), 0);

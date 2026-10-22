@@ -164,6 +164,10 @@ test("impact: a missing twin, no adjacent test, and an unconfigured registry are
   assert.match(rows[0].answer, /src\/lib\/solo\/lonely\.js: no twin at server\/solo\/lonely\.js/);
   assert.match(rows[2].answer, /^no test or corpus of the input files: build an accept \+ reject corpus/);
   assert.match(rows[3].answer, /ceiling registry: unmeasured: no ceiling registry configured/);
+  // A registry an editor saved with a byte order mark still reads.
+  writeFileSync(join(dir, "bom.json"), `\uFEFF${JSON.stringify({ registered: { "src/lib/engine/parse.js#MAX": {} } })}`);
+  const bom = buildImpactTable({ cwd: dir, config: cfg({ impact: { ceilingRegistry: "bom.json" } }), symbol: "parseRow", files: ["src/lib/engine/parse.js"] });
+  assert.match(bom.rows[3].answer, /1 entries mention the input files: src\/lib\/engine\/parse\.js#MAX/);
   assert.match(rows[3].answer, /lonely\.js: 0 catch, 1 fallback returns/);
   assert.equal(rows[4].answer, "no test mocks or imports the input files");
 });
