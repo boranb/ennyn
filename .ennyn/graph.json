@@ -100,13 +100,13 @@
     },
     {
       "id": "fold-target-depth",
-      "title": "amend! / squash! target is searched in the last 500 commits only; without it only the message itself is checked",
+      "title": "amend! / squash! target is searched in the last 500 commits; past that, or past a shallow boundary, the hook now says what went unchecked: search the rest of the history instead",
       "status": "planned",
       "value": "low",
       "cost": "S",
       "cluster": "gates",
       "needs": [],
-      "source": "review, cycle 2026-10-19"
+      "source": "review, cycle 2026-10-19; updated cycle 2026-10-21 (5)"
     },
     {
       "id": "hygiene-gaps",
@@ -167,28 +167,6 @@
       "cluster": "metrics",
       "needs": [],
       "source": "mutation pass, cycle 2026-10-20 (3) (F27, F28 not shown)"
-    },
-    {
-      "id": "fault-injection-matrix",
-      "title": "A test that runs every CLI command with git failing, a child process that cannot start, a timeout and a closed pipe, and asserts each prints unmeasured or fails: never a number",
-      "status": "planned",
-      "value": "high",
-      "cost": "M",
-      "cluster": "gates",
-      "needs": [],
-      "mechanization": true,
-      "sourceClass": "unmeasured read as a measurement",
-      "source": "convergence, cycle 2026-10-20 (4): 11 findings in mutate and bypass (a timeout, a spawn error, a check with no answer, a shallow range read as a result)"
-    },
-    {
-      "id": "szz-since-walk",
-      "title": "rework: git's --since walk stops at a commit dated more than a day early and misses the commits behind it (readLog uses gitSince)",
-      "status": "planned",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "metrics",
-      "needs": [],
-      "source": "data review, cycle 2026-10-20 (4), bypass-audit"
     },
     {
       "id": "hygiene-user-ignores",
@@ -271,24 +249,97 @@
       "source": "review, cycle 2026-10-20 (4), mutation-runner"
     },
     {
-      "id": "engine-floor-check",
-      "title": "engines says Node >= 20, but only a hand run checks it: run the suite on the oldest supported Node where the suite runs (CI or an npm script)",
-      "status": "planned",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "gates",
-      "needs": [],
-      "source": "review, cycle 2026-10-20 (4), tests-hermetic-git (the oracle failed on Node 20 for a cycle)"
-    },
-    {
       "id": "suite-unexplained-failure",
-      "title": "One full npm test run of seven failed on a loaded machine and the failing test was not captured; keep the output of every failing run until it is found",
+      "title": "Captured in cycle 5: a zombie read as alive and the --import order on Node < 20.11 (both fixed). Still open: one git-oracle failure on Node 20.0.0 in a 2-CPU Linux VM (a commit with core.commentChar=auto, empty stderr), not seen in 26 more runs; keep code, signal and stderr when CI shows it",
       "status": "planned",
       "value": "low",
       "cost": "S",
       "cluster": "gates",
       "needs": [],
-      "source": "cycle 2026-10-20 (4), mutation-runner verification"
+      "source": "cycle 2026-10-20 (4), mutation-runner verification; updated cycle 2026-10-21 (5)"
+    },
+    {
+      "id": "fault-matrix-files-hooks",
+      "title": "Extend test/fault-injection.test.mjs: every file a command reads made unreadable in turn (EACCES, a directory in its place), the side-copy and conversation-style hooks, impact.referenceCommand failing or timing out; fail or say so, never a number",
+      "status": "planned",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "needs": [],
+      "mechanization": true,
+      "sourceClass": "unmeasured read as a measurement",
+      "source": "convergence, cycle 2026-10-21 (5): the class again outside git (an unreadable CLAUDE.md, a directory named by @, a fold target past the boundary, guessed graph weights)"
+    },
+    {
+      "id": "guard-vacuous",
+      "title": "A gate test can pass while what it names is false (the engines test twice, the fault judge, gone() twice): keep, next to each gate test, edits to what it guards that must fail it",
+      "status": "planned",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "gates",
+      "needs": [],
+      "source": "convergence, cycle 2026-10-21 (5), second class"
+    },
+    {
+      "id": "rework-skew-before-since",
+      "title": "rework with --since: a fix dated before the bound is never read, so a skewed link to an in-range origin is neither a pair nor counted in skewed",
+      "status": "planned",
+      "value": "low",
+      "cost": "M",
+      "cluster": "metrics",
+      "needs": [],
+      "source": "review, cycle 2026-10-21 (5), szz-since-walk"
+    },
+    {
+      "id": "git-floor",
+      "title": "Ennyn names no git version: on git 2.30 four tests fail (SSH signing needs 2.34, GIT_CONFIG_PARAMETERS quoting changed in 2.31, impact counts a reference twice for an absolute path); state a floor and run the suite on it",
+      "status": "planned",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "needs": [],
+      "source": "cycle 2026-10-21 (5), engine-floor-check Linux runs"
+    },
+    {
+      "id": "engines-floor-decision",
+      "title": "Node 20 reached end of life in April 2026; engines still says >= 20 and CI runs 20.0.0: keep the floor or raise it",
+      "status": "planned",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "distribution",
+      "needs": [],
+      "gate": "user",
+      "source": "cycle 2026-10-21 (5), engine-floor-check"
+    },
+    {
+      "id": "graph-id-types",
+      "title": "work graph: a need \"1\" against id 1 reads as unknown; numeric ids break ties as text (10 before 2); an infinite score prints as null in --json",
+      "status": "planned",
+      "value": "low",
+      "cost": "S",
+      "cluster": "plan",
+      "needs": [],
+      "source": "data review, cycle 2026-10-21 (5), graph-audit (low confidence)"
+    },
+    {
+      "id": "fault-judge-reasons",
+      "title": "The fault judge takes any part that says unmeasured as honest, also with a false reason (doctor saying \"not a git repository\" when git failed), and lets one such part stand for several dropped ones",
+      "status": "planned",
+      "value": "low",
+      "cost": "M",
+      "cluster": "gates",
+      "needs": [],
+      "source": "mutation pass and review, cycle 2026-10-21 (5), fault-injection-matrix (T3-9 survived)"
+    },
+    {
+      "id": "bare-repo-history",
+      "title": "A bare repository is now an error for every command; rework, bypass and push-check need no work tree and measured there before",
+      "status": "planned",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "needs": [],
+      "source": "data review, cycle 2026-10-21 (5), fault-injection-matrix (accepted: refusing is the safer default)"
     }
   ],
   "done": [
@@ -438,6 +489,30 @@
       "title": "Legacy audit of bypass: a rewritten --from fails, shallow clones say so, no --since walk, merges the hook checks count, amend! subject is no second use (52a92d6)",
       "status": "done",
       "finished": "2026-10-21"
+    },
+    {
+      "id": "szz-since-walk",
+      "title": "rework: no date to git, the range filters commit time; skewed clocks, no committer time and a shallow boundary are said (83bbce2)",
+      "status": "done",
+      "finished": "2026-10-22"
+    },
+    {
+      "id": "engine-floor-check",
+      "title": "CI runs npm test on Node 20.0.0, 22, 24; a test ties the first entry to engines and holds the workflow text; one --import (Node < 20.11 loads them at once) (e08501a)",
+      "status": "done",
+      "finished": "2026-10-22"
+    },
+    {
+      "id": "fault-injection-matrix",
+      "title": "test/fault-injection.test.mjs: every command with each git call failing or killed, with no git, with a closed stdout; allowFail gone, gitMaybe / repoPath / headCommit read git's own \"nothing there\" (00e94a7)",
+      "status": "done",
+      "finished": "2026-10-22"
+    },
+    {
+      "id": "graph-audit",
+      "title": "Legacy audit of the work graph and the mechanization pick: one list of problems for doctor and the pick, BOM, partial module exports, a needs cycle, guessed weights said (47e4f93)",
+      "status": "done",
+      "finished": "2026-10-22"
     }
   ]
 }
