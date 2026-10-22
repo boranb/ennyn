@@ -84,6 +84,8 @@
   "rework.skewed": "Commits whose fix is dated before them (a clock was off): {n}. They are left out unmeasured, not counted as clean.",
   "rework.shallow": "This clone is shallow: commits before its boundary are not counted.",
   "gate.recorded": "Gate attempt recorded ({result}) in {path}.",
+  "gate.recordedUntimed": "Gate attempt recorded ({result}) in {path}, with its duration unmeasured: start {start} is before 2000, after the end or more than a day before it.",
+  "gate.durationUnmeasured": "{n} attempts have no measured duration (a start before 2000, after the end or more than a day before it); the times above leave them out.",
   "gate.recordFailed": "Gate attempt not recorded: {error}",
   "gate.result.pass": "passed",
   "gate.result.fail": "failed",

@@ -73,6 +73,8 @@ function parseArgs(args, { options = [], flags = [], positional = 0 }) {
     if (a.startsWith("--")) {
       const eq = a.indexOf("=");
       const name = eq === -1 ? a.slice(2) : a.slice(2, eq);
+      // Given twice, the last would win without a word (an --exit 1 that a later --exit 0 turns into a pass).
+      if ((flags.includes(name) || options.includes(name)) && Object.hasOwn(opts, name)) throw new UsageError(`--${name} given twice`);
       if (flags.includes(name)) {
         if (eq !== -1) throw new UsageError(`--${name} takes no value`);
         opts[name] = true;
@@ -529,6 +531,10 @@ const COMMANDS = {
     const start = intOpt(opts.start, "start");
     const exit = intOpt(opts.exit, "exit");
     const kind = strOpt(opts.kind) ?? "full";
+    // An empty value is an unset variable in the wrapper. An empty --kind could be either kind; an empty
+    // --commit with exit 0 would turn a pass into a failure. With a non-zero exit there is no commit to name.
+    if (opts.kind !== undefined && strOpt(opts.kind) === null) throw new UsageError("--kind needs a value");
+    if (opts.commit !== undefined && strOpt(opts.commit) === null && exit === 0) throw new UsageError("--commit needs a value with --exit 0");
     if (!(/** @type {readonly string[]} */ (KINDS)).includes(kind)) throw new UsageError(`--kind must be ${KINDS.join(" | ")}`);
     const cwd = projectDir();
     const cfg = config(cwd);
@@ -540,7 +546,9 @@ const COMMANDS = {
       err(t("gate.recordFailed", { error: e.message }, cfg.language));
       return 1;
     }
-    out(t("gate.recorded", { result: t(`gate.result.${res.entry.result}`, {}, cfg.language), path: res.path }, cfg.language));
+    const result = t(`gate.result.${res.entry.result}`, {}, cfg.language);
+    if (res.entry.seconds === null) out(t("gate.recordedUntimed", { result, path: res.path, start }, cfg.language));
+    else out(t("gate.recorded", { result, path: res.path }, cfg.language));
     return 0;
   },
 
@@ -563,6 +571,7 @@ const COMMANDS = {
     out(t("gate.summary", { full: sum.full, passed: sum.passed, failed: sum.failed, pct, message: sum.message }, lang));
     if (sum.pass.n) out(t("gate.passTime", { median: minutes(sum.pass.median), p90: minutes(sum.pass.p90) }, lang));
     if (sum.fail.n) out(t("gate.failTime", { median: minutes(sum.fail.median), p90: minutes(sum.fail.p90), wasted: minutes(sum.wastedSeconds) }, lang));
+    if (sum.unmeasuredDurations) out(t("gate.durationUnmeasured", { n: sum.unmeasuredDurations }, lang));
     if (sum.steps.length) out(t("gate.steps", { list: sum.steps.map((s) => `${s.step} ${s.n}`).join(" · ") }, lang));
     if (sum.unmeasuredSteps) out(t("gate.stepsUnmeasured", { n: sum.unmeasuredSteps }, lang));
     return 0;

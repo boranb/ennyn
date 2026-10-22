@@ -125,7 +125,9 @@ put(REPO, {
   ".git/mutants.json": JSON.stringify([{ id: "m1", file: "src/use.js", old: "add(2, 2)", new: "add(2, 3)" }]),
   ".git/check.mjs": 'import { readFileSync } from "node:fs";\nif (!readFileSync("src/use.js", "utf8").includes("add(2, 2)")) process.exit(1);\n',
 });
-for (const args of [["gate-record", "--start", "1767268800", "--exit", "1", "--step", "lint"], ["budget", "--record"]]) {
+// gate-record refuses a start more than a day before now: a minute ago.
+const START = String(Math.floor(Date.now() / 1000) - 60);
+for (const args of [["gate-record", "--start", START, "--exit", "1", "--step", "lint"], ["budget", "--record"]]) {
   execFileSync(process.execPath, [CLI, ...args], { cwd: REPO, stdio: "ignore" });
 }
 
@@ -205,8 +207,8 @@ const CASES = [
   { args: ["mutate", ".git/mutants.json", "--command", `${NODE} .git/check.mjs`], writes: true },
   { args: ["mutate", "--restore"], writes: true },
   { args: ["push-check"] },
-  { args: ["gate-record", "--start", "1767268800", "--exit", "0", "--commit", "HEAD"], writes: true },
-  { args: ["gate-record", "--start", "1767268800", "--exit", "1"], writes: true },
+  { args: ["gate-record", "--start", START, "--exit", "0", "--commit", "HEAD"], writes: true },
+  { args: ["gate-record", "--start", START, "--exit", "1"], writes: true },
   { args: ["gate-stats"] },
   { args: ["gate-stats", "--json"] },
 ];

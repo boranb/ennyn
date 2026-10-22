@@ -84,6 +84,8 @@
   "rework.skewed": "Düzeltmesi kendisinden önce tarihli commit (bir saat yanlıştı): {n}. Temiz sayılmadı, ölçülmeden dışarıda bırakıldı.",
   "rework.shallow": "Bu klon sığ: sınırından önceki commit'ler sayılmadı.",
   "gate.recorded": "Kapı denemesi kaydedildi ({result}): {path}.",
+  "gate.recordedUntimed": "Kapı denemesi kaydedildi ({result}): {path}; süresi ölçülmedi: başlangıç {start} 2000'den önce, bitişten sonra ya da bitişten bir günden fazla önce.",
+  "gate.durationUnmeasured": "{n} denemenin süresi ölçülmedi (başlangıç 2000'den önce, bitişten sonra ya da bitişten bir günden fazla önce); yukarıdaki süreler onları saymıyor.",
   "gate.recordFailed": "Kapı denemesi kaydedilmedi: {error}",
   "gate.result.pass": "geçti",
   "gate.result.fail": "düştü",
