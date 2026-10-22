@@ -1,8 +1,9 @@
 /**
- * Setup check: does the config load, do its patterns compile, does the work
- * graph load with unique ids and known needs, can a cycle pick anything, and
- * does the fix label separate repairs from ordinary work? Run after /init and
- * whenever the config or the graph is edited by hand.
+ * Setup check: is git as new as the one the suite runs on, does the config
+ * load, do its patterns compile, does the work graph load with unique ids and
+ * known needs, can a cycle pick anything, and does the fix label separate
+ * repairs from ordinary work? Run after /init and whenever the config or the
+ * graph is edited by hand.
  *
  * Returns message keys, not text: the CLI renders them in the config language.
  */
@@ -13,7 +14,7 @@ import { MIN_HISTORY, recentCommits, productionSubjects } from "./scan.mjs";
 import { hookStatus } from "./hook.mjs";
 import { instructionBudget, readBudgets } from "./budget.mjs";
 import { resolve } from "node:path";
-import { git, repoPath } from "../core/git.mjs";
+import { git, repoPath, gitVersion, parseVersion, versionAtLeast, GIT_FLOOR } from "../core/git.mjs";
 import { matchAny } from "../core/glob.mjs";
 
 /**
@@ -34,6 +35,13 @@ export async function checkSetup({ cwd, env = process.env }) {
   /** @param {DoctorItem["level"]} level @param {string} key @param {Record<string, string | number>} [vars] */
   const add = (level, key, vars = {}) => items.push({ level, key, vars });
   const done = (/** @type {string} */ language) => ({ ok: !items.some((i) => i.level === "fail"), items, language });
+
+  // A git older than the suite runs on gives numbers nobody checked, with no error to say so.
+  const installed = gitVersion({ cwd });
+  const floor = /** @type {number[]} */ (parseVersion(GIT_FLOOR));
+  if (!installed.version) add("warn", "doctor.gitVersionUnknown", { text: installed.text.split("\n")[0].slice(0, 80), floor: GIT_FLOOR });
+  else if (!versionAtLeast(installed.version, floor)) add("fail", "doctor.gitOld", { version: installed.version.join("."), floor: GIT_FLOOR });
+  else add("ok", "doctor.gitOk", { version: installed.version.join(".") });
 
   /** @type {any} */
   let config;

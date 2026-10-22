@@ -45,7 +45,7 @@ Then, in the project: `/ennyn:init`.
 
 Before the repository is public, install from a local clone: `claude plugin marketplace add ./ennyn`.
 
-Other agents that read [Agent Skills](https://agentskills.io) can use `skills/cycle/` directly. The CLI needs Node 20 or later and has no dependencies: `node scripts/ennyn.mjs --help`.
+Other agents that read [Agent Skills](https://agentskills.io) can use `skills/cycle/` directly. The CLI needs Node 20 or later and git 2.34 or later, and has no dependencies: `node scripts/ennyn.mjs --help`.
 
 ## Configure
 

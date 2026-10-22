@@ -45,7 +45,7 @@ Ardından projede: `/ennyn:init`.
 
 Depo herkese açılmadan önce yerel bir kopyadan kurun: `claude plugin marketplace add ./ennyn`.
 
-[Agent Skills](https://agentskills.io) biçimini okuyan başka ajanlar `skills/cycle/` dizinini doğrudan kullanabilir. CLI, Node 20 ya da üstünü ister ve bağımlılığı yoktur: `node scripts/ennyn.mjs --help`.
+[Agent Skills](https://agentskills.io) biçimini okuyan başka ajanlar `skills/cycle/` dizinini doğrudan kullanabilir. CLI, Node 20 ya da üstünü ve git 2.34 ya da üstünü ister, bağımlılığı yoktur: `node scripts/ennyn.mjs --help`.
 
 ## Ayar
 

@@ -66,7 +66,7 @@ Write this only when `handoff.exists` is false. An existing handoff gets nothing
 
 ## 7. Check and report
 
-When `commitMsg.types` is set, offer `ennyn install-hook`: the commit convention becomes a gate in this clone (machine-local; with `core.hooksPath` it says what to add instead). Then run `ennyn doctor` and fix every ✗. A `!` stays only when the user has seen and accepted it, for example the fix-label majority.
+When `commitMsg.types` is set, offer `ennyn install-hook`: the commit convention becomes a gate in this clone (machine-local; with `core.hooksPath` it says what to add instead). Then run `ennyn doctor` and fix every ✗ in the files you wrote. A ✗ about the machine's git (older than the floor) is the user's: tell them the version and the floor, and change nothing on their machine. A `!` stays only when the user has seen and accepted it, for example the fix-label majority.
 
 Report in at most twelve lines:
 

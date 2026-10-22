@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, mkdirSync, symlinkSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, symlinkSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { join, dirname, delimiter } from "node:path";
 import { fileURLToPath } from "node:url";
-import { git } from "../core/git.mjs";
+import { git, parseVersion, versionAtLeast, GIT_FLOOR } from "../core/git.mjs";
 import { DEFAULTS, loadConfig } from "../core/config.mjs";
 import {
   FIX_CANDIDATES,
@@ -304,7 +304,8 @@ test("doctor: a missing graph and a broken config fail; a fix-label majority war
   assert.ok(keys(await checkSetup({ cwd: noGraph.dir, env: {} })).includes("fail doctor.graphBad"));
   const badCfg = setup({ review: { maxRounds: "two" } }, { nodes: [] });
   const bad = await checkSetup({ cwd: badCfg.dir, env: {} });
-  assert.deepEqual(keys(bad), ["fail doctor.configBad"]);
+  // The git version needs no config; nothing after the config is checked without one.
+  assert.deepEqual(keys(bad), ["ok doctor.gitOk", "fail doctor.configBad"]);
   const r = setup({}, { nodes: [{ id: "a" }] });
   for (let i = 0; i < MIN_HISTORY; i++) r.commit(i % 3 ? `fix: repair ${i}` : `feat: add ${i}`, { "src/a.js": `export const v = ${i};\n` });
   assert.ok(keys(await checkSetup({ cwd: r.dir, env: {} })).includes("warn doctor.fixMajority"));
@@ -319,6 +320,47 @@ test("doctor: a null node or a module graph that does not load is a ✗ line, no
   put(broken.dir, { ".ennyn/graph.mjs": "export const nodes = [\n" });
   const mod = await checkSetup({ cwd: broken.dir, env: {} });
   assert.match(String(mod.items.find((i) => i.key === "doctor.graphBad")?.vars.error), /cannot load .*graph\.mjs/);
+});
+
+test("git floor: versions as git words them parse, and compare part by part", () => {
+  // Accept: what git, Apple's build, Git for Windows and a release candidate print, and a bare "X.Y".
+  for (const [text, want] of /** @type {const} */ ([
+    ["git version 2.34.1", [2, 34, 1]],
+    ["git version 2.39.5 (Apple Git-154)", [2, 39, 5]],
+    ["git version 2.45.1.windows.1", [2, 45, 1]],
+    ["git version 2.34.0.rc1", [2, 34, 0]],
+    ["git version 2.100.0\n", [2, 100, 0]],
+    ["2.34", [2, 34, 0]],
+  ])) assert.deepEqual(parseVersion(text), want, text);
+  // Reject: no version where git puts it.
+  for (const text of ["", "git version", "hub version 2.14.2", "git version two", "version 2", "git version 2"]) assert.equal(parseVersion(text), null, text);
+  const floor = /** @type {number[]} */ (parseVersion(GIT_FLOOR));
+  assert.deepEqual(floor, [2, 34, 0]);
+  for (const v of ["2.34.0", "2.34.1", "2.35.0", "2.100.0", "3.0.0"]) assert.ok(versionAtLeast(/** @type {number[]} */ (parseVersion(v)), floor), v);
+  for (const v of ["2.33.8", "2.30.2", "2.4.0", "1.99.99"]) assert.ok(!versionAtLeast(/** @type {number[]} */ (parseVersion(v)), floor), v);
+});
+
+test("doctor: a git older than the floor fails, one that says no version warns, the floor itself passes", () => {
+  const r = setup({}, { nodes: [{ id: "a" }] });
+  // A git that answers --version with the given text and runs the real git for everything else.
+  const realGit = join(git(["--exec-path"], { cwd: r.dir }), "git");
+  const doctor = (/** @type {string} */ said) => {
+    const bin = mkdtempSync(join(tmpdir(), "en-gitv-"));
+    writeFileSync(join(bin, "git"), `#!/bin/sh\nfor a in "$@"; do [ "$a" = --version ] && { printf '%s\\n' '${said}'; exit 0; }; done\nexec '${realGit}' "$@"\n`);
+    chmodSync(join(bin, "git"), 0o755);
+    return spawnSync(process.execPath, [CLI, "doctor"], { cwd: r.dir, encoding: "utf8", env: { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}` } });
+  };
+  const old = doctor("git version 2.30.2");
+  assert.equal(old.status, 1, old.stdout + old.stderr);
+  assert.match(old.stdout, /^✗ git: 2\.30\.2 is older than 2\.34, the oldest git Ennyn's tests run on/m);
+  const unknown = doctor("hub version 2.14.2");
+  assert.equal(unknown.status, 0, unknown.stdout + unknown.stderr);
+  assert.match(unknown.stdout, /^! git: no version in "hub version 2\.14\.2"; Ennyn's tests run on git 2\.34 and later$/m);
+  // Only git's own words: a bare number is another program's.
+  assert.match(doctor("2.30.2").stdout, /^! git: no version in "2\.30\.2"/m);
+  const floor = doctor("git version 2.34.1");
+  assert.equal(floor.status, 0, floor.stdout + floor.stderr);
+  assert.match(floor.stdout, /^✓ git: 2\.34\.1$/m);
 });
 
 test("cli: init-scan --json is the scan; doctor prints marks and exits 1 on a problem", () => {

@@ -145,6 +145,48 @@ export function headCommit(cwd) {
 }
 
 /**
+ * The oldest git the suite runs on (`npm run test:linux`, Ubuntu 22.04's). Older git is not tested, and on 2.30
+ * the suite failed four tests, one of them a wrong count: impact read a reference twice for an absolute path.
+ */
+export const GIT_FLOOR = "2.34";
+
+/**
+ * The parts of a "X.Y[.Z…]" version as numbers, or of git's own words for it ("git version 2.39.5 (Apple
+ * Git-154)", "git version 2.45.1.windows.1", "git version 2.34.0.rc1"): [X, Y, Z], Z 0 when absent. null for
+ * any other text.
+ * @param {string} text
+ * @returns {number[] | null}
+ */
+export function parseVersion(text) {
+  const m = /^(?:git version )?(\d+)\.(\d+)(?:\.(\d+))?/.exec(text.trim());
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3] ?? 0)] : null;
+}
+
+/**
+ * Whether version `a` is `b` or newer, part by part (2.100 is newer than 2.34).
+ * @param {number[]} a @param {number[]} b
+ */
+export function versionAtLeast(a, b) {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] ?? 0;
+    const y = b[i] ?? 0;
+    if (x !== y) return x > y;
+  }
+  return true;
+}
+
+/**
+ * The git on PATH: what `git --version` prints (in the C locale) and its version, null when the text is not
+ * git's. A git that fails, is killed or does not start throws.
+ * @param {{ cwd: string }} opts
+ * @returns {{ text: string, version: number[] | null }}
+ */
+export function gitVersion({ cwd }) {
+  const text = git(["--version"], { cwd, env: { ...process.env, LC_ALL: "C", LANGUAGE: "C" } });
+  return { text, version: /^git version /.test(text) ? parseVersion(text) : null };
+}
+
+/**
  * The index a running hook was given, when it belongs to the repository at
  * `cwd`. `git commit -- <path>` hands its hooks a temporary index through
  * GIT_INDEX_FILE; reading the main index there sees the wrong staged set. An

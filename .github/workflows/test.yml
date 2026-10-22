@@ -1,8 +1,8 @@
-# The suite on the oldest Node that package.json's engines allows, and on current ones.
-# test/engines.test.mjs keeps the first matrix entry equal to that floor, and holds this text whole.
+# The suite on Linux at the floors (git, and the Node of package.json's engines) and on newer Node majors:
+# `npm run test:linux`, the script that also runs before each push. test/engines.test.mjs holds this text whole.
 # In a private repository a push or pull request starts no job: a private repository's runs draw on
-# metered Actions minutes, and the same suite runs on Linux before each push (.ennyn/handoff.md). Started by
-# hand it runs anyway. Once the repository is public, every push and pull request runs it, at no cost.
+# metered Actions minutes, and the same script runs before each push (.claude/CLAUDE.md). Started by hand it
+# runs anyway. Once the repository is public, every push and pull request runs it, at no cost.
 name: test
 
 on:
@@ -14,20 +14,12 @@ jobs:
   test:
     if: github.event_name == 'workflow_dispatch' || !github.event.repository.private
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        node: ["20.0.0", "22", "24"]
     steps:
       - uses: actions/checkout@v4
         with:
           # The hygiene test reads every commit message.
           fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node }}
-      - run: node --version && git --version
-      - run: npm test
+      - run: npm run test:linux
 
   typecheck:
     if: github.event_name == 'workflow_dispatch' || !github.event.repository.private
