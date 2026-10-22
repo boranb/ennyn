@@ -39,20 +39,27 @@ function matrixNodes(yaml) {
  * The workflow, whole, for a floor and the newer majors. Any other line could keep the floor from being
  * tested (a condition, a matrix exclude, a second setup-node, continue-on-error, a trigger filtered to no
  * branch, a comment a reader takes for the end of the job), so the test owns the text: a change to the
- * workflow is made here too, on purpose.
+ * workflow is made here too, on purpose. Its one condition is on purpose: both jobs, every Node alike, are
+ * skipped in a private repository unless started by hand, so CI spends no metered minutes
+ * on what the Linux run before each push already ran.
  * @param {string} floor @param {string[]} newer
  */
 function workflow(floor, newer) {
   return `# The suite on the oldest Node that package.json's engines allows, and on current ones.
 # test/engines.test.mjs keeps the first matrix entry equal to that floor, and holds this text whole.
+# In a private repository a push or pull request starts no job: a private repository's runs draw on
+# metered Actions minutes, and the same suite runs on Linux before each push (.ennyn/handoff.md). Started by
+# hand it runs anyway. Once the repository is public, every push and pull request runs it, at no cost.
 name: test
 
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   test:
+    if: github.event_name == 'workflow_dispatch' || !github.event.repository.private
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -70,6 +77,7 @@ jobs:
       - run: npm test
 
   typecheck:
+    if: github.event_name == 'workflow_dispatch' || !github.event.repository.private
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -105,7 +113,8 @@ test("engines: CI runs the suite first on the exact floor of package.json, then 
   assert.equal(nodes[0], floor.join("."), "the first matrix entry is the floor, written in full");
   for (const v of nodes.slice(1)) assert.ok(/^\d+$/.test(v) && Number(v) > floor[0], `${v} is a newer major than the floor`);
   // The rest of the file, line for line: setup-node installs the matrix entry, the test job runs npm test on
-  // a full clone (the hygiene test reads every commit message), on every push, with nothing to skip a Node.
+  // a full clone (the hygiene test reads every commit message), on every push of a public repository and on
+  // every run started by hand, with nothing to skip a Node.
   assert.equal(yaml, workflow(nodes[0], nodes.slice(1)));
 });
 

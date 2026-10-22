@@ -1,13 +1,18 @@
 # The suite on the oldest Node that package.json's engines allows, and on current ones.
 # test/engines.test.mjs keeps the first matrix entry equal to that floor, and holds this text whole.
+# In a private repository a push or pull request starts no job: a private repository's runs draw on
+# metered Actions minutes, and the same suite runs on Linux before each push (.ennyn/handoff.md). Started by
+# hand it runs anyway. Once the repository is public, every push and pull request runs it, at no cost.
 name: test
 
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 jobs:
   test:
+    if: github.event_name == 'workflow_dispatch' || !github.event.repository.private
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -25,6 +30,7 @@ jobs:
       - run: npm test
 
   typecheck:
+    if: github.event_name == 'workflow_dispatch' || !github.event.repository.private
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

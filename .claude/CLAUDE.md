@@ -16,13 +16,14 @@ A development loop for coding agents, shipped as a Claude Code plugin and a zero
 ## Tests
 
 - `npm test` and `npm run typecheck` both pass before every commit.
+- Before a push, the suite also passes on Linux on Node 20.0.0, 22 and 24 (the Linux run in the handoff's commands): CI starts no job while the repository is private.
 - Tests are hermetic: temporary directories only, never a path outside the repository.
 
 ## Release
 
 1. Move the `Unreleased` section of CHANGELOG.md under the new version.
 2. Set the version in `package.json`, `package-lock.json` (two places) and `.claude-plugin/plugin.json`.
-3. `npm test && npm run typecheck && npm run validate:plugin` (the last needs the claude CLI; it checks the manifests, agents, skills and hooks as Claude Code loads them).
+3. `npm test && npm run typecheck && npm run validate:plugin` (the last needs the claude CLI; it checks the manifests, agents, skills and hooks as Claude Code loads them), and the Linux run from Tests.
 4. Commit `chore: release vX.Y.Z`, tag `vX.Y.Z`, push the commit and the tag.
 
 Install: `claude plugin marketplace add boranb/ennyn`. The repository stays private until the public release.
