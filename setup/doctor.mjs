@@ -10,10 +10,10 @@
 
 import { loadConfig, ConfigError } from "../core/config.mjs";
 import { loadGraph, readyNodes, readyMechanization, graphProblems, GraphError } from "../plan/mechanization.mjs";
-import { MIN_HISTORY, recentCommits, productionSubjects } from "./scan.mjs";
+import { MIN_HISTORY, indexMatches, recentCommits, productionSubjects } from "./scan.mjs";
 import { hookStatus } from "./hook.mjs";
 import { instructionBudget, readBudgets } from "./budget.mjs";
-import { resolve } from "node:path";
+import { relative, resolve, sep } from "node:path";
 import { git, repoPath, gitVersion, parseVersion, versionAtLeast, GIT_FLOOR } from "../core/git.mjs";
 import { matchAny } from "../core/glob.mjs";
 
@@ -96,9 +96,10 @@ export async function checkSetup({ cwd, env = process.env }) {
   if (cm.types.length) add("ok", "doctor.commitStyle", { language: commitLanguage, types: cm.types.join(", "), type: cm.fixType });
   else add("ok", "doctor.commitStyleFree", { language: commitLanguage });
 
-  // Declared types with no hook to check them are a rule on paper again.
+  // Declared types, or literals kept out, with no hook to check them are a rule on paper again.
   const repo = repoPath("--git-dir", { cwd }) !== null;
-  if (cm.types.length && repo) {
+  const forbidden = config.review.forbidden;
+  if ((cm.types.length || forbidden.length) && repo) {
     /** @type {ReturnType<typeof hookStatus> | null} */
     let hook = null;
     try {
@@ -112,7 +113,7 @@ export async function checkSetup({ cwd, env = process.env }) {
     } else if (hook.state === "ennyn" || hook.state === "wired") add("ok", "doctor.hookOk", { path: hook.path });
     else if (hook.hooksPath) add("warn", "doctor.hookPath", { dir: hook.hooksPath });
     else if (hook.state === "other") add("warn", "doctor.hookOther", { path: hook.path });
-    else add("warn", "doctor.hookMissing");
+    else add("warn", cm.types.length ? "doctor.hookMissing" : "doctor.hookMissingForbidden");
   }
 
   // Text loaded in every session only shrinks: growth since the last recorded budget is a warning.
@@ -140,6 +141,26 @@ export async function checkSetup({ cwd, env = process.env }) {
         const unmatched = [...rule.paths, ...rule.docs].filter((g) => !files.some((f) => matchAny(f, [g])));
         if (unmatched.length) add("warn", "doctor.cochangeUnmatched", { rule: i + 1, globs: unmatched.join(", ") });
         else if (!files.some((f) => matchAny(f, rule.paths) && !matchAny(f, rule.docs))) add("warn", "doctor.cochangeSilent", { rule: i + 1 });
+      });
+      // What each rule covers holds today: new lines fail the commit, these stay until the file is touched.
+      const configRel = config.configPath ? relative(cwd, config.configPath).split(sep).join("/") : null;
+      /** @type {Map<string, { path: string, n: number }[]> | null} */
+      let all = null;
+      /** @type {unknown} */
+      let failed = null;
+      try {
+        if (forbidden.length) all = indexMatches(cwd, forbidden.map((/** @type {{ text: string }} */ r) => r.text));
+      } catch (e) {
+        failed = e;
+      }
+      forbidden.forEach((/** @type {{ text: string, paths: string[], except?: string[] }} */ rule, /** @type {number} */ i) => {
+        const unmatched = [...rule.paths, ...(rule.except ?? [])].filter((g) => !files.some((f) => matchAny(f, [g])));
+        if (unmatched.length) add("warn", "doctor.forbiddenUnmatched", { rule: i + 1, globs: unmatched.join(", ") });
+        if (!all) return add("unmeasured", "doctor.forbiddenUnmeasured", { rule: i + 1, text: rule.text, error: oneLine(failed) });
+        const held = (all.get(rule.text) ?? []).filter((h) => h.path !== configRel && matchAny(h.path, rule.paths) && !matchAny(h.path, rule.except ?? []));
+        const lines = held.reduce((a, h) => a + h.n, 0);
+        if (lines) add("warn", "doctor.forbiddenHeld", { rule: i + 1, text: rule.text, lines, files: held.length, examples: held.slice(0, 3).map((h) => h.path).join(", ") });
+        else add("ok", "doctor.forbiddenClean", { rule: i + 1, text: rule.text });
       });
     }
   }

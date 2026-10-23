@@ -96,7 +96,7 @@ const FIRST = commit(0, "feat: add", {
   ".ennyn/config.json": JSON.stringify({
     language: "en",
     commitMsg: { types: ["feat", "fix", "chore"] },
-    review: { impactRequiredGlobs: ["src/**"], cochange: [{ paths: ["src/**"], docs: ["README.md"] }] },
+    review: { impactRequiredGlobs: ["src/**"], cochange: [{ paths: ["src/**"], docs: ["README.md"] }], forbidden: [{ text: "console.log", paths: ["src/**"] }] },
   }),
   ".ennyn/graph.json": JSON.stringify({
     nodes: [
@@ -105,7 +105,9 @@ const FIRST = commit(0, "feat: add", {
     ],
     done: [{ id: "base", status: "done" }],
   }),
-  "CLAUDE.md": "# Project\n\n- Every change keeps the tests green before it is committed.\n- Never write a secret into a file that is tracked.\n",
+  "CLAUDE.md": "# Project\n\n- Every change keeps the tests green before it is committed.\n- Never write a secret into a file that is tracked.\n- Never call `console.log` in src/.\n",
+  // A literal the ban line names, held by a file: init-scan's count of it has an answer to lose.
+  "scripts/debug.js": "console.log(process.argv);\n",
   "README.md": "# demo\n",
   // What init-scan, budget and the hooks look for: a read that fails there must change the output, not hide.
   "AGENTS.md": "# Agents\n\n- Run the tests before every commit, and keep them green.\n",
@@ -152,6 +154,13 @@ for (const args of [["gate-record", "--start", START, "--exit", "1", "--step", "
 
 // --------------------------------------------------------------------------------------------- cases --
 
+/** Stages a src/use.js line that review.forbidden keeps out, in the main index or the one `env` names. @param {string} repo @param {NodeJS.ProcessEnv} [env] */
+function stageLog(repo, env) {
+  if (env) git(["read-tree", "HEAD"], { cwd: repo, env, keepIndex: true });
+  writeFileSync(join(repo, "src", "use.js"), `${readFileSync(join(repo, "src", "use.js"), "utf8")}console.log(three);\n`);
+  git(["add", "src/use.js", ...(env ? ["README.md"] : [])], { cwd: repo, ...(env ? { env, keepIndex: true } : {}) });
+}
+
 /**
  * @typedef {{ args: string[], cwd?: string, writes?: boolean, setup?: (repo: string) => void, env?: Record<string, string>, first?: boolean, outside?: boolean, hook?: string, input?: (repo: string) => unknown }} Case
  *   `cwd` is relative to the repository; a case that writes, or has a setup, runs in a copy of its own.
@@ -192,6 +201,10 @@ const CASES = [
       git(["add", "src/add.js"], { cwd: repo, env, keepIndex: true });
     },
   },
+  // A staged line review.forbidden keeps out: read as no line, the commit would pass.
+  { args: ["commit-check", ".git/MSG"], setup: (repo) => stageLog(repo) },
+  { args: ["commit-check", "--hook", ".git/MSG"], setup: (repo) => stageLog(repo) },
+  { args: ["commit-check", "--hook", ".git/MSG"], env: { GIT_INDEX_FILE: ".git/index.hook" }, setup: (repo) => stageLog(repo, { ...process.env, GIT_INDEX_FILE: join(repo, ".git", "index.hook") }) },
   // An amend! that drops the Impact line its target needs; the target is read from the log.
   { args: ["commit-check", "--hook", ".git/AMEND"], setup: (repo) => git(["reset", "-q"], { cwd: repo }) },
   // The same past a shallow boundary: the target cannot be found, and the hook says what went unchecked.

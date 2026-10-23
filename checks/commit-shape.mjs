@@ -193,6 +193,25 @@ export function skippedSubject(subject, config) {
 }
 
 /**
+ * The message's shape, and the lines it adds that review.forbidden bans. The second is about content, not the
+ * message: it holds for every commit the hook sees, whatever its subject or an empty message, and the bypass
+ * marker, which loosens the shape, does not loosen it.
+ * @param {string} message raw commit message (as given to a commit-msg hook)
+ * @param {Parameters<typeof shapeOf>[1] & { addedLines?: Map<string, AddedLine[]>, exempt?: string[] }} opts
+ *   `addedLines`: the lines the commit adds, per staged path (stagedAddedLines); `exempt`: paths no rule reads
+ *   (the config, which holds every rule's text)
+ * @returns {{ ok: boolean, errors: string[], warnings?: string[], skipped?: string }}
+ */
+export function checkCommitShape(message, opts) {
+  const res = shapeOf(message, opts);
+  // Also for a message the shape check reads as empty: with --allow-empty-message git commits it anyway.
+  if (!opts.addedLines) return res;
+  const rules = opts.config.review.forbidden;
+  const banned = forbiddenErrors(forbiddenHits(opts.addedLines, rules, opts.exempt), rules, opts.config.language);
+  return banned.length ? { ...res, ok: false, errors: [...banned, ...res.errors] } : res;
+}
+
+/**
  * @param {string} message raw commit message (as given to a commit-msg hook)
  * @param {{ config: any, stagedPaths?: string[], cleanup?: "strip" | "whitespace" | "verbatim" | "scissors", cut?: boolean, comment?: string, foldTarget?: { message: string, paths: string[] } | null, ownSubject?: boolean, alsoChanged?: string[] }} opts
  *   `cleanup` is git's mode for this commit: "whitespace" when the message came from `-m` / `-F`.
@@ -204,7 +223,7 @@ export function skippedSubject(subject, config) {
  * @returns {{ ok: boolean, errors: string[], warnings?: string[], skipped?: string }} `warnings`: staged paths whose
  *   documents (review.cochange) are not staged; they never fail the check
  */
-export function checkCommitShape(message, { config, stagedPaths = [], cleanup = "strip", cut, comment = "#", foldTarget = null, ownSubject = true, alsoChanged = [] }) {
+function shapeOf(message, { config, stagedPaths = [], cleanup = "strip", cut, comment = "#", foldTarget = null, ownSubject = true, alsoChanged = [] }) {
   const lang = config.language;
   const cm = config.commitMsg;
   const rv = config.review;
@@ -225,9 +244,9 @@ export function checkCommitShape(message, { config, stagedPaths = [], cleanup = 
     const rest = lines.slice(1).join("\n").replace(/^\n+/, "");
     if (!rest) return { ok: true, errors: [], skipped: "subject" };
     const paths = [...new Set([...stagedPaths, ...(foldTarget?.paths ?? [])])];
-    if (fold[1] === "amend") return checkCommitShape(rest, { config, stagedPaths: paths, cleanup: "whitespace", comment });
+    if (fold[1] === "amend") return shapeOf(rest, { config, stagedPaths: paths, cleanup: "whitespace", comment });
     const base = foldTarget ? storedMessage(foldTarget.message, "whitespace") : fold[2];
-    return checkCommitShape(`${base}\n\n${rest}`, { config, stagedPaths, cleanup: "whitespace", comment, ownSubject: false, alsoChanged: foldTarget?.paths ?? [] });
+    return shapeOf(`${base}\n\n${rest}`, { config, stagedPaths, cleanup: "whitespace", comment, ownSubject: false, alsoChanged: foldTarget?.paths ?? [] });
   }
   if (skippedSubject(subject, config)) {
     return { ok: true, errors: [], skipped: "subject" };
@@ -317,4 +336,46 @@ export function cochangeWarnings(staged, rules, lang, alsoChanged = []) {
     out.push(t("shape.cochange", { paths, docs: rule.docs.join(", "), note: rule.note ? ` (${rule.note})` : "" }, lang));
   }
   return out;
+}
+
+/** @typedef {import("../core/git.mjs").AddedLine} AddedLine a line a commit adds, numbered as in the new file */
+/** @typedef {{ text: string, paths: string[], except?: string[], note?: string }} ForbiddenRule */
+
+/**
+ * Added lines that hold a review.forbidden rule's text, as written (case and spaces too), in a path its
+ * `paths` name and its `except` do not.
+ * @param {Map<string, AddedLine[]>} added
+ * @param {ForbiddenRule[]} rules
+ * @param {string[]} [exempt] paths no rule reads
+ * @returns {{ rule: number, path: string, line: number, from?: string }[]} `rule`: index in rules; `from`: the merge
+ *   parent that already holds the line
+ */
+export function forbiddenHits(added, rules, exempt = []) {
+  /** @type {{ rule: number, path: string, line: number, from?: string }[]} */
+  const out = [];
+  rules.forEach((rule, i) => {
+    for (const [path, lines] of added) {
+      if (exempt.includes(path) || !matchAny(path, rule.paths) || matchAny(path, rule.except ?? [])) continue;
+      for (const l of lines) if (l.text.includes(rule.text)) out.push({ rule: i, path, line: l.line, ...(l.from ? { from: l.from } : {}) });
+    }
+  });
+  return out;
+}
+
+/**
+ * One error per rule a commit breaks: the first three places, the text and the rule's note; in a merge, how
+ * many of the lines the other side brings, and where they are to be fixed.
+ * @param {{ rule: number, path: string, line: number, from?: string }[]} hits
+ * @param {ForbiddenRule[]} rules
+ * @param {string} lang
+ */
+function forbiddenErrors(hits, rules, lang) {
+  return rules.flatMap((rule, i) => {
+    const mine = hits.filter((h) => h.rule === i);
+    if (!mine.length) return [];
+    const where = mine.slice(0, 3).map((h) => `${h.path}:${h.line}`).join(", ") + (mine.length > 3 ? t("shape.cochangeMore", { n: mine.length - 3 }, lang) : "");
+    const merged = mine.filter((h) => h.from);
+    const brought = merged.length ? t("shape.forbiddenMerged", { n: merged.length, commit: String(merged[0].from).slice(0, 10) }, lang) : "";
+    return [t("shape.forbidden", { where, text: rule.text, rule: i + 1, note: rule.note ? ` (${rule.note})` : "" }, lang) + brought];
+  });
 }

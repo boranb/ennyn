@@ -55,6 +55,8 @@ Follow [graph.md](graph.md): where the graph goes, a module when the roadmap is 
 
 The cycle follows Ennyn's convention. When an instruction or rule file sets another commit format or language (`commitLines` of `agentSetup.instructions`; every-session files first, then on-demand ones, then those of other agents; for example "one-line commits"), show each such line and propose replacing it with one that points at `.ennyn/config.json`. Edit it only on the user's yes, so the agent never gets two rules.
 
+A line that forbids a literal (`bans`: "never use `console.log`") can become a `review.forbidden` rule, which the commit-msg hook enforces: follow [gates.md](gates.md). The line goes only once doctor shows that hook.
+
 ## 6. Handoff stub
 
 Write this only when `handoff.exists` is false. An existing handoff gets nothing but the one line from question 6, and only on the user's yes. Write it to `paths.handoff`:
@@ -66,14 +68,14 @@ Write this only when `handoff.exists` is false. An existing handoff gets nothing
 
 ## 7. Check and report
 
-When `commitMsg.types` is set, offer `ennyn install-hook`: the commit convention becomes a gate in this clone (machine-local; with `core.hooksPath` it says what to add instead). Then run `ennyn doctor` and fix every ✗ in the files you wrote. A ✗ about the machine's git (older than the floor) is the user's: tell them the version and the floor, and change nothing on their machine. A `!` stays only when the user has seen and accepted it, for example the fix-label majority.
+When `commitMsg.types` or `review.forbidden` is set, offer `ennyn install-hook`: the commit convention becomes a gate in this clone (machine-local; with `core.hooksPath` it says what to add instead). Then run `ennyn doctor` and fix every ✗ in the files you wrote. A ✗ about the machine's git (older than the floor) is the user's: tell them the version and the floor, and change nothing on their machine. A `!` stays only when the user has seen and accepted it, for example the fix-label majority.
 
 Report in at most twelve lines:
 
 - files written;
 - the fix-label decision, with its share;
 - the languages, the voice and the commit convention;
-- what was changed in the project's own instructions, or left in conflict and why; an audit queue the project already keeps;
+- what was changed in the project's own instructions (lines replaced, lines turned into gates), or left in conflict and why; an audit queue the project already keeps;
 - node counts: open, done and ready;
 - the instruction text the project loads: `agentSetup.size.always` in every session, `size.onDemand` by path;
 - what was estimated or left at its default;

@@ -20,6 +20,7 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { realpathSync } from "node:fs";
+import { readIfThere } from "./files.mjs";
 
 const LEAKY_ENV = ["GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_PREFIX", "GIT_COMMON_DIR"];
 /** Environment that changes what git prints or how it reads a path, removed for every call. */
@@ -62,7 +63,12 @@ export function git(args, { cwd, env = process.env, keepIndex = false }) {
   } catch (err) {
     // A killed git or one that did not start says nothing on stderr: say what happened instead.
     const e = /** @type {Error & { stderr?: string, signal?: string | null, code?: string }} */ (err);
-    if (!String(e.stderr ?? "").trim()) e.stderr = `git ${args[0]}: ${e.signal ? `killed by ${e.signal}` : e.code === "ENOENT" ? NO_START : e.message}`;
+    // The command's name, past any "-c key=value" in front of it.
+    let at = 0;
+    while (args[at] === "-c") at += 2;
+    // Output past the buffer stops git with SIGTERM: that is no kill from outside.
+    if (e.code === "ENOBUFS") e.stderr = `git ${args[at]}: its output was larger than 64 MB`;
+    else if (!String(e.stderr ?? "").trim()) e.stderr = `git ${args[at]}: ${e.signal ? `killed by ${e.signal}` : e.code === "ENOENT" ? NO_START : e.message}`;
     throw e;
   }
 }
@@ -232,6 +238,166 @@ export function stagedPaths(cwd, { env } = {}) {
     keepIndex: Boolean(index),
   });
   return out.split("\0").filter(Boolean);
+}
+
+/**
+ * A path as git writes it in a diff header: C-quoted when it holds a quote, a backslash or a control
+ * character ("a\tb", octal for bytes), else as is.
+ * @param {string} s
+ */
+export function unquotePath(s) {
+  if (!s.startsWith('"') || !s.endsWith('"') || s.length < 2) return s;
+  /** @type {number[]} */
+  const bytes = [];
+  const named = /** @type {Record<string, number>} */ ({ a: 7, b: 8, t: 9, n: 10, v: 11, f: 12, r: 13, '"': 34, "\\": 92 });
+  for (let i = 1; i < s.length - 1; i++) {
+    if (s[i] !== "\\") {
+      const ch = String.fromCodePoint(/** @type {number} */ (s.codePointAt(i)));
+      bytes.push(...Buffer.from(ch, "utf8"));
+      i += ch.length - 1;
+    } else if (/[0-7]{3}/.test(s.slice(i + 1, i + 4))) {
+      bytes.push(parseInt(s.slice(i + 1, i + 4), 8));
+      i += 3;
+    } else {
+      bytes.push(named[s[i + 1]] ?? s.charCodeAt(i + 1));
+      i += 1;
+    }
+  }
+  return Buffer.from(bytes).toString("utf8");
+}
+
+/**
+ * The lines a commit adds to `paths` (the staged paths a review.forbidden rule names), numbered as in the new
+ * file. Read from the index the hook was given (stagedPaths), with those paths as pathspecs, 500 a git call:
+ * only the files a rule reads are diffed, so a large file elsewhere cannot fill git()'s buffer. A path handed
+ * back to git can match nothing (macOS precomposes a decomposed name; bytes that are not UTF-8 come back
+ * changed, and two such names can decode alike): every path asked must show in a header, else it throws and
+ * the hook says it did not check. The diff is pinned against the user's config: no color, external diff or
+ * textconv, the a/ and b/ prefixes (diff.noprefix and diff.mnemonicPrefix change them), a submodule as its
+ * commit line, no renames (a moved file is added in full, as its new name is staged), and every file as
+ * text (--text: a NUL byte, a -diff or binary attribute and core.bigFileThreshold would otherwise hide its
+ * lines). A file stored in UTF-16 holds the text with NULs between its letters: it is not matched.
+ * In a merge every added line counts: the other side's commits may have run no hook (cherry-pick, rebase,
+ * --no-verify, a clone without it). A line a parent named in MERGE_HEAD already holds carries that parent in
+ * `from`, for the message only: MERGE_HEAD is a file anyone can write.
+ * @param {string} cwd the repository's top
+ * @param {string[]} paths
+ * @param {{ env?: NodeJS.ProcessEnv }} [opts]
+ * @returns {Map<string, AddedLine[]>}
+ * @typedef {{ line: number, text: string, from?: string }} AddedLine
+ */
+export function stagedAddedLines(cwd, paths, { env } = {}) {
+  /** @type {Map<string, AddedLine[]>} */
+  const out = new Map();
+  if (!paths.length) return out;
+  const index = env ? hookIndexFile(cwd, env) : null;
+  const run = (/** @type {string[]} */ against, /** @type {string[]} */ batch) =>
+    git(["-c", "core.quotePath=false", "diff", "--cached", ...against, "--text", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--submodule=short", "-U0", "--src-prefix=a/", "--dst-prefix=b/", "--", ...batch], {
+      cwd,
+      env: index ? { ...process.env, GIT_INDEX_FILE: index } : process.env,
+      keepIndex: Boolean(index),
+    });
+  const parents = mergeHeads(cwd);
+  const unique = [...new Set(paths)];
+  for (let at = 0; at < unique.length; at += 500) {
+    const batch = unique.slice(at, at + 500);
+    const mine = addedLines(run([], batch), new Set(batch), { complete: true });
+    for (const parent of parents) {
+      const theirs = addedLines(run([parent], batch), null);
+      for (const [path, lines] of mine) {
+        const added = new Set((theirs.get(path) ?? []).map((l) => l.line));
+        for (const l of lines) if (!added.has(l.line)) l.from ??= parent;
+      }
+    }
+    for (const [path, lines] of mine) out.set(path, lines);
+  }
+  return out;
+}
+
+/**
+ * The other parents of a merge being committed: the hashes in MERGE_HEAD, one a line (more for an octopus);
+ * none outside a merge.
+ * @param {string} cwd
+ * @returns {string[]}
+ */
+export function mergeHeads(cwd) {
+  const path = git(["rev-parse", "--git-path", "MERGE_HEAD"], { cwd });
+  const text = readIfThere(resolve(cwd, path));
+  if (text === null) return [];
+  const heads = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (!heads.every((h) => /^[0-9a-f]{40,64}$/.test(h))) throw new Error(`${path} holds something that is not a commit hash`);
+  return heads;
+}
+
+/**
+ * The name in a `diff --git a/<p> b/<p>` line, with no renames both the same: quoted when git quoted it.
+ * @param {string} rest the line after "diff --git "
+ * @returns {string | null}
+ */
+function headerPath(rest) {
+  if (rest.startsWith('"')) {
+    const end = /^"(?:[^"\\]|\\.)*"/.exec(rest);
+    return end ? unquotePath(end[0]).replace(/^a\//, "") : null;
+  }
+  const n = (rest.length - 5) / 2;
+  const p = rest.slice(2, 2 + n);
+  return Number.isInteger(n) && rest === `a/${p} b/${p}` ? p : null;
+}
+
+/**
+ * The added lines of a `-U0` diff with a/ and b/ prefixes, per file. With `asked`, a header that names a path
+ * not in it throws, and with `complete` so does a path in it that no header names: a misread diff is no
+ * answer. A hunk header that does not parse throws.
+ * @param {string} text
+ * @param {Set<string> | null} asked
+ * @param {{ complete?: boolean }} [opts]
+ * @returns {Map<string, AddedLine[]>}
+ */
+export function addedLines(text, asked, { complete = false } = {}) {
+  /** @type {Map<string, AddedLine[]>} */
+  const out = new Map();
+  /** @type {Set<string>} */
+  const shown = new Set();
+  /** @type {string | null} */
+  let file = null;
+  /** @type {AddedLine[] | null} */
+  let lines = null;
+  let header = false;
+  let n = 0;
+  for (const raw of text.split("\n")) {
+    if (raw.startsWith("diff --git ")) {
+      file = null;
+      lines = null;
+      header = true;
+      const path = headerPath(raw.slice(11));
+      if (path === null || (asked && !asked.has(path))) throw new Error(`git diff named a path it was not asked for: ${JSON.stringify(raw.slice(11, 200))}`);
+      shown.add(path);
+    } else if (header && raw.startsWith("+++ ")) {
+      // A name with a space ends in a tab, for patch, quoted or not; a tab in the name itself is quoted.
+      const name = raw.slice(4).replace(/\t$/, "");
+      if (name === "/dev/null") continue;
+      const path = unquotePath(name);
+      if (!path.startsWith("b/") || (asked && !asked.has(path.slice(2)))) throw new Error(`git diff named a path it was not asked for: ${JSON.stringify(name)}`);
+      file = path.slice(2);
+    } else if (raw.startsWith("@@ ")) {
+      header = false;
+      const m = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw);
+      if (!m) throw new Error(`git diff wrote a hunk header that does not parse: ${JSON.stringify(raw.slice(0, 80))}`);
+      n = Number(m[1]);
+    } else if (!header && raw.startsWith("+")) {
+      if (file !== null) {
+        if (!lines) out.set(file, (lines = []));
+        lines.push({ line: n, text: raw.slice(1) });
+      }
+      n++;
+    }
+    // "-" lines and "\ No newline at end of file" leave the new file's numbering where it is.
+  }
+  if (complete && asked) {
+    const missing = [...asked].filter((p) => !shown.has(p));
+    if (missing.length) throw new Error(`git diff did not show ${missing.length} staged path(s), so their lines were not read: ${missing.slice(0, 3).map((p) => JSON.stringify(p)).join(", ")}`);
+  }
+  return out;
 }
 
 /**

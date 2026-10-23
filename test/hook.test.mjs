@@ -152,7 +152,7 @@ test("hook: a config that does not load lets the commit through with a warning, 
   writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ commitMsg: { types: ["feat"], typo: 1 } }));
   const r = commit(dir, "anything at all");
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stderr, /config does not load, so this commit message was not checked/);
+  assert.match(r.stderr, /config does not load, so this commit was not checked: not its message, not its lines/);
   // Run by hand (no --hook), the same config is still an error.
   writeFileSync(join(dir, "MSG"), "x\n");
   assert.equal(spawnSync(process.execPath, [CLI, "commit-check", join(dir, "MSG")], { cwd: dir }).status, 1);

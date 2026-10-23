@@ -8,10 +8,11 @@
 
 import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { resolve } from "node:path";
+import { relative, resolve, sep } from "node:path";
 import { loadConfig, ConfigError } from "../core/config.mjs";
-import { git, headCommit, repoPath, stagedPaths, unpushedCount } from "../core/git.mjs";
+import { git, headCommit, hookIndexFile, repoPath, stagedAddedLines, stagedPaths, unpushedCount } from "../core/git.mjs";
 import { t } from "../core/i18n.mjs";
+import { matchAny } from "../core/glob.mjs";
 import { checkCommitShape, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
 import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
 import { reworkRate } from "../metrics/szz.mjs";
@@ -248,6 +249,23 @@ const COMMANDS = {
       for (const r of shown) say("scan.commitRule", r);
       if (all > shown.length) say("scan.commitRuleMore", { n: all - shown.length });
     }
+    // Ban lines with what the index holds of each literal today; the same two-a-file, eight in all as above.
+    if (res.bans?.length) {
+      /** @type {Map<string, number>} */
+      const perFile = new Map();
+      const shown = res.bans.filter((b) => {
+        const n = (perFile.get(b.path) ?? 0) + 1;
+        perFile.set(b.path, n);
+        return n <= 2;
+      }).slice(0, 8);
+      for (const b of shown) {
+        const literals = b.literals
+          .map((l) => t(l.lines ? "scan.banLiteral" : "scan.banLiteralNone", { text: l.text, lines: l.lines, files: l.files, examples: l.examples.join(", "), gated: l.gated ? t("scan.banGated", {}, lang) : "" }, lang))
+          .join("; ");
+        say("scan.ban", { path: b.path, line: b.line, literals });
+      }
+      if (res.bans.length > shown.length) say("scan.banMore", { n: res.bans.length - shown.length });
+    }
     if (ag.skills.length || ag.agents.length || ag.commands.length) say("scan.agentParts", { skills: ag.skills.length, agents: ag.agents.length, commands: ag.commands.length });
     if (ag.overlaps.cycle.length || ag.overlaps.reviewers.length) {
       say("scan.overlaps", { cycle: ag.overlaps.cycle.join(", ") || "—", reviewers: ag.overlaps.reviewers.join(", ") || "—" });
@@ -347,19 +365,54 @@ const COMMANDS = {
       err(t("cli.cannotRead", { path: positional[0], error }, cfg.language));
       return 1;
     }
+    // A config git tracks that is not in the work tree (a sparse checkout without .ennyn/), or an ENNYN_CONFIG
+    // naming no file: the defaults would check another project's rules, so the hook says nothing was checked.
+    if (opts.hook && !cfg.configPath) {
+      const named = process.env.ENNYN_CONFIG;
+      let tracked = "";
+      try {
+        if (!named && repoPath("--git-dir", { cwd }) !== null) tracked = git(["ls-files", "-z", "--", ".ennyn/config.json"], { cwd });
+      } catch (e) {
+        const error = /** @type {Error & { stderr?: unknown }} */ (e);
+        return (err(t("cli.hookGitFailed", { error: String(error.stderr || error.message).trim().split("\n")[0] }, "en")), 0);
+      }
+      if (named || tracked) return (err(t("cli.hookConfigAbsent", { path: named || ".ennyn/config.json" }, "en")), 0);
+    }
     /** @type {string[]} */
     let staged = [];
     try {
-      staged = stagedPaths(cwd, { env: process.env });
+      // An index git gave the hook that is not this repository's own (GIT_INDEX_FILE set outside its git dir):
+      // the main index would be read instead, another commit's files.
+      const given = process.env.GIT_INDEX_FILE;
+      if (opts.hook && given && !hookIndexFile(cwd, process.env)) throw new Error(t("cli.hookIndexForeign", { path: given }, cfg.language));
+      // Outside a repository nothing is staged: the message is all there is to check.
+      if (repoPath("--git-dir", { cwd }) !== null) staged = stagedPaths(cwd, { env: process.env });
     } catch (e) {
+      if (!opts.hook) throw e;
       err(t("cli.stagedUnmeasured", { error: String(/** @type {Error} */ (e).message).split("\n")[0] }, cfg.language));
+    }
+    // The config holds every rule's text: it names the literal without breaking the rule.
+    const exempt = cfg.configPath ? [relative(cwd, cfg.configPath).split(sep).join("/")] : [];
+    // The lines review.forbidden reads: those of the staged paths a rule names. Unread, the hook says so and the
+    // rest of the check still runs; run by hand, the command fails.
+    /** @type {Map<string, import("../core/git.mjs").AddedLine[]> | undefined} */
+    let addedLines;
+    const named = staged.filter((p) => !exempt.includes(p) && cfg.review.forbidden.some((/** @type {{ paths: string[] }} */ r) => matchAny(p, r.paths)));
+    if (named.length) {
+      try {
+        addedLines = stagedAddedLines(cwd, named, { env: process.env });
+      } catch (e) {
+        if (!opts.hook) throw e;
+        const error = /** @type {Error & { stderr?: unknown }} */ (e);
+        err(t("cli.forbiddenUnmeasured", { error: String(error.stderr || error.message).trim().split("\n")[0] }, cfg.language));
+      }
     }
     let res;
     try {
       const { cleanup, comment, cut } = hookCommitMode({ cwd, message, env: process.env });
       const fold = foldTarget(cwd, message, cleanup, comment, cut);
       if (fold.missed) err(t("cli.foldNotFound", { subject: fold.subject, where: t(`cli.foldWhere.${fold.missed}`, {}, cfg.language) }, cfg.language));
-      res = checkCommitShape(message, { config: cfg, stagedPaths: staged, cleanup, cut, comment, foldTarget: fold.target });
+      res = checkCommitShape(message, { config: cfg, stagedPaths: staged, cleanup, cut, comment, foldTarget: fold.target, addedLines, exempt });
     } catch (e) {
       // A git that fails, or a pattern in the config that does not compile, is no reason to lock commits either:
       // the commit goes through, and the message says it was not checked.

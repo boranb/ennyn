@@ -31,7 +31,8 @@ export function globToRegExp(pattern) {
             re += "(?:[^/]+/)*";
             i += 3;
           } else {
-            re += ".*";
+            // Any character, line breaks and separators too: "." stops at them, and a name may hold one.
+            re += "[\\s\\S]*";
             i += 2;
           }
           continue;

@@ -12,8 +12,8 @@
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { gone, present, readIfThere } from "../core/files.mjs";
-import { join, resolve, posix } from "node:path";
-import { git, gitMaybe, headCommit, repoPath } from "../core/git.mjs";
+import { join, relative, resolve, posix, sep } from "node:path";
+import { git, gitError, gitMaybe, gitRun, headCommit, repoPath } from "../core/git.mjs";
 import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
 import { loadPathScopedRules, splitFrontMatter, parsePaths } from "../adapters/claude-code/rules-index.mjs";
 
@@ -492,6 +492,114 @@ export function commitRuleLines(text) {
     .map(({ l }) => (l.length > 160 ? l.slice(0, 157) + "…" : l));
 }
 
+// A line that forbids something: the words that say so in English and Turkish, outside code spans, or a line
+// that starts "No `…`". The softer words ("avoid", "prefer") admit exceptions and are left out. Turkish forbids
+// with a negative verb: the endings that only negate ("-mamalı", "-mayın", "-masın", "-mayalım", the passive
+// "-ılmaz"), and a few imperatives by name, only where their clause ends: "kullanma" is also a noun
+// ("kullanma kılavuzu"). Also as typed without diacritics.
+const BAN_EN = /(?<![A-Za-z])(never|do not|don't|don’t|must not|mustn't|mustn’t|should not|shouldn't|shouldn’t|cannot|can't|can’t|not allowed|not permitted|forbidden|banned|prohibited|disallowed|under no circumstances)(?![A-Za-z])/i;
+const BAN_TR = new RegExp(
+  `(?<![${L}])(asla|hi[çc] ?bir zaman|yasak(t[ıi]r)?` +
+    `|[${L}]+(mamal[ıi]|memeli|may[ıi]n|meyin|may[ıi]n[ıi]z|meyiniz|mas[ıi]n|mesin|mayal[ıi]m|meyelim)(d[ıi]r)?|[${L}]+([ıiuü]lmaz|[ıiuü]lmez|nmaz|nmez))(?![${L}])`,
+  "i",
+);
+const BAN_TR_IMPERATIVE = new RegExp(`(?<![${L}])(kullanma|yazma|[çc]a[ğg][ıi]rma|b[ıi]rakma|koyma|yapma|ekleme|import etme)\\s*([.;,:!?)]|$)`, "i");
+const NO_LITERAL = /^[\s>*+-]*(\d+[.)]\s*)?(\*\*)?no\s+`/i;
+const CODE_SPAN = /`([^`\n]+)`/g;
+
+/**
+ * Lines that forbid a literal they name in a code span ("never use `console.log`", "`eval` yasak"): prose a
+ * grep gate can hold (review.forbidden). Lines inside code blocks are examples, not rules; a block ends at a
+ * fence of its own character and at least its length. A literal shorter than two characters names nothing a
+ * gate could find. At most three literals a line.
+ * @param {string} text
+ * @returns {{ line: string, literals: string[] }[]}
+ */
+export function banLines(text) {
+  /** @type {{ line: string, literals: string[] }[]} */
+  const out = [];
+  let fence = "";
+  for (const raw of text.split("\n")) {
+    const l = raw.trim();
+    const mark = /^(`{3,}|~{3,})/.exec(l)?.[1];
+    if (mark && !fence) {
+      fence = mark;
+      continue;
+    }
+    if (mark && mark[0] === fence[0] && mark.length >= fence.length && l.slice(mark.length).trim() === "") {
+      fence = "";
+      continue;
+    }
+    if (fence) continue;
+    const prose = l.replace(CODE_SPAN, " ");
+    if (!BAN_EN.test(prose) && !BAN_TR.test(prose) && !BAN_TR_IMPERATIVE.test(prose) && !NO_LITERAL.test(l)) continue;
+    const literals = [...l.matchAll(CODE_SPAN)].map((m) => m[1].trim()).filter((s) => s.length >= 2);
+    if (!literals.length) continue;
+    out.push({ line: l.length > 160 ? l.slice(0, 157) + "…" : l, literals: [...new Set(literals)].slice(0, 3) });
+  }
+  return out;
+}
+
+/**
+ * For each text, the files of the index that hold it, with how many lines each: `git grep --cached -a -F`,
+ * 100 texts a call, each matching line given to every text it holds. The index, not the work tree: a sparse
+ * checkout leaves files out of the one, not the other, and it is what a commit is checked against. Files git
+ * takes for binary are read as text (-a), as the commit-msg hook reads them. A git that fails throws; exit 1
+ * with nothing on stderr is no match.
+ * @param {string} cwd
+ * @param {string[]} texts
+ * @returns {Map<string, { path: string, n: number }[]>}
+ */
+export function indexMatches(cwd, texts) {
+  /** @type {Map<string, Map<string, number>>} */
+  const counts = new Map(texts.map((t) => [t, new Map()]));
+  const unique = [...counts.keys()];
+  for (let at = 0; at < unique.length; at += 100) {
+    const batch = unique.slice(at, at + 100);
+    const args = ["grep", "--cached", "--no-color", "-a", "-F", "-n", "--null", ...batch.flatMap((t) => ["-e", t])];
+    const r = gitRun(args, { cwd });
+    if (r.error || (r.status !== 0 && r.status !== 1) || r.stderr.trim()) throw gitError(args, r);
+    // "path\0line\0text\n": a path may hold a newline, never a NUL; the text ends at the line's end.
+    for (let pos = 0; pos < r.stdout.length; ) {
+      const nul = r.stdout.indexOf("\0", pos);
+      const nul2 = nul === -1 ? -1 : r.stdout.indexOf("\0", nul + 1);
+      if (nul2 === -1 || !/^\d+$/.test(r.stdout.slice(nul + 1, nul2))) throw new Error(`git grep printed a line that does not parse: ${JSON.stringify(r.stdout.slice(pos, pos + 80))}`);
+      const end = r.stdout.indexOf("\n", nul2);
+      const path = r.stdout.slice(pos, nul);
+      const text = r.stdout.slice(nul2 + 1, end === -1 ? undefined : end);
+      for (const t of batch) {
+        if (!text.includes(t)) continue;
+        const files = /** @type {Map<string, number>} */ (counts.get(t));
+        files.set(path, (files.get(path) ?? 0) + 1);
+      }
+      pos = end === -1 ? r.stdout.length : end + 1;
+    }
+  }
+  return new Map([...counts].map(([t, files]) => [t, [...files].map(([path, n]) => ({ path, n }))]));
+}
+
+/**
+ * Lines of the index that hold each literal a ban line names, outside the instruction files themselves (they
+ * quote the rule) and the config: how far the project keeps the rule today, over the whole index (the line's
+ * own scope is prose; doctor counts a rule's `paths` once it is written).
+ * @param {string} cwd
+ * @param {{ path: string, loads: string, banLines: { line: string, literals: string[] }[] }[]} instructions
+ * @param {{ text: string }[]} gates review.forbidden: a literal one of them holds is `gated`
+ * @param {string[]} [skip] more paths that name a literal without breaking its rule (the config holding the gate)
+ */
+export function banMatches(cwd, instructions, gates, skip = []) {
+  const own = new Set([...instructions.map((i) => i.path), ...skip]);
+  const all = indexMatches(cwd, instructions.flatMap((i) => i.banLines.flatMap((b) => b.literals)));
+  const count = (/** @type {string} */ text) => {
+    const hits = (all.get(text) ?? []).filter((h) => !own.has(h.path));
+    return { lines: hits.reduce((a, h) => a + h.n, 0), files: hits.length, examples: hits.slice(0, 3).map((h) => h.path) };
+  };
+  const order = { always: 0, "on-demand": 1, other: 2 };
+  return [...instructions]
+    .sort((a, b) => order[/** @type {keyof typeof order} */ (a.loads)] - order[/** @type {keyof typeof order} */ (b.loads)])
+    .flatMap((i) => i.banLines.map((b) => ({ path: i.path, line: b.line, literals: b.literals.map((text) => ({ text, ...count(text), gated: gates.some((g) => g.text === text) })) })));
+}
+
 /**
  * Files a Claude Code instruction file imports with `@path`, outside code blocks and code spans,
  * resolved against the importing file; a path that leaves the repository (`..`, `~`, absolute) is not
@@ -563,7 +671,7 @@ export function agentSetup(cwd, files) {
   const candidates = [...kinds].map(([path, loads]) => ({ path, loads }));
   const instructions = candidates.flatMap(({ path, loads }) => {
     const text = readText(join(cwd, path));
-    return text === null ? [] : [{ path, loads, bytes: Buffer.byteLength(text, "utf8"), commitLines: commitRuleLines(text) }];
+    return text === null ? [] : [{ path, loads, bytes: Buffer.byteLength(text, "utf8"), commitLines: commitRuleLines(text), banLines: banLines(text) }];
   });
   const size = { always: 0, onDemand: 0, other: 0 };
   for (const i of instructions) size[i.loads === "always" ? "always" : i.loads === "on-demand" ? "onDemand" : "other"] += i.bytes;
@@ -626,6 +734,7 @@ export function scanProject({ cwd, env = process.env }) {
   const commits = repo ? recentCommits(cwd) : [];
   const graphPath = resolve(cwd, config.paths.graph);
   const handoffPath = resolve(cwd, config.paths.handoff);
+  const setup = agentSetup(cwd, files);
   return {
     repository: repo,
     config: { path: configPath, loaded, problems },
@@ -640,7 +749,9 @@ export function scanProject({ cwd, env = process.env }) {
     roadmap: roadmapFiles(cwd, files),
     github: repo ? githubRepo(cwd) : null,
     pathScopedRules: countRules(cwd),
-    agentSetup: agentSetup(cwd, files),
+    agentSetup: setup,
+    // Outside a repository there is no index to count in: the lines are listed, their matches unmeasured.
+    bans: repo ? banMatches(cwd, setup.instructions, config.review.forbidden, configPath ? [relative(cwd, configPath).split(sep).join("/")] : []) : null,
     ...projectCommands(cwd),
   };
 }

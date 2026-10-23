@@ -69,6 +69,9 @@ export const DEFAULTS = Object.freeze({
     // Documents that move with code, [{ paths, docs, note? }]: commit-check warns when one of `paths` is
     // staged and none of `docs` is. A warning, not an error: not every change shows in its documents.
     cochange: [],
+    // Literals kept out of files, [{ text, paths, except?, note? }]: commit-check fails a commit that adds a line
+    // holding `text` to a staged path `paths` names and `except` does not. A prose "never X" rule, as a gate.
+    forbidden: [],
     // A change that touches only tests next to a guarded file does not need an impact table.
     impactIgnoreGlobs: ["**/*.test.*", "**/*.spec.*", "**/__tests__/**", "**/__fixtures__/**"],
   },
@@ -228,6 +231,18 @@ export function loadConfig({ cwd, env = process.env, override }) {
     }
     if (rule.note !== undefined && typeof rule.note !== "string") problems.push(`${at}.note must be a string`);
   });
+  /** @type {unknown[]} */ (/** @type {any} */ (cfg).review.forbidden).forEach((r, i) => {
+    const at = `"review.forbidden"[${i}]`;
+    if (r === null || typeof r !== "object" || Array.isArray(r)) return problems.push(`${at} must be an object { text, paths, except?, note? }`);
+    const rule = /** @type {Record<string, unknown>} */ (r);
+    for (const k of Object.keys(rule)) if (!["text", "paths", "except", "note"].includes(k)) problems.push(`${at}: unknown key "${k}"`);
+    // A literal holds no line break: a diff is read line by line, and such a text would never match.
+    if (typeof rule.text !== "string" || rule.text.trim() === "" || /[\r\n]/.test(rule.text)) problems.push(`${at}.text must be a non-empty string on one line`);
+    const isGlobs = (/** @type {unknown} */ list) => Array.isArray(list) && list.every((g) => typeof g === "string" && g !== "");
+    if (!isGlobs(rule.paths) || !(/** @type {unknown[]} */ (rule.paths)).length) problems.push(`${at}.paths must be a non-empty list of globs`);
+    if (rule.except !== undefined && !isGlobs(rule.except)) problems.push(`${at}.except must be a list of globs`);
+    if (rule.note !== undefined && typeof rule.note !== "string") problems.push(`${at}.note must be a string`);
+  });
   // A glob compiles when a path is first matched; one that cannot would fail there, in the hook or in doctor.
   const c = /** @type {any} */ (cfg);
   const globLists = [
@@ -237,6 +252,9 @@ export function loadConfig({ cwd, env = process.env, override }) {
     ["impact.fixtureGlobs", c.impact.fixtureGlobs],
     ...c.review.cochange.flatMap((/** @type {any} */ r, /** @type {number} */ i) =>
       r && typeof r === "object" ? [[`review.cochange[${i}].paths`, r.paths], [`review.cochange[${i}].docs`, r.docs]] : [],
+    ),
+    ...c.review.forbidden.flatMap((/** @type {any} */ r, /** @type {number} */ i) =>
+      r && typeof r === "object" ? [[`review.forbidden[${i}].paths`, r.paths], [`review.forbidden[${i}].except`, r.except]] : [],
     ),
   ];
   for (const [key, list] of globLists) {
