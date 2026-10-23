@@ -13,14 +13,20 @@
  * read whose failure would change the result needs a case that reaches it (a config value, a hook's
  * index, a fold target, a sparse checkout, a subdirectory).
  *
+ * The same for files: test/fault-fs.mjs, loaded into every run, counts the file reads outside Ennyn's own
+ * files and fails the k-th, as a file without permission (EACCES) and as a directory in its place (EISDIR),
+ * for every k. The Claude Code hooks run here too, given their stdin; their JSON output is judged as the
+ * text Claude Code shows, and exit 2 (blocking) is never right.
+ *
  * Cycle 2026-10-20 (4) found this class 11 times, each by a reviewer or a loaded machine: a timeout, a
  * process that did not start, a check with no answer, a shallow range read as a result. The first run
- * of this matrix found 44 more: git calls that answered "nothing there" when they had failed.
+ * of this matrix found 44 more: git calls that answered "nothing there" when they had failed. The first
+ * run over file reads found 73: files that could not be read taken for files that are not there.
  */
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync, spawn } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { availableParallelism, tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
@@ -29,9 +35,13 @@ import { git } from "../core/git.mjs";
 import { USAGE } from "../scripts/ennyn.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+/** Loaded into every run: counts the file reads, and fails the one a cell names. */
+const FAULT_FS = join(dirname(fileURLToPath(import.meta.url)), "fault-fs.mjs");
+const HOOKS = join(dirname(fileURLToPath(import.meta.url)), "..", "adapters", "claude-code", "hooks");
 const NODE = JSON.stringify(process.execPath);
-/** What a changed line says when a value could not be measured (English: the fixture's language). */
-const SAYS = /unmeasured|could not be (measured|read)|was not checked/i;
+/** What a changed line says when a value could not be measured or an action could not be done (English: the fixture's language). */
+// Named one by one: "could not be found" is the very claim a failed read must not make.
+const SAYS = /unmeasured|could not be (measured|read|applied|reset)|was not checked/i;
 
 const REAL_GIT = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
 const BIN = mkdtempSync(join(tmpdir(), "en-fault-bin-"));
@@ -97,6 +107,13 @@ const FIRST = commit(0, "feat: add", {
   }),
   "CLAUDE.md": "# Project\n\n- Every change keeps the tests green before it is committed.\n- Never write a secret into a file that is tracked.\n",
   "README.md": "# demo\n",
+  // What init-scan, budget and the hooks look for: a read that fails there must change the output, not hide.
+  "AGENTS.md": "# Agents\n\n- Run the tests before every commit, and keep them green.\n",
+  "package.json": JSON.stringify({ name: "demo", scripts: { test: "node test/add.test.js" } }),
+  ".claude/rules/src.md": '---\npaths:\n  - "src/**"\n---\n# Source\n\nKeep add pure.\n',
+  ".claude/skills/review/SKILL.md": "---\nname: review\ndescription: Review a change before it is committed.\n---\n\nRead the diff.\n",
+  ".claude/agents/checker.md": "---\nname: checker\ndescription: Checks a change for correctness.\n---\n\nCheck it.\n",
+  ".claude/commands/ship.md": "---\ndescription: Ship the change.\n---\n\nShip it.\n",
   "src/add.js": ADD,
   "src/use.js": 'import { add } from "./add.js";\nexport const three = add(1, 2);\n',
   "test/add.test.js": 'import { add } from "../src/add.js";\nif (add(1, 2) !== 3) throw new Error("add");\n',
@@ -122,23 +139,27 @@ put(REPO, {
   ".git/LONG": `feat: add in either order\n\nbody\n${"#kept by verbatim\n".repeat(9)}\nImpact: S1 one reader\n`,
   ".git/AMEND": "amend! feat: add\n\nfeat: add, reworded\n",
   ".git/CUT": "feat: add in either order\n\n# ------------------------ >8 ------------------------\nImpact: S1 one reader\n",
-  ".git/mutants.json": JSON.stringify([{ id: "m1", file: "src/use.js", old: "add(2, 2)", new: "add(2, 3)" }]),
-  ".git/check.mjs": 'import { readFileSync } from "node:fs";\nif (!readFileSync("src/use.js", "utf8").includes("add(2, 2)")) process.exit(1);\n',
+  // A mutant the check kills, in the src/use.js the steps above left: the run reaches the journal and undo.
+  ".git/mutants.json": JSON.stringify([{ id: "m1", file: "src/use.js", old: "add(1, 2)", new: "add(1, 3)" }]),
+  ".git/check.mjs": 'import { readFileSync } from "node:fs";\nif (!readFileSync("src/use.js", "utf8").includes("add(1, 2)")) process.exit(1);\n',
 });
 // gate-record refuses a start more than a day before now: a minute ago.
 const START = String(Math.floor(Date.now() / 1000) - 60);
-for (const args of [["gate-record", "--start", START, "--exit", "1", "--step", "lint"], ["budget", "--record"]]) {
+// The commit-msg hook installed, so doctor reads it: a hook that cannot be read must not read as none.
+for (const args of [["gate-record", "--start", START, "--exit", "1", "--step", "lint"], ["budget", "--record"], ["install-hook"]]) {
   execFileSync(process.execPath, [CLI, ...args], { cwd: REPO, stdio: "ignore" });
 }
 
 // --------------------------------------------------------------------------------------------- cases --
 
 /**
- * @typedef {{ args: string[], cwd?: string, writes?: boolean, setup?: (repo: string) => void, env?: Record<string, string>, first?: boolean, outside?: boolean }} Case
+ * @typedef {{ args: string[], cwd?: string, writes?: boolean, setup?: (repo: string) => void, env?: Record<string, string>, first?: boolean, outside?: boolean, hook?: string, input?: (repo: string) => unknown }} Case
  *   `cwd` is relative to the repository; a case that writes, or has a setup, runs in a copy of its own.
  *   `env` values are paths relative to the repository. `first`: only the first git call is faulted (the
  *   one that finds the project directory; the case without `cwd` sweeps the rest). `outside`: the
- *   repository's files without its .git, so in no repository. A `--hook` case fails open.
+ *   repository's files without its .git, so in no repository. A `--hook` case fails open. `hook`: a Claude
+ *   Code hook (adapters/claude-code/hooks), given `input` on stdin and the copy as CLAUDE_PROJECT_DIR; it may
+ *   fail with a message (exit 1), never with exit 2, which Claude Code reads as blocking.
  * @type {Case[]}
  */
 const CASES = [
@@ -211,7 +232,37 @@ const CASES = [
   { args: ["gate-record", "--start", START, "--exit", "1"], writes: true },
   { args: ["gate-stats"] },
   { args: ["gate-stats", "--json"] },
+  // The Claude Code hooks: a side copy (a linked worktree) reading a file a path-scoped rule covers, the
+  // conversation style at session start, and the reset after compaction.
+  {
+    args: ["hook:side-copy-rules"],
+    hook: "side-copy-rules.mjs",
+    setup: (repo) => git(["worktree", "add", "-q", "--detach", `${repo}-side`], { cwd: repo }),
+    input: (repo) => ({ tool_name: "Read", tool_input: { file_path: `${repo}-side/src/add.js` }, session_id: "s1", cwd: `${repo}-side` }),
+  },
+  {
+    args: ["hook:conversation-style"],
+    hook: "conversation-style.mjs",
+    setup: (repo) => {
+      const path = join(repo, ".ennyn", "config.json");
+      writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, "utf8")), conversation: { style: "terse" } }));
+    },
+    input: (repo) => ({ source: "startup", session_id: "s1", cwd: repo }),
+  },
+  {
+    args: ["hook:side-copy-reset"],
+    hook: "side-copy-reset.mjs",
+    setup: (repo) => put(repo, { ".git/ennyn/side-copy/s1.json": '{"emitted":[]}\n' }),
+    input: (repo) => ({ source: "compact", session_id: "s1", cwd: repo }),
+  },
 ];
+
+test("fault matrix: every Claude Code hook in hooks/hooks.json has a case", () => {
+  const listed = [...readFileSync(join(HOOKS, "..", "..", "..", "hooks", "hooks.json"), "utf8").matchAll(/hooks\/([a-z-]+\.mjs)/g)].map((m) => m[1]);
+  assert.ok(listed.length >= 3, `hooks read from hooks.json: ${listed}`);
+  const covered = new Set(CASES.map((c) => c.hook));
+  assert.deepEqual(listed.filter((h) => !covered.has(h)), []);
+});
 
 test("fault matrix: every command in USAGE has a case", () => {
   const commands = [...USAGE.matchAll(/^ {2}([a-z][a-z-]*)\b/gm)].map((m) => m[1]);
@@ -221,8 +272,8 @@ test("fault matrix: every command in USAGE has a case", () => {
 });
 
 /**
- * @typedef {{ code: number | null, signal: string | null, stdout: string, stderr: string, calls: number }} Run
- * @typedef {{ at?: number, kind?: "fail" | "kill", noGit?: boolean, closed?: boolean }} Fault
+ * @typedef {{ code: number | null, signal: string | null, stdout: string, stderr: string, calls: number, reads: string[] }} Run
+ * @typedef {{ at?: number, kind?: "fail" | "kill", noGit?: boolean, closed?: boolean, read?: { at: number, kind: "eacces" | "eisdir" } }} Fault
  * @param {Case} c @param {Fault} fault
  * @returns {Promise<Run>}
  */
@@ -248,9 +299,15 @@ function run(c, fault) {
     ENNYN_FAULT_AT: String(fault.at ?? 0),
     ENNYN_FAULT: fault.kind ?? "",
     ENNYN_REAL_GIT: REAL_GIT,
+    ENNYN_FS_FAULT_DIR: box,
+    ENNYN_FS_FAULT_AT: String(fault.read?.at ?? 0),
+    ENNYN_FS_FAULT: fault.read?.kind ?? "eacces",
+    ...(c.hook ? { CLAUDE_PROJECT_DIR: repo } : {}),
   };
   return new Promise((done) => {
-    const child = spawn(process.execPath, [CLI, ...c.args], { cwd: join(repo, c.cwd ?? ""), env, stdio: ["ignore", "pipe", "pipe"] });
+    const argv = c.hook ? ["--import", FAULT_FS, join(HOOKS, c.hook)] : ["--import", FAULT_FS, CLI, ...c.args];
+    const child = spawn(process.execPath, argv, { cwd: join(repo, c.cwd ?? ""), env, stdio: [c.hook ? "pipe" : "ignore", "pipe", "pipe"] });
+    if (c.hook) child.stdin?.end(JSON.stringify(c.input?.(repo) ?? {}));
     let stdout = "";
     let stderr = "";
     if (fault.closed) child.stdout.destroy();
@@ -265,13 +322,36 @@ function run(c, fault) {
       }
       // A copy's own path and the mutate timings differ from run to run.
       const norm = (/** @type {string} */ s) => s.split(repo).join("<repo>").replace(/^Tests pass without mutants in .*$/gm, "<baseline>");
-      done({ code, signal, stdout: norm(stdout), stderr: norm(stderr), calls });
+      let reads = "";
+      try {
+        reads = readFileSync(join(box, "fs-calls"), "utf8");
+      } catch {
+        // Killed before its exit handler.
+      }
+      done({ code, signal, stdout: norm(stdout), stderr: norm(stderr), calls, reads: norm(reads).split("\n").filter(Boolean) });
     });
   });
 }
 
+/**
+ * A hook's JSON output as the text Claude Code shows: the context it gives the model and the message it
+ * gives the user. Anything else stays as printed.
+ * @param {string} out
+ */
+function shown(out) {
+  try {
+    const o = JSON.parse(out);
+    // Only a hook's output: a --json report is judged line by line, numbers and all.
+    if (o && typeof o === "object" && ("hookSpecificOutput" in o || "systemMessage" in o)) {
+      return [o.hookSpecificOutput?.additionalContext, o.systemMessage].filter((x) => typeof x === "string").join("\n");
+    }
+  } catch {
+    // Not JSON: as printed.
+  }
+  return out;
+}
 /** The parts of an output: its lines, each cut at " · ", "<br>" and "|" (table cells). @param {Run} r */
-const parts = (r) => [r.stdout, r.stderr].join("\n").split("\n").flatMap((l) => l.split(/ · |<br>|\|/)).map((p) => p.trim()).filter(Boolean);
+const parts = (r) => [shown(r.stdout), r.stderr].join("\n").split("\n").flatMap((l) => l.split(/ · |<br>|\|/)).map((p) => p.trim()).filter(Boolean);
 /** @param {string} s */
 const digits = (s) => s.replace(/\d+(\.\d+)?/g, "#");
 
@@ -281,11 +361,17 @@ const digits = (s) => s.replace(/\d+(\.\d+)?/g, "#");
  */
 function judge(clean, got, hook) {
   if (/^\s+at .+:\d+:\d+\)?$/m.test(got.stderr)) return "a stack trace";
+  if (got.code === 2 && clean.code !== 2) return "exit 2, which a Claude Code hook reads as blocking";
   const same = got.stdout === clean.stdout && got.stderr === clean.stderr && got.code === clean.code;
   if (same) return null;
-  if (got.code !== 0 && !hook) return got.stderr.trim() ? null : "a failure with no message";
+  // A failure says why: on stderr, or (doctor's ✗ lines) in a new part of its report that says so.
+  if (got.code !== 0 && !hook) {
+    if (got.stderr.trim()) return null;
+    const was = new Set(parts(clean));
+    return parts(got).some((p) => !was.has(p) && SAYS.test(p)) ? null : "a failure with no message";
+  }
   // The hook may still reject what it measured without git, and say what it could not read.
-  if (got.code !== 0 && clean.code === 0) return `the hook fails (exit ${got.code}) where the clean run passes: a failure must let the commit through`;
+  if (hook && got.code !== 0 && clean.code === 0) return `the hook fails (exit ${got.code}) where the clean run passes: a failure must let the commit through`;
   const before = new Set(parts(clean));
   const after = new Set(parts(got));
   const shapes = new Set([...before].map(digits));
@@ -319,7 +405,7 @@ async function pool(jobs, n) {
 test("fault matrix: with any git call failing or killed, or no git at all, a command fails or says so; a closed pipe is no crash", async () => {
   const width = Math.max(2, Math.min(8, availableParallelism()));
   const clean = await pool(CASES.map((c) => () => run(c, {})), width);
-  for (const [i, c] of CASES.entries()) assert.ok(clean[i].calls > 0, `${c.args.join(" ")} calls git`);
+  for (const [i, c] of CASES.entries()) assert.ok(c.hook || clean[i].calls > 0, `${c.args.join(" ")} calls git`);
   /** @type {{ c: Case, i: number, fault: Fault }[]} */
   const cells = [];
   for (const [i, c] of CASES.entries()) {
@@ -343,4 +429,107 @@ test("fault matrix: with any git call failing or killed, or no git at all, a com
     .filter((r) => r.why)
     .map((r) => `${where(r.cell.c)} · ${r.cell.fault.noGit ? "no git" : r.cell.fault.closed ? "closed stdout" : `git call ${r.cell.fault.at} ${r.cell.fault.kind}`}: ${r.why}`);
   assert.deepEqual(bad, [], `${bad.length} of ${cells.length} cells`);
+});
+
+/** The reads a directory in a file's place fails; the rest fail only as EACCES. */
+const DIR_READS = /^(readFileSync|openSync) /;
+
+test("fault matrix: with any file read failing (no permission, a directory in its place), a command fails or says so", async () => {
+  const width = Math.max(2, Math.min(8, availableParallelism()));
+  const clean = await pool(CASES.map((c) => () => run(c, {})), width);
+  // A preload that stopped counting would leave no cells, and a green test.
+  for (const [i, c] of CASES.entries()) assert.ok(clean[i].reads.length > 0, `${c.args.join(" ")} reads files`);
+  /** @type {{ c: Case, i: number, fault: Fault, call: string }[]} */
+  const cells = [];
+  for (const [i, c] of CASES.entries()) {
+    clean[i].reads.forEach((call, k) => cells.push({ c, i, fault: { read: { at: k + 1, kind: "eacces" } }, call }));
+    clean[i].reads.filter((call) => DIR_READS.test(call)).forEach((call, k) => cells.push({ c, i, fault: { read: { at: k + 1, kind: "eisdir" } }, call }));
+  }
+  const results = await pool(cells.map((cell) => () => run(cell.c, cell.fault)), width);
+  const where = (/** @type {Case} */ c) => `${c.args.join(" ")}${c.cwd ? ` (in ${c.cwd}/)` : ""}${c.setup ? " (set up)" : ""}${c.outside ? " (no repository)" : ""}`;
+  const bad = cells
+    .map((cell, k) => ({ cell, why: judge(clean[cell.i], results[k], cell.c.args.includes("--hook")) }))
+    .filter((r) => r.why)
+    .map((r) => `${where(r.cell.c)} · ${r.cell.fault.read?.kind} ${r.cell.call}: ${r.why}`);
+  assert.deepEqual(bad, [], `${bad.length} of ${cells.length} cells`);
+});
+
+test("fault matrix: a reference command that fails, is killed, is not found or runs too long leaves S1's references unmeasured, saying how it ended", async () => {
+  assert.ok(!/\s/.test(process.execPath), "the node path splits as one word");
+  const node = process.execPath;
+  /** @param {string} command @param {number} [timeout] @returns {Case} */
+  const withReference = (command, timeout = 30) => ({
+    args: ["impact", "--symbol", "add", "--files", "src/add.js"],
+    setup: (repo) => {
+      const path = join(repo, ".ennyn", "config.json");
+      const config = JSON.parse(readFileSync(path, "utf8"));
+      writeFileSync(path, JSON.stringify({ ...config, impact: { referenceCommand: command, referenceTimeout: timeout } }));
+    },
+  });
+  const cases = /** @type {const} */ ([
+    [`${node} -e process.exit(3)`, 30, /exit 3/],
+    [`${node} -e process.stderr.write("index\\x20missing");process.exit(4)`, 30, /exit 4: index missing/],
+    [`${node} -e process.kill(process.pid,9)`, 30, /killed by SIGKILL/],
+    [`${node} -e setTimeout(()=>{},20000)`, 1, /timed out after 1 s/],
+    ["no-such-reference-tool {symbol}", 30, /no-such-reference-tool: not found/],
+  ]);
+  const runs = await pool(cases.map(([command, timeout]) => () => run(withReference(command, timeout), {})), 4);
+  cases.forEach(([command], k) => {
+    const r = runs[k];
+    assert.equal(r.code, 0, `${command}: ${r.stderr}`);
+    const s1 = r.stdout.split("\n").find((l) => l.startsWith("| S1 "));
+    assert.match(String(s1), /unmeasured: reference command failed: /, command);
+    assert.match(String(s1), cases[k][2], command);
+  });
+  // One that works is read as references.
+  const works = await run(withReference(`${node} -e console.log("src/use.js:1")`), {});
+  assert.match(String(works.stdout.split("\n").find((l) => l.startsWith("| S1 "))), /references: src\/use\.js:1</);
+});
+
+// ----------------------------------------------------------------------------------- positive controls --
+
+test("fault matrix control: the preload fails the read a cell names, counts only reads outside Ennyn's files, and nothing without its variable", () => {
+  const dir = mkdtempSync(join(tmpdir(), "en-fault-ctl-"));
+  const file = join(dir, "x.txt");
+  writeFileSync(file, "x");
+  const own = join(dirname(fileURLToPath(import.meta.url)), "..", "package.json");
+  const probe = `import fs from "node:fs"; const r = []; for (const p of ${JSON.stringify([own, file, file])}) { try { fs.readFileSync(p); r.push("read"); } catch (e) { r.push(e.code); } } r.push(fs.existsSync(${JSON.stringify(file)})); console.log(JSON.stringify(r));`;
+  const go = (/** @type {Record<string, string>} */ env) => {
+    const r = spawnSync(process.execPath, ["--import", FAULT_FS, "--input-type=module", "-e", probe], { encoding: "utf8", env: { ...process.env, ...env } });
+    return { out: JSON.parse(r.stdout), count: env.ENNYN_FS_FAULT_DIR ? readFileSync(join(env.ENNYN_FS_FAULT_DIR, "fs-count"), "utf8") : null };
+  };
+  const box = () => mkdtempSync(join(tmpdir(), "en-fault-ctl-box-"));
+  assert.deepEqual(go({}), { out: ["read", "read", "read", true], count: null }, "no variable: nothing wrapped");
+  assert.deepEqual(go({ ENNYN_FS_FAULT_DIR: box(), ENNYN_FS_FAULT_AT: "0" }), { out: ["read", "read", "read", true], count: "3" }, "Ennyn's own file is not counted");
+  assert.deepEqual(go({ ENNYN_FS_FAULT_DIR: box(), ENNYN_FS_FAULT_AT: "2", ENNYN_FS_FAULT: "eacces" }).out, ["read", "read", "EACCES", true]);
+  assert.deepEqual(go({ ENNYN_FS_FAULT_DIR: box(), ENNYN_FS_FAULT_AT: "1", ENNYN_FS_FAULT: "eisdir" }).out, ["read", "EISDIR", "read", true]);
+  assert.deepEqual(go({ ENNYN_FS_FAULT_DIR: box(), ENNYN_FS_FAULT_AT: "3", ENNYN_FS_FAULT: "eacces" }).out, ["read", "read", "read", false], "existsSync says false");
+});
+
+test("fault matrix control: the judge flags each way a run can hide a failure", () => {
+  /** @param {Partial<Run>} r @returns {Run} */
+  const R = (r) => ({ code: 0, signal: null, stdout: "", stderr: "", calls: 1, reads: [], ...r });
+  const clean = R({ stdout: "Rework: 2 of 10 lines (20%)\nCo-change: src/a.js (3 commits)\n" });
+  assert.equal(judge(clean, clean, false), null);
+  assert.match(String(judge(clean, R({ stdout: "Rework: 0 of 10 lines (0%)\nCo-change: src/a.js (3 commits)\n" }), false)), /a number changed/);
+  assert.match(String(judge(clean, R({ stdout: "Rework: 2 of 10 lines (20%)\n" }), false)), /parts dropped without saying so/);
+  assert.match(String(judge(clean, R({ stdout: "Rework: 2 of 10 lines (20%)\nCo-change: none\n" }), false)), /changed without saying so/);
+  assert.match(String(judge(clean, R({ stdout: "Rework: 2 of 10 lines (20%)\nCo-change: the log could not be found\n" }), false)), /changed without saying so/);
+  assert.equal(judge(clean, R({ stdout: "Rework: 2 of 10 lines (20%)\nCo-change: unmeasured: git log failed\n" }), false), null);
+  assert.match(String(judge(clean, R({ code: 1 }), false)), /a failure with no message/);
+  assert.equal(judge(clean, R({ code: 1, stderr: "ennyn rework: git log failed" }), false), null);
+  assert.equal(judge(clean, R({ code: 1, stdout: "✗ work graph: work graph g.json could not be read: EACCES\n" }), false), null, "doctor's ✗ line");
+  assert.match(String(judge(clean, R({ code: 1, stdout: "✗ problems: 1\n" }), false)), /a failure with no message/, "a ✗ that does not say why");
+  assert.match(String(judge(clean, R({ code: 2, stderr: "boom" }), false)), /exit 2/);
+  assert.match(String(judge(R({}), R({ code: 1, stderr: "ennyn: cannot" }), true)), /the hook fails/);
+  assert.match(String(judge(R({ code: 1, stderr: "x" }), R({ code: 0 }), false)), /exit 0 where the clean run exits 1/);
+  assert.match(String(judge(clean, R({ stderr: "x\n    at f (file.mjs:1:2)" }), false)), /a stack trace/);
+  // A hook's JSON is judged as the text Claude Code shows.
+  const ctx = (/** @type {string} */ text) => JSON.stringify({ hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: text } });
+  const hook = R({ stdout: ctx("Rules that apply to src/a.js:\n\nKeep add pure.") });
+  assert.match(String(judge(hook, R({ stdout: "" }), false)), /parts dropped without saying so/);
+  assert.equal(judge(hook, R({ stdout: ctx("These rule files could not be read, so whether they apply to src/a.js was not checked: r.md") }), false), null);
+  // A --json report is judged line by line: a number that changes is caught even when stderr says why.
+  const json = R({ stdout: JSON.stringify({ attempts: 4, failed: 1 }, null, 2) });
+  assert.match(String(judge(json, R({ stdout: JSON.stringify({ attempts: 0, failed: 0 }, null, 2), stderr: "log could not be read" }), false)), /a number changed/);
 });

@@ -59,7 +59,7 @@ function runHook(config, stdin = JSON.stringify({ session_id: "s", source: "star
   return spawnSync(process.execPath, [HOOK], { input: stdin, env: { ...process.env, CLAUDE_PROJECT_DIR: project }, encoding: "utf8" });
 }
 
-test("hook: injects the style in the config language; nothing for normal, no config or a broken one; exit 0 always", () => {
+test("hook: injects the style in the config language; nothing for normal or no config; a broken one is said; exit 0 always", () => {
   const tr = runHook({ language: "tr", conversation: { style: "terse" } });
   assert.equal(tr.status, 0);
   const out = JSON.parse(tr.stdout);
@@ -67,9 +67,15 @@ test("hook: injects the style in the config language; nothing for normal, no con
   assert.match(out.hookSpecificOutput.additionalContext, /^Konuşma üslubu: kısa/);
   const en = JSON.parse(runHook({ conversation: { style: "focused" } }).stdout);
   assert.match(en.hookSpecificOutput.additionalContext, /^Conversation style: focused/);
-  for (const config of [{ conversation: { style: "normal" } }, null, /** @type {any} */ ("{ broken"), { conversation: { style: "loud" } }]) {
+  for (const config of [{ conversation: { style: "normal" } }, null]) {
     const r = runHook(config);
     assert.deepEqual([r.status, r.stdout], [0, ""], JSON.stringify(config));
+  }
+  // A config that does not load: the session runs without its style, and the user is told.
+  for (const config of [/** @type {any} */ ("{ broken"), { conversation: { style: "loud" } }]) {
+    const r = runHook(config);
+    assert.equal(r.status, 0);
+    assert.match(JSON.parse(r.stdout).systemMessage, /^ennyn: the config does not load, so the conversation style could not be applied \(/, JSON.stringify(config));
   }
   // Malformed input: the project still comes from CLAUDE_PROJECT_DIR.
   const bad = runHook({ conversation: { style: "terse" } }, "not json");

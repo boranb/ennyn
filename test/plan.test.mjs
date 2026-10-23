@@ -119,7 +119,7 @@ test("loadGraph audit: a byte order mark, an unreadable file, and arrays in a mo
   if (process.getuid?.() === 0) return t.skip("root reads any file");
   const locked = graphFile("graph.json", "{}");
   chmodSync(join(locked, ".ennyn", "graph.json"), 0o000);
-  await assert.rejects(loadGraph({ cwd: locked, config: cfg() }), (e) => e instanceof GraphError && /^cannot read .*EACCES/.test(e.message));
+  await assert.rejects(loadGraph({ cwd: locked, config: cfg() }), (e) => e instanceof GraphError && /^work graph .* could not be read: .*EACCES/.test(e.message));
 });
 
 test("graphProblems audit: what doctor fails and warns on, and the pick refuses", () => {

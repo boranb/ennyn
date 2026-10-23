@@ -10,7 +10,8 @@
  * production path.
  */
 
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { gone, present, readIfThere } from "../core/files.mjs";
 import { join, resolve, posix } from "node:path";
 import { git, gitMaybe, headCommit, repoPath } from "../core/git.mjs";
 import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
@@ -203,10 +204,21 @@ function trackedFiles(cwd) {
 
 /** @param {string} path */
 function hasGeneratedMarker(path) {
+  // Gone from the tree, or a directory git lists: no marker. There but unreadable: no answer, which the scan does not guess.
+  return GENERATED_MARKER.test((readListed(path) ?? "").slice(0, 1024));
+}
+
+/**
+ * A path git lists, as text: null when it is gone, or a directory (a submodule, a link to a directory),
+ * which holds no text of its own. A file that is there but cannot be read throws.
+ * @param {string} path
+ */
+function readListed(path) {
   try {
-    return GENERATED_MARKER.test(readFileSync(path, "utf8").slice(0, 1024));
-  } catch {
-    return false;
+    return readIfThere(path);
+  } catch (err) {
+    if (/** @type {NodeJS.ErrnoException} */ (err).code === "EISDIR") return null;
+    throw err;
   }
 }
 
@@ -292,12 +304,8 @@ export function roadmapFiles(cwd, files) {
     .filter((f) => (ROADMAP_FILE.test(f) || ROADMAP_DOC.test(f) || ROADMAP_DIR.test(f)) && !/(^|\/)archive\//i.test(f))
     .slice(0, MAX_LISTED * 2)
     .map((path) => {
-      let text = "";
-      try {
-        text = readFileSync(join(cwd, path), "utf8");
-      } catch {
-        // Listed by git but unreadable here: counts stay zero.
-      }
+      // Listed by git but gone here, or a submodule: counts stay zero. There but unreadable: the scan fails, saying which.
+      const text = readListed(join(cwd, path)) ?? "";
       return {
         path,
         open: (text.match(/^\s*[-*+] \[ \]/gm) ?? []).length,
@@ -315,6 +323,18 @@ function githubRepo(cwd) {
 }
 
 /**
+ * Path-scoped rule files; a rule file or directory that cannot be read fails the scan, never a smaller count.
+ * @param {string} cwd
+ */
+function countRules(cwd) {
+  /** @type {string[]} */
+  const unreadable = [];
+  const n = loadPathScopedRules(cwd, unreadable).length;
+  if (unreadable.length) throw new Error(`path-scoped rules could not be read: ${unreadable.join(", ")}`);
+  return n;
+}
+
+/**
  * Test, lint and mutation commands the repository declares at its root.
  * @param {string} cwd
  */
@@ -323,13 +343,8 @@ export function projectCommands(cwd) {
   const commands = [];
   /** @type {string | null} */
   let mutation = null;
-  const read = (/** @type {string} */ name) => {
-    try {
-      return readFileSync(join(cwd, name), "utf8");
-    } catch {
-      return null;
-    }
-  };
+  // No such file declares nothing; one that is there but cannot be read is no answer: the scan fails.
+  const read = (/** @type {string} */ name) => readIfThere(join(cwd, name));
   const pkg = read("package.json");
   if (pkg) {
     try {
@@ -347,14 +362,14 @@ export function projectCommands(cwd) {
   const make = read("Makefile");
   if (make) for (const m of make.matchAll(/^(test|check|lint)\s*:/gm)) commands.push(`make ${m[1]}`);
   // A project's own gate script often runs everything the commands above run, and more.
-  for (const name of ["validate", "test", "check", "ci"]) if (existsSync(join(cwd, "scripts", `${name}.sh`))) commands.push(`./scripts/${name}.sh`);
+  for (const name of ["validate", "test", "check", "ci"]) if (present(join(cwd, "scripts", `${name}.sh`))) commands.push(`./scripts/${name}.sh`);
   const py = (read("pyproject.toml") ?? "") + (read("pytest.ini") ?? "") + (read("setup.cfg") ?? "");
   if (/pytest/.test(py)) commands.push("pytest");
   if (/\[tool\.mutmut\]|\[mutmut\]/.test(py)) mutation ??= "mutmut run";
-  if (existsSync(join(cwd, "go.mod"))) commands.push("go test ./...");
-  if (existsSync(join(cwd, "Cargo.toml"))) commands.push("cargo test");
-  if (existsSync(join(cwd, ".cargo", "mutants.toml"))) mutation ??= "cargo mutants";
-  if (mutation === null && ["stryker.conf.js", "stryker.conf.mjs", "stryker.conf.json", "stryker.config.js", "stryker.config.mjs", "stryker.config.json"].some((f) => existsSync(join(cwd, f)))) {
+  if (present(join(cwd, "go.mod"))) commands.push("go test ./...");
+  if (present(join(cwd, "Cargo.toml"))) commands.push("cargo test");
+  if (present(join(cwd, ".cargo", "mutants.toml"))) mutation ??= "cargo mutants";
+  if (mutation === null && ["stryker.conf.js", "stryker.conf.mjs", "stryker.conf.json", "stryker.config.js", "stryker.config.mjs", "stryker.config.json"].some((f) => present(join(cwd, f)))) {
     mutation = "npx stryker run";
   }
   return { commands: [...new Set(commands)].slice(0, 8), mutation };
@@ -379,8 +394,9 @@ const SQL = /\bCOMMIT\s*;|\b(BEGIN|ROLLBACK)\b/;
 function isFile(path) {
   try {
     return statSync(path).isFile();
-  } catch {
-    return false;
+  } catch (err) {
+    if (gone(err)) return false;
+    throw err;
   }
 }
 
@@ -423,10 +439,12 @@ function names(dir, keep) {
   let list = [];
   try {
     list = readdirSync(dir);
-  } catch {
-    return [];
+  } catch (err) {
+    // No such directory holds nothing; one that cannot be listed is no empty one.
+    if (gone(err)) return [];
+    throw err;
   }
-  return list.filter((n) => existsSync(join(dir, n)) && keep(n)).map((n) => n.normalize("NFC")).sort();
+  return list.filter((n) => present(join(dir, n)) && keep(n)).map((n) => n.normalize("NFC")).sort();
 }
 
 /**
@@ -439,8 +457,9 @@ function markdownBelow(dir, rel = "", depth = 0) {
   let entries = [];
   try {
     entries = readdirSync(join(dir, rel));
-  } catch {
-    return [];
+  } catch (err) {
+    if (gone(err)) return [];
+    throw err;
   }
   /** @type {string[]} */
   const out = [];
@@ -449,8 +468,10 @@ function markdownBelow(dir, rel = "", depth = 0) {
     let st;
     try {
       st = statSync(join(dir, path));
-    } catch {
-      continue;
+    } catch (err) {
+      // A link to nothing is no file; one that cannot be looked at may be.
+      if (gone(err)) continue;
+      throw err;
     }
     if (st.isDirectory() && depth < 8) out.push(...markdownBelow(dir, path, depth + 1));
     else if (st.isFile() && name.endsWith(".md")) out.push(path);
@@ -547,7 +568,7 @@ export function agentSetup(cwd, files) {
   const size = { always: 0, onDemand: 0, other: 0 };
   for (const i of instructions) size[i.loads === "always" ? "always" : i.loads === "on-demand" ? "onDemand" : "other"] += i.bytes;
 
-  const skills = names(join(cwd, ".claude", "skills"), (n) => existsSync(join(cwd, ".claude", "skills", n, "SKILL.md")));
+  const skills = names(join(cwd, ".claude", "skills"), (n) => present(join(cwd, ".claude", "skills", n, "SKILL.md")));
   const agents = names(join(cwd, ".claude", "agents"), (n) => n.endsWith(".md")).map((n) => n.replace(/\.md$/, ""));
   const commands = markdownBelow(join(cwd, ".claude", "commands")).map((f) => f.slice(0, -3).normalize("NFC"));
   /** @type {string[]} */
@@ -609,8 +630,8 @@ export function scanProject({ cwd, env = process.env }) {
     repository: repo,
     config: { path: configPath, loaded, problems },
     metrics: { excludeRe: patterns.excludeRe, testRe: patterns.testRe },
-    graph: { path: graphPath, exists: existsSync(graphPath), exports: config.graph.exports },
-    handoff: { path: handoffPath, exists: existsSync(handoffPath) },
+    graph: { path: graphPath, exists: present(graphPath), exports: config.graph.exports },
+    handoff: { path: handoffPath, exists: present(handoffPath) },
     fixSubject: { current: config.metrics.fixSubject, ...proposeFixSubject(productionSubjects(commits, patterns.re)) },
     commitStyle: commitStyle(commits.map((c) => c.subject)),
     churn: churnPaths(commits, cwd, patterns.re),
@@ -618,7 +639,7 @@ export function scanProject({ cwd, env = process.env }) {
     risky: riskyPaths(files, patterns.re),
     roadmap: roadmapFiles(cwd, files),
     github: repo ? githubRepo(cwd) : null,
-    pathScopedRules: loadPathScopedRules(cwd).length,
+    pathScopedRules: countRules(cwd),
     agentSetup: agentSetup(cwd, files),
     ...projectCommands(cwd),
   };

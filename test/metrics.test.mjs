@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -450,4 +450,21 @@ test("szz audit: with log.showSignature on, signed commits are read like any oth
   assert.match(spawnSync("git", ["log", "-1"], { cwd: r.dir, encoding: "utf8" }).stdout + spawnSync("git", ["log", "-1"], { cwd: r.dir, encoding: "utf8" }).stderr, /signature|allowedSignersFile/i);
   const res = reworkRate({ cwd: r.dir, since: "2026-01-01", until: "2026-01-01", days: 7, config: loose() });
   assert.deepEqual(res.pairs.map((p) => [p.origin, p.fix]), [[origin, fix]]);
+});
+
+test("rework audit: a shallow file that is there but cannot be read is no full clone", async (t) => {
+  if (process.getuid?.() === 0) return t.skip("root reads any file");
+  const { shallowEdge } = await import("../metrics/szz.mjs");
+  const r = repo();
+  r.commit(0, "feat: one", { "a.js": "a\n" });
+  assert.deepEqual([...shallowEdge(r.dir)], [], "no shallow file: a full clone");
+  const shallow = join(r.dir, ".git", "shallow");
+  writeFileSync(shallow, `${git(["rev-parse", "HEAD"], { cwd: r.dir })}\n`);
+  assert.equal(shallowEdge(r.dir).size, 1);
+  chmodSync(shallow, 0o000);
+  try {
+    assert.throws(() => shallowEdge(r.dir), /shallow could not be read: EACCES/);
+  } finally {
+    chmodSync(shallow, 0o644);
+  }
 });

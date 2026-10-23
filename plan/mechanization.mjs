@@ -9,7 +9,8 @@
  * ties break by id so the pick is deterministic.
  */
 
-import { readFileSync, existsSync, statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
+import { present } from "../core/files.mjs";
 import { resolve, extname } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -33,7 +34,13 @@ export class GraphError extends Error {
  */
 export async function loadGraph({ cwd, config }) {
   const path = resolve(cwd, config.paths.graph);
-  if (!existsSync(path)) throw new GraphError(`work graph not found: ${path}`);
+  let there;
+  try {
+    there = present(path);
+  } catch (err) {
+    throw new GraphError(`work graph ${path} could not be read: ${/** @type {Error} */ (err).message}`);
+  }
+  if (!there) throw new GraphError(`work graph not found: ${path}`);
   const { open: openName, done: doneName } = config.graph.exports;
   /** @type {Record<string, unknown>} */
   let data;
@@ -43,7 +50,7 @@ export async function loadGraph({ cwd, config }) {
     try {
       text = readFileSync(path, "utf8");
     } catch (err) {
-      throw new GraphError(`cannot read ${path}: ${/** @type {Error} */ (err).message}`);
+      throw new GraphError(`work graph ${path} could not be read: ${/** @type {Error} */ (err).message}`);
     }
     try {
       data = JSON.parse(text.replace(BOM, ""));

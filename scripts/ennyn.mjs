@@ -168,6 +168,9 @@ function intOpt(v, name) {
 /** @param {string | true | undefined} v */
 const strOpt = (v) => (typeof v === "string" && v !== "" ? v : null);
 
+/** An error message on one line: a message's parts are judged line by line. @param {string} s */
+const oneLine = (s) => s.trim().replace(/\s*\n\s*(?:- )?/g, "; ");
+
 /** @param {number | null} sec */
 const minutes = (sec) => (sec === null ? "—" : (sec / 60).toFixed(1));
 
@@ -301,10 +304,12 @@ const COMMANDS = {
     const { help } = parseArgs(args, {});
     if (help) return (out(USAGE), 0);
     const res = await checkSetup({ cwd: projectDir() });
-    const mark = { ok: "✓", warn: "!", fail: "✗" };
+    const mark = { ok: "✓", warn: "!", fail: "✗", unmeasured: "?" };
     for (const i of res.items) out(`${mark[i.level]} ${t(i.key, i.vars, res.language)}`);
     const count = (/** @type {string} */ level) => res.items.filter((i) => i.level === level).length;
-    out(t("doctor.summary", { fail: count("fail"), warn: count("warn") }, res.language));
+    // A check that could not be made is no warning: counted apart, and only when there is one.
+    const unmeasured = count("unmeasured") ? t("doctor.summaryUnmeasured", { n: count("unmeasured") }, res.language) : "";
+    out(t("doctor.summary", { fail: count("fail"), warn: count("warn") }, res.language) + unmeasured);
     return res.ok ? 0 : 1;
   },
 
@@ -326,16 +331,20 @@ const COMMANDS = {
     try {
       cfg = config(cwd);
     } catch (e) {
-      // From the commit-msg hook a broken config must not lock every commit, the one that fixes it included.
-      if (!(e instanceof ConfigError) || !opts.hook) throw e;
-      err(t("cli.hookConfigBroken", { error: e.message }, "en"));
+      // From the commit-msg hook a config that does not load (broken, or there but unreadable) must not lock
+      // every commit, the one that fixes it included.
+      if (!opts.hook) throw e;
+      err(t("cli.hookConfigBroken", { error: oneLine(/** @type {Error} */ (e).message) }, "en"));
       return 0;
     }
     let message;
     try {
       message = readFileSync(positional[0], "utf8");
     } catch (e) {
-      err(t("cli.cannotRead", { path: positional[0], error: /** @type {Error} */ (e).message }, cfg.language));
+      const error = oneLine(/** @type {Error} */ (e).message);
+      // The hook lets the commit through when it cannot read what it would check, and says so.
+      if (opts.hook) return (err(t("cli.hookMessageUnreadable", { path: positional[0], error }, cfg.language)), 0);
+      err(t("cli.cannotRead", { path: positional[0], error }, cfg.language));
       return 1;
     }
     /** @type {string[]} */

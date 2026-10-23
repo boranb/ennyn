@@ -13,7 +13,8 @@
  */
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
+import { present } from "../core/files.mjs";
 import { isAbsolute, join, posix, relative } from "node:path";
 import { git, gitMaybe, gitRun } from "../core/git.mjs";
 import { matchAny } from "../core/glob.mjs";
@@ -86,6 +87,19 @@ function errorLine(err) {
   const e = /** @type {{ stderr?: string | Buffer, message?: string }} */ (err);
   const raw = (e.stderr ? String(e.stderr) : "") || e.message || String(err);
   return raw.trim().split("\n")[0].slice(0, 200);
+}
+
+/**
+ * How a command that did not succeed ended: timed out, killed, not found, or its exit code, with the first
+ * line it wrote to stderr.
+ * @param {unknown} err @param {string} program @param {number} timeoutSeconds
+ */
+function commandEnd(err, program, timeoutSeconds) {
+  const e = /** @type {{ code?: string, signal?: string | null, status?: number | null, stderr?: string | Buffer }} */ (err);
+  const said = (e.stderr ? String(e.stderr) : "").trim().split("\n")[0].slice(0, 200);
+  const how =
+    e.code === "ETIMEDOUT" ? `timed out after ${timeoutSeconds} s` : e.code === "ENOENT" ? `${program}: not found` : e.signal ? `killed by ${e.signal}` : typeof e.status === "number" ? `exit ${e.status}` : errorLine(err);
+  return said && !how.includes(said) ? `${how}: ${said}` : how;
 }
 
 /**
@@ -197,7 +211,7 @@ class Context {
         this._refs = null;
         return null;
       }
-      const cachedOnly = (runs[1]?.stdout ?? "").split("\n").filter((l) => l.includes("\0") && !existsSync(join(this.cwd, l.slice(0, l.indexOf("\0")))));
+      const cachedOnly = (runs[1]?.stdout ?? "").split("\n").filter((l) => l.includes("\0") && !present(join(this.cwd, l.slice(0, l.indexOf("\0")))));
       const out = [runs[0].stdout, ...cachedOnly].join("\n");
       /** @type {Map<string, number[]>} */
       const refs = new Map();
@@ -245,14 +259,14 @@ function rowS1(c) {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "pipe"],
         maxBuffer: 64 * 1024 * 1024,
-        timeout: 120_000,
+        timeout: config.impact.referenceTimeout * 1000,
       });
       const lines = out.replace(/\s+$/, "").split("\n");
       let text = lines.slice(0, OUTPUT_LINES).join("\n");
       if (lines.length > OUTPUT_LINES) text += "\n" + t("impact.moreLines", { n: lines.length - OUTPUT_LINES }, lang);
       parts.push({ label: refLabel, text: text.trim() ? text : t("impact.s1.noOutput", {}, lang), measured: true });
     } catch (err) {
-      parts.push({ label: refLabel, text: t("impact.reason.commandFailed", { error: errorLine(err) }, lang), measured: false });
+      parts.push({ label: refLabel, text: t("impact.reason.commandFailed", { error: commandEnd(err, argv[0], config.impact.referenceTimeout) }, lang), measured: false });
     }
   } else if (c.repoError()) {
     parts.push({ label: refLabel, text: t("impact.reason.gitFailed", { error: String(c.repoError()) }, lang), measured: false });
@@ -286,7 +300,7 @@ function rowS1(c) {
         ]) {
           if (!file.startsWith(from + "/")) continue;
           const twin = `${to}/${file.slice(from.length + 1)}`;
-          found.push(existsSync(join(c.cwd, twin)) ? `${file} ↔ ${twin}` : t("impact.s1.twinMissing", { file, twin }, lang));
+          found.push(present(join(c.cwd, twin)) ? `${file} ↔ ${twin}` : t("impact.s1.twinMissing", { file, twin }, lang));
         }
       }
     }
@@ -376,18 +390,18 @@ function rowS3(c) {
       if (!adjacent || !/\.(?:test|spec)\./.test(base(p))) return false;
       if (base(p).startsWith(stem + ".")) return true;
       const abs = join(c.cwd, p);
-      return existsSync(abs) && specifiers(SPECIFIER_RE, readFileSync(abs, "utf8")).some((sp) => specifierRefersTo(sp, p, file));
+      return present(abs) && specifiers(SPECIFIER_RE, readFileSync(abs, "utf8")).some((sp) => specifierRefersTo(sp, p, file));
     });
     // A test elsewhere (a top-level test/ directory) counts when an import statement names the file by a
     // relative path; an alias ("@/x") there may be another package's own file.
     for (const p of tracked) {
       if (near.includes(p) || c.files.includes(p) || !TEST_FILE_RE.test(p) || !CODE_EXT_RE.test(p)) continue;
       const abs = join(c.cwd, p);
-      if (existsSync(abs) && specifiers(STATEMENT_RE, readFileSync(abs, "utf8")).some((sp) => sp.startsWith(".") && specifierRefersTo(sp, p, file))) near.push(p);
+      if (present(abs) && specifiers(STATEMENT_RE, readFileSync(abs, "utf8")).some((sp) => sp.startsWith(".") && specifierRefersTo(sp, p, file))) near.push(p);
     }
     // Fixtures and corpora near the file count when named after it or cited by one of its tests;
     // a shared __fixtures__/ directory holds other modules' recordings too.
-    const cited = near.map((p) => (existsSync(join(c.cwd, p)) ? readFileSync(join(c.cwd, p), "utf8") : ""));
+    const cited = near.map((p) => (present(join(c.cwd, p)) ? readFileSync(join(c.cwd, p), "utf8") : ""));
     for (const p of tracked) {
       if (c.files.includes(p) || (dir && !p.startsWith(dir + "/"))) continue;
       const rest = dir ? p.slice(dir.length + 1) : p;
@@ -448,7 +462,7 @@ function rowS4(c) {
   const regPath = config.impact.ceilingRegistry;
   if (!c.files.length) parts.push({ label: regLabel, text: t("impact.reason.noFiles", {}, lang), measured: false });
   else if (!regPath) parts.push({ label: regLabel, text: t("impact.reason.noRegistry", {}, lang), measured: false });
-  else if (!existsSync(join(c.cwd, regPath))) {
+  else if (!present(join(c.cwd, regPath))) {
     parts.push({ label: regLabel, text: t("impact.reason.registryMissing", { path: regPath }, lang), measured: false });
   } else {
     commands.push(`grep -F -e ${c.files.join(" -e ")} ${regPath}`);
@@ -477,7 +491,7 @@ function rowS4(c) {
     commands.push(`grep -nE '\\bcatch\\b|return (\\[\\]|null|0)' ${c.files.join(" ")}`);
     const lines = c.files.map((file) => {
       const abs = join(c.cwd, file);
-      if (!existsSync(abs)) return t("impact.s4.fileMissing", { file }, lang);
+      if (!present(abs)) return t("impact.s4.fileMissing", { file }, lang);
       const src = readFileSync(abs, "utf8");
       const catches = src.match(CATCH_RE)?.length ?? 0;
       const returns = src.match(FALLBACK_RETURN_RE)?.length ?? 0;
@@ -536,7 +550,7 @@ function rowS5(c) {
   let fakeTests = 0;
   for (const test of tests) {
     const abs = join(c.cwd, test);
-    if (!existsSync(abs)) continue;
+    if (!present(abs)) continue;
     const src = readFileSync(abs, "utf8");
     const mocks = specifiers(MOCK_CALL_RE, src).some((s) => c.files.some((f) => specifierRefersTo(s, test, f)));
     const imports = specifiers(SPECIFIER_RE, src).some((s) => c.files.some((f) => specifierRefersTo(s, test, f)));
@@ -563,7 +577,18 @@ function rowS5(c) {
  */
 export function buildImpactTable(opts) {
   const c = new Context(opts);
-  return { rows: [rowS1(c), rowS2(c), rowS3(c), rowS4(c), rowS5(c)] };
+  // A file a row reads that is there but cannot be read leaves that row unmeasured, never "missing".
+  const rows = /** @type {const} */ ([["S1", rowS1], ["S2", rowS2], ["S3", rowS3], ["S4", rowS4], ["S5", rowS5]]);
+  return {
+    rows: rows.map(([id, row]) => {
+      try {
+        return row(c);
+      } catch (err) {
+        const reason = errorLine(err);
+        return { id, question: t(`impact.q.${id}`, {}, c.lang), answer: t("impact.unmeasured", { reason }, c.lang), commands: [] };
+      }
+    }),
+  };
 }
 
 /** @param {string} s */

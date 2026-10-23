@@ -23,7 +23,8 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, utimesSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, utimesSync, writeFileSync, writeSync } from "node:fs";
+import { gone, present } from "../core/files.mjs";
 import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { commonDir, resolveStateDir } from "../core/git.mjs";
@@ -213,7 +214,7 @@ function moduleGoal(abs, original) {
   if (ext === ".cjs") return "commonjs";
   for (let dir = dirname(abs); ; dir = dirname(dir)) {
     const pkg = join(dir, "package.json");
-    if (existsSync(pkg)) {
+    if (present(pkg)) {
       try {
         if (JSON.parse(readFileSync(pkg, "utf8")).type === "module") return "module";
       } catch {
@@ -307,7 +308,7 @@ function undo(cwd, path, j) {
     }
     const original = Buffer.from(String(j.original), "base64");
     const mutated = Buffer.from(String(j.mutated), "base64");
-    const now = existsSync(abs) ? readFileSync(abs) : null;
+    const now = present(abs) ? readFileSync(abs) : null;
     if (now && now.equals(mutated)) {
       const before = Math.floor(statSync(abs).mtimeMs / 1000);
       writeFileSync(abs, original);
@@ -354,8 +355,8 @@ function readJournal(path) {
  * @returns {{ restored: string | null, found: boolean }}
  */
 export function restoreJournal(cwd, path, { force = false } = {}) {
-  if (dirname(path) === userDir() && existsSync(dirname(path))) journalDir(path);
-  if (!existsSync(path)) return { restored: null, found: false };
+  if (dirname(path) === userDir() && present(dirname(path))) journalDir(path);
+  if (!present(path)) return { restored: null, found: false };
   const j = readJournal(path);
   if (!force && typeof j?.pid === "number" && j.pid !== process.pid && alive(j.pid)) {
     throw new MutationError(`pid ${j.pid} of the journal is alive: an ennyn mutate may be running in this tree. If that pid is no such run (reused after a reboot), add --force`);
@@ -372,7 +373,7 @@ function takeJournal(cwd, path) {
   /** @type {string | null} */
   let restored = null;
   journalDir(path);
-  if (existsSync(path)) {
+  if (present(path)) {
     const j = readJournal(path);
     if (typeof j?.pid === "number" && j.pid !== process.pid && alive(j.pid)) {
       const held = typeof j.file === "string" ? `; it holds the original bytes of ${j.file}` : "";
@@ -410,8 +411,10 @@ function prepare(cwd, m) {
   let real;
   try {
     real = realpathSync(abs);
-  } catch {
-    return { reason: { key: "mutate.reason.missing" } };
+  } catch (err) {
+    // No such file is a mutant that cannot apply; one that cannot be looked at stops the run, saying why.
+    if (gone(err)) return { reason: { key: "mutate.reason.missing" } };
+    throw err;
   }
   const rel = relative(root, real);
   if (rel === "" || rel.startsWith(`..${sep}`) || rel === ".." || isAbsolute(rel)) return { reason: { key: "mutate.reason.outside" } };

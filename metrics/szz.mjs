@@ -21,9 +21,9 @@
  * names no origin.
  */
 
-import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { git, headCommit } from "../core/git.mjs";
+import { readIfThere } from "../core/files.mjs";
 
 const DAY = 86400;
 
@@ -236,7 +236,8 @@ function reaches(cwd, hash) {
  */
 export function shallowEdge(cwd) {
   const path = resolve(cwd, git(["rev-parse", "--git-path", "shallow"], { cwd }));
-  return new Set(existsSync(path) ? readFileSync(path, "utf8").split("\n").filter(Boolean) : []);
+  // Not there: a full clone. There but unreadable: the edge is unknown, which is no full clone.
+  return new Set((readIfThere(path) ?? "").split("\n").filter(Boolean));
 }
 
 /**

@@ -10,6 +10,7 @@
  */
 
 import { readFileSync, writeFileSync, mkdirSync, chmodSync, realpathSync } from "node:fs";
+import { readIfThere } from "../core/files.mjs";
 import { join, resolve, dirname, basename, relative, isAbsolute } from "node:path";
 import { git, gitMaybe, repoPath } from "../core/git.mjs";
 
@@ -69,14 +70,12 @@ function real(p) {
   }
 }
 
-/** @param {string} path */
-function readOrNull(path) {
-  try {
-    return readFileSync(path, "utf8");
-  } catch {
-    return null;
-  }
-}
+/**
+ * A hook file's text; null when there is none. One that is there but cannot be read throws: read as "no
+ * hook", doctor would say the commit types go unchecked, and install-hook might write over it.
+ * @param {string} path
+ */
+const readOrNull = (path) => readIfThere(path);
 
 /**
  * @param {string} cwd

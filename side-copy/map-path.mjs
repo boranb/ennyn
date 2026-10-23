@@ -11,7 +11,8 @@
  * 4 of 2,000+ side-copy turns did.
  */
 
-import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { readFileSync, realpathSync, statSync } from "node:fs";
+import { gone, present } from "../core/files.mjs";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { repoPath } from "../core/git.mjs";
 
@@ -50,12 +51,13 @@ function isInside(child, parent) {
 /** @param {string} p */
 const toSlash = (p) => p.split(sep).join("/");
 
-/** @param {string} p */
+/** A directory that cannot be looked at throws: it may hold a side copy. @param {string} p */
 function isDir(p) {
   try {
     return statSync(p).isDirectory();
-  } catch {
-    return false;
+  } catch (err) {
+    if (gone(err)) return false;
+    throw err;
   }
 }
 
@@ -68,7 +70,7 @@ function isDir(p) {
  */
 function nearestWith(start, entry, stopAt) {
   for (let d = start; ; d = dirname(d)) {
-    if (existsSync(join(d, entry))) return d;
+    if (present(join(d, entry))) return d;
     if (d === stopAt || dirname(d) === d) return null;
   }
 }
@@ -97,12 +99,41 @@ function commonDir(dir) {
  * @returns {string | null}
  */
 function packageName(dir) {
+  let text;
   try {
-    const name = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).name;
+    text = readFileSync(join(dir, "package.json"), "utf8");
+  } catch (err) {
+    // No package.json is no copy root; one that cannot be read may be.
+    if (gone(err) || /** @type {NodeJS.ErrnoException} */ (err).code === "EISDIR") return null;
+    throw err;
+  }
+  try {
+    const name = JSON.parse(text).name;
     return typeof name === "string" && name ? name : null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Whether the `.git` file at `top` names a worktree of the repository whose common git dir is `mine`
+ * (`gitdir: <mine>/worktrees/<name>`). A `.git` directory or no `.git` is no linked worktree.
+ * @param {string} top @param {string} mine
+ */
+function linkedTo(top, mine) {
+  let text;
+  try {
+    text = readFileSync(join(top, ".git"), "utf8");
+  } catch (err) {
+    if (gone(err) || /** @type {NodeJS.ErrnoException} */ (err).code === "EISDIR") return false;
+    throw err;
+  }
+  const dir = /^gitdir: (.+)$/m.exec(text)?.[1]?.trim();
+  if (!dir) return false;
+  // A linked worktree's own git dir is <common>/worktrees/<name>; a submodule's is <common>/modules/<name>,
+  // another repository.
+  const rel = relative(mine, resolveReal(resolve(top, dir))).split(sep);
+  return rel.length === 2 && rel[0] === "worktrees" && rel[1] !== "" && rel[1] !== "..";
 }
 
 /**
@@ -122,7 +153,8 @@ function matchWorktree(top, file, project) {
     theirs = commonDir(top);
   } catch (e) {
     if (/** @type {{ status?: number | null }} */ (e).status !== 128) throw e;
-    return null;
+    // git will not open it; its .git file still says whose worktree it is.
+    return linkedTo(top, mine) ? { root: top, relPath: toSlash(relative(top, file)) } : null;
   }
   return theirs === mine ? { root: top, relPath: toSlash(relative(top, file)) } : null;
 }
@@ -181,9 +213,10 @@ export function mapSideCopyPath(absPath, { projectDir, roots = [] }) {
     if (wt) return wt;
     return matchPlainCopy(file, start, project, Array.isArray(roots) ? roots : []);
   } catch (e) {
-    // A path the file system cannot resolve is in no side copy; a git that fails is no answer, and the
-    // hook says it cannot run.
+    // A path that is not there is in no side copy. A git that fails, or a path that is there but cannot be
+    // looked at, is no answer: the hook says it cannot run.
     if (typeof (/** @type {{ stderr?: unknown }} */ (e)).stderr === "string") throw e;
+    if (/** @type {NodeJS.ErrnoException} */ (e).code && !gone(e)) throw e;
     return null;
   }
 }

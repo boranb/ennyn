@@ -134,8 +134,10 @@ async function main() {
   const mapped = mapSideCopyPath(absPath, { projectDir, roots: config.sideCopy.roots });
   if (!mapped) return 0;
 
-  const matching = rulesForPath(loadPathScopedRules(projectDir), mapped.relPath);
-  if (!matching.length) return 0;
+  /** @type {string[]} */
+  const unreadable = [];
+  const matching = rulesForPath(loadPathScopedRules(projectDir, unreadable), mapped.relPath);
+  if (!matching.length && !unreadable.length) return 0;
 
   const state = sideCopyStatePath(projectDir, config.paths.stateDir, input.session_id);
   const emitted = readEmitted(state);
@@ -144,13 +146,16 @@ async function main() {
     if (emitted.has(file)) continue;
     const body = readRuleBody(file);
     if (body !== null) fresh.push({ file, body });
+    else unreadable.push(file);
   }
-  if (!fresh.length) return 0;
+  if (!fresh.length && !unreadable.length) return 0;
 
+  // A rule that could not be read is not marked as given: it comes back on the next file once it can be read.
   for (const r of fresh) emitted.add(r.file);
-  writeEmitted(state, emitted);
+  if (fresh.length) writeEmitted(state, emitted);
 
-  const additionalContext = render(mapped.relPath, fresh, config.sideCopy.maxInjectBytes, config.language);
+  const said = unreadable.length ? t("sidecopy.unreadable", { relPath: mapped.relPath, list: unreadable.join(", ") }, config.language) : null;
+  const additionalContext = [fresh.length ? render(mapped.relPath, fresh, config.sideCopy.maxInjectBytes, config.language) : null, said].filter(Boolean).join("\n\n");
   process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext } }));
   return 0;
 }
@@ -162,6 +167,14 @@ const invokedDirectly = (() => {
     return false;
   }
 })();
+
+// Claude Code stopped reading: end without a stack trace, as a process ended by SIGPIPE.
+if (invokedDirectly) {
+  process.stdout.on("error", (e) => {
+    if (/** @type {NodeJS.ErrnoException} */ (e).code === "EPIPE") process.exit(141);
+    throw e;
+  });
+}
 
 if (invokedDirectly) main().then(
   (code) => {

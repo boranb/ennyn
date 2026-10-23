@@ -3,13 +3,15 @@
  * Claude Code SessionStart hook: gives the session the project's conversation
  * style (`conversation.style`, in `language`). It runs at startup and resume,
  * and again after compaction or /clear, when the earlier injection is gone.
- * "normal", no config or a config that does not load: nothing is injected.
+ * "normal" or no config: nothing is injected. A config that does not load (broken, or there but unreadable)
+ * injects nothing either, and says so to the user (systemMessage): the session runs without its style.
  *
  * Exit 0 on every path, including malformed input; never 2.
  */
 
 import { loadConfig } from "../../../core/config.mjs";
 import { styleRules } from "../../../core/style.mjs";
+import { t } from "../../../core/i18n.mjs";
 
 /** @returns {Promise<string>} */
 async function readStdin() {
@@ -32,13 +34,21 @@ async function main() {
   let config;
   try {
     config = loadConfig({ cwd: projectDir });
-  } catch {
+  } catch (err) {
+    const error = String(/** @type {Error} */ (err).message).trim().replace(/\s*\n\s*(?:- )?/g, "; ");
+    process.stdout.write(JSON.stringify({ systemMessage: t("style.notApplied", { error }, "en") }));
     return;
   }
   const rules = styleRules(config.conversation.style, config.language);
   if (!rules) return;
   process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: rules } }));
 }
+
+// Claude Code stopped reading: end without a stack trace, as a process ended by SIGPIPE.
+process.stdout.on("error", (e) => {
+  if (/** @type {NodeJS.ErrnoException} */ (e).code === "EPIPE") process.exit(141);
+  throw e;
+});
 
 main().then(
   () => {

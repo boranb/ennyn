@@ -18,9 +18,13 @@ import { git, repoPath, gitVersion, parseVersion, versionAtLeast, GIT_FLOOR } fr
 import { matchAny } from "../core/glob.mjs";
 
 /**
- * @typedef {{ level: "ok" | "warn" | "fail", key: string, vars: Record<string, string | number> }} DoctorItem
+ * @typedef {{ level: "ok" | "warn" | "fail" | "unmeasured", key: string, vars: Record<string, string | number> }} DoctorItem
+ *   `unmeasured`: a check that could not be made (a file or git that failed); counted apart from warnings.
  * @typedef {{ ok: boolean, items: DoctorItem[], language: string }} DoctorResult
  */
+
+/** An error as one line of the report. @param {unknown} e */
+const oneLine = (e) => String(/** @type {Error & { stderr?: unknown }} */ (e)?.stderr || /** @type {Error} */ (e)?.message || e).trim().split("\n")[0];
 
 /** Config keys holding a regular expression (as metrics/szz.mjs and checks/commit-shape.mjs compile them). */
 const REGEX_KEYS = /** @type {const} */ (["fixSubject", "excludeRe", "testRe", "moveSubject"]);
@@ -95,8 +99,17 @@ export async function checkSetup({ cwd, env = process.env }) {
   // Declared types with no hook to check them are a rule on paper again.
   const repo = repoPath("--git-dir", { cwd }) !== null;
   if (cm.types.length && repo) {
-    const hook = hookStatus(cwd);
-    if (hook.state === "ennyn" || hook.state === "wired") add("ok", "doctor.hookOk", { path: hook.path });
+    /** @type {ReturnType<typeof hookStatus> | null} */
+    let hook = null;
+    try {
+      hook = hookStatus(cwd);
+    } catch (e) {
+      // One check that cannot be made is said on its own line; the rest of the report stands.
+      add("unmeasured", "doctor.hookUnmeasured", { error: oneLine(e) });
+    }
+    if (!hook) {
+      // said above
+    } else if (hook.state === "ennyn" || hook.state === "wired") add("ok", "doctor.hookOk", { path: hook.path });
     else if (hook.hooksPath) add("warn", "doctor.hookPath", { dir: hook.hooksPath });
     else if (hook.state === "other") add("warn", "doctor.hookOther", { path: hook.path });
     else add("warn", "doctor.hookMissing");
@@ -105,11 +118,19 @@ export async function checkSetup({ cwd, env = process.env }) {
   // Text loaded in every session only shrinks: growth since the last recorded budget is a warning.
   if (repo) {
     const files = git(["-c", "core.quotePath=false", "ls-files", "-z"], { cwd }).split("\0").filter(Boolean);
-    const b = instructionBudget(cwd, files);
+    /** @type {ReturnType<typeof instructionBudget> | null} */
+    let b = null;
+    try {
+      b = instructionBudget(cwd, files);
+    } catch (e) {
+      add("unmeasured", "doctor.budgetUnmeasured", { error: oneLine(e) });
+    }
     const kb = (/** @type {number} */ n) => `${(n / 1024).toFixed(1)} KB`;
     const log = readBudgets(resolve(cwd, config.paths.metricsLog));
     const last = log.records.at(-1);
-    if (last && b.always > last.always) add("warn", "doctor.budgetGrew", { now: kb(b.always), before: kb(last.always), bytes: b.always - last.always, commit: last.commit.slice(0, 10) || "—" });
+    if (!b) {
+      // said above
+    } else if (last && b.always > last.always) add("warn", "doctor.budgetGrew", { now: kb(b.always), before: kb(last.always), bytes: b.always - last.always, commit: last.commit.slice(0, 10) || "—" });
     else add("ok", "doctor.budget", { always: kb(b.always), repeated: b.repeatedLines });
     if (log.skipped) add("warn", "doctor.budgetLogBroken", { n: log.skipped, path: config.paths.metricsLog });
     // A glob that names no file: in `paths` the rule never warns, in `docs` it warns on every change. A rule whose

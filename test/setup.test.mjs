@@ -561,3 +561,39 @@ test("doctor: a cochange rule whose documents are all the files its paths name c
   const none = await checkSetup({ cwd: empty.dir, env: {} });
   assert.deepEqual(none.items.filter((i) => i.key.startsWith("doctor.cochange")), []);
 });
+
+test("scan audit (after review): a directory git lists (a submodule) is no unreadable file; one unreadable check leaves doctor's other lines", (t) => {
+  const r = setup({ commitMsg: { types: ["feat", "fix"] } }, { nodes: [{ id: "a" }] });
+  // A gitlink named like a roadmap file, changed often enough to be a churn path, with its directory checked out.
+  mkdirSync(join(r.dir, "todo"));
+  for (let i = 0; i < 4; i++) {
+    git(["update-index", "--add", "--cacheinfo", `160000,${String(i + 1).padStart(40, "a")},todo`], { cwd: r.dir });
+    git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", `feat: todo ${i}`], { cwd: r.dir });
+  }
+  const scan = scanProject({ cwd: r.dir, env: {} });
+  assert.deepEqual(scan.roadmap.find((f) => f.path === "todo"), { path: "todo", open: 0, done: 0, lines: 0 });
+  if (process.getuid?.() === 0) return t.skip("root reads any file");
+  const run = () => spawnSync(process.execPath, [CLI, "doctor"], { cwd: r.dir, encoding: "utf8" });
+  // A hook that is there but cannot be read is no missing hook.
+  assert.equal(spawnSync(process.execPath, [CLI, "install-hook"], { cwd: r.dir, encoding: "utf8" }).status, 0);
+  const hook = join(r.dir, ".git", "hooks", "commit-msg");
+  chmodSync(hook, 0o000);
+  try {
+    const out = run().stdout;
+    assert.match(out, /^\? commit-msg hook: unmeasured: .*commit-msg could not be read: EACCES/m);
+    assert.match(out, /^problems: 0 · warnings: \d+ · unmeasured: 1$/m);
+    assert.doesNotMatch(out, /hook: none/);
+  } finally {
+    chmodSync(hook, 0o755);
+  }
+  // A .claude directory that cannot be listed: the budget is unmeasured, every other line is still there.
+  mkdirSync(join(r.dir, ".claude", "commands"), { recursive: true });
+  chmodSync(join(r.dir, ".claude", "commands"), 0o000);
+  try {
+    const out = run().stdout;
+    assert.match(out, /^\? instruction budget: unmeasured: .*EACCES/m);
+    for (const line of [/^✓ git: /m, /^✓ config: /m, /^✓ work graph: /m, /^✓ commit-msg hook: /m]) assert.match(out, line);
+  } finally {
+    chmodSync(join(r.dir, ".claude", "commands"), 0o755);
+  }
+});

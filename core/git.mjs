@@ -200,11 +200,14 @@ export function hookIndexFile(cwd, env) {
   if (!raw) return null;
   const gitDir = repoPath("--absolute-git-dir", { cwd });
   if (!gitDir) return null;
+  // A name with nothing behind it stays as given; one that cannot be looked at throws (the hook then says it
+  // could not check), never read as another index.
   const real = (/** @type {string} */ p) => {
     try {
       return realpathSync(p);
-    } catch {
-      return resolve(p);
+    } catch (err) {
+      if (/** @type {NodeJS.ErrnoException} */ (err).code === "ENOENT") return resolve(p);
+      throw err;
     }
   };
   const abs = isAbsolute(raw) ? raw : resolve(cwd, raw);

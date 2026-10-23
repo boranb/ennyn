@@ -253,7 +253,7 @@ test("map-path: different package name, outside every root, or no roots → null
   assert.equal(mapSideCopyPath(join(copy, "src/lib/engine/x.ts"), { projectDir: project, roots: [] }), null);
 });
 
-test("map-path: bad input and unreadable files never throw", () => {
+test("map-path: bad input is no side copy; a copy root that cannot be read throws, it is no answer", (t) => {
   assert.equal(mapSideCopyPath("relative/x.ts", { projectDir: project, roots: [scratch] }), null);
   assert.equal(mapSideCopyPath(join(copy, "x.ts"), { projectDir: join(tmpdir(), "pl-sc-missing-xyz"), roots: [scratch] }), null);
   assert.equal(
@@ -262,9 +262,11 @@ test("map-path: bad input and unreadable files never throw", () => {
   );
   const locked = join(scratch, "locked");
   cpSync(project, locked, { recursive: true, filter: (src) => basename(src) !== ".git" });
+  if (process.getuid?.() === 0) return t.skip("root reads any file");
   chmodSync(join(locked, "package.json"), 0o000);
   try {
-    assert.equal(mapSideCopyPath(join(locked, "src/lib/engine/x.ts"), { projectDir: project, roots: [locked] }), null);
+    // Read as "no package.json", a copy of the project would get no rules and nobody would know.
+    assert.throws(() => mapSideCopyPath(join(locked, "src/lib/engine/x.ts"), { projectDir: project, roots: [locked] }), /EACCES/);
   } finally {
     chmodSync(join(locked, "package.json"), 0o644);
   }
@@ -411,6 +413,58 @@ test("reset hook: after compaction or /clear the rules come back; other session 
     const r = spawnSync(process.execPath, [resetPath], { input: bad, env: hookEnv({ CLAUDE_PROJECT_DIR: project }), encoding: "utf8" });
     assert.equal(r.status, 0);
   }
+});
+
+test("reset hook audit: a reset it cannot do is said to the user; a rule it cannot read is named, not dropped", async (t) => {
+  if (process.getuid?.() === 0) return t.skip("root reads and writes anywhere");
+  const { sideCopyStatePath } = await import("../adapters/claude-code/hooks/side-copy-rules.mjs");
+  const resetPath = join(pluginRoot, "adapters/claude-code/hooks/side-copy-reset.mjs");
+  runHook(readInput("s-locked", join(worktree, "src/lib/engine/x.ts")));
+  const dir = dirname(sideCopyStatePath(project, ".git/ennyn", "s-locked"));
+  chmodSync(dir, 0o555);
+  try {
+    const r = spawnSync(process.execPath, [resetPath], {
+      input: JSON.stringify({ session_id: "s-locked", hook_event_name: "SessionStart", source: "compact", cwd: project }),
+      env: hookEnv({ CLAUDE_PROJECT_DIR: project }),
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0);
+    assert.match(JSON.parse(r.stdout).systemMessage, /^ennyn: the side-copy rules given in this session could not be reset, .*EACCES/);
+  } finally {
+    chmodSync(dir, 0o755);
+  }
+  chmodSync(engineRule, 0o000);
+  try {
+    const r = runHook(readInput("s-unreadable", join(worktree, "src/lib/engine/x.ts")));
+    assert.equal(r.status, 0, r.stderr);
+    assert.match(context(r), new RegExp(`could not be read, so whether they apply to src/lib/engine/x\\.ts was not checked: .*${basename(engineRule).replace(".", "\\.")}`));
+  } finally {
+    chmodSync(engineRule, 0o644);
+  }
+  // Not marked as given: once it can be read, the same session gets it.
+  assert.ok(context(runHook(readInput("s-unreadable", join(worktree, "src/lib/engine/x.ts")))).includes("ENGINE-RULE-BODY"));
+});
+
+test("map-path audit: a copy git will not open is mapped by its .git file only when that names a worktree of the project", () => {
+  const proj = realpathSync(mkdtempSync(join(tmpdir(), "en-sc-gitfile-")));
+  git(["init", "-q", "-b", "main"], { cwd: proj });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "root"], { cwd: proj });
+  // Git dirs git refuses to open (a repository format it does not know), one where a worktree's would be
+  // and one where a submodule's would be.
+  for (const sub of ["worktrees/side", "modules/sub"]) {
+    const gitdir = join(proj, ".git", sub);
+    git(["init", "-q", "--bare", gitdir], { cwd: proj });
+    git(["config", "core.repositoryformatversion", "99"], { cwd: gitdir });
+  }
+  const copy = (/** @type {string} */ sub) => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "en-sc-copy-")));
+    writeFileSync(join(dir, ".git"), `gitdir: ${join(proj, ".git", sub)}\n`);
+    mkdirSync(join(dir, "src"));
+    writeFileSync(join(dir, "src", "x.js"), "x\n");
+    return join(dir, "src", "x.js");
+  };
+  assert.equal(mapSideCopyPath(copy("worktrees/side"), { projectDir: proj })?.relPath, "src/x.js");
+  assert.equal(mapSideCopyPath(copy("modules/sub"), { projectDir: proj }), null, "a submodule is another repository");
 });
 
 test("hook (j): Turkish output when the project language is tr", () => {

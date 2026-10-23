@@ -11,6 +11,7 @@
  */
 
 import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { gone } from "../../core/files.mjs";
 import { join } from "node:path";
 import { matchAny } from "../../core/glob.mjs";
 
@@ -167,13 +168,15 @@ export function parsePaths(frontMatter) {
  * @param {string[]} out
  * @param {Set<string>} seen real paths of visited directories (symlink cycles)
  * @param {number} depth
+ * @param {string[]} unreadable paths there that could not be read (not "no rules")
  */
-function walk(dir, out, seen, depth) {
+function walk(dir, out, seen, depth, unreadable) {
   if (depth > MAX_DEPTH) return;
   let real;
   try {
     real = realpathSync.native(dir);
-  } catch {
+  } catch (err) {
+    if (!gone(err)) unreadable.push(dir);
     return;
   }
   if (seen.has(real)) return;
@@ -181,7 +184,8 @@ function walk(dir, out, seen, depth) {
   let entries;
   try {
     entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
+  } catch (err) {
+    if (!gone(err)) unreadable.push(dir);
     return;
   }
   for (const e of entries) {
@@ -193,30 +197,35 @@ function walk(dir, out, seen, depth) {
         const st = statSync(p);
         isDir = st.isDirectory();
         isFile = st.isFile();
-      } catch {
+      } catch (err) {
+        // A link to nothing is no rule; one that cannot be looked at may be.
+        if (!gone(err)) unreadable.push(p);
         continue;
       }
     }
-    if (isDir) walk(p, out, seen, depth + 1);
+    if (isDir) walk(p, out, seen, depth + 1, unreadable);
     else if (isFile && e.name.endsWith(".md")) out.push(p);
   }
 }
 
 /**
  * @param {string} projectDir
+ * @param {string[]} [unreadable] filled with the rule files and directories that are there but could not be
+ *   read: whether they apply is unknown, which the caller says
  * @returns {Array<{ file: string, patterns: string[] }>} absolute rule file paths, sorted
  */
-export function loadPathScopedRules(projectDir) {
+export function loadPathScopedRules(projectDir, unreadable = []) {
   /** @type {string[]} */
   const files = [];
-  walk(join(projectDir, ".claude", "rules"), files, new Set(), 0);
+  walk(join(projectDir, ".claude", "rules"), files, new Set(), 0, unreadable);
   /** @type {Array<{ file: string, patterns: string[] }>} */
   const rules = [];
   for (const file of files.sort()) {
     let text;
     try {
       text = readFileSync(file, "utf8");
-    } catch {
+    } catch (err) {
+      if (!gone(err)) unreadable.push(file);
       continue;
     }
     const { frontMatter } = splitFrontMatter(text);

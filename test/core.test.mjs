@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, chmodSync, symlinkSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -239,4 +239,43 @@ test("git: stagedPaths reads the index a hook was given, but only from the same 
   // A linked worktree's index lives under the main git dir but belongs to the worktree.
   mkdirSync(join(repo, ".git", "worktrees", "w1"), { recursive: true });
   assert.equal(hookIndexFile(repo, { GIT_INDEX_FILE: join(repo, ".git", "worktrees", "w1", "index") }), null);
+});
+
+test("files: nothing there is false or null; there but not readable throws, on every Node the engines allow", async (t) => {
+  const { present, readIfThere } = await import("../core/files.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "en-files-"));
+  writeFileSync(join(dir, "f"), "x");
+  assert.equal(present(join(dir, "f")), true);
+  assert.equal(present(join(dir, "nope")), false);
+  // A file where a directory of the path should be: Node 20.0's statSync throwIfNoEntry still throws ENOTDIR.
+  assert.equal(present(join(dir, "f", "x")), false);
+  assert.equal(readIfThere(join(dir, "f", "x")), null);
+  assert.equal(readIfThere(join(dir, "nope")), null);
+  assert.equal(readIfThere(join(dir, "f")), "x");
+  assert.throws(() => readIfThere(dir), (/** @type {Error} */ e) => e.message.startsWith(`${dir} could not be read: EISDIR`), "a directory in a file's place is no missing file, and the path is named");
+  // A link that leads back to itself, and a name no file system allows: nothing there.
+  symlinkSync(join(dir, "loop"), join(dir, "loop"));
+  assert.equal(present(join(dir, "loop")), false);
+  assert.equal(present(join(dir, "n".repeat(5000))), false);
+  if (process.getuid?.() === 0) return t.skip("root reads any file");
+  mkdirSync(join(dir, "locked"));
+  writeFileSync(join(dir, "locked", "c"), "x");
+  chmodSync(join(dir, "locked"), 0o000);
+  try {
+    assert.throws(() => present(join(dir, "locked", "c")), /EACCES/);
+    assert.throws(() => readIfThere(join(dir, "locked", "c")), /EACCES/);
+  } finally {
+    chmodSync(join(dir, "locked"), 0o755);
+  }
+});
+
+test("config: impact.referenceTimeout is whole seconds from 1 to 3600", () => {
+  const at = (/** @type {unknown} */ v) => {
+    const dir = mkdtempSync(join(tmpdir(), "en-reftimeout-"));
+    mkdirSync(join(dir, ".ennyn"));
+    writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ impact: { referenceTimeout: v } }));
+    return () => loadConfig({ cwd: dir, env: {} });
+  };
+  for (const ok of [1, 120, 3600]) assert.equal(at(ok)().impact.referenceTimeout, ok);
+  for (const bad of [0, 0.5, 3601, -5]) assert.throws(at(bad), ConfigError, String(bad));
 });

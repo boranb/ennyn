@@ -5,7 +5,7 @@
  * at once: a silently ignored typo is a gate that never runs.
  */
 
-import { readFileSync, existsSync } from "node:fs";
+import { readIfThere } from "./files.mjs";
 import { join, isAbsolute } from "node:path";
 import { globToRegExp } from "./glob.mjs";
 
@@ -76,6 +76,8 @@ export const DEFAULTS = Object.freeze({
   sideCopy: { roots: [], maxInjectBytes: 24000 },
   impact: {
     referenceCommand: null,
+    // Seconds the reference command may run before it is stopped and S1's references are unmeasured.
+    referenceTimeout: 120,
     twins: [],
     coChangeMin: 3,
     ceilingRegistry: null,
@@ -186,11 +188,13 @@ export function loadConfig({ cwd, env = process.env, override }) {
   /** @type {Record<string, unknown>} */
   let user = {};
   let found = null;
-  if (existsSync(configPath)) {
+  // A config that is there but cannot be read is no config problem to report and go on from: it throws.
+  const text = readIfThere(configPath);
+  if (text !== null) {
     found = configPath;
     try {
       // A byte order mark some editors write is no part of the JSON.
-      user = JSON.parse(readFileSync(configPath, "utf8").replace(/^\uFEFF/, ""));
+      user = JSON.parse(text.replace(/^\uFEFF/, ""));
     } catch (err) {
       throw new ConfigError([`cannot parse ${configPath}: ${/** @type {Error} */ (err).message}`]);
     }
@@ -204,6 +208,8 @@ export function loadConfig({ cwd, env = process.env, override }) {
   const cm = /** @type {any} */ (cfg).commitMsg;
   if (cm.language !== null && !["en", "tr"].includes(cm.language)) problems.push(`"commitMsg.language" must be "en", "tr" or null`);
   if (!["normal", "terse"].includes(cm.style)) problems.push(`"commitMsg.style" must be "normal" or "terse"`);
+  const timeout = /** @type {any} */ (cfg).impact.referenceTimeout;
+  if (typeof timeout === "number" && !(timeout >= 1 && timeout <= 3600)) problems.push(`"impact.referenceTimeout" must be seconds from 1 to 3600`);
   const style = /** @type {any} */ (cfg).conversation.style;
   if (!CONVERSATION_STYLES.includes(style)) problems.push(`"conversation.style" must be ${CONVERSATION_STYLES.map((s) => `"${s}"`).join(", ")}`);
   // A type is the word before "(scope):" or ":"; spaces, colons and brackets would never match a subject.

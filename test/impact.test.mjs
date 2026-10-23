@@ -322,3 +322,23 @@ test("impact: module specifiers resolve relative paths and aliases, never bare p
   assert.ok(!specifierRefersTo("parse", "src/x.test.ts", "src/lib/parse.ts"), "bare package name");
   assert.ok(!specifierRefersTo("./parse", "src/other/x.test.ts", "src/lib/parse.ts"), "relative to a different directory");
 });
+
+test("impact audit: a test file that is there but cannot be read leaves its rows unmeasured, never \"no test\", and the other rows stand", (t) => {
+  if (process.getuid?.() === 0) return t.skip("root reads any file");
+  const dir = fixtureRepo();
+  const config = loadConfig({ cwd: dir, env: {} });
+  const test = join(dir, "src/routes/rows.test.js");
+  chmodSync(test, 0o000);
+  try {
+    const rows = buildImpactTable({ cwd: dir, config, symbol: "parseRow", files: ["src/lib/engine/parse.js"] }).rows;
+    const s5 = rows.find((r) => r.id === "S5");
+    assert.match(String(s5?.answer), /^unmeasured: .*EACCES.*rows\.test\.js/);
+    assert.doesNotMatch(String(s5?.answer), /no test/i);
+    assert.deepEqual(rows.map((r) => r.id), ["S1", "S2", "S3", "S4", "S5"]);
+    // git grep cannot read it either: S1 says so too. S4 reads only the input file, and stands.
+    assert.match(String(rows.find((r) => r.id === "S1")?.answer), /references: unmeasured: /);
+    assert.match(String(rows.find((r) => r.id === "S4")?.answer), /src\/lib\/engine\/parse\.js: 2 catch/);
+  } finally {
+    chmodSync(test, 0o644);
+  }
+});
