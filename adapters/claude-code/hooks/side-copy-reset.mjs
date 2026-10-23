@@ -10,7 +10,9 @@
  * otherwise never come back, and nobody would know.
  */
 
-import { rmSync } from "node:fs";
+import { readdirSync, rmSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { gone } from "../../../core/files.mjs";
 import { loadConfig } from "../../../core/config.mjs";
 import { t } from "../../../core/i18n.mjs";
 import { sideCopyStatePath } from "./side-copy-rules.mjs";
@@ -46,7 +48,18 @@ async function main() {
     return notReset(err);
   }
   try {
-    rmSync(sideCopyStatePath(projectDir, config.paths.stateDir, input.session_id), { force: true });
+    // The session's list and its subagents' (`<session>+agent-<id>.json`): a compacted or cleared
+    // conversation ends the subagents in it, and their lists would only keep rules from them later.
+    const main = sideCopyStatePath(projectDir, config.paths.stateDir, input.session_id);
+    const prefix = `${basename(main, ".json")}+agent-`;
+    /** @type {string[]} */
+    let names = [];
+    try {
+      names = readdirSync(dirname(main));
+    } catch (err) {
+      if (!gone(err)) throw err;
+    }
+    for (const name of [basename(main), ...names.filter((n) => n.startsWith(prefix) && n.endsWith(".json"))]) rmSync(join(dirname(main), name), { force: true });
   } catch (err) {
     notReset(err);
   }

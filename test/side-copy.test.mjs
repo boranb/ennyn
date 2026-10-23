@@ -8,13 +8,17 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  readdirSync,
   realpathSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { git } from "../core/git.mjs";
+import { loadConfig } from "../core/config.mjs";
+import { t } from "../core/i18n.mjs";
 import { mapSideCopyPath } from "../side-copy/map-path.mjs";
 import {
   loadPathScopedRules,
@@ -318,7 +322,7 @@ test("hook (c): each rule is emitted once per session", () => {
   // A hostile session id cannot escape the state directory.
   const odd = runHook(readInput("../../../escape", join(worktree, "src/lib/engine/x.ts")));
   assert.equal(odd.status, 0);
-  assert.ok(existsSync(join(project, ".git/ennyn/side-copy/.._.._.._escape.json")));
+  assert.deepEqual(readdirSync(join(project, ".git/ennyn/side-copy")).filter((f) => f.startsWith(".._.._.._escape")).map((f) => f.replace(/\+[0-9a-f]{12}\.json$/, "+<digest>.json")), [".._.._.._escape+<digest>.json"]);
 });
 
 test("hook: state that cannot be written does not stop the injection", () => {
@@ -378,7 +382,9 @@ test("hook (k): within the budget as many rules as fit are inlined, the rest lis
   const parts = full.split(/\n\n(?=<rule file=)/);
   assert.equal(parts.length, 3, "header + two rule blocks with the default budget");
   const bytes = (/** @type {string} */ s) => Buffer.byteLength(s, "utf8");
-  const budget = bytes(parts[0]) + 2 + bytes(parts[1]) + 1;
+  // The budget keeps room for the list the rules would make were none of them inlined.
+  const reserve = bytes([t("sidecopy.tooLarge", { relPath: "server/src/a.mjs" }, "en"), `- ${inlineRule}`, `- ${nestedRule}`].join("\n")) + 2;
+  const budget = bytes(parts[0]) + 2 + bytes(parts[1]) + 1 + reserve;
   const cfg = join(configs, "one-fits.json");
   writeFileSync(cfg, JSON.stringify({ sideCopy: { roots: [scratch], maxInjectBytes: budget } }));
   const ctx = context(runHook(readInput("s-k2", join(worktree, "server/src/a.mjs")), { CLAUDE_PROJECT_DIR: project, ENNYN_CONFIG: cfg }));
@@ -539,4 +545,210 @@ test("side-copy audit: another repository this git cannot open is no worktree of
   git(["config", "extensions.fromthefuture", "true"], { cwd: other });
   put(join(other, "src/lib/engine/x.ts"), "export const x = 1;\n");
   assert.equal(mapSideCopyPath(join(other, "src/lib/engine/x.ts"), { projectDir: project }), null);
+});
+
+test("side-copy audit: a rule edited during the session is given again, with its new text, and only that rule", () => {
+  const rule = join(project, ".claude/rules/audit-stale.md");
+  put(rule, '---\npaths:\n  - "src/audit/**"\n---\nSTALE-V1\n');
+  try {
+    const first = context(runHook(readInput("s-stale", join(worktree, "src/audit/a.ts"))));
+    assert.match(first, /STALE-V1/);
+    assert.equal(runHook(readInput("s-stale", join(worktree, "src/audit/b.ts"))).stdout, "", "unchanged: given once");
+    put(rule, '---\npaths:\n  - "src/audit/**"\n---\nSTALE-V2\n');
+    const again = context(runHook(readInput("s-stale", join(worktree, "src/audit/c.ts"))));
+    assert.match(again, /STALE-V2/);
+    assert.doesNotMatch(again, /STALE-V1/);
+    assert.equal(runHook(readInput("s-stale", join(worktree, "src/audit/d.ts"))).stdout, "", "the new text is given once too");
+    // The state keeps one entry for the rule, not one for each text it ever had.
+    const state = JSON.parse(readFileSync(join(project, ".git/ennyn/side-copy/s-stale.json"), "utf8")).emitted;
+    assert.equal(state.filter((/** @type {string} */ e) => e.startsWith(`${rule}#`)).length, 1, JSON.stringify(state));
+  } finally {
+    rmSync(rule, { force: true });
+  }
+});
+
+test("side-copy audit: session ids that clean up to the same name keep lists of their own", () => {
+  const file = join(worktree, "src/lib/engine/x.ts");
+  assert.match(context(runHook(readInput("s/one", file))), /ENGINE-RULE-BODY/);
+  assert.match(context(runHook(readInput("s_one", file))), /ENGINE-RULE-BODY/, "another session: its own list");
+  assert.match(context(runHook(readInput("s:one", file))), /ENGINE-RULE-BODY/);
+  assert.equal(runHook(readInput("s/one", file)).stdout, "", "the same session: given once");
+});
+
+test("side-copy audit: the text never passes the 10,000 characters Claude Code shows a model, rules inlined, listed or not read", async () => {
+  const { render, CONTEXT_CAP } = await import("../adapters/claude-code/hooks/side-copy-rules.mjs");
+  const rule = (/** @type {number} */ i, /** @type {number} */ n) => ({ file: `/p/.claude/rules/r${i}.md`, body: "x".repeat(n) });
+  // A rule bigger than the cap: listed, the small one after it inlined.
+  const big = render("src/a.ts", [rule(1, 12000), rule(2, 100)], 10000, "en").text;
+  assert.ok(big.length <= CONTEXT_CAP, String(big.length));
+  assert.match(big, /<rule file="\/p\/\.claude\/rules\/r2\.md">/);
+  assert.match(big, /- \/p\/\.claude\/rules\/r1\.md$/);
+  // Many rules that fit one by one: inlined until the list and the unread note still fit after them.
+  const unread = [`/p/.claude/rules/${"y".repeat(300)}.md`];
+  const many = render("src/a.ts", Array.from({ length: 40 }, (_, i) => rule(i, 400)), 10000, "en", unread).text;
+  assert.ok(many.length <= CONTEXT_CAP && Buffer.byteLength(many) <= CONTEXT_CAP, String(many.length));
+  assert.ok(many.endsWith(`${unread[0]}`));
+  // More rule paths than the cap holds: as many as fit, and how many more.
+  const lots = render("src/a.ts", Array.from({ length: 600 }, (_, i) => rule(i, 20000)), 10000, "en").text;
+  assert.ok(lots.length <= CONTEXT_CAP, String(lots.length));
+  assert.match(lots, /…and \d+ more rule files that apply here$/);
+  // A text in two-byte letters is measured in bytes, never more characters than bytes.
+  const tr = render("src/a.ts", [{ file: "/p/ğ.md", body: "ş".repeat(6000) }], 10000, "tr").text;
+  assert.ok(tr.length <= CONTEXT_CAP);
+  assert.equal(loadConfig({ cwd: tmp("pl-sc-cap-"), env: {}, override: { sideCopy: { maxInjectBytes: 24000 } } }).sideCopy.maxInjectBytes, 24000, "loads; held to the cap");
+  assert.equal(loadConfig({ cwd: tmp("pl-sc-cap-"), env: {} }).sideCopy.maxInjectBytes, 9000);
+});
+
+test("side-copy audit: a subagent's context keeps its own list; the main conversation still gets the rule", () => {
+  const file = join(worktree, "src/lib/engine/x.ts");
+  const sub = (/** @type {string} */ agent) => ({ ...readInput("s-agents", file), agent_id: agent, agent_type: "general-purpose" });
+  assert.match(context(runHook(sub("a1"))), /ENGINE-RULE-BODY/);
+  assert.equal(runHook(sub("a1")).stdout, "", "the same subagent: given once");
+  assert.match(context(runHook(sub("a2"))), /ENGINE-RULE-BODY/, "another subagent");
+  assert.match(context(runHook(readInput("s-agents", file))), /ENGINE-RULE-BODY/, "the main conversation never got it");
+  assert.equal(runHook(readInput("s-agents", file)).stdout, "");
+});
+
+test("side-copy audit (mutation pass): the cap holds for any budget given, counts the note after the rules, and is measured in bytes", async (tc) => {
+  const { render, CONTEXT_CAP } = await import("../adapters/claude-code/hooks/side-copy-rules.mjs");
+  const rule = (/** @type {number} */ i, /** @type {number} */ n) => ({ file: `/p/.claude/rules/r${i}.md`, body: "x".repeat(n) });
+  // A budget above the cap, given by a caller the config does not check.
+  assert.ok(render("src/a.ts", [rule(1, 6000), rule(2, 6000), rule(3, 6000)], 24000, "en").text.length <= CONTEXT_CAP);
+  // One rule that fits the budget alone, and a long note after it: the note is part of the text.
+  const unread = [`/p/.claude/rules/${"z".repeat(1500)}.md`];
+  const one = render("src/a.ts", [rule(1, 9000)], 10000, "en", unread).text;
+  assert.ok(one.length <= CONTEXT_CAP, String(one.length));
+  assert.ok(one.endsWith(`${unread[0]}`));
+  // 6,000 two-byte letters are 12,000 bytes: past a 10,000-byte budget, so listed, not inlined.
+  const tr = render("src/a.ts", [{ file: "/p/ğ.md", body: "ş".repeat(6000) }], 10000, "tr").text;
+  assert.doesNotMatch(tr, /ş/);
+  assert.match(tr, /- \/p\/ğ\.md/);
+  // Through the hook: a rule that cannot be read, and a large one sized to fit only when the note is not counted.
+  if (process.getuid?.() === 0) return tc.skip("root reads any file");
+  const big = join(project, ".claude/rules/audit-big.md");
+  const locked = join(project, `.claude/rules/audit-locked-${"n".repeat(180)}.md`);
+  const relPath = "src/big/a.ts";
+  const bytes = (/** @type {string} */ s) => Buffer.byteLength(s, "utf8");
+  const header = t("sidecopy.header", { relPath }, "en");
+  const reserve = bytes([t("sidecopy.tooLarge", { relPath }, "en"), `- ${big}`].join("\n")) + 2;
+  const wrap = bytes(`<rule file="${big}">\n\n</rule>`);
+  const body = "B".repeat(10000 - reserve - bytes(header) - 2 - wrap);
+  assert.ok(bytes(t("sidecopy.unreadable", { relPath, list: locked }, "en")) > reserve, "the note is longer than the room kept for the list");
+  put(big, `---\npaths:\n  - "src/big/**"\n---\n${body}\n`);
+  put(locked, '---\npaths:\n  - "src/big/**"\n---\nL\n');
+  const cfg = join(configs, "cap.json");
+  writeFileSync(cfg, JSON.stringify({ sideCopy: { roots: [scratch], maxInjectBytes: 10000 } }));
+  try {
+    // A rule file that cannot be read: the note naming it comes after the large rule, inside the cap.
+    chmodSync(locked, 0o000);
+    const r = runHook(readInput("s-cap", join(worktree, relPath)), { CLAUDE_PROJECT_DIR: project, ENNYN_CONFIG: cfg });
+    assert.equal(r.status, 0, r.stderr);
+    const ctx = context(r);
+    assert.ok(ctx.length <= CONTEXT_CAP, String(ctx.length));
+    assert.match(ctx, /could not be read/);
+  } finally {
+    chmodSync(locked, 0o644);
+    rmSync(big, { force: true });
+    rmSync(locked, { force: true });
+  }
+});
+
+// ------------------------------------------------------------- after review round one --
+
+test("side-copy audit (review): a reset after compaction or /clear forgets the session's subagent lists too", () => {
+  const resetPath = join(pluginRoot, "adapters/claude-code/hooks/side-copy-reset.mjs");
+  const file = join(worktree, "src/lib/engine/x.ts");
+  const sub = { ...readInput("s-rst", file), agent_id: "a1" };
+  assert.match(context(runHook(sub)), /ENGINE-RULE-BODY/);
+  assert.equal(runHook(sub).stdout, "");
+  const r = spawnSync(process.execPath, [resetPath], { input: JSON.stringify({ session_id: "s-rst", source: "compact", cwd: project }), env: hookEnv({ CLAUDE_PROJECT_DIR: project }), cwd: neutralCwd, encoding: "utf8" });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(context(runHook(sub)), /ENGINE-RULE-BODY/, "the subagent's list went with the session's");
+});
+
+test("side-copy audit (review): a budget above the cap still loads, is held to the cap, and doctor says so", async () => {
+  const cfg = join(configs, "old-budget.json");
+  writeFileSync(cfg, JSON.stringify({ sideCopy: { roots: [scratch], maxInjectBytes: 24000 } }));
+  const r = runHook(readInput("s-old", join(worktree, "src/lib/engine/x.ts")), { CLAUDE_PROJECT_DIR: project, ENNYN_CONFIG: cfg });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(context(r), /ENGINE-RULE-BODY/);
+  const { checkSetup } = await import("../setup/doctor.mjs");
+  const res = await checkSetup({ cwd: project, env: { ENNYN_CONFIG: cfg } });
+  assert.ok(res.items.some((i) => i.level === "warn" && i.key === "doctor.injectAboveCap"), JSON.stringify(res.items.map((i) => i.key)));
+});
+
+test("side-copy audit (review): a rule named only in a count is not marked as given; a changed rule says it replaces its earlier text", async () => {
+  const { render } = await import("../adapters/claude-code/hooks/side-copy-rules.mjs");
+  const rules = Array.from({ length: 200 }, (_, i) => ({ file: `/p/.claude/rules/${"r".repeat(80)}${i}.md`, body: "x".repeat(200) }));
+  const out = render("src/a.ts", rules, 9000, "en", []);
+  assert.ok(out.text.length <= 10000);
+  assert.match(out.text, /…and \d+ more rule files that apply here/);
+  for (const r of rules) assert.equal(out.given.has(r.file), out.text.includes(r.file), r.file);
+  assert.ok(out.given.size < rules.length);
+  // Through the hook: an edited rule comes back marked as the new text of one given before.
+  const rule = join(project, ".claude/rules/audit-changed.md");
+  put(rule, '---\npaths:\n  - "src/changed/**"\n---\nCHANGED-V1\n');
+  try {
+    context(runHook(readInput("s-chg", join(worktree, "src/changed/a.ts"))));
+    put(rule, '---\npaths:\n  - "src/changed/**"\n---\nCHANGED-V2\n');
+    assert.match(context(runHook(readInput("s-chg", join(worktree, "src/changed/b.ts")))), /<rule file="[^"]*audit-changed\.md" changed="this text replaces the one given before">\nCHANGED-V2/);
+  } finally {
+    rmSync(rule, { force: true });
+  }
+});
+
+test("side-copy audit (review): the note on rules that cannot be read is cut to the cap too", async () => {
+  const { render, CONTEXT_CAP } = await import("../adapters/claude-code/hooks/side-copy-rules.mjs");
+  const unreadable = Array.from({ length: 200 }, (_, i) => `/p/.claude/rules/${"u".repeat(80)}${i}.md`);
+  for (const rules of [[{ file: "/p/r.md", body: "small" }], []]) {
+    const out = render("src/a.ts", rules, 9000, "en", unreadable);
+    assert.ok(out.text.length <= CONTEXT_CAP, String(out.text.length));
+    assert.match(out.text, /could not be read.*…and \d+ more/s);
+    assert.deepEqual([...out.given], rules.map((r) => r.file));
+  }
+});
+
+test("side-copy audit (review): context ids that clean up alike still keep lists of their own", () => {
+  const file = join(worktree, "src/lib/engine/x.ts");
+  const give = (/** @type {Record<string, unknown>} */ extra) => runHook({ ...readInput("ignored", file), ...extra });
+  const pairs = [
+    [{ session_id: "s.agent-a1" }, { session_id: "s", agent_id: "a1" }],
+    [{ session_id: ["x"] }, { session_id: "x" }],
+    [{ session_id: undefined }, { session_id: "no-session" }],
+    [{ session_id: "Case" }, { session_id: "case" }],
+  ];
+  for (const [a, b] of pairs) {
+    assert.match(context(give(a)), /ENGINE-RULE-BODY/, JSON.stringify(a));
+    assert.match(context(give(b)), /ENGINE-RULE-BODY/, `${JSON.stringify(b)} after ${JSON.stringify(a)}`);
+  }
+});
+
+test("side-copy audit (review round two): a rule named like another's key, long ids, and long lists cut fast", async () => {
+  // A rule file whose name holds "#" is not an earlier text of the rule its name starts with.
+  const a = join(project, ".claude/rules/audit-k.md");
+  const ab = join(project, ".claude/rules/audit-k.md#b.md");
+  put(ab, '---\npaths:\n  - "src/k/**"\n---\nAB-BODY\n');
+  try {
+    assert.match(context(runHook(readInput("s-key", join(worktree, "src/k/1.ts")))), /AB-BODY/);
+    put(a, '---\npaths:\n  - "src/k/**"\n---\nA-BODY\n');
+    const next = context(runHook(readInput("s-key", join(worktree, "src/k/2.ts"))));
+    assert.match(next, /A-BODY/);
+    assert.doesNotMatch(next, /changed=/, "a rule never given is no changed rule");
+    assert.equal(runHook(readInput("s-key", join(worktree, "src/k/3.ts"))).stdout, "", "both stay given");
+  } finally {
+    rmSync(a, { force: true });
+    rmSync(ab, { force: true });
+  }
+  // Long session and agent ids: one list, a file name within 255 bytes.
+  const { sideCopyStatePath, render, CONTEXT_CAP } = await import("../adapters/claude-code/hooks/side-copy-rules.mjs");
+  const long = { ...readInput("s".repeat(150), join(worktree, "src/lib/engine/x.ts")), agent_id: "a".repeat(150) };
+  assert.match(context(runHook(long)), /ENGINE-RULE-BODY/);
+  assert.equal(runHook(long).stdout, "");
+  assert.ok(Buffer.byteLength(basename(sideCopyStatePath(project, ".git/ennyn", "S".repeat(500), "A".repeat(500)))) <= 255);
+  // Thousands of rules and unreadable files: cut to the cap without rebuilding the text for every one dropped.
+  const t0 = Date.now();
+  const many = Array.from({ length: 6000 }, (_, i) => ({ file: `/p/.claude/rules/${"r".repeat(60)}${i}.md`, body: "x" }));
+  const out = render("src/a.ts", many, 9000, "en", many.map((r) => `${r.file}.locked`));
+  assert.ok(out.text.length <= CONTEXT_CAP);
+  assert.ok(Date.now() - t0 < 3000, `${Date.now() - t0} ms`);
 });

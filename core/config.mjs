@@ -76,7 +76,8 @@ export const DEFAULTS = Object.freeze({
     impactIgnoreGlobs: ["**/*.test.*", "**/*.spec.*", "**/__tests__/**", "**/__fixtures__/**"],
   },
   push: { warnAtUnpushed: 20 },
-  sideCopy: { roots: [], maxInjectBytes: 24000 },
+  // Claude Code keeps a hook's added context to 10,000 characters; the rules and the list after them fit in it.
+  sideCopy: { roots: [], maxInjectBytes: 9000 },
   impact: {
     referenceCommand: null,
     // Seconds the reference command may run before it is stopped and S1's references are unmeasured.

@@ -18,6 +18,7 @@
  */
 
 import { resolveStateDir } from "../../../core/git.mjs";
+import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -28,6 +29,17 @@ import { loadPathScopedRules, readRuleBody, rulesForPath } from "../rules-index.
 
 const FILE_TOOLS = new Set(["Read", "Edit", "Write", "MultiEdit", "NotebookEdit"]);
 
+/**
+ * Claude Code keeps a hook's additionalContext to 10,000 characters: past that it saves the text to a file and
+ * shows the model a path and a 2,000-character preview it is not asked to read (code.claude.com/docs/en/hooks).
+ * The rules marked as given must be the ones the model reads, so the whole text stays under it; a UTF-8 byte
+ * count is never below the character count, so bytes are measured.
+ */
+export const CONTEXT_CAP = 10000;
+
+/** @param {string} s */
+const digest = (s) => createHash("sha256").update(s).digest("hex");
+
 /** @returns {Promise<string>} */
 async function readStdin() {
   let data = "";
@@ -37,14 +49,48 @@ async function readStdin() {
 }
 
 /**
- * Where a session's "already injected" list lives (shared with side-copy-reset.mjs).
+ * Where the "already injected" list of one context lives (shared with side-copy-reset.mjs): the session's,
+ * or a subagent's in it, which Claude Code names with `agent_id` (a subagent has a context of its own, and a
+ * rule given there is not in the main conversation's). An id that is cleaned for a file name, holds capitals
+ * (a case-insensitive disk folds them) or is not text keeps a digest of the raw one; "+" parts the session from
+ * the agent, and no cleaned id holds one, so no two contexts share a file.
  * @param {string} projectDir
  * @param {string} stateDir
  * @param {unknown} sessionId
+ * @param {unknown} [agentId]
  */
-export function sideCopyStatePath(projectDir, stateDir, sessionId) {
-  const safe = String(sessionId ?? "").replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 200) || "no-session";
-  return join(resolveStateDir(projectDir, stateDir), "side-copy", `${safe}.json`);
+export function sideCopyStatePath(projectDir, stateDir, sessionId, agentId) {
+  const part = (/** @type {unknown} */ v) => {
+    if (v === undefined || v === null || v === "") return "+none";
+    if (typeof v !== "string") return `+${digest(JSON.stringify(v) ?? String(v)).slice(0, 16)}`;
+    // Cut to 60 characters a part, so session and agent stay within a file name's 255 bytes.
+    const safe = v.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 60);
+    return safe === v && !/[A-Z]/.test(v) ? safe : `${safe}+${digest(v).slice(0, 12)}`;
+  };
+  const agent = agentId === undefined || agentId === null || agentId === "" ? "" : `+agent-${part(agentId)}`;
+  return join(resolveStateDir(projectDir, stateDir), "side-copy", `${part(sessionId)}${agent}.json`);
+}
+
+/** A rule as given: its file and the text it had, so an edited rule is given again. @param {string} file @param {string} body */
+const givenKey = (file, body) => `${file}#${digest(body).slice(0, 16)}`;
+
+/** The file a given-list entry names: the key less its digest, or a plain path from before digests were kept. @param {string} entry */
+const keyFile = (entry) => (/#[0-9a-f]{16}$/.test(entry) ? entry.slice(0, -17) : entry);
+
+/**
+ * The largest `n` from 0 to `max` for which `fits(n)` holds, `fits` holding for every smaller one too: a
+ * search, not a step down from `max` that rebuilds the text for each entry dropped.
+ * @param {number} max @param {(n: number) => boolean} fits
+ */
+function most(max, fits) {
+  let lo = 0;
+  let hi = max;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (fits(mid)) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo;
 }
 
 /**
@@ -77,32 +123,61 @@ function writeEmitted(path, emitted) {
   }
 }
 
+/** @param {string} s */
+const bytes = (s) => Buffer.byteLength(s, "utf8");
+
+/** The note on rule files that cannot be read takes at most this much of the cap; past it, a count. */
+const NOTE_MAX = 2000;
+
 /**
- * Inline as many rules as the budget holds (each tried in order, so a large
- * rule does not crowd out the smaller ones after it); list the rest by path.
+ * Inline as many rules as the budget holds (each tried in order, so a large rule does not crowd out the
+ * smaller ones after it); list the rest by path; then the note on the rule files that could not be read. The
+ * whole text never passes CONTEXT_CAP: the budget for rules is `maxBytes` (at most the cap) less the note and
+ * the list, were every rule listed; a list or a note too long names as many paths as fit and how many more.
+ * `given` holds the rules the text inlines or names: a rule in a count only is not given.
  * @param {string} relPath
- * @param {Array<{ file: string, body: string }>} rules
+ * @param {Array<{ file: string, body: string, changed?: boolean }>} rules
  * @param {number} maxBytes
  * @param {string} lang
+ * @param {string[]} [unreadable]
+ * @returns {{ text: string, given: Set<string> }}
  */
-function render(relPath, rules, maxBytes, lang) {
+export function render(relPath, rules, maxBytes, lang, unreadable = []) {
   const header = t("sidecopy.header", { relPath }, lang);
+  const top = t("sidecopy.tooLarge", { relPath }, lang);
+  const noteWith = (/** @type {number} */ kept) =>
+    t("sidecopy.unreadable", { relPath, list: [...unreadable.slice(0, kept), ...(kept < unreadable.length ? [t("sidecopy.unreadableMore", { n: unreadable.length - kept }, lang)] : [])].join(", ") }, lang);
+  const noted = most(unreadable.length, (n) => bytes(noteWith(n)) <= NOTE_MAX);
+  const note = unreadable.length ? noteWith(noted) : null;
+  const after = note ? bytes(note) + 2 : 0;
+  const budget = Math.min(maxBytes, CONTEXT_CAP) - after - bytes([top, ...rules.map((r) => `- ${r.file}`)].join("\n")) - 2;
   /** @type {string[]} */
   const blocks = [];
   /** @type {string[]} */
   const listed = [];
-  let size = Buffer.byteLength(header, "utf8");
+  /** @type {Set<string>} */
+  const given = new Set();
+  let size = bytes(header);
   for (const r of rules) {
-    const block = `<rule file="${r.file}">\n${r.body}\n</rule>`;
-    const add = Buffer.byteLength(block, "utf8") + 2;
-    if (size + add <= maxBytes) {
+    const changed = r.changed ? ` changed="${t("sidecopy.changed", {}, lang)}"` : "";
+    const block = `<rule file="${r.file}"${changed}>\n${r.body}\n</rule>`;
+    const add = bytes(block) + 2;
+    if (size + add <= budget) {
       blocks.push(block);
+      given.add(r.file);
       size += add;
     } else listed.push(r.file);
   }
-  const list = [t("sidecopy.tooLarge", { relPath }, lang), ...listed.map((f) => `- ${f}`)].join("\n");
-  if (!blocks.length) return list;
-  return [header, ...blocks, ...(listed.length ? [list] : [])].join("\n\n");
+  const parts = blocks.length ? [header, ...blocks] : [];
+  if (listed.length) {
+    const used = (/** @type {string} */ list) => bytes([...parts, list, ...(note ? [note] : [])].join("\n\n"));
+    const list = (/** @type {number} */ kept) => [top, ...listed.slice(0, kept).map((f) => `- ${f}`), ...(kept < listed.length ? [t("sidecopy.listMore", { n: listed.length - kept }, lang)] : [])].join("\n");
+    const kept = most(listed.length, (n) => used(list(n)) <= CONTEXT_CAP);
+    parts.push(list(kept));
+    for (const f of listed.slice(0, kept)) given.add(f);
+  }
+  if (note) parts.push(note);
+  return { text: parts.join("\n\n"), given };
 }
 
 /** @returns {Promise<number>} exit code */
@@ -139,24 +214,31 @@ async function main() {
   const matching = rulesForPath(loadPathScopedRules(projectDir, unreadable), mapped.relPath);
   if (!matching.length && !unreadable.length) return 0;
 
-  const state = sideCopyStatePath(projectDir, config.paths.stateDir, input.session_id);
+  const state = sideCopyStatePath(projectDir, config.paths.stateDir, input.session_id, input.agent_id);
   const emitted = readEmitted(state);
+  /** @type {Array<{ file: string, body: string, changed: boolean }>} */
   const fresh = [];
+  const before = (/** @type {string} */ file) => [...emitted].filter((e) => keyFile(e) === file);
   for (const file of matching) {
-    if (emitted.has(file)) continue;
+    // Read every time: a rule edited since it was given is given again, with its new text, marked as such.
     const body = readRuleBody(file);
-    if (body !== null) fresh.push({ file, body });
-    else unreadable.push(file);
+    if (body === null) unreadable.push(file);
+    else if (!emitted.has(givenKey(file, body))) fresh.push({ file, body, changed: before(file).length > 0 });
   }
   if (!fresh.length && !unreadable.length) return 0;
 
-  // A rule that could not be read is not marked as given: it comes back on the next file once it can be read.
-  for (const r of fresh) emitted.add(r.file);
-  if (fresh.length) writeEmitted(state, emitted);
-
-  const said = unreadable.length ? t("sidecopy.unreadable", { relPath: mapped.relPath, list: unreadable.join(", ") }, config.language) : null;
-  const additionalContext = [fresh.length ? render(mapped.relPath, fresh, config.sideCopy.maxInjectBytes, config.language) : null, said].filter(Boolean).join("\n\n");
-  process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext } }));
+  const { text, given } = render(mapped.relPath, fresh, config.sideCopy.maxInjectBytes, config.language, unreadable);
+  // Marked as given only what the text inlines or names, and only once it is written out: a rule that could not
+  // be read, one in a count, or a text that never reached Claude Code comes back on the next file. One entry a
+  // rule: the text it had before goes.
+  for (const r of fresh) {
+    if (!given.has(r.file)) continue;
+    for (const e of before(r.file)) emitted.delete(e);
+    emitted.add(givenKey(r.file, r.body));
+  }
+  process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: text } }), (err) => {
+    if (!err && given.size) writeEmitted(state, emitted);
+  });
   return 0;
 }
 

@@ -59,6 +59,9 @@ export async function checkSetup({ cwd, env = process.env }) {
   if (config.configPath) add("ok", "doctor.configOk", { path: config.configPath });
   else add("warn", "doctor.configDefault", { path: env.ENNYN_CONFIG || ".ennyn/config.json" });
 
+  // Claude Code keeps a hook's added context to 10,000 characters: a larger budget is held to that.
+  if (config.sideCopy.maxInjectBytes > 10000) add("warn", "doctor.injectAboveCap", { n: config.sideCopy.maxInjectBytes });
+
   /** @type {Record<string, RegExp>} */
   const compiled = {};
   const patterns = [
