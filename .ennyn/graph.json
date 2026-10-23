@@ -229,16 +229,6 @@
       "source": "data review, cycle 2026-10-20 (4), bypass-audit"
     },
     {
-      "id": "gate-stats-locale-sort",
-      "title": "gate-stats sorts step names with the machine's default locale (localeCompare without a locale): the order differs by machine",
-      "status": "planned",
-      "value": "low",
-      "cost": "S",
-      "cluster": "metrics",
-      "needs": [],
-      "source": "cycle 2026-10-20 (4), seen while pinning the test locale"
-    },
-    {
       "id": "mutate-node-version",
       "title": "mutate checks JavaScript with the Node that runs ennyn, not the one the tests use: across versions a mutant that does not parse for the tests can pass the check",
       "status": "planned",
@@ -250,7 +240,7 @@
     },
     {
       "id": "suite-unexplained-failure",
-      "title": "Captured in cycle 5: a zombie read as alive and the --import order on Node < 20.11 (both fixed). Still open: one git-oracle failure on Node 20.0.0 in a 2-CPU Linux VM (a commit with core.commentChar=auto, empty stderr), not seen in 26 more runs; keep code, signal and stderr when CI shows it",
+      "title": "Captured in cycle 5: a zombie read as alive and the --import order on Node < 20.11 (both fixed). Still open: one git-oracle failure on Node 20.0.0 in a 2-CPU Linux VM (a commit with core.commentChar=auto, empty stderr), not seen in 26 more runs; keep code, signal and stderr when CI shows it; cycle 6: a test in 'mutate: runs that wait' failed once on Node 22 in the Linux run under load 22 (timing), not again",
       "status": "planned",
       "value": "low",
       "cost": "S",
@@ -259,26 +249,16 @@
       "source": "cycle 2026-10-20 (4), mutation-runner verification; updated cycle 2026-10-21 (5)"
     },
     {
-      "id": "fault-matrix-files-hooks",
-      "title": "Extend test/fault-injection.test.mjs: every file a command reads made unreadable in turn (EACCES, a directory in its place), the side-copy and conversation-style hooks, impact.referenceCommand failing or timing out; fail or say so, never a number",
+      "id": "guard-vacuous",
+      "title": "A gate test can pass while what it names is false (cycle 6: an untested Linux-run decision, a skip read as a pass, a symlinked entry that ran nothing, fault cells on files the fixture lacks, a judge that read JSON as empty, a preload that could stop counting): give each gate test a positive control or a guard-mutant list that must be killed",
       "status": "planned",
       "value": "high",
       "cost": "M",
       "cluster": "gates",
       "needs": [],
+      "source": "convergence, cycle 2026-10-21 (5) and 2026-10-23 (6): the most recurring class of cycle 6's reviews",
       "mechanization": true,
-      "sourceClass": "unmeasured read as a measurement",
-      "source": "convergence, cycle 2026-10-21 (5): the class again outside git (an unreadable CLAUDE.md, a directory named by @, a fold target past the boundary, guessed graph weights)"
-    },
-    {
-      "id": "guard-vacuous",
-      "title": "A gate test can pass while what it names is false (the engines test twice, the fault judge, gone() twice): keep, next to each gate test, edits to what it guards that must fail it",
-      "status": "planned",
-      "value": "medium",
-      "cost": "M",
-      "cluster": "gates",
-      "needs": [],
-      "source": "convergence, cycle 2026-10-21 (5), second class"
+      "sourceClass": "a gate that passes while what it guards is false"
     },
     {
       "id": "rework-skew-before-since",
@@ -289,16 +269,6 @@
       "cluster": "metrics",
       "needs": [],
       "source": "review, cycle 2026-10-21 (5), szz-since-walk"
-    },
-    {
-      "id": "git-floor",
-      "title": "Ennyn names no git version: on git 2.30 four tests fail (SSH signing needs 2.34, GIT_CONFIG_PARAMETERS quoting changed in 2.31, impact counts a reference twice for an absolute path); state a floor and run the suite on it",
-      "status": "planned",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "gates",
-      "needs": [],
-      "source": "cycle 2026-10-21 (5), engine-floor-check Linux runs"
     },
     {
       "id": "engines-floor-decision",
@@ -340,6 +310,77 @@
       "cluster": "gates",
       "needs": [],
       "source": "data review, cycle 2026-10-21 (5), fault-injection-matrix (accepted: refusing is the safer default)"
+    },
+    {
+      "id": "ci-first-run",
+      "title": "The CI workflow has never run on GitHub (the docker-based test job included): start it once by hand, or let the first public push run it",
+      "status": "planned",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "needs": [],
+      "gate": "user",
+      "source": "cycle 2026-10-23 (6), ci-free-quota and git-floor"
+    },
+    {
+      "id": "fault-matrix-writes",
+      "title": "The fault matrix fails reads only: writes (mkdir, append, rename, unlink, utimes), errors other than EACCES/EISDIR (EIO, ELOOP, EMFILE) and realpathSync.native are not tried; a write that fails in silence is the same class",
+      "status": "planned",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "gates",
+      "needs": [],
+      "source": "impact table S4, cycle 2026-10-23 (6), fault-matrix-files-hooks"
+    },
+    {
+      "id": "floor-run-record",
+      "title": "Nothing stops a push without a passing npm run test:linux at HEAD: record the commit it passed and have push-check say when HEAD has none",
+      "status": "planned",
+      "value": "low",
+      "cost": "M",
+      "cluster": "gates",
+      "needs": [],
+      "source": "review, cycle 2026-10-23 (6), ci-free-quota"
+    },
+    {
+      "id": "gate-record-temp-index",
+      "title": "gate-record: a failed commit -a, pathspec or --include commit leaves nothing staged, so files: [] is recorded; take the files from the wrapper, or record them as unknown",
+      "status": "planned",
+      "value": "low",
+      "cost": "M",
+      "cluster": "metrics",
+      "needs": [],
+      "source": "audit, cycle 2026-10-23 (6), gate-log-audit"
+    },
+    {
+      "id": "gate-stats-duplicate-pass",
+      "title": "gate-stats: a pass recorded twice for the same commit counts twice; report it as a duplicate or as HEAD that did not move",
+      "status": "planned",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "needs": [],
+      "source": "audit, cycle 2026-10-23 (6), gate-log-audit"
+    },
+    {
+      "id": "gate-log-reader-version",
+      "title": "An older ennyn reading the same state dir skips lines with seconds: null as 'not gate attempts' (the line shape changed under v: 1)",
+      "status": "planned",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "needs": [],
+      "source": "review, cycle 2026-10-23 (6), gate-log-audit"
+    },
+    {
+      "id": "init-doctor-project-data",
+      "title": "/ennyn:init: a ✗ whose cause is in the project's own data (duplicate ids in a roadmap the graph module reads) has no instruction, and the report has no line for a ✗ left open",
+      "status": "planned",
+      "value": "low",
+      "cost": "S",
+      "cluster": "init",
+      "needs": [],
+      "source": "review, cycle 2026-10-23 (6), git-floor (low confidence)"
     }
   ],
   "done": [
@@ -513,6 +554,30 @@
       "title": "Legacy audit of the work graph and the mechanization pick: one list of problems for doctor and the pick, BOM, partial module exports, a needs cycle, guessed weights said (47e4f93)",
       "status": "done",
       "finished": "2026-10-22"
+    },
+    {
+      "id": "ci-free-quota",
+      "title": "CI starts no job for a push or pull request while the repository is private (a private repository's runs draw on metered Actions minutes); a run started by hand still runs; before a push the suite runs on Linux (1ae8f03)",
+      "status": "done",
+      "finished": "2026-10-23"
+    },
+    {
+      "id": "gate-log-audit",
+      "title": "Legacy audit of gate-record / gate-stats: an unreadable state dir read as no attempts, a start from another clock or a bad name kept as unmeasured or cleaned, ties in a fixed order, an option given twice refused (852871f)",
+      "status": "done",
+      "finished": "2026-10-23"
+    },
+    {
+      "id": "git-floor",
+      "title": "git floor 2.34 (Ubuntu 22.04's): doctor fails below it; npm run test:linux runs the suite at the git and Node floors, then Node 22 and 24, and CI runs the same script (0bca659)",
+      "status": "done",
+      "finished": "2026-10-23"
+    },
+    {
+      "id": "fault-matrix-files-hooks",
+      "title": "The fault matrix fails every file read in turn (EACCES, EISDIR) and runs the Claude Code hooks; present()/readIfThere() replace existsSync; impact.referenceTimeout (e636ee6)",
+      "status": "done",
+      "finished": "2026-10-23"
     }
   ]
 }
