@@ -176,11 +176,37 @@ export function graphProblems(graph, config) {
     const id = n[f.id];
     return (typeof id === "string" && id.trim() !== "") || (typeof id === "number" && Number.isFinite(id));
   };
+  // Where the items come from (graph.fields.source, "ROADMAP.md:12"): a graph module reads the project's own
+  // files, and the cause of a problem in its items is there, not in the module. One line each, cut at 120
+  // characters; "?" for an item with no source, each its own; the same place twice is "×2" (the module read it
+  // twice, or two items share it). Those marks come first, so the cut at three places never hides them.
+  // " · " parts the places: a source written as text may hold a comma.
+  const line = (/** @type {unknown} */ v) => {
+    const one = [...String(v).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]+/g, " ").trim()];
+    return one.length > 120 ? `${one.slice(0, 119).join("")}…` : one.join("");
+  };
+  const place = (/** @type {GraphNode} */ n) => (typeof n[f.source] === "string" ? line(n[f.source]) : "");
+  const has = (/** @type {GraphNode} */ n) => place(n) !== "";
+  const places = (/** @type {GraphNode[]} */ nodes) => {
+    /** @type {Map<string, number>} */
+    const seen = new Map();
+    for (const n of nodes.filter(has)) seen.set(place(n), (seen.get(place(n)) ?? 0) + 1);
+    const twice = [...seen].filter(([, k]) => k > 1).map(([p, k]) => `${p} ×${k}`);
+    const parts = [...twice, ...nodes.filter((n) => !has(n)).map(() => "?"), ...[...seen].filter(([, k]) => k === 1).map(([p]) => p)];
+    return [...parts.slice(0, 3), ...(parts.length > 3 ? [`+${parts.length - 3}`] : [])].join(" · ");
+  };
+  const where = (/** @type {GraphNode[]} */ nodes) => (nodes.some(has) ? ` (${places(nodes)})` : "");
+  /** Per id, its places: at most four ids. @param {unknown[]} ids @param {GraphNode[]} nodes */
+  const whereById = (ids, nodes) => {
+    if (!nodes.some(has)) return "";
+    const each = ids.slice(0, 4).map((id) => `${line(id)}: ${places(nodes.filter((n) => n[f.id] === id))}`);
+    return ` (${[...each, ...(ids.length > 4 ? ["…"] : [])].join("; ")})`;
+  };
   const waitingNodes = graph.open.filter((n) => n[f.status] !== doneStatus);
   const finished = [...graph.done, ...graph.open.filter((n) => n[f.status] === doneStatus)];
   for (const [list, level] of /** @type {const} */ ([[waitingNodes, "fail"], [finished, "warn"]])) {
-    const missing = list.filter((n) => !named(n)).length;
-    if (missing) out.push({ level, key: "doctor.idMissing", vars: { n: missing, field: f.id } });
+    const missing = list.filter((n) => !named(n));
+    if (missing.length) out.push({ level, key: "doctor.idMissing", vars: { n: missing.length, field: f.id, where: where(missing) } });
   }
   /** @type {Map<unknown, number>} */
   const seen = new Map();
@@ -188,11 +214,12 @@ export function graphProblems(graph, config) {
   const waitingIds = new Set(waitingNodes.filter(named).map((n) => n[f.id]));
   const dupes = [...seen].filter(([, c]) => c > 1).map(([id]) => id);
   for (const [ids, level] of /** @type {const} */ ([[dupes.filter((id) => waitingIds.has(id)), "fail"], [dupes.filter((id) => !waitingIds.has(id)), "warn"]])) {
-    if (ids.length) out.push({ level, key: "doctor.idDuplicate", vars: { list: ids.map(String).join(", ") } });
+    const holders = [...waitingNodes, ...finished].filter((n) => named(n) && ids.includes(n[f.id]));
+    if (ids.length) out.push({ level, key: "doctor.idDuplicate", vars: { list: ids.map(String).join(", "), where: whereById(ids, holders) } });
   }
   for (const n of waitingNodes) {
     const unknown = needsOf(n, config).filter((id) => !seen.has(id));
-    if (unknown.length) out.push({ level: "fail", key: "doctor.needsUnknown", vars: { id: String(n[f.id]), list: unknown.map(String).join(", ") } });
+    if (unknown.length) out.push({ level: "fail", key: "doctor.needsUnknown", vars: { id: String(n[f.id]), list: unknown.map(String).join(", "), where: where([n]) } });
   }
   // A cycle among waiting nodes never opens. Depth first with a stack of its own: a needs chain thousands
   // long would overflow the call stack.
@@ -224,7 +251,10 @@ export function graphProblems(graph, config) {
       stack.push({ id: need, needs: needsOf(/** @type {GraphNode} */ (waiting.get(need)), config), next: 0 });
     }
   }
-  if (cycle) out.push({ level: "fail", key: "doctor.needsCycle", vars: { cycle: cycle.map(String).join(" → ") } });
+  if (cycle) {
+    const ring = [...new Set(cycle)];
+    out.push({ level: "fail", key: "doctor.needsCycle", vars: { cycle: cycle.map(String).join(" → "), where: whereById(ring, ring.map((id) => /** @type {GraphNode} */ (waiting.get(id)))) } });
+  }
   for (const [field, scale, name] of /** @type {const} */ ([[f.value, valueScale, "valueScale"], [f.cost, costScale, "costScale"]])) {
     for (const n of waitingNodes) {
       const v = n[field];

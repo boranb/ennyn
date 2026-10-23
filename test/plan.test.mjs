@@ -4,6 +4,7 @@ import { chmodSync, mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../core/config.mjs";
+import { t } from "../core/i18n.mjs";
 import { graphProblems, loadGraph, pickMechanization, readyMechanization, scoreNode, GraphError } from "../plan/mechanization.mjs";
 
 const cfg = (override = {}) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-p-")), env: {}, override });
@@ -122,6 +123,51 @@ test("loadGraph audit: a byte order mark, an unreadable file, and arrays in a mo
   await assert.rejects(loadGraph({ cwd: locked, config: cfg() }), (e) => e instanceof GraphError && /^work graph .* could not be read: .*EACCES/.test(e.message));
 });
 
+test("graphProblems: a problem in the items says where each item comes from, by its source field", () => {
+  const c = cfg();
+  const at = (/** @type {{ open: any[], done: any[] }} */ g, config = c) => graphProblems(g, config).map((p) => [p.key, p.vars.where]);
+  // A roadmap the graph module reads: the same id on two lines, a need no item has, an item with no id.
+  assert.deepEqual(
+    at({
+      open: [
+        { id: "a", source: "ROADMAP.md:12" },
+        { id: "a", source: "ROADMAP.md:40" },
+        { id: "b", needs: ["ghost"], source: "ROADMAP.md:41" },
+        { title: "no id", source: "docs/roadmap/phase-2.md:3" },
+      ],
+      done: [{ id: "a", source: "CHANGELOG.md:9" }],
+    }),
+    [
+      ["doctor.idMissing", " (docs/roadmap/phase-2.md:3)"],
+      ["doctor.idDuplicate", " (a: ROADMAP.md:12 · ROADMAP.md:40 · CHANGELOG.md:9)"],
+      ["doctor.needsUnknown", " (ROADMAP.md:41)"],
+    ],
+  );
+  // Each id its own places, at most three each and four ids; an item with no source is a "?".
+  const two = at({ open: [{ id: "a", source: "R.md:1" }, { id: "b", source: "R.md:7" }, { id: "a", source: "R.md:2" }, { id: "b" }], done: [] });
+  assert.deepEqual(two, [["doctor.idDuplicate", " (a: R.md:1 · R.md:2; b: ? · R.md:7)"]]);
+  const many = Array.from({ length: 5 }, (_, i) => ({ id: "x", source: `R.md:${i + 1}` }));
+  assert.deepEqual(at({ open: many, done: [] }), [["doctor.idDuplicate", " (x: R.md:1 · R.md:2 · R.md:3 · +2)"]]);
+  const ids = ["p", "q", "r", "s", "u"].flatMap((id) => [{ id, source: `${id}.md:1` }, { id, source: `${id}.md:2` }]);
+  assert.match(String(at({ open: ids, done: [] })[0][1]), /^ \(p: .*; s: s\.md:1 · s\.md:2; …\)$/);
+  // The same place twice: the module read one item twice. Said as such, so it is not taken for the roadmap's.
+  const item = { id: "x", status: "done", source: "ROADMAP.md:7" };
+  assert.deepEqual(at({ open: [item], done: [item] }), [["doctor.idDuplicate", " (x: ROADMAP.md:7 ×2)"]]);
+  // No source at all, or one that is not text: nothing to point at.
+  assert.deepEqual(at({ open: [{ id: "a" }, { id: "a", source: 12 }, { id: "a", source: "  " }], done: [] }), [["doctor.idDuplicate", ""]]);
+  // A cycle names its items' places too.
+  assert.deepEqual(at({ open: [{ id: "a", needs: ["b"], source: "R.md:1" }, { id: "b", needs: ["a"], source: "R.md:2" }], done: [] }), [["doctor.needsCycle", " (a: R.md:1; b: R.md:2)"]]);
+  // A source is one line of reasonable length; one with a comma keeps its comma (" · " parts places).
+  assert.deepEqual(at({ open: [{ id: "a", source: "R.md:1\n✓ all good" }, { id: "a", source: `docs/evidence.md, Open questions ${"w".repeat(200)}` }], done: [] }), [
+    ["doctor.idDuplicate", ` (a: R.md:1 ✓ all good · docs/evidence.md, Open questions ${"w".repeat(86)}…)`],
+  ]);
+  // The field is the project's own name for it.
+  const named = cfg({ graph: { fields: { source: "from" } } });
+  assert.deepEqual(at({ open: [{ id: "a", from: "TODO.md:2" }, { id: "a", from: "TODO.md:5" }], done: [] }, named), [["doctor.idDuplicate", " (a: TODO.md:2 · TODO.md:5)"]]);
+  assert.match(t("doctor.idDuplicate", { list: "a", where: " (a: TODO.md:2 · TODO.md:5)" }, "tr"), /yinelenen kimlikler: a \(a: TODO\.md:2 · TODO\.md:5\)$/);
+  assert.match(t("doctor.needsCycle", { cycle: "a → b → a", where: " (a: R.md:1; b: R.md:2)" }, "en"), /a → b → a \(a: R\.md:1; b: R\.md:2\)$/);
+});
+
 test("graphProblems audit: what doctor fails and warns on, and the pick refuses", () => {
   const c = cfg();
   const keys = (/** @type {{ open: any[], done: any[] }} */ g, config = c) => graphProblems(g, config).map((p) => `${p.level} ${p.key}`);
@@ -131,8 +177,8 @@ test("graphProblems audit: what doctor fails and warns on, and the pick refuses"
   // Twice among finished nodes only: said, but it cannot change the pick.
   assert.deepEqual(keys({ open: [{ id: "a", status: "done" }, { id: "b" }], done: [{ id: "a" }, { id: "c" }, { id: "c" }] }), ["warn doctor.idDuplicate"]);
   assert.deepEqual(graphProblems({ open: [{ mechanization: true }, { id: "" }, { id: " " }], done: [{ title: "old" }] }, c), [
-    { level: "fail", key: "doctor.idMissing", vars: { n: 3, field: "id" } },
-    { level: "warn", key: "doctor.idMissing", vars: { n: 1, field: "id" } },
+    { level: "fail", key: "doctor.idMissing", vars: { n: 3, field: "id", where: "" } },
+    { level: "warn", key: "doctor.idMissing", vars: { n: 1, field: "id", where: "" } },
   ], "an empty or blank id is no id");
   assert.deepEqual(graphProblems({ open: [{ id: "a", needs: ["b"] }, { id: "b", needs: "c" }, { id: "c", needs: ["a"] }, { id: "d", needs: ["d"], status: "done" }], done: [] }, c).map((p) => p.vars.cycle ?? p.key), ["a → b → c → a"]);
   assert.deepEqual(keys({ open: [{ id: "a", needs: ["ghost"] }], done: [] }), ["fail doctor.needsUnknown"]);
@@ -185,4 +231,19 @@ test("loadGraph audit: a module whose names Node detects only in part keeps ever
   // A default export about something else is not the graph's done list.
   const other = graphFile("graph.mjs", 'export const nodes = [{ id: "m" }];\nexport default { title: "roadmap", done: 3 };\n');
   assert.deepEqual((await loadGraph({ cwd: other, config: cfg({ paths: { graph: ".ennyn/graph.mjs" } }) })).done, []);
+});
+
+test("graphProblems (after review round two): ? is never merged, marks come before the cut, ids and sources are one clean line", () => {
+  const c = cfg();
+  const at = (/** @type {{ open: any[], done: any[] }} */ g) => graphProblems(g, c).map((p) => p.vars.where);
+  // Two items with no source are two unknown places, not one place read twice.
+  assert.deepEqual(at({ open: [{ id: "a", source: "R.md:1" }, { id: "a", source: "R.md:2" }, { id: "b" }, { id: "b" }], done: [] }), [" (a: R.md:1 · R.md:2; b: ? · ?)"]);
+  // A mark past the third place is not folded into the count.
+  assert.deepEqual(at({ open: [{ id: "a", source: "R.md:1" }, { id: "a", source: "R.md:2" }, { id: "a", source: "R.md:3" }, { id: "a" }], done: [] }), [" (a: ? · R.md:1 · R.md:2 · +1)"]);
+  const twice = { id: "a", status: "done", source: "R.md:9" };
+  assert.deepEqual(at({ open: [{ id: "a", source: "R.md:1" }, { id: "a", source: "R.md:2" }, { id: "a", source: "R.md:3" }, twice], done: [twice] }), [" (a: R.md:9 ×2 · R.md:1 · R.md:2 · +1)"]);
+  // C1 controls and direction overrides go too; a source of nothing but them is no source.
+  assert.deepEqual(at({ open: [{ id: "a", source: "R.md:1\u0085x‮" }, { id: "a", source: "\u0007\u0007" }], done: [] }), [" (a: ? · R.md:1 x)"]);
+  // An id is cleaned the same way inside the places.
+  assert.deepEqual(at({ open: [{ id: "a\n✓ ok", source: "R.md:1" }, { id: "a\n✓ ok", source: "R.md:2" }], done: [] }), [" (a ✓ ok: R.md:1 · R.md:2)"]);
 });

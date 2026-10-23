@@ -68,9 +68,9 @@ Write this only when `handoff.exists` is false. An existing handoff gets nothing
 
 ## 7. Check and report
 
-When `commitMsg.types` or `review.forbidden` is set, offer `ennyn install-hook`: the commit convention becomes a gate in this clone (machine-local; with `core.hooksPath` it says what to add instead). Then run `ennyn doctor` and fix every ✗ in the files you wrote. A ✗ about the machine's git (older than the floor) is the user's: tell them the version and the floor, and change nothing on their machine. A `!` stays only when the user has seen and accepted it, for example the fix-label majority.
+When `commitMsg.types` or `review.forbidden` is set, offer `ennyn install-hook`: the commit convention becomes a gate in this clone (machine-local; with `core.hooksPath` it says what to add instead). Then run `ennyn doctor` and fix every ✗ in the files you wrote. Two kinds are not yours to fix alone. A ✗ about the machine's git (older than the floor): tell the user the version and the floor, and change nothing on their machine. A ✗ about the items of a roadmap the graph module reads: follow [graph.md](graph.md), "When doctor fails on the items". A `!` stays only when the user has seen and accepted it, for example the fix-label majority.
 
-Report in at most twelve lines:
+Report in at most thirteen lines:
 
 - files written;
 - the fix-label decision, with its share;
@@ -78,6 +78,7 @@ Report in at most twelve lines:
 - what was changed in the project's own instructions (lines replaced, lines turned into gates), or left in conflict and why; an audit queue the project already keeps;
 - node counts: open, done and ready;
 - the instruction text the project loads: `agentSetup.size.always` in every session, `size.onDemand` by path;
+- the ✗ left open: how many, and for each, as the lines allow, its cause and who fixes it;
 - what was estimated or left at its default;
 - "Next: /ennyn:cycle".
 
