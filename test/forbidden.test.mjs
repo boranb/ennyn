@@ -341,7 +341,8 @@ test("review.forbidden through the hook: the config holding the text commits; a 
   git(["checkout", "-q", "main"], { cwd: dir });
   stage({ "b.js": "b\n" });
   assert.equal(commit("b").status, 0);
-  assert.equal(spawnSync("git", ["merge", "-q", "--no-commit", "side"], { cwd: dir, encoding: "utf8" }).status, 0);
+  // git needs an identity to merge, and a container has none it can guess.
+  assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "merge", "-q", "--no-commit", "side"], { cwd: dir, encoding: "utf8" }).status, 0);
   put(dir, { "b.js": "b\ndebugger; // resolved here\n" });
   git(["add", "b.js"], { cwd: dir });
   const evil = commit("merge side");
