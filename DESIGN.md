@@ -37,6 +37,7 @@ styles/<style>.<lang>.md            conversation style rules (focused, terse), i
 schema/config.schema.json           config schema
 test/                               node:test suites; npm test loads hermetic.mjs into each: it imports hostile.mjs (a hostile machine), then clears it
 test/linux-run.mjs                  npm run test:linux: the suite on Linux at the git and Node floors, then newer Node majors (docker); CI runs it
+test/guards.mjs                     guard mutants for every gate test, each naming the test that guards it; test/guards.test.mjs runs them in a clone of the tree, and that test must fail with each
 docs/                               method guide, evidence, adoption guide
 ```
 

@@ -76,10 +76,22 @@ test("plugin: hook commands point at files that exist; manifests agree on name a
   assert.ok(!existsSync(join(ROOT, "CLAUDE.md")), "developer notes live in .claude/CLAUDE.md");
 });
 
+/**
+ * Markdown files below `dir`, relative. A walk of its own: Node 20.0 ignores readdirSync's recursive option and
+ * lists the top only, so the nested documents went unread on the floor (test/guards.mjs, plugin-pipe).
+ * @param {string} dir @returns {string[]}
+ */
+function markdownFiles(dir) {
+  return readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((e) => {
+    const rel = dir ? `${dir}/${e.name}` : e.name;
+    if (e.isDirectory()) return e.name === "node_modules" || e.name === ".git" ? [] : markdownFiles(rel);
+    return e.name.endsWith(".md") ? [rel] : [];
+  });
+}
+
 test("docs: no table cell holds an unescaped | inside code (GitHub splits the row there)", () => {
-  const tracked = readdirSync(ROOT, { recursive: true })
-    .map(String)
-    .filter((f) => f.endsWith(".md") && !f.startsWith("node_modules") && !f.startsWith(".git"));
+  const tracked = markdownFiles("");
+  assert.ok(["docs/evidence.md", "skills/cycle/SKILL.md", "agents/code-reviewer.md", "README.md"].every((f) => tracked.includes(f)), `nested documents read: ${tracked.length}`);
   const bad = [];
   for (const f of tracked) {
     read(f)
