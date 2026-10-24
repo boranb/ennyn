@@ -10,13 +10,14 @@ import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { relative, resolve, sep } from "node:path";
 import { loadConfig, ConfigError } from "../core/config.mjs";
-import { git, headCommit, hookIndexFile, indexNames, repoPath, stagedAddedLines, stagedNames, stagedVersions, unpushedCount } from "../core/git.mjs";
+import { READ_BUDGET, git, headBlob, headCommit, hookIndexFile, indexNames, mergeHeads, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
 import { shown, t, tShown } from "../core/i18n.mjs";
-import { matchAny } from "../core/glob.mjs";
-import { checkCommitShape, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
+import { globToRegExp, matchAny } from "../core/glob.mjs";
+import { checkCommitShape, nameShown, secretErrors, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
 import { ciCallees, ciMessages } from "../checks/ci.mjs";
 import { advisoriesOf, depsMessages, dirOf, lockEntries, lockPath, lockText, npmrcFindings, npmrcPath, reasonText, registryOf } from "../checks/deps.mjs";
 import { readIfThere } from "../core/files.mjs";
+import { SecretScanner, masked, secretsOff } from "../checks/secrets.mjs";
 import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
 import { reworkRate } from "../metrics/szz.mjs";
 import { bypassUses } from "../metrics/bypass.mjs";
@@ -138,6 +139,172 @@ function foldTarget(cwd, message, cleanup, comment, cut) {
     missed: null,
     subject,
   };
+}
+
+/**
+ * security.secrets.except as a config file holds it: the list, [] when unset, null when the file does not parse
+ * or holds no list of globs that compile there.
+ * @param {Buffer} bytes
+ * @returns {string[] | null}
+ */
+function exceptIn(bytes) {
+  try {
+    const list = JSON.parse(bytes.toString("utf8").replace(/^\uFEFF/, ""))?.security?.secrets?.except;
+    if (list === undefined) return [];
+    if (!Array.isArray(list) || !list.every((g) => typeof g === "string" && g !== "")) return null;
+    for (const g of list) globToRegExp(g);
+    return list;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The except list the commit's own config holds, when the config is tracked: one written in the work tree and
+ * not staged does not loosen the scan, and a config the commit deletes means the defaults. `before`: HEAD's list
+ * (null with none); a name is exempt only where both lists name it. `said`: what to tell (the work tree's list
+ * is not the commit's; the commit changes the list so that it lets staged paths through; the commit's config
+ * does not parse, or is deleted).
+ * @param {string} cwd @param {any} cfg @param {string[]} staged @param {NodeJS.ProcessEnv} env
+ * @returns {{ except: string[], before: string[] | null, said: string[] }}
+ */
+function committedExcept(cwd, cfg, staged, env) {
+  const work = cfg.security.secrets.except;
+  const rel = cfg.configPath ? relative(cwd, cfg.configPath).split(sep).join("/") : "";
+  if (!rel || rel.startsWith("../")) return { except: work, before: null, said: [] };
+  const lang = cfg.language;
+  const blob = stagedBlobs(cwd, [rel], { env }).blobs.get(rel);
+  const head = headBlob(cwd, rel);
+  const before = head ? exceptIn(head) : null;
+  // Not in the index: the work tree's config is the only one, unless HEAD holds one the commit deletes.
+  if (!blob) return head ? { except: [], before, said: [t("cli.secretsConfigDeleted", { path: rel }, lang)] } : { except: work, before: null, said: [] };
+  const own = exceptIn(blob);
+  if (own === null) return { except: work, before, said: [t("cli.secretsConfigUnread", { path: rel }, lang)] };
+  const same = (/** @type {string[]} */ a, /** @type {string[]} */ b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+  const said = same(own, work) ? [] : [t("cli.secretsExceptUnstaged", { path: rel }, lang)];
+  if (before !== null && !same(own, before)) {
+    const through = staged.filter((p) => matchAny(p, own) && !matchAny(p, before));
+    if (through.length) said.push(t("cli.secretsExceptWidened", { n: through.length, paths: namesShown(through) }, lang));
+  }
+  return { except: own, before, said };
+}
+
+/** Up to three names as a message shows them: each quoted, a control character escaped, a secret cut. @param {string[]} list */
+const namesShown = (list) => list.slice(0, 3).map(nameShown).join(", ");
+
+/**
+ * security.secrets for one commit. except as the commit's own config holds it (committedExcept); the names the
+ * commit adds; the lines it adds, streamed through SecretScanner, smallest files first while their new sizes fit
+ * READ_BUDGET, so a commit of large files costs a bounded time and memory (the scan keeps a window, not the lines), apart
+ * from review.forbidden's own read; a file whose added lines look like part of a key read whole for the key
+ * around them; in a merge, which hits the other side brings. What it cannot read is said by name, with why; run
+ * by hand (`hook` false) that fails instead. `namesUnread` is said after the CI check, so a CI file's name gets
+ * that check's words first.
+ * @param {string} cwd @param {any} cfg @param {string[]} staged @param {string[]} notUtf8 @param {boolean} hook
+ * @returns {Promise<{ errors: string[], said: string[], except: string[], namesUnread: string | null }>}
+ */
+async function secretScan(cwd, cfg, staged, notUtf8, hook) {
+  const lang = cfg.language;
+  /** @type {string[]} */
+  const said = [];
+  const say = (/** @type {string} */ key, /** @type {Record<string, string | number>} */ vars) => {
+    const text = t(key, vars, lang);
+    if (!hook) throw new Error(text);
+    said.push(text);
+  };
+  const reason = (/** @type {unknown} */ e) => String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message).trim().split("\n")[0];
+  /** @type {string[]} */
+  let except = cfg.security.secrets.except;
+  /** @type {string[] | null} */
+  let before = null;
+  const done = (/** @type {string[]} */ errors, /** @type {string | null} */ namesUnread = null) => ({ errors, said, except, namesUnread });
+  try {
+    // Outside a repository nothing is staged.
+    if (repoPath("--git-dir", { cwd }) === null) return done([]);
+    const own = committedExcept(cwd, cfg, staged, process.env);
+    ({ except, before } = own);
+    said.push(...own.said);
+  } catch (e) {
+    if (!hook) throw e;
+    said.push(t("cli.secretsConfigUnmeasured", { error: reason(e) }, lang));
+  }
+  if (secretsOff(except)) return done([]);
+  let changes;
+  try {
+    changes = stagedChanges(cwd, { env: process.env });
+  } catch (e) {
+    if (!hook) throw e;
+    said.push(t("cli.secretsUnmeasured", { error: reason(e) }, lang));
+    return done([]);
+  }
+  // The names the commit adds; one is exempt only where the list HEAD holds names it too.
+  const names = [...changes].filter(([p, c]) => c.status === "A" && !(matchAny(p, except) && (before === null || matchAny(p, before)))).map(([p]) => p);
+  // Smallest first: a large file cannot crowd out the small one beside it. The lines a file adds are at most its new size.
+  const kept = [...changes].filter(([, c]) => c.status !== "D");
+  const read = kept.filter(([p]) => !matchAny(p, except)).sort((a, b) => a[1].newSize - b[1].newSize || (a[0] < b[0] ? -1 : 1));
+  /** @type {Set<string>} */
+  const planned = new Set();
+  /** @type {string[]} */
+  const past = [];
+  let left = READ_BUDGET;
+  for (const [p, c] of read) {
+    if (c.newSize <= left) planned.add(p), (left -= c.newSize);
+    else past.push(p);
+  }
+  if (past.length) say("cli.secretsPastBudget", { n: past.length, paths: namesShown(past), mb: READ_BUDGET / 1024 / 1024 });
+  // A file the commit adds is read whole from cat-file (git's diff would hold each of its lines in memory to
+  // compare with nothing); the others from the diff: with no pathspec when they are all there is and all are read,
+  // which names that are not UTF-8 reach too, else by pathspec.
+  const added = [...planned].filter((p) => changes.get(p)?.status === "A" && changes.get(p)?.oid);
+  const addedSet = new Set(added);
+  const changed = [...planned].filter((p) => !addedSet.has(p));
+  const unasked = new Set(notUtf8);
+  const whole = added.length === 0 && planned.size === kept.length;
+  const unnamed = whole ? [] : changed.filter((p) => unasked.has(p));
+  const namesUnread = unnamed.length ? t("cli.secretsNamesUnread", { n: unnamed.length, paths: namesShown(unnamed) }, lang) : null;
+  const scan = new SecretScanner();
+  /** @type {string | null} */
+  let current = null;
+  /** @type {Set<string>} */
+  const shownPaths = new Set();
+  const onLine = (/** @type {string} */ path, /** @type {number} */ n, /** @type {Buffer} */ bytes) => {
+    if (!planned.has(path)) return;
+    if (path !== current) scan.file((current = path));
+    scan.line(n, bytes);
+  };
+  try {
+    await streamStagedBlobs(cwd, added.sort().map((p) => ({ path: p, oid: /** @type {any} */ (changes.get(p)).oid })), { env: process.env, onLine });
+    const asked = changed.filter((p) => !unasked.has(p));
+    for (let at = 0; at < (whole ? 1 : asked.length); at += 500) {
+      const r = await streamStagedDiff(cwd, whole ? null : asked.slice(at, at + 500), { env: process.env, onLine });
+      for (const p of r.shown) shownPaths.add(p);
+    }
+    scan.close();
+    // A path asked that no header named (a pathspec that matched nothing) was not read.
+    const unseen = changed.filter((p) => !shownPaths.has(p) && !unasked.has(p));
+    if (unseen.length) say("cli.secretsUnseen", { n: unseen.length, paths: namesShown(unseen) });
+    // A key's header or material without the rest in the added lines: the file read whole for the key around them.
+    const near = [...scan.near.keys()];
+    if (near.length) {
+      const whole = stagedBlobs(cwd, near, { env: process.env });
+      for (const [p, blob] of whole.blobs) scan.around(p, blob);
+      if (whole.unread.size) say("cli.secretsKeyUnread", { n: whole.unread.size, paths: namesShown([...whole.unread.keys()]), reason: String([...whole.unread.values()][0]) });
+    }
+    // In a merge, the hits the other side's commits bring (they may have run no hook), for the message only.
+    const parents = scan.hits.length ? mergeHeads(cwd) : [];
+    for (const path of [...new Set(scan.hits.map((h) => h.path))].slice(0, 20)) {
+      for (const parent of parents) {
+        /** @type {Set<number>} */
+        const theirs = new Set();
+        await streamStagedDiff(cwd, [path], { env: process.env, against: [parent], onLine: (_, n) => void theirs.add(n) });
+        for (const h of scan.hits) if (h.path === path && !theirs.has(h.line)) h.from ??= parent;
+      }
+    }
+  } catch (e) {
+    if (!hook) throw e;
+    said.push(t("cli.secretsUnmeasured", { error: reason(e) }, lang));
+  }
+  return done(secretErrors({ config: cfg, hits: scan.hits, names, secretsExcept: except }), namesUnread);
 }
 
 /** @param {string} s */
@@ -418,7 +585,7 @@ const COMMANDS = {
     // A name that is not UTF-8 may read the same as another staged name: neither is asked for, both are said.
     const unnamed = [...new Set(ruled.filter((p) => notUtf8.includes(p) && cfg.review.forbidden.some((/** @type {{ paths: string[], except?: string[] }} */ r) => matchAny(p, r.paths) && !matchAny(p, r.except ?? []))))];
     if (unnamed.length) {
-      const said = t("cli.forbiddenNamesUnread", { n: unnamed.length, paths: unnamed.slice(0, 3).map((p) => JSON.stringify(p)).join(", ") }, cfg.language);
+      const said = t("cli.forbiddenNamesUnread", { n: unnamed.length, paths: namesShown(unnamed) }, cfg.language);
       if (!opts.hook) throw new Error(said);
       err(said);
     }
@@ -432,6 +599,11 @@ const COMMANDS = {
         err(t("cli.forbiddenUnmeasured", { error: String(error.stderr || error.message).trim().split("\n")[0] }, cfg.language));
       }
     }
+    // security.secrets: every file and name the commit adds, except as the commit's own config holds it, read
+    // apart from review.forbidden and before the message: what the files bring stands when the message check fails.
+    const secrets = await secretScan(cwd, cfg, staged, notUtf8, Boolean(opts.hook));
+    for (const said of secrets.said) err(said);
+    const namesUnread = secrets.namesUnread;
     // CI files (security.ci): the uses, triggers and permissions the commit brings, against HEAD's version. The
     // files under the directories `security.ci.paths` names are read with the staged ones, and every local callee
     // their `uses` name, by path: a caller's change can reach a reusable workflow or an action it calls. Reading
@@ -444,7 +616,7 @@ const COMMANDS = {
     let ci = { errors: [], warnings: [] };
     if (staged.some(isCi)) {
       try {
-        const shownNames = (/** @type {string[]} */ list) => list.slice(0, 3).map((p) => shown(p, { name: true }).text).join(", ");
+        const shownNames = (/** @type {string[]} */ list) => list.slice(0, 3).map((p) => shown(masked(p), { name: true }).text).join(", ");
         // Where callers live: each glob's directory before its first wildcard; an action-file glob ("**/action.yml")
         // names callees, which are read by path; any other glob with no directory means the whole index.
         const dirs = [...new Set(ciRule.paths.flatMap((/** @type {string} */ g) => {
@@ -537,12 +709,16 @@ const COMMANDS = {
       }
       if (versions) deps = await depsMessages(versions, depsRule, cfg.language);
     }
+    if (namesUnread) {
+      if (!opts.hook) throw new Error(namesUnread);
+      err(namesUnread);
+    }
     let res;
     try {
       const { cleanup, comment, cut } = hookCommitMode({ cwd, message, env: process.env });
       const fold = foldTarget(cwd, message, cleanup, comment, cut);
       if (fold.missed) err(t("cli.foldNotFound", { subject: fold.subject, where: t(`cli.foldWhere.${fold.missed}`, {}, cfg.language) }, cfg.language));
-      res = checkCommitShape(message, { config: cfg, stagedPaths: staged, cleanup, cut, comment, foldTarget: fold.target, addedLines, exempt, wideUnread });
+      res = checkCommitShape(message, { config: cfg, stagedPaths: staged, cleanup, cut, comment, foldTarget: fold.target, addedLines, secretsExcept: secrets.except, exempt, wideUnread });
     } catch (e) {
       // A git that fails, or a pattern in the config that does not compile, is no reason to lock commits either:
       // the commit goes through, and the message says it was not checked.
@@ -550,13 +726,13 @@ const COMMANDS = {
       const error = /** @type {Error & { stderr?: unknown }} */ (e);
       if (typeof error.stderr === "string") err(t("cli.hookGitFailed", { error: error.stderr.trim().split("\n")[0] }, cfg.language));
       else err(t("cli.hookConfigBroken", { error: error.message }, "en"));
-      // What the files bring was read apart from the message: it still stands.
-      for (const x of [...ci.errors, ...ci.warnings, ...deps.errors, ...deps.warnings]) err(x);
-      return ci.errors.length || deps.errors.length ? 1 : 0;
+      // What the files bring was read apart from the message: it still stands, the secrets they hold too.
+      for (const x of [...ci.errors, ...ci.warnings, ...deps.errors, ...deps.warnings, ...secrets.errors]) err(x);
+      return ci.errors.length || deps.errors.length || secrets.errors.length ? 1 : 0;
     }
-    for (const e of [...ci.errors, ...deps.errors, ...res.errors]) err(e);
+    for (const e of [...ci.errors, ...deps.errors, ...secrets.errors, ...res.errors]) err(e);
     for (const w of [...(res.warnings ?? []), ...ci.warnings, ...deps.warnings]) err(w);
-    return res.ok && !ci.errors.length && !deps.errors.length ? 0 : 1;
+    return res.ok && !ci.errors.length && !deps.errors.length && !secrets.errors.length ? 0 : 1;
   },
 
   async deps(args) {

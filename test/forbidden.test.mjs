@@ -363,7 +363,7 @@ test("review.forbidden through the hook: an index from outside the git dir, or a
   spawnSync("git", ["add", "src/a.js"], { cwd: dir, env });
   const foreign = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "alt"], { cwd: dir, env, encoding: "utf8" });
   assert.match(foreign.stderr, /Staged paths could not be read \(the hook was given an index outside this repository's git dir/);
-  assert.match(foreign.stderr, /review\.forbidden( and \S+)* checks ran without them/);
+  assert.match(foreign.stderr, /review\.forbidden(,? (?:and )?\S+)* checks ran without them/);
   // The config named by ENNYN_CONFIG is not there: the defaults would check nothing of this project.
   stage({ "src/a.js": "2\nconsole.log(2);\n" });
   const named = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "named"], { cwd: dir, env: { ...process.env, ENNYN_CONFIG: join(dir, "nope.json") }, encoding: "utf8" });
@@ -461,6 +461,7 @@ test("doctor: review.forbidden with no hook warns; a glob in paths or except tha
   const res = await checkSetup({ cwd: dir, env: {} });
   const keys = res.items.map((i) => [i.level, i.key]);
   assert.ok(keys.some(([l, k]) => l === "warn" && k === "doctor.hookMissing"), JSON.stringify(keys));
+  assert.deepEqual(res.items.find((i) => i.key === "doctor.hookMissing")?.vars.rules, ["review.forbidden", "security.secrets"]);
   const dead = res.items.find((i) => i.key === "doctor.forbiddenUnmatched");
   assert.deepEqual(dead?.vars, { rule: 1, globs: ["lib/**", "src/gone.js"] });
   installHook({ cwd: dir, cliPath: CLI });
@@ -516,7 +517,9 @@ test("round two: only the files a rule names are diffed, so a big file elsewhere
   const r = commit("with a big file");
   assert.notEqual(r.status, 0, r.stderr);
   assert.match(r.stderr, /src\/a\.js:2 adds "console\.log"/);
-  assert.doesNotMatch(r.stderr, /not checked/);
+  assert.doesNotMatch(r.stderr, /review\.forbidden was not checked/);
+  // The secret scan reads every staged file: the big one alone is said, by name.
+  assert.match(r.stderr, /security\.secrets was not checked in 1 staged path\(s\) \("assets\/blob\.bin"\): the lines they add are past the 64 MB the hook reads of a commit/);
 });
 
 test("round two: a glob's ** reaches names that hold a line break or a line separator", async () => {

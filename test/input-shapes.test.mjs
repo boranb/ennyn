@@ -18,7 +18,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -29,7 +29,9 @@ import { loadConfig } from "../core/config.mjs";
 import { decodeWide, wideEncoding, wideLines } from "../core/encoding.mjs";
 import { git, gitBytes, gitError, stagedAddedLines, stagedPaths } from "../core/git.mjs";
 import { matchAny } from "../core/glob.mjs";
+import { shown } from "../core/i18n.mjs";
 import { indexMatches } from "../setup/scan.mjs";
+import { TOKENS, body, pem } from "./secret-shapes.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
 const run = promisify(execFile);
@@ -80,9 +82,10 @@ function utf32(s, enc, bom) {
  * `base`: files committed first, past the hook, and kept. `env`: more environment for the commit. `gap`: a
  * known silent pass.
  * `strict`: refused, and saying what was not checked is not enough (the shape it holds beside the path is
- * no reason to stop checking the rest).
+ * no reason to stop checking the rest). `unsaid`: a text the hook must not print (a check that has nothing to
+ * say about the cell, while another check says it).
  * @typedef {{ name: string | Buffer, data?: string | Buffer | (() => Buffer), mode?: "100644" | "120000" | "160000", worktree?: boolean }} CellFile
- * @typedef {{ id: string, files: CellFile[], want: "refused" | "landed", names?: string, warns?: string, before?: CellFile[], base?: CellFile[], side?: CellFile[], via?: "all" | "path", staged?: string | Buffer, replace?: "commit" | "blob", env?: Record<string, string>, gap?: boolean, strict?: boolean }} Cell
+ * @typedef {{ id: string, files: CellFile[], want: "refused" | "landed", names?: string, warns?: string, before?: CellFile[], base?: CellFile[], side?: CellFile[], via?: "all" | "path", staged?: string | Buffer, replace?: "commit" | "blob", env?: Record<string, string>, gap?: boolean, strict?: boolean, unsaid?: string }} Cell
  */
 
 /** @type {Cell[]} */
@@ -120,6 +123,25 @@ for (const [shape, make, ext] of CONTENT) {
 for (const [shape, make, ext] of CONTENT.filter(([s]) => s !== "latin1")) refused(`${shape}-cjk`, [{ name: `src/${shape}-cjk/f.${ext}`, data: make(`bir ${CJK} daha`) }]);
 refused("latin1-cjk", [{ name: "src/latin1-cjk/f.txt", data: Buffer.from(`bir ${CJK} daha\n`, "latin1") }]);
 refused("cp1254-cjk", [{ name: "src/cp1254-cjk/f.txt", data: Buffer.from([0x62, 0x69, 0x72, 0x20, 0xe7, 0xf6, 0x70, 0x20, 0xfe, 0x0a]) }]);
+// A secret (security.secrets, on for every path), in every encoding a file may be stored in, where no forbidden
+// rule reads: every shape the scan reads is ASCII, so it is found in each, and none is said.
+const SECRET = `t = ${TOKENS.npm}`;
+for (const [shape, make, ext] of CONTENT) refused(`${shape}-secret`, [{ name: `lib/${shape}-secret/f.${ext}`, data: make(SECRET) }], undefined, { strict: true });
+// Past the budget, the scan asks by pathspec for the files a commit changes: a name that is not UTF-8 cannot be
+// asked, and is said; so is the big file. (A file the commit adds is read by its object, whatever its name.)
+refused("secret-name-not-utf8-asked", [{ name: "lib/big-s/blob.txt", data: () => Buffer.alloc(65 * 1024 * 1024, 0x61) }, { name: Buffer.from([...Buffer.from("lib/bad-s2/"), 0xff, ...Buffer.from(".js")]), data: `a\n${SECRET}\n` }], "lib/bad-s2/", { base: [{ name: Buffer.from([...Buffer.from("lib/bad-s2/"), 0xff, ...Buffer.from(".js")]), data: "a\n" }], warns: "whose names are not UTF-8" });
+landed("secret-past-budget", [{ name: "lib/past/big.txt", data: () => Buffer.alloc(65 * 1024 * 1024, 0x61) }], { warns: "security.secrets was not checked in 1 staged path" });
+// A name that is not UTF-8: the diff with no pathspec reads it, so it is refused, not said.
+refused("secret-name-not-utf8", [{ name: Buffer.from([...Buffer.from("lib/bad-s/"), 0xff, ...Buffer.from(".js")]), data: `${SECRET}\n` }], "lib/bad-s/", { strict: true });
+refused("secret-merge-side", [], "lib/merge-s/a.js", { side: [{ name: "lib/merge-s/a.js", data: `${SECRET}\n` }], strict: true });
+// A key replaced under the header the commit keeps: only its body lines are added, and the file is read whole.
+const KEY = pem("RSA PRIVATE KEY");
+refused("key-body-only", [{ name: "lib/key/k.pem", data: [KEY.begin, ...body(4, 61), KEY.end, ""].join("\n") }], "lib/key/k.pem:2", { base: [{ name: "lib/key/k.pem", data: [KEY.begin, ...body(4, 71), KEY.end, ""].join("\n") }], strict: true });
+// A token beside NULs in a binary, as a compiler lays out its strings.
+refused("secret-c-strings", [{ name: "lib/tool/a.out", data: Buffer.concat([Buffer.from("\x7fELF\0\0usage"), Buffer.from([0]), Buffer.from(TOKENS.github), Buffer.from([0]), Buffer.from("version\0")]) }], undefined, { strict: true });
+// A commit that deletes a file past what the hook reads: it adds nothing, so nothing is said.
+landed("delete-huge", [], { before: [{ name: "lib/del/big.txt", data: () => Buffer.alloc(70 * 1024 * 1024, 0x61) }], unsaid: "not checked" });
+
 // Decomposed letters spell the same text, also mixed with composed ones in UTF-16; a match as written stays
 // one where composing the line changes it (g and a combining breve, p and a combining acute).
 refused("nfd-content", [{ name: "src/nfd-content/f.txt", data: `bir ${CJK.normalize("NFD")}\n` }]);
@@ -146,12 +168,14 @@ const NAMES = ["sp ace.js", "tab\there.js", 'q"uote.js', "back\\slash.js", "new\
 NAMES.forEach((n, i) => refused(`name-${i}`, [{ name: `src/n${i}/${n}`, data: `${LOG}\n` }]));
 // Names git may not hand back as it was given them.
 refused("name-nfd", [{ name: "src/nfd/u\u0308.js", data: `${LOG}\n` }]);
-refused("name-not-utf8", [{ name: Buffer.from([...Buffer.from("src/bad/"), 0xff, 0xfe, ...Buffer.from(".js")]), data: `${LOG}\n` }], "src/bad/");
+// The secret scan says the same names: each cell names the check it wants said, so one cannot hide the other.
+const FORBIDDEN_SAID = "review.forbidden was not checked";
+refused("name-not-utf8", [{ name: Buffer.from([...Buffer.from("src/bad/"), 0xff, 0xfe, ...Buffer.from(".js")]), data: `${LOG}\n` }], "src/bad/", { warns: FORBIDDEN_SAID });
 refused("glob-nfc-name-nfd", [{ name: "do\u0308k/a.js", data: `${LOG}\n` }], "dök/a.js".normalize("NFD"));
 // Two names that read alike: one not UTF-8 holding the text, one spelled with U+FFFD itself.
-refused("name-collision", [{ name: Buffer.from([...Buffer.from("src/bad2/"), 0xff, ...Buffer.from(".js")]), data: `${LOG}\n` }, { name: "src/bad2/\ufffd.js", data: "a\n" }], "src/bad2/");
+refused("name-collision", [{ name: Buffer.from([...Buffer.from("src/bad2/"), 0xff, ...Buffer.from(".js")]), data: `${LOG}\n` }, { name: "src/bad2/\ufffd.js", data: "a\n" }], "src/bad2/", { warns: FORBIDDEN_SAID });
 // A name that is not UTF-8 where every rule that names it excepts it: nothing to say.
-landed("name-not-utf8-excepted", [{ name: Buffer.from([...Buffer.from("exc/ok/"), 0xff, ...Buffer.from(".js")]), data: `${LOG}\n` }]);
+landed("name-not-utf8-excepted", [{ name: Buffer.from([...Buffer.from("exc/ok/"), 0xff, ...Buffer.from(".js")]), data: `${LOG}\n` }], { unsaid: "review.forbidden" });
 // A name that is not UTF-8 beside a file that holds the text: the one is said, the other still refused.
 refused("name-not-utf8-beside", [{ name: Buffer.from([...Buffer.from("src/bad3/"), 0xff, ...Buffer.from(".js")]), data: "a\n" }, { name: "src/bad3/b.js", data: `${LOG}\n` }], "src/bad3/b.js:1", { strict: true });
 // A backslash is a character of a name outside Windows: this file is in src/, not in src/allowed/.
@@ -172,7 +196,7 @@ refused("filter-adds", [{ name: "src/filter/a.flt", data: "a\nLOG\n", worktree: 
 landed("filter-removes", [{ name: "src/filter2/a.rmf", data: `a\n${LOG}\n`, worktree: true }]);
 refused("wte-utf16", [{ name: "src/wte/a.w16", data: utf16(`a\n${LOG}\n`, "utf16le", true), worktree: true }]);
 // Past git()'s 64 MB buffer, inside a rule's paths.
-refused("huge", [{ name: "src/huge/blob.txt", data: () => Buffer.concat([Buffer.alloc(65 * 1024 * 1024, 0x61), Buffer.from(`\n${LOG}\n`)]) }]);
+refused("huge", [{ name: "src/huge/blob.txt", data: () => Buffer.concat([Buffer.alloc(65 * 1024 * 1024, 0x61), Buffer.from(`\n${LOG}\n`)]) }], undefined, { warns: FORBIDDEN_SAID });
 // A move into a rule's paths: the new name is added in full, whatever diff.renames says.
 refused("moved-in", [{ name: "src/moved/f.txt", data: `${LOG}\n` }], "src/moved/f.txt", { before: [{ name: "lib/moved.txt", data: `${LOG}\n` }] });
 // Merges: the other side's lines count (its commits may have run no hook), and so does the resolution's own.
@@ -245,6 +269,10 @@ const big = (edited) => {
   if (edited) b.write("changed", 1024 * 1024 + 8);
   return b;
 };
+// A file past git()'s buffer where no forbidden rule reads stops neither check of the other files; it is said.
+refused("huge-outside", [{ name: "lib/huge-outside/blob.txt", data: () => Buffer.concat([Buffer.alloc(65 * 1024 * 1024, 0x61), Buffer.from("\n")]) }, { name: "src/huge-outside/b.js", data: `${LOG}\n` }], "src/huge-outside/b.js:1", { strict: true });
+// A UTF-16 file too large to decode still has its secret found: git's lines with the NULs dropped are ASCII.
+refused("wide-large-secret", [{ name: "lib/wide-large-s/f.txt", data: () => utf16(`${"ab".repeat(4 * 1024 * 1024 + 1)}\n${SECRET}\n`, "utf16le", true) }], undefined, { strict: true });
 // A UTF-16 file too large to decode, with nothing to refuse in its own lines: said, not passed.
 landed("wide-large", [{ name: "src/wide-large/f.txt", data: () => utf16("ab".repeat(4 * 1024 * 1024 + 1), "utf16le", true) }], { warns: "as UTF-16 or UTF-32 text: past 16 MB" });
 // Past 16 MB, a UTF-16 file one line of which is edited: a text only its decoding finds ("\u4e0a" is 0A 4E,
@@ -268,19 +296,22 @@ refused("big-binary-small-diff", [{ name: "src/big/big.bin", data: () => big(tru
 /**
  * The verdict on one cell's commit: null when the hook did what the cell wants, else the problem.
  * `said`: the commit went through and the hook said what it did not check.
- * @param {Pick<Cell, "want" | "names" | "warns" | "strict">} cell @param {CellRun} r
+ * @param {Pick<Cell, "want" | "names" | "warns" | "strict" | "unsaid">} cell @param {CellRun} r
  * @returns {{ problem: string | null, said: boolean }}
  */
 export function judge(cell, r) {
   const said = r.status === 0 && SAYS.test(r.stderr);
   if (r.status === 0 && !r.moved) return { problem: "exit 0, but no commit was made", said };
   if (r.status !== 0 && r.moved) return { problem: "a commit was made, but the hook failed", said };
+  if (cell.unsaid && r.stderr.includes(cell.unsaid)) return { problem: `said ${cell.unsaid}, which has nothing to say here`, said };
   if (cell.want === "landed" && r.status !== 0) return { problem: `refused with nothing to refuse: ${r.stderr.trim().split("\n")[0]}`, said };
   if (cell.want === "landed") return { problem: cell.warns && !r.stderr.includes(cell.warns) ? `landed without the warning that names ${cell.warns}` : null, said };
   if (r.status === 0 && said && cell.strict) return { problem: "said it did not check, where it could and had to refuse", said };
   if (r.status === 0 && said && cell.warns && !r.stderr.includes(cell.warns)) return { problem: `said, but not ${cell.warns}`, said };
   if (r.status === 0) return { problem: said ? null : "a silent pass: committed, and nothing said it was not checked", said };
-  if (!r.stderr.includes(String(cell.names))) return { problem: `refused, but not for the path: ${JSON.stringify(r.stderr.trim().slice(0, 200))}`, said };
+  // A name with a control character, a quote or a backslash is printed quoted and escaped, as doctor prints it.
+  const names = String(cell.names);
+  if (!r.stderr.includes(names) && !r.stderr.includes(shown(names, { name: true }).text)) return { problem: `refused, but not for the path: ${JSON.stringify(r.stderr.trim().slice(0, 200))}`, said };
   return { problem: null, said };
 }
 
@@ -446,8 +477,10 @@ test("input shapes: every staged content and name shape is refused, landed, or s
     }),
   );
   // Each said cell is a shape the hook cannot read; the list is what is left of the class.
-  const unread = ["huge", "name-not-utf8", "name-collision", "latin1-clean", "latin1-cjk", "cp1254-cjk", "binary-8bit", "via-all-latin1", "via-path-latin1", "nul-and-8bit", "binary-counted", "wide-large", "utf16-then-latin1", "mark-latin1", "wav-latin1", "wide-past-limit"];
-  assert.deepEqual({ problems, said: said.sort(), gaps }, { problems: [], said: unread.sort(), gaps: ["utf16-no-mark-han"] });
+  const unread = ["huge", "name-not-utf8", "name-collision", "latin1-clean", "latin1-cjk", "cp1254-cjk", "binary-8bit", "via-all-latin1", "via-path-latin1", "nul-and-8bit", "binary-counted", "wide-large", "utf16-then-latin1", "mark-latin1", "wav-latin1", "wide-past-limit", "secret-name-not-utf8-asked", "secret-past-budget"];
+  // The cells' files, some of 65 MB and more, are not left in the temporary directory.
+  for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
+  assert.deepEqual({ problems, said: said.sort(), gaps: gaps.sort() }, { problems: [], said: unread.sort(), gaps: ["utf16-no-mark-han"] });
 });
 
 test("input shapes control: the judge flags a silent pass, a refusal with nothing to refuse, a refusal for another reason, and a hook that lies about the commit", () => {
@@ -463,6 +496,7 @@ test("input shapes control: the judge flags a silent pass, a refusal with nothin
   assert.match(String(judge({ want: "landed", warns: "doc.md" }, { status: 0, stderr: "", moved: true }).problem), /without the warning/);
   assert.equal(judge({ want: "landed", warns: "doc.md" }, { status: 0, stderr: "a.js changed without doc.md", moved: true }).problem, null);
   assert.match(String(judge({ ...want, strict: true }, { status: 0, stderr: "ennyn: review.forbidden was not checked: x", moved: true }).problem), /had to refuse/);
+  assert.match(String(judge({ want: "landed", unsaid: "review.forbidden" }, { status: 0, stderr: "review.forbidden was not checked in 1", moved: true }).problem), /nothing to say/);
 });
 
 test("input shapes: a line holds a text as written or composed; an 8-bit line is said where a text has no one spelling, a NUL line is binary", () => {

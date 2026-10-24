@@ -109,7 +109,9 @@ test("doctor: declared commit types without a hook warn; with the hook installed
   const dir = repo();
   writeFileSync(join(dir, ".ennyn", "graph.json"), JSON.stringify({ nodes: [{ id: "a" }] }));
   const keys = async () => (await checkSetup({ cwd: dir, env: {} })).items.map((i) => `${i.level} ${i.key}`);
-  assert.ok((await keys()).includes("warn doctor.hookMissing"));
+  // The rules named, each one: security.secrets is on by default, so a warning alone would not show the types.
+  const rules = async () => (await checkSetup({ cwd: dir, env: {} })).items.find((i) => i.key === "doctor.hookMissing")?.vars.rules;
+  assert.deepEqual(await rules(), ["commitMsg.types", "security.secrets"]);
   installHook({ cwd: dir, cliPath: CLI });
   assert.ok((await keys()).includes("ok doctor.hookOk"));
   git(["config", "core.hooksPath", ".githooks"], { cwd: dir });
@@ -327,7 +329,8 @@ test("doctor audit: review.impactRequiredGlobs with no hook is a rule on paper t
   writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ review: { impactRequiredGlobs: ["src/**"] } }));
   writeFileSync(join(dir, ".ennyn", "graph.json"), JSON.stringify({ nodes: [{ id: "a" }] }));
   const keys = async () => (await checkSetup({ cwd: dir, env: {} })).items.map((i) => `${i.level} ${i.key}`);
-  assert.ok((await keys()).includes("warn doctor.hookMissing"));
+  const rules = async () => (await checkSetup({ cwd: dir, env: {} })).items.find((i) => i.key === "doctor.hookMissing")?.vars.rules;
+  assert.deepEqual(await rules(), ["review.impactRequiredGlobs", "security.secrets"]);
   installHook({ cwd: dir, cliPath: CLI });
   assert.ok((await keys()).includes("ok doctor.hookOk"));
 });
@@ -406,11 +409,14 @@ test("install-hook audit (review): for every hook state doctor and install-hook 
 test("doctor audit (review): every rule only the commit-msg hook checks warns without a hook, named in one line", async () => {
   const { checkSetup } = await import("../setup/doctor.mjs");
   const { t } = await import("../core/i18n.mjs");
-  for (const [config, named] of [
-    [{ commitMsg: { style: "terse" } }, /commitMsg\.style/],
-    [{ review: { cochange: [{ paths: ["src/**"], docs: ["README.md"] }] } }, /review\.cochange/],
-    [{ review: { impactRequiredGlobs: ["src/**"], forbidden: [{ text: "debugger", paths: ["**"] }] } }, /review\.forbidden, review\.impactRequiredGlobs/],
-  ]) {
+  // The secret scan off (except names every path), so each list holds only the rule the config sets.
+  const off = { secrets: { except: ["**/*"] } };
+  for (const [config, named, rules] of /** @type {[Record<string, unknown>, RegExp, string[]][]} */ ([
+    [{ commitMsg: { style: "terse" }, security: off }, /commitMsg\.style/, ["commitMsg.style"]],
+    [{ review: { cochange: [{ paths: ["src/**"], docs: ["README.md"] }] }, security: off }, /review\.cochange/, ["review.cochange"]],
+    [{ review: { impactRequiredGlobs: ["src/**"], forbidden: [{ text: "debugger", paths: ["**"] }] }, security: off }, /review\.forbidden, review\.impactRequiredGlobs/, ["review.forbidden", "review.impactRequiredGlobs"]],
+    [{}, /security\.secrets/, ["security.secrets"]],
+  ])) {
     const dir = mkdtempSync(join(tmpdir(), "en-hook-paper-"));
     git(["init", "-q", "-b", "main"], { cwd: dir });
     mkdirSync(join(dir, ".ennyn"));
@@ -418,6 +424,7 @@ test("doctor audit (review): every rule only the commit-msg hook checks warns wi
     writeFileSync(join(dir, ".ennyn", "graph.json"), JSON.stringify({ nodes: [{ id: "a" }] }));
     const item = (await checkSetup({ cwd: dir, env: {} })).items.find((i) => i.key === "doctor.hookMissing");
     assert.ok(item && item.level === "warn", JSON.stringify(config));
+    assert.deepEqual(item.vars.rules, rules, JSON.stringify(config));
     assert.match(t(item.key, item.vars, "en"), named);
     assert.match(t(item.key, item.vars, "tr"), named);
   }

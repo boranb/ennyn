@@ -11,7 +11,8 @@ import { isUtf8 } from "node:buffer";
 import { matchAny } from "../core/glob.mjs";
 import { markLength, wideForms } from "../core/encoding.mjs";
 import { gitMaybe, parseTrailers } from "../core/git.mjs";
-import { t } from "../core/i18n.mjs";
+import { shown, t } from "../core/i18n.mjs";
+import { masked, secretHits, secretsOff, textSecrets } from "./secrets.mjs";
 
 /** @param {string} s */
 const len = (s) => [...s].length;
@@ -195,17 +196,20 @@ export function skippedSubject(subject, config) {
 }
 
 /**
- * The message's shape, and the lines it adds that review.forbidden bans. The second is about content, not the
- * message: it holds for every commit the hook sees, whatever its subject or an empty message, and the bypass
- * marker, which loosens the shape, does not loosen it.
+ * The message's shape, and the lines it adds that review.forbidden bans or that hold a secret (security.secrets).
+ * Those two are about content, not the message: they hold for every commit the hook sees, whatever its subject
+ * or an empty message, and the bypass marker, which loosens the shape, does not loosen them.
  * @param {string} message raw commit message (as given to a commit-msg hook)
- * @param {Parameters<typeof shapeOf>[1] & { addedLines?: Map<string, AddedLine[]>, exempt?: string[], wideUnread?: Map<string, string> }} opts
+ * @param {Parameters<typeof shapeOf>[1] & { addedLines?: Map<string, AddedLine[]>, secretLines?: Map<string, AddedLine[]>, keyFiles?: Map<string, Buffer>, secretsExcept?: string[], exempt?: string[], wideUnread?: Map<string, string> }} opts
  *   `addedLines`: the lines the commit adds, per staged path (stagedAddedLines); `exempt`: paths no rule reads
- *   (the config, which holds every rule's text)
+ *   (the config, which holds every rule's text); `secretLines`: the lines the secret scan reads (the config's
+ *   too: a secret there is still one), and by its keys the names the commit adds; `keyFiles`: staged files
+ *   read whole for a private key around their added lines (keyCandidates); `secretsExcept`: the except list
+ *   as the commit's own config holds it (default: the config's). The message git will store is scanned too.
  * @returns {{ ok: boolean, errors: string[], warnings?: string[], skipped?: string }}
  */
 export function checkCommitShape(message, opts) {
-  const res = shapeOf(message, opts);
+  const res = withSecrets(message, shapeOf(message, opts), opts);
   // Also for a message the shape check reads as empty: with --allow-empty-message git commits it anyway.
   if (!opts.addedLines) return res;
   const rules = opts.config.review.forbidden;
@@ -217,7 +221,7 @@ export function checkCommitShape(message, opts) {
   // are named; binary files are counted, so a text file is not lost among them.
   const unsure = rules.flatMap((/** @type {ForbiddenRule} */ rule, /** @type {number} */ i) => {
     const of = (/** @type {string} */ kind) => unread.filter((u) => u.rule === i && u.kind === kind).map((u) => u.path);
-    const where = (/** @type {string[]} */ paths) => paths.slice(0, 3).join(", ") + (paths.length > 3 ? t("shape.cochangeMore", { n: paths.length - 3 }, lang) : "");
+    const where = (/** @type {string[]} */ paths) => paths.slice(0, 3).map(pathShown).join(", ") + (paths.length > 3 ? t("shape.cochangeMore", { n: paths.length - 3 }, lang) : "");
     const vars = { rule: i + 1, text: rule.text };
     const [text, binary, wide] = [of("text"), of("binary"), of("wide")];
     return [
@@ -228,6 +232,66 @@ export function checkCommitShape(message, opts) {
   });
   const out = unsure.length ? { ...res, warnings: [...(res.warnings ?? []), ...unsure] } : res;
   return banned.length ? { ...out, ok: false, errors: [...banned, ...res.errors] } : out;
+}
+
+/** A staged path as a line of a report shows it: any secret in it cut, a control character escaped. @param {string} path */
+const pathShown = (path) => shown(masked(path), { name: true }).text;
+
+/** A name as a message lists it: always quoted, a control character escaped, a secret cut. @param {string} path */
+export const nameShown = (path) => {
+  const s = shown(masked(path), { name: true });
+  return s.quoted ? s.text : JSON.stringify(s.text);
+};
+
+/**
+ * The result with one error for the secrets the commit adds (secretErrors, the message included).
+ * @param {string} message
+ * @param {{ ok: boolean, errors: string[], warnings?: string[], skipped?: string }} res
+ * @param {Parameters<typeof secretErrors>[0]} opts
+ */
+function withSecrets(message, res, opts) {
+  const errors = secretErrors({ ...opts, message });
+  return errors.length ? { ...res, ok: false, errors: [...errors, ...res.errors] } : res;
+}
+
+/**
+ * The message as the secret scan reads it: as given, a superset of what any cleanup stores (the hook cannot see
+ * `--cleanup=verbatim` on the command line), cut where git cuts it, at its scissors line; with the editor's
+ * status template, its file lines (a tab after the comment marker) are git's own list of names, read as names.
+ * @param {string} message @param {{ comment?: string, cut?: boolean }} how
+ */
+function scannedMessage(message, { comment = "#", cut = false }) {
+  const at = cut ? scissorsAt(message, comment) : -1;
+  const text = at === -1 ? message : message.slice(0, at);
+  return templateShown(text, comment) ? text.split("\n").map((l) => (l.startsWith(`${comment}\t`) ? "" : l)).join("\n") : text;
+}
+
+/**
+ * One error for the secrets the commit adds: in its files (`hits`, or found in `secretLines`), the names it adds
+ * (`names`, by default `secretLines`' paths) and, given `message`, the message (scannedMessage): the first three
+ * places, each with its kind and never the secret; in a merge, how many the other side brings. None when except
+ * holds a catch-all (secretsOff). Apart from the message's own check, so the hook can stand by what the files
+ * bring when reading how git cleans the message fails.
+ * @param {{ config: any, hits?: import("./secrets.mjs").SecretHit[], names?: string[], secretLines?: Map<string, AddedLine[]>, keyFiles?: Map<string, Buffer>, secretsExcept?: string[], message?: string, comment?: string, cut?: boolean }} opts
+ * @returns {string[]}
+ */
+export function secretErrors(opts) {
+  const { config } = opts;
+  const except = opts.secretsExcept ?? config.security.secrets.except;
+  if (secretsOff(except)) return [];
+  const lang = config.language;
+  /** @type {{ where: string, from?: string }[]} */
+  const places = [];
+  for (const h of [...(opts.hits ?? []), ...(opts.secretLines ? secretHits(opts.secretLines, { except, files: opts.keyFiles }) : [])]) places.push({ where: `${pathShown(h.path)}:${h.line} (${h.shown})`, ...(h.from ? { from: h.from } : {}) });
+  for (const path of opts.names ?? [...(opts.secretLines?.keys() ?? [])].filter((p) => !matchAny(p, except))) {
+    for (const s of textSecrets(path)) places.push({ where: t("shape.secretName", { path: pathShown(path), shown: s.shown }, lang) });
+  }
+  if (opts.message !== undefined) for (const s of textSecrets(scannedMessage(opts.message, opts))) places.push({ where: t("shape.secretMessage", { line: s.line, shown: s.shown }, lang) });
+  if (!places.length) return [];
+  const where = places.slice(0, 3).map((p) => p.where).join(", ") + (places.length > 3 ? t("shape.cochangeMore", { n: places.length - 3 }, lang) : "");
+  const merged = places.filter((p) => p.from);
+  const brought = merged.length ? t("shape.forbiddenMerged", { n: merged.length, commit: String(merged[0].from).slice(0, 10) }, lang) : "";
+  return [t("shape.secret", { where }, lang) + brought];
 }
 
 /**
@@ -328,7 +392,7 @@ function shapeOf(message, { config, stagedPaths = [], cleanup = "strip", cut, co
   if (rv.impactRequiredGlobs.length) {
     const hits = stagedPaths.filter((p) => matchAny(p, rv.impactRequiredGlobs) && !matchAny(p, rv.impactIgnoreGlobs));
     if (hits.length && !bodyLines.some((l) => l.trimStart().startsWith(rv.impactLine))) {
-      errors.push(t("shape.impactMissing", { line: rv.impactLine, paths: hits.slice(0, 3).join(", ") }, lang));
+      errors.push(t("shape.impactMissing", { line: rv.impactLine, paths: hits.slice(0, 3).map(pathShown).join(", ") }, lang));
     }
   }
 
@@ -351,7 +415,7 @@ export function cochangeWarnings(staged, rules, lang, alsoChanged = []) {
     if ([...staged, ...alsoChanged].some((p) => matchAny(p, rule.docs))) continue;
     const changed = staged.filter((p) => matchAny(p, rule.paths));
     if (!changed.length) continue;
-    const paths = changed.slice(0, 3).join(", ") + (changed.length > 3 ? t("shape.cochangeMore", { n: changed.length - 3 }, lang) : "");
+    const paths = changed.slice(0, 3).map(pathShown).join(", ") + (changed.length > 3 ? t("shape.cochangeMore", { n: changed.length - 3 }, lang) : "");
     out.push(t("shape.cochange", { paths, docs: rule.docs.join(", "), note: rule.note ? ` (${rule.note})` : "" }, lang));
   }
   return out;
@@ -436,7 +500,7 @@ function forbiddenErrors(hits, rules, lang) {
   return rules.flatMap((rule, i) => {
     const mine = hits.filter((h) => h.rule === i);
     if (!mine.length) return [];
-    const where = mine.slice(0, 3).map((h) => `${h.path}:${h.line}`).join(", ") + (mine.length > 3 ? t("shape.cochangeMore", { n: mine.length - 3 }, lang) : "");
+    const where = mine.slice(0, 3).map((h) => `${pathShown(h.path)}:${h.line}`).join(", ") + (mine.length > 3 ? t("shape.cochangeMore", { n: mine.length - 3 }, lang) : "");
     const merged = mine.filter((h) => h.from);
     const brought = merged.length ? t("shape.forbiddenMerged", { n: merged.length, commit: String(merged[0].from).slice(0, 10) }, lang) : "";
     return [t("shape.forbidden", { where, text: rule.text, rule: i + 1, note: rule.note ? ` (${rule.note})` : "" }, lang) + brought];

@@ -17,7 +17,7 @@
  * runs every CLI command with each of its git calls failing.
  */
 
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { isUtf8 } from "node:buffer";
 import { realpathSync } from "node:fs";
@@ -381,6 +381,279 @@ export function stagedAddedLines(cwd, paths, { env, wideUnread = new Map() } = {
   }
   readWide(cwd, readEnv, candidates, out, wideUnread);
   return out;
+}
+
+/** What the secret scan reads of one commit's added lines, in bytes: a bound on the hook's time, whatever the commit holds. */
+export const READ_BUDGET = 64 * 1024 * 1024;
+
+/**
+ * The staged changes as one `diff --raw` lists them, with no pathspec (one walk of the index, whatever the
+ * count): per path its status letter (A added, M, T, D deleted…), new mode, and old and new sizes from one
+ * `cat-file --batch-check` (0 for a submodule's commit). Names read as bytes, as stagedNames reads them, from
+ * the index the hook was given. A git that fails throws.
+ * @param {string} cwd @param {{ env?: NodeJS.ProcessEnv }} [opts]
+ * @returns {Map<string, { status: string, mode: string, oid: string, oldSize: number, newSize: number }>}
+ */
+export function stagedChanges(cwd, { env } = {}) {
+  const index = env ? hookIndexFile(cwd, env) : null;
+  const readEnv = stagedEnv(index);
+  const out = gitBytes(["-c", "core.precomposeUnicode=false", "diff", "--cached", "--raw", "-z", "--no-renames", "--no-abbrev"], { cwd, env: readEnv, keepIndex: Boolean(index) });
+  /** @type {{ path: string, status: string, mode: string, old: string, new: string }[]} */
+  const entries = [];
+  for (let at = 0; at < out.length; ) {
+    const meta = out.indexOf(0, at);
+    if (meta === -1) break;
+    const end = out.indexOf(0, meta + 1);
+    const m = /^:\d+ (\d+) ([0-9a-f]+) ([0-9a-f]+) ([A-Z])/.exec(out.toString("utf8", at, meta));
+    const path = out.toString("utf8", meta + 1, end === -1 ? out.length : end);
+    at = end === -1 ? out.length : end + 1;
+    if (m) entries.push({ path, status: m[4], mode: m[1], old: m[2], new: m[1] === "160000" ? "" : m[3] });
+  }
+  const oids = [...new Set(entries.flatMap((e) => [e.old, e.new]).filter((o) => o && !/^0+$/.test(o)))];
+  /** @type {Map<string, number>} */
+  const sizes = new Map();
+  if (oids.length) {
+    for (const l of gitBytes(["cat-file", "--batch-check"], { cwd, env: readEnv, input: oids.join("\n") + "\n" }).toString("utf8").split("\n")) {
+      const m = /^([0-9a-f]+) \w+ (\d+)$/.exec(l);
+      if (m) sizes.set(m[1], Number(m[2]));
+    }
+  }
+  return new Map(entries.map((e) => [e.path, { status: e.status, mode: e.mode, oid: e.new, oldSize: sizes.get(e.old) ?? 0, newSize: sizes.get(e.new) ?? 0 }]));
+}
+
+/**
+ * Files the commit adds, streamed whole from one `cat-file --batch`: `onLine(path, number, bytes)` for each line
+ * (split at every newline byte, as git's diff splits them, numbered from 1). A new file's lines are all added,
+ * and git's diff would hold every one of them in memory to compare with nothing. Rejects as streamStagedDiff.
+ * @param {string} cwd @param {{ path: string, oid: string }[]} files
+ * @param {{ env?: NodeJS.ProcessEnv, onLine: (path: string, line: number, bytes: Buffer) => void }} opts
+ * @returns {Promise<void>}
+ */
+export function streamStagedBlobs(cwd, files, { env, onLine }) {
+  const index = env ? hookIndexFile(cwd, env) : null;
+  return new Promise((done, fail) => {
+    if (!files.length) return done();
+    const child = spawn("git", [...FIXED_CONFIG, "cat-file", "--batch"], { cwd, env: cleanEnv(stagedEnv(index), Boolean(index)), stdio: ["pipe", "pipe", "pipe"] });
+    let k = 0;
+    /** Bytes of the current blob still to come; -1 while a header is awaited. */
+    let left = -1;
+    let n = 1;
+    /** @type {Buffer[]} */
+    let carry = [];
+    let stderr = "";
+    let bad = "";
+    const line = (/** @type {Buffer} */ bytes) => onLine(files[k].path, n++, bytes);
+    child.stdout.on("data", (/** @type {Buffer} */ chunk) => {
+      let at = 0;
+      while (at < chunk.length && !bad) {
+        if (left === -1) {
+          const eol = chunk.indexOf(0x0a, at);
+          if (eol === -1) return void carry.push(chunk.subarray(at));
+          const head = Buffer.concat([...carry, chunk.subarray(at, eol)]).toString("utf8");
+          carry = [];
+          at = eol + 1;
+          const m = /^([0-9a-f]+) blob (\d+)$/.exec(head);
+          if (!m || m[1] !== files[k]?.oid) {
+            bad = `cat-file wrote something other than the blob: ${JSON.stringify(head.slice(0, 80))}`;
+            child.kill("SIGTERM");
+            return;
+          }
+          left = Number(m[2]);
+          n = 1;
+          continue;
+        }
+        // Inside a blob: its lines, then the newline cat-file puts after it.
+        const end = Math.min(chunk.length, at + left);
+        for (let eol = chunk.indexOf(0x0a, at); eol !== -1 && eol < end; eol = chunk.indexOf(0x0a, at)) {
+          line(carry.length ? Buffer.concat([...carry, chunk.subarray(at, eol)]) : chunk.subarray(at, eol));
+          carry = [];
+          left -= eol + 1 - at;
+          at = eol + 1;
+        }
+        if (at < end) carry.push(chunk.subarray(at, end)), (left -= end - at), (at = end);
+        if (left === 0 && at < chunk.length) {
+          // The blob's end; a last line with no newline is a line too.
+          if (carry.length) line(Buffer.concat(carry)), (carry = []);
+          at++;
+          k++;
+          left = -1;
+        }
+      }
+    });
+    child.stderr.on("data", (/** @type {Buffer} */ c) => {
+      if (stderr.length < 65536) stderr += c.toString("utf8");
+    });
+    child.on("error", (e) => {
+      const err = /** @type {Error & { stderr?: string }} */ (e);
+      err.stderr = `git cat-file: ${/** @type {NodeJS.ErrnoException} */ (e).code === "ENOENT" ? NO_START : e.message}`;
+      fail(err);
+    });
+    child.on("close", (code, signal) => {
+      if (bad || code !== 0 || k < files.length) {
+        const why = bad || stderr.trim().split("\n")[0] || (signal ? `killed by ${signal}` : code !== 0 ? `exit ${code}` : `${files.length - k} blob(s) not written`);
+        const err = /** @type {Error & { stderr?: string }} */ (new Error(`git cat-file: ${why}`));
+        err.stderr = `git cat-file: ${why}`;
+        return fail(err);
+      }
+      done();
+    });
+    child.stdin.on("error", () => {});
+    child.stdin.end(files.map((f) => f.oid).join("\n") + "\n");
+  });
+}
+
+/**
+ * The staged -U0 diff streamed: `onLine(path, number, bytes)` for each added line as git writes it, numbered as
+ * in the new file, nothing kept, so memory is a line's and time the lines'. The diff is pinned as
+ * stagedAddedLines pins it (--text, no textconv, external diff, color or renames, a/ and b/ prefixes).
+ * `paths`: pathspecs, or null for every staged path (one walk of the index). `against`: a revision to diff
+ * against instead of HEAD. `onLine` returning false stops git, and the stream ends as read so far
+ * (`stopped`). Resolves with the paths a header named; a git that fails, is killed or does not start rejects,
+ * with git's message as `stderr`.
+ * @param {string} cwd @param {string[] | null} paths
+ * @param {{ env?: NodeJS.ProcessEnv, against?: string[], onLine: (path: string, line: number, bytes: Buffer) => boolean | void }} opts
+ * @returns {Promise<{ shown: Set<string>, stopped: boolean }>}
+ */
+export function streamStagedDiff(cwd, paths, { env, against = [], onLine }) {
+  const index = env ? hookIndexFile(cwd, env) : null;
+  const args = [...FIXED_CONFIG, "-c", "core.quotePath=false", "-c", "core.precomposeUnicode=false", "diff", "--cached", ...against, "--text", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--submodule=short", "-U0", "--src-prefix=a/", "--dst-prefix=b/", ...(paths ? ["--", ...paths] : [])];
+  return new Promise((done, fail) => {
+    const child = spawn("git", args, { cwd, env: cleanEnv(stagedEnv(index), Boolean(index)), stdio: ["ignore", "pipe", "pipe"] });
+    /** @type {Set<string>} */
+    const shown = new Set();
+    /** @type {string | null} */
+    let file = null;
+    let header = false;
+    let n = 0;
+    let stopped = false;
+    /** @type {Buffer[]} */
+    let carry = [];
+    let stderr = "";
+    const line = (/** @type {Buffer} */ bytes) => {
+      if (stopped) return;
+      if (bytes[0] === 0x2b && !header) {
+        if (file !== null && onLine(file, n, bytes.subarray(1)) === false) {
+          stopped = true;
+          child.kill("SIGTERM");
+        }
+        n++;
+        return;
+      }
+      const raw = bytes.toString("utf8");
+      if (raw.startsWith("diff --git ")) {
+        file = null;
+        header = true;
+        const path = headerPath(raw.slice(11));
+        if (path !== null) shown.add(path);
+      } else if (header && raw.startsWith("+++ ")) {
+        const name = raw.slice(4).replace(/\t$/, "");
+        if (name !== "/dev/null") file = unquotePath(name).replace(/^b\//, "");
+      } else if (raw.startsWith("@@ ")) {
+        header = false;
+        const m = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw);
+        if (m) n = Number(m[1]);
+      }
+    };
+    child.stdout.on("data", (/** @type {Buffer} */ chunk) => {
+      let at = 0;
+      for (let end = chunk.indexOf(0x0a); end !== -1 && !stopped; end = chunk.indexOf(0x0a, at)) {
+        line(carry.length ? Buffer.concat([...carry, chunk.subarray(at, end)]) : chunk.subarray(at, end));
+        carry = [];
+        at = end + 1;
+      }
+      if (!stopped && at < chunk.length) carry.push(chunk.subarray(at));
+    });
+    child.stderr.on("data", (/** @type {Buffer} */ c) => {
+      if (stderr.length < 65536) stderr += c.toString("utf8");
+    });
+    child.on("error", (e) => {
+      const err = /** @type {Error & { stderr?: string }} */ (e);
+      err.stderr = `git diff: ${/** @type {NodeJS.ErrnoException} */ (e).code === "ENOENT" ? NO_START : e.message}`;
+      fail(err);
+    });
+    child.on("close", (code, signal) => {
+      if (stopped) return done({ shown, stopped });
+      if (code !== 0) {
+        const err = /** @type {Error & { stderr?: string }} */ (new Error(`git diff: ${stderr.trim().split("\n")[0] || (signal ? `killed by ${signal}` : `exit ${code}`)}`));
+        err.stderr = stderr.trim() || `git diff: ${signal ? `killed by ${signal}` : `exit ${code}`}`;
+        return fail(err);
+      }
+      if (carry.length) line(Buffer.concat(carry));
+      done({ shown, stopped });
+    });
+  });
+}
+
+/**
+ * Staged files read whole from the index the hook was given, up to `limit` bytes each and `total` in all: their
+ * object ids from `ls-files -s` (stage 0), sizes from one `cat-file --batch-check`, bytes from `cat-file
+ * --batch`. A path the index does not hold is in neither map; one past a limit, or one cat-file could not
+ * read, is in `unread` with why. A git that fails throws.
+ * @param {string} cwd @param {string[]} paths
+ * @param {{ env?: NodeJS.ProcessEnv, limit?: number, total?: number }} [opts]
+ * @returns {{ blobs: Map<string, Buffer>, unread: Map<string, string> }}
+ */
+export function stagedBlobs(cwd, paths, { env, limit = WIDE_LIMIT, total = READ_BUDGET } = {}) {
+  const index = env ? hookIndexFile(cwd, env) : null;
+  const readEnv = stagedEnv(index);
+  /** @type {Map<string, string>} */
+  const oids = new Map();
+  const unique = [...new Set(paths)];
+  for (let at = 0; at < unique.length; at += 500) {
+    const out = gitBytes(["-c", "core.precomposeUnicode=false", "ls-files", "-s", "-z", "--", ...unique.slice(at, at + 500)], { cwd, env: readEnv, keepIndex: Boolean(index) }).toString("utf8");
+    for (const e of out.split("\0")) {
+      const m = /^\d+ ([0-9a-f]+) 0\t([^]*)$/.exec(e);
+      if (m) oids.set(m[2], m[1]);
+    }
+  }
+  /** @type {Map<string, Buffer>} */
+  const blobs = new Map();
+  /** @type {Map<string, string>} */
+  const unread = new Map();
+  const want = [...oids].filter(([path]) => unique.includes(path));
+  if (!want.length) return { blobs, unread };
+  /** @type {Map<string, number>} */
+  const sizes = new Map();
+  for (const l of gitBytes(["cat-file", "--batch-check"], { cwd, env: readEnv, input: want.map(([, oid]) => oid).join("\n") + "\n" }).toString("utf8").split("\n")) {
+    const m = /^([0-9a-f]+) blob (\d+)$/.exec(l);
+    if (m) sizes.set(m[1], Number(m[2]));
+  }
+  let left = total;
+  const read = want.filter(([path, oid]) => {
+    const size = sizes.get(oid);
+    if (size === undefined) unread.set(path, `${oid} is not a blob git can read`);
+    else if (size > limit) unread.set(path, `past ${limit / 1024 / 1024} MB`);
+    else if (size > left) unread.set(path, `past the ${total / 1024 / 1024} MB read in all`);
+    else return (left -= size), true;
+    return false;
+  });
+  if (!read.length) return { blobs, unread };
+  const bytes = gitBytes(["cat-file", "--batch"], { cwd, env: readEnv, input: read.map(([, oid]) => oid).join("\n") + "\n" });
+  // "<oid> blob <size>\n<bytes>\n" for each, in the order asked; past a header that does not parse, none is read.
+  let at = 0;
+  for (const [k, [path, oid]] of read.entries()) {
+    const eol = bytes.indexOf(0x0a, at);
+    const m = /^([0-9a-f]+) blob (\d+)$/.exec(bytes.toString("utf8", at, eol === -1 ? bytes.length : eol));
+    if (!m || m[1] !== oid) {
+      for (const [rest] of read.slice(k)) unread.set(rest, "cat-file wrote something other than the blob");
+      break;
+    }
+    blobs.set(path, bytes.subarray(eol + 1, eol + 1 + Number(m[2])));
+    at = eol + 1 + Number(m[2]) + 1;
+  }
+  return { blobs, unread };
+}
+
+/**
+ * A file as HEAD's tree holds it, or null with no commit yet or no such file there. A git that fails throws.
+ * @param {string} cwd @param {string} path
+ * @returns {Buffer | null}
+ */
+export function headBlob(cwd, path) {
+  if (!headCommit(cwd)) return null;
+  const entry = gitBytes(["-c", "core.precomposeUnicode=false", "ls-tree", "-z", "HEAD", "--", path], { cwd, env: { ...process.env, GIT_NO_REPLACE_OBJECTS: "1" } }).toString("utf8").split("\0")[0];
+  const m = /^\d+ blob ([0-9a-f]+)\t/.exec(entry ?? "");
+  return m ? gitBytes(["cat-file", "blob", m[1]], { cwd, env: { ...process.env, GIT_NO_REPLACE_OBJECTS: "1" } }) : null;
 }
 
 /**

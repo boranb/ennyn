@@ -100,6 +100,9 @@ export const DEFAULTS = Object.freeze({
       advisories: "https://api.osv.dev",
       advisoryRegistries: ["https://registry.npmjs.org"],
     },
+    // Secret shapes kept out of commits: commit-check fails a commit that adds a line holding a credential in a
+    // shape only its issuer writes (checks/secrets.mjs), in any staged path `except` does not name.
+    secrets: { except: [] },
   },
   // Claude Code keeps a hook's added context to 10,000 characters; the rules and the list after them fit in it.
   sideCopy: { roots: [], maxInjectBytes: 9000 },
@@ -314,6 +317,8 @@ export function loadConfig({ cwd, env = process.env, override }) {
   }
   if (deps.advisories !== "" && !isOrigin(deps.advisories)) problems.push(`"security.deps.advisories" must be an origin such as https://api.osv.dev, or ""`);
   if (deps.advisoryRegistries.some((/** @type {unknown} */ o) => !isRegistry(o))) problems.push(`"security.deps.advisoryRegistries" entries must be registry URLs such as https://registry.npmjs.org`);
+  const secretsExcept = /** @type {any} */ (cfg).security.secrets.except;
+  if (!secretsExcept.every((/** @type {unknown} */ g) => typeof g === "string" && g !== "")) problems.push(`"security.secrets.except" must be a list of globs`);
   // A glob compiles when a path is first matched; one that cannot would fail there, in the hook or in doctor.
   const c = /** @type {any} */ (cfg);
   const globLists = [
@@ -324,6 +329,7 @@ export function loadConfig({ cwd, env = process.env, override }) {
     ["security.ci.paths", c.security.ci.paths],
     ["security.ci.except", c.security.ci.except],
     ["security.deps.paths", c.security.deps.paths],
+    ["security.secrets.except", c.security.secrets.except],
     ...c.review.cochange.flatMap((/** @type {any} */ r, /** @type {number} */ i) =>
       r && typeof r === "object" ? [[`review.cochange[${i}].paths`, r.paths], [`review.cochange[${i}].docs`, r.docs]] : [],
     ),

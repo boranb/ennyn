@@ -35,6 +35,7 @@ import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { git } from "../core/git.mjs";
 import { USAGE } from "../scripts/ennyn.mjs";
+import { TOKENS } from "./secret-shapes.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
 /** Loaded into every run: counts the file reads, and fails the one a cell names. */
@@ -192,6 +193,15 @@ function stageLock(repo) {
   git(["add", "package-lock.json"], { cwd: repo });
 }
 
+/** Stages a line that holds a secret, with a config that has no review.forbidden rule. @param {string} repo */
+function stageSecret(repo) {
+  const path = join(repo, ".ennyn", "config.json");
+  const config = JSON.parse(readFileSync(path, "utf8"));
+  writeFileSync(path, JSON.stringify({ ...config, review: { ...config.review, forbidden: [] } }));
+  writeFileSync(join(repo, "deploy.sh"), `export NPM_TOKEN=${TOKENS.npm}\n`);
+  git(["add", "deploy.sh", ".ennyn/config.json"], { cwd: repo });
+}
+
 /**
  * @typedef {{ args: string[], cwd?: string, writes?: boolean, setup?: (repo: string) => void, env?: Record<string, string>, first?: boolean, outside?: boolean, hook?: string, input?: (repo: string) => unknown }} Case
  *   `cwd` is relative to the repository; a case that writes, or has a setup, runs in a copy of its own.
@@ -244,6 +254,9 @@ const CASES = [
   { args: ["commit-check", "--hook", ".git/MSG"], setup: (repo) => stageLock(repo) },
   { args: ["deps"] },
   { args: ["deps", "--json"] },
+  // A staged secret where no forbidden rule reads: only the secret scan reads the lines, and says a read that failed.
+  { args: ["commit-check", ".git/MSG"], setup: (repo) => stageSecret(repo) },
+  { args: ["commit-check", "--hook", ".git/MSG"], setup: (repo) => stageSecret(repo) },
   // An amend! that drops the Impact line its target needs; the target is read from the log.
   { args: ["commit-check", "--hook", ".git/AMEND"], setup: (repo) => git(["reset", "-q"], { cwd: repo }) },
   // The same past a shallow boundary: the target cannot be found, and the hook says what went unchecked.

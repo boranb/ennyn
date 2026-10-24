@@ -27,6 +27,8 @@
 
 const NAME = "Zor" + "blax";
 const HOME = "/" + "Users/someone";
+/** A token the secret scan refuses, in parts like the name. */
+const TOKEN = "np" + "m_" + "q7Rk2LmVx9TbWc4ZsHn8JyPd3FgAe6Ku5Qo1";
 
 /** @type {Gate[]} */
 export const GATES = [
@@ -44,6 +46,8 @@ export const GATES = [
         new: "const log = /** @type {string[]} */ ([]);",
         pattern: "hygiene: the repository scan finds",
       },
+      { id: "hygiene-secret", why: "a secret shape in a tracked file", file: "DESIGN.md", old: "# ennyn — design\n", new: `# ennyn — design\n\nnpmrc: ${TOKEN}\n`, pattern: "hygiene: no tracked file holds a secret" },
+      { id: "hygiene-secret-judge", why: "a secret scan that finds nothing", file: "checks/secrets.mjs", old: "    if (matchAny(path, except)) continue;\n", new: "    if (path) continue;\n", pattern: "hygiene: no tracked file holds a secret" },
     ],
   },
   {
@@ -180,6 +184,11 @@ export const GATES = [
       { id: "shapes-error-name", why: "a git error named after its -c", file: "core/git.mjs", old: "err.stderr = said || `git ${args[at]}: ${how}`;", new: "err.stderr = said || `git ${args[0]}: ${how}`;", pattern: "input shapes: git errors name" },
       { id: "shapes-names", why: "a name that is not UTF-8 asked for, so nothing is checked", file: "scripts/ennyn.mjs", old: "const named = ruled.filter((p) => !notUtf8.includes(p));", new: "const named = ruled;", pattern: "input shapes: every staged" },
       { id: "shapes-names-said", why: "a name that is not UTF-8 passed in silence", file: "scripts/ennyn.mjs", old: "if (unnamed.length) {", new: "if (unnamed.length < 0) {", pattern: "input shapes: every staged" },
+      { id: "shapes-secret-names", why: "a name that is not UTF-8 passed by the secret scan in silence", file: "scripts/ennyn.mjs", old: "    if (namesUnread) {", new: "    if (namesUnread && false) {", pattern: "input shapes: every staged" },
+      { id: "shapes-too-large", why: "a file past what the hook reads skipped in silence", file: "scripts/ennyn.mjs", old: "  if (past.length) say(", new: "  if (past.length < 0) say(", pattern: "input shapes: every staged" },
+      { id: "shapes-secret-bytes", why: "a secret in UTF-16 or UTF-32 read as UTF-8 alone", file: "checks/secrets.mjs", old: "  if (raw?.length && raw.includes(0)) {", new: "  if (raw?.length && raw.includes(0) && false) {", pattern: "input shapes: every staged" },
+      { id: "shapes-key-around", why: "a key replaced under a header the commit keeps, passed in silence", file: "scripts/ennyn.mjs", old: "    if (near.length) {", new: "    if (near.length < 0) {", pattern: "input shapes: every staged" },
+      { id: "shapes-unsaid", why: "a judge that lets a check say what it has nothing to say", file: "test/input-shapes.test.mjs", old: "if (cell.unsaid && r.stderr.includes(cell.unsaid))", new: "if (cell.unsaid && false)", pattern: "input shapes control: the judge" },
       { id: "shapes-unread", why: "an 8-bit line no text can be compared in, passed in silence", file: "checks/commit-shape.mjs", old: ": l.raw)) eightBit = true;", new: ": l.raw)) eightBit = false;", pattern: "input shapes: a line holds" },
       { id: "shapes-nul-8bit", why: "8-bit text beside a NUL, passed in silence", file: "checks/commit-shape.mjs", old: "} else if (!ascii && l.raw && !isUtf8(", new: "} else if (!ascii && l.raw && !l.raw.includes(0) && !isUtf8(", pattern: "input shapes: a line holds" },
       { id: "shapes-decoded-8bit", why: "a decoded file whose own 8-bit lines are no longer judged", file: "checks/commit-shape.mjs", old: "} else if (!ascii && l.raw && !isUtf8(", new: "} else if (!ascii && !lines.some((x) => x.decoded) && l.raw && !isUtf8(", pattern: "input shapes: a line holds" },
@@ -233,6 +242,7 @@ export const NOT_GATES = {
   "test/cli.test.mjs": CLI_ONLY,
   "test/deps.test.mjs": { reason: "runs the CLI on temporary repositories against recorded registry and OSV answers", allow: '"scripts", "ennyn\\.mjs"|"__fixtures__", "deps"' },
   "test/forbidden.test.mjs": CLI_ONLY,
+  "test/secrets.test.mjs": CLI_ONLY,
   "test/gate-log.test.mjs": CLI_ONLY,
   "test/hook.test.mjs": CLI_ONLY,
   "test/mutation.test.mjs": CLI_ONLY,

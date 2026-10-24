@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { git, gitMaybe } from "../core/git.mjs";
+import { secretHits } from "../checks/secrets.mjs";
+import { TOKENS } from "./secret-shapes.mjs";
 
 // No names, paths or data of the projects that use Ennyn go into this repository (.claude/CLAUDE.md).
 // The names are listed as SHA-256 digests, so this list does not name them either. EXACT holds a word
@@ -113,4 +115,43 @@ test("hygiene: no file, path, symlink or commit message here names a project tha
   const res = scanRepo(ROOT);
   assert.ok(res.read > 50 && res.commits > 10, `read ${res.read} files and ${res.commits} commits: a scan that reads nothing finds nothing`);
   assert.deepEqual(res.bad, []);
+});
+
+/**
+ * Every line of every file `scanRepo` reads, as the commit-msg hook reads an added line: its UTF-8 text, and
+ * its bytes when it holds a NUL or is not UTF-8.
+ * @param {string} root
+ */
+export function repoLines(root) {
+  const files = git(["-c", "core.quotePath=false", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], { cwd: root }).split("\0").filter(Boolean);
+  /** @type {Map<string, import("../core/git.mjs").AddedLine[]>} */
+  const out = new Map();
+  for (const f of files) {
+    let bytes;
+    try {
+      bytes = lstatSync(join(root, f)).isSymbolicLink() ? Buffer.from(readlinkSync(join(root, f))) : readFileSync(join(root, f));
+    } catch {
+      continue;
+    }
+    /** @type {import("../core/git.mjs").AddedLine[]} */
+    const lines = [];
+    for (let at = 0, n = 1; at <= bytes.length; n++) {
+      let end = bytes.indexOf(0x0a, at);
+      if (end === -1) end = bytes.length;
+      const raw = bytes.subarray(at, end);
+      const text = raw.toString("utf8");
+      lines.push(raw.includes(0) || Buffer.from(text, "utf8").compare(raw) !== 0 ? { line: n, text, raw: Buffer.from(raw) } : { line: n, text });
+      at = end + 1;
+    }
+    out.set(f, lines);
+  }
+  return out;
+}
+
+test("hygiene: no tracked file holds a secret shape the commit-msg hook refuses, with no except", () => {
+  // A control first: a scan that finds nothing proves nothing.
+  assert.equal(secretHits(new Map([["control", [{ line: 1, text: `t = ${TOKENS.github}` }]]])).length, 1);
+  const lines = repoLines(ROOT);
+  assert.ok(lines.size > 50, `read ${lines.size} files: a scan that reads nothing finds nothing`);
+  assert.deepEqual(secretHits(lines).map((h) => `${h.path}:${h.line} ${h.shown}`), []);
 });

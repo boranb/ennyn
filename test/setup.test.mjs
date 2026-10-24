@@ -378,7 +378,9 @@ test("cli: init-scan --json is the scan; doctor prints marks and exits 1 on a pr
   const doc = run("doctor");
   assert.equal(doc.status, 1);
   assert.match(doc.stdout, /^✗ work graph: duplicate ids: a$/m);
-  assert.match(doc.stdout, /^problems: 1 · warnings: 0 · unmeasured: 1$/m, "the one unmeasured: too few commits for the fix label");
+  // security.secrets is on by default, and only the hook checks it: with no hook, the one warning.
+  assert.match(doc.stdout, /^! commit-msg hook: none, so these are rules on paper: security\.secrets; run ennyn install-hook$/m);
+  assert.match(doc.stdout, /^problems: 1 · warnings: 1 · unmeasured: 1$/m, "the one unmeasured: too few commits for the fix label");
 });
 
 test("commit style: language guessed from subjects, also Turkish typed without diacritics; types counted, 'faz 8:' is not one", () => {

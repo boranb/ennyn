@@ -18,6 +18,7 @@ import { git, repoPath, gitVersion, parseVersion, versionAtLeast, stagedVersions
 import { ciSet, ciText } from "../checks/ci.mjs";
 import { t } from "../core/i18n.mjs";
 import { matchAny } from "../core/glob.mjs";
+import { secretsOff } from "../checks/secrets.mjs";
 
 /**
  * @typedef {{ level: "ok" | "warn" | "fail" | "unmeasured", key: string, vars: import("../core/i18n.mjs").Vars }} DoctorItem
@@ -175,6 +176,8 @@ export async function checkSetup({ cwd, env = process.env }) {
     ...(forbidden.length ? ["review.forbidden"] : []),
     ...(config.review.impactRequiredGlobs.length ? ["review.impactRequiredGlobs"] : []),
     ...(config.review.cochange.length ? ["review.cochange"] : []),
+    // On by default: off only when except names every path.
+    ...(secretsOff(config.security.secrets.except) ? [] : ["security.secrets"]),
   ];
   if (onPaper.length && repo) {
     /** @type {ReturnType<typeof hookStatus> | null} */

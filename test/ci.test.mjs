@@ -429,7 +429,7 @@ test("ci round one: the hook reads past a HEAD it cannot read, names security.ci
   // An index from outside the git dir: the message names every check that went without the staged paths.
   writeFileSync(join(r.dir, ".git", "MSG"), "chore: ci\n");
   const foreign = spawnSync(process.execPath, [CLI, "commit-check", "--hook", ".git/MSG"], { cwd: r.dir, encoding: "utf8", env: { ...process.env, GIT_INDEX_FILE: join(r.dir, "foreign-index") } });
-  assert.match(foreign.stderr, /review\.forbidden and security\.ci checks ran without them/);
+  assert.match(foreign.stderr, /review\.forbidden, security\.ci, security\.deps and security\.secrets checks ran without them/);
   // A pattern in the config that does not compile: the message goes unchecked, the workflow's errors stand.
   put(r.dir, { ".ennyn/config.json": JSON.stringify({ commitMsg: { skipSubjects: ["("] } }) });
   git(["add", ".ennyn/config.json"], { cwd: r.dir });
