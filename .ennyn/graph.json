@@ -380,48 +380,6 @@
     },
     {
       "status": "planned",
-      "needs": [],
-      "id": "deps-check",
-      "title": "Dependency adoption gate for projects that use Ennyn: the commit-msg hook checks a changed lock file (a version younger than a cooldown, a small share of its package's weekly downloads, install scripts and binding.gyp) and `ennyn deps` reports known advisories (OSV) for the whole lock file; offline is said, never clean; Ennyn's own lock file first",
-      "value": "high",
-      "cost": "M",
-      "cluster": "security",
-      "source": "cycle 2026-10-24 (8), user: security measures in the projects that use Ennyn; 2026 npm worms (ChainDrop, TanStack with valid provenance, Miasma via binding.gyp)"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "ci-check",
-      "title": "CI hardening for projects: doctor reports, and the commit-msg hook refuses new, workflow lines that name an action by tag instead of a full commit SHA, pull_request_target that checks out the pull request's code, and workflows without permissions; Ennyn's own workflow is the first case (actions/checkout@v4), with SECURITY.md, digest-pinned floor images in test:linux and npm ci --ignore-scripts",
-      "value": "high",
-      "cost": "M",
-      "cluster": "security",
-      "source": "cycle 2026-10-24 (8), user: security; 2026 action tag hijacks (actions-cool, codfish, Trivy) and malicious workflow files (GhostAction)"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "secret-scan",
-      "title": "Secret shapes kept out of commits: the commit-msg hook refuses added lines that hold a high-confidence secret (private key headers, cloud, forge and registry tokens); accept and reject corpus first; the input-shape matrix reused, so a file it cannot read is said",
-      "value": "high",
-      "cost": "M",
-      "cluster": "security",
-      "source": "cycle 2026-10-24 (8), user: security; review.forbidden matches literals only",
-      "mechanization": true,
-      "sourceClass": "a literal rule matches only text written exactly; a secret has a shape, not a spelling"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "hook-trust-audit",
-      "title": "Legacy audit of the hooks' trusted channel: which file contents the side-copy and conversation-style hooks put into Claude's context and under which conditions (a plain copy matched by package name, a rule file a repository plants, a config style); path table first",
-      "value": "high",
-      "cost": "M",
-      "cluster": "security",
-      "source": "cycle 2026-10-24 (8), user: security; the class of a 2026 marketplace plugin finding where repository files reached a hook's trusted channel"
-    },
-    {
-      "status": "planned",
       "needs": [
         "deps-check",
         "ci-check"
@@ -466,13 +424,13 @@
       "cluster": "gates",
       "mechanization": true,
       "sourceClass": "a fix that replaces a reading instead of adding to it",
-      "source": "cycle 2026-10-24 (8), convergence: about 9 times, 8 of them fix-introduced and found by reviewers in rounds 2-4 (NFC over raw bytes, decoding over git's lines, a normalized glob, a string-stripping hook reader, a declaration rewrite)"
+      "source": "cycle 2026-10-24 (8), convergence: about 9 times, 8 of them fix-introduced and found by reviewers in rounds 2-4 (NFC over raw bytes, decoding over git's lines, a normalized glob, a string-stripping hook reader, a declaration rewrite); cycle 2026-10-24 (9), convergence again: a fix that narrows a reading opened silent passes in every security task (ci-check 37 fix-introduced findings in rounds two to four, deps-check 18, secret-scan 13): reviewers' probe corpora kept as cells with their verdicts would have failed each"
     },
     {
       "status": "planned",
       "needs": [],
       "id": "suite-wall-clock-limits",
-      "title": "Fixed wall-clock limits in tests fail npm test on a loaded machine: mutation.test.mjs's timeoutMs 1500/2000 (refused once the baseline passes 1 s: 4 tests failed in npm test at load 26-28, the file alone passed), the < 45 s, < 25 s and < 3000 ms asserts; scale them from a measured baseline",
+      "title": "Fixed wall-clock limits in tests fail npm test on a loaded machine: mutation.test.mjs's timeoutMs 1500/2000 (refused once the baseline passes 1 s: 4 tests failed in npm test at load 26-28, the file alone passed), the < 45 s, < 25 s and < 3000 ms asserts; scale them from a measured baseline; cycle 9 added < 5000 ms reads in test/ci.test.mjs (generous: the readings take under 300 ms at load 5)",
       "value": "medium",
       "cost": "M",
       "cluster": "gates",
@@ -602,7 +560,7 @@
       "status": "planned",
       "needs": [],
       "id": "raw-output-commit-check",
-      "title": "commit-check and install-hook print paths and rule text raw (doctor and mechanization go through tShown): a name with a line break can fake a line in the hook's output",
+      "title": "commit-check and install-hook print paths and rule text raw (doctor and mechanization go through tShown): a name with a line break can fake a line in the hook's output; cycle 9 escaped CI, deps and secrets messages and masked names; left: core/git.mjs's \"git diff did not show N staged path(s)\" error prints names with JSON.stringify (a token in a name a forbidden rule reads)",
       "value": "medium",
       "cost": "M",
       "cluster": "security",
@@ -617,6 +575,206 @@
       "cost": "S",
       "cluster": "gates",
       "source": "cycle 2026-10-24 (8), doctor-audit"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hook-project-dir-fallback",
+      "title": "Hooks: without CLAUDE_PROJECT_DIR the project is input.cwd, so a session whose cwd moved into a side copy reads that copy's config and rules as the project's (a PR worktree's .claude/rules bodies inlined, its stateDir deciding where the given list is written and what the reset deletes); fall back to the main worktree of cwd's repository, or say it cannot tell (pinned as a feature by test/side-copy.test.mjs)",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-10-24 (9), hook-trust-audit P10 and review round one"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "side-copy-cut-names-crowd",
+      "title": "Three project rules with names cut to head…tail (past 4,100 bytes shown) and large bodies keep a later rule from being inlined or named on every file all session: a cut name is never given, and its line is reserved each time",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-10-24 (9), hook-trust-audit review round three"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ci-run-dataflow",
+      "title": "security.ci follows a pull request ref from a variable to git on one line, for/read/functions, a patch kept in a file; not through a heredoc, a $( … ) over several lines, step outputs, $GITHUB_ENV, files, jq over $GITHUB_EVENT_PATH, curl of a tarball",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-10-24 (9), ci-check review rounds three and four"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ci-yaml-differential",
+      "title": "Compare security.ci's YAML reader with how GitHub reads a workflow (NEL, LS and PS as line breaks, alias keys, merge keys, a quoted scalar continued at its key's column) on a recorded corpus; today a form it cannot follow is refused, a form it reads differently passes",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-10-24 (9), ci-check review rounds one to four: 9 reader findings, all fix-introduced after round one"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ci-sha-provenance",
+      "title": "A pinned uses SHA is not checked to belong to the action's own repository (a fork's commit is served under the parent's name) nor to be no branch or tag named like a SHA; an online check (doctor or a command) through the GitHub API",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-10-24 (9), ci-check DESIGN Not-seen"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ci-more-sinks",
+      "title": "security.ci reads pull_request_target only: workflow_run and issue_comment checkouts, and script injection of untrusted event fields (${{ github.event.issue.title }} in a run) are not seen",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-10-24 (9), ci-check DESIGN Not-seen"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "forbidden-lost-on-shape-error",
+      "title": "When the message check throws in the hook (a skipSubjects pattern that does not compile, a git failure in hookCommitMode), review.forbidden's errors are lost with it: the CI, deps and secrets errors now stand there, the forbidden ones should too",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-24 (9), ci-check review round one C8 (pre-existing for forbidden)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "deps-tarball-scripts",
+      "title": "The hook inspects the tarball of a new lock entry for a binding.gyp or an install script its registry manifest does not show (manifest confusion), read in place with zlib and a tar header reader",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-10-24 (9), deps-check: hasInstallScript comes from the registry manifest"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "deps-other-locks",
+      "title": "pnpm-lock.yaml and yarn.lock read like package-lock.json (new entries, identity, integrity, scripts, age, adoption, advisories)",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-10-24 (9), deps-check: npm lock files only"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "deps-allowed-hosts",
+      "title": "A new lock entry resolved from a host no list names fails instead of being said; git dependencies and their prepare script judged",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-10-24 (9), deps-check: an unlisted origin is said, not refused"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "deps-doctor",
+      "title": "doctor reports install-script entries not in allowScripts and a project .npmrc without ignore-scripts, offline",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-10-24 (9), deps-check"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "deps-answer-queue",
+      "title": "Registry answers that each fit their cap but arrive together past the 256 MB held at once are said unmeasured; queue them instead",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-10-24 (9), deps-check review round three"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hook-config-from-index",
+      "title": "The commit-msg hook reads the work tree's config for every rule; read the config the commit holds (security.secrets.except already is), so an unstaged edit cannot loosen a rule",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "cycle 2026-10-24 (9), secret-scan review F10"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hook-amend-base",
+      "title": "With --amend the hook diffs against the commit being replaced, so what a --no-verify or cherry-picked commit brought survives an amend; git gives a commit-msg hook no reliable amend signal (measured on 2.47: no GIT_REFLOG_ACTION; only the parent's command line or GIT_AUTHOR_DATE equal to HEAD's)",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "cycle 2026-10-24 (9), secret-scan review F11/F18"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "secret-kinds-more",
+      "title": "More secret kinds once their issuers document a shape: OpenAI, Google and Gemini, Hugging Face, Stripe whsec_, GitLab custom prefixes on self-managed instances",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-10-24 (9), secret-scan"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "secret-held-today",
+      "title": "doctor and init-scan count secret shapes already in tracked files and in history; the hook only sees new lines",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-10-24 (9), secret-scan"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "secret-scan-leftovers",
+      "title": "secret-scan's verification run left two small items: one added file among many modified ones brings back 500-path diff calls (20,000 modified + 1 added: 6.5 s), and a secret in a UTF-16 file outside review.forbidden's paths is reported at git's line number, not the editor's",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-10-24 (9), secret-scan verification run"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "partial-clone-reads",
+      "title": "In a partial clone git may fetch a blob it lacks to diff it during the hook (network, time); not tried",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-24 (9), secret-scan"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "test-file-hang-guard",
+      "title": "A test file that never ends (a handle left open) holds npm test and the Linux run with no limit and no name: the Linux run waited 40 minutes on the fault matrix at Node 20.0.0; a per-file or per-container limit that names the file",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-24 (9), push-time Linux run (b859092)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "guard-temp-leftovers",
+      "title": "The hermetic-clean guard runs test/hermetic.mjs with its cleanup turned off, so each guards run leaves that run's two temporary roots (a few KB, one directory left unreadable) in the system temporary folder; the guard harness removes what its mutant runs leave",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-24 (9), cleanup after the cycle"
     }
   ],
   "done": [
@@ -866,6 +1024,36 @@
     {
       "id": "doctor-audit",
       "title": "Legacy audit of doctor: a hook git skips or whose CLI is gone is a warning in doctor and install-hook alike; a read it cannot make is a ? line; every value shown on one line (fe5cdc2)",
+      "status": "done",
+      "finished": "2026-10-24"
+    },
+    {
+      "id": "deps-check",
+      "title": "Lock files a commit brings are checked for what npm installs: identity from the tarball, integrity, install scripts, cooldown and adoption from listed registries, .npmrc read as npm reads it; ennyn deps lists OSV advisories for public packages (98cc079)",
+      "status": "done",
+      "finished": "2026-10-24"
+    },
+    {
+      "id": "ci-check",
+      "title": "CI files a commit brings are refused for a uses by tag, a pull_request_target checkout of the pull request's code (also through local callees) and jobs without permissions; YAML read in one pass, what it cannot follow refused; Ennyn's own workflow pinned, images by digest, SECURITY.md (d1e2041)",
+      "status": "done",
+      "finished": "2026-10-24"
+    },
+    {
+      "id": "secret-scan",
+      "title": "Secrets in a shape only their issuer writes are refused in added lines, added names and the message, every byte view read, the scan streamed and bounded; review.forbidden reads as before (cc1d553)",
+      "status": "done",
+      "finished": "2026-10-24"
+    },
+    {
+      "id": "hook-trust-audit",
+      "title": "Legacy audit of the hooks' trusted channel: a side copy's names reach the context as printable-ASCII JSON values, bounded, cut names not given; hook errors escaped (b4e0b8d)",
+      "status": "done",
+      "finished": "2026-10-24"
+    },
+    {
+      "id": "test-temp-cleanup",
+      "title": "Each test file removes its temporary root at exit: the suite had left ~15 MB a file per run, ~160 GB and a full disk by cycle 9 (f8d5048)",
       "status": "done",
       "finished": "2026-10-24"
     }
