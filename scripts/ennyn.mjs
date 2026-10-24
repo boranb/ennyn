@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { relative, resolve, sep } from "node:path";
 import { loadConfig, ConfigError } from "../core/config.mjs";
 import { git, headCommit, hookIndexFile, repoPath, stagedAddedLines, stagedPaths, unpushedCount } from "../core/git.mjs";
-import { t } from "../core/i18n.mjs";
+import { t, tShown } from "../core/i18n.mjs";
 import { matchAny } from "../core/glob.mjs";
 import { checkCommitShape, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
 import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
@@ -283,8 +283,9 @@ const COMMANDS = {
     const cfg = config(cwd);
     const res = installHook({ cwd, cliPath: fileURLToPath(import.meta.url) });
     const key = res.result === "hooksPath" ? `hook.hooksPath.${res.hooksKind}` : `hook.${res.result}`;
-    out(t(key, { path: res.path, dir: res.hooksPath ?? "", line: res.line }, cfg.language));
-    return res.result === "other" || res.result === "hooksPath" ? 1 : 0;
+    out(t(key, { path: res.path, dir: res.hooksPath ?? "", line: res.line, cli: res.cli ?? "", chmod: res.chmod, own: res.own }, cfg.language));
+    // What doctor warns about is no "nothing to do": a hook left as it is, or one that checks nothing, exits 1.
+    return ["other", "hooksPath", "notThere", "notExecutable", "cliGone"].includes(res.result) ? 1 : 0;
   },
 
   budget(args) {
@@ -302,7 +303,7 @@ const COMMANDS = {
     const d = new Date();
     const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
     const recorded = opts.record ? recordBudget(cwd, cfg.paths.metricsLog, b, { date: today, commit: head }) : null;
-    if (opts.json) return (out(JSON.stringify({ ...b, previous, skipped: log.skipped, recorded: recorded ? { ...recorded.entry, replaced: recorded.replaced } : null }, null, 2)), 0);
+    if (opts.json) return (out(JSON.stringify({ ...b, previous, skipped: log.skipped, unusable: log.unusable, recorded: recorded ? { ...recorded.entry, replaced: recorded.replaced } : null }, null, 2)), 0);
     const lang = cfg.language;
     const delta = previous
       ? t("budget.delta", { d: signedKb(b.always - previous.always), bytes: b.always - previous.always, commit: previous.commit.slice(0, 10) || "—" }, lang)
@@ -310,10 +311,12 @@ const COMMANDS = {
     out(t("budget.summary", { always: kb(b.always), listings: kb(b.listings), onDemand: kb(b.onDemand), files: b.files, delta }, lang));
     if (b.repeatedLines) {
       out(t("budget.repeated", { n: b.repeatedLines, every: b.repeatedEverySession }, lang));
-      for (const r of b.repeated.slice(0, 5)) out(t("budget.repeatedItem", { line: r.line, files: r.files.join(", ") }, lang));
+      // Names of the project's files, and a line of one: shown as one line each can show (tShown).
+      for (const r of b.repeated.slice(0, 5)) out(tShown("budget.repeatedItem", { line: r.line, files: r.files }, lang));
     }
-    if (b.untracked.length) out(t("budget.untracked", { list: b.untracked.join(", ") }, lang));
+    if (b.untracked.length) out(tShown("budget.untracked", { list: b.untracked }, lang));
     if (log.skipped) out(t("budget.skipped", { n: log.skipped, path: resolve(cwd, cfg.paths.metricsLog) }, lang));
+    if (log.unusable) out(t("budget.unusable", { n: log.unusable, path: resolve(cwd, cfg.paths.metricsLog) }, lang));
     if (recorded) out(t(recorded.replaced ? "budget.replaced" : "budget.recorded", { path: recorded.path, commit: recorded.entry.commit.slice(0, 10) }, lang));
     return 0;
   },
@@ -323,7 +326,8 @@ const COMMANDS = {
     if (help) return (out(USAGE), 0);
     const res = await checkSetup({ cwd: projectDir() });
     const mark = { ok: "✓", warn: "!", fail: "✗", unmeasured: "?" };
-    for (const i of res.items) out(`${mark[i.level]} ${t(i.key, i.vars, res.language)}`);
+    // Every value shown as one line can show it: a tracked name or a graph id could otherwise print a line of its own.
+    for (const i of res.items) out(`${mark[i.level]} ${tShown(i.key, i.vars, res.language)}`);
     const count = (/** @type {string} */ level) => res.items.filter((i) => i.level === level).length;
     // A check that could not be made is no warning: counted apart, and only when there is one.
     const unmeasured = count("unmeasured") ? t("doctor.summaryUnmeasured", { n: count("unmeasured") }, res.language) : "";
@@ -503,13 +507,13 @@ const COMMANDS = {
     const graph = await loadGraph({ cwd, config: cfg });
     // What doctor fails on, this refuses: a pick from a graph with a node twice or no id is a guess.
     const problems = graphProblems(graph, cfg);
-    for (const p of problems) err(`${p.level === "fail" ? "✗" : "!"} ${t(p.key, p.vars, cfg.language)}`);
+    for (const p of problems) err(`${p.level === "fail" ? "✗" : "!"} ${tShown(p.key, p.vars, cfg.language)}`);
     if (problems.some((p) => p.level === "fail")) return (err(t("mechanization.refused", {}, cfg.language)), 1);
     const node = pickMechanization(graph, cfg);
     const score = node ? scoreNode(node, cfg) : null;
     if (opts.json) return (out(JSON.stringify(node ? { node, score } : null, null, 2)), 0);
     if (!node) out(t("mechanization.none", {}, cfg.language));
-    else out(t("mechanization.pick", { id: String(node[cfg.graph.fields.id]), score: Number(score).toFixed(2) }, cfg.language));
+    else out(tShown("mechanization.pick", { id: String(node[cfg.graph.fields.id]), score: Number(score).toFixed(2) }, cfg.language));
     return 0;
   },
 

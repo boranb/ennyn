@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, existsSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, existsSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { git } from "../core/git.mjs";
+import * as hookModule from "../setup/hook.mjs";
 import { HOOK_MARKER, hookScript, hookStatus, installHook } from "../setup/hook.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
@@ -52,6 +53,8 @@ test("hook: never over a hook it did not write; a project's own hook that runs c
   writeFileSync(path, "#!/bin/sh\necho theirs\n");
   assert.deepEqual([installHook({ cwd: dir, cliPath: CLI }).result, readFileSync(path, "utf8")], ["other", "#!/bin/sh\necho theirs\n"]);
   writeFileSync(path, '#!/bin/sh\nnode tools/ennyn/scripts/ennyn.mjs commit-check "$1"\n');
+  // Executable, as git runs only such a hook (a mode given to writeFileSync holds only for a new file).
+  chmodSync(path, 0o755);
   assert.equal(hookStatus(dir).state, "wired");
   assert.equal(installHook({ cwd: dir, cliPath: CLI }).result, "wired");
 });
@@ -113,7 +116,8 @@ test("doctor: declared commit types without a hook warn; with the hook installed
   assert.ok((await keys()).includes("warn doctor.hookPath"));
   // The project's own tracked hook that runs commit-check is as good as ours.
   mkdirSync(join(dir, ".githooks"));
-  writeFileSync(join(dir, ".githooks", "commit-msg"), "#!/bin/sh\nnode tools/ennyn/scripts/ennyn.mjs commit-check \"$1\"\n");
+  // Executable, as git runs only such a hook.
+  writeFileSync(join(dir, ".githooks", "commit-msg"), "#!/bin/sh\nnode tools/ennyn/scripts/ennyn.mjs commit-check \"$1\"\n", { mode: 0o755 });
   assert.ok((await keys()).includes("ok doctor.hookOk"));
 });
 
@@ -122,7 +126,7 @@ test("hook: husky's stubs are not ours to edit; .husky/commit-msg running commit
   const dir = repo();
   writeFileSync(join(dir, ".ennyn", "graph.json"), JSON.stringify({ nodes: [{ id: "a" }] }));
   mkdirSync(join(dir, ".husky", "_"), { recursive: true });
-  writeFileSync(join(dir, ".husky", "_", "commit-msg"), '#!/usr/bin/env sh\n. "${0%/*}/h"\n');
+  writeFileSync(join(dir, ".husky", "_", "commit-msg"), '#!/usr/bin/env sh\n. "${0%/*}/h"\n', { mode: 0o755 });
   git(["config", "core.hooksPath", ".husky/_"], { cwd: dir });
   const bare = installHook({ cwd: dir, cliPath: CLI });
   assert.deepEqual([bare.result, bare.hooksKind], ["hooksPath", "husky"]);
@@ -278,4 +282,247 @@ test("hook: a chained squash! finds the commit autosquash folds into, and that c
   const second = squash("3");
   assert.equal(git(["log", "-1", "--format=%s"], { cwd: dir }), "squash! squash! feat: module a");
   assert.deepEqual([second.status, second.stderr], [0, ""]);
+});
+
+test("doctor audit: a hook whose CLI is gone, or one git does not run (not executable, a husky stub never generated), is no ✓; install-hook makes it run again", async () => {
+  const { checkSetup } = await import("../setup/doctor.mjs");
+  const dir = repo();
+  writeFileSync(join(dir, ".ennyn", "graph.json"), JSON.stringify({ nodes: [{ id: "a" }] }));
+  const keys = async () => (await checkSetup({ cwd: dir, env: {} })).items.map((i) => `${i.level} ${i.key}`);
+  const hook = join(dir, ".git", "hooks", "commit-msg");
+  // Installed from a copy of Ennyn that has since moved: every commit goes through unchecked.
+  installHook({ cwd: dir, cliPath: join(dir, "moved", "it's here", "ennyn.mjs") });
+  assert.equal(hookStatus(dir).cli, join(dir, "moved", "it's here", "ennyn.mjs"), "the path as the script quotes it");
+  assert.ok((await keys()).includes("warn doctor.hookCliGone"));
+  // A directory in the CLI's place is no CLI: the hook itself asks [ -f "$cli" ].
+  mkdirSync(join(dir, "moved", "it's here", "ennyn.mjs"), { recursive: true });
+  assert.ok((await keys()).includes("warn doctor.hookCliGone"), "a directory is no CLI");
+  assert.equal(commit(dir, "untyped subject").status, 0, "the stale hook lets it through");
+  assert.equal(installHook({ cwd: dir, cliPath: CLI }).result, "updated");
+  assert.ok((await keys()).includes("ok doctor.hookOk"));
+  // Not executable: git skips it with a hint, and checks nothing.
+  if (process.platform !== "win32") {
+    chmodSync(hook, 0o644);
+    assert.ok((await keys()).includes("warn doctor.hookNotRun"));
+    assert.equal(commit(dir, "untyped again").status, 0, "git ran no hook");
+    assert.equal(installHook({ cwd: dir, cliPath: CLI }).result, "updated", "install-hook does not call an idle hook unchanged");
+    assert.ok(statSync(hook).mode & 0o100);
+    assert.ok((await keys()).includes("ok doctor.hookOk"));
+    assert.notEqual(commit(dir, "untyped once more").status, 0, "it runs again");
+  }
+  // husky's hooks path with .husky/commit-msg wired, but the stub husky generates on install not there yet.
+  const husky = repo();
+  writeFileSync(join(husky, ".ennyn", "graph.json"), JSON.stringify({ nodes: [{ id: "a" }] }));
+  mkdirSync(join(husky, ".husky"));
+  writeFileSync(join(husky, ".husky", "commit-msg"), 'npx ennyn commit-check "$1"\n');
+  git(["config", "core.hooksPath", ".husky/_"], { cwd: husky });
+  assert.ok((await checkSetup({ cwd: husky, env: {} })).items.some((i) => i.key === "doctor.hookAbsent"));
+});
+
+test("doctor audit: review.impactRequiredGlobs with no hook is a rule on paper too", async () => {
+  const { checkSetup } = await import("../setup/doctor.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "en-hook-impact-"));
+  git(["init", "-q", "-b", "main"], { cwd: dir });
+  mkdirSync(join(dir, ".ennyn"));
+  writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ review: { impactRequiredGlobs: ["src/**"] } }));
+  writeFileSync(join(dir, ".ennyn", "graph.json"), JSON.stringify({ nodes: [{ id: "a" }] }));
+  const keys = async () => (await checkSetup({ cwd: dir, env: {} })).items.map((i) => `${i.level} ${i.key}`);
+  assert.ok((await keys()).includes("warn doctor.hookMissing"));
+  installHook({ cwd: dir, cliPath: CLI });
+  assert.ok((await keys()).includes("ok doctor.hookOk"));
+});
+
+test("install-hook audit (review): for every hook state doctor and install-hook agree: a ✓ is nothing to do, a warning is fixed or refused with why", async () => {
+  const { checkSetup } = await import("../setup/doctor.mjs");
+  /** @param {string} dir */
+  const hookLine = async (dir) => (await checkSetup({ cwd: dir, env: {} })).items.find((i) => i.key.startsWith("doctor.hook"));
+  /** @param {string} dir */
+  const install = (dir) => spawnSync(process.execPath, [CLI, "install-hook"], { cwd: dir, encoding: "utf8" });
+  /** @param {(dir: string) => void} make */
+  const state = (make) => {
+    const dir = repo();
+    writeFileSync(join(dir, ".ennyn", "graph.json"), JSON.stringify({ nodes: [{ id: "a" }] }));
+    make(dir);
+    return dir;
+  };
+  const wiredLine = '#!/bin/sh\nnode tools/ennyn/scripts/ennyn.mjs commit-check "$1"\n';
+  const cases = [
+    { name: "a wired hook at 0644", want: "doctor.hookNotRun", says: /not executable.*chmod \+x/, make: (/** @type {string} */ d) => writeFileSync(join(d, ".git", "hooks", "commit-msg"), wiredLine, { mode: 0o644 }) },
+    {
+      name: "a wired tracked hook at 0644 under core.hooksPath",
+      want: "doctor.hookNotRun",
+      says: /not executable/,
+      make: (/** @type {string} */ d) => {
+        mkdirSync(join(d, ".githooks"));
+        writeFileSync(join(d, ".githooks", "commit-msg"), wiredLine, { mode: 0o644 });
+        git(["config", "core.hooksPath", ".githooks"], { cwd: d });
+      },
+    },
+    {
+      name: "husky's .husky/commit-msg with no generated stub",
+      want: "doctor.hookAbsent",
+      says: /is not there.*husky/,
+      make: (/** @type {string} */ d) => {
+        mkdirSync(join(d, ".husky"));
+        writeFileSync(join(d, ".husky", "commit-msg"), 'npx ennyn commit-check "$1"\n');
+        git(["config", "core.hooksPath", ".husky/_"], { cwd: d });
+      },
+    },
+    {
+      name: "an Ennyn script under core.hooksPath whose CLI moved",
+      want: "doctor.hookCliGone",
+      says: /which is not there/,
+      make: (/** @type {string} */ d) => {
+        mkdirSync(join(d, ".githooks"));
+        writeFileSync(join(d, ".githooks", "commit-msg"), hookScript(join(d, "gone", "ennyn.mjs")), { mode: 0o755 });
+        git(["config", "core.hooksPath", ".githooks"], { cwd: d });
+      },
+    },
+    {
+      name: "an Ennyn script under core.hooksPath that runs",
+      want: "doctor.hookOk",
+      says: /already runs commit-check/,
+      make: (/** @type {string} */ d) => {
+        mkdirSync(join(d, ".githooks"));
+        writeFileSync(join(d, ".githooks", "commit-msg"), hookScript(CLI), { mode: 0o755 });
+        git(["config", "core.hooksPath", ".githooks"], { cwd: d });
+      },
+    },
+    { name: "a wired hook that runs", want: "doctor.hookOk", says: /already runs commit-check/, make: (/** @type {string} */ d) => writeFileSync(join(d, ".git", "hooks", "commit-msg"), wiredLine, { mode: 0o755 }) },
+  ];
+  for (const c of cases) {
+    if (process.platform === "win32" && c.want === "doctor.hookNotRun") continue;
+    const dir = state(c.make);
+    assert.equal((await hookLine(dir))?.key, c.want, c.name);
+    const before = hookStatus(dir);
+    const r = install(dir);
+    assert.match(r.stdout, c.says, `${c.name}: ${r.stdout}`);
+    assert.equal(r.status, c.want === "doctor.hookOk" ? 0 : 1, `${c.name}: a warning doctor gives is no "nothing to do"`);
+    assert.doesNotMatch(r.stdout, c.want === "doctor.hookOk" ? /^$/ : /already runs|nothing to do/, c.name);
+    assert.deepEqual(hookStatus(dir), before, `${c.name}: install-hook writes into no hook it did not write`);
+  }
+});
+
+test("doctor audit (review): every rule only the commit-msg hook checks warns without a hook, named in one line", async () => {
+  const { checkSetup } = await import("../setup/doctor.mjs");
+  const { t } = await import("../core/i18n.mjs");
+  for (const [config, named] of [
+    [{ commitMsg: { style: "terse" } }, /commitMsg\.style/],
+    [{ review: { cochange: [{ paths: ["src/**"], docs: ["README.md"] }] } }, /review\.cochange/],
+    [{ review: { impactRequiredGlobs: ["src/**"], forbidden: [{ text: "debugger", paths: ["**"] }] } }, /review\.forbidden, review\.impactRequiredGlobs/],
+  ]) {
+    const dir = mkdtempSync(join(tmpdir(), "en-hook-paper-"));
+    git(["init", "-q", "-b", "main"], { cwd: dir });
+    mkdirSync(join(dir, ".ennyn"));
+    writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify(config));
+    writeFileSync(join(dir, ".ennyn", "graph.json"), JSON.stringify({ nodes: [{ id: "a" }] }));
+    const item = (await checkSetup({ cwd: dir, env: {} })).items.find((i) => i.key === "doctor.hookMissing");
+    assert.ok(item && item.level === "warn", JSON.stringify(config));
+    assert.match(t(item.key, item.vars, "en"), named);
+    assert.match(t(item.key, item.vars, "tr"), named);
+  }
+});
+
+test("hook audit (review): a hook is wired when a line runs commit-check as a check; real git is the judge, refusing an untyped subject only then (accept and reject corpus)", () => {
+  const { callsCommitCheck } = /** @type {{ callsCommitCheck: (t: string) => boolean }} */ (hookModule);
+  const cli = `'${CLI.replace(/'/g, "'\\''")}'`;
+  const node = (/** @type {string} */ body) => `#!/usr/bin/env node\n${body}`;
+  // Each runs commit-check as a check: git refuses the untyped subject.
+  const calls = [
+    `node ${cli} commit-check "$1"`,
+    `exec node ${cli} commit-check --hook "$1"`,
+    `  node ${cli} commit-check "$1" # the convention`,
+    `node ${cli} commit-check "$1" || exit 1`,
+    `if ! node ${cli} commit-check "$1"; then exit 1; fi`,
+    `# checks the message\nnode ${cli} commit-check "$1"`,
+    `out="$(node ${cli} commit-check "$1" 2>&1)" || { echo "$out" >&2; exit 1; }`,
+    `node ${cli} "commit-check" "$1"`,
+    `SUB=commit-check; node ${cli} "$SUB" "$1"`,
+    `sh -c "node ${cli} commit-check \\"$1\\""`,
+    `node ${cli} commit-check "$1" && :`,
+    `if [ -n "$ENNYN_SKIP" ]; then\n  exit 0\nfi\nnode ${cli} commit-check "$1"`,
+    `cat >/dev/null <<-'END'\n\ttext\n\tEND\nnode ${cli} commit-check "$1"`,
+    `[ $# -gt 0 ] && node ${cli} commit-check "$1"`,
+    node(`const { execFileSync } = require("node:child_process");\ntry {\n  execFileSync(process.execPath, [${JSON.stringify(CLI)}, "commit-check", process.argv[2]], { stdio: "inherit" });\n} catch {\n  process.exit(1);\n}`),
+  ];
+  // Each names commit-check and checks nothing: git takes the untyped subject.
+  const idle = [
+    `# node ${cli} commit-check "$1"`,
+    "echo skipping commit-check",
+    "printf 'commit-check is off\\n'",
+    `cat >&2 <<EOF\nrun node ${cli} commit-check "$1" yourself\nEOF`,
+    `cat <<-'END'\n\tnode ${cli} commit-check "$1"\n\tEND`,
+    `node ${cli} commit-check "$1" || true`,
+    `node ${cli} commit-check "$1" || :`,
+    `node ${cli} commit-check "$1" || exit 0`,
+    `exit 0\nnode ${cli} commit-check "$1"`,
+    "true # commit-check",
+    "if true; then echo commit-check is off; fi",
+    ": 'commit-check disabled'",
+    node(`// execFileSync(process.execPath, [${JSON.stringify(CLI)}, "commit-check", process.argv[2]]);\nprocess.exit(0);`),
+  ];
+  const dir = repo();
+  const hook = join(dir, ".git", "hooks", "commit-msg");
+  /** @param {string} body */
+  const refused = (body) => {
+    writeFileSync(hook, body.startsWith("#!") ? `${body}\n` : `#!/bin/sh\n${body}\n`);
+    chmodSync(hook, 0o755);
+    return commit(dir, "untyped subject").status !== 0;
+  };
+  for (const body of calls) {
+    assert.equal(refused(body), true, `the oracle: ${JSON.stringify(body)}`);
+    assert.equal(callsCommitCheck(body), true, JSON.stringify(body));
+  }
+  for (const body of idle) {
+    assert.equal(refused(body), false, `the oracle: ${JSON.stringify(body)}`);
+    assert.equal(callsCommitCheck(body), false, JSON.stringify(body));
+  }
+  // Shapes git cannot run here (no npx package, a CRLF shell script), read the same way.
+  for (const body of ['npx ennyn commit-check "$1"', 'npx --no -- ennyn commit-check "$1"', `node ${cli} commit-check "$1"\r\n`]) assert.equal(callsCommitCheck(body), true, JSON.stringify(body));
+  for (const body of ['node x commit-checker "$1"', 'node x my-commit-check "$1"']) assert.equal(callsCommitCheck(body), false, JSON.stringify(body));
+  // Known limit of a line-level reading: a block that never runs. Read as wired; git takes the subject.
+  const never = `if false; then\n  node ${cli} commit-check "$1"\nfi`;
+  assert.deepEqual([callsCommitCheck(never), refused(never)], [true, false]);
+  writeFileSync(hook, "#!/bin/sh\n# node x commit-check \"$1\" (disabled)\nexit 0\n");
+  assert.equal(hookStatus(dir).state, "other");
+});
+
+test("install-hook audit (review round two): the chmod it advises works on a path with a space, run as printed", (t) => {
+  if (process.platform === "win32") return t.skip("no executable bit on Windows");
+  const dir = mkdtempSync(join(tmpdir(), "en hook space "));
+  git(["init", "-q", "-b", "main"], { cwd: dir });
+  mkdirSync(join(dir, ".ennyn"));
+  writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ commitMsg: { types: ["feat", "fix"], fixType: "fix" } }));
+  writeFileSync(join(dir, ".git", "hooks", "commit-msg"), `#!/bin/sh\nnode '${CLI}' commit-check "$1"\n`, { mode: 0o644 });
+  const r = spawnSync(process.execPath, [CLI, "install-hook"], { cwd: dir, encoding: "utf8" });
+  assert.equal(r.status, 1);
+  const advice = /Make it executable: (.+)$/m.exec(r.stdout)?.[1];
+  assert.ok(advice, r.stdout);
+  const run = spawnSync("sh", ["-c", advice], { encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(hookStatus(dir).runs, true);
+});
+
+test("hook audit (review round two): husky in a directory of its own choosing is husky, known by the h it writes", () => {
+  const dir = repo();
+  mkdirSync(join(dir, ".config", "husky", "_"), { recursive: true });
+  writeFileSync(join(dir, ".config", "husky", "_", "h"), "#!/usr/bin/env sh\n");
+  writeFileSync(join(dir, ".config", "husky", "_", "commit-msg"), '#!/usr/bin/env sh\n. "${0%/*}/h"\n', { mode: 0o755 });
+  writeFileSync(join(dir, ".config", "husky", "commit-msg"), 'npx ennyn commit-check "$1"\n');
+  git(["config", "core.hooksPath", ".config/husky/_"], { cwd: dir });
+  const st = hookStatus(dir);
+  assert.deepEqual([st.hooksKind, st.state], ["husky", "wired"]);
+  // A tracked hooks directory named _ that husky did not write stays the repository's.
+  const plain = repo();
+  mkdirSync(join(plain, "hooks", "_"), { recursive: true });
+  git(["config", "core.hooksPath", "hooks/_"], { cwd: plain });
+  assert.equal(hookStatus(plain).hooksKind, "repo");
+  // An h in a directory not named _ is no husky either.
+  writeFileSync(join(plain, "hooks", "h"), "x\n");
+  git(["config", "core.hooksPath", "hooks"], { cwd: plain });
+  assert.equal(hookStatus(plain).hooksKind, "repo");
+  // The advice for husky names the file husky runs, in its own directory.
+  rmSync(join(dir, ".config", "husky", "commit-msg"));
+  const r = spawnSync(process.execPath, [CLI, "install-hook"], { cwd: dir, encoding: "utf8" });
+  assert.match(r.stdout, /\.config\/husky\/commit-msg/, r.stdout);
 });

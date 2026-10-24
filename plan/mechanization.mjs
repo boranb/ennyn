@@ -11,6 +11,10 @@
 
 import { readFileSync, statSync } from "node:fs";
 import { present } from "../core/files.mjs";
+import { UNSHOWN } from "../core/i18n.mjs";
+
+/** Runs of what a report line cannot show (core/i18n.mjs), each made one space in a place a problem names. */
+const UNSHOWN_RUN = new RegExp(`(?:${UNSHOWN.source})+`, "gu");
 import { resolve, extname } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -151,7 +155,7 @@ export function readyNodes(graph, config) {
 }
 
 /**
- * @typedef {{ level: "fail" | "warn", key: string, vars: Record<string, string | number> }} GraphProblem
+ * @typedef {{ level: "fail" | "warn", key: string, vars: import("../core/i18n.mjs").Vars }} GraphProblem
  */
 
 /**
@@ -182,7 +186,7 @@ export function graphProblems(graph, config) {
   // twice, or two items share it). Those marks come first, so the cut at three places never hides them.
   // " · " parts the places: a source written as text may hold a comma.
   const line = (/** @type {unknown} */ v) => {
-    const one = [...String(v).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]+/g, " ").trim()];
+    const one = [...String(v).replace(UNSHOWN_RUN, " ").trim()];
     return one.length > 120 ? `${one.slice(0, 119).join("")}…` : one.join("");
   };
   const place = (/** @type {GraphNode} */ n) => (typeof n[f.source] === "string" ? line(n[f.source]) : "");
@@ -215,11 +219,11 @@ export function graphProblems(graph, config) {
   const dupes = [...seen].filter(([, c]) => c > 1).map(([id]) => id);
   for (const [ids, level] of /** @type {const} */ ([[dupes.filter((id) => waitingIds.has(id)), "fail"], [dupes.filter((id) => !waitingIds.has(id)), "warn"]])) {
     const holders = [...waitingNodes, ...finished].filter((n) => named(n) && ids.includes(n[f.id]));
-    if (ids.length) out.push({ level, key: "doctor.idDuplicate", vars: { list: ids.map(String).join(", "), where: whereById(ids, holders) } });
+    if (ids.length) out.push({ level, key: "doctor.idDuplicate", vars: { list: ids.map(String), where: whereById(ids, holders) } });
   }
   for (const n of waitingNodes) {
     const unknown = needsOf(n, config).filter((id) => !seen.has(id));
-    if (unknown.length) out.push({ level: "fail", key: "doctor.needsUnknown", vars: { id: String(n[f.id]), list: unknown.map(String).join(", "), where: where([n]) } });
+    if (unknown.length) out.push({ level: "fail", key: "doctor.needsUnknown", vars: { id: String(n[f.id]), list: unknown.map(String), where: where([n]) } });
   }
   // A cycle among waiting nodes never opens. Depth first with a stack of its own: a needs chain thousands
   // long would overflow the call stack.

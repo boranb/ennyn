@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../core/config.mjs";
-import { t } from "../core/i18n.mjs";
+import { t, tShown } from "../core/i18n.mjs";
 import { graphProblems, loadGraph, pickMechanization, readyMechanization, scoreNode, GraphError } from "../plan/mechanization.mjs";
 
 const cfg = (override = {}) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-p-")), env: {}, override });
@@ -246,4 +246,23 @@ test("graphProblems (after review round two): ? is never merged, marks come befo
   assert.deepEqual(at({ open: [{ id: "a", source: "R.md:1\u0085x‮" }, { id: "a", source: "\u0007\u0007" }], done: [] }), [" (a: ? · R.md:1 x)"]);
   // An id is cleaned the same way inside the places.
   assert.deepEqual(at({ open: [{ id: "a\n✓ ok", source: "R.md:1" }, { id: "a\n✓ ok", source: "R.md:2" }], done: [] }), [" (a ✓ ok: R.md:1 · R.md:2)"]);
+});
+
+test("graphProblems (doctor audit, review): a source loses every character a line cannot show; ids are listed as names, each its own", () => {
+  const c = cfg();
+  // Direction and format marks a source written as text can hold: the left-to-right and Arabic letter marks, a soft hyphen.
+  const dup = [{ id: "a", source: "‎ROADMAP.md:1" }, { id: "a", source: "ROAD؜MAP.md:2­" }];
+  const where = String(graphProblems({ open: dup, done: [] }, c).find((p) => p.key === "doctor.idDuplicate")?.vars.where);
+  assert.doesNotMatch(where, /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u, JSON.stringify(where));
+  // An id holding the ", " that joins the list stays one id.
+  const ids = [{ id: "x, y" }, { id: "x, y" }, { id: "z" }, { id: "z" }];
+  const p = graphProblems({ open: ids, done: [] }, c).find((q) => q.key === "doctor.idDuplicate");
+  assert.match(tShown(String(p?.key), p?.vars, "en"), /duplicate ids: "x, y", z/);
+});
+
+test("graphProblems (doctor audit, review round two): ZWNJ and ZWJ in a source stay, as in Persian and Indic names", () => {
+  const dup = [{ id: "a", source: "نقشه\u200cراه.md:1" }, { id: "a", source: "x\u200e\u200cy.md:2" }];
+  const where = String(graphProblems({ open: dup, done: [] }, cfg()).find((p) => p.key === "doctor.idDuplicate")?.vars.where);
+  assert.ok(where.includes("نقشه\u200cراه.md:1"), JSON.stringify(where));
+  assert.ok(where.includes("x \u200cy.md:2"), `a mark before it goes, the ZWNJ stays: ${JSON.stringify(where)}`);
 });

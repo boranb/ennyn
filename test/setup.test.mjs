@@ -23,7 +23,7 @@ import {
   scanProject,
 } from "../setup/scan.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
-import { t } from "../core/i18n.mjs";
+import { shown, t, tShown } from "../core/i18n.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
 const cfg = () => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "en-s-")), env: {} });
@@ -271,7 +271,7 @@ test("doctor: a valid setup passes and counts ready nodes", async () => {
   assert.equal(res.language, "tr");
   const ready = res.items.find((i) => i.key === "doctor.ready");
   assert.deepEqual(ready?.vars, { core: 1, mech: 1 });
-  assert.ok(keys(res).includes("ok doctor.fixTooFew"));
+  assert.ok(keys(res).includes("unmeasured doctor.fixTooFew"), "too few commits to judge is no verdict");
 });
 
 test("doctor: bad regex, missing id, duplicate id and unknown need fail; nothing ready warns", async () => {
@@ -294,7 +294,7 @@ test("doctor audit: outside a repository the git checks are skipped and the fix 
   put(dir, { ".ennyn/config.json": "{}", ".ennyn/graph.json": JSON.stringify({ nodes: [{ id: "a", mechanization: true }], done: [] }) });
   const res = await checkSetup({ cwd: dir, env: {} });
   const k = keys(res);
-  assert.ok(k.includes("warn doctor.fixNoRepo"), k.join("\n"));
+  assert.ok(k.includes("unmeasured doctor.fixNoRepo"), k.join("\n"));
   assert.ok(k.includes("ok doctor.ready"));
   assert.ok(!k.some((x) => /doctor\.(fixTooFew|fixOk|fixNone|hook|budget)/.test(x)), "no git-based verdict outside a repository");
 });
@@ -378,7 +378,7 @@ test("cli: init-scan --json is the scan; doctor prints marks and exits 1 on a pr
   const doc = run("doctor");
   assert.equal(doc.status, 1);
   assert.match(doc.stdout, /^✗ work graph: duplicate ids: a$/m);
-  assert.match(doc.stdout, /^problems: 1 · warnings: 0$/m);
+  assert.match(doc.stdout, /^problems: 1 · warnings: 0 · unmeasured: 1$/m, "the one unmeasured: too few commits for the fix label");
 });
 
 test("commit style: language guessed from subjects, also Turkish typed without diacritics; types counted, 'faz 8:' is not one", () => {
@@ -544,7 +544,7 @@ test("doctor: a cochange glob that matches no tracked file warns (a typo would l
   r.commit("feat: files", { "src/a.js": "x", "README.md": "# x" });
   const res = await checkSetup({ cwd: r.dir, env: {} });
   const found = res.items.filter((i) => i.key === "doctor.cochangeUnmatched");
-  assert.deepEqual(found.map((i) => [i.level, i.vars]), [["warn", { rule: 2, globs: "scr/**, DESIGN.md, docs/**" }]]);
+  assert.deepEqual(found.map((i) => [i.level, i.vars]), [["warn", { rule: 2, globs: ["scr/**", "DESIGN.md", "docs/**"] }]]);
   assert.match(t("doctor.cochangeUnmatched", found[0].vars, "en"), /^review\.cochange rule 2: scr\/\*\*, DESIGN\.md, docs\/\*\* match no tracked file/);
   const fine = await checkSetup({ cwd: setup({ review: { cochange: [{ paths: [".ennyn/*.json"], docs: [".ennyn/graph.json"] }] } }, { nodes: [{ id: "a" }] }).dir, env: {} });
   assert.ok(!keys(fine).includes("warn doctor.cochangeUnmatched"));
@@ -581,7 +581,7 @@ test("scan audit (after review): a directory git lists (a submodule) is no unrea
   try {
     const out = run().stdout;
     assert.match(out, /^\? commit-msg hook: unmeasured: .*commit-msg could not be read: EACCES/m);
-    assert.match(out, /^problems: 0 · warnings: \d+ · unmeasured: 1$/m);
+    assert.match(out, /^problems: 0 · warnings: \d+ · unmeasured: 2$/m, "the hook, and the fix label with too few commits");
     assert.doesNotMatch(out, /hook: none/);
   } finally {
     chmodSync(hook, 0o755);
@@ -596,4 +596,137 @@ test("scan audit (after review): a directory git lists (a submodule) is no unrea
   } finally {
     chmodSync(join(r.dir, ".claude", "commands"), 0o755);
   }
+});
+
+test("doctor audit: a metrics log it cannot read (a directory in its place, no permission) is said as unmeasured; the rest of the report stands", async (t) => {
+  const r = setup({}, { nodes: [{ id: "a" }] });
+  put(r.dir, { ".ennyn/metrics.jsonl": `${JSON.stringify({ kind: "budget", date: "2026-10-01", commit: "a".repeat(40), always: 1 })}\n` });
+  /** @param {string[]} k */
+  const after = (k) => k.slice(k.indexOf("unmeasured doctor.budgetLogUnmeasured") + 1);
+  // paths.metricsLog naming a directory (an empty value resolves to the project directory itself).
+  for (const metricsLog of ["", ".ennyn"]) {
+    put(r.dir, { ".ennyn/config.json": JSON.stringify({ paths: { metricsLog } }) });
+    const k = keys(await checkSetup({ cwd: r.dir, env: {} }));
+    assert.ok(k.includes("unmeasured doctor.budgetLogUnmeasured"), `${JSON.stringify(metricsLog)}:\n${k.join("\n")}`);
+    assert.ok(after(k).some((x) => x.includes("doctor.fix")), "the checks after it still run");
+  }
+  put(r.dir, { ".ennyn/config.json": "{}" });
+  if (process.getuid?.() === 0) return t.skip("root reads any file");
+  const log = join(r.dir, ".ennyn", "metrics.jsonl");
+  chmodSync(log, 0o000);
+  try {
+    const res = await checkSetup({ cwd: r.dir, env: {} });
+    const item = res.items.find((i) => i.key === "doctor.budgetLogUnmeasured");
+    assert.match(String(item?.vars.error), /metrics\.jsonl could not be read: EACCES/);
+    assert.match(t_(item), /could not be read/, "the line says the comparison was not made");
+    const out = spawnSync(process.execPath, [CLI, "doctor"], { cwd: r.dir, encoding: "utf8" });
+    assert.match(out.stdout, /^\? instruction budget: .*unmeasured/m);
+    assert.match(out.stdout, /^\? fix label: \d+ commits, too few to judge$/m);
+  } finally {
+    chmodSync(log, 0o644);
+  }
+});
+
+/** @param {{ key: string, vars: Record<string, string | number> } | undefined} item */
+const t_ = (item) => (item ? t(item.key, item.vars, "en") : "");
+
+test("doctor audit: tracked files or the recent history that git cannot list (past its buffer, or failing) are said as unmeasured; the rest stands", async () => {
+  const r = setup({ review: { cochange: [{ paths: ["src/**"], docs: ["README.md"] }] } }, { nodes: [{ id: "a" }] });
+  const bin = mkdtempSync(join(tmpdir(), "en-doc-bin-"));
+  const real = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+  /** @param {string} sub */
+  const failing = (sub) => {
+    writeFileSync(join(bin, "git"), `#!/bin/sh\ncase " $* " in *" ${sub} "*) echo "fatal: injected" >&2; exit 128 ;; esac\nexec "${real}" "$@"\n`);
+    chmodSync(join(bin, "git"), 0o755);
+    return spawnSync(process.execPath, [CLI, "doctor"], { cwd: r.dir, env: { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}` }, encoding: "utf8" });
+  };
+  const files = failing("ls-files");
+  assert.match(files.stdout, /^\? tracked files: unmeasured \(.*injected.*\)/m, files.stdout + files.stderr);
+  assert.match(files.stdout, /^\? fix label: \d+ commits, too few/m, "the fix label does not need the file list");
+  assert.doesNotMatch(files.stdout, /instruction budget: [\d.]+ KB/, "no budget from no file list");
+  const log = failing("log");
+  assert.match(log.stdout, /^\? fix label: unmeasured: .*injected/m, log.stdout + log.stderr);
+  assert.doesNotMatch(log.stdout, /^. fix label: \d/m, "no verdict from no history");
+  assert.match(log.stdout, /^✓ instruction budget: /m);
+  assert.match(log.stdout, / · unmeasured: 1$/m);
+});
+
+test("doctor audit: outside a repository the fix label is counted as unmeasured, not as a warning", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "pl-doc-out2-"));
+  put(dir, { ".ennyn/config.json": "{}", ".ennyn/graph.json": JSON.stringify({ nodes: [{ id: "a" }] }) });
+  assert.ok(keys(await checkSetup({ cwd: dir, env: {} })).includes("unmeasured doctor.fixNoRepo"));
+  assert.match(t("doctor.fixNoRepo", {}, "tr"), /^fix etiketi: /, "one Turkish name for the fix label");
+});
+
+test("doctor audit: a file name with a line break or another control character stays on its line, quoted", async (t) => {
+  if (process.platform === "win32") return t.skip("no such names on Windows");
+  const spoof = "x\n✓ commit-msg hook: checks every message";
+  const r = setup({ review: { forbidden: [{ text: "debugger", paths: ["**"] }] } }, { nodes: [{ id: "a" }] });
+  const flipped = "a\u202eexe.js";
+  r.commit("feat: names", { [spoof]: "debugger\n", "plain.js": "debugger\n", [flipped]: "debugger\n" });
+  const out = spawnSync(process.execPath, [CLI, "doctor"], { cwd: r.dir, encoding: "utf8" }).stdout;
+  assert.doesNotMatch(out, /^✓ commit-msg hook: checks every message$/m, out);
+  const held = out.split("\n").find((l) => l.includes("review.forbidden rule 1"));
+  assert.ok(held?.includes(JSON.stringify(spoof)) && held.includes("plain.js") && !held.includes('"plain.js"'), held);
+  assert.ok(held.includes('"a\\u202eexe.js"') && !held.includes("\u202e"), "a direction mark is escaped, not shown");
+});
+
+/** What a report line must never hold raw: controls, format characters, line and paragraph separators. */
+const RAW = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+
+test("doctor audit (review): every value escaped where the lines are written: errors, graph ids, rule texts; names that could pass for each other stay apart", async (t) => {
+  if (process.platform === "win32") return t.skip("no such names on Windows");
+  const esc = "\u001b[2K\u001b[G✓ instruction budget: 0.0 KB in every session";
+  const graph = { nodes: [{ id: `dup\u2028${esc}` }, { id: `dup\u2028${esc}` }, { id: "b", needs: ["x\u200ey", "z\u061cw"] }] };
+  const text = "deb\u001bugger";
+  const r = setup({ review: { forbidden: [{ text, paths: ["**"] }] } }, graph);
+  // A command file that is a link to a directory: the budget's read error names it.
+  mkdirSync(join(r.dir, "somewhere"));
+  writeFileSync(join(r.dir, "somewhere", "f"), "x\n");
+  mkdirSync(join(r.dir, ".claude", "commands"), { recursive: true });
+  symlinkSync("../../somewhere", join(r.dir, ".claude", "commands", `z${esc}.md`), "dir");
+  r.commit("feat: odd values", {
+    '"a\\nb.js"': `${text}\n`,
+    "a\nb.js": `${text}\n`,
+    "x, y.js": `${text}\n`,
+  });
+  const run = spawnSync(process.execPath, [CLI, "doctor"], { cwd: r.dir, encoding: "utf8" });
+  for (const l of run.stdout.split("\n")) assert.doesNotMatch(l, RAW, JSON.stringify(l));
+  assert.match(run.stdout, /^\? instruction budget: unmeasured: .*\\u001b\[2K\\u001b\[G/m);
+  assert.match(run.stdout, /x\\u200ey/);
+  assert.match(run.stdout, /z\\u061cw/);
+  const held = run.stdout.split("\n").find((l) => l.includes("review.forbidden rule 1") && l.includes("already"));
+  assert.ok(held, run.stdout);
+  // The rule's text quoted once, escaped; the names each their own, the one holding ", " quoted.
+  assert.ok(held.includes(`hold "deb\\u001bugger" already`), held);
+  assert.ok(held.includes('"\\"a\\\\nb.js\\""') && held.includes('"a\\nb.js"') && held.includes('"x, y.js"'), held);
+  const mech = spawnSync(process.execPath, [CLI, "mechanization"], { cwd: r.dir, encoding: "utf8" });
+  for (const l of mech.stderr.split("\n")) assert.doesNotMatch(l, RAW, JSON.stringify(l));
+});
+
+test("doctor audit (review): an escaped value reads back as the value, astral format characters too", () => {
+  for (const v of ["a\u{E0001}b", "x\u200ey", "\u2028", "q\"\\n", "\u0085\u007f"]) {
+    const { text, quoted } = shown(v, { name: true });
+    assert.ok(quoted && !/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u.test(text) && JSON.parse(text) === v, JSON.stringify([v, text]));
+  }
+});
+
+test("doctor audit (review round two): a path stays as a user copies it: a Windows path is not quoted for its backslashes, and ZWNJ / ZWJ stay as they are", () => {
+  assert.deepEqual(shown("D:\\work\\src\\x.js", { name: true, platform: "win32" }), { text: "D:\\work\\src\\x.js", quoted: false });
+  assert.equal(shown("a\\b.js", { name: true, platform: "linux" }).quoted, true, "a backslash in a POSIX name is part of the name");
+  assert.equal(shown("x, y.js", { name: true, platform: "win32" }).quoted, true, "the list separator still quotes");
+  for (const v of ["می\u200cخواهم.md", "क्\u200dष.md"]) assert.deepEqual(shown(v, { name: true }), { text: v, quoted: false }, JSON.stringify(v));
+  for (const v of ["a\u200eb", "a\u202eb", "a\u2066b", "a\u2028b"]) assert.equal(shown(v, { name: true }).quoted, true, JSON.stringify(v));
+});
+
+test("doctor audit (review round two): the globs a cochange or forbidden rule names are listed one by one", async () => {
+  const r = setup({ review: { cochange: [{ paths: ["src/**"], docs: ["docs/a, b.md", "lib/**"] }], forbidden: [{ text: "debugger", paths: ["gone/a, b.js", "src/**"] }] } }, { nodes: [{ id: "a" }] });
+  r.commit("feat: src", { "src/x.js": "x\n" });
+  const items = (await checkSetup({ cwd: r.dir, env: {} })).items;
+  const line = (/** @type {string} */ key) => {
+    const i = items.find((x) => x.key === key);
+    return i ? tShown(i.key, i.vars, "en") : "";
+  };
+  assert.match(line("doctor.cochangeUnmatched"), /: "docs\/a, b\.md", lib\/\*\* match no tracked file/);
+  assert.match(line("doctor.forbiddenUnmatched"), /: "gone\/a, b\.js" match no tracked file/);
 });

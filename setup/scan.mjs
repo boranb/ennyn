@@ -10,7 +10,7 @@
  * production path.
  */
 
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { gone, present, readIfThere } from "../core/files.mjs";
 import { join, relative, resolve, posix, sep } from "node:path";
 import { git, gitError, gitMaybe, gitRun, headCommit, repoPath } from "../core/git.mjs";
@@ -400,20 +400,8 @@ function isFile(path) {
   }
 }
 
-/**
- * A file's text; null when there is no such file. Any other error (no permission, a directory) throws: a
- * file that could not be read is no empty file.
- * @param {string} path
- */
-function readText(path) {
-  try {
-    return readFileSync(path, "utf8");
-  } catch (e) {
-    const code = /** @type {NodeJS.ErrnoException} */ (e).code;
-    if (code === "ENOENT" || code === "ENOTDIR") return null;
-    throw e;
-  }
-}
+/** A file's text; null when there is no such file. One that could not be read throws, naming it: it is no empty file. */
+const readText = readIfThere;
 
 /**
  * A JSON file's top-level object: `null` when absent, `"unreadable"` when it does not parse.

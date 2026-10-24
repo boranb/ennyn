@@ -460,9 +460,9 @@ test("doctor: review.forbidden with no hook warns; a glob in paths or except tha
   stage({ "src/a.js": "1\n" });
   const res = await checkSetup({ cwd: dir, env: {} });
   const keys = res.items.map((i) => [i.level, i.key]);
-  assert.ok(keys.some(([l, k]) => l === "warn" && k === "doctor.hookMissingForbidden"), JSON.stringify(keys));
+  assert.ok(keys.some(([l, k]) => l === "warn" && k === "doctor.hookMissing"), JSON.stringify(keys));
   const dead = res.items.find((i) => i.key === "doctor.forbiddenUnmatched");
-  assert.deepEqual(dead?.vars, { rule: 1, globs: "lib/**, src/gone.js" });
+  assert.deepEqual(dead?.vars, { rule: 1, globs: ["lib/**", "src/gone.js"] });
   installHook({ cwd: dir, cliPath: CLI });
   assert.ok((await checkSetup({ cwd: dir, env: {} })).items.some((i) => i.key === "doctor.hookOk"));
 });
@@ -472,7 +472,7 @@ test("doctor: per rule, the lines inside its paths that hold the text today, out
   stage({ "src/a.js": "console.log(1);\nconsole.log(2);\n", "src/log.js": "console.log(m);\n", "scripts/x.js": "console.log(3);\n", "CLAUDE.md": "- never use `console.log`\n" });
   const items = (await checkSetup({ cwd: dir, env: {} })).items.filter((i) => i.key.startsWith("doctor.forbidden"));
   assert.deepEqual(items, [
-    { level: "warn", key: "doctor.forbiddenHeld", vars: { rule: 1, text: "console.log", lines: 2, files: 1, examples: "src/a.js" } },
+    { level: "warn", key: "doctor.forbiddenHeld", vars: { rule: 1, text: "console.log", lines: 2, files: 1, examples: ["src/a.js"] } },
     { level: "ok", key: "doctor.forbiddenClean", vars: { rule: 2, text: "debugger" } },
   ]);
 });
@@ -546,7 +546,7 @@ test("round two: doctor and the scan count lines in files git calls binary, as t
   const { dir, stage } = repo({ review: { forbidden: [{ text: "console.log", paths: ["src/**"] }] } });
   stage({ ".gitattributes": "*.min.js -diff\n", "src/lib.min.js": "console.log(1)\n", "src/mod.wasm": "\0asm console.log\n", "CLAUDE.md": "- never use `console.log`\n" });
   const held = (await checkSetup({ cwd: dir, env: {} })).items.find((i) => i.key.startsWith("doctor.forbidden"));
-  assert.deepEqual(held?.vars, { rule: 1, text: "console.log", lines: 2, files: 2, examples: "src/lib.min.js, src/mod.wasm" });
+  assert.deepEqual(held?.vars, { rule: 1, text: "console.log", lines: 2, files: 2, examples: ["src/lib.min.js", "src/mod.wasm"] });
   assert.deepEqual(scanProject({ cwd: dir, env: {} }).bans?.[0].literals[0], { text: "console.log", lines: 2, files: 2, examples: ["src/lib.min.js", "src/mod.wasm"], gated: true });
 });
 

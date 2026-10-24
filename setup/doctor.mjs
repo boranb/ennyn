@@ -11,15 +11,16 @@
 import { loadConfig, ConfigError } from "../core/config.mjs";
 import { loadGraph, readyNodes, readyMechanization, graphProblems, GraphError } from "../plan/mechanization.mjs";
 import { MIN_HISTORY, indexMatches, recentCommits, productionSubjects } from "./scan.mjs";
-import { hookStatus } from "./hook.mjs";
+import { hookStatus, idleReason } from "./hook.mjs";
 import { instructionBudget, readBudgets } from "./budget.mjs";
 import { relative, resolve, sep } from "node:path";
 import { git, repoPath, gitVersion, parseVersion, versionAtLeast, GIT_FLOOR } from "../core/git.mjs";
 import { matchAny } from "../core/glob.mjs";
 
 /**
- * @typedef {{ level: "ok" | "warn" | "fail" | "unmeasured", key: string, vars: Record<string, string | number> }} DoctorItem
+ * @typedef {{ level: "ok" | "warn" | "fail" | "unmeasured", key: string, vars: import("../core/i18n.mjs").Vars }} DoctorItem
  *   `unmeasured`: a check that could not be made (a file or git that failed); counted apart from warnings.
+ *   A list in `vars` is names (paths, ids): the CLI shows each one on its own (tShown).
  * @typedef {{ ok: boolean, items: DoctorItem[], language: string }} DoctorResult
  */
 
@@ -36,7 +37,7 @@ const REGEX_KEYS = /** @type {const} */ (["fixSubject", "excludeRe", "testRe", "
 export async function checkSetup({ cwd, env = process.env }) {
   /** @type {DoctorItem[]} */
   const items = [];
-  /** @param {DoctorItem["level"]} level @param {string} key @param {Record<string, string | number>} [vars] */
+  /** @param {DoctorItem["level"]} level @param {string} key @param {DoctorItem["vars"]} [vars] */
   const add = (level, key, vars = {}) => items.push({ level, key, vars });
   const done = (/** @type {string} */ language) => ({ ok: !items.some((i) => i.level === "fail"), items, language });
 
@@ -56,8 +57,8 @@ export async function checkSetup({ cwd, env = process.env }) {
     add("fail", "doctor.configBad", { problems: e.problems.join("; ") });
     return done("en");
   }
-  if (config.configPath) add("ok", "doctor.configOk", { path: config.configPath });
-  else add("warn", "doctor.configDefault", { path: env.ENNYN_CONFIG || ".ennyn/config.json" });
+  if (config.configPath) add("ok", "doctor.configOk", { path: [config.configPath] });
+  else add("warn", "doctor.configDefault", { path: [env.ENNYN_CONFIG || ".ennyn/config.json"] });
 
   // Claude Code keeps a hook's added context to 10,000 characters: a larger budget is held to that.
   if (config.sideCopy.maxInjectBytes > 10000) add("warn", "doctor.injectAboveCap", { n: config.sideCopy.maxInjectBytes });
@@ -84,7 +85,7 @@ export async function checkSetup({ cwd, env = process.env }) {
     add("fail", "doctor.graphBad", { error: e.message });
   }
   if (graph) {
-    add("ok", "doctor.graphOk", { open: graph.open.length, done: graph.done.length, path: config.paths.graph });
+    add("ok", "doctor.graphOk", { open: graph.open.length, done: graph.done.length, path: [config.paths.graph] });
     const f = config.graph.fields;
     // The same list the mechanization command refuses a graph by.
     for (const p of graphProblems(graph, config)) add(p.level, p.key, p.vars);
@@ -99,51 +100,84 @@ export async function checkSetup({ cwd, env = process.env }) {
   if (cm.types.length) add("ok", "doctor.commitStyle", { language: commitLanguage, types: cm.types.join(", "), type: cm.fixType });
   else add("ok", "doctor.commitStyleFree", { language: commitLanguage });
 
-  // Declared types, or literals kept out, with no hook to check them are a rule on paper again.
+  // The rules only the commit-msg hook checks: set, with no hook to check them, they are rules on paper again.
   const repo = repoPath("--git-dir", { cwd }) !== null;
   const forbidden = config.review.forbidden;
-  if ((cm.types.length || forbidden.length) && repo) {
+  const onPaper = [
+    ...(cm.types.length ? ["commitMsg.types"] : []),
+    ...(cm.style === "terse" ? ["commitMsg.style"] : []),
+    ...(forbidden.length ? ["review.forbidden"] : []),
+    ...(config.review.impactRequiredGlobs.length ? ["review.impactRequiredGlobs"] : []),
+    ...(config.review.cochange.length ? ["review.cochange"] : []),
+  ];
+  if (onPaper.length && repo) {
     /** @type {ReturnType<typeof hookStatus> | null} */
     let hook = null;
+    /** @type {ReturnType<typeof idleReason>} */
+    let idle = null;
     try {
       hook = hookStatus(cwd);
+      if (hook.state === "ennyn" || hook.state === "wired") idle = idleReason(hook);
     } catch (e) {
       // One check that cannot be made is said on its own line; the rest of the report stands.
+      hook = null;
       add("unmeasured", "doctor.hookUnmeasured", { error: oneLine(e) });
     }
     if (!hook) {
       // said above
-    } else if (hook.state === "ennyn" || hook.state === "wired") add("ok", "doctor.hookOk", { path: hook.path });
-    else if (hook.hooksPath) add("warn", "doctor.hookPath", { dir: hook.hooksPath });
-    else if (hook.state === "other") add("warn", "doctor.hookOther", { path: hook.path });
-    else add("warn", cm.types.length ? "doctor.hookMissing" : "doctor.hookMissingForbidden");
+    } else if (hook.state === "ennyn" || hook.state === "wired") {
+      // A hook git skips (husky's stub not generated yet, not executable) or one whose CLI moved checks nothing.
+      if (idle === "absent") add("warn", "doctor.hookAbsent", { path: [hook.path] });
+      else if (idle === "mode") add("warn", "doctor.hookNotRun", { path: [hook.path] });
+      else if (idle === "cli") add("warn", "doctor.hookCliGone", { path: [hook.path], cli: [String(hook.cli)] });
+      else add("ok", "doctor.hookOk", { path: [hook.path] });
+    } else if (hook.hooksPath) add("warn", "doctor.hookPath", { dir: [hook.hooksPath] });
+    else if (hook.state === "other") add("warn", "doctor.hookOther", { path: [hook.path] });
+    else add("warn", "doctor.hookMissing", { rules: onPaper });
   }
 
   // Text loaded in every session only shrinks: growth since the last recorded budget is a warning.
   if (repo) {
-    const files = git(["-c", "core.quotePath=false", "ls-files", "-z"], { cwd }).split("\0").filter(Boolean);
+    // The file list the budget, cochange and forbidden checks read: one git cannot give (it failed, or its
+    // output passed git()'s buffer) is said once, and those checks are skipped.
+    /** @type {string[] | null} */
+    let files = null;
+    try {
+      files = git(["-c", "core.quotePath=false", "ls-files", "-z"], { cwd }).split("\0").filter(Boolean);
+    } catch (e) {
+      add("unmeasured", "doctor.filesUnmeasured", { error: oneLine(e) });
+    }
     /** @type {ReturnType<typeof instructionBudget> | null} */
     let b = null;
     try {
-      b = instructionBudget(cwd, files);
+      if (files) b = instructionBudget(cwd, files);
     } catch (e) {
       add("unmeasured", "doctor.budgetUnmeasured", { error: oneLine(e) });
     }
     const kb = (/** @type {number} */ n) => `${(n / 1024).toFixed(1)} KB`;
-    const log = readBudgets(resolve(cwd, config.paths.metricsLog));
-    const last = log.records.at(-1);
+    /** @type {ReturnType<typeof readBudgets> | null} */
+    let log = null;
+    try {
+      log = readBudgets(resolve(cwd, config.paths.metricsLog));
+    } catch (e) {
+      // A log that is there but cannot be read is no empty log: growth since its last record is unmeasured.
+      add("unmeasured", "doctor.budgetLogUnmeasured", { error: oneLine(e) });
+    }
+    const last = log?.records.at(-1);
     if (!b) {
       // said above
     } else if (last && b.always > last.always) add("warn", "doctor.budgetGrew", { now: kb(b.always), before: kb(last.always), bytes: b.always - last.always, commit: last.commit.slice(0, 10) || "—" });
     else add("ok", "doctor.budget", { always: kb(b.always), repeated: b.repeatedLines });
-    if (log.skipped) add("warn", "doctor.budgetLogBroken", { n: log.skipped, path: config.paths.metricsLog });
+    if (log?.skipped) add("warn", "doctor.budgetLogBroken", { n: log.skipped, path: [config.paths.metricsLog] });
+    if (log?.unusable) add("warn", "doctor.budgetLogUnusable", { n: log.unusable, path: [config.paths.metricsLog] });
     // A glob that names no file: in `paths` the rule never warns, in `docs` it warns on every change. A rule whose
-    // documents are all the files its paths name can never warn. No file list (git failed): nothing to judge by.
-    if (files.length) {
+    // documents are all the files its paths name can never warn. No file list: nothing to judge by.
+    if (files?.length) {
+      const tracked = files;
       config.review.cochange.forEach((/** @type {{ paths: string[], docs: string[] }} */ rule, /** @type {number} */ i) => {
-        const unmatched = [...rule.paths, ...rule.docs].filter((g) => !files.some((f) => matchAny(f, [g])));
-        if (unmatched.length) add("warn", "doctor.cochangeUnmatched", { rule: i + 1, globs: unmatched.join(", ") });
-        else if (!files.some((f) => matchAny(f, rule.paths) && !matchAny(f, rule.docs))) add("warn", "doctor.cochangeSilent", { rule: i + 1 });
+        const unmatched = [...rule.paths, ...rule.docs].filter((g) => !tracked.some((f) => matchAny(f, [g])));
+        if (unmatched.length) add("warn", "doctor.cochangeUnmatched", { rule: i + 1, globs: unmatched });
+        else if (!tracked.some((f) => matchAny(f, rule.paths) && !matchAny(f, rule.docs))) add("warn", "doctor.cochangeSilent", { rule: i + 1 });
       });
       // What each rule covers holds today: new lines fail the commit, these stay until the file is touched.
       const configRel = config.configPath ? relative(cwd, config.configPath).split(sep).join("/") : null;
@@ -157,12 +191,12 @@ export async function checkSetup({ cwd, env = process.env }) {
         failed = e;
       }
       forbidden.forEach((/** @type {{ text: string, paths: string[], except?: string[] }} */ rule, /** @type {number} */ i) => {
-        const unmatched = [...rule.paths, ...(rule.except ?? [])].filter((g) => !files.some((f) => matchAny(f, [g])));
-        if (unmatched.length) add("warn", "doctor.forbiddenUnmatched", { rule: i + 1, globs: unmatched.join(", ") });
+        const unmatched = [...rule.paths, ...(rule.except ?? [])].filter((g) => !tracked.some((f) => matchAny(f, [g])));
+        if (unmatched.length) add("warn", "doctor.forbiddenUnmatched", { rule: i + 1, globs: unmatched });
         if (!all) return add("unmeasured", "doctor.forbiddenUnmeasured", { rule: i + 1, text: rule.text, error: oneLine(failed) });
         const held = (all.get(rule.text) ?? []).filter((h) => h.path !== configRel && matchAny(h.path, rule.paths) && !matchAny(h.path, rule.except ?? []));
         const lines = held.reduce((a, h) => a + h.n, 0);
-        if (lines) add("warn", "doctor.forbiddenHeld", { rule: i + 1, text: rule.text, lines, files: held.length, examples: held.slice(0, 3).map((h) => h.path).join(", ") });
+        if (lines) add("warn", "doctor.forbiddenHeld", { rule: i + 1, text: rule.text, lines, files: held.length, examples: held.slice(0, 3).map((h) => h.path) });
         else add("ok", "doctor.forbiddenClean", { rule: i + 1, text: rule.text });
       });
     }
@@ -176,12 +210,20 @@ export async function checkSetup({ cwd, env = process.env }) {
   }
   const exclude = compiled["metrics.excludeRe"];
   const test = compiled["metrics.testRe"];
-  if (fixRe && exclude && test && !repo) add("warn", "doctor.fixNoRepo");
+  if (fixRe && exclude && test && !repo) add("unmeasured", "doctor.fixNoRepo");
   else if (fixRe && exclude && test) {
-    const subjects = productionSubjects(recentCommits(cwd), { exclude, test });
+    /** @type {string[]} */
+    let subjects;
+    try {
+      subjects = productionSubjects(recentCommits(cwd), { exclude, test });
+    } catch (e) {
+      add("unmeasured", "doctor.fixUnmeasured", { error: oneLine(e) });
+      return done(config.language);
+    }
     const matches = subjects.filter((s) => fixRe.test(s)).length;
     const vars = { pattern: config.metrics.fixSubject, matches, commits: subjects.length };
-    if (subjects.length < MIN_HISTORY) add("ok", "doctor.fixTooFew", vars);
+    // Too few commits to judge is no verdict.
+    if (subjects.length < MIN_HISTORY) add("unmeasured", "doctor.fixTooFew", vars);
     else if (matches === 0) add("warn", "doctor.fixNone", vars);
     else if (matches * 2 > subjects.length) add("warn", "doctor.fixMajority", vars);
     else add("ok", "doctor.fixOk", vars);

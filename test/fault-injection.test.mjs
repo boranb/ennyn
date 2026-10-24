@@ -6,8 +6,9 @@
  * no stack trace), print exactly what the clean run prints (the failed call changed nothing), or say so
  * in every part it changed ("unmeasured", "could not be read", "was not checked"; a part is a line, or a
  * piece of one between " · ", "<br>" or "|"): never a number read from a call that failed (a part the
- * clean run has with other numbers fails even when it says unmeasured), and never a pass where the clean
- * run fails unless it says it did not check. The commit-msg hook fails open: it may not fail where the
+ * clean run has with other numbers fails even when it says unmeasured; one count may move: doctor's count of
+ * its "?" lines, up by exactly the "?" lines the faulted run adds), and never a pass where the clean run
+ * fails unless it says it did not check. The commit-msg hook fails open: it may not fail where the
  * clean run passes.
  * A closed stdout must end a command without a stack trace. Every command in USAGE needs a case, and a
  * read whose failure would change the result needs a case that reaches it (a config value, a hook's
@@ -367,6 +368,12 @@ function shown(out) {
 const parts = (r) => [shown(r.stdout), r.stderr].join("\n").split("\n").flatMap((l) => l.split(/ · |<br>|\|/)).map((p) => p.trim()).filter(Boolean);
 /** @param {string} s */
 const digits = (s) => s.replace(/\d+(\.\d+)?/g, "#");
+/** The part of doctor's summary line that counts its "?" lines (the fixture's language is English). */
+const UNMEASURED_COUNT = /^unmeasured: (\d+)$/;
+/** doctor's "?" lines. @param {Run} r */
+const marks = (r) => r.stdout.split("\n").filter((l) => l.startsWith("? ")).length;
+/** The count on doctor's summary line, 0 without one. @param {Set<string>} parts */
+const counted = (parts) => Number([...parts].map((p) => UNMEASURED_COUNT.exec(p)?.[1]).find((n) => n !== undefined) ?? 0);
 
 /**
  * What is wrong with a faulted run, measured against the clean one; null when nothing is.
@@ -390,6 +397,10 @@ function judge(clean, got, hook) {
   const shapes = new Set([...before].map(digits));
   const changed = [...after].filter((p) => !before.has(p));
   for (const p of changed) {
+    // doctor counts its "?" lines on the summary line; with one in the clean run already (too few commits for
+    // the fix label) the count moves with each line a fault leaves unmeasured. It may rise by exactly the "?"
+    // lines the faulted run adds, each of which says why; no other number may move.
+    if (UNMEASURED_COUNT.test(p) && marks(got) > marks(clean) && counted(after) - counted(before) === marks(got) - marks(clean)) continue;
     if (shapes.has(digits(p))) return `a number changed: ${JSON.stringify(p)}`;
     if (!SAYS.test(p)) return `changed without saying so: ${JSON.stringify(p)}`;
   }
@@ -529,6 +540,22 @@ test("fault matrix control: the judge flags each way a run can hide a failure", 
   assert.match(String(judge(clean, R({ stdout: "Rework: 2 of 10 lines (20%)\nCo-change: none\n" }), false)), /changed without saying so/);
   assert.match(String(judge(clean, R({ stdout: "Rework: 2 of 10 lines (20%)\nCo-change: the log could not be found\n" }), false)), /changed without saying so/);
   assert.equal(judge(clean, R({ stdout: "Rework: 2 of 10 lines (20%)\nCo-change: unmeasured: git log failed\n" }), false), null);
+  // doctor's count of its ? lines may rise by the ? lines the fault adds, and by nothing else. Any other number
+  // that moves fails, also in a part that says unmeasured: a sentence's count, a --json field.
+  const one = R({ stdout: "✓ budget: 1.0 KB\n? fix label: 3 commits, too few to judge\nproblems: 0 · warnings: 0 · unmeasured: 1\n" });
+  assert.equal(judge(one, R({ stdout: "? budget: unmeasured: git failed\n? fix label: 3 commits, too few to judge\nproblems: 0 · warnings: 0 · unmeasured: 2\n" }), false), null, "one ? line more, the count one up");
+  assert.match(String(judge(one, R({ stdout: "✓ budget: 1.0 KB\n? fix label: 3 commits, too few to judge\n? x: unmeasured: y\nproblems: 0 · warnings: 0 · unmeasured: 3\n" }), false)), /a number changed: "unmeasured: 3"/, "up by more than the ? lines added");
+  assert.match(String(judge(one, R({ stdout: "✓ budget: 0.0 KB\n? fix label: 3 commits, too few to judge\nproblems: 0 · warnings: 0 · unmeasured: 2\n" }), false)), /a number changed: "✓ budget: 0\.0 KB"/);
+  // Only the summary's own part is the count: a ? line may hold "unmeasured: <n>" of its own.
+  assert.equal(judge(one, R({ stdout: "✓ budget: 1.0 KB\n? fix label: 3 commits, too few to judge\n? rules: unmeasured: 5 files could not be read\nproblems: 0 · warnings: 0 · unmeasured: 2\n" }), false), null);
+  const two = R({ stdout: "? budget: unmeasured: x\n? fix label: 3 commits, too few to judge\nproblems: 0 · warnings: 0 · unmeasured: 2\n" });
+  assert.match(String(judge(two, R({ stdout: "? budget: unmeasured: x\nproblems: 0 · warnings: 0 · unmeasured: 1\n" }), false)), /a number changed: "unmeasured: 1"/, "a ? line dropped, the count down");
+  const left = (/** @type {number} */ n) => R({ stdout: `Rework: 2 of 10 lines (20%)\n${n} commits were left out unmeasured: their 30-day window has not closed.\n` });
+  assert.match(String(judge(left(3), left(0), false)), /a number changed: "0 commits were left out unmeasured/);
+  const steps = (/** @type {number} */ n) => R({ stdout: `Attempts: 9\n${n} failed attempts did not name the failing step (unmeasured, not clean).\n` });
+  assert.match(String(judge(steps(5), steps(2), false)), /a number changed: "2 failed attempts/);
+  const stats = (/** @type {number} */ n) => R({ stdout: JSON.stringify({ attempts: 4, unmeasuredDurations: n }, null, 2) });
+  assert.match(String(judge(stats(1), stats(0), false)), /a number changed: "\\"unmeasuredDurations\\": 0"/);
   assert.match(String(judge(clean, R({ code: 1 }), false)), /a failure with no message/);
   assert.equal(judge(clean, R({ code: 1, stderr: "ennyn rework: git log failed" }), false), null);
   assert.equal(judge(clean, R({ code: 1, stdout: "✗ work graph: work graph g.json could not be read: EACCES\n" }), false), null, "doctor's ✗ line");

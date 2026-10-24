@@ -13,9 +13,10 @@
  * first request (docs/evidence.md).
  */
 
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { agentSetup } from "./scan.mjs";
+import { readIfThere } from "../core/files.mjs";
 import { splitFrontMatter } from "../adapters/claude-code/rules-index.mjs";
 
 /** A line this short is a heading, a label or a fragment, not a rule worth counting twice. */
@@ -34,17 +35,8 @@ export function ruleKey(raw) {
     .toLowerCase();
 }
 
-/** @param {string} path */
-function readOrNull(path) {
-  try {
-    return readFileSync(path, "utf8");
-  } catch (e) {
-    // No such file is nothing to count; one that could not be read is no empty file.
-    const code = /** @type {NodeJS.ErrnoException} */ (e).code;
-    if (code === "ENOENT" || code === "ENOTDIR") return null;
-    throw e;
-  }
-}
+/** No such file is nothing to count; one that could not be read is no empty file, and the error names it. */
+const readOrNull = readIfThere;
 
 /**
  * A front-matter field, also as a YAML block (`description: >` or `|`, the text on the indented lines below).
@@ -143,26 +135,32 @@ export function instructionBudget(cwd, files) {
 
 /**
  * Budget records in the metrics log (one JSON line each, `kind: "budget"`), oldest first.
- * A line that does not parse is counted, not read as zero.
+ * A line that does not parse is counted (`skipped`), not read as zero; a budget record with no commit (a
+ * string, empty when recorded outside a repository) or no whole, non-negative size in bytes is counted apart
+ * (`unusable`). doctor and the budget command name each.
  * @param {string} path
- * @returns {{ records: BudgetRecord[], skipped: number }}
+ * @returns {{ records: BudgetRecord[], skipped: number, unusable: number }}
  */
 export function readBudgets(path) {
   const text = readOrNull(path);
-  if (text === null) return { records: [], skipped: 0 };
+  if (text === null) return { records: [], skipped: 0, unusable: 0 };
   /** @type {BudgetRecord[]} */
   const records = [];
   let skipped = 0;
+  let unusable = 0;
   for (const line of text.split("\n")) {
     if (!line.trim()) continue;
     try {
       const o = JSON.parse(line);
-      if (o && o.kind === "budget" && Number.isFinite(o.always)) records.push(o);
+      if (o && o.kind === "budget") {
+        if (Number.isSafeInteger(o.always) && o.always >= 0 && typeof o.commit === "string") records.push(o);
+        else unusable++;
+      }
     } catch {
       skipped++;
     }
   }
-  return { records, skipped };
+  return { records, skipped, unusable };
 }
 
 /**
@@ -188,7 +186,8 @@ export function recordBudget(cwd, metricsLog, budget, at) {
   const path = resolve(cwd, metricsLog);
   /** @type {BudgetRecord} */
   const entry = { kind: "budget", date: at.date, commit: at.commit, always: budget.always, onDemand: budget.onDemand, repeatedLines: budget.repeatedLines };
-  const lines = (readOrNull(path) ?? "").split("\n").filter((l) => l.trim() !== "");
+  const before = readOrNull(path) ?? "";
+  const lines = before.split("\n").filter((l) => l.trim() !== "");
   let lastAt = -1;
   for (let i = lines.length - 1; i >= 0 && lastAt === -1; i--) {
     try {
@@ -204,6 +203,7 @@ export function recordBudget(cwd, metricsLog, budget, at) {
     return { path, entry, replaced: true };
   }
   mkdirSync(dirname(path), { recursive: true });
-  appendFileSync(path, JSON.stringify(entry) + "\n");
+  // A last line cut short (a write that was killed) stays a line of its own: glued onto it, the record would never be read.
+  appendFileSync(path, (before === "" || before.endsWith("\n") ? "" : "\n") + JSON.stringify(entry) + "\n");
   return { path, entry, replaced: false };
 }

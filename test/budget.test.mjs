@@ -63,7 +63,7 @@ test("budget audit: a metrics log that cannot be read is no empty log", (t) => {
   } finally {
     chmodSync(log, 0o644);
   }
-  assert.deepEqual(readBudgets(join(dir, "none.jsonl")), { records: [], skipped: 0 }, "no log is still no records");
+  assert.deepEqual(readBudgets(join(dir, "none.jsonl")), { records: [], skipped: 0, unusable: 0 }, "no log is still no records");
 });
 
 test("budget audit: an @ that names a directory imports nothing, and is no file it cannot read", () => {
@@ -111,7 +111,7 @@ test("budget: one record per commit; the change is measured against another comm
   assert.deepEqual([log.records.map((r) => [r.commit, r.always]), log.skipped], [[["abc", 120], ["def", 90]], 1]);
   assert.equal(previousBudget(log.records, "def")?.commit, "abc", "recording twice at def does not hide def's change");
   assert.equal(previousBudget(log.records, "zzz")?.commit, "def");
-  assert.deepEqual(readBudgets(join(dir, "missing.jsonl")), { records: [], skipped: 0 });
+  assert.deepEqual(readBudgets(join(dir, "missing.jsonl")), { records: [], skipped: 0, unusable: 0 });
 });
 
 test("cli and doctor: budget --record keeps a number per cycle; growth warns with its bytes; a broken log line is reported", async () => {
@@ -156,4 +156,58 @@ test("budget: descriptions written as YAML blocks and command descriptions count
   };
   put(dir, files);
   assert.equal(instructionBudget(dir, Object.keys(files)).listings, Buffer.byteLength(`big: ${long}`) + Buffer.byteLength("team/ship: Ships it"));
+});
+
+test("budget audit: a budget record with no commit is a line it skips, for doctor and the budget command, never a crash", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "en-budget-nocommit-"));
+  git(["init", "-q", "-b", "main"], { cwd: dir });
+  put(dir, { "CLAUDE.md": `${RULE}\n`, ".ennyn/graph.json": JSON.stringify({ nodes: [{ id: "a" }] }) });
+  git(["add", "-A"], { cwd: dir });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "feat: x"], { cwd: dir });
+  const log = join(dir, ".ennyn", "metrics.jsonl");
+  const bad = [{ always: 1 }, { commit: 7, always: 1 }, { commit: "c", always: "1" }, { commit: "c", always: -5 }, { commit: "c", always: 207.5 }, { commit: "c", always: 1e300 }];
+  const lines = [...bad.map((r) => JSON.stringify({ kind: "budget", ...r })), '{"kind":"budget","commit":"","always":1}', "{ cut"];
+  writeFileSync(log, lines.join("\n") + "\n");
+  const read = readBudgets(log);
+  assert.deepEqual([read.records.length, read.unusable, read.skipped], [1, bad.length, 1], "no commit string, or a size that is not a whole number of bytes: no record; an empty commit is one (recorded outside a repository)");
+  const run = spawnSync(process.execPath, [CLI, "budget"], { cwd: dir, encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  // Each reason said as it is: a line that parses is not called one that does not.
+  assert.match(run.stdout, /^1 lines in .*metrics\.jsonl do not parse and were left out\.$/m);
+  assert.match(run.stdout, /^6 budget records in .*metrics\.jsonl have no commit or no whole size in bytes and were left out\.$/m);
+  const items = async () => (await checkSetup({ cwd: dir, env: {} })).items.map((i) => `${i.level} ${i.key}`);
+  for (const key of ["warn doctor.budgetLogBroken", "warn doctor.budgetLogUnusable", "warn doctor.budgetGrew"]) assert.ok((await items()).includes(key), `${key}\n${(await items()).join("\n")}`);
+  // Measured against the newest record, not the first.
+  writeFileSync(log, `${JSON.stringify({ kind: "budget", date: "2026-10-01", commit: "a", always: 1 })}\n${JSON.stringify({ kind: "budget", date: "2026-10-02", commit: "b", always: 1e6 })}\n`);
+  assert.ok((await items()).includes("ok doctor.budget"), (await items()).join("\n"));
+});
+
+test("budget audit (review): a record after a torn last line starts a line of its own, so it is read", () => {
+  const dir = mkdtempSync(join(tmpdir(), "en-budget-torn-"));
+  const path = join(dir, ".ennyn", "metrics.jsonl");
+  put(dir, { ".ennyn/metrics.jsonl": `${JSON.stringify({ kind: "budget", date: "2026-10-01", commit: "a", always: 5, onDemand: 0, repeatedLines: 0 })}\n{ cut sho` });
+  recordBudget(dir, ".ennyn/metrics.jsonl", { always: 7, onDemand: 0, repeatedLines: 0 }, { date: "2026-10-02", commit: "b" });
+  const log = readBudgets(path);
+  assert.deepEqual([log.records.map((r) => r.commit), log.skipped], [["a", "b"], 1]);
+  assert.ok(readFileSync(path, "utf8").endsWith("\n"));
+  // A log made by the first record holds that line alone.
+  const fresh = recordBudget(dir, "new.jsonl", { always: 1, onDemand: 0, repeatedLines: 0 }, { date: "2026-10-03", commit: "c" });
+  assert.equal(readFileSync(fresh.path, "utf8"), `${JSON.stringify(fresh.entry)}\n`);
+});
+
+test("budget audit (review round two): the files a repeated rule sits in are shown as names, one line each", (t) => {
+  if (process.platform === "win32") return t.skip("no such names on Windows");
+  const dir = mkdtempSync(join(tmpdir(), "en-budget-names-"));
+  git(["init", "-q", "-b", "main"], { cwd: dir });
+  const odd = ".claude/rules/r\u001b[2K\u001b[G✓ fine.md";
+  put(dir, { "CLAUDE.md": `${RULE}\n`, [odd]: `${RULE}\n`, ".claude/rules/x, y.md": `${RULE}\n` });
+  git(["add", "-A"], { cwd: dir });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "feat: x"], { cwd: dir });
+  // An untracked rule file, this machine's own, is listed by name too.
+  put(dir, { ".claude/rules/u\u001b[2K.md": "a rule of this machine's own\n" });
+  const out = spawnSync(process.execPath, [CLI, "budget"], { cwd: dir, encoding: "utf8" }).stdout;
+  for (const l of out.split("\n")) assert.doesNotMatch(l, /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u, JSON.stringify(l));
+  assert.match(out, /untracked\): ".*u\\u001b\[2K\.md"/);
+  assert.match(out, /"\.claude\/rules\/r\\u001b\[2K\\u001b\[G✓ fine\.md"/);
+  assert.match(out, /"\.claude\/rules\/x, y\.md"/);
 });
