@@ -505,7 +505,7 @@ test("round two: a merge is checked whole; the other side's lines fail too, sayi
   assert.match(forged.stderr, /a\.js:2 adds "debugger"/);
 });
 
-test("round two: only the files a rule names are diffed, so a big file elsewhere cannot turn the check off", { timeout: 120000 }, () => {
+test("round two: only the files a rule names are diffed, so a big file elsewhere cannot turn the check off", () => {
   const { dir, stage, commit } = repo({ review: { forbidden: [RULE] } });
   stage({ "src/a.js": "1\n" });
   assert.equal(commit("first").status, 0);

@@ -34,11 +34,29 @@ const quote = (s) => `'${s.replace(/'/g, "'\\''")}'`;
  */
 export function verdict(res, guards) {
   if (res.baseline.exit !== 0) return [`the gate test fails with no guard applied (${res.baseline.exit ?? res.baseline.signal}): ${res.baseline.tail.trim().split("\n").slice(-5).join(" | ")}`];
+  const limit = `${((res.timeoutMs ?? 0) / 1000).toFixed(1)} s`;
+  /** @type {Record<string, string>} */
+  const means = {
+    survived: "the gate passed with it, so its check cannot fail there",
+    timeout: `it ran past ${limit}, then past twice that: no failure the gate reported (a loaded machine, or a guard that makes the gate hang)`,
+    unapplied: "it changed nothing, so it tested nothing",
+    invalid: "it does not parse, so it tested nothing",
+  };
+  // An unchecked run, by what its parse check did: here every guard has a check (ANY_TEXT), so one was asked.
+  /** @type {Record<string, string>} */
+  const unchecked = {
+    "mutate.reason.noCheck": "no check read the file, so its failure may be one that does not parse",
+    "mutate.reason.checkNoAnswer": "its parse check gave no answer (it ran past its limit, was killed or did not start), so the run shows nothing",
+    "mutate.reason.originalFails": "its parse check fails on the file as it is, so it cannot tell a broken guard from a sound one",
+  };
   const out = [];
   for (const g of guards) {
     const r = res.results.find((x) => x.id === g.id);
     if (!r) out.push(`${g.id}: not run`);
-    else if (r.outcome !== "killed") out.push(`${g.id} (${g.why}): ${r.outcome}${r.reason ? ` (${r.reason.key})` : ""}; the gate passed with it, so its check cannot fail there`);
+    else if (r.outcome !== "killed") {
+      const what = r.outcome === "unchecked" ? unchecked[r.reason?.key ?? ""] : means[r.outcome];
+      out.push(`${g.id} (${g.why}): ${r.outcome}${r.reason ? ` (${r.reason.key})` : ""}; ${what ?? "no kill"}`);
+    }
   }
   return out;
 }
@@ -145,12 +163,33 @@ test("guards control: a test that finds the repository and is listed nowhere is 
   assert.deepEqual(testNames('test("a: \\"q\\" one", () => {});\n  test("nested is no top-level test");\ntest("b", () => {});\n'), ['a: "q" one', "b"]);
 });
 
-test("guards control: the verdict fails a guard that survived, did not apply, timed out or did not run, and a gate that fails alone", () => {
-  /** @param {string} outcome */
-  const r = (outcome) => ({ restored: null, timeoutMs: 1, baseline: { exit: 0, signal: null, ms: 1, tail: "" }, results: [{ id: "a", file: "f", outcome, checked: true }] });
+test("guards control: the verdict fails a guard that survived, did not apply, timed out or did not run, and a gate that fails alone; the time report puts the slowest gate first", () => {
+  // Each result as runMutants writes it (metrics/mutation.mjs, where it builds the MutantResult).
+  const run = { ms: 5, tail: "" };
+  /** @type {Record<string, object>} */
+  const shapes = {
+    killed: { outcome: "killed", checked: true, ...run, exit: 1 },
+    survived: { outcome: "survived", checked: true, ...run, exit: 0 },
+    timeout: { outcome: "timeout", checked: true, ...run, exit: null },
+    unapplied: { outcome: "unapplied", reason: { key: "mutate.reason.occurs", vars: { n: 0 } } },
+    invalid: { outcome: "invalid", checked: true, reason: { key: "mutate.reason.parse" } },
+    unchecked: { outcome: "unchecked", checked: false, reason: { key: "mutate.reason.checkNoAnswer" }, ...run, exit: 1 },
+    "unchecked-original": { outcome: "unchecked", checked: false, reason: { key: "mutate.reason.originalFails" }, ...run, exit: 1 },
+  };
+  /** @param {string} shape */
+  const r = (shape) => ({ restored: null, timeoutMs: 1, baseline: { exit: 0, signal: null, ms: 1, tail: "" }, results: [{ id: "a", file: "f", ...shapes[shape] }] });
   const g = [{ id: "a", why: "w", file: "f", old: "o", new: "n" }];
   assert.deepEqual(verdict(/** @type {any} */ (r("killed")), g), []);
   for (const outcome of ["survived", "unapplied", "invalid", "timeout", "unchecked"]) assert.match(verdict(/** @type {any} */ (r(outcome)), g).join(), new RegExp(`a \\(w\\): ${outcome}`));
+  // Only a survivor says the gate passed: a slow run, or a guard that changed nothing, is no pass of the gate.
+  assert.match(verdict(/** @type {any} */ (r("survived")), g).join(), /the gate passed with it/);
+  for (const outcome of ["unapplied", "invalid", "timeout", "unchecked"]) assert.doesNotMatch(verdict(/** @type {any} */ (r(outcome)), g).join(), /passed/, outcome);
+  // An unchecked run says what its check did: here a check always ran.
+  assert.match(verdict(/** @type {any} */ (r("unchecked")), g).join(), /checkNoAnswer\); its parse check gave no answer/);
+  assert.match(verdict(/** @type {any} */ (r("unchecked-original")), g).join(), /originalFails\); its parse check fails on the file as it is/);
+  assert.doesNotMatch(verdict(/** @type {any} */ (r("unchecked")), g).join(), /no check read the file/);
+  assert.match(verdict(/** @type {any} */ ({ ...r("timeout"), timeoutMs: 42_000 }), g).join(), /ran past 42\.0 s, then past twice that/);
+  assert.deepEqual(slowestFirst([{ test: "a", ms: 1500 }, { test: "b", ms: 61_000 }, { test: "c", ms: 40 }]), ["b: 61.0 s", "a: 1.5 s", "c: 0.0 s"]);
   assert.match(verdict(/** @type {any} */ ({ ...r("killed"), results: [] }), g).join(), /a: not run/);
   assert.match(verdict(/** @type {any} */ ({ ...r("killed"), baseline: { exit: 1, signal: null, ms: 1, tail: "not ok 1\n" } }), g).join(), /fails with no guard applied/);
 });
@@ -209,7 +248,10 @@ test("guards control: the clone holds the tree as it is, changes not committed i
   }
 });
 
-test("guards: every guard makes its gate test fail", { timeout: 15 * 60 * 1000 }, async (t) => {
+// No time limit of its own. A node:test timeout marks the test cancelled and stops none of the runs, which go on
+// to their end; all it did was fail the suite on a loaded machine (cycle 2026-10-23 (7): 18 minutes under load
+// 30-44, 18 s idle). Each guard run has its own limit, three times its gate's run without guards, then twice that.
+test("guards: every guard makes its gate test fail", async (t) => {
   // One clone a gate; a few gates at a time, each one's runs one after another (one journal a tree).
   const jobs = GATES.flatMap((gate) => {
     /** @type {Map<string, import("./guards.mjs").Guard[]>} */
@@ -219,6 +261,8 @@ test("guards: every guard makes its gate test fail", { timeout: 15 * 60 * 1000 }
   });
   /** @type {string[]} */
   const problems = [];
+  /** @type {{ test: string, ms: number }[]} */
+  const spent = [];
   let next = 0;
   // The runner tells the test files it starts to report to it (NODE_TEST_CONTEXT): a gate test started here
   // with that value runs as its child and exits 0 whatever it found, so every guard survived. This file's own
@@ -231,6 +275,7 @@ test("guards: every guard makes its gate test fail", { timeout: 15 * 60 * 1000 }
   const worker = async () => {
     while (next < jobs.length) {
       const { gate, groups } = jobs[next++];
+      const started = Date.now();
       const dir = cloneOfTree(TOP);
       for (const [pattern, guards] of groups) {
         const command = `${NODE} --test --import ./test/hermetic.mjs --test-name-pattern=${quote(pattern)} ${gate.test}`;
@@ -238,11 +283,22 @@ test("guards: every guard makes its gate test fail", { timeout: 15 * 60 * 1000 }
         for (const p of verdict(res, guards)) problems.push(`${gate.test} (${pattern}): ${p}`);
       }
       rmSync(dirname(dir), { recursive: true, force: true });
+      spent.push({ test: gate.test, ms: Date.now() - started });
     }
   };
   await Promise.all(Array.from({ length: Math.max(1, Math.min(3, availableParallelism() - 1)) }, worker));
+  for (const line of slowestFirst(spent)) t.diagnostic(line);
+  assert.equal(spent.length, jobs.length, "every gate's guards ran");
   assert.deepEqual(problems, []);
 });
+
+/**
+ * Where the guard runs' time went, slowest gate first: on a loaded machine the report names the gates it waited on.
+ * @param {{ test: string, ms: number }[]} spent
+ */
+export function slowestFirst(spent) {
+  return [...spent].sort((a, b) => b.ms - a.ms).map((s) => `${s.test}: ${(s.ms / 1000).toFixed(1)} s`);
+}
 
 
 test("guards control (review round two): every way a test finds the repository is seen, and a no-gate file that reads more than it says is named", () => {

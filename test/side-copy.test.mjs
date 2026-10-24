@@ -140,6 +140,7 @@ function runHook(input, env = { CLAUDE_PROJECT_DIR: project }) {
     env: hookEnv(env),
     cwd: neutralCwd,
     encoding: "utf8",
+    // Claude Code stops this hook at 15 s (hooks/hooks.json): a run past 20 s here would be stopped there too.
     timeout: 20000,
   });
   exitCodes.push(r.status);
