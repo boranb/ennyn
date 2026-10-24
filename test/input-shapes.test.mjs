@@ -18,7 +18,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -682,6 +682,13 @@ test("input shapes: git() and gitBytes() fail with git's message as text, as eve
   git(["init", "-q"], { cwd: traced });
   assert.equal(git(["rev-parse", "--git-dir"], { cwd: traced, env: { ...process.env, GIT_TRACE_PERFORMANCE: "/dev/stdout" } }), ".git");
   assert.equal(git(["rev-parse", "--git-dir"], { cwd: traced, env: { ...process.env, GIT_TRACE: "/dev/stdout", GIT_TRACE2: "/dev/stdout" } }), ".git");
+  // On Linux git cannot open /dev/stdout when it is the socket node gives it (ENXIO), so the lines above hold there
+  // whatever the helper does: a trace sent to a file shows on every platform whether the variable reached git.
+  for (const k of ["GIT_TRACE", "GIT_TRACE_PERFORMANCE", "GIT_TRACE2", "GIT_TRACE2_EVENT"]) {
+    const file = join(traced, `${k}.log`);
+    assert.equal(git(["rev-parse", "--git-dir"], { cwd: traced, env: { ...process.env, [k]: file } }), ".git");
+    assert.ok(!existsSync(file), `${k} reached git`);
+  }
   for (const call of [git, gitBytes]) {
     try {
       call(["rev-parse", "--verify", "no-such-ref"], { cwd: dir });
