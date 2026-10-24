@@ -27,7 +27,8 @@ import { t } from "../../../core/i18n.mjs";
 import { mapSideCopyPath } from "../../../side-copy/map-path.mjs";
 import { loadPathScopedRules, readRuleBody, rulesForPath } from "../rules-index.mjs";
 
-const FILE_TOOLS = new Set(["Read", "Edit", "Write", "MultiEdit", "NotebookEdit"]);
+/** The file tools the hook reads a path from; hooks/hooks.json's matcher sends exactly these (test/plugin.test.mjs). */
+export const FILE_TOOLS = new Set(["Read", "Edit", "Write", "MultiEdit", "NotebookEdit"]);
 
 /**
  * Claude Code keeps a hook's additionalContext to 10,000 characters: past that it saves the text to a file and

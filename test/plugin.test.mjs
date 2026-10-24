@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
+import { t } from "../core/i18n.mjs";
+import { FILE_TOOLS } from "../adapters/claude-code/hooks/side-copy-rules.mjs";
 
 // What `claude plugin validate --strict` checks, for machines without the claude CLI.
 // Origin: a ": " inside an unquoted agent description made the YAML unparsable, and
@@ -102,4 +104,24 @@ test("docs: no table cell holds an unescaped | inside code (GitHub splits the ro
       });
   }
   assert.deepEqual(bad, []);
+});
+
+test("i18n: every English key exists in every catalog, vars interpolate, fallback works", () => {
+  const en = Object.keys(JSON.parse(read("i18n/en.json"))).sort();
+  const catalogs = readdirSync(join(ROOT, "i18n")).filter((f) => f.endsWith(".json") && f !== "en.json");
+  assert.ok(catalogs.includes("tr.json"), `catalogs: ${catalogs}`);
+  for (const f of catalogs) assert.deepEqual(Object.keys(JSON.parse(read(`i18n/${f}`))).sort(), en, f);
+  assert.match(t("shape.subjectTooLong", { len: 130, max: 120 }, "tr"), /130 karakter; sınır 120/);
+  assert.throws(() => t("no.such.key"));
+});
+
+test("hooks.json: the PostToolUse matcher sends exactly the file tools the side-copy hook handles, by a quoted command that resolves to it", () => {
+  const [entry] = JSON.parse(read("hooks/hooks.json")).hooks.PostToolUse;
+  assert.deepEqual(entry.matcher.split("|").sort(), [...FILE_TOOLS].sort());
+  const [cmd] = entry.hooks;
+  assert.equal(cmd.type, "command");
+  const m = /^node "\$\{CLAUDE_PLUGIN_ROOT\}\/([^"]+)"$/.exec(cmd.command);
+  assert.ok(m, `command must quote \${CLAUDE_PLUGIN_ROOT}: ${cmd.command}`);
+  assert.equal(m[1], "adapters/claude-code/hooks/side-copy-rules.mjs");
+  assert.ok(read(m[1]).startsWith("#!/usr/bin/env node\n"));
 });

@@ -28,9 +28,8 @@ import {
   splitFrontMatter,
 } from "../adapters/claude-code/rules-index.mjs";
 
-const here = dirname(fileURLToPath(import.meta.url));
-const pluginRoot = join(here, "..");
-const hookPath = join(pluginRoot, "adapters/claude-code/hooks/side-copy-rules.mjs");
+const hookPath = fileURLToPath(new URL("../adapters/claude-code/hooks/side-copy-rules.mjs", import.meta.url));
+const resetPath = fileURLToPath(new URL("../adapters/claude-code/hooks/side-copy-reset.mjs", import.meta.url));
 
 /** Every exit code the hook produced in this file; checked by the last test. */
 const exitCodes = [];
@@ -399,7 +398,6 @@ test("hook (k): within the budget as many rules as fit are inlined, the rest lis
 });
 
 test("reset hook: after compaction or /clear the rules come back; other session starts keep the list", () => {
-  const resetPath = join(pluginRoot, "adapters/claude-code/hooks/side-copy-reset.mjs");
   const reset = (/** @type {string} */ source) =>
     spawnSync(process.execPath, [resetPath], {
       input: JSON.stringify({ session_id: "s-reset", hook_event_name: "SessionStart", source, cwd: project }),
@@ -425,7 +423,6 @@ test("reset hook: after compaction or /clear the rules come back; other session 
 test("reset hook audit: a reset it cannot do is said to the user; a rule it cannot read is named, not dropped", async (t) => {
   if (process.getuid?.() === 0) return t.skip("root reads and writes anywhere");
   const { sideCopyStatePath } = await import("../adapters/claude-code/hooks/side-copy-rules.mjs");
-  const resetPath = join(pluginRoot, "adapters/claude-code/hooks/side-copy-reset.mjs");
   runHook(readInput("s-locked", join(worktree, "src/lib/engine/x.ts")));
   const dir = dirname(sideCopyStatePath(project, ".git/ennyn", "s-locked"));
   chmodSync(dir, 0o555);
@@ -501,19 +498,10 @@ test("hook: config errors exit 1 with the reason on stderr and nothing on stdout
   }
 });
 
-test("hooks.json: PostToolUse matcher and a quoted command that resolves to the hook", () => {
-  const spec = JSON.parse(readFileSync(join(pluginRoot, "hooks/hooks.json"), "utf8"));
-  assert.ok(spec.hooks && typeof spec.hooks === "object");
-  const [entry] = spec.hooks.PostToolUse;
-  assert.equal(entry.matcher, "Read|Edit|Write|MultiEdit|NotebookEdit");
-  const [cmd] = entry.hooks;
-  assert.equal(cmd.type, "command");
-  const m = /^node "\$\{CLAUDE_PLUGIN_ROOT\}\/([^"]+)"$/.exec(cmd.command);
-  assert.ok(m, `command must quote \${CLAUDE_PLUGIN_ROOT}: ${cmd.command}`);
-  assert.equal(join(pluginRoot, m[1]), hookPath);
-  assert.ok(readFileSync(hookPath, "utf8").startsWith("#!/usr/bin/env node\n"));
-  // Every tool the matcher sends is one the hook handles.
-  for (const tool of entry.matcher.split("|")) {
+test("hook: every file tool it handles gets the rule (hooks.json's matcher sends exactly these: test/plugin.test.mjs)", async () => {
+  const { FILE_TOOLS } = await import("../adapters/claude-code/hooks/side-copy-rules.mjs");
+  assert.ok(FILE_TOOLS.size >= 5);
+  for (const tool of FILE_TOOLS) {
     const r = runHook(readInput(`s-matcher-${tool}`, join(worktree, "src/lib/engine/x.ts"), tool));
     assert.ok(context(r).includes("ENGINE-RULE-BODY"), tool);
   }
@@ -657,7 +645,6 @@ test("side-copy audit (mutation pass): the cap holds for any budget given, count
 // ------------------------------------------------------------- after review round one --
 
 test("side-copy audit (review): a reset after compaction or /clear forgets the session's subagent lists too", () => {
-  const resetPath = join(pluginRoot, "adapters/claude-code/hooks/side-copy-reset.mjs");
   const file = join(worktree, "src/lib/engine/x.ts");
   const sub = { ...readInput("s-rst", file), agent_id: "a1" };
   assert.match(context(runHook(sub)), /ENGINE-RULE-BODY/);

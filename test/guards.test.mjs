@@ -1,9 +1,10 @@
 /**
  * Every gate test can fail. test/guards.mjs gives each one guard mutants that make what it guards false;
  * here each guard runs, in a clone of the tree as it is now (changes not committed included), against its
- * gate test, and must fail it. A gate test that reads the repository's own files and has no guards fails
- * here too: nothing would show its check can fail. The guards run with `runMutants` (metrics/mutation.mjs),
- * the gate test with no mutant first: a gate that fails in the clone shows nothing about its guards.
+ * gate test, and must fail it: its runner reports that test as failed (TAP, written to a file per run). A gate
+ * test that reads the repository's own files and has no guards fails here too: nothing would show its check can
+ * fail. The guards run with `runMutants` (metrics/mutation.mjs), the gate test with no mutant first: a gate that
+ * fails in the clone, or a pattern that runs no test, shows nothing about its guards.
  */
 
 import { test } from "node:test";
@@ -12,6 +13,7 @@ import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync
 import { availableParallelism, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readIfThere } from "../core/files.mjs";
 import { git } from "../core/git.mjs";
 import { journalPath, runMutants } from "../metrics/mutation.mjs";
 import { GATES, NOT_GATES } from "./guards.mjs";
@@ -27,13 +29,19 @@ const quote = (s) => `'${s.replace(/'/g, "'\\''")}'`;
 
 /**
  * The verdict on a gate's guard runs: every guard killed, the gate passing with none. A timeout is no
- * failure the gate reported, and a guard that does not apply, or does not parse, tested nothing.
+ * failure the gate reported, and a guard that does not apply, or does not parse, tested nothing. With `tap`
+ * (each run's TAP report, and the one test the pattern names), the named test must pass with no guard and be
+ * reported failed under each: a run that failed otherwise (another test, a file that never ran it, a death by a
+ * signal, which the shell reports as an exit of 128 and more) is no kill.
  * @param {Awaited<ReturnType<typeof runMutants>>} res
  * @param {import("./guards.mjs").Guard[]} guards
+ * @param {{ name: string, baseline: string | null, runs: Map<string, string | null> } | null} [tap]
  * @returns {string[]}
  */
-export function verdict(res, guards) {
+export function verdict(res, guards, tap = null) {
   if (res.baseline.exit !== 0) return [`the gate test fails with no guard applied (${res.baseline.exit ?? res.baseline.signal}): ${res.baseline.tail.trim().split("\n").slice(-5).join(" | ")}`];
+  const base = tap && testOutcome(tap.baseline, tap.name);
+  if (tap && base !== "ok") return [`with no guard applied, "${tap.name}" ${base ? `reported ${base}` : "did not run"}: the pattern runs no test, so its guards show nothing`];
   const limit = `${((res.timeoutMs ?? 0) / 1000).toFixed(1)} s`;
   /** @type {Record<string, string>} */
   const means = {
@@ -56,9 +64,41 @@ export function verdict(res, guards) {
     else if (r.outcome !== "killed") {
       const what = r.outcome === "unchecked" ? unchecked[r.reason?.key ?? ""] : means[r.outcome];
       out.push(`${g.id} (${g.why}): ${r.outcome}${r.reason ? ` (${r.reason.key})` : ""}; ${what ?? "no kill"}`);
+    } else if (tap) {
+      const named = testOutcome(tap.runs.get(g.id) ?? null, tap.name);
+      const signal = r.exit === null || r.exit === undefined || r.exit >= 128;
+      if (signal) out.push(`${g.id} (${g.why}): its run ended by a signal (exit ${r.exit ?? "none"}): no failure the gate reported`);
+      else if (named !== "not ok") out.push(`${g.id} (${g.why}): the run failed (exit ${r.exit}), but "${tap.name}" ${named ? `reported ${named}` : "did not run"}: something else failed, not the test that guards it`);
     }
   }
   return out;
+}
+
+/**
+ * How a top-level test ended in a TAP report: "ok", "not ok", "skipped" (a SKIP or TODO directive), "hook
+ * failed" (not ok because a before or beforeEach hook threw: `failureType: 'hookFailed'` in its block, from
+ * Node 20.11), or null when the report holds no line for it (the file failed before it ran, or there is no
+ * report). Node's reporter writes \\ and \# for a backslash and a hash in a name; a directive follows an
+ * unescaped "#".
+ * @param {string | null} report @param {string} name
+ * @returns {"ok" | "not ok" | "skipped" | "hook failed" | null}
+ */
+export function testOutcome(report, name) {
+  const lines = (report ?? "").split("\n");
+  for (const [i, line] of lines.entries()) {
+    const m = /^(not ok|ok) \d+ - (.*)$/.exec(line);
+    if (!m) continue;
+    const directive = /(?<!\\)# (?:SKIP|TODO)\b/i.exec(m[2]);
+    const title = (directive ? m[2].slice(0, directive.index).trimEnd() : m[2]).replace(/\\([\\#])/g, "$1");
+    if (title !== name) continue;
+    if (directive) return "skipped";
+    if (m[1] === "ok") return "ok";
+    // Its YAML block: indented, up to its "  ..." line.
+    const end = lines.findIndex((l, k) => k > i && /^ {2}\.\.\.$/.test(l));
+    const block = lines.slice(i + 1, end === -1 ? undefined : end);
+    return block.some((l) => /^ {2}failureType: '?hookFailed'?$/.test(l)) ? "hook failed" : "not ok";
+  }
+  return null;
 }
 
 /**
@@ -102,8 +142,11 @@ export function cloneOfTree(top) {
   return dir;
 }
 
-/** A line that finds the repository from the test's own place: import.meta's path, or an import of a data file above test/. */
-const FINDS = /import\.meta\.(url|dirname|filename)|\bfrom\s+["']\.\.\/[^"']*\.json["']/;
+/**
+ * A line that finds the repository from the test's own place: import.meta's path, the test file's own path in
+ * process.argv[1], or an import of a data file above test/.
+ */
+const FINDS = /\bimport\.meta\b|\bprocess\.argv\b(?!\s*\[\s*[02-9])(?!\s*\.\s*slice\(\s*[2-9])|(?<![\w.$])argv\s*(?:\[\s*1\s*\]|\.\s*at\(\s*1\s*\))|\bfrom\s+["']\.\.\/[^"']*\.json["']/;
 
 /**
  * The test files in `dir` that find the repository from their own place, those listed neither as a gate nor
@@ -131,6 +174,143 @@ export function unguarded(dir, gates, notGates) {
 /** The names of the top-level tests a file declares. @param {string} text */
 const testNames = (text) => [...text.matchAll(/^test\("((?:[^"\\]|\\.)*)"/gm)].map((m) => JSON.parse(`"${m[1]}"`));
 
+/**
+ * The file's code with comments taken out and the text inside strings, template literals and regular
+ * expression literals blanked (delimiters and line breaks kept), so a count of calls reads code only.
+ * @param {string} text
+ */
+export function codeOf(text) {
+  let out = "";
+  /** @type {number[]} brace depth outside each open template expression */
+  const outer = [];
+  let depth = 0;
+  let i = 0;
+  const blank = (/** @type {string} */ c) => (c === "\n" ? "\n" : " ");
+  // The rest of a quoted text from i (past its opening quote); a template stops at `${` too.
+  const quoted = (/** @type {string} */ q) => {
+    for (; i < text.length; i++) {
+      const c = text[i];
+      if (c === "\\") {
+        out += blank(c) + blank(text[i + 1] ?? "");
+        i++;
+      } else if (c === q) {
+        out += q;
+        i++;
+        return false;
+      } else if (q === "`" && c === "$" && text[i + 1] === "{") {
+        out += "${";
+        i += 2;
+        return true;
+      } else if (q !== "`" && c === "\n") return false;
+      else out += blank(c);
+    }
+    return false;
+  };
+  const template = () => {
+    if (quoted("`")) {
+      outer.push(depth);
+      depth = 0;
+    }
+  };
+  // A slash starts a regular expression where a value may begin, not after one.
+  const valueMayStart = () => {
+    const before = out.trimEnd();
+    return before === "" || /[(,=:[!&|?{};+\-*%<>~^]$/.test(before) || /(?:^|[^\w$.])(?:return|typeof|case|in|of|void|delete|throw|new|yield|await)$/.test(before);
+  };
+  while (i < text.length) {
+    const c = text[i];
+    const n = text[i + 1];
+    if (c === "/" && n === "/") {
+      while (i < text.length && text[i] !== "\n") i++;
+    } else if (c === "/" && n === "*") {
+      const end = text.indexOf("*/", i + 2);
+      const stop = end === -1 ? text.length : end + 2;
+      out += text.slice(i, stop).replace(/[^\n]/g, " ");
+      i = stop;
+    } else if (c === "'" || c === '"') {
+      out += c;
+      i++;
+      quoted(c);
+    } else if (c === "`") {
+      out += c;
+      i++;
+      template();
+    } else if (c === "}" && outer.length && depth === 0) {
+      out += c;
+      i++;
+      depth = /** @type {number} */ (outer.pop());
+      template();
+    } else if (c === "/" && valueMayStart()) {
+      out += c;
+      let cls = false;
+      for (i++; i < text.length && text[i] !== "\n"; i++) {
+        const d = text[i];
+        if (d === "\\") {
+          out += "  ";
+          i++;
+        } else if (cls ? d === "]" : d === "[") {
+          cls = !cls;
+          out += " ";
+        } else if (!cls && d === "/") {
+          out += d;
+          i++;
+          break;
+        } else out += " ";
+      }
+    } else {
+      if (c === "{") depth++;
+      else if (c === "}") depth--;
+      out += c;
+      i++;
+    }
+  }
+  return out;
+}
+
+/**
+ * Calls that declare a test, wherever they are (a loop, a block, after await; test.skip, it, describe; a space
+ * before the parenthesis), in code only (codeOf: a glob like "docs/*.md" in a string is no comment), a subtest
+ * (`t.test(`) not counted; and whether node:test's functions are imported under other names (`test as check`,
+ * a default or namespace import), which no count could follow.
+ * @param {string} text
+ */
+const declarations = (text) => {
+  const calls = [...codeOf(text).matchAll(/(?<![\w.$])(?:test|it|describe|suite)\s*(?:\??\.\s*\w+\s*|\[[^\]]*\]\s*)?(?:\?\.)?\(/g)].length;
+  const imports = [...text.matchAll(/^import\s+([^;]*?)\s+from\s+["'](?:node:)?test["']/gm)].map((m) => m[1]);
+  const renamed = imports.some((i) => !/^\{[^}]*\}$/.test(i.trim()) || /\bas\b/.test(i));
+  return { calls, renamed };
+};
+
+/**
+ * A gate file's tests, each decided: named by exactly one guard's pattern, or listed in `others` with why it has
+ * no guard, never both; each pattern names exactly one test; every name in `others` is a test of the file; and
+ * every top-level test is declared in the form testNames reads, so none goes uncounted.
+ * @param {import("./guards.mjs").Gate} gate @param {string} text the gate file
+ * @returns {string[]}
+ */
+export function accounting(gate, text) {
+  const names = testNames(text);
+  const others = gate.others ?? {};
+  const out = [];
+  const declared = declarations(text);
+  if (declared.renamed) out.push(`${gate.test}: node:test is imported under another name; declare tests as test("…")`);
+  if (declared.calls !== names.length) out.push(`${gate.test}: ${declared.calls} tests declared, ${names.length} read as a top-level test("…"): declare each so`);
+  for (const g of gate.guards) {
+    const named = names.filter((n) => new RegExp(g.pattern).test(n));
+    if (named.length !== 1) out.push(`${g.id}: its pattern names ${named.length} tests of ${gate.test}, not one${named.length ? `: ${named.join(" | ")}` : ""}`);
+  }
+  for (const n of names) {
+    const guarded = gate.guards.some((g) => new RegExp(g.pattern).test(n));
+    if (guarded && Object.hasOwn(others, n)) out.push(`${gate.test}: "${n}" has a guard and is in others`);
+    else if (!guarded && !Object.hasOwn(others, n)) out.push(`${gate.test}: "${n}" has no guard, and others does not say why`);
+  }
+  for (const [n, why] of Object.entries(others)) {
+    if (!names.includes(n)) out.push(`${gate.test}: others names "${n}", no test of the file`);
+    else if (!why.trim()) out.push(`${gate.test}: others gives no reason for "${n}"`);
+  }
+  return out;
+}
+
 test("guards: every test that reads this repository has guards; each guard changes one place and names the test that guards it", () => {
   const { readers, missing, overreach } = unguarded(HERE, GATES, NOT_GATES);
   assert.ok(readers.length >= 15, `tests that find the repository: ${readers}`);
@@ -138,12 +318,12 @@ test("guards: every test that reads this repository has guards; each guard chang
   assert.deepEqual(overreach, [], "a no-gate file that finds the repository on a line its allow does not name: a gate now");
   for (const f of Object.keys(NOT_GATES)) assert.ok(!GATES.some((g) => g.test === f), `${f}: a gate and no gate`);
   const ids = new Set();
+  /** @type {string[]} */
+  const undecided = [];
   for (const gate of GATES) {
     assert.ok(gate.guards.length, `${gate.test}: no guards`);
-    readFileSync(join(TOP, gate.test));
-    const names = testNames(readFileSync(join(TOP, gate.test), "utf8"));
+    undecided.push(...accounting(gate, readFileSync(join(TOP, gate.test), "utf8")));
     for (const g of gate.guards) {
-      assert.ok(g.pattern && names.some((n) => new RegExp(g.pattern).test(n)), `${g.id}: its pattern names no test of ${gate.test}`);
       assert.ok(!ids.has(g.id), `${g.id} twice`);
       ids.add(g.id);
       assert.ok(g.why, `${g.id}: why`);
@@ -151,6 +331,7 @@ test("guards: every test that reads this repository has guards; each guard chang
       assert.equal(text.split(g.old).length - 1, 1, `${g.id}: "old" must occur once in ${g.file}`);
     }
   }
+  assert.deepEqual(undecided, [], "a test of a gate file that no guard names and others does not list, or a pattern that names not one test");
 });
 
 test("guards control: a test that finds the repository and is listed nowhere is named; a test name is read as written", () => {
@@ -264,24 +445,12 @@ test("guards: every guard makes its gate test fail", async (t) => {
   /** @type {{ test: string, ms: number }[]} */
   const spent = [];
   let next = 0;
-  // The runner tells the test files it starts to report to it (NODE_TEST_CONTEXT): a gate test started here
-  // with that value runs as its child and exits 0 whatever it found, so every guard survived. This file's own
-  // report was set up when its first test started.
-  const context = process.env.NODE_TEST_CONTEXT;
-  delete process.env.NODE_TEST_CONTEXT;
-  t.after(() => {
-    if (context !== undefined) process.env.NODE_TEST_CONTEXT = context;
-  });
   const worker = async () => {
     while (next < jobs.length) {
       const { gate, groups } = jobs[next++];
       const started = Date.now();
       const dir = cloneOfTree(TOP);
-      for (const [pattern, guards] of groups) {
-        const command = `${NODE} --test --import ./test/hermetic.mjs --test-name-pattern=${quote(pattern)} ${gate.test}`;
-        const res = await runMutants({ cwd: dir, mutants: guards, command, check: ANY_TEXT, journal: journalPath(dir, ".git/ennyn") });
-        for (const p of verdict(res, guards)) problems.push(`${gate.test} (${pattern}): ${p}`);
-      }
+      for (const [pattern, guards] of groups) for (const p of await runGuards(dir, gate.test, pattern, guards)) problems.push(`${gate.test} (${pattern}): ${p}`);
       rmSync(dirname(dir), { recursive: true, force: true });
       spent.push({ test: gate.test, ms: Date.now() - started });
     }
@@ -291,6 +460,40 @@ test("guards: every guard makes its gate test fail", async (t) => {
   assert.equal(spent.length, jobs.length, "every gate's guards ran");
   assert.deepEqual(problems, []);
 });
+
+/**
+ * One pattern's guards in `dir` (a git work tree): the gate test alone with no guard, then with each one, the
+ * runner's TAP report of each run kept in the git dir and taken before the next run writes its own.
+ * @param {string} dir @param {string} file the gate test, relative to dir @param {string} pattern
+ * @param {import("./guards.mjs").Guard[]} guards
+ * @returns {Promise<string[]>} the verdict's problems
+ */
+export async function runGuards(dir, file, pattern, guards) {
+  const names = testNames(readFileSync(join(dir, file), "utf8"));
+  const report = join(dir, ".git", "ennyn-guard.tap");
+  const take = () => {
+    const text = readIfThere(report);
+    rmSync(report, { force: true });
+    return text;
+  };
+  const tap = { name: names.find((n) => new RegExp(pattern).test(n)) ?? pattern, baseline: /** @type {string | null} */ (null), runs: new Map() };
+  const reporters = `--test-reporter=tap --test-reporter-destination=stdout --test-reporter=tap --test-reporter-destination=${quote(report)}`;
+  // The file runs directly, not under `node --test`: there a parent re-reads the file's TAP, and Node 20.0.0's
+  // parser gives up on a control character a failing assertion prints (the whole file is then one "not ok"). A
+  // file started with the runner's NODE_TEST_CONTEXT reports to a parent instead and exits 0 whatever it found.
+  const command = `unset NODE_TEST_CONTEXT; ${NODE} --import ./test/hermetic.mjs ${reporters} --test-name-pattern=${quote(pattern)} ${file}`;
+  rmSync(report, { force: true });
+  const res = await runMutants({
+    cwd: dir,
+    mutants: guards,
+    command,
+    check: ANY_TEXT,
+    journal: journalPath(dir, ".git/ennyn"),
+    onBaseline: () => (tap.baseline = take()),
+    onResult: (r) => tap.runs.set(r.id, take()),
+  });
+  return verdict(res, guards, tap);
+}
 
 /**
  * Where the guard runs' time went, slowest gate first: on a loaded machine the report names the gates it waited on.
@@ -308,9 +511,17 @@ test("guards control (review round two): every way a test finds the repository i
   writeFileSync(join(dir, "json.test.mjs"), 'import pkg from "../package.json" with { type: "json" };\n');
   writeFileSync(join(dir, "cli.test.mjs"), 'const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");\nconst ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");\n');
   writeFileSync(join(dir, "plain.test.mjs"), "const x = 1;\n");
+  // The test file's own path, as node gives it (cycle 2026-10-24 (8)); a child's arguments are no such path.
+  writeFileSync(join(dir, "argv.test.mjs"), "const root = join(dirname(process.argv[1]), \"..\");\n");
+  writeFileSync(join(dir, "argv2.test.mjs"), "const [, self] = process.argv;\n");
+  writeFileSync(join(dir, "argv3.test.mjs"), "const self = process.argv.at(1);\n");
+  writeFileSync(join(dir, "meta.test.mjs"), "const { url } = import.meta;\n");
+  writeFileSync(join(dir, "argv4.test.mjs"), 'import { argv } from "node:process";\nconst root = dirname(argv[1]);\n');
+  writeFileSync(join(dir, "child.test.mjs"), "const script = 'const f = process.argv[2];';\n");
   const res = unguarded(dir, [], { "test/cli.test.mjs": { reason: "runs the CLI", allow: '"scripts", "ennyn\\.mjs"' } });
-  assert.deepEqual(res.readers, ["test/cli.test.mjs", "test/dirname.test.mjs", "test/json.test.mjs", "test/url.test.mjs"]);
-  assert.deepEqual(res.missing, ["test/dirname.test.mjs", "test/json.test.mjs", "test/url.test.mjs"]);
+  const finding = ["test/argv.test.mjs", "test/argv2.test.mjs", "test/argv3.test.mjs", "test/argv4.test.mjs"];
+  assert.deepEqual(res.readers, [...finding, "test/cli.test.mjs", "test/dirname.test.mjs", "test/json.test.mjs", "test/meta.test.mjs", "test/url.test.mjs"]);
+  assert.deepEqual(res.missing, [...finding, "test/dirname.test.mjs", "test/json.test.mjs", "test/meta.test.mjs", "test/url.test.mjs"]);
   assert.deepEqual(res.overreach, ["test/cli.test.mjs:2"]);
 });
 
@@ -325,4 +536,90 @@ test("guards control (review round two): the clone keeps a file's mode", () => {
   chmodSync(join(top, "new.sh"), 0o755);
   const dir = cloneOfTree(top);
   assert.deepEqual([lstatSync(join(dir, "run.sh")).mode & 0o777, lstatSync(join(dir, "new.sh")).mode & 0o777], [0o755, 0o755]);
+});
+
+test("guards control: every test of a gate file is decided once, each pattern names one test, and every declaration is read", () => {
+  const file = ['test("a: one", () => {});', 'test("a: two", () => {});', 'test("b: three", () => {});', "test('quoted', () => {});", ""].join("\n");
+  const guard = (/** @type {string} */ id, /** @type {string} */ pattern) => ({ id, why: "w", file: "f", old: "o", new: "n", pattern });
+  assert.deepEqual(accounting({ test: "test/x.test.mjs", guards: [guard("g1", "a: ")], others: { "b: three": "a unit", gone: "stale" } }, file), [
+    'test/x.test.mjs: 4 tests declared, 3 read as a top-level test("…"): declare each so',
+    "g1: its pattern names 2 tests of test/x.test.mjs, not one: a: one | a: two",
+    'test/x.test.mjs: others names "gone", no test of the file',
+  ]);
+  const plain = file.replace("test('quoted', () => {});\n", "");
+  assert.deepEqual(accounting({ test: "t", guards: [guard("g1", "a: one"), guard("g2", "a: two")], others: { "b: three": "a unit" } }, plain), []);
+  // Declared but not as a top-level test("…"): each is counted, so none is left undecided (review round one).
+  for (const form of [
+    "for (const c of [1, 2]) test(`case ${c}`, () => {});",
+    "if (process.env.X) {\n  test(\"in a block\", () => {});\n}",
+    "await test(\"awaited\", () => {});",
+    "test.skip(\"skipped\", () => {});",
+    "describe(\"group\", () => {});",
+    "it(\"an it\", () => {});",
+    // Round two: a space before the parenthesis, and a glob in a string that is no comment.
+    "test (\"spaced\", () => {});",
+    "test.skip (\"spaced skip\", () => {});",
+    "const g = \"docs/*.md\";\nfor (const c of [1, 2]) test(`v ${c}`, () => {});\n/** a comment */",
+    "test?.(\"optional call\", () => {});",
+    "test[\"skip\"](\"by key\", () => {});",
+    "test\n(\"next line\", () => {});",
+  ]) assert.match(accounting({ test: "t", guards: [guard("g1", "a: one"), guard("g2", "a: two")], others: { "b: three": "a unit" } }, `${plain}${form}\n`).join(), /4 tests declared, 3 read/, form);
+  for (const imports of ['import { test as check } from "node:test";', 'import t from "node:test";', 'import * as nt from "node:test";']) {
+    assert.match(accounting({ test: "t", guards: [guard("g1", "a: one"), guard("g2", "a: two")], others: { "b: three": "a unit" } }, `${imports}\n${plain}`).join(), /imported under another name/, imports);
+  }
+  // Not a declaration: a subtest, quoted text, a comment, a longer name.
+  const quiet = `import { test } from "node:test";\n${plain}  await t.test("sub", () => {});\nconst s = 'test("in a string")';\n// test("in a comment")\n/* test("a block comment") */\nmytest("x");\nconst m = "a test (x)";\nconst r = /test\\(/g;\nconst q = a / b / c;\nconst n = \`\${x ? \`test(\` : "test ("} b\`;\n`;
+  assert.deepEqual(accounting({ test: "t", guards: [guard("g1", "a: one"), guard("g2", "a: two")], others: { "b: three": "a unit" } }, quiet), []);
+  assert.deepEqual(accounting({ test: "t", guards: [guard("g1", "a: one")], others: { "a: one": "x", "b: three": " " } }, plain), [
+    't: "a: one" has a guard and is in others',
+    't: "a: two" has no guard, and others does not say why',
+    't: others gives no reason for "b: three"',
+  ]);
+});
+
+test("guards control: a kill is the named test reported failed by its runner; a run that failed otherwise is none", async () => {
+  // The runner's own TAP: a name with a hash and a backslash, a subtest, a test the pattern leaves out (Node 20 says SKIP).
+  const dir = mkdtempSync(join(tmpdir(), "en-guards-tap-"));
+  git(["init", "-q"], { cwd: dir });
+  mkdirSync(join(dir, "test"));
+  writeFileSync(join(dir, "test", "hermetic.mjs"), "");
+  const gateFile = [
+    'import { before, test } from "node:test";',
+    'import { readFileSync } from "node:fs";',
+    "const doc = readFileSync(new URL(\"../doc.md\", import.meta.url), \"utf8\");",
+    'if (doc.includes("crash")) throw new Error("the file fails before its tests");',
+    'test("named # \\\\ one", async (t) => {',
+    '  await t.test("inner", () => {});',
+    '  if (doc.includes("bad")) throw new Error("bad");',
+    '  // A line the test prints that looks like a result: written to its output, not to the runner\'s report.',
+    '  if (doc.includes("print")) (console.log("not ok 1 - named \\\\# \\\\\\\\ one"), (process.exitCode = 1));',
+    '});',
+    'test("other", () => {});',
+    '// Something other than the named test fails the run (on every Node from 20.0.0): the file sets its exit code.',
+    'if (doc.includes("other")) process.exitCode = 1;',
+    'before(() => { if (doc.includes("hook")) throw new Error("a hook, not the test"); });',
+    "",
+  ].join("\n");
+  writeFileSync(join(dir, "test", "gate.test.mjs"), gateFile);
+  writeFileSync(join(dir, "doc.md"), "clean\n");
+  const g = (/** @type {string} */ id, /** @type {string} */ to) => ({ id, why: id, file: "doc.md", old: "clean\n", new: to, pattern: "^named" });
+  const problems = await runGuards(dir, "test/gate.test.mjs", "^named", [g("kills", "bad\n"), g("other-fails", "other\n"), g("load-fails", "crash\n"), g("hook-fails", "hook\n"), g("prints", "print\n")]);
+  assert.equal(problems.length, 4, JSON.stringify(problems));
+  assert.match(problems[0], /^other-fails \(other-fails\): the run failed \(exit 1\), but "named # \\ one" reported ok/);
+  assert.match(problems[1], /^load-fails \(load-fails\): the run failed \(exit 1\), but "named # \\ one" did not run/);
+  // A before hook that throws: from Node 20.11 the test is "not ok" with failureType hookFailed; 20.0.0 runs it as passed.
+  assert.match(problems[2], /^hook-fails \(hook-fails\): (?:survived|the run failed \(exit 1\), but "named # \\ one" reported hook failed)/);
+  assert.match(problems[3], /^prints \(prints\): the run failed \(exit 1\), but "named # \\ one" reported ok/);
+  // A pattern that runs no test: its guards show nothing.
+  assert.match((await runGuards(dir, "test/gate.test.mjs", "^nothing", [g("kills", "bad\n")])).join(), /the pattern runs no test/);
+  // Read from the runner's report: a subtest is no top-level test, a SKIP is no pass, escapes are undone.
+  const report = "ok 1 - a \\# b\n    not ok 1 - inner\nok 2 - s # SKIP test name does not match pattern\nnot ok 3 - back \\\\ slash\n  ---\n  failureType: 'testCodeFailure'\n  ...\nnot ok 4 - h\n  ---\n  failureType: 'hookFailed'\n  ...\n";
+  assert.deepEqual(
+    [testOutcome(report, "a # b"), testOutcome(report, "inner"), testOutcome(report, "s"), testOutcome(report, "back \\ slash"), testOutcome(report, "h"), testOutcome(null, "a # b")],
+    ["ok", null, "skipped", "not ok", "hook failed", null],
+  );
+  // A kill whose run the shell reports as ended by a signal.
+  const res = { restored: null, timeoutMs: 1, baseline: { exit: 0, signal: null, ms: 1, tail: "" }, results: [{ id: "k", file: "f", outcome: "killed", checked: true, ms: 1, exit: 137, tail: "" }] };
+  const tap = { name: "a # b", baseline: "ok 1 - a \\# b\n", runs: new Map([["k", null]]) };
+  assert.match(verdict(/** @type {any} */ (res), [{ id: "k", why: "w", file: "f", old: "o", new: "n", pattern: "a" }], tap).join(), /k \(w\): its run ended by a signal \(exit 137\)/);
 });

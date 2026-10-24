@@ -1,16 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, chmodSync, symlinkSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, chmodSync, symlinkSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { globToRegExp, matchAny } from "../core/glob.mjs";
 import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
 import { git, headCommit, parseTrailers, repoPath, stagedPaths, unpushedCount } from "../core/git.mjs";
 import { t } from "../core/i18n.mjs";
-
-const here = dirname(fileURLToPath(import.meta.url));
 
 test("glob: ** matches zero or more segments", () => {
   assert.ok(matchAny("src/lib/engine/x.ts", ["src/lib/engine/**"]));
@@ -188,14 +185,6 @@ test("git: parseTrailers reads only a trailer-only last paragraph", () => {
   assert.deepEqual(m.get("Review-Rounds"), ["2"]);
   assert.equal(parseTrailers("subject\n\nbody: not a trailer block\nplain line").size, 0);
   assert.equal(parseTrailers("subject only").size, 0);
-});
-
-test("i18n: every English key exists in every catalog, vars interpolate, fallback works", () => {
-  const en = JSON.parse(readFileSync(join(here, "../i18n/en.json"), "utf8"));
-  const tr = JSON.parse(readFileSync(join(here, "../i18n/tr.json"), "utf8"));
-  assert.deepEqual(Object.keys(tr).sort(), Object.keys(en).sort());
-  assert.match(t("shape.subjectTooLong", { len: 130, max: 120 }, "tr"), /130 karakter; sınır 120/);
-  assert.throws(() => t("no.such.key"));
 });
 
 test("git: state dir under .git resolves through the common dir in a linked worktree", async () => {

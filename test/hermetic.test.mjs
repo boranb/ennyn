@@ -12,7 +12,7 @@ import { exec, execFile, execFileSync, spawnSync } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { basename, delimiter, join, dirname, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { hostileHome } from "./hostile.mjs";
 import { takeRefused } from "./hermetic.mjs";
@@ -107,4 +107,56 @@ test("hermetic: a test file whose code swallows a refused call still fails", () 
   const run = spawnSync(process.execPath, ["--test", "--import", pathToFileURL(join(ROOT, "test", "hermetic.mjs")).href, file], { env, encoding: "utf8" });
   assert.equal(run.status, 1);
   assert.match(run.stdout + run.stderr, /1 child process call\(s\) dropped the test setup/);
+});
+
+test("hermetic: every test file starts in an empty directory of its own, and no variable names the repository", () => {
+  const top = realpathSync(ROOT);
+  const inTop = (/** @type {string} */ p) => p === top || p.startsWith(top + sep) || p === ROOT || p.startsWith(ROOT + sep);
+  const cwd = process.cwd();
+  assert.ok(!inTop(cwd), `the working directory is the repository's: ${cwd}`);
+  // A read by a path relative to the working directory finds nothing of the repository.
+  assert.deepEqual([existsSync("package.json"), existsSync(join("test", "hermetic.mjs"))], [false, false]);
+  assert.equal(realpathSync(String(process.env.PWD)), realpathSync(cwd), "PWD is where the file runs");
+  const named = Object.entries(process.env).filter(([, v = ""]) => v.split(delimiter).some(inTop) || v.includes(top + sep) || v.includes(ROOT + sep));
+  assert.deepEqual(named.map(([k]) => k), [], "variables that name the repository (npm sets INIT_CWD and npm_package_json, the shell PWD)");
+  // Started as npm starts it (from the top, npm's variables, the repository's node_modules/.bin on PATH), and with
+  // other spellings of its path (review round one): each variable listed as gone is gone, each kept one is kept.
+  const parent = dirname(top);
+  /** @type {Record<string, string>} */
+  const gone = {
+    INIT_CWD: ROOT,
+    npm_package_json: join(ROOT, "package.json"),
+    npm_config_local_prefix: ROOT,
+    OLDPWD: ROOT,
+    EN_DOTDOT: `${parent}/x/../${basename(top)}`,
+    EN_DOUBLE: `${parent}//${basename(top)}`,
+    EN_FLAG: `--root=${top}`,
+    EN_JSON: JSON.stringify({ root: top }),
+  };
+  // macOS: /tmp and /var are links into /private.
+  if (/^\/private\/(?:tmp|var)\//.test(top)) {
+    gone.EN_ALIAS = top.replace(/^\/private/, "");
+    gone.EN_ALIAS_FLAG = `--root=${gone.EN_ALIAS}`;
+  }
+  /** @type {Record<string, string>} */
+  const kept = { EN_SIBLING: `${top}-other`, EN_PARENT: parent, EN_RELATIVE: "node_modules/.bin" };
+  const dir = mkdtempSync(join(tmpdir(), "en-herm-cwd-"));
+  const probe = join(dir, "probe.test.mjs");
+  writeFileSync(probe, [
+    'import { test } from "node:test";',
+    'import assert from "node:assert/strict";',
+    'import { realpathSync } from "node:fs";',
+    'test("probe", () => {',
+    `  assert.ok(!realpathSync(process.cwd()).startsWith(${JSON.stringify(top)}), process.cwd());`,
+    `  assert.deepEqual(${JSON.stringify(Object.keys(gone))}.filter((k) => k in process.env), [], "left naming the repository");`,
+    `  assert.deepEqual(${JSON.stringify(Object.keys(kept))}.filter((k) => !(k in process.env)), [], "removed though they name another place");`,
+    `  assert.ok(!process.env.PATH.split(${JSON.stringify(delimiter)}).includes(${JSON.stringify(join(ROOT, "node_modules", ".bin"))}), "the repository's .bin on PATH");`,
+    `  assert.ok(process.env.PATH.split(${JSON.stringify(delimiter)}).includes("node_modules/.bin"), "a relative PATH entry names no place");`,
+    "});",
+    "",
+  ].join("\n"));
+  const { NODE_TEST_CONTEXT: _, ...env } = process.env;
+  const PATH = [join(ROOT, "node_modules", ".bin"), "node_modules/.bin", process.env.PATH].join(delimiter);
+  const run = spawnSync(process.execPath, ["--test", "--import", pathToFileURL(join(ROOT, "test", "hermetic.mjs")).href, probe], { cwd: ROOT, env: { ...env, ...gone, ...kept, PWD: ROOT, PATH }, encoding: "utf8" });
+  assert.equal(run.status, 0, run.stdout + run.stderr);
 });

@@ -22,8 +22,38 @@ import childProcess from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, isAbsolute, join, normalize, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+
+// A test that reads a file by a path relative to the working directory (npm test starts at the top) reads the
+// repository without saying so, and test/guards.mjs cannot see it. Every test file starts in an empty directory,
+// and no variable names the repository (npm's INIT_CWD and npm_package_json, the shell's PWD, its
+// node_modules/.bin on PATH): a test that needs a file of it finds it from its own place, which the guards see.
+const top = realpathSync.native(dirname(dirname(fileURLToPath(import.meta.url))));
+// Its real path, and the spelling without macOS's /private (/tmp and /var are links into it).
+const tops = [...new Set([top, top.replace(/^\/private(?=\/(?:tmp|var|etc)\/)/, "")])];
+const inTop = (/** @type {string} */ p) => tops.some((t) => p === t || p.startsWith(t + sep));
+/** A path that names the repository as written, or once resolved (`x/../`, `//`, a link, another case on a disk that ignores case). */
+const names = (/** @type {string} */ p) => {
+  if (inTop(p)) return true;
+  if (!isAbsolute(p)) return false;
+  try {
+    return inTop(realpathSync.native(p));
+  } catch {
+    return inTop(normalize(p));
+  }
+};
+/** Its path inside other text (`--root=<repo>`, JSON), up to a separator or the end of a name. */
+const esc = (/** @type {string} */ s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const mentioned = new RegExp(`(?:${tops.map(esc).join("|")})(?=$|[/\\\\\\s"',;:}\\]])`);
+const start = mkdtempSync(join(tmpdir(), "en-cwd-"));
+process.chdir(start);
+for (const [k, v = ""] of Object.entries(process.env)) {
+  if (k === "PATH") process.env.PATH = v.split(delimiter).filter((p) => !names(p)).join(delimiter);
+  else if (v.split(delimiter).some(names) || mentioned.test(v)) delete process.env[k];
+}
+process.env.PWD = start;
 
 const home = mkdtempSync(join(tmpdir(), "en-home-"));
 mkdirSync(join(home, ".config"));
