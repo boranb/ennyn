@@ -100,6 +100,9 @@ const OSV = createServer((req, res) => {
   req.on("end", () => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ results: JSON.parse(body || '{"queries":[]}').queries.map(() => ({})) })));
 });
 await new Promise((r) => OSV.listen(0, "127.0.0.1", () => r(undefined)));
+// It must not hold the file open: Node 20.0.0's runner does not reach the file's after hook here, and the file
+// never ended (the Linux run waited on it for 40 minutes).
+OSV.unref();
 const OSV_ORIGIN = `http://127.0.0.1:${/** @type {import("node:net").AddressInfo} */ (OSV.address()).port}`;
 after(() => (OSV.closeAllConnections(), OSV.close()));
 const LOCK = (/** @type {Record<string, unknown>} */ extra = {}) =>
