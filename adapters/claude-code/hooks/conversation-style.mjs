@@ -11,7 +11,7 @@
 
 import { loadConfig } from "../../../core/config.mjs";
 import { styleRules } from "../../../core/style.mjs";
-import { t } from "../../../core/i18n.mjs";
+import { shown, t } from "../../../core/i18n.mjs";
 
 /** @returns {Promise<string>} */
 async function readStdin() {
@@ -35,7 +35,8 @@ async function main() {
   try {
     config = loadConfig({ cwd: projectDir });
   } catch (err) {
-    const error = String(/** @type {Error} */ (err).message).trim().replace(/\s*\n\s*(?:- )?/g, "; ");
+    // One line, and no control character a terminal would act on: the config is the project's text.
+    const error = shown(String(/** @type {Error} */ (err).message).trim().replace(/\s*\n\s*(?:- )?/g, "; ")).text;
     process.stdout.write(JSON.stringify({ systemMessage: t("style.notApplied", { error }, "en") }));
     return;
   }

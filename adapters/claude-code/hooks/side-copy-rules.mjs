@@ -23,7 +23,7 @@ import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from
 import { fileURLToPath } from "node:url";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { loadConfig } from "../../../core/config.mjs";
-import { t } from "../../../core/i18n.mjs";
+import { shown, t } from "../../../core/i18n.mjs";
 import { mapSideCopyPath } from "../../../side-copy/map-path.mjs";
 import { loadPathScopedRules, readRuleBody, rulesForPath } from "../rules-index.mjs";
 
@@ -127,6 +127,59 @@ function writeEmitted(path, emitted) {
 /** @param {string} s */
 const bytes = (s) => Buffer.byteLength(s, "utf8");
 
+/**
+ * The most bytes a name takes in the hook's text, shown. Escaped, a name can grow sixfold (each "<" or control
+ * character is six bytes); past these its middle is cut, so the text stays inside CONTEXT_CAP whatever the
+ * names, and the rule that applies is at least named: the side copy's path, shown up to three times (header,
+ * list, note), 1,000; a project name, 4,100, so a real path (Linux's limit is 4,096 bytes) shown as it is is
+ * never cut.
+ */
+export const PATH_SHOWN_MAX = 1000;
+export const NAME_SHOWN_MAX = 4100;
+
+/**
+ * A name as one JSON string in printable ASCII: every other character, "<" and ">" too, as \uXXXX (a pair of
+ * UTF-16 halves as two escapes). Nothing inside the value can look like its end: a list of look-alike quotes
+ * and brackets (U+201D, U+FF02, U+2039, U+FF1C…) would always miss one.
+ * @param {string} name
+ */
+function json(name) {
+  return JSON.stringify(name).replace(/[^\x20-\x7e]|[<>]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+}
+
+/**
+ * A name as a value with a visible start and end: one JSON string, or, past `max` bytes, its start and its
+ * end as two, with "…" between them.
+ * @param {string} name @param {number} [max]
+ */
+export function value(name, max = PATH_SHOWN_MAX) {
+  const whole = json(name);
+  if (bytes(whole) <= max) return whole;
+  const cps = [...name];
+  const half = Math.floor((max - bytes("…")) / 2);
+  const head = most(cps.length, (n) => bytes(json(cps.slice(0, n).join(""))) <= half);
+  const tail = most(cps.length - head, (n) => bytes(json(cps.slice(cps.length - n).join(""))) <= half);
+  return `${json(cps.slice(0, head).join(""))}…${json(cps.slice(cps.length - tail).join(""))}`;
+}
+
+/**
+ * A name of the project's own (a rule file, one that cannot be read) as the model reads it in the hook's
+ * text: as it is, as Claude Code's own loading names it, or as a value (`value`) when it holds what could
+ * frame words of its own as the hook's: a line break, a control or format character, a quote, a backslash,
+ * an angle bracket; or when it is longer than NAME_SHOWN_MAX. A side copy's names are always values (render).
+ * `cut`: shown by its start and end only, so the file cannot be opened by what is shown.
+ * @param {string} name
+ * @returns {{ text: string, quoted: boolean, cut: boolean }}
+ */
+export function named(name) {
+  const plain = !shown(name, { name: true }).quoted && !/[<>]/.test(name) && bytes(name) <= NAME_SHOWN_MAX;
+  if (plain) return { text: name, quoted: false, cut: false };
+  return { text: value(name, NAME_SHOWN_MAX), quoted: true, cut: bytes(json(name)) > NAME_SHOWN_MAX };
+}
+
+/** An error as one line the user can read: no line breaks, and no control character a terminal would act on. @param {string} s */
+export const said = (s) => shown(s.trim().replace(/\s*\n\s*(?:- )?/g, "; ")).text;
+
 /** The note on rule files that cannot be read takes at most this much of the cap; past it, a count. */
 const NOTE_MAX = 2000;
 
@@ -135,7 +188,8 @@ const NOTE_MAX = 2000;
  * smaller ones after it); list the rest by path; then the note on the rule files that could not be read. The
  * whole text never passes CONTEXT_CAP: the budget for rules is `maxBytes` (at most the cap) less the note and
  * the list, were every rule listed; a list or a note too long names as many paths as fit and how many more.
- * `given` holds the rules the text inlines or names: a rule in a count only is not given.
+ * `given` holds the rules the text inlines or names whole: a rule in a count only, or named by its start and end
+ * only (`named().cut`), is not given.
  * @param {string} relPath
  * @param {Array<{ file: string, body: string, changed?: boolean }>} rules
  * @param {number} maxBytes
@@ -144,14 +198,17 @@ const NOTE_MAX = 2000;
  * @returns {{ text: string, given: Set<string> }}
  */
 export function render(relPath, rules, maxBytes, lang, unreadable = []) {
-  const header = t("sidecopy.header", { relPath }, lang);
-  const top = t("sidecopy.tooLarge", { relPath }, lang);
+  // The side copy's name: no trusted text (a worktree may hold a pull request under review), always a value.
+  const path = value(relPath);
+  const item = (/** @type {string} */ file) => named(file).text;
+  const header = t("sidecopy.header", { relPath: path }, lang);
+  const top = t("sidecopy.tooLarge", { relPath: path }, lang);
   const noteWith = (/** @type {number} */ kept) =>
-    t("sidecopy.unreadable", { relPath, list: [...unreadable.slice(0, kept), ...(kept < unreadable.length ? [t("sidecopy.unreadableMore", { n: unreadable.length - kept }, lang)] : [])].join(", ") }, lang);
+    t("sidecopy.unreadable", { relPath: path, list: [...unreadable.slice(0, kept).map(item), ...(kept < unreadable.length ? [t("sidecopy.unreadableMore", { n: unreadable.length - kept }, lang)] : [])].join(", ") }, lang);
   const noted = most(unreadable.length, (n) => bytes(noteWith(n)) <= NOTE_MAX);
   const note = unreadable.length ? noteWith(noted) : null;
   const after = note ? bytes(note) + 2 : 0;
-  const budget = Math.min(maxBytes, CONTEXT_CAP) - after - bytes([top, ...rules.map((r) => `- ${r.file}`)].join("\n")) - 2;
+  const budget = Math.min(maxBytes, CONTEXT_CAP) - after - bytes([top, ...rules.map((r) => `- ${item(r.file)}`)].join("\n")) - 2;
   /** @type {string[]} */
   const blocks = [];
   /** @type {string[]} */
@@ -161,7 +218,8 @@ export function render(relPath, rules, maxBytes, lang, unreadable = []) {
   let size = bytes(header);
   for (const r of rules) {
     const changed = r.changed ? ` changed="${t("sidecopy.changed", {}, lang)}"` : "";
-    const block = `<rule file="${r.file}"${changed}>\n${r.body}\n</rule>`;
+    const file = named(r.file);
+    const block = `<rule file=${file.quoted ? file.text : `"${file.text}"`}${changed}>\n${r.body}\n</rule>`;
     const add = bytes(block) + 2;
     if (size + add <= budget) {
       blocks.push(block);
@@ -172,10 +230,11 @@ export function render(relPath, rules, maxBytes, lang, unreadable = []) {
   const parts = blocks.length ? [header, ...blocks] : [];
   if (listed.length) {
     const used = (/** @type {string} */ list) => bytes([...parts, list, ...(note ? [note] : [])].join("\n\n"));
-    const list = (/** @type {number} */ kept) => [top, ...listed.slice(0, kept).map((f) => `- ${f}`), ...(kept < listed.length ? [t("sidecopy.listMore", { n: listed.length - kept }, lang)] : [])].join("\n");
+    const list = (/** @type {number} */ kept) => [top, ...listed.slice(0, kept).map((f) => `- ${item(f)}`), ...(kept < listed.length ? [t("sidecopy.listMore", { n: listed.length - kept }, lang)] : [])].join("\n");
     const kept = most(listed.length, (n) => used(list(n)) <= CONTEXT_CAP);
     parts.push(list(kept));
-    for (const f of listed.slice(0, kept)) given.add(f);
+    // Named cut, a rule cannot be opened by what is shown: it is not given, and is offered again.
+    for (const f of listed.slice(0, kept)) if (!named(f).cut) given.add(f);
   }
   if (note) parts.push(note);
   return { text: parts.join("\n\n"), given };
@@ -203,7 +262,7 @@ async function main() {
   try {
     config = loadConfig({ cwd: projectDir });
   } catch (err) {
-    process.stderr.write(`${t("sidecopy.cannotRun", { reason: /** @type {Error} */ (err).message }, "en")}\n`);
+    process.stderr.write(`${t("sidecopy.cannotRun", { reason: said(/** @type {Error} */ (err).message) }, "en")}\n`);
     return 1;
   }
 
@@ -265,7 +324,7 @@ if (invokedDirectly) main().then(
   },
   (err) => {
     // The message, not a stack trace: this runs on every edit, and says why it cannot.
-    const reason = err instanceof Error ? err.message : String(err);
+    const reason = said(err instanceof Error ? err.message : String(err));
     process.stderr.write(`${t("sidecopy.cannotRun", { reason }, "en")}\n`);
     process.exitCode = 1;
   },

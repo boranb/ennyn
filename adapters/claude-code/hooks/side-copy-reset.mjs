@@ -15,12 +15,11 @@ import { basename, dirname, join } from "node:path";
 import { gone } from "../../../core/files.mjs";
 import { loadConfig } from "../../../core/config.mjs";
 import { t } from "../../../core/i18n.mjs";
-import { sideCopyStatePath } from "./side-copy-rules.mjs";
+import { said, sideCopyStatePath } from "./side-copy-rules.mjs";
 
 /** @param {unknown} err */
 function notReset(err) {
-  const error = String(/** @type {Error} */ (err)?.message ?? err).trim().replace(/\s*\n\s*(?:- )?/g, "; ");
-  process.stdout.write(JSON.stringify({ systemMessage: t("sidecopy.notReset", { error }, "en") }));
+  process.stdout.write(JSON.stringify({ systemMessage: t("sidecopy.notReset", { error: said(String(/** @type {Error} */ (err)?.message ?? err)) }, "en") }));
 }
 
 /** @returns {Promise<string>} */

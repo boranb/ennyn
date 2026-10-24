@@ -72,10 +72,13 @@ test("hook: injects the style in the config language; nothing for normal or no c
     assert.deepEqual([r.status, r.stdout], [0, ""], JSON.stringify(config));
   }
   // A config that does not load: the session runs without its style, and the user is told.
-  for (const config of [/** @type {any} */ ("{ broken"), { conversation: { style: "loud" } }]) {
+  // A key holding a terminal control sequence reaches the message escaped: the config is the project's text.
+  for (const config of [/** @type {any} */ ("{ broken"), { conversation: { style: "loud" } }, { "\u001b]0;owned\u0007": 1 }, /** @type {any} */ ("\u001b[2J")]) {
     const r = runHook(config);
     assert.equal(r.status, 0);
-    assert.match(JSON.parse(r.stdout).systemMessage, /^ennyn: the config does not load, so the conversation style could not be applied \(/, JSON.stringify(config));
+    const said = JSON.parse(r.stdout).systemMessage;
+    assert.match(said, /^ennyn: the config does not load, so the conversation style could not be applied \(/, JSON.stringify(config));
+    assert.doesNotMatch(said, /[\u0000-\u001f\u2028]/, JSON.stringify(said));
   }
   // Malformed input: the project still comes from CLAUDE_PROJECT_DIR.
   const bad = runHook({ conversation: { style: "terse" } }, "not json");
