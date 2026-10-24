@@ -248,14 +248,14 @@
     },
     {
       "id": "engines-floor-decision",
-      "title": "Node 20 reached end of life in April 2026; engines still says >= 20 and CI runs 20.0.0: keep the floor or raise it",
+      "title": "Node 20 reached end of life in April 2026 and gets no security fixes; engines still says >= 20 and CI runs 20.0.0: keep the floor or raise it to 22",
       "status": "planned",
       "value": "medium",
       "cost": "S",
       "cluster": "distribution",
       "needs": [],
       "gate": "user",
-      "source": "cycle 2026-10-21 (5), engine-floor-check"
+      "source": "cycle 2026-10-21 (5), engine-floor-check; security reason added cycle 2026-10-24 (8)"
     },
     {
       "id": "graph-id-types",
@@ -349,38 +349,6 @@
       "source": "review, cycle 2026-10-23 (6), gate-log-audit"
     },
     {
-      "id": "input-shape-matrix",
-      "title": "A gate fed every input shape it cannot read must refuse or say it did not check: run the commit-msg hook over a matrix of staged content and names (binary, UTF-16, NFD, bytes not UTF-8, line breaks in names, links, submodules, merges, huge files) through real git",
-      "status": "planned",
-      "value": "high",
-      "cost": "M",
-      "cluster": "gates",
-      "needs": [],
-      "source": "convergence, cycle 2026-10-23 (7): the most recurring class of the reviews, a check that passes in silence on an input shape it cannot read",
-      "mechanization": true,
-      "sourceClass": "a check that passes silently on an input shape it cannot read"
-    },
-    {
-      "id": "forbidden-utf16",
-      "title": "review.forbidden does not match a file stored in UTF-16 (NULs between the letters): read such a file as its encoding, or say it was not checked",
-      "status": "planned",
-      "value": "low",
-      "cost": "M",
-      "cluster": "gates",
-      "needs": [],
-      "source": "security review round 2, cycle 2026-10-23 (7), prose-rules-to-gates"
-    },
-    {
-      "id": "guards-per-test",
-      "title": "Guards are per file: a vacuous test added to a listed gate file, or a test that reads the repository by a path relative to the working directory, is not seen; a guard run that dies by a signal counts as a kill",
-      "status": "planned",
-      "value": "medium",
-      "cost": "M",
-      "cluster": "gates",
-      "needs": [],
-      "source": "review rounds 1-2, cycle 2026-10-23 (7), guard-vacuous"
-    },
-    {
       "id": "fault-fixture-probes",
       "title": "The fault matrix passes when its fixture lacks files the commands probe (a read that fails on a file that is not there proves nothing): check that each case's probed files are there",
       "status": "planned",
@@ -411,14 +379,244 @@
       "source": "review, cycle 2026-10-23 (7), prose-rules-to-gates (the same cut was removed for ban lines)"
     },
     {
-      "id": "guards-under-load",
-      "title": "Under load 30-44 the guards test took 18 minutes alone and ran past its 15-minute limit inside npm test (cancelled, not failed): bound its cost (fewer clones at once, the gate runs' own timeouts) or scale its limit",
       "status": "planned",
+      "needs": [],
+      "id": "deps-check",
+      "title": "Dependency adoption gate for projects that use Ennyn: the commit-msg hook checks a changed lock file (a version younger than a cooldown, a small share of its package's weekly downloads, install scripts and binding.gyp) and `ennyn deps` reports known advisories (OSV) for the whole lock file; offline is said, never clean; Ennyn's own lock file first",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-10-24 (8), user: security measures in the projects that use Ennyn; 2026 npm worms (ChainDrop, TanStack with valid provenance, Miasma via binding.gyp)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ci-check",
+      "title": "CI hardening for projects: doctor reports, and the commit-msg hook refuses new, workflow lines that name an action by tag instead of a full commit SHA, pull_request_target that checks out the pull request's code, and workflows without permissions; Ennyn's own workflow is the first case (actions/checkout@v4), with SECURITY.md, digest-pinned floor images in test:linux and npm ci --ignore-scripts",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-10-24 (8), user: security; 2026 action tag hijacks (actions-cool, codfish, Trivy) and malicious workflow files (GhostAction)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "secret-scan",
+      "title": "Secret shapes kept out of commits: the commit-msg hook refuses added lines that hold a high-confidence secret (private key headers, cloud, forge and registry tokens); accept and reject corpus first; the input-shape matrix reused, so a file it cannot read is said",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-10-24 (8), user: security; review.forbidden matches literals only",
+      "mechanization": true,
+      "sourceClass": "a literal rule matches only text written exactly; a secret has a shape, not a spelling"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hook-trust-audit",
+      "title": "Legacy audit of the hooks' trusted channel: which file contents the side-copy and conversation-style hooks put into Claude's context and under which conditions (a plain copy matched by package name, a rule file a repository plants, a config style); path table first",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-10-24 (8), user: security; the class of a 2026 marketplace plugin finding where repository files reached a hook's trusted channel"
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "deps-check",
+        "ci-check"
+      ],
+      "id": "security-axis",
+      "title": "The cycle's security axis: every plan carries a security line; every N cycles (security.everyCycles) the audit slot is a security audit of the project's sensitive paths with a path table; `ennyn deps` and the CI check run at cycle end; /ennyn:init asks the thresholds",
+      "value": "high",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 2026-10-24 (8), user decision: periodic checks run locally in every cycle, no cloud routine"
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "hook-trust-audit"
+      ],
+      "id": "agent-setup-risk",
+      "title": "init-scan and doctor judge the project's agent setup: broad allow rules (Bash(*)), hooks that run remote scripts, MCP servers and plugins from unpinned sources, a Claude Code version below a known fix (2.1.179: plugin auto-update checkout)",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-10-24 (8), user: security; 2026 plugin and hook findings (trusted channel, permission rewrites, Plugin4Shell)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "account-hardening",
+      "title": "GitHub account and repository hardening before the public release (owner's checklist)",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "gate": "user",
+      "source": "cycle 2026-10-24 (8), user: security; only the account owner can do these"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "verdict-baseline",
+      "title": "A gate's corpus keeps its verdicts: the input-shape matrix (and the hook and declaration corpora) record each cell's verdict; a change that turns a refused or said cell into a silent pass fails unless the recorded verdict changes in the same commit",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "mechanization": true,
+      "sourceClass": "a fix that replaces a reading instead of adding to it",
+      "source": "cycle 2026-10-24 (8), convergence: about 9 times, 8 of them fix-introduced and found by reviewers in rounds 2-4 (NFC over raw bytes, decoding over git's lines, a normalized glob, a string-stripping hook reader, a declaration rewrite)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "suite-wall-clock-limits",
+      "title": "Fixed wall-clock limits in tests fail npm test on a loaded machine: mutation.test.mjs's timeoutMs 1500/2000 (refused once the baseline passes 1 s: 4 tests failed in npm test at load 26-28, the file alone passed), the < 45 s, < 25 s and < 3000 ms asserts; scale them from a measured baseline",
       "value": "medium",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "cycle 2026-10-24 (8), review round 1 of guards-under-load; measured in the T4 landing run"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "guards-accounting-gaps",
+      "title": "Guards: node:test reached dynamically in a gate file (const check = test, await import, createRequire) is not counted; the fault matrix's git and file-read tests have no guard of their own (their judge, case lists and preload do)",
+      "value": "low",
       "cost": "S",
       "cluster": "gates",
+      "source": "cycle 2026-10-24 (8), review of guards-per-test"
+    },
+    {
+      "status": "planned",
       "needs": [],
-      "source": "closing run, cycle 2026-10-23 (7), guard-vacuous"
+      "id": "hermetic-env-gaps",
+      "title": "hermetic.mjs keeps a variable naming the repository through a link to a path that does not exist, another spelling inside other text, or upper case on a path that does not exist; a fork() or Worker child of a directly run gate file inherits the reporter flags",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-24 (8), review rounds 1-2 of guards-per-test (low confidence)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "forbidden-count-shapes",
+      "title": "doctor and init-scan count a forbidden text by git grep -F as written, composed and decomposed: UTF-16/UTF-32 files, 8-bit non-ASCII text, mixed forms and compatibility characters (Kelvin sign) the hook refuses are not counted",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "cycle 2026-10-24 (8), data review of input-shape-matrix"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "forbidden-wide-gaps",
+      "title": "review.forbidden wide files: UTF-16 with no byte order mark and no NUL is not recognized; a decoded file is searched in its own encoding only (a UTF-32 section inside UTF-16); the 48 MB cat-file chunking has no test; non-ASCII rules report every UTF-16/32 or binary file as not checked (noise)",
+      "value": "low",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "cycle 2026-10-24 (8), security review rounds 2-4 of input-shape-matrix"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "forbidden-huge-stream",
+      "title": "review.forbidden says, not reads, a diff past 64 MB and a wide file past 16 MB: stream them instead",
+      "value": "low",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "cycle 2026-10-24 (8), input-shape-matrix"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "forbidden-byte-names",
+      "title": "A staged name that is not UTF-8 is said, not read: git diff cannot take it as a pathspec in bytes",
+      "value": "low",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "cycle 2026-10-24 (8), security review of input-shape-matrix"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "glob-class-astral",
+      "title": "A glob character class [...] matches one UTF-16 code unit, not one character (? now matches one)",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-24 (8), data review of input-shape-matrix"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "forbidden-ignorecase",
+      "title": "core.ignorecase: a new Src/ directory under a src/** rule is not named (documented in DESIGN.md)",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-24 (8), security review of input-shape-matrix"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "trace2-config-targets",
+      "title": "A user config with trace2.*Target pointing at stdout makes every commit 'not checked' with a misleading reason; only GIT_TRACE* in the environment is stripped",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-24 (8), security review round 4 of input-shape-matrix"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hook-wired-limits",
+      "title": "callsCommitCheck cannot see blocks that never run (if false), functions never called, or Node block comments; a custom husky directory before husky installs reads as repo",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-24 (8), doctor-audit review round 2"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "name-lossy-decode",
+      "title": "Path bytes that are not UTF-8 print as U+FFFD in doctor and other reports (git() decodes as UTF-8)",
+      "value": "low",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "cycle 2026-10-24 (8), doctor-audit data review"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "error-text-i18n",
+      "title": "GraphError, ConfigError and MutationError carry English text inside Turkish reports (the most common line in a fresh project)",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "init",
+      "source": "cycle 2026-10-24 (8), doctor-audit"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "raw-output-commit-check",
+      "title": "commit-check and install-hook print paths and rule text raw (doctor and mechanization go through tShown): a name with a line break can fake a line in the hook's output",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-10-24 (8), doctor-audit review"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "config-path-validation",
+      "title": "Config validation accepts paths.metricsLog set to \"\" or \".\" (doctor says unmeasured, but budget --record would write to a directory); gate-log keeps its own not-there predicate",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-24 (8), doctor-audit"
     }
   ],
   "done": [
@@ -640,6 +838,36 @@
       "title": "Legacy audit of the side-copy hook: Claude Code's 10,000-character cap kept, only rules shown marked as given, an edited rule given again, a list per subagent, no shared lists by cleaned ids (08b7b5d)",
       "status": "done",
       "finished": "2026-10-23"
+    },
+    {
+      "id": "input-shape-matrix",
+      "title": "test/input-shapes.test.mjs: 130 cells of content and names through real git with the hook; UTF-16/32 decoded beside git's own lines, names read as bytes, globs raw or composed (d103af1)",
+      "status": "done",
+      "finished": "2026-10-24"
+    },
+    {
+      "id": "forbidden-utf16",
+      "title": "review.forbidden reads UTF-16 and UTF-32 files, in true line numbers (folded into input-shape-matrix, d103af1)",
+      "status": "done",
+      "finished": "2026-10-24"
+    },
+    {
+      "id": "guards-per-test",
+      "title": "Guards are per test: every top-level test of a gate file has a guard or a reason; a kill is the named test reported failed, the gate file run directly; test files start in an empty directory (f707151)",
+      "status": "done",
+      "finished": "2026-10-24"
+    },
+    {
+      "id": "guards-under-load",
+      "title": "The guards test has no fixed time limit; a guard run past its own limit is said, not read as a pass; time per gate reported (0bf88ae)",
+      "status": "done",
+      "finished": "2026-10-24"
+    },
+    {
+      "id": "doctor-audit",
+      "title": "Legacy audit of doctor: a hook git skips or whose CLI is gone is a warning in doctor and install-hook alike; a read it cannot make is a ? line; every value shown on one line (fe5cdc2)",
+      "status": "done",
+      "finished": "2026-10-24"
     }
   ]
 }
