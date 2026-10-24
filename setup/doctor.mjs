@@ -14,7 +14,9 @@ import { MIN_HISTORY, indexMatches, recentCommits, productionSubjects } from "./
 import { hookStatus, idleReason } from "./hook.mjs";
 import { instructionBudget, readBudgets } from "./budget.mjs";
 import { relative, resolve, sep } from "node:path";
-import { git, repoPath, gitVersion, parseVersion, versionAtLeast, GIT_FLOOR } from "../core/git.mjs";
+import { git, repoPath, gitVersion, parseVersion, versionAtLeast, stagedVersions, GIT_FLOOR } from "../core/git.mjs";
+import { ciSet, ciText } from "../checks/ci.mjs";
+import { t } from "../core/i18n.mjs";
 import { matchAny } from "../core/glob.mjs";
 
 /**
@@ -29,6 +31,70 @@ const oneLine = (e) => String(/** @type {Error & { stderr?: unknown }} */ (e)?.s
 
 /** Config keys holding a regular expression (as metrics/szz.mjs and checks/commit-shape.mjs compile them). */
 const REGEX_KEYS = /** @type {const} */ (["fixSubject", "excludeRe", "testRe", "moveSubject"]);
+
+/**
+ * What the CI files the index holds today bring (security.ci), read together as the hook reads them: the hook
+ * refuses new ones, these stay until the file is fixed. A file that cannot be read is unmeasured, never clean; a
+ * file security.ci.except skips is named, so a skipped file is not taken for a clean one.
+ * @param {string} cwd @param {string[]} tracked @param {any} config
+ * @param {(level: DoctorItem["level"], key: string, vars?: DoctorItem["vars"]) => void} add
+ */
+function ciReport(cwd, tracked, config, add) {
+  const rule = config.security.ci;
+  const lang = config.language;
+  const files = tracked.filter((f) => matchAny(f, rule.paths) && !matchAny(f, rule.except));
+  const skipped = tracked.filter((f) => matchAny(f, rule.paths) && matchAny(f, rule.except));
+  if (skipped.length) add("warn", "doctor.ciExcepted", { list: skipped });
+  if (!files.length) return;
+  let versions;
+  try {
+    versions = stagedVersions(cwd, files);
+  } catch (e) {
+    return add("unmeasured", "doctor.ciUnmeasured", { error: oneLine(e) });
+  }
+  /** @type {Map<string, string>} */
+  const texts = new Map();
+  /** @type {Map<string, string[]>} */
+  const unread = new Map();
+  const skip = (/** @type {string} */ reason, /** @type {string} */ path) => unread.set(reason, [...(unread.get(reason) ?? []), path]);
+  for (const [path, v] of versions) {
+    // A tracked name the index does not list as asked (one that is not UTF-8) was not read.
+    const text = v.staged ? ciText(v.staged) : null;
+    if (v.unread) skip(t(`ci.reason.${v.unread}`, {}, lang), path);
+    else if (!v.staged) skip(t("ci.reason.notFound", {}, lang), path);
+    else if (text === null) skip(t("ci.reason.notText", {}, lang), path);
+    else texts.set(path, text);
+  }
+  const { findings, missing } = ciSet(texts);
+  /** @type {{ path: string, value: string }[]} */
+  const unpinned = [];
+  /** @type {Set<string>} */
+  const pwn = new Set();
+  /** @type {{ path: string, job: string }[]} */
+  const unpermitted = [];
+  /** @type {Set<string>} */
+  const writeAll = new Set();
+  /** @type {Set<string>} */
+  const forms = new Set();
+  for (const [path, f] of findings) {
+    unpinned.push(...f.uses.filter((u) => !u.pinned).map((u) => ({ path, value: u.value })));
+    if (f.pwn.length) pwn.add(path);
+    unpermitted.push(...f.unpermitted.map((j) => ({ path, job: j.job })));
+    if (f.writeAll.length) writeAll.add(path);
+    if (f.unread.length) forms.add(path);
+  }
+
+  const fileCount = (/** @type {{ path: string }[]} */ list) => new Set(list.map((x) => x.path)).size;
+  if (unpinned.length) add("warn", "doctor.ciUnpinned", { n: unpinned.length, files: fileCount(unpinned), examples: unpinned.slice(0, 3).map((u) => `${u.path}: ${u.value}`) });
+  if (pwn.size) add("warn", "doctor.ciPwn", { list: [...pwn] });
+  if (unpermitted.length) add("warn", "doctor.ciPermissions", { n: unpermitted.length, list: [...new Set(unpermitted.map((j) => j.path))] });
+  if (writeAll.size) add("warn", "doctor.ciWriteAll", { list: [...writeAll] });
+  if (forms.size) add("warn", "doctor.ciForms", { list: [...forms] });
+  for (const [reason, paths] of unread) add("unmeasured", "doctor.ciUnread", { list: paths, reason });
+  // The caller was read; what its callee checks out was not.
+  for (const m of missing) add("unmeasured", "doctor.ciCalleeMissing", { path: [m.path], callee: [m.callee || "./"] });
+  if (!unpinned.length && !pwn.size && !unpermitted.length && !writeAll.size && !forms.size && !unread.size && !missing.length) add("ok", "doctor.ciClean", { files: files.length });
+}
 
 /**
  * @param {{ cwd: string, env?: NodeJS.ProcessEnv }} opts
@@ -199,6 +265,7 @@ export async function checkSetup({ cwd, env = process.env }) {
         if (lines) add("warn", "doctor.forbiddenHeld", { rule: i + 1, text: rule.text, lines, files: held.length, examples: held.slice(0, 3).map((h) => h.path) });
         else add("ok", "doctor.forbiddenClean", { rule: i + 1, text: rule.text });
       });
+      ciReport(cwd, tracked, config, add);
     }
   }
 

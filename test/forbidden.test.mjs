@@ -363,7 +363,7 @@ test("review.forbidden through the hook: an index from outside the git dir, or a
   spawnSync("git", ["add", "src/a.js"], { cwd: dir, env });
   const foreign = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "alt"], { cwd: dir, env, encoding: "utf8" });
   assert.match(foreign.stderr, /Staged paths could not be read \(the hook was given an index outside this repository's git dir/);
-  assert.match(foreign.stderr, /review\.forbidden checks ran without them/);
+  assert.match(foreign.stderr, /review\.forbidden( and \S+)* checks ran without them/);
   // The config named by ENNYN_CONFIG is not there: the defaults would check nothing of this project.
   stage({ "src/a.js": "2\nconsole.log(2);\n" });
   const named = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "named"], { cwd: dir, env: { ...process.env, ENNYN_CONFIG: join(dir, "nope.json") }, encoding: "utf8" });

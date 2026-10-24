@@ -10,10 +10,11 @@ import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { relative, resolve, sep } from "node:path";
 import { loadConfig, ConfigError } from "../core/config.mjs";
-import { git, headCommit, hookIndexFile, repoPath, stagedAddedLines, stagedNames, unpushedCount } from "../core/git.mjs";
-import { t, tShown } from "../core/i18n.mjs";
+import { git, headCommit, hookIndexFile, indexNames, repoPath, stagedAddedLines, stagedNames, stagedVersions, unpushedCount } from "../core/git.mjs";
+import { shown, t, tShown } from "../core/i18n.mjs";
 import { matchAny } from "../core/glob.mjs";
 import { checkCommitShape, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
+import { ciCallees, ciMessages } from "../checks/ci.mjs";
 import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
 import { reworkRate } from "../metrics/szz.mjs";
 import { bypassUses } from "../metrics/bypass.mjs";
@@ -54,6 +55,9 @@ Options:
 Config: .ennyn/config.json in the repository root (override with ENNYN_CONFIG).`;
 
 class UsageError extends Error {}
+
+/** How many levels of local callees the commit-msg hook reads, one git round each; past it they are said unread. */
+const CALLEE_ROUNDS = 20;
 
 /**
  * @param {string[]} args
@@ -425,6 +429,71 @@ const COMMANDS = {
         err(t("cli.forbiddenUnmeasured", { error: String(error.stderr || error.message).trim().split("\n")[0] }, cfg.language));
       }
     }
+    // CI files (security.ci): the uses, triggers and permissions the commit brings, against HEAD's version. The
+    // files under the directories `security.ci.paths` names are read with the staged ones, and every local callee
+    // their `uses` name, by path: a caller's change can reach a reusable workflow or an action it calls. Reading
+    // that context can fail, or stop at a depth, without turning the check of the staged files off: what it could
+    // not read is said. Like review.forbidden it holds for every message, and what it cannot read is said, never
+    // passed as clean.
+    const ciRule = cfg.security.ci;
+    const isCi = (/** @type {string} */ p) => matchAny(p, ciRule.paths) && !matchAny(p, ciRule.except);
+    /** @type {{ errors: string[], warnings: string[] }} */
+    let ci = { errors: [], warnings: [] };
+    if (staged.some(isCi)) {
+      try {
+        const shownNames = (/** @type {string[]} */ list) => list.slice(0, 3).map((p) => shown(p, { name: true }).text).join(", ");
+        // Where callers live: each glob's directory before its first wildcard; an action-file glob ("**/action.yml")
+        // names callees, which are read by path; any other glob with no directory means the whole index.
+        const dirs = [...new Set(ciRule.paths.flatMap((/** @type {string} */ g) => {
+          const at = g.search(/[*?[{]/);
+          const lit = at === -1 ? g : g.slice(0, at);
+          const dir = lit.includes("/") ? lit.slice(0, lit.lastIndexOf("/")) : "";
+          return dir === "" && /(^|\/)action\.(?:ya?ml|\{[^}]*\})$/.test(g) ? [] : [dir];
+        }))];
+        /** @type {{ paths: string[], notUtf8: string[] }} */
+        let callers = { paths: [], notUtf8: [] };
+        try {
+          if (dirs.length) callers = indexNames(cwd, { env: process.env, paths: dirs.includes("") ? [] : dirs });
+        } catch (e) {
+          if (!opts.hook) throw e;
+          err(t("cli.ciCallersUnread", { error: String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message).trim().split("\n")[0] }, cfg.language));
+        }
+        const all = [...new Set([...staged.filter(isCi), ...callers.paths.filter(isCi)])];
+        const ciUnnamed = all.filter((p) => notUtf8.includes(p) || callers.notUtf8.includes(p));
+        // A staged name git cannot be asked for fails a hand run; a tracked one the commit leaves alone is said.
+        const stagedUnnamed = ciUnnamed.filter((p) => staged.includes(p));
+        const trackedUnnamed = ciUnnamed.filter((p) => !staged.includes(p));
+        if (stagedUnnamed.length) {
+          const said = t("cli.ciNamesUnread", { n: stagedUnnamed.length, paths: shownNames(stagedUnnamed) }, cfg.language);
+          if (!opts.hook) throw new Error(said);
+          err(said);
+        }
+        if (trackedUnnamed.length) err(t("cli.ciTrackedUnread", { n: trackedUnnamed.length, paths: shownNames(trackedUnnamed) }, cfg.language));
+        const versions = stagedVersions(cwd, all.filter((p) => !ciUnnamed.includes(p)), { env: process.env });
+        // Callees by path, a level a round, each new file parsed once; a candidate in neither the index nor HEAD is
+        // no file. Past CALLEE_ROUNDS levels, or when a read fails, what is left is said (ciSet names it missing).
+        const tried = new Set(versions.keys());
+        let fresh = new Map(versions);
+        for (let round = 0; fresh.size && round < CALLEE_ROUNDS; round++) {
+          const want = ciCallees(fresh).filter((p) => isCi(p) && !tried.has(p));
+          fresh = new Map();
+          if (!want.length) break;
+          for (const p of want) tried.add(p);
+          try {
+            for (const [p, v] of stagedVersions(cwd, want, { env: process.env })) if (v.staged || v.head || v.unread || v.headUnread) versions.set(p, v), fresh.set(p, v);
+          } catch (e) {
+            if (!opts.hook) throw e;
+            err(t("cli.ciCalleesUnread", { paths: shownNames(want), error: String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message).trim().split("\n")[0] }, cfg.language));
+            break;
+          }
+        }
+        ci = ciMessages(versions, cfg.language);
+      } catch (e) {
+        if (!opts.hook) throw e;
+        const error = /** @type {Error & { stderr?: unknown }} */ (e);
+        err(t("cli.ciUnmeasured", { error: String(error.stderr || error.message).trim().split("\n")[0] }, cfg.language));
+      }
+    }
     let res;
     try {
       const { cleanup, comment, cut } = hookCommitMode({ cwd, message, env: process.env });
@@ -438,11 +507,13 @@ const COMMANDS = {
       const error = /** @type {Error & { stderr?: unknown }} */ (e);
       if (typeof error.stderr === "string") err(t("cli.hookGitFailed", { error: error.stderr.trim().split("\n")[0] }, cfg.language));
       else err(t("cli.hookConfigBroken", { error: error.message }, "en"));
-      return 0;
+      // What the files bring was read apart from the message: it still stands.
+      for (const x of [...ci.errors, ...ci.warnings]) err(x);
+      return ci.errors.length ? 1 : 0;
     }
-    for (const e of res.errors) err(e);
-    for (const w of res.warnings ?? []) err(w);
-    return res.ok ? 0 : 1;
+    for (const e of [...ci.errors, ...res.errors]) err(e);
+    for (const w of [...(res.warnings ?? []), ...ci.warnings]) err(w);
+    return res.ok && !ci.errors.length ? 0 : 1;
   },
 
   impact(args) {

@@ -12,8 +12,11 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { GIT_FLOOR } from "../core/git.mjs";
-import { nodeFloor, versionIs, runs, NEWER, FLOOR_BASE } from "./linux-run.mjs";
+import { GIT_FLOOR, git } from "../core/git.mjs";
+import { DEFAULTS } from "../core/config.mjs";
+import { matchAny } from "../core/glob.mjs";
+import { ciFindings, ciKind } from "../checks/ci.mjs";
+import { nodeFloor, versionIs, runs, pinned, NEWER, FLOOR_BASE } from "./linux-run.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (/** @type {string} */ p) => readFileSync(join(ROOT, p), "utf8");
@@ -30,6 +33,8 @@ const WORKFLOW = `# The suite on Linux at the floors (git, and the Node of packa
 # In a private repository a push or pull request starts no job: a private repository's runs draw on
 # metered Actions minutes, and the same script runs before each push (.claude/CLAUDE.md). Started by hand it
 # runs anyway. Once the repository is public, every push and pull request runs it, at no cost.
+# Each action is named by its full commit SHA (a tag can be moved to other code), the token only reads,
+# checkout leaves no credential in .git/config, and npm ci runs no install script.
 name: test
 
 on:
@@ -37,26 +42,32 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     if: github.event_name == 'workflow_dispatch' || !github.event.repository.private
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The hygiene test reads every commit message.
           fetch-depth: 0
+          persist-credentials: false
       - run: npm run test:linux
 
   typecheck:
     if: github.event_name == 'workflow_dispatch' || !github.event.repository.private
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - run: npm run typecheck
 `;
 
@@ -85,10 +96,13 @@ test("engines: the Linux run starts at both floors, then newer Node majors, and 
 
   const list = runs(floor);
   assert.deepEqual([list[0].node, list[0].git], [floor, GIT_FLOOR], "the first run is at both floors");
-  assert.match(String(list[0].build), new RegExp(`^FROM node:${floor.replace(/\./g, "\\.")} AS node\nFROM ${FLOOR_BASE}\n`));
+  assert.match(String(list[0].build), new RegExp(`^FROM node:${floor.replace(/\./g, "\\.")}@sha256:[0-9a-f]{64} AS node\nFROM ${FLOOR_BASE}@sha256:[0-9a-f]{64}\n`));
   // git itself; tzdata, or git reads the hostile machine's far time zone as UTC; ssh-keygen for the signing test.
   assert.match(String(list[0].build), /install .* git tzdata openssh-client /);
   assert.deepEqual(list.slice(1).map((r) => r.node), NEWER);
+  // Pulled by digest, the one each tag named when it was pinned.
+  for (const r of list.slice(1)) assert.match(r.image, new RegExp(`^node:${r.node}@sha256:[0-9a-f]{64}$`));
+  assert.throws(() => pinned("node:99"), /node:99 has no digest/, "an image with no digest stops the run");
   const major = Number(floor.split(".")[0]);
   NEWER.forEach((v, i) => assert.ok(/^\d+$/.test(v) && Number(v) > (i ? Number(NEWER[i - 1]) : major), `${v} is a newer major than the one before it`));
 
@@ -101,4 +115,18 @@ test("engines: both READMEs name the Node floor's major version and the git floo
   const git = GIT_FLOOR.replace(/\./g, "\\.");
   assert.match(read("README.md"), new RegExp(`needs Node ${major} or later and git ${git} or later`));
   assert.match(read("README.tr.md"), new RegExp(`Node ${major} ya da üstünü ve git ${git} ya da üstünü ister`));
+});
+
+test("engines: the repository's own CI files name every action by a commit, check out no pull request code and set permissions", () => {
+  const files = git(["ls-files", "-z"], { cwd: ROOT }).split("\0").filter((f) => matchAny(f, DEFAULTS.security.ci.paths));
+  assert.ok(files.includes(".github/workflows/test.yml"), "the workflow is read");
+  for (const f of files) {
+    const found = ciFindings(read(f), ciKind(f));
+    assert.ok(found.uses.length || ciKind(f) === "action", `${f}: no uses read`);
+    assert.deepEqual(
+      { unpinned: found.uses.filter((u) => !u.pinned), pwn: found.pwn, unpermitted: found.unpermitted, writeAll: found.writeAll, unread: found.unread },
+      { unpinned: [], pwn: [], unpermitted: [], writeAll: [], unread: [] },
+      f,
+    );
+  }
 });

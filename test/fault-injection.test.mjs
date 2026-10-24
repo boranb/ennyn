@@ -117,6 +117,8 @@ const FIRST = commit(0, "feat: add", {
   ".claude/skills/review/SKILL.md": "---\nname: review\ndescription: Review a change before it is committed.\n---\n\nRead the diff.\n",
   ".claude/agents/checker.md": "---\nname: checker\ndescription: Checks a change for correctness.\n---\n\nCheck it.\n",
   ".claude/commands/ship.md": "---\ndescription: Ship the change.\n---\n\nShip it.\n",
+  // A CI file doctor reads, and one a commit can change: a read that fails there must be said.
+  ".github/workflows/ci.yml": `on: push\npermissions:\n  contents: read\njobs:\n  a:\n    steps:\n      - uses: a/b@${"0".repeat(40)}\n`,
   "src/add.js": ADD,
   "src/use.js": 'import { add } from "./add.js";\nexport const three = add(1, 2);\n',
   "test/add.test.js": 'import { add } from "../src/add.js";\nif (add(1, 2) !== 3) throw new Error("add");\n',
@@ -160,6 +162,12 @@ function stageLog(repo, env) {
   if (env) git(["read-tree", "HEAD"], { cwd: repo, env, keepIndex: true });
   writeFileSync(join(repo, "src", "use.js"), `${readFileSync(join(repo, "src", "use.js"), "utf8")}console.log(three);\n`);
   git(["add", "src/use.js", ...(env ? ["README.md"] : [])], { cwd: repo, ...(env ? { env, keepIndex: true } : {}) });
+}
+
+/** Stages a workflow step that names an action by its tag, which security.ci keeps out. @param {string} repo */
+function stageWorkflow(repo) {
+  writeFileSync(join(repo, ".github", "workflows", "ci.yml"), `${readFileSync(join(repo, ".github", "workflows", "ci.yml"), "utf8")}      - uses: a/b@v1\n`);
+  git(["add", ".github/workflows/ci.yml"], { cwd: repo });
 }
 
 /**
@@ -206,6 +214,9 @@ const CASES = [
   { args: ["commit-check", ".git/MSG"], setup: (repo) => stageLog(repo) },
   { args: ["commit-check", "--hook", ".git/MSG"], setup: (repo) => stageLog(repo) },
   { args: ["commit-check", "--hook", ".git/MSG"], env: { GIT_INDEX_FILE: ".git/index.hook" }, setup: (repo) => stageLog(repo, { ...process.env, GIT_INDEX_FILE: join(repo, ".git", "index.hook") }) },
+  // A uses by tag in a staged workflow: read as nothing staged, the commit would pass.
+  { args: ["commit-check", ".git/MSG"], setup: (repo) => stageWorkflow(repo) },
+  { args: ["commit-check", "--hook", ".git/MSG"], setup: (repo) => stageWorkflow(repo) },
   // An amend! that drops the Impact line its target needs; the target is read from the log.
   { args: ["commit-check", "--hook", ".git/AMEND"], setup: (repo) => git(["reset", "-q"], { cwd: repo }) },
   // The same past a shallow boundary: the target cannot be found, and the hook says what went unchecked.

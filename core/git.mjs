@@ -462,6 +462,140 @@ export function mergeHeads(cwd) {
 }
 
 /**
+ * The names the index holds (the one a hook was given) under `paths` (literal pathspecs; a directory names what is
+ * in it), read as bytes: `notUtf8` as in stagedNames.
+ * @param {string} cwd
+ * @param {{ env?: NodeJS.ProcessEnv, paths: string[] }} opts
+ * @returns {{ paths: string[], notUtf8: string[] }}
+ */
+export function indexNames(cwd, { env, paths: under }) {
+  const index = env ? hookIndexFile(cwd, env) : null;
+  const out = gitBytes(["-c", "core.precomposeUnicode=false", "ls-files", "-z", "--", ...under], { cwd, env: stagedEnv(index), keepIndex: Boolean(index) });
+  /** @type {Set<string>} */
+  const paths = new Set();
+  /** @type {string[]} */
+  const notUtf8 = [];
+  for (const name of splitNul(out)) {
+    const text = name.toString("utf8");
+    // An unmerged path is listed once per stage.
+    if (paths.has(text)) continue;
+    paths.add(text);
+    if (!isUtf8(name)) notUtf8.push(text);
+  }
+  return { paths: [...paths], notUtf8 };
+}
+
+/** @param {Buffer} out */
+function splitNul(out) {
+  /** @type {Buffer[]} */
+  const names = [];
+  for (let at = 0; at < out.length; ) {
+    let end = out.indexOf(0, at);
+    if (end === -1) end = out.length;
+    if (end > at) names.push(out.subarray(at, end));
+    at = end + 1;
+  }
+  return names;
+}
+
+/**
+ * Both versions of staged files, for checks that judge a file whole (a workflow's triggers and permissions, a
+ * lock file): `staged` from the index the hook was given (null: not there, a file the commit deletes), `head`
+ * from HEAD (null: new, or no commit yet). In a merge HEAD is the first parent, so what the other side brings is
+ * new; with --amend HEAD is the commit amended. Read as bytes, objects as they are (no replace refs),
+ * `core.precomposeUnicode` off, 500 paths a listing and at most 3 × WIDE_LIMIT a cat-file call. What cannot be read is said per side, as a code: `unread` for
+ * the index side (`symlink`, `submodule`, `large` past WIDE_LIMIT, `notBlob`, `unmerged`: a conflict not
+ * resolved), `headUnread` for HEAD's (its `head` is then null). Names are handed to git as written: one that is
+ * not UTF-8 cannot be (stagedNames), and the caller says so.
+ * @param {string} cwd the repository's top
+ * @param {string[]} paths
+ * @param {{ env?: NodeJS.ProcessEnv }} [opts]
+ * @returns {Map<string, StagedVersion>}
+ * @typedef {{ staged: Buffer | null, head: Buffer | null, unread?: Unread, headUnread?: Unread }} StagedVersion
+ * @typedef {"symlink" | "submodule" | "large" | "notBlob" | "unmerged"} Unread
+ */
+export function stagedVersions(cwd, paths, { env } = {}) {
+  /** @type {Map<string, StagedVersion>} */
+  const out = new Map();
+  const unique = [...new Set(paths)];
+  if (!unique.length) return out;
+  const index = env ? hookIndexFile(cwd, env) : null;
+  const readEnv = stagedEnv(index);
+  const head = headCommit(cwd);
+  /** @type {{ path: string, side: "staged" | "head", oid: string }[]} */
+  const wanted = [];
+  for (const path of unique) out.set(path, { staged: null, head: null });
+  const mark = (/** @type {StagedVersion} */ item, /** @type {"staged" | "head"} */ side, /** @type {Unread} */ why) => {
+    if (side === "staged") item.unread = why;
+    else item.headUnread = why;
+  };
+  // "<mode> <oid> <stage>\t<path>" from the index, "<mode> <type> <oid>\t<path>" from HEAD's tree.
+  const entries = (/** @type {Buffer} */ bytes, /** @type {RegExp} */ re, /** @type {"staged" | "head"} */ side) => {
+    for (const rec of splitNul(bytes).map((b) => b.toString("utf8"))) {
+      const tab = rec.indexOf("\t");
+      const m = re.exec(rec.slice(0, tab));
+      const path = rec.slice(tab + 1);
+      const item = out.get(path);
+      // A file in HEAD's tree under a staged path that was a directory there: not this file's old version.
+      if (!item && unique.some((p) => path.startsWith(`${p}/`))) continue;
+      if (tab === -1 || !m || !item) throw new Error(`git listed "${path}", which was not asked for, or a line that does not parse`);
+      const [mode, oid, stage] = [m[1], m[2], m[3]];
+      if (stage && stage !== "0") mark(item, side, "unmerged");
+      else if (mode === "120000") mark(item, side, "symlink");
+      else if (mode === "160000") mark(item, side, "submodule");
+      else wanted.push({ path, side, oid });
+    }
+  };
+  for (let at = 0; at < unique.length; at += 500) {
+    const batch = unique.slice(at, at + 500);
+    // A decomposed name is asked for and listed as git wrote it (macOS git would compose it).
+    const asIs = ["-c", "core.precomposeUnicode=false"];
+    entries(gitBytes([...asIs, "ls-files", "-s", "-z", "--", ...batch], { cwd, env: readEnv, keepIndex: Boolean(index) }), /^(\d{6}) ([0-9a-f]{40,64}) (\d)$/, "staged");
+    if (head) entries(gitBytes([...asIs, "ls-tree", "-r", "-z", "--full-tree", head, "--", ...batch], { cwd, env: readEnv }), /^(\d{6}) (?:blob|commit) ([0-9a-f]{40,64})()$/, "head");
+  }
+  // An unmerged path has no one staged version.
+  const read = wanted.filter((w) => !(w.side === "staged" && out.get(w.path)?.unread === "unmerged"));
+  const sizes = new Map(
+    gitBytes(["cat-file", "--batch-check"], { cwd, env: readEnv, input: read.map((w) => w.oid).join("\n") + "\n" })
+      .toString("utf8")
+      .split("\n")
+      .map((l) => /^([0-9a-f]+) blob (\d+)$/.exec(l))
+      .filter((m) => m !== null)
+      .map((m) => [/** @type {RegExpExecArray} */ (m)[1], Number(/** @type {RegExpExecArray} */ (m)[2])]),
+  );
+  const readable = read.filter((w) => {
+    const size = sizes.get(w.oid);
+    const item = /** @type {StagedVersion} */ (out.get(w.path));
+    if (size === undefined) mark(item, w.side, "notBlob");
+    else if (size > WIDE_LIMIT) mark(item, w.side, "large");
+    return size !== undefined && size <= WIDE_LIMIT;
+  });
+  // As few cat-file calls as git()'s buffer allows: each reads at most 3 × WIDE_LIMIT, whatever the files add up to.
+  /** @type {(typeof readable)[]} */
+  const calls = [[]];
+  let total = 0;
+  for (const w of readable) {
+    const size = /** @type {number} */ (sizes.get(w.oid));
+    if (total + size > 3 * WIDE_LIMIT) calls.push([]), (total = 0);
+    /** @type {typeof readable} */ (calls.at(-1)).push(w);
+    total += size;
+  }
+  for (const call of calls.filter((c) => c.length)) {
+    const bytes = gitBytes(["cat-file", "--batch"], { cwd, env: readEnv, input: call.map((w) => w.oid).join("\n") + "\n" });
+    // "<oid> blob <size>\n<bytes>\n" for each, in the order asked.
+    let at = 0;
+    for (const w of call) {
+      const eol = bytes.indexOf(0x0a, at);
+      const m = /^([0-9a-f]+) blob (\d+)$/.exec(bytes.toString("utf8", at, eol === -1 ? bytes.length : eol));
+      if (!m || m[1] !== w.oid) throw new Error("git cat-file wrote something other than the blob asked for");
+      /** @type {any} */ (out.get(w.path))[w.side] = bytes.subarray(eol + 1, eol + 1 + Number(m[2]));
+      at = eol + 1 + Number(m[2]) + 1;
+    }
+  }
+  return out;
+}
+
+/**
  * The name in a `diff --git a/<p> b/<p>` line, with no renames both the same: quoted when git quoted it.
  * @param {string} rest the line after "diff --git "
  * @returns {string | null}

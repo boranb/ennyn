@@ -76,6 +76,14 @@ export const DEFAULTS = Object.freeze({
     impactIgnoreGlobs: ["**/*.test.*", "**/*.spec.*", "**/__tests__/**", "**/__fixtures__/**"],
   },
   push: { warnAtUnpushed: 20 },
+  security: {
+    // CI files the commit-msg hook and doctor read (checks/ci.mjs): a `uses` by tag, a pull_request_target that
+    // checks out the pull request's code, a workflow without permissions. [] turns the check off.
+    ci: {
+      paths: [".github/workflows/*.yml", ".github/workflows/*.yaml", "**/action.yml", "**/action.yaml"],
+      except: [],
+    },
+  },
   // Claude Code keeps a hook's added context to 10,000 characters; the rules and the list after them fit in it.
   sideCopy: { roots: [], maxInjectBytes: 9000 },
   impact: {
@@ -244,6 +252,8 @@ export function loadConfig({ cwd, env = process.env, override }) {
     if (rule.except !== undefined && !isGlobs(rule.except)) problems.push(`${at}.except must be a list of globs`);
     if (rule.note !== undefined && typeof rule.note !== "string") problems.push(`${at}.note must be a string`);
   });
+  const ci = /** @type {any} */ (cfg).security.ci;
+  for (const k of ["paths", "except"]) if (ci[k].some((/** @type {unknown} */ g) => typeof g !== "string" || g === "")) problems.push(`"security.ci.${k}" must be a list of globs`);
   // A glob compiles when a path is first matched; one that cannot would fail there, in the hook or in doctor.
   const c = /** @type {any} */ (cfg);
   const globLists = [
@@ -251,6 +261,8 @@ export function loadConfig({ cwd, env = process.env, override }) {
     ["review.impactIgnoreGlobs", c.review.impactIgnoreGlobs],
     ["impact.fakeGlobs", c.impact.fakeGlobs],
     ["impact.fixtureGlobs", c.impact.fixtureGlobs],
+    ["security.ci.paths", c.security.ci.paths],
+    ["security.ci.except", c.security.ci.except],
     ...c.review.cochange.flatMap((/** @type {any} */ r, /** @type {number} */ i) =>
       r && typeof r === "object" ? [[`review.cochange[${i}].paths`, r.paths], [`review.cochange[${i}].docs`, r.docs]] : [],
     ),

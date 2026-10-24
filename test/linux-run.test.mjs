@@ -12,7 +12,7 @@ import { chmodSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { judgeRun, summaryCount, failureDetails } from "./linux-run.mjs";
+import { judgeRun, summaryCount, failureDetails, pinned } from "./linux-run.mjs";
 
 const SCRIPT = join(dirname(fileURLToPath(import.meta.url)), "linux-run.mjs");
 
@@ -94,8 +94,8 @@ process.stdin.on("end", () => {
 
 const GOOD = {
   "ennyn-linux-floor:20.0.0": { out: output("20.0.0", "2.34.1"), status: 0 },
-  "node:22": { out: output("22.21.0", "2.39.5"), status: 0 },
-  "node:24": { out: output("24.11.0", "2.39.5"), status: 0 },
+  [pinned("node:22")]: { out: output("22.21.0", "2.39.5"), status: 0 },
+  [pinned("node:24")]: { out: output("24.11.0", "2.39.5"), status: 0 },
 };
 
 test("linux run: the script passes only when every run passes, floor first, and fails or stops otherwise", () => {
@@ -110,9 +110,9 @@ test("linux run: the script passes only when every run passes, floor first, and 
 
   for (const [runs, build, why] of /** @type {const} */ ([
     [{ ...GOOD, "ennyn-linux-floor:20.0.0": { out: output("20.0.0", "2.39.5"), status: 0 } }, 0, /^✗ node v20\.0\.0 · git 2\.39\.5: git 2\.39\.5 is not 2\.34; 3\/3 passed$/m],
-    [{ ...GOOD, "node:22": { out: "ok 1 - a\nnot ok 2 - b\n  ---\n  error: boom\n  ...\n" + output("22.21.0", "2.39.5", { pass: 2, fail: 1 }), status: 1 } }, 0, /^ {4}error: boom$/m],
-    [{ ...GOOD, "node:24": { out: output("24.11.0", "2.39.5", { pass: 2, skipped: 1 }), status: 0 } }, 0, /: 1 skipped; 2\/3 passed$/m],
-    [{ ...GOOD, "node:24": { out: output("24.11.0", "2.39.5", { tests: 2 }), status: 0 } }, 0, /^✗ the runs ran different numbers of tests: 3, 2$/m],
+    [{ ...GOOD, [pinned("node:22")]: { out: "ok 1 - a\nnot ok 2 - b\n  ---\n  error: boom\n  ...\n" + output("22.21.0", "2.39.5", { pass: 2, fail: 1 }), status: 1 } }, 0, /^ {4}error: boom$/m],
+    [{ ...GOOD, [pinned("node:24")]: { out: output("24.11.0", "2.39.5", { pass: 2, skipped: 1 }), status: 0 } }, 0, /: 1 skipped; 2\/3 passed$/m],
+    [{ ...GOOD, [pinned("node:24")]: { out: output("24.11.0", "2.39.5", { tests: 2 }), status: 0 } }, 0, /^✗ the runs ran different numbers of tests: 3, 2$/m],
     [GOOD, 1, /did not build/],
   ])) {
     const r = linuxRun({ runs, build });

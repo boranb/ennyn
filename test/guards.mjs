@@ -73,6 +73,9 @@ export const GATES = [
       { id: "engines-readme", why: "a README that names another floor", file: "README.md", old: "needs Node 20 or later", new: "needs Node 18 or later", pattern: "engines: both READMEs" },
       { id: "engines-floor-form", why: "a floor read from a range with an upper bound", file: "test/linux-run.mjs", old: "(?:\\.(\\d+))?(?:\\.(\\d+))?$/.exec(range.trim());", new: "(?:\\.(\\d+))?(?:\\.(\\d+))?/.exec(range.trim());", pattern: "engines: the Node floor parses" },
       { id: "engines-version-part", why: "a container version that matches the floor's major only", file: "test/linux-run.mjs", old: "n.every((part, i) => r[i] === part)", new: "n.every((part, i) => i > 0 || r[i] === part)", pattern: "engines: a container's version is the one named" },
+      { id: "engines-image-tag", why: "a newer major pulled by its tag", file: "test/linux-run.mjs", old: "image: pinned(`node:${major}`)", new: "image: `node:${major}`", pattern: "engines: the Linux run starts at both floors" },
+      { id: "engines-action-tag", why: "an action of the workflow named by its tag", file: ".github/workflows/test.yml", old: "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0", new: "actions/setup-node@v7", pattern: "engines: the repository's own CI files" },
+      { id: "engines-ci-permissions", why: "the workflow's permissions removed", file: ".github/workflows/test.yml", old: "permissions:\n  contents: read\n", new: "", pattern: "engines: the repository's own CI files" },
     ],
   },
   {
@@ -224,6 +227,7 @@ export const GATES = [
 const CLI_ONLY = { reason: "runs the CLI on temporary repositories", allow: '"scripts", "ennyn\\.mjs"' };
 export const NOT_GATES = {
   "test/budget.test.mjs": CLI_ONLY,
+  "test/ci.test.mjs": CLI_ONLY,
   "test/bypass.test.mjs": CLI_ONLY,
   "test/cli.test.mjs": CLI_ONLY,
   "test/forbidden.test.mjs": CLI_ONLY,

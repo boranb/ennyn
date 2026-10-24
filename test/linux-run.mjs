@@ -24,6 +24,29 @@ export const NEWER = ["22", "24"];
 export const FLOOR_BASE = "ubuntu:22.04";
 
 /**
+ * Every image the run pulls, by the digest of its index as Docker Hub served it on 2026-10-24: a tag can be
+ * moved to other contents, a digest cannot. A newer major therefore stays on the release it had that day until
+ * the digest is changed here. A floor or major with no digest stops the run (test/engines.test.mjs checks the
+ * list); a new digest is read with `docker buildx imagetools inspect <image>`.
+ */
+export const DIGESTS = Object.freeze({
+  "node:20.0.0": "sha256:942fa0013e9adfbde06ad07433bdb0a67cc2ac0d5a3db38f12a9c8f710b41f1c",
+  "ubuntu:22.04": "sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956",
+  "node:22": "sha256:63538dfe497cc29dfafdda25ada09b46db68a3f4cc205abf1f5d6bf0913f3384",
+  "node:24": "sha256:6449e19d8184d84062525b6a7524def03146c2cb04a7f08b076680d0e8e4240a",
+});
+
+/**
+ * An image named with its digest: "node:22@sha256:…". One with no digest throws.
+ * @param {string} image
+ */
+export function pinned(image) {
+  const digest = /** @type {Record<string, string>} */ (DIGESTS)[image];
+  if (!digest) throw new Error(`${image} has no digest in test/linux-run.mjs DIGESTS, so the run would pull whatever the tag names today`);
+  return `${image}@${digest}`;
+}
+
+/**
  * The floor of a ">=X[.Y[.Z]]" range, written in full ("20.0.0": "20" would install the newest 20.x); null for
  * any other form, which has no single floor to run.
  * @param {string} range
@@ -39,8 +62,8 @@ export function nodeFloor(range) {
  * @param {string} node
  */
 export function floorDockerfile(node) {
-  return `FROM node:${node} AS node
-FROM ${FLOOR_BASE}
+  return `FROM ${pinned(`node:${node}`)} AS node
+FROM ${pinned(FLOOR_BASE)}
 RUN apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends git tzdata openssh-client ca-certificates >/dev/null && rm -rf /var/lib/apt/lists/*
 COPY --from=node /usr/local/bin/node /usr/local/bin/node
 COPY --from=node /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/npm
@@ -57,7 +80,7 @@ USER node
 export function runs(floor) {
   return [
     { image: `ennyn-linux-floor:${floor}`, node: floor, git: GIT_FLOOR, build: floorDockerfile(floor) },
-    ...NEWER.map((major) => ({ image: `node:${major}`, node: major, git: null })),
+    ...NEWER.map((major) => ({ image: pinned(`node:${major}`), node: major, git: null })),
   ];
 }
 
