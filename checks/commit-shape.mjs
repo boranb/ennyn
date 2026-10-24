@@ -7,7 +7,9 @@
  * while production code per task stayed flat; the extra prose bought nothing.
  */
 
+import { isUtf8 } from "node:buffer";
 import { matchAny } from "../core/glob.mjs";
+import { markLength, wideForms } from "../core/encoding.mjs";
 import { gitMaybe, parseTrailers } from "../core/git.mjs";
 import { t } from "../core/i18n.mjs";
 
@@ -197,7 +199,7 @@ export function skippedSubject(subject, config) {
  * message: it holds for every commit the hook sees, whatever its subject or an empty message, and the bypass
  * marker, which loosens the shape, does not loosen it.
  * @param {string} message raw commit message (as given to a commit-msg hook)
- * @param {Parameters<typeof shapeOf>[1] & { addedLines?: Map<string, AddedLine[]>, exempt?: string[] }} opts
+ * @param {Parameters<typeof shapeOf>[1] & { addedLines?: Map<string, AddedLine[]>, exempt?: string[], wideUnread?: Map<string, string> }} opts
  *   `addedLines`: the lines the commit adds, per staged path (stagedAddedLines); `exempt`: paths no rule reads
  *   (the config, which holds every rule's text)
  * @returns {{ ok: boolean, errors: string[], warnings?: string[], skipped?: string }}
@@ -207,8 +209,25 @@ export function checkCommitShape(message, opts) {
   // Also for a message the shape check reads as empty: with --allow-empty-message git commits it anyway.
   if (!opts.addedLines) return res;
   const rules = opts.config.review.forbidden;
-  const banned = forbiddenErrors(forbiddenHits(opts.addedLines, rules, opts.exempt), rules, opts.config.language);
-  return banned.length ? { ...res, ok: false, errors: [...banned, ...res.errors] } : res;
+  const lang = opts.config.language;
+  const wideUnread = opts.wideUnread ?? new Map();
+  const { hits, unread } = forbiddenScan(opts.addedLines, rules, opts.exempt, wideUnread);
+  const banned = forbiddenErrors(hits, rules, lang);
+  // What could not be compared is said, never counted as clean; the commit is not refused for it. Text files
+  // are named; binary files are counted, so a text file is not lost among them.
+  const unsure = rules.flatMap((/** @type {ForbiddenRule} */ rule, /** @type {number} */ i) => {
+    const of = (/** @type {string} */ kind) => unread.filter((u) => u.rule === i && u.kind === kind).map((u) => u.path);
+    const where = (/** @type {string[]} */ paths) => paths.slice(0, 3).join(", ") + (paths.length > 3 ? t("shape.cochangeMore", { n: paths.length - 3 }, lang) : "");
+    const vars = { rule: i + 1, text: rule.text };
+    const [text, binary, wide] = [of("text"), of("binary"), of("wide")];
+    return [
+      ...(text.length ? [t("shape.forbiddenUnread", { ...vars, where: where(text) }, lang)] : []),
+      ...(binary.length ? [t("shape.forbiddenBinaryUnread", { ...vars, n: binary.length }, lang)] : []),
+      ...(wide.length ? [t("shape.forbiddenWideUnread", { ...vars, where: where(wide), reason: String(wideUnread.get(wide[0])) }, lang)] : []),
+    ];
+  });
+  const out = unsure.length ? { ...res, warnings: [...(res.warnings ?? []), ...unsure] } : res;
+  return banned.length ? { ...out, ok: false, errors: [...banned, ...res.errors] } : out;
 }
 
 /**
@@ -351,15 +370,59 @@ export function cochangeWarnings(staged, rules, lang, alsoChanged = []) {
  *   parent that already holds the line
  */
 export function forbiddenHits(added, rules, exempt = []) {
+  return forbiddenScan(added, rules, exempt).hits;
+}
+
+/** @param {string} s */
+const composed = (s) => (/[^\x00-\x7f]/.test(s) ? s.normalize("NFC") : s);
+
+/**
+ * forbiddenHits, and the paths a rule could not be compared in. A line holds the text when it holds it as
+ * written, or composed (NFC) holds the composed text: "ü" written as "u" and a combining mark is the same
+ * text, and a match as written stays one. git's own lines are always read, and a file decoded from UTF-16 or
+ * UTF-32 adds its decoded lines (`decoded`, stagedAddedLines); decoding never turns a check of git's lines
+ * off. In a file with NULs git's lines are also searched for the text's UTF-16 and UTF-32 bytes: either byte
+ * order, or in a decoded file only the decoded one (an ANSI line can put the rest at the other alignment).
+ * `unread`, for a path the text was not found in: `text`, a file with no NUL that has a line that is not UTF-8
+ * (an 8-bit encoding), where a text with letters outside ASCII has no single spelling; `binary`, the same in a
+ * file with NULs (binary, UTF-16 or UTF-32: a NUL is UTF-8, so 8-bit text beside one counts; a byte order mark
+ * at the start of the file is no 8-bit text); `wide`, a path
+ * in `wideUnread`, not decoded, under a text the search of git's lines cannot find: one with letters outside
+ * ASCII (their UTF-16 may hold no NUL, or a newline byte where git splits the line; an ASCII text's UTF-16
+ * holds a NUL for every letter and a newline byte only for a newline, which no line holds).
+ * @param {Map<string, AddedLine[]>} added
+ * @param {ForbiddenRule[]} rules
+ * @param {string[]} [exempt]
+ * @param {Map<string, string>} [wideUnread] paths that were not decoded (too large, or not read), with why
+ * @returns {{ hits: { rule: number, path: string, line: number, from?: string }[], unread: { rule: number, path: string, kind: "text" | "binary" | "wide" }[] }}
+ */
+export function forbiddenScan(added, rules, exempt = [], wideUnread = new Map()) {
   /** @type {{ rule: number, path: string, line: number, from?: string }[]} */
-  const out = [];
+  const hits = [];
+  /** @type {{ rule: number, path: string, kind: "text" | "binary" | "wide" }[]} */
+  const unread = [];
   rules.forEach((rule, i) => {
+    const text = composed(rule.text);
+    const ascii = !/[^\x00-\x7f]/.test(rule.text);
     for (const [path, lines] of added) {
       if (exempt.includes(path) || !matchAny(path, rule.paths) || matchAny(path, rule.except ?? [])) continue;
-      for (const l of lines) if (l.text.includes(rule.text)) out.push({ rule: i, path, line: l.line, ...(l.from ? { from: l.from } : {}) });
+      const nul = lines.some((l) => l.raw?.includes(0));
+      const forms = nul ? wideForms(rule.text, lines.find((l) => l.decoded)?.decoded) : [];
+      let hit = false;
+      let eightBit = false;
+      for (const l of lines) {
+        const bytes = nul && !l.decoded ? (l.raw ?? Buffer.from(l.text, "utf8")) : null;
+        if (l.text.includes(rule.text) || composed(l.text).includes(text) || (bytes && forms.some((f) => bytes.includes(f)))) {
+          hits.push({ rule: i, path, line: l.line, ...(l.from ? { from: l.from } : {}) });
+          hit = true;
+        } else if (!ascii && l.raw && !isUtf8(l.line === 1 ? l.raw.subarray(markLength(l.raw)) : l.raw)) eightBit = true;
+      }
+      if (hit) continue;
+      if (eightBit) unread.push({ rule: i, path, kind: nul ? "binary" : "text" });
+      if (wideUnread.has(path) && !ascii) unread.push({ rule: i, path, kind: "wide" });
     }
   });
-  return out;
+  return { hits, unread };
 }
 
 /**

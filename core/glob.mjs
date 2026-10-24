@@ -3,8 +3,13 @@
  * (rule front matter, impact globs, gate maps). Paths always use "/".
  *
  * Supported: `**` (any number of path segments, including none), `*` (within
- * one segment), `?` (one character within a segment), `{a,b}` alternation
+ * one segment), `?` (one character within a segment, a letter outside the BMP too), `{a,b}` alternation
  * (no nesting), `[...]` character classes.
+ *
+ * A name matches when the pattern matches it as written, or composed (NFC) the pattern matches the
+ * composed name: macOS and many editors write "ü" as "u" and a combining diaeresis, git on Linux keeps
+ * the name as given, and a rule written with "ü" names that file too; a pattern with a combining mark
+ * after glob syntax (`{e,o}\u0301.md`) still matches as written (test/input-shapes.test.mjs).
  */
 
 const cache = new Map();
@@ -46,7 +51,8 @@ export function globToRegExp(pattern) {
       continue;
     }
     if (c === "?") {
-      re += "[^/]";
+      // One character: a pair of UTF-16 halves is one, as the name's own letter.
+      re += "(?:[\\uD800-\\uDBFF][\\uDC00-\\uDFFF]|[^/])";
       i += 1;
       continue;
     }
@@ -88,12 +94,16 @@ export function globToRegExp(pattern) {
   return out;
 }
 
+/** @param {string} s */
+const plain = (s) => !/[^\x00-\x7f]/.test(s);
+
 /**
- * @param {string} path project-relative, "/" separated
+ * @param {string} path project-relative, "/" separated; on Windows "\\" is taken for "/", elsewhere it is a
+ *   character a name may hold (git's `src/a\\b.js` is a file in src/)
  * @param {readonly string[]} patterns
  * @returns {boolean}
  */
 export function matchAny(path, patterns) {
-  const p = path.replace(/\\/g, "/").replace(/^\.\//, "");
-  return patterns.some((pat) => globToRegExp(pat).test(p));
+  const p = (process.platform === "win32" ? path.replace(/\\/g, "/") : path).replace(/^\.\//, "");
+  return patterns.some((pat) => globToRegExp(pat).test(p) || (!(plain(p) && plain(pat)) && globToRegExp(pat.normalize("NFC")).test(p.normalize("NFC"))));
 }

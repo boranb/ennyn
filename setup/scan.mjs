@@ -532,8 +532,10 @@ export function banLines(text) {
  * For each text, the files of the index that hold it, with how many lines each: `git grep --cached -a -F`,
  * 100 texts a call, each matching line given to every text it holds. The index, not the work tree: a sparse
  * checkout leaves files out of the one, not the other, and it is what a commit is checked against. Files git
- * takes for binary are read as text (-a), as the commit-msg hook reads them. A git that fails throws; exit 1
- * with nothing on stderr is no match.
+ * takes for binary are read as text (-a), as the commit-msg hook reads them. Each text is asked for as written,
+ * composed (NFC) and decomposed (NFD), and a line counts when it holds the text as written or composed.
+ * Unlike the hook, other spellings that compose to the text (a mixed form, the Kelvin sign for "K"), a file
+ * stored in UTF-16 or UTF-32, and a text with letters outside ASCII in an 8-bit file are not counted. A git that fails throws; exit 1 with nothing on stderr is no match.
  * @param {string} cwd
  * @param {string[]} texts
  * @returns {Map<string, { path: string, n: number }[]>}
@@ -544,7 +546,9 @@ export function indexMatches(cwd, texts) {
   const unique = [...counts.keys()];
   for (let at = 0; at < unique.length; at += 100) {
     const batch = unique.slice(at, at + 100);
-    const args = ["grep", "--cached", "--no-color", "-a", "-F", "-n", "--null", ...batch.flatMap((t) => ["-e", t])];
+    const forms = [...new Set(batch.flatMap((t) => [t, t.normalize("NFC"), t.normalize("NFD")]))];
+    // macOS git composes its arguments (core.precomposeUnicode): a decomposed text would be asked for composed.
+    const args = ["-c", "core.precomposeUnicode=false", "grep", "--cached", "--no-color", "-a", "-F", "-n", "--null", ...forms.flatMap((t) => ["-e", t])];
     const r = gitRun(args, { cwd });
     if (r.error || (r.status !== 0 && r.status !== 1) || r.stderr.trim()) throw gitError(args, r);
     // "path\0line\0text\n": a path may hold a newline, never a NUL; the text ends at the line's end.
@@ -556,7 +560,7 @@ export function indexMatches(cwd, texts) {
       const path = r.stdout.slice(pos, nul);
       const text = r.stdout.slice(nul2 + 1, end === -1 ? undefined : end);
       for (const t of batch) {
-        if (!text.includes(t)) continue;
+        if (!text.includes(t) && !text.normalize("NFC").includes(t.normalize("NFC"))) continue;
         const files = /** @type {Map<string, number>} */ (counts.get(t));
         files.set(path, (files.get(path) ?? 0) + 1);
       }

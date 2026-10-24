@@ -253,8 +253,8 @@ test("stagedAddedLines: real git; odd names, hunks, deletions, binary files, the
   assert.deepEqual(lines.get("src/moved.js"), [{ line: 1, text: "one" }, { line: 2, text: "two" }]);
   assert.deepEqual(lines.get("src/with space.js"), [{ line: 1, text: "zero" }, { line: 4, text: "three" }]);
   assert.equal(lines.get("src/ü.js"), undefined, "only a deletion: no line added");
-  // Binary to git (a NUL byte, -diff, past core.bigFileThreshold): read as text all the same.
-  assert.deepEqual(lines.get("bin.dat"), [{ line: 1, text: "\0\x01console.log\0" }]);
+  // Binary to git (a NUL byte, -diff, past core.bigFileThreshold): read as text all the same, its bytes kept.
+  assert.deepEqual(lines.get("bin.dat"), [{ line: 1, text: "\0\x01console.log\0", raw: Buffer.from("\0\x01console.log\0") }]);
   assert.deepEqual(lines.get("src/x.min.js"), [{ line: 1, text: "console.log(1)" }]);
   assert.deepEqual(lines.get("src/new.js"), [{ line: 1, text: "a" }, { line: 2, text: "" }, { line: 3, text: "console.log" }]);
   assert.equal(lines.get("src/tab\there.js"), undefined, "deleted");

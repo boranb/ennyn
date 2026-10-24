@@ -19,8 +19,13 @@
 
 import { execFileSync, spawnSync } from "node:child_process";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { isUtf8 } from "node:buffer";
 import { realpathSync } from "node:fs";
 import { readIfThere } from "./files.mjs";
+import { startsWithMark, wideEncoding, wideLines } from "./encoding.mjs";
+
+/** The largest file read whole to be decoded as UTF-16 or UTF-32; past it, git's own lines are still read. */
+export const WIDE_LIMIT = 16 * 1024 * 1024;
 
 const LEAKY_ENV = ["GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_PREFIX", "GIT_COMMON_DIR"];
 /** Environment that changes what git prints or how it reads a path, removed for every call. */
@@ -42,6 +47,8 @@ function cleanEnv(env, keepIndex) {
   const out = { ...env };
   for (const k of LEAKY_ENV) if (!(keepIndex && k === "GIT_INDEX_FILE")) delete out[k];
   for (const k of SHAPING_ENV) delete out[k];
+  // GIT_TRACE=/dev/stdout (or any GIT_TRACE_* sent there) would be read as git's answer.
+  for (const k of Object.keys(out)) if (k.startsWith("GIT_TRACE")) delete out[k];
   return out;
 }
 
@@ -51,18 +58,30 @@ function cleanEnv(env, keepIndex) {
  *   `keepIndex` keeps GIT_INDEX_FILE (only for an index already checked by hookIndexFile).
  * @returns {string} stdout without the trailing newline; a failure throws, with git's message as `stderr`
  */
-export function git(args, { cwd, env = process.env, keepIndex = false }) {
+export function git(args, opts) {
+  return gitBytes(args, opts).toString("utf8").replace(/\n$/, "");
+}
+
+/**
+ * git() with stdout as git wrote it: bytes that are not UTF-8 (a file in another encoding, UTF-16) stay
+ * as they are, where a string would hold U+FFFD for them. `input` goes to git's stdin.
+ * @param {string[]} args
+ * @param {{ cwd: string, env?: NodeJS.ProcessEnv, keepIndex?: boolean, input?: string | Buffer }} opts
+ * @returns {Buffer}
+ */
+export function gitBytes(args, { cwd, env = process.env, keepIndex = false, input }) {
   try {
     return execFileSync("git", [...FIXED_CONFIG, ...args], {
       cwd,
       env: cleanEnv(env, keepIndex),
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
       maxBuffer: 64 * 1024 * 1024,
-    }).replace(/\n$/, "");
+      ...(input === undefined ? {} : { input }),
+    });
   } catch (err) {
     // A killed git or one that did not start says nothing on stderr: say what happened instead.
-    const e = /** @type {Error & { stderr?: string, signal?: string | null, code?: string }} */ (err);
+    const e = /** @type {Error & { stderr?: string | Buffer, signal?: string | null, code?: string }} */ (err);
+    e.stderr = Buffer.isBuffer(e.stderr) ? e.stderr.toString("utf8") : e.stderr;
     // The command's name, past any "-c key=value" in front of it.
     let at = 0;
     while (args[at] === "-c") at += 2;
@@ -94,7 +113,10 @@ export function gitError(args, r) {
   const how = r.error ? (/** @type {NodeJS.ErrnoException} */ (r.error).code === "ENOENT" ? NO_START : r.error.message) : r.signal ? `killed by ${r.signal}` : `exit ${r.status}`;
   const said = r.stderr.trim();
   const err = /** @type {Error & { stderr: string, status: number | null }} */ (new Error(`git ${args.join(" ")}: ${said.split("\n")[0] || how}`));
-  err.stderr = said || `git ${args[0]}: ${how}`;
+  // The command's name, past any "-c key=value" in front of it.
+  let at = 0;
+  while (args[at] === "-c") at += 2;
+  err.stderr = said || `git ${args[at]}: ${how}`;
   err.status = r.status;
   return err;
 }
@@ -225,19 +247,48 @@ export function hookIndexFile(cwd, env) {
 }
 
 /**
+ * The environment of a read of what a commit will hold: the index the hook was given, and the objects as
+ * they are. A replace ref (`git replace HEAD <commit>`) would have HEAD's tree read as another commit's, and
+ * a line already there not count as added.
+ * @param {string | null} index
+ */
+const stagedEnv = (index) => ({ ...process.env, ...(index ? { GIT_INDEX_FILE: index } : {}), GIT_NO_REPLACE_OBJECTS: "1" });
+
+/**
  * @param {string} cwd
  * @param {{ env?: NodeJS.ProcessEnv }} [opts] pass the hook's environment to read the index it was given
  * @returns {string[]}
  */
-export function stagedPaths(cwd, { env } = {}) {
+export function stagedPaths(cwd, opts = {}) {
+  return stagedNames(cwd, opts).paths;
+}
+
+/**
+ * The staged paths, read as bytes: `notUtf8` holds those whose names are not UTF-8, as `paths` spells them
+ * (U+FFFD for each byte that is not). Such a name cannot be handed back to git as a pathspec, and it may
+ * read the same as another staged name that is UTF-8.
+ * @param {string} cwd
+ * @param {{ env?: NodeJS.ProcessEnv }} [opts]
+ * @returns {{ paths: string[], notUtf8: string[] }}
+ */
+export function stagedNames(cwd, { env } = {}) {
   const index = env ? hookIndexFile(cwd, env) : null;
   // Both names of a rename (diff.renames would list only the new one): moving a file out is a change there too.
-  const out = git(["diff", "--cached", "--name-only", "--no-renames", "-z"], {
-    cwd,
-    env: index ? { ...process.env, GIT_INDEX_FILE: index } : process.env,
-    keepIndex: Boolean(index),
-  });
-  return out.split("\0").filter(Boolean);
+  const out = gitBytes(["diff", "--cached", "--name-only", "--no-renames", "-z"], { cwd, env: stagedEnv(index), keepIndex: Boolean(index) });
+  /** @type {string[]} */
+  const paths = [];
+  /** @type {string[]} */
+  const notUtf8 = [];
+  for (let at = 0; at < out.length; ) {
+    let end = out.indexOf(0, at);
+    if (end === -1) end = out.length;
+    const name = out.subarray(at, end);
+    at = end + 1;
+    if (!name.length) continue;
+    paths.push(name.toString("utf8"));
+    if (!isUtf8(name)) notUtf8.push(name.toString("utf8"));
+  }
+  return { paths, notUtf8 };
 }
 
 /**
@@ -269,39 +320,52 @@ export function unquotePath(s) {
 /**
  * The lines a commit adds to `paths` (the staged paths a review.forbidden rule names), numbered as in the new
  * file. Read from the index the hook was given (stagedPaths), with those paths as pathspecs, 500 a git call:
- * only the files a rule reads are diffed, so a large file elsewhere cannot fill git()'s buffer. A path handed
- * back to git can match nothing (macOS precomposes a decomposed name; bytes that are not UTF-8 come back
- * changed, and two such names can decode alike): every path asked must show in a header, else it throws and
- * the hook says it did not check. The diff is pinned against the user's config: no color, external diff or
+ * only the files a rule reads are diffed, so a large file elsewhere cannot fill git()'s buffer. A path is handed
+ * back as git wrote it (core.precomposeUnicode off: macOS git would compose a decomposed name); a name that
+ * is not UTF-8 cannot be (stagedNames), and every path asked must show in a header, else it throws and the
+ * hook says it did not check. The diff is pinned against the user's config: no color, external diff or
  * textconv, the a/ and b/ prefixes (diff.noprefix and diff.mnemonicPrefix change them), a submodule as its
  * commit line, no renames (a moved file is added in full, as its new name is staged), and every file as
  * text (--text: a NUL byte, a -diff or binary attribute and core.bigFileThreshold would otherwise hide its
- * lines). A file stored in UTF-16 holds the text with NULs between its letters: it is not matched.
+ * lines). The diff is read as bytes: a line that holds a NUL or is not UTF-8 keeps them in `raw`. A file whose
+ * added lines hold a NUL or start with a byte order mark is read again whole from the index (one cat-file for
+ * all of them): when it is text in UTF-16 or UTF-32 (core/encoding.mjs), its decoded lines are added to git's
+ * own (`decoded`: the encoding; numbered as an editor numbers them); git's lines stay, so decoding can only add
+ * a match. A file past WIDE_LIMIT, or one cat-file could not read, keeps git's lines alone, and its path goes
+ * into `wideUnread` with the reason. Objects are read as they are, not as a replace
+ * ref has them.
  * In a merge every added line counts: the other side's commits may have run no hook (cherry-pick, rebase,
  * --no-verify, a clone without it). A line a parent named in MERGE_HEAD already holds carries that parent in
  * `from`, for the message only: MERGE_HEAD is a file anyone can write.
  * @param {string} cwd the repository's top
  * @param {string[]} paths
- * @param {{ env?: NodeJS.ProcessEnv }} [opts]
+ * @param {{ env?: NodeJS.ProcessEnv, wideUnread?: Map<string, string> }} [opts]
  * @returns {Map<string, AddedLine[]>}
- * @typedef {{ line: number, text: string, from?: string }} AddedLine
+ * @typedef {{ line: number, text: string, from?: string, raw?: Buffer, decoded?: string }} AddedLine `text` is
+ *   the line read as UTF-8 (U+FFFD for bytes that are not); `raw`, only for a line that holds a NUL or is not
+ *   UTF-8, its bytes; `decoded`: the encoding of a line decoded from UTF-16 or UTF-32, not one of git's
  */
-export function stagedAddedLines(cwd, paths, { env } = {}) {
+export function stagedAddedLines(cwd, paths, { env, wideUnread = new Map() } = {}) {
   /** @type {Map<string, AddedLine[]>} */
   const out = new Map();
   if (!paths.length) return out;
   const index = env ? hookIndexFile(cwd, env) : null;
+  const readEnv = stagedEnv(index);
   const run = (/** @type {string[]} */ against, /** @type {string[]} */ batch) =>
-    git(["-c", "core.quotePath=false", "diff", "--cached", ...against, "--text", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--submodule=short", "-U0", "--src-prefix=a/", "--dst-prefix=b/", "--", ...batch], {
+    gitBytes(["-c", "core.quotePath=false", "-c", "core.precomposeUnicode=false", "diff", "--cached", ...against, "--text", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--submodule=short", "--full-index", "-U0", "--src-prefix=a/", "--dst-prefix=b/", "--", ...batch], {
       cwd,
-      env: index ? { ...process.env, GIT_INDEX_FILE: index } : process.env,
+      env: readEnv,
       keepIndex: Boolean(index),
     });
   const parents = mergeHeads(cwd);
   const unique = [...new Set(paths)];
+  /** @type {{ path: string, oid: string, lines: AddedLine[] }[]} */
+  const candidates = [];
   for (let at = 0; at < unique.length; at += 500) {
     const batch = unique.slice(at, at + 500);
-    const mine = addedLines(run([], batch), new Set(batch), { complete: true });
+    /** @type {Map<string, string>} */
+    const blobs = new Map();
+    const mine = addedLines(run([], batch), new Set(batch), { complete: true, blobs });
     for (const parent of parents) {
       const theirs = addedLines(run([parent], batch), null);
       for (const [path, lines] of mine) {
@@ -309,9 +373,77 @@ export function stagedAddedLines(cwd, paths, { env } = {}) {
         for (const l of lines) if (!added.has(l.line)) l.from ??= parent;
       }
     }
-    for (const [path, lines] of mine) out.set(path, lines);
+    for (const [path, lines] of mine) {
+      out.set(path, lines);
+      const oid = blobs.get(path);
+      if (oid && lines.some((l) => l.raw && (l.raw.includes(0) || (l.line === 1 && startsWithMark(l.raw))))) candidates.push({ path, oid, lines });
+    }
   }
+  readWide(cwd, readEnv, candidates, out, wideUnread);
   return out;
+}
+
+/**
+ * Adds the decoded lines of the candidates that are UTF-16 or UTF-32 text: their sizes from one
+ * `cat-file --batch-check`, their bytes from `cat-file --batch`, as few calls as git()'s buffer allows.
+ * @param {string} cwd @param {NodeJS.ProcessEnv} env
+ * @param {{ path: string, oid: string, lines: AddedLine[] }[]} candidates
+ * @param {Map<string, AddedLine[]>} out @param {Map<string, string>} wideUnread
+ */
+function readWide(cwd, env, candidates, out, wideUnread) {
+  if (!candidates.length) return;
+  // Whatever git's lines look like: a line edited in a large UTF-16 file may look like neither UTF-16 nor 8-bit
+  // text. The scan says it for the texts a search of git's lines cannot find.
+  const unread = (/** @type {{ path: string }} */ c, /** @type {string} */ reason) => wideUnread.set(c.path, reason);
+  const oneLine = (/** @type {unknown} */ e) => String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message).trim().split("\n")[0];
+  /** @type {Map<string, number>} */
+  const sizes = new Map();
+  try {
+    const listed = gitBytes(["cat-file", "--batch-check"], { cwd, env, input: candidates.map((c) => c.oid).join("\n") + "\n" }).toString("utf8").split("\n");
+    for (const l of listed) {
+      const m = /^([0-9a-f]+) blob (\d+)$/.exec(l);
+      if (m) sizes.set(m[1], Number(m[2]));
+    }
+  } catch (e) {
+    for (const c of candidates) unread(c, oneLine(e));
+    return;
+  }
+  /** @type {{ path: string, oid: string, lines: AddedLine[] }[][]} */
+  const calls = [[]];
+  let total = 0;
+  for (const c of candidates) {
+    const size = sizes.get(c.oid);
+    if (size === undefined) unread(c, `${c.oid} is not a blob git can read`);
+    else if (size > WIDE_LIMIT) unread(c, `past ${WIDE_LIMIT / 1024 / 1024} MB`);
+    else {
+      if (total + size > 3 * WIDE_LIMIT) calls.push([]), (total = 0);
+      /** @type {{ path: string, oid: string, lines: AddedLine[] }[]} */ (calls.at(-1)).push(c);
+      total += size;
+    }
+  }
+  for (const call of calls.filter((c) => c.length)) {
+    let bytes;
+    try {
+      bytes = gitBytes(["cat-file", "--batch"], { cwd, env, input: call.map((c) => c.oid).join("\n") + "\n" });
+    } catch (e) {
+      for (const c of call) unread(c, oneLine(e));
+      continue;
+    }
+    // "<oid> blob <size>\n<bytes>\n" for each, in the order asked; past a header that does not parse, none is read.
+    let at = 0;
+    for (const [k, c] of call.entries()) {
+      const eol = bytes.indexOf(0x0a, at);
+      const m = /^([0-9a-f]+) blob (\d+)$/.exec(bytes.toString("utf8", at, eol === -1 ? bytes.length : eol));
+      if (!m || m[1] !== c.oid) {
+        for (const rest of call.slice(k)) unread(rest, "cat-file wrote something other than the blob");
+        break;
+      }
+      const blob = bytes.subarray(eol + 1, eol + 1 + Number(m[2]));
+      at = eol + 1 + Number(m[2]) + 1;
+      const wide = wideEncoding(blob);
+      if (wide) out.set(c.path, [...c.lines, ...wideLines(blob, wide, c.lines).map((l) => ({ ...l, decoded: wide.encoding }))]);
+    }
+  }
 }
 
 /**
@@ -347,13 +479,16 @@ function headerPath(rest) {
 /**
  * The added lines of a `-U0` diff with a/ and b/ prefixes, per file. With `asked`, a header that names a path
  * not in it throws, and with `complete` so does a path in it that no header names: a misread diff is no
- * answer. A hunk header that does not parse throws.
- * @param {string} text
+ * answer. A hunk header that does not parse throws. Given as bytes (git's own output), a line is split where
+ * git splits it, at a newline byte, and keeps its bytes in `raw` when they are not plain UTF-8 text.
+ * `blobs`, when given, gets each file's new object id from its `index` line (a `--full-index` diff).
+ * @param {string | Buffer} diff
  * @param {Set<string> | null} asked
- * @param {{ complete?: boolean }} [opts]
+ * @param {{ complete?: boolean, blobs?: Map<string, string> }} [opts]
  * @returns {Map<string, AddedLine[]>}
  */
-export function addedLines(text, asked, { complete = false } = {}) {
+export function addedLines(diff, asked, { complete = false, blobs } = {}) {
+  const bytes = typeof diff === "string" ? Buffer.from(diff, "utf8") : diff;
   /** @type {Map<string, AddedLine[]>} */
   const out = new Map();
   /** @type {Set<string>} */
@@ -363,8 +498,28 @@ export function addedLines(text, asked, { complete = false } = {}) {
   /** @type {AddedLine[] | null} */
   let lines = null;
   let header = false;
+  /** The path of the header being read, for its `index` line. */
+  let named = "";
   let n = 0;
-  for (const raw of text.split("\n")) {
+  for (let start = 0; start <= bytes.length; ) {
+    let end = bytes.indexOf(0x0a, start);
+    if (end === -1) end = bytes.length;
+    const at = start;
+    start = end + 1;
+    // A plus sign starts an added line; the rest is read as text only when it is a header.
+    if (bytes[at] === 0x2b && !header) {
+      if (file !== null) {
+        if (!lines) out.set(file, (lines = []));
+        const body = bytes.subarray(at + 1, end);
+        /** @type {AddedLine} */
+        const l = { line: n, text: body.toString("utf8") };
+        if (body.includes(0) || !isUtf8(body)) l.raw = Buffer.from(body);
+        lines.push(l);
+      }
+      n++;
+      continue;
+    }
+    const raw = bytes.toString("utf8", at, end);
     if (raw.startsWith("diff --git ")) {
       file = null;
       lines = null;
@@ -372,6 +527,10 @@ export function addedLines(text, asked, { complete = false } = {}) {
       const path = headerPath(raw.slice(11));
       if (path === null || (asked && !asked.has(path))) throw new Error(`git diff named a path it was not asked for: ${JSON.stringify(raw.slice(11, 200))}`);
       shown.add(path);
+      named = path;
+    } else if (header && raw.startsWith("index ")) {
+      const m = /^index [0-9a-f]+\.\.([0-9a-f]+)/.exec(raw);
+      if (m && blobs && !/^0+$/.test(m[1])) blobs.set(named, m[1]);
     } else if (header && raw.startsWith("+++ ")) {
       // A name with a space ends in a tab, for patch, quoted or not; a tab in the name itself is quoted.
       const name = raw.slice(4).replace(/\t$/, "");
@@ -384,12 +543,6 @@ export function addedLines(text, asked, { complete = false } = {}) {
       const m = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw);
       if (!m) throw new Error(`git diff wrote a hunk header that does not parse: ${JSON.stringify(raw.slice(0, 80))}`);
       n = Number(m[1]);
-    } else if (!header && raw.startsWith("+")) {
-      if (file !== null) {
-        if (!lines) out.set(file, (lines = []));
-        lines.push({ line: n, text: raw.slice(1) });
-      }
-      n++;
     }
     // "-" lines and "\ No newline at end of file" leave the new file's numbering where it is.
   }

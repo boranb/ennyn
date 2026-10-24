@@ -10,7 +10,7 @@ import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { relative, resolve, sep } from "node:path";
 import { loadConfig, ConfigError } from "../core/config.mjs";
-import { git, headCommit, hookIndexFile, repoPath, stagedAddedLines, stagedPaths, unpushedCount } from "../core/git.mjs";
+import { git, headCommit, hookIndexFile, repoPath, stagedAddedLines, stagedNames, unpushedCount } from "../core/git.mjs";
 import { t, tShown } from "../core/i18n.mjs";
 import { matchAny } from "../core/glob.mjs";
 import { checkCommitShape, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
@@ -384,13 +384,16 @@ const COMMANDS = {
     }
     /** @type {string[]} */
     let staged = [];
+    /** Staged names that are not UTF-8: git cannot be asked for them by name. */
+    /** @type {string[]} */
+    let notUtf8 = [];
     try {
       // An index git gave the hook that is not this repository's own (GIT_INDEX_FILE set outside its git dir):
       // the main index would be read instead, another commit's files.
       const given = process.env.GIT_INDEX_FILE;
       if (opts.hook && given && !hookIndexFile(cwd, process.env)) throw new Error(t("cli.hookIndexForeign", { path: given }, cfg.language));
       // Outside a repository nothing is staged: the message is all there is to check.
-      if (repoPath("--git-dir", { cwd }) !== null) staged = stagedPaths(cwd, { env: process.env });
+      if (repoPath("--git-dir", { cwd }) !== null) ({ paths: staged, notUtf8 } = stagedNames(cwd, { env: process.env }));
     } catch (e) {
       if (!opts.hook) throw e;
       err(t("cli.stagedUnmeasured", { error: String(/** @type {Error} */ (e).message).split("\n")[0] }, cfg.language));
@@ -401,10 +404,21 @@ const COMMANDS = {
     // rest of the check still runs; run by hand, the command fails.
     /** @type {Map<string, import("../core/git.mjs").AddedLine[]> | undefined} */
     let addedLines;
-    const named = staged.filter((p) => !exempt.includes(p) && cfg.review.forbidden.some((/** @type {{ paths: string[] }} */ r) => matchAny(p, r.paths)));
+    /** Files that look like UTF-16 or UTF-32 and could not be read whole to be decoded, with why. */
+    /** @type {Map<string, string>} */
+    const wideUnread = new Map();
+    const ruled = staged.filter((p) => !exempt.includes(p) && cfg.review.forbidden.some((/** @type {{ paths: string[] }} */ r) => matchAny(p, r.paths)));
+    // A name that is not UTF-8 may read the same as another staged name: neither is asked for, both are said.
+    const unnamed = [...new Set(ruled.filter((p) => notUtf8.includes(p) && cfg.review.forbidden.some((/** @type {{ paths: string[], except?: string[] }} */ r) => matchAny(p, r.paths) && !matchAny(p, r.except ?? []))))];
+    if (unnamed.length) {
+      const said = t("cli.forbiddenNamesUnread", { n: unnamed.length, paths: unnamed.slice(0, 3).map((p) => JSON.stringify(p)).join(", ") }, cfg.language);
+      if (!opts.hook) throw new Error(said);
+      err(said);
+    }
+    const named = ruled.filter((p) => !notUtf8.includes(p));
     if (named.length) {
       try {
-        addedLines = stagedAddedLines(cwd, named, { env: process.env });
+        addedLines = stagedAddedLines(cwd, named, { env: process.env, wideUnread });
       } catch (e) {
         if (!opts.hook) throw e;
         const error = /** @type {Error & { stderr?: unknown }} */ (e);
@@ -416,7 +430,7 @@ const COMMANDS = {
       const { cleanup, comment, cut } = hookCommitMode({ cwd, message, env: process.env });
       const fold = foldTarget(cwd, message, cleanup, comment, cut);
       if (fold.missed) err(t("cli.foldNotFound", { subject: fold.subject, where: t(`cli.foldWhere.${fold.missed}`, {}, cfg.language) }, cfg.language));
-      res = checkCommitShape(message, { config: cfg, stagedPaths: staged, cleanup, cut, comment, foldTarget: fold.target, addedLines, exempt });
+      res = checkCommitShape(message, { config: cfg, stagedPaths: staged, cleanup, cut, comment, foldTarget: fold.target, addedLines, exempt, wideUnread });
     } catch (e) {
       // A git that fails, or a pattern in the config that does not compile, is no reason to lock commits either:
       // the commit goes through, and the message says it was not checked.
