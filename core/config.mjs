@@ -83,6 +83,23 @@ export const DEFAULTS = Object.freeze({
       paths: [".github/workflows/*.yml", ".github/workflows/*.yaml", "**/action.yml", "**/action.yaml"],
       except: [],
     },
+    // Lock files the commit-msg hook reads (checks/deps.mjs): new entries with install scripts, younger than the
+    // cooldown, or used by few. Only the origins in `registries` are contacted (registry → downloads API, null
+    // for none; a registry URL may hold a path); `advisories` is the OSV API `ennyn deps` asks ("" for none), and
+    // only about packages from the public registries in `advisoryRegistries`. `paths: []` turns the check off.
+    deps: {
+      paths: ["**/package-lock.json", "**/npm-shrinkwrap.json"],
+      cooldownDays: 7,
+      minShare: 0.01,
+      minWeekly: 1000,
+      allow: [],
+      allowScripts: [],
+      online: true,
+      timeout: 20,
+      registries: { "https://registry.npmjs.org": "https://api.npmjs.org" },
+      advisories: "https://api.osv.dev",
+      advisoryRegistries: ["https://registry.npmjs.org"],
+    },
   },
   // Claude Code keeps a hook's added context to 10,000 characters; the rules and the list after them fit in it.
   sideCopy: { roots: [], maxInjectBytes: 9000 },
@@ -134,9 +151,16 @@ function kind(v) {
 }
 
 // Keys whose value is a free-form map (any key allowed below them).
-const OPEN_MAPS = new Set(["graph.exports", "graph.fields", "graph.valueScale", "graph.costScale"]);
-/** A scale the project gives replaces the default one: a default name left in it (XL: 5) would outrank its own. */
-const REPLACED_MAPS = new Set(["graph.valueScale", "graph.costScale"]);
+const OPEN_MAPS = new Set(["graph.exports", "graph.fields", "graph.valueScale", "graph.costScale", "security.deps.registries"]);
+/**
+ * Maps the project gives in place of the default one, with the kinds their values take: a default name left in
+ * a scale (XL: 5) would outrank its own, and a registry left in the list would still be contacted.
+ */
+const REPLACED_MAPS = new Map([
+  ["graph.valueScale", ["number"]],
+  ["graph.costScale", ["number"]],
+  ["security.deps.registries", ["string", "null"]],
+]);
 // Keys whose default is null but accept a value of this kind.
 const NULLABLE = new Map([
   ["commitMsg.language", ["string"]],
@@ -165,9 +189,10 @@ function merge(base, over, prefix, problems) {
     }
     const bk = kind(base[k]);
     const vk = kind(v);
-    if (bk === "object" && vk === "object" && REPLACED_MAPS.has(path)) {
-      // Replaced, and still checked: each weight is a number, as each default one is.
-      for (const [sk, sv] of Object.entries(/** @type {Record<string, unknown>} */ (v))) if (kind(sv) !== "number") problems.push(`"${path}.${sk}" must be number, got ${kind(sv)}`);
+    const kinds = REPLACED_MAPS.get(path);
+    if (bk === "object" && vk === "object" && kinds) {
+      // Replaced, and still checked: each value is of a kind the default's values are (a weight is a number).
+      for (const [sk, sv] of Object.entries(/** @type {Record<string, unknown>} */ (v))) if (!kinds.includes(kind(sv))) problems.push(`"${path}.${sk}" must be ${kinds.join(" | ")}, got ${kind(sv)}`);
       out[k] = { .../** @type {object} */ (v) };
       continue;
     }
@@ -254,6 +279,41 @@ export function loadConfig({ cwd, env = process.env, override }) {
   });
   const ci = /** @type {any} */ (cfg).security.ci;
   for (const k of ["paths", "except"]) if (ci[k].some((/** @type {unknown} */ g) => typeof g !== "string" || g === "")) problems.push(`"security.ci.${k}" must be a list of globs`);
+  const deps = /** @type {any} */ (cfg).security.deps;
+  const inRange = (/** @type {string} */ k, /** @type {number} */ lo, /** @type {number} */ hi, /** @type {boolean} */ whole) => {
+    const n = deps[k];
+    if (!(n >= lo && n <= hi) || (whole && !Number.isInteger(n))) problems.push(`"security.deps.${k}" must be ${whole ? "a whole number" : "a number"} from ${lo} to ${hi}`);
+  };
+  inRange("cooldownDays", 0, 365, false);
+  inRange("minShare", 0, 1, false);
+  inRange("minWeekly", 0, 1e9, true);
+  inRange("timeout", 1, 600, false);
+  for (const k of ["paths", "allowScripts"]) if (deps[k].some((/** @type {unknown} */ g) => typeof g !== "string" || g === "")) problems.push(`"security.deps.${k}" must be a list of ${k === "paths" ? "globs" : "package names"}`);
+  if (deps.allow.some((/** @type {unknown} */ a) => typeof a !== "string" || !/^.+@[^@]+$/.test(a))) problems.push(`"security.deps.allow" entries must be "name@version"`);
+  // An origin, as a URL's own origin reads: a path or a trailing slash would never equal one.
+  const isOrigin = (/** @type {unknown} */ u) => {
+    try {
+      return typeof u === "string" && /^https?:$/.test(new URL(u).protocol) && new URL(u).origin === u;
+    } catch {
+      return false;
+    }
+  };
+  // A registry: an origin, or an origin and a path (Artifactory, Nexus), written as a URL reads it, with no
+  // trailing slash, credentials, query or fragment: what a tarball's `resolved` starts with.
+  const isRegistry = (/** @type {unknown} */ u) => {
+    try {
+      const x = new URL(String(u));
+      return typeof u === "string" && /^https?:$/.test(x.protocol) && !x.username && !x.password && !x.search && !x.hash && u === `${x.origin}${x.pathname === "/" ? "" : x.pathname}` && !u.endsWith("/");
+    } catch {
+      return false;
+    }
+  };
+  for (const [k, v] of Object.entries(deps.registries)) {
+    if (!isRegistry(k)) problems.push(`"security.deps.registries": "${k}" must be a registry URL such as https://registry.npmjs.org or https://acme.jfrog.io/artifactory/api/npm/npm (no trailing slash)`);
+    if (v !== null && !isOrigin(v)) problems.push(`"security.deps.registries.${k}" must be an origin such as https://api.npmjs.org, or null`);
+  }
+  if (deps.advisories !== "" && !isOrigin(deps.advisories)) problems.push(`"security.deps.advisories" must be an origin such as https://api.osv.dev, or ""`);
+  if (deps.advisoryRegistries.some((/** @type {unknown} */ o) => !isRegistry(o))) problems.push(`"security.deps.advisoryRegistries" entries must be registry URLs such as https://registry.npmjs.org`);
   // A glob compiles when a path is first matched; one that cannot would fail there, in the hook or in doctor.
   const c = /** @type {any} */ (cfg);
   const globLists = [
@@ -263,6 +323,7 @@ export function loadConfig({ cwd, env = process.env, override }) {
     ["impact.fixtureGlobs", c.impact.fixtureGlobs],
     ["security.ci.paths", c.security.ci.paths],
     ["security.ci.except", c.security.ci.except],
+    ["security.deps.paths", c.security.deps.paths],
     ...c.review.cochange.flatMap((/** @type {any} */ r, /** @type {number} */ i) =>
       r && typeof r === "object" ? [[`review.cochange[${i}].paths`, r.paths], [`review.cochange[${i}].docs`, r.docs]] : [],
     ),

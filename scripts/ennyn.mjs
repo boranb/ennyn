@@ -6,7 +6,7 @@
  * 2 usage error · 141 stdout closed before the output was written, as for a process ended by SIGPIPE.
  */
 
-import { readFileSync, realpathSync } from "node:fs";
+import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { relative, resolve, sep } from "node:path";
 import { loadConfig, ConfigError } from "../core/config.mjs";
@@ -15,6 +15,8 @@ import { shown, t, tShown } from "../core/i18n.mjs";
 import { matchAny } from "../core/glob.mjs";
 import { checkCommitShape, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
 import { ciCallees, ciMessages } from "../checks/ci.mjs";
+import { advisoriesOf, depsMessages, dirOf, lockEntries, lockPath, lockText, npmrcFindings, npmrcPath, reasonText, registryOf } from "../checks/deps.mjs";
+import { readIfThere } from "../core/files.mjs";
 import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
 import { reworkRate } from "../metrics/szz.mjs";
 import { bypassUses } from "../metrics/bypass.mjs";
@@ -34,6 +36,7 @@ Commands:
   install-hook                                      run commit-check as this repository's commit-msg hook (machine-local)
   budget [--json] [--record]                        instruction text loaded every session / by path, rule lines repeated across files; --record appends to paths.metricsLog
   commit-check [--hook] <message-file>              check commit message shape (commit-msg hook; --hook: a config that does not load warns instead of failing)
+  deps [--json]                                     known advisories (OSV), install scripts and unlisted sources of the lock files; exit 1 unless all measured clean
   impact --symbol <s> [--files a,b]                 five-row impact table (markdown)
   rework [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--days N] [--json]
                                                     SZZ-style rework rate
@@ -339,7 +342,7 @@ const COMMANDS = {
     return res.ok ? 0 : 1;
   },
 
-  "commit-check"(args) {
+  async "commit-check"(args) {
     const { positional, opts, help } = parseArgs(args, { positional: 1, flags: ["hook"] });
     if (help) return (out(USAGE), 0);
     if (!positional[0]) throw new UsageError("commit-check needs a message file");
@@ -494,6 +497,46 @@ const COMMANDS = {
         err(t("cli.ciUnmeasured", { error: String(error.stderr || error.message).trim().split("\n")[0] }, cfg.language));
       }
     }
+    // Lock files and .npmrc (security.deps): what the commit brings, against HEAD's version. Like review.forbidden
+    // it holds for every message; what the registry does not answer is said, never passed as clean.
+    const depsRule = cfg.security.deps;
+    /** @type {{ errors: string[], warnings: string[] }} */
+    let deps = { errors: [], warnings: [] };
+    const stagedLocks = staged.filter((p) => lockPath(p, depsRule.paths));
+    // An .npmrc counts where npm reads it for the project: at the top, or next to a lock file the paths name.
+    const npmrcs = depsRule.paths.length ? staged.filter(npmrcPath) : [];
+    let readNpmrc = npmrcs.filter((p) => dirOf(p) === "" || stagedLocks.some((l) => dirOf(l) === dirOf(p)));
+    const besideNone = npmrcs.filter((p) => !readNpmrc.includes(p));
+    if (besideNone.length) {
+      try {
+        const listed = indexNames(cwd, { env: process.env, paths: [...new Set(besideNone.map(dirOf))] }).paths;
+        readNpmrc = [...readNpmrc, ...besideNone.filter((p) => listed.some((l) => dirOf(l) === dirOf(p) && lockPath(l, depsRule.paths)))];
+      } catch (e) {
+        if (!opts.hook) throw e;
+        err(t("cli.depsUnmeasured", { error: String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message).trim().split("\n")[0] }, cfg.language));
+      }
+    }
+    const depsPaths = [...stagedLocks, ...readNpmrc];
+    const depsUnnamed = depsPaths.filter((p) => notUtf8.includes(p));
+    if (depsUnnamed.length) {
+      // Shown as a report shows a name: a direction mark or a control character in it is escaped.
+      const said = tShown("cli.depsNamesUnread", { n: depsUnnamed.length, paths: depsUnnamed.slice(0, 3) }, cfg.language);
+      if (!opts.hook) throw new Error(said);
+      err(said);
+    }
+    const depsNamed = depsPaths.filter((p) => !notUtf8.includes(p));
+    if (depsNamed.length) {
+      /** @type {ReturnType<typeof stagedVersions> | null} */
+      let versions = null;
+      try {
+        versions = stagedVersions(cwd, depsNamed, { env: process.env });
+      } catch (e) {
+        if (!opts.hook) throw e;
+        const error = /** @type {Error & { stderr?: unknown }} */ (e);
+        err(t("cli.depsUnmeasured", { error: String(error.stderr || error.message).trim().split("\n")[0] }, cfg.language));
+      }
+      if (versions) deps = await depsMessages(versions, depsRule, cfg.language);
+    }
     let res;
     try {
       const { cleanup, comment, cut } = hookCommitMode({ cwd, message, env: process.env });
@@ -508,12 +551,140 @@ const COMMANDS = {
       if (typeof error.stderr === "string") err(t("cli.hookGitFailed", { error: error.stderr.trim().split("\n")[0] }, cfg.language));
       else err(t("cli.hookConfigBroken", { error: error.message }, "en"));
       // What the files bring was read apart from the message: it still stands.
-      for (const x of [...ci.errors, ...ci.warnings]) err(x);
-      return ci.errors.length ? 1 : 0;
+      for (const x of [...ci.errors, ...ci.warnings, ...deps.errors, ...deps.warnings]) err(x);
+      return ci.errors.length || deps.errors.length ? 1 : 0;
     }
-    for (const e of [...ci.errors, ...res.errors]) err(e);
-    for (const w of [...(res.warnings ?? []), ...ci.warnings]) err(w);
-    return res.ok && !ci.errors.length ? 0 : 1;
+    for (const e of [...ci.errors, ...deps.errors, ...res.errors]) err(e);
+    for (const w of [...(res.warnings ?? []), ...ci.warnings, ...deps.warnings]) err(w);
+    return res.ok && !ci.errors.length && !deps.errors.length ? 0 : 1;
+  },
+
+  async deps(args) {
+    const { opts, help } = parseArgs(args, { flags: ["json"] });
+    if (help) return (out(USAGE), 0);
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    const lang = cfg.language;
+    const rule = /** @type {import("../checks/deps.mjs").DepsRule} */ (cfg.security.deps);
+    // What npm installs from: the tracked lock files the paths name, and the lock files beside each package.json,
+    // tracked or not (one that is ignored is still the one npm reads); the .npmrc npm reads beside them and at the
+    // top. With the check off (paths []), nothing.
+    const inRepo = repoPath("--git-dir", { cwd }) !== null;
+    const tracked = inRepo ? git(["-c", "core.quotePath=false", "ls-files", "-z"], { cwd }).split("\0").filter(Boolean) : [];
+    const off = !rule.paths.length;
+    /** @type {{ path: string, reason: import("../checks/deps.mjs").Reason }[]} */
+    const unreadFiles = [];
+    const hasTopPackage = readIfThere(resolve(cwd, "package.json")) !== null;
+    const pkgDirs = off ? [] : [...new Set([...tracked.filter((f) => /(^|\/)package\.json$/.test(f) && !f.split("/").includes("node_modules")).map(dirOf), ...(hasTopPackage ? [""] : [])])].sort();
+    const near = pkgDirs.flatMap((dir) => {
+      try {
+        return readdirSync(resolve(cwd, dir || ".")).map((f) => (dir ? `${dir}/${f}` : f));
+      } catch (e) {
+        // A package.json git lists in a directory the work tree no longer has: nothing is installed there.
+        if (/** @type {NodeJS.ErrnoException} */ (e).code !== "ENOENT") unreadFiles.push({ path: dir || ".", reason: { key: "readFailed", vars: { error: oneLine(/** @type {Error} */ (e).message) } } });
+        return [];
+      }
+    });
+    const locks = off ? [] : [...new Set([...tracked.filter((f) => lockPath(f, rule.paths)), ...near.filter((f) => lockPath(f, rule.paths))])].sort();
+    const lockDirs = new Set(locks.map(dirOf));
+    const npmrcs = off ? [] : [...new Set([...tracked, ...near].filter((f) => npmrcPath(f) && (dirOf(f) === "" || lockDirs.has(dirOf(f)))))].sort();
+    const untracked = inRepo ? [...locks, ...npmrcs].filter((f) => !tracked.includes(f)) : [];
+    /** @type {(import("../checks/deps.mjs").LockEntry & { path: string })[]} */
+    const entries = [];
+    /** @type {{ path: string, line: string, reason?: import("../checks/deps.mjs").Reason, kind?: "registry" | "indirect" }[]} */
+    const npmrcLines = [];
+    const read = (/** @type {string} */ path) => {
+      try {
+        const text = lockText(readFileSync(resolve(cwd, path)));
+        if (text === null) unreadFiles.push({ path, reason: { key: "notText" } });
+        return text;
+      } catch (e) {
+        unreadFiles.push({ path, reason: { key: "readFailed", vars: { error: oneLine(/** @type {Error} */ (e).message) } } });
+        return null;
+      }
+    };
+    for (const path of locks) {
+      const text = read(path);
+      if (text === null) continue;
+      const lock = lockEntries(text);
+      if (lock.unread !== undefined) unreadFiles.push({ path, reason: lock.unread });
+      else {
+        // One line for each entry, however many places in the tree hold it.
+        const seen = new Set();
+        for (const e of lock.entries) {
+          const k = `${e.name}@${e.version} ${e.resolved ?? ""} ${e.integrity ?? ""}`;
+          if (!seen.has(k)) seen.add(k), entries.push({ ...e, path });
+        }
+      }
+    }
+    for (const path of npmrcs) {
+      const text = rule.paths.length ? read(path) : null;
+      if (text === null) continue;
+      const f = npmrcFindings(text, rule);
+      npmrcLines.push(...f.refuse.map((r) => ({ path, line: `${r.n}: ${r.line}`, kind: r.kind })), ...f.said.map((x) => ({ path, line: `${x.n}: ${x.line}`, reason: x.reason })));
+    }
+    const scripts = entries.filter((e) => e.scripts && !rule.allowScripts.includes(String(e.resolved)) && !("origin" in registryOf(e, rule) && rule.allowScripts.includes(e.name)));
+    const mismatched = entries.flatMap((e) => {
+      const where = registryOf(e, rule);
+      return "refuse" in where && where.refuse ? [{ entry: e, reason: where.reason }] : [];
+    });
+    const found = await advisoriesOf(entries.filter((e) => !mismatched.some((m) => m.entry === e)), rule);
+    // One name@version from two places: the place shows, so two lines never read alike.
+    const originOf = (/** @type {import("../checks/deps.mjs").LockEntry} */ e) => {
+      try {
+        return e.resolved ? new URL(e.resolved).origin : "—";
+      } catch {
+        return e.resolved ?? "—";
+      }
+    };
+    /** @type {Map<string, Set<string>>} */
+    const sources = new Map();
+    for (const e of entries) sources.set(`${e.path}\0${e.name}@${e.version}`, new Set([...(sources.get(`${e.path}\0${e.name}@${e.version}`) ?? []), originOf(e)]));
+    const where = (/** @type {(import("../checks/deps.mjs").LockEntry & { path?: string }) | null} */ e) =>
+      e ? `${e.name}@${e.version} (${e.path}${(sources.get(`${e.path}\0${e.name}@${e.version}`)?.size ?? 0) > 1 ? `; ${originOf(e)}` : ""})` : "—";
+    // A package.json with dependencies and no lock beside it or above it (a workspace's lock sits at its root):
+    // what npm installs there is unmeasured. One it cannot read may have some.
+    const hasDeps = (/** @type {string} */ dir) => {
+      try {
+        const pkg = JSON.parse(readFileSync(resolve(cwd, dir, "package.json"), "utf8"));
+        return ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"].some((k) => pkg?.[k] && typeof pkg[k] === "object" && Object.keys(pkg[k]).length);
+      } catch (e) {
+        return /** @type {NodeJS.ErrnoException} */ (e).code !== "ENOENT";
+      }
+    };
+    const lockless = pkgDirs.filter((d) => ![...lockDirs].some((l) => l === "" || l === d || d.startsWith(`${l}/`)) && hasDeps(d));
+    const unchecked = found.unread.length + unreadFiles.length + npmrcLines.filter((l) => l.reason).length + lockless.length;
+    const problems = found.advisories.length + scripts.length + mismatched.length + npmrcLines.filter((l) => !l.reason).length;
+    const clean = !problems && !unchecked;
+    const summary = t("deps.summary", { files: locks.length, entries: entries.length, advisories: found.advisories.length, scripts: scripts.length, unchecked }, lang);
+    if (opts.json) {
+      const text = (/** @type {import("../checks/deps.mjs").Reason} */ r) => ({ code: r.key, reason: reasonText(r, lang) });
+      out(JSON.stringify({ files: locks, npmrc: npmrcs, untracked, lockless: lockless.map((d) => (d ? `${d}/package.json` : "package.json")), entries: entries.length, advisories: found.advisories.map((a) => ({ ...a, entries: [...new Set(a.entries.map(where))], ...(a.unread ? { unread: text(a.unread) } : {}) })), scripts: scripts.map(where), mismatched: mismatched.map((m) => ({ entry: where(m.entry), ...text(m.reason) })), npmrcLines: npmrcLines.map((l) => ({ path: l.path, line: l.line, ...(l.reason ? text(l.reason) : { refused: true }) })), unchecked: found.unread.map((u) => ({ entry: where(u.entry), ...text(u.reason) })), unread: unreadFiles.map((u) => ({ path: u.path, ...text(u.reason) })), clean }, null, 2));
+      // The exit code says it; so does a line on stderr, for a reader of the JSON who only sees the failure.
+      if (!clean) err(summary);
+      return clean ? 0 : 1;
+    }
+    if (off) out(t("deps.checkOff", {}, lang));
+    else if (!locks.length && !lockless.length) out(t("deps.noLock", {}, lang));
+    for (const d of lockless) out(`? ${tShown("deps.noneMeasured", { path: [d ? `${d}/package.json` : "package.json"] }, lang)}`);
+    for (const f of untracked) out(`! ${tShown("deps.untracked", { path: [f] }, lang)}`);
+    for (const u of unreadFiles) out(`? ${tShown("deps.lockUnread", { path: [u.path], reason: reasonText(u.reason, lang) }, lang)}`);
+    for (const a of found.advisories) {
+      const summaryText = a.unread ? t("deps.recordUnread", { reason: reasonText(a.unread, lang) }, lang) : a.summary;
+      out(`✗ ${tShown("deps.advisory", { id: a.id, severity: a.severity || "—", aliases: a.aliases.join(", ") || "—", summary: summaryText, where: [...new Set(a.entries.map(where))] }, lang)}`);
+    }
+    for (const m of mismatched) out(`✗ ${tShown("deps.mismatchEntry", { where: [where(m.entry)], reason: reasonText(m.reason, lang) }, lang)}`);
+    for (const e of scripts) out(`! ${tShown("deps.scriptEntry", { where: [where(e)] }, lang)}`);
+    for (const l of npmrcLines) out(l.reason ? `? ${tShown("deps.npmrcSaid", { path: [l.path], where: [l.line], why: reasonText(l.reason, lang) }, lang)}` : `✗ ${tShown(l.kind === "indirect" ? "deps.npmrcIndirect" : "deps.npmrc", { path: [l.path], where: [l.line] }, lang)}`);
+    /** @type {Map<string, string[]>} */
+    const byReason = new Map();
+    for (const u of found.unread) {
+      const k = reasonText(u.reason, lang);
+      byReason.set(k, [...(byReason.get(k) ?? []), where(u.entry)]);
+    }
+    for (const [reason, list] of [...byReason].sort(([a], [b]) => (a < b ? -1 : 1))) out(`? ${tShown("deps.unchecked", { n: list.length, reason, where: list.length > 3 ? [...list.slice(0, 3), t("deps.more", { n: list.length - 3 }, lang)] : list }, lang)}`);
+    out(summary);
+    return clean ? 0 : 1;
   },
 
   impact(args) {
@@ -777,5 +948,18 @@ if (invokedDirectly) {
   });
   main(process.argv.slice(2)).then((code) => {
     process.exitCode = code;
+    // The commands that may ask the network: a request the budget gave up on can leave a lookup in flight (a DNS
+    // answer that never comes), which would hold the commit. Once the work is done, the process ends a second
+    // later at most; with nothing pending it ends at once, as any other command does.
+    // The timer starts once stdout and stderr have taken all that was written to them: a reader that comes late
+    // still gets every line.
+    if (["commit-check", "deps"].includes(process.argv[2] ?? "")) {
+      let open = 2;
+      const drained = () => {
+        if (--open === 0) setTimeout(() => process.exit(), 1000).unref();
+      };
+      process.stdout.write("", drained);
+      process.stderr.write("", drained);
+    }
   });
 }

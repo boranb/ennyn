@@ -25,10 +25,11 @@
  * run over file reads found 73: files that could not be read taken for files that are not there.
  */
 
-import { test } from "node:test";
+import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { availableParallelism, tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -91,6 +92,17 @@ function commit(day, message, files) {
   });
   return git(["rev-parse", "HEAD"], { cwd: REPO });
 }
+// A local OSV that knows no advisory: `ennyn deps` has an answer to lose, and nothing leaves the machine.
+const OSV = createServer((req, res) => {
+  let body = "";
+  req.on("data", (d) => (body += d));
+  req.on("end", () => res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ results: JSON.parse(body || '{"queries":[]}').queries.map(() => ({})) })));
+});
+await new Promise((r) => OSV.listen(0, "127.0.0.1", () => r(undefined)));
+const OSV_ORIGIN = `http://127.0.0.1:${/** @type {import("node:net").AddressInfo} */ (OSV.address()).port}`;
+after(() => (OSV.closeAllConnections(), OSV.close()));
+const LOCK = (/** @type {Record<string, unknown>} */ extra = {}) =>
+  `${JSON.stringify({ name: "demo", lockfileVersion: 3, packages: { "": { name: "demo" }, "node_modules/left": { version: "1.0.0", resolved: `${OSV_ORIGIN}/left/-/left-1.0.0.tgz`, integrity: "sha512-x" }, ...extra } }, null, 2)}\n`;
 const ADD = "export function add(a, b) {\n  const sum = a + b;\n  const checked = Number(sum);\n  return checked;\n}\n";
 git(["init", "-q", "-b", "main"], { cwd: REPO });
 const FIRST = commit(0, "feat: add", {
@@ -98,7 +110,11 @@ const FIRST = commit(0, "feat: add", {
     language: "en",
     commitMsg: { types: ["feat", "fix", "chore"] },
     review: { impactRequiredGlobs: ["src/**"], cochange: [{ paths: ["src/**"], docs: ["README.md"] }], forbidden: [{ text: "console.log", paths: ["src/**"] }] },
+    // No request leaves the machine: the hook asks no registry, and `deps` asks the local OSV above.
+    security: { deps: { online: false, registries: { [OSV_ORIGIN]: null }, advisories: OSV_ORIGIN, advisoryRegistries: [OSV_ORIGIN] } },
   }),
+  // A lock file the hook and `deps` read: a read that fails there must be said.
+  "package-lock.json": LOCK(),
   ".ennyn/graph.json": JSON.stringify({
     nodes: [
       { id: "core-one", status: "planned", value: "high", cost: "S", needs: [] },
@@ -170,6 +186,12 @@ function stageWorkflow(repo) {
   git(["add", ".github/workflows/ci.yml"], { cwd: repo });
 }
 
+/** Stages a lock file whose new package runs an install script, which security.deps refuses. @param {string} repo */
+function stageLock(repo) {
+  writeFileSync(join(repo, "package-lock.json"), LOCK({ "node_modules/nat": { version: "1.0.0", resolved: `${OSV_ORIGIN}/nat/-/nat-1.0.0.tgz`, integrity: "sha512-x", hasInstallScript: true } }));
+  git(["add", "package-lock.json"], { cwd: repo });
+}
+
 /**
  * @typedef {{ args: string[], cwd?: string, writes?: boolean, setup?: (repo: string) => void, env?: Record<string, string>, first?: boolean, outside?: boolean, hook?: string, input?: (repo: string) => unknown }} Case
  *   `cwd` is relative to the repository; a case that writes, or has a setup, runs in a copy of its own.
@@ -217,6 +239,11 @@ const CASES = [
   // A uses by tag in a staged workflow: read as nothing staged, the commit would pass.
   { args: ["commit-check", ".git/MSG"], setup: (repo) => stageWorkflow(repo) },
   { args: ["commit-check", "--hook", ".git/MSG"], setup: (repo) => stageWorkflow(repo) },
+  // A new package with an install script in the staged lock file: read as nothing staged, the commit would pass.
+  { args: ["commit-check", ".git/MSG"], setup: (repo) => stageLock(repo) },
+  { args: ["commit-check", "--hook", ".git/MSG"], setup: (repo) => stageLock(repo) },
+  { args: ["deps"] },
+  { args: ["deps", "--json"] },
   // An amend! that drops the Impact line its target needs; the target is read from the log.
   { args: ["commit-check", "--hook", ".git/AMEND"], setup: (repo) => git(["reset", "-q"], { cwd: repo }) },
   // The same past a shallow boundary: the target cannot be found, and the hook says what went unchecked.
