@@ -19,7 +19,7 @@
 
 import "./hostile.mjs";
 import childProcess from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, normalize, sep } from "node:path";
@@ -79,6 +79,33 @@ process.on("exit", () => {
   if (!refused.length) return;
   process.stderr.write(`test/hermetic.mjs: ${refused.length} child process call(s) dropped the test setup:\n${refused.join("\n")}\n`);
   process.exitCode = 1;
+});
+
+// Every temporary directory of the file lies under the hostile root (TMPDIR points into it, and the start and home
+// directories above were made there): it goes when the file ends. Left in place, each run of the suite kept some
+// 15 MB a file in the system's temporary folder; cycle 2026-10-24 (9) found 160 GB of them, and a full disk.
+const hostileRoot = process.env.ENNYN_HOSTILE_HOME;
+process.on("exit", () => {
+  if (!hostileRoot) return;
+  try {
+    rmSync(hostileRoot, { recursive: true, force: true });
+  } catch {
+    // A fault test left a directory it made unreadable: open the tree up, then remove it.
+    const open = (/** @type {string} */ d) => {
+      try {
+        chmodSync(d, 0o700);
+        for (const e of readdirSync(d, { withFileTypes: true })) if (e.isDirectory()) open(join(d, e.name));
+      } catch {
+        // as much as can be opened
+      }
+    };
+    open(hostileRoot);
+    try {
+      rmSync(hostileRoot, { recursive: true, force: true });
+    } catch {
+      // what is left stays; the test's result does not change for it
+    }
+  }
 });
 
 /** The refused calls so far, cleared: for a test that makes them on purpose. */

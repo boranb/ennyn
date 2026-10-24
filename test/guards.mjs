@@ -98,6 +98,7 @@ export const GATES = [
       { id: "hermetic-refuse", why: "a child that drops the setup, let run", file: "test/hermetic.mjs", old: "  if (!missing.length) return;\n", new: "  return;\n", pattern: "hermetic: a child given its own environment" },
       { id: "hermetic-exit", why: "a refused call the code swallowed, forgotten at exit", file: "test/hermetic.mjs", old: "  process.exitCode = 1;\n});", new: "});", pattern: "hermetic: a test file whose code swallows" },
       { id: "hermetic-cwd", why: "a test file that starts in the repository", file: "test/hermetic.mjs", old: "process.chdir(start);\n", new: "", pattern: "hermetic: every test file starts in an empty directory" },
+      { id: "hermetic-clean", why: "a test file that leaves its temporary directories", file: "test/hermetic.mjs", old: "  if (!hostileRoot) return;\n", new: "  return;\n", pattern: "hermetic: a test file's temporary directories are gone" },
       {
         id: "hermetic-env",
         why: "a variable left naming the repository",

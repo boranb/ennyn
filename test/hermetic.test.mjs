@@ -109,6 +109,31 @@ test("hermetic: a test file whose code swallows a refused call still fails", () 
   assert.match(run.stdout + run.stderr, /1 child process call\(s\) dropped the test setup/);
 });
 
+test("hermetic: a test file's temporary directories are gone when it ends, an unreadable one too", () => {
+  const dir = mkdtempSync(join(tmpdir(), "en-herm-clean-"));
+  const file = join(dir, "temp.test.mjs");
+  const out = join(dir, "paths.json");
+  writeFileSync(file, [
+    'import { test } from "node:test";',
+    'import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";',
+    'import { tmpdir } from "node:os";',
+    'import { join } from "node:path";',
+    'test("makes temporary directories", () => {',
+    '  const made = mkdtempSync(join(tmpdir(), "x-"));',
+    '  mkdirSync(join(made, "locked"));',
+    '  chmodSync(join(made, "locked"), 0);',
+    `  writeFileSync(${JSON.stringify(out)}, JSON.stringify([process.env.ENNYN_HOSTILE_HOME, made, process.cwd()]));`,
+    "});",
+    "",
+  ].join("\n"));
+  const { NODE_TEST_CONTEXT: _, ...env } = process.env;
+  const run = spawnSync(process.execPath, ["--test", "--import", pathToFileURL(join(ROOT, "test", "hermetic.mjs")).href, file], { env, encoding: "utf8" });
+  assert.equal(run.status, 0, run.stdout + run.stderr);
+  const paths = JSON.parse(readFileSync(out, "utf8"));
+  assert.equal(paths.length, 3);
+  for (const p of paths) assert.ok(!existsSync(p), `${p} is still there`);
+});
+
 test("hermetic: every test file starts in an empty directory of its own, and no variable names the repository", () => {
   const top = realpathSync(ROOT);
   const inTop = (/** @type {string} */ p) => p === top || p.startsWith(top + sep) || p === ROOT || p.startsWith(ROOT + sep);
