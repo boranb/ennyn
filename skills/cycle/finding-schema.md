@@ -18,6 +18,16 @@ Shared output contract for every reviewer. Include this file in the reviewer's p
 
 In security reviews, **evidence gaps** (a test does not pin the location of a gate, a path was not tried) are listed under their own heading even at low confidence; they do not open a new round.
 
+## Probes
+
+Hand back every input you tried, found or not, as a cell: an id, the input in the gate's own terms, the verdict you expect (`refused`; `said`: let through, saying what it did not check; `pass`), what its reason must hold when the verdict alone would not show the reading (`expectWhy`), and where it came from:
+
+```json
+{ "id": "checkout-in-subshell", "workflow": "on: pull_request_target\n…", "expect": "refused", "from": "cycle 9 ci review r3" }
+```
+
+The author adds them to the project's verdict corpus beside the gate's test (in Ennyn: `node test/verdicts.mjs add <gate> <probes.json>`), which replays every cell and fails when a recorded verdict moves, so a later fix that turns a refused cell into a silent pass fails there instead of in a reviewer's next round. A probe that does not get what it expects is a finding, or a gap the work graph names. A recorded verdict changes, and a cell is retired, only by an edit in a commit that says why.
+
 ## If an impact table was given
 
 First look for its **missing row**: a reader, twin, path, newly accepted input, ceiling state or fake source that the table does not list.

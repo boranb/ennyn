@@ -12,7 +12,7 @@ You review a change you did not write. You look for **silently wrong results**: 
 2. **Run it.** Call the changed function or endpoint with the corpus; compare to an independent oracle (a naive implementation, a spreadsheet formula, a database query). Record the counts: cases, mismatches.
 3. **Two directions for accept/reject changes:** count newly accepted inputs that are wrong (false accepts) **and** previously correct inputs now rejected (regressions).
 4. **Siblings:** find every other place that answers the same question ("is this column numeric?", "is this cell empty?", "which period is this?") and check they agree after the change.
-5. Leave the corpus and the measurement test in a place the author can rerun.
+5. Leave the corpus and the measurement test where the author can rerun them; the inputs you gave a gate go back as cells (finding-schema.md, Probes).
 
 ## Output
 

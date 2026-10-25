@@ -7,7 +7,7 @@
     "fixType": "fix"
   },
   "review": {
-    "impactRequiredGlobs": ["checks/**", "core/config.mjs", "metrics/szz.mjs", "setup/scan.mjs"],
+    "impactRequiredGlobs": ["checks/**", "core/config.mjs", "metrics/szz.mjs", "setup/scan.mjs", "test/verdicts/**"],
     "cochange": [
       { "paths": ["README.md"], "docs": ["README.tr.md"], "note": "the twins change together" },
       { "paths": ["README.tr.md"], "docs": ["README.md"], "note": "the twins change together" },

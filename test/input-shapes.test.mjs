@@ -8,7 +8,9 @@
  * history (or a path that needs an Impact line, without one) must be refused, naming the path, or go
  * through saying it was not checked; a cell with nothing to refuse must land. A silent pass is the defect
  * this matrix exists for: a check that passes on an input shape it cannot read. A known one is a `gap`
- * cell: it must pass in silence until it is fixed, so the list of what is left stays true.
+ * cell: it must pass in silence until it is fixed, so the list of what is left stays true. Each cell's exact
+ * verdict (refused, said, or a silent pass) is recorded in test/verdicts/input-shapes.json (test/verdicts.mjs):
+ * a cell whose verdict moves fails, refused turned said too, until the record changes in the same commit.
  *
  * Cycle 2026-10-23 (7) found this class about 12 times, all by reviewers: binary attributes, NUL bytes,
  * core.bigFileThreshold, an empty message, a clean git cannot see, NFD and non-UTF-8 names, names with line
@@ -32,6 +34,7 @@ import { matchAny } from "../core/glob.mjs";
 import { shown } from "../core/i18n.mjs";
 import { indexMatches } from "../setup/scan.mjs";
 import { TOKENS, body, pem } from "./secret-shapes.mjs";
+import { moves, movesText, readCells } from "./verdicts.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
 const run = promisify(execFile);
@@ -315,6 +318,14 @@ export function judge(cell, r) {
   return { problem: null, said };
 }
 
+/**
+ * The cells' exact verdicts against their record (test/verdicts/input-shapes.json): "" when none moved.
+ * @param {Map<string, { verdict: "refused" | "said" | "pass" }>} got
+ */
+export function recordMoves(got) {
+  return movesText("input-shapes", moves(readCells("input-shapes"), got));
+}
+
 /** @param {string} dir @param {string[]} args @param {Buffer | string} [input] */
 async function g(dir, args, input) {
   if (input === undefined) return (await run("git", args, { cwd: dir, env: { ...process.env }, encoding: "buffer", maxBuffer: 256 * 1024 * 1024 })).stdout.toString("utf8").trim();
@@ -461,26 +472,26 @@ test("input shapes: every staged content and name shape is refused, landed, or s
   /** @type {string[]} */
   const problems = [];
   /** @type {string[]} */
-  const said = [];
-  /** @type {string[]} */
   const gaps = [];
+  /** Each cell's exact verdict. @type {Map<string, { verdict: "refused" | "said" | "pass" }>} */
+  const got = new Map();
   let next = 0;
   await Promise.all(
     dirs.map(async (dir) => {
       while (next < CELLS.length) {
         const cell = CELLS[next++];
-        const v = judge(cell, await commitCell(dir, cell));
+        const r = await commitCell(dir, cell);
+        const v = judge(cell, r);
         if (cell.gap && v.problem?.startsWith("a silent pass")) gaps.push(cell.id);
         else if (v.problem) problems.push(`${cell.id}: ${v.problem}`);
-        if (v.said) said.push(cell.id);
+        got.set(cell.id, { verdict: r.status !== 0 ? "refused" : v.said ? "said" : "pass" });
       }
     }),
   );
-  // Each said cell is a shape the hook cannot read; the list is what is left of the class.
-  const unread = ["huge", "name-not-utf8", "name-collision", "latin1-clean", "latin1-cjk", "cp1254-cjk", "binary-8bit", "via-all-latin1", "via-path-latin1", "nul-and-8bit", "binary-counted", "wide-large", "utf16-then-latin1", "mark-latin1", "wav-latin1", "wide-past-limit", "secret-name-not-utf8-asked", "secret-past-budget"];
   // The cells' files, some of 65 MB and more, are not left in the temporary directory.
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
-  assert.deepEqual({ problems, said: said.sort(), gaps: gaps.sort() }, { problems: [], said: unread.sort(), gaps: ["utf16-no-mark-han"] });
+  // Each said cell is a shape the hook cannot read: the record's said cells are what is left of the class.
+  assert.deepEqual({ problems, gaps: gaps.sort(), moved: recordMoves(got) }, { problems: [], gaps: ["utf16-no-mark-han"], moved: "" });
 });
 
 test("input shapes control: the judge flags a silent pass, a refusal with nothing to refuse, a refusal for another reason, and a hook that lies about the commit", () => {
@@ -497,6 +508,11 @@ test("input shapes control: the judge flags a silent pass, a refusal with nothin
   assert.equal(judge({ want: "landed", warns: "doc.md" }, { status: 0, stderr: "a.js changed without doc.md", moved: true }).problem, null);
   assert.match(String(judge({ ...want, strict: true }, { status: 0, stderr: "ennyn: review.forbidden was not checked: x", moved: true }).problem), /had to refuse/);
   assert.match(String(judge({ want: "landed", unsaid: "review.forbidden" }, { status: 0, stderr: "review.forbidden was not checked in 1", moved: true }).problem), /nothing to say/);
+  // The record holds the exact verdict: a said cell that passes, a refused cell that is only said, moved.
+  const recorded = new Map(readCells("input-shapes").map((c) => [c.id, { verdict: c.verdict }]));
+  assert.equal(recordMoves(recorded), "");
+  assert.match(recordMoves(new Map([...recorded, ["latin1-clean", { verdict: "pass" }]])), /latin1-clean: recorded said, now pass/);
+  assert.match(recordMoves(new Map([...recorded, ["utf8-ascii", { verdict: "said" }]])), /utf8-ascii: recorded refused, now said/);
 });
 
 test("input shapes: a line holds a text as written or composed; an 8-bit line is said where a text has no one spelling, a NUL line is binary", () => {

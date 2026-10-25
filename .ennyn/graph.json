@@ -440,7 +440,7 @@
       "status": "planned",
       "needs": [],
       "id": "guards-accounting-gaps",
-      "title": "Guards: node:test reached dynamically in a gate file (const check = test, await import, createRequire) is not counted; the fault matrix's git and file-read tests have no guard of their own (their judge, case lists and preload do)",
+      "title": "Guards: node:test reached dynamically in a gate file (const check = test, (0, test)(…), await import, createRequire) is not counted (gap cells in test/verdicts/declarations.json); the fault matrix's git and file-read tests have no guard of their own (their judge, case lists and preload do)",
       "value": "low",
       "cost": "S",
       "cluster": "gates",
@@ -474,7 +474,7 @@
       "value": "low",
       "cost": "M",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (8), security review rounds 2-4 of input-shape-matrix"
+      "source": "cycle 2026-10-24 (8), security review rounds 2-4 of input-shape-matrix; gap cells in test/verdicts/forbidden.json and test/verdicts/input-shapes.json"
     },
     {
       "status": "planned",
@@ -500,7 +500,7 @@
       "status": "planned",
       "needs": [],
       "id": "glob-class-astral",
-      "title": "A glob character class [...] matches one UTF-16 code unit, not one character (? now matches one)",
+      "title": "A glob character class [...] matches one UTF-16 code unit, not one character (? now matches one); gap cell in test/verdicts/forbidden.json",
       "value": "low",
       "cost": "S",
       "cluster": "gates",
@@ -530,7 +530,7 @@
       "status": "planned",
       "needs": [],
       "id": "hook-wired-limits",
-      "title": "callsCommitCheck cannot see blocks that never run (if false), functions never called, or Node block comments; a custom husky directory before husky installs reads as repo",
+      "title": "callsCommitCheck cannot see blocks that never run (if false), functions never called, or Node block comments; nor that the hook's exit status is not commit-check's (a later command, a pipe, a background job, || echo, ; true, an if with no else, true ||, !) or that a line only names it in a value (MSG=\"commit-check is off\"): each reads as wired (test/verdicts/hook.json gap cells); a custom husky directory before husky installs reads as repo",
       "value": "low",
       "cost": "S",
       "cluster": "gates",
@@ -605,6 +605,26 @@
       "cost": "M",
       "cluster": "security",
       "source": "cycle 2026-10-24 (9), ci-check review rounds three and four"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ci-run-plain-continuation",
+      "title": "security.ci reads a run value continued as a plain scalar on the next line (`run: git fetch origin` then `pull/${{ github.event.number }}/head`) line by line, so the pull request ref passes in silence; YAML folds it into one line, as it folds a > block, which is read",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-10-25 (10), verdict-baseline: a cycle 9 review probe recorded as a gap cell in test/verdicts/ci.json"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ci-yaml-flow-anchor",
+      "title": "security.ci refuses an anchor on a flow sequence (`a: &a [x, y]`, then `b: *a`) as an alias with no anchor before it, though anchors of a sequence are read: valid YAML refused (known cell anchor-on-flow-sequence in test/verdicts/ci.json)",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-10-25 (10), verdict-baseline data review round 2"
     },
     {
       "status": "planned",
