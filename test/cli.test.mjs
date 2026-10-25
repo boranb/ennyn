@@ -123,6 +123,17 @@ test("cli: rework reports JSON and text; a bad date is a usage error", () => {
   assert.equal(run(p.dir, "rework", "--days", "seven").code, 2);
 });
 
+test("cli: rework shows a file name from history as one line can show it (a terminal escape in it is escaped)", () => {
+  const p = project({ metrics: { minLines: 1 } });
+  const name = "src/a\x1b[2J.js";
+  p.commit({ [name]: SRC }, "feat: add", 0);
+  p.commit({ [name]: SRC.replace("a + b", "Number(a) + Number(b)") }, "fix: numbers", 2);
+  const text = run(p.dir, "rework", "--since", "2026-01-01", "--until", "2026-01-01");
+  assert.equal(text.code, 0, text.stderr);
+  assert.ok(!text.stdout.includes("\x1b"), "no escape reaches the terminal");
+  assert.match(text.stdout, /· "src\/a\\u001b\[2J\.js" ·/);
+});
+
 test("cli audit: an amend! whose target is past a shallow boundary says what went unchecked", () => {
   const p = project({ review: { impactRequiredGlobs: ["src/**"] } });
   p.commit({ "src/a.js": SRC }, "feat: add", 0);

@@ -14,7 +14,7 @@
  */
 
 import { dirname, join, resolve } from "node:path";
-import { agentSetup } from "./scan.mjs";
+import { agentSetup, projectFiles } from "./scan.mjs";
 import { readIfThere, readRegular, writeRegular } from "../core/files.mjs";
 import { splitFrontMatter } from "../adapters/claude-code/rules-index.mjs";
 
@@ -70,7 +70,7 @@ function listing(text, name) {
 /**
  * @param {string} cwd
  * @param {string[]} files tracked files
- * @returns {{ always: number, onDemand: number, listings: number, files: number, untracked: string[],
+ * @returns {{ always: number, onDemand: number, listings: number, files: number, untracked: string[], outside: string[],
  *   repeated: Array<{ line: string, files: string[], everySession: boolean }>, repeatedLines: number, repeatedEverySession: number }}
  */
 export function instructionBudget(cwd, files) {
@@ -82,11 +82,13 @@ export function instructionBudget(cwd, files) {
 
   // Skill, agent and command descriptions sit in every session's context so the agent can choose them.
   let listings = 0;
+  // Read as the scan reads: a listing linked out of the repository is not read, so not counted (agentSetup names it).
+  const pf = projectFiles(cwd);
   for (const f of files) {
     const m = /^\.claude\/(?:skills\/([^/]+)\/SKILL\.md|agents\/([^/]+)\.md|commands\/(.+)\.md)$/.exec(f);
     if (!m) continue;
-    const text = readOrNull(join(cwd, f));
-    if (text !== null) listings += Buffer.byteLength(listing(text, m[1] ?? m[2] ?? m[3]), "utf8");
+    const text = pf.read(f);
+    if (typeof text === "string") listings += Buffer.byteLength(listing(text, m[1] ?? m[2] ?? m[3]), "utf8");
   }
 
   /** @type {Map<string, { line: string, files: Map<string, string> }>} */
@@ -122,6 +124,8 @@ export function instructionBudget(cwd, files) {
     listings,
     files: counted.length,
     untracked,
+    // What leads out of the repository is not read, so not counted: said beside the count.
+    outside: setup.outside,
     repeated: repeated.slice(0, 20),
     repeatedLines: repeated.length,
     repeatedEverySession: repeated.filter((r) => r.everySession).length,

@@ -1,18 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import {
-  chmodSync,
-  cpSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1024,4 +1013,82 @@ test("hook trust audit (review round two, mutation pass): a name shown at exactl
   assert.deepEqual([named(at).cut, named(past).cut], [false, true]);
   assert.equal(JSON.parse(named(at).text), at);
   assert.deepEqual([...render("src/a.ts", [{ file: at, body: "x".repeat(9000) }], 9000, "en").given], [at]);
+});
+
+// Cycle 2026-10-25 (10), init-scan audit, review round two: a rule link out of the project.
+test("side-copy (init-scan audit): a rule link out of the project is not followed and said as such, once per context; a walk's limit says what it left", async () => {
+  const { render } = await import("../adapters/claude-code/hooks/side-copy-rules.mjs");
+  const home = tmp("pl-sc-out-home-");
+  put(join(home, "shared.md"), "---\npaths:\n  - '**'\n---\nshared rule\n");
+  const proj = tmp("pl-sc-out-");
+  put(join(proj, ".claude/rules/local.md"), "---\npaths:\n  - 'src/**'\n---\nlocal rule\n");
+  symlinkSync(home, join(proj, ".claude/rules/shared"));
+  put(join(proj, "src/a.ts"), "x");
+  git(["init", "-q", "-b", "main"], { cwd: proj });
+  git(["add", "."], { cwd: proj });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init"], { cwd: proj });
+  const wt = join(tmp("pl-sc-out-wt-"), "wt");
+  git(["worktree", "add", "-q", "--detach", wt], { cwd: proj });
+  const run = (/** @type {string} */ session) => {
+    const r = runHook({ session_id: session, hook_event_name: "PostToolUse", tool_name: "Read", tool_input: { file_path: join(wt, "src/a.ts") }, cwd: proj }, { CLAUDE_PROJECT_DIR: proj });
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout ? String(JSON.parse(r.stdout).hookSpecificOutput.additionalContext) : "";
+  };
+  const first = run("s-out");
+  assert.match(first, /local rule/);
+  // Only what the hook did and why: no claim about what Claude Code does with the link.
+  assert.match(first, /These rule links point outside the project, so their rules were not given: .*\.claude\/rules\/shared/s);
+  assert.doesNotMatch(first, /approve|Claude Code loads/);
+  assert.doesNotMatch(first, /could not be read|shared rule/);
+  // Said once in this context: the next file tool call says nothing more about it.
+  assert.equal(run("s-out"), "");
+  // Another context hears it once too.
+  assert.match(run("s-out-2"), /their rules were not given/);
+  // With no rule given at all (a file no rule names), the note alone is said once.
+  const other = (/** @type {string} */ session) => {
+    const r = runHook({ session_id: session, hook_event_name: "PostToolUse", tool_name: "Read", tool_input: { file_path: join(wt, "README.md") }, cwd: proj }, { CLAUDE_PROJECT_DIR: proj });
+    return r.stdout ? String(JSON.parse(r.stdout).hookSpecificOutput.additionalContext) : "";
+  };
+  put(join(wt, "README.md"), "x");
+  assert.match(other("s-out-3"), /^These rule links point outside the project/);
+  assert.equal(other("s-out-3"), "");
+  // A walk's limit names what it left: the directory it stopped in, with the count of those still waiting.
+  const text = render("src/a.ts", [], 9000, "en", ["/p/.claude/rules/a-assets"], [], new Map([["/p/.claude/rules/a-assets", "more than 10000 entries; 1 more directory not read"]])).text;
+  assert.match(text, /\/p\/\.claude\/rules\/a-assets \(more than 10000 entries; 1 more directory not read\)/);
+});
+
+test("side-copy (init-scan audit): in a package of a monorepo, a link to the repository root's rules is outside the project too", () => {
+  const repo = tmp("pl-sc-mono-");
+  put(join(repo, ".claude/rules/root.md"), "---\npaths:\n  - '**'\n---\nroot rule\n");
+  const app = join(repo, "packages/app");
+  put(join(app, ".claude/rules/app.md"), "---\npaths:\n  - 'src/**'\n---\napp rule\n");
+  symlinkSync(join(repo, ".claude/rules"), join(app, ".claude/rules/root"));
+  put(join(app, "src/a.ts"), "x");
+  git(["init", "-q", "-b", "main"], { cwd: repo });
+  git(["add", "."], { cwd: repo });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init"], { cwd: repo });
+  const wt = join(tmp("pl-sc-mono-wt-"), "wt");
+  git(["worktree", "add", "-q", "--detach", wt], { cwd: repo });
+  const r = runHook({ session_id: "s-mono", hook_event_name: "PostToolUse", tool_name: "Read", tool_input: { file_path: join(wt, "packages/app/src/a.ts") }, cwd: app }, { CLAUDE_PROJECT_DIR: app });
+  assert.equal(r.status, 0, r.stderr);
+  // The note tells the truth about the link; which of the package's rules apply is the mapping's own question.
+  const text = String(JSON.parse(r.stdout).hookSpecificOutput.additionalContext);
+  assert.match(text, /their rules were not given: .*packages\/app\/\.claude\/rules\/root/s);
+  assert.doesNotMatch(text, /could not be read|root rule/);
+});
+
+test("side-copy (init-scan audit): a directory past the walk's depth is named in the note with why, in the project's language", () => {
+  const proj = tmp("pl-sc-deep-");
+  put(join(proj, ".claude/rules/r.md"), "---\npaths:\n  - 'src/**'\n---\nr\n");
+  put(join(proj, `.claude/rules/${Array.from({ length: 33 }, () => "d").join("/")}/x.md`), "x\n");
+  put(join(proj, ".ennyn/config.json"), JSON.stringify({ language: "tr" }));
+  put(join(proj, "src/a.ts"), "x");
+  git(["init", "-q", "-b", "main"], { cwd: proj });
+  git(["add", "."], { cwd: proj });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init"], { cwd: proj });
+  const wt = join(tmp("pl-sc-deep-wt-"), "wt");
+  git(["worktree", "add", "-q", "--detach", wt], { cwd: proj });
+  const r = runHook({ session_id: "s-deep", hook_event_name: "PostToolUse", tool_name: "Read", tool_input: { file_path: join(wt, "src/a.ts") }, cwd: proj }, { CLAUDE_PROJECT_DIR: proj });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(String(JSON.parse(r.stdout).hookSpecificOutput.additionalContext), /(\/d){33} \(32 dizinden daha derinde\)/);
 });

@@ -4,7 +4,7 @@
  * graph as "not found", a test as missing. test/fault-injection.test.mjs fails every file read in turn.
  */
 
-import { closeSync, constants, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readFileSync, statSync, writeSync } from "node:fs";
+import { closeSync, constants, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 
 /**
@@ -32,20 +32,93 @@ export function present(path) {
   }
 }
 
+/** The most of a project file read: past it the file is no text a scan or a check reads whole. */
+export const READ_LIMIT = 16 * 1024 * 1024;
+
+/** The device /dev/null is, once looked up: a project file linked to it reads as empty, as Claude Code reads it. */
+let devNull = /** @type {bigint | null | undefined} */ (undefined);
+const isDevNull = (/** @type {import("node:fs").BigIntStats} */ st) => {
+  if (devNull === undefined) {
+    try {
+      devNull = statSync("/dev/null", { bigint: true }).rdev;
+    } catch {
+      devNull = null;
+    }
+  }
+  return st.isCharacterDevice() && devNull !== null && st.rdev === devNull;
+};
+
 /**
- * A file's text, or null when nothing is there; a file that is there but cannot be read (no permission, a
- * directory in its place) throws, naming the path (Node's EISDIR message names none).
+ * A file's text, or null when nothing is there; a file that is there but cannot be read throws, naming the
+ * path (Node's EISDIR message names none). A file found in the project is read only when it is a regular file
+ * (/dev/null reads as empty): it is looked at before it is opened, so a pipe is never opened (opening one would
+ * wait for a writer) and a device never read, and the open descriptor is looked at again; a directory throws
+ * EISDIR, a pipe, socket or other device ENOTREG, a file past `limit` bytes EFBIG unless `head` asks for its first
+ * `limit` bytes. A path the user named (`given`: ENNYN_CONFIG) is read as it is, whatever it is: a process
+ * substitution, /dev/stdin.
  * @param {string} path
+ * @param {{ limit?: number, head?: boolean, given?: boolean }} [opts]
  * @returns {string | null}
  */
-export function readIfThere(path) {
-  try {
-    return readFileSync(path, "utf8");
-  } catch (err) {
-    if (gone(err)) return null;
+export function readIfThere(path, { limit = READ_LIMIT, head = false, given = false } = {}) {
+  /** @param {unknown} err */
+  const named = (err) => {
     const e = /** @type {NodeJS.ErrnoException} */ (err);
     e.message = `${path} could not be read: ${e.message}`;
-    throw e;
+    return e;
+  };
+  /** @param {string} code @param {string} text */
+  const refused = (code, text) => named(Object.assign(new Error(`${code}: ${text}`), { code }));
+  if (given) {
+    try {
+      return readFileSync(path, "utf8");
+    } catch (err) {
+      if (gone(err)) return null;
+      throw named(err);
+    }
+  }
+  let st;
+  try {
+    st = statSync(path, { bigint: true });
+  } catch (err) {
+    if (gone(err)) return null;
+    throw named(err);
+  }
+  if (st.isDirectory()) throw refused("EISDIR", "illegal operation on a directory");
+  if (isDevNull(st)) return "";
+  if (!st.isFile()) throw refused("ENOTREG", "not a regular file (a pipe, a socket or a device)");
+  let fd;
+  try {
+    fd = openSync(path, "r");
+  } catch (err) {
+    if (gone(err)) return null;
+    throw named(err);
+  }
+  try {
+    // Looked at again through the descriptor: what was checked is what is read.
+    if (!fstatSync(fd).isFile()) throw refused("ENOTREG", "not a regular file (a pipe, a socket or a device)");
+    /** @type {Buffer[]} */
+    const parts = [];
+    let total = 0;
+    // Read to the end, not to the size the file had: it may grow while read, and past the limit it is refused.
+    for (;;) {
+      const part = Buffer.allocUnsafe(Math.min(64 * 1024, limit + 1 - total));
+      const n = readSync(fd, part, 0, part.length, null);
+      if (n === 0) break;
+      parts.push(part.subarray(0, n));
+      total += n;
+      if (total > limit) {
+        if (head) break;
+        throw refused("EFBIG", `larger than ${limit % (1024 * 1024) ? `${limit} bytes` : `${limit / 1024 / 1024} MB`}`);
+      }
+    }
+    const bytes = Buffer.concat(parts);
+    return (head ? bytes.subarray(0, limit) : bytes).toString("utf8");
+  } catch (err) {
+    if (/** @type {Error} */ (err).message.startsWith(`${path} could not be read: `)) throw err;
+    throw named(err);
+  } finally {
+    closeSync(fd);
   }
 }
 

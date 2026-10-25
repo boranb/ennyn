@@ -25,7 +25,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { loadConfig } from "../../../core/config.mjs";
 import { shown, t } from "../../../core/i18n.mjs";
 import { mapSideCopyPath } from "../../../side-copy/map-path.mjs";
-import { loadPathScopedRules, readRuleBody, rulesForPath } from "../rules-index.mjs";
+import { LEAVES, isLimit, loadPathScopedRules, readRuleBody, reasonText, rulesForPath } from "../rules-index.mjs";
 
 /** The file tools the hook reads a path from; hooks/hooks.json's matcher sends exactly these (test/plugin.test.mjs). */
 export const FILE_TOOLS = new Set(["Read", "Edit", "Write", "MultiEdit", "NotebookEdit"]);
@@ -74,6 +74,9 @@ export function sideCopyStatePath(projectDir, stateDir, sessionId, agentId) {
 
 /** A rule as given: its file and the text it had, so an edited rule is given again. @param {string} file @param {string} body */
 const givenKey = (file, body) => `${file}#${digest(body).slice(0, 16)}`;
+
+/** A rule link out of the project, once its note is given: said once per context, not on every file. @param {string} file */
+const outsideKey = (file) => `outside:${file}`;
 
 /** The file a given-list entry names: the key less its digest, or a plain path from before digests were kept. @param {string} entry */
 const keyFile = (entry) => (/#[0-9a-f]{16}$/.test(entry) ? entry.slice(0, -17) : entry);
@@ -172,7 +175,8 @@ export function value(name, max = PATH_SHOWN_MAX) {
  * @returns {{ text: string, quoted: boolean, cut: boolean }}
  */
 export function named(name) {
-  const plain = !shown(name, { name: true }).quoted && !/[<>]/.test(name) && bytes(name) <= NAME_SHOWN_MAX;
+  // Its own bound (NAME_SHOWN_MAX), so not shown()'s.
+  const plain = !shown(name, { name: true, max: Infinity }).quoted && !/[<>]/.test(name) && bytes(name) <= NAME_SHOWN_MAX;
   if (plain) return { text: name, quoted: false, cut: false };
   return { text: value(name, NAME_SHOWN_MAX), quoted: true, cut: bytes(json(name)) > NAME_SHOWN_MAX };
 }
@@ -195,19 +199,29 @@ const NOTE_MAX = 2000;
  * @param {number} maxBytes
  * @param {string} lang
  * @param {string[]} [unreadable]
- * @returns {{ text: string, given: Set<string> }}
+ * @param {string[]} [outside] rule links whose real path leaves the project: not followed, which the text says
+ * @param {Map<string, string>} [limits] a walk's limit reached at a path (depth, entries), shown beside it
+ * @returns {{ text: string, given: Set<string>, said: Set<string> }} `said`: the links out the text names
  */
-export function render(relPath, rules, maxBytes, lang, unreadable = []) {
+export function render(relPath, rules, maxBytes, lang, unreadable = [], outside = [], limits = new Map()) {
   // The side copy's name: no trusted text (a worktree may hold a pull request under review), always a value.
   const path = value(relPath);
   const item = (/** @type {string} */ file) => named(file).text;
   const header = t("sidecopy.header", { relPath: path }, lang);
   const top = t("sidecopy.tooLarge", { relPath: path }, lang);
+  // A path the walk stopped at says why: what below it was not read, a count of the directories left too.
+  const unreadItem = (/** @type {string} */ file) => (limits.has(file) ? `${item(file)} (${limits.get(file)})` : item(file));
   const noteWith = (/** @type {number} */ kept) =>
-    t("sidecopy.unreadable", { relPath: path, list: [...unreadable.slice(0, kept).map(item), ...(kept < unreadable.length ? [t("sidecopy.unreadableMore", { n: unreadable.length - kept }, lang)] : [])].join(", ") }, lang);
+    t("sidecopy.unreadable", { relPath: path, list: { shown: [...unreadable.slice(0, kept).map(unreadItem), ...(kept < unreadable.length ? [t("sidecopy.unreadableMore", { n: unreadable.length - kept }, lang)] : [])].join(", ") } }, lang);
   const noted = most(unreadable.length, (n) => bytes(noteWith(n)) <= NOTE_MAX);
   const note = unreadable.length ? noteWith(noted) : null;
-  const after = note ? bytes(note) + 2 : 0;
+  const outsideWith = (/** @type {number} */ kept) =>
+    t("sidecopy.outside", { list: { shown: [...outside.slice(0, kept).map(item), ...(kept < outside.length ? [t("sidecopy.unreadableMore", { n: outside.length - kept }, lang)] : [])].join(", ") } }, lang);
+  const outsideKept = most(outside.length, (n) => bytes(outsideWith(n)) <= NOTE_MAX);
+  const outsideNote = outside.length ? outsideWith(outsideKept) : null;
+  // Said: only the links the note names whole.
+  const said = new Set(outside.slice(0, outsideKept).filter((f) => !named(f).cut));
+  const after = (note ? bytes(note) + 2 : 0) + (outsideNote ? bytes(outsideNote) + 2 : 0);
   const budget = Math.min(maxBytes, CONTEXT_CAP) - after - bytes([top, ...rules.map((r) => `- ${item(r.file)}`)].join("\n")) - 2;
   /** @type {string[]} */
   const blocks = [];
@@ -229,7 +243,7 @@ export function render(relPath, rules, maxBytes, lang, unreadable = []) {
   }
   const parts = blocks.length ? [header, ...blocks] : [];
   if (listed.length) {
-    const used = (/** @type {string} */ list) => bytes([...parts, list, ...(note ? [note] : [])].join("\n\n"));
+    const used = (/** @type {string} */ list) => bytes([...parts, list, ...(note ? [note] : []), ...(outsideNote ? [outsideNote] : [])].join("\n\n"));
     const list = (/** @type {number} */ kept) => [top, ...listed.slice(0, kept).map((f) => `- ${item(f)}`), ...(kept < listed.length ? [t("sidecopy.listMore", { n: listed.length - kept }, lang)] : [])].join("\n");
     const kept = most(listed.length, (n) => used(list(n)) <= CONTEXT_CAP);
     parts.push(list(kept));
@@ -237,7 +251,8 @@ export function render(relPath, rules, maxBytes, lang, unreadable = []) {
     for (const f of listed.slice(0, kept)) if (!named(f).cut) given.add(f);
   }
   if (note) parts.push(note);
-  return { text: parts.join("\n\n"), given };
+  if (outsideNote) parts.push(outsideNote);
+  return { text: parts.join("\n\n"), given, said };
 }
 
 /** @returns {Promise<number>} exit code */
@@ -270,12 +285,21 @@ async function main() {
   if (!mapped) return 0;
 
   /** @type {string[]} */
-  const unreadable = [];
-  const matching = rulesForPath(loadPathScopedRules(projectDir, unreadable), mapped.relPath);
-  if (!matching.length && !unreadable.length) return 0;
+  const found = [];
+  /** @type {Map<string, string>} */
+  const why = new Map();
+  const matching = rulesForPath(loadPathScopedRules(projectDir, found, why), mapped.relPath);
+  // A rule link out of the project (Claude Code's own notion, CLAUDE_PROJECT_DIR) is not followed: Claude Code
+  // loads it only once the user approves external imports, which the hook cannot see. Said once per context.
+  const linkedOut = found.filter((p) => why.get(p) === LEAVES);
+  const unreadable = found.filter((p) => why.get(p) !== LEAVES);
+  /** @type {Map<string, string>} */
+  const limits = new Map(unreadable.filter((p) => isLimit(why.get(p))).map((p) => [p, reasonText(/** @type {string} */ (why.get(p)), config.language)]));
 
   const state = sideCopyStatePath(projectDir, config.paths.stateDir, input.session_id, input.agent_id);
   const emitted = readEmitted(state);
+  const outside = linkedOut.filter((p) => !emitted.has(outsideKey(p)));
+  if (!matching.length && !unreadable.length && !outside.length) return 0;
   /** @type {Array<{ file: string, body: string, changed: boolean }>} */
   const fresh = [];
   const before = (/** @type {string} */ file) => [...emitted].filter((e) => keyFile(e) === file);
@@ -285,9 +309,9 @@ async function main() {
     if (body === null) unreadable.push(file);
     else if (!emitted.has(givenKey(file, body))) fresh.push({ file, body, changed: before(file).length > 0 });
   }
-  if (!fresh.length && !unreadable.length) return 0;
+  if (!fresh.length && !unreadable.length && !outside.length) return 0;
 
-  const { text, given } = render(mapped.relPath, fresh, config.sideCopy.maxInjectBytes, config.language, unreadable);
+  const { text, given, said: saidOutside } = render(mapped.relPath, fresh, config.sideCopy.maxInjectBytes, config.language, unreadable, outside, limits);
   // Marked as given only what the text inlines or names, and only once it is written out: a rule that could not
   // be read, one in a count, or a text that never reached Claude Code comes back on the next file. One entry a
   // rule: the text it had before goes.
@@ -296,8 +320,9 @@ async function main() {
     for (const e of before(r.file)) emitted.delete(e);
     emitted.add(givenKey(r.file, r.body));
   }
+  for (const f of saidOutside) emitted.add(outsideKey(f));
   process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: text } }), (err) => {
-    if (!err && given.size) writeEmitted(state, emitted);
+    if (!err && (given.size || saidOutside.size)) writeEmitted(state, emitted);
   });
   return 0;
 }

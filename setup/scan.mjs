@@ -10,12 +10,14 @@
  * production path.
  */
 
-import { readdirSync, statSync } from "node:fs";
+import { readdirSync, realpathSync, statSync } from "node:fs";
 import { gone, present, readIfThere } from "../core/files.mjs";
 import { join, relative, resolve, posix, sep } from "node:path";
 import { git, gitError, gitMaybe, gitRun, headCommit, repoPath } from "../core/git.mjs";
 import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
-import { loadPathScopedRules, splitFrontMatter, parsePaths } from "../adapters/claude-code/rules-index.mjs";
+import { literalGlob } from "../core/glob.mjs";
+import { ends } from "../core/i18n.mjs";
+import { LEAVES, loadPathScopedRules, markdownFiles, reasonText, splitFrontMatter, parsePaths } from "../adapters/claude-code/rules-index.mjs";
 
 /** Fewer commits than this and a share says little: the default stays. */
 export const MIN_HISTORY = 30;
@@ -64,6 +66,27 @@ const COMMAND_SCRIPT = /^(test|lint|typecheck|type-check|check|verify|validate)(
 /** @param {string} s */
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/** A JSON object: not null, not a list. @param {unknown} v @returns {v is Record<string, any>} */
+const isObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+
+// The scan's output reaches the model and the terminal: a value from the project is kept to a bound, its start
+// and end with the cut said. Paths and proposals (globs, patterns) are kept whole: /ennyn:init reads and writes them.
+/** A hook event or an MCP server name. */
+const NAME_MAX = 200;
+/** A commit subject shown as an example. */
+const SUBJECT_MAX = 300;
+/** A config problem, which may quote the config. */
+const PROBLEM_MAX = 500;
+/** A literal a ban line names, offered for review.forbidden: a longer one is no text a gate would hold. */
+const LITERAL_MAX = 200;
+
+/** @param {string} s @param {number} max */
+function bounded(s, max) {
+  if (s.length <= max) return s;
+  const { head, tail, cut } = ends(s, max);
+  return `${head}…(${cut} characters cut)…${tail}`;
+}
+
 /** `type(scope)!: ` in any language; the word must not hold spaces, so "faz 8:" is not a type. */
 const TYPE_PREFIX = /^([^\s:()!]{1,24})(\([^)]*\))?!?:\s/;
 const TR_LETTER = /[çğıöşüÇĞİÖŞÜ]/;
@@ -107,6 +130,9 @@ export function commitStyle(subjects) {
 /**
  * Recent non-merge commits with their subject and touched paths. `-z` keeps
  * paths raw: without it git C-quotes names holding quotes, backslashes or tabs.
+ * Every field ends at a NUL, which no message or name holds: a commit is its
+ * hash and subject, then a status and a path per file, so a subject holding
+ * any other character (a \x01) or a name spelled like a hash shifts nothing.
  * @param {string} cwd
  * @param {number} [limit]
  * @returns {RecentCommit[]} newest first; [] outside a repository or without commits
@@ -114,15 +140,22 @@ export function commitStyle(subjects) {
 export function recentCommits(cwd, limit = RECENT_COMMITS) {
   // Outside a repository, or no commit yet: none. A broken HEAD throws.
   if (!headCommit(cwd)) return [];
-  const out = git(["log", "-z", "--no-merges", "--no-renames", `-n${limit}`, "--name-only", "--format=%x01%s"], { cwd });
-  return out
-    .split("\x01")
-    .slice(1)
-    .map((chunk) => {
-      const nul = chunk.indexOf("\0");
-      if (nul === -1) return { subject: chunk, paths: [] };
-      return { subject: chunk.slice(0, nul), paths: chunk.slice(nul + 1).replace(/^\n/, "").split("\0").filter(Boolean) };
-    });
+  const fields = git(["log", "-z", "--no-merges", "--no-renames", `-n${limit}`, "--name-status", "--format=%H%x00%s"], { cwd }).split("\0");
+  /** @type {RecentCommit[]} */
+  const out = [];
+  for (let i = 0; i + 1 < fields.length; ) {
+    if (!/^[0-9a-f]{40,64}$/.test(fields[i])) throw new Error(`git log printed a field that is no commit: ${JSON.stringify(fields[i].slice(0, 80))}`);
+    /** @type {RecentCommit} */
+    const commit = { subject: fields[i + 1], paths: [] };
+    i += 2;
+    // The list of names starts on a line of its own: its first status carries the "\n".
+    while (i + 1 < fields.length && /^[A-Z]$/.test(fields[i].replace(/^\n/, ""))) {
+      commit.paths.push(fields[i + 1]);
+      i += 2;
+    }
+    out.push(commit);
+  }
+  return out;
 }
 
 /**
@@ -174,7 +207,7 @@ export function proposeFixSubject(subjects) {
     const re = new RegExp(c.pattern);
     const hits = new Set(subjects.flatMap((s, i) => (re.test(s) ? [i] : [])));
     hitsOf.set(c.id, hits);
-    const examples = [...hits].slice(0, 3).map((i) => subjects[i]);
+    const examples = [...hits].slice(0, 3).map((i) => bounded(subjects[i], SUBJECT_MAX));
     return { id: c.id, anchored: c.anchored, pattern: c.pattern, matches: hits.size, share: n ? hits.size / n : null, examples };
   });
   const conventionalShare = n ? subjects.filter((s) => CONVENTIONAL.test(s)).length / n : null;
@@ -188,7 +221,7 @@ export function proposeFixSubject(subjects) {
   if (kept.length) {
     const union = new Set(kept.flatMap((c) => [...(hitsOf.get(c.id) ?? [])]));
     const proposal = kept.length === 1 ? kept[0].pattern : kept.map((c) => `(?:${c.pattern})`).join("|");
-    const examples = [...union].sort((a, b) => a - b).slice(0, 3).map((i) => subjects[i]);
+    const examples = [...union].sort((a, b) => a - b).slice(0, 3).map((i) => bounded(subjects[i], SUBJECT_MAX));
     const reason = union.size * 2 > n ? "majority" : "ok";
     return { ...base, proposal, pick: kept.map((c) => c.id).join("+"), matches: union.size, share: union.size / n, examples, reason };
   }
@@ -202,24 +235,94 @@ function trackedFiles(cwd) {
   return git(["-c", "core.quotePath=false", "ls-files", "-z"], { cwd }).split("\0").filter(Boolean);
 }
 
-/** @param {string} path */
-function hasGeneratedMarker(path) {
-  // Gone from the tree, or a directory git lists: no marker. There but unreadable: no answer, which the scan does not guess.
-  return GENERATED_MARKER.test((readListed(path) ?? "").slice(0, 1024));
+/**
+ * Whether a path git lists starts with a generated-file marker; null when it leads out of the repository (not
+ * read). Gone from the tree, or a directory git lists: no marker. There but unreadable: no answer, which the scan
+ * does not guess. The head only: generated output is often large, and the marker sits at the top.
+ * @param {ReturnType<typeof projectFiles>} pf @param {string} rel
+ */
+function hasGeneratedMarker(pf, rel) {
+  const text = readListed(pf, rel, { limit: 1024, head: true });
+  return text === undefined ? null : GENERATED_MARKER.test(text ?? "");
 }
 
 /**
  * A path git lists, as text: null when it is gone, or a directory (a submodule, a link to a directory),
- * which holds no text of its own. A file that is there but cannot be read throws.
- * @param {string} path
+ * which holds no text of its own; undefined when it leads out of the repository. A file that is there but
+ * cannot be read (not a regular file, past the read limit) throws.
+ * @param {ReturnType<typeof projectFiles>} pf
+ * @param {string} rel
+ * @param {{ limit?: number, head?: boolean }} [opts]
  */
-function readListed(path) {
+function readListed(pf, rel, opts) {
   try {
-    return readIfThere(path);
+    return pf.read(rel, opts);
   } catch (err) {
     if (/** @type {NodeJS.ErrnoException} */ (err).code === "EISDIR") return null;
     throw err;
   }
+}
+
+/**
+ * The scan's reads of the project, by one rule: a path is read only while its real path stays in the
+ * repository. One that leaves it, through a link anywhere along it (`.claude`, CLAUDE.md, package.json, an
+ * import's directory), is never read and goes into `outside`, named by its path in the repository: what it
+ * holds is not the project's to show. Files are read as readIfThere reads them (regular only, /dev/null as
+ * empty, up to the read limit).
+ * @param {string} cwd
+ */
+export function projectFiles(cwd) {
+  /** @type {string | null} */
+  let top = null;
+  try {
+    top = realpathSync.native(cwd);
+  } catch (err) {
+    if (!gone(err)) throw err;
+  }
+  /** @type {Set<string>} */
+  const outside = new Set();
+  /** @param {string} rel */
+  const inside = (rel) => {
+    const real = realpathSync.native(join(cwd, rel));
+    return real === top || real.startsWith(/** @type {string} */ (top).endsWith(sep) ? /** @type {string} */ (top) : top + sep);
+  };
+  /**
+   * Whether `rel` stays in the repository; one that leaves is put in `outside` by the first part of it that
+   * does (the link: `.claude`, not each file under it). Nothing there stays: its read says so.
+   * @param {string} rel
+   */
+  const stays = (rel) => {
+    if (top === null) return true;
+    try {
+      if (inside(rel)) return true;
+    } catch (err) {
+      if (gone(err)) return true;
+      throw err;
+    }
+    const parts = rel.split("/");
+    for (let i = 1; i <= parts.length; i++) {
+      const prefix = parts.slice(0, i).join("/");
+      if (i === parts.length || !inside(prefix)) {
+        outside.add(prefix);
+        break;
+      }
+    }
+    return false;
+  };
+  return {
+    cwd,
+    outside,
+    stays,
+    /**
+     * @param {string} rel @param {{ limit?: number, head?: boolean }} [opts]
+     * @returns {string | null | undefined} null: nothing there; undefined: it leads out of the repository
+     */
+    read: (rel, opts) => (stays(rel) ? readIfThere(join(cwd, rel), opts) : undefined),
+    /** @param {string} rel */
+    present: (rel) => stays(rel) && present(join(cwd, rel)),
+    /** @param {string} rel */
+    isFile: (rel) => stays(rel) && isFile(join(cwd, rel)),
+  };
 }
 
 /**
@@ -238,11 +341,15 @@ export function churnPaths(commits, cwd, re) {
   const counts = new Map();
   for (const c of commits) for (const p of new Set(c.paths)) counts.set(p, (counts.get(p) ?? 0) + 1);
   const min = Math.max(10, Math.ceil(n / 4));
+  const pf = projectFiles(cwd);
   const paths = [...counts]
     .filter(([p, c]) => c >= min && !re.exclude.test(p) && !re.test.test(p))
     .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
     .slice(0, MAX_LISTED)
-    .map(([path, c]) => ({ path, commits: c, share: c / n, generatedMarker: hasGeneratedMarker(join(cwd, path)), excludePattern: `^${escapeRe(path)}$` }));
+    .map(([path, c]) => {
+      const marker = hasGeneratedMarker(pf, path);
+      return { path, commits: c, share: c / n, generatedMarker: marker === true, ...(marker === null ? { outside: true } : {}), excludePattern: `^${escapeRe(path)}$` };
+    });
   return { commits: n, min, paths };
 }
 
@@ -284,9 +391,10 @@ export function riskyPaths(files, re, limit = MAX_LISTED) {
     if (i !== -1) {
       const dir = parts.slice(0, i + 1).join("/");
       const prev = found.get(dir);
-      found.set(dir, { files: (prev?.files ?? 0) + 1, glob: `${dir}/**` });
+      // A name holding glob syntax (`app/[locale]`, `src/{legacy}`) is written so the glob names it, not a class.
+      found.set(dir, { files: (prev?.files ?? 0) + 1, glob: `${literalGlob(dir)}/**` });
     } else if (RISKY_NAME.test(parts[parts.length - 1].replace(/\.[^.]*$/, ""))) {
-      found.set(f, { files: 1, glob: f });
+      found.set(f, { files: 1, glob: literalGlob(f) });
     }
   }
   return [...found.keys()]
@@ -299,18 +407,25 @@ export function riskyPaths(files, re, limit = MAX_LISTED) {
  * Files that read like a roadmap or backlog, with their checkbox counts.
  * @param {string} cwd
  * @param {string[]} files
+ * @returns {{ path: string, absent?: boolean, outside?: boolean, open: number, done: number, lines: number }[]}
  */
 export function roadmapFiles(cwd, files) {
+  const pf = projectFiles(cwd);
   return files
     .filter((f) => (ROADMAP_FILE.test(f) || ROADMAP_DOC.test(f) || ROADMAP_DIR.test(f)) && !/(^|\/)archive\//i.test(f))
     .slice(0, MAX_LISTED * 2)
     .map((path) => {
-      // Listed by git but gone here, or a submodule: counts stay zero. There but unreadable: the scan fails, saying which.
-      const text = readListed(join(cwd, path)) ?? "";
+      // Listed by git but not in the work tree (a sparse checkout), or a submodule: nothing read, which is said
+      // (`absent`), never "0 lines"; one that leads out of the repository is not read (`outside`). There but
+      // unreadable: the scan fails, saying which.
+      const listed = readListed(pf, path);
+      const text = listed ?? "";
       return {
         path,
-        open: (text.match(/^\s*[-*+] \[ \]/gm) ?? []).length,
-        done: (text.match(/^\s*[-*+] \[[xX]\]/gm) ?? []).length,
+        ...(listed === null ? { absent: true } : listed === undefined ? { outside: true } : {}),
+        // The indent holds no line break: `\s*` would run over every blank line below each one, the square of a run.
+        open: (text.match(/^[^\S\n\r\u2028\u2029]*[-*+] \[ \]/gm) ?? []).length,
+        done: (text.match(/^[^\S\n\r\u2028\u2029]*[-*+] \[[xX]\]/gm) ?? []).length,
         lines: text === "" ? 0 : text.split("\n").length,
       };
     });
@@ -320,61 +435,107 @@ export function roadmapFiles(cwd, files) {
 function githubRepo(cwd) {
   const url = gitMaybe(["remote", "get-url", "origin"], { cwd, absent: [2] }) ?? "";
   const m = /github\.com[:/]([^/\s]+)\/([^/\s]+?)(\.git)?\/?$/.exec(url);
-  return m ? `${m[1]}/${m[2]}` : null;
+  return m ? bounded(`${m[1]}/${m[2]}`, NAME_MAX) : null;
 }
 
 /**
- * Path-scoped rule files; a rule file or directory that cannot be read fails the scan, never a smaller count.
+ * Path-scoped rule files inside the repository, and the rule links out of it apart (`linkedOut`, not followed,
+ * so the side-copy hook does not give their rules); a rule file or directory that cannot be read fails the
+ * scan, never a smaller count.
  * @param {string} cwd
  */
 function countRules(cwd) {
   /** @type {string[]} */
   const unreadable = [];
-  const n = loadPathScopedRules(cwd, unreadable).length;
-  if (unreadable.length) throw new Error(`path-scoped rules could not be read: ${unreadable.join(", ")}`);
-  return n;
+  /** @type {Map<string, string>} */
+  const why = new Map();
+  const n = loadPathScopedRules(cwd, unreadable, why).length;
+  // A link out of the repository is not followed (agentSetup names it in `outside`) and is no failure: counted
+  // apart, as rules the side-copy hook does not give.
+  const failed = unreadable.filter((p) => why.get(p) !== LEAVES);
+  if (failed.length) throw new Error(`path-scoped rules not read: ${failed.map((p) => `${p} (${reasonText(/** @type {string} */ (why.get(p)), "en")})`).join(", ")}`);
+  return { n, linkedOut: unreadable.length - failed.length };
 }
 
 /**
- * Test, lint and mutation commands the repository declares at its root.
+ * What was not measured, and why: a catalog key (`scan.why.<reason>`), so a report reads in its language.
+ * @typedef {{ path?: string, reason: string, name?: string }} Unmeasured
+ */
+
+/** Files a test or lint command is read from, and those a mutation tool is. */
+const COMMAND_SOURCES = ["package.json", "Makefile", "scripts/validate.sh", "scripts/test.sh", "scripts/check.sh", "scripts/ci.sh", "pyproject.toml", "pytest.ini", "setup.cfg", "go.mod", "Cargo.toml"];
+const MUTATION_SOURCES = ["package.json", "pyproject.toml", "pytest.ini", "setup.cfg", ".cargo/mutants.toml", "stryker.conf.js", "stryker.conf.mjs", "stryker.conf.json", "stryker.config.js", "stryker.config.mjs", "stryker.config.json"];
+
+/**
+ * Test, lint and mutation commands the repository declares at its root. What a file not read would have
+ * declared is unknown, not nothing: `unmeasured.commands` (and `unmeasured.mutation`, when no tool was found
+ * elsewhere) names each such file and why, and what the other files declare is still listed. `unreadable`
+ * names a package.json that does not parse; `outside` the files that lead out of the repository.
  * @param {string} cwd
+ * @returns {{ commands: string[], mutation: string | null, unreadable: string[], unmeasured: { commands?: Unmeasured[], mutation?: Unmeasured[] }, outside: string[] }}
  */
 export function projectCommands(cwd) {
+  const pf = projectFiles(cwd);
   /** @type {string[]} */
   const commands = [];
   /** @type {string | null} */
   let mutation = null;
+  /** @type {string[]} */
+  const unreadable = [];
+  /** @type {Map<string, { reason: string, name?: string }>} a declaring file not read, and why (a catalog key) */
+  const unread = new Map();
   // No such file declares nothing; one that is there but cannot be read is no answer: the scan fails.
-  const read = (/** @type {string} */ name) => readIfThere(join(cwd, name));
+  const read = (/** @type {string} */ name) => pf.read(name) ?? null;
   const pkg = read("package.json");
-  if (pkg) {
+  if (pkg !== null) {
+    /** @type {unknown} */
+    let json;
     try {
-      const scripts = JSON.parse(pkg)?.scripts;
-      if (scripts && typeof scripts === "object") {
-        for (const name of Object.keys(scripts).sort()) {
-          if (COMMAND_SCRIPT.test(name)) commands.push(name === "test" ? "npm test" : `npm run ${name}`);
-          if (mutation === null && /stryker/.test(String(scripts[name]))) mutation = `npm run ${name}`;
-        }
-      }
+      // npm skips a byte order mark.
+      json = JSON.parse(pkg.replace(/^\uFEFF/, ""));
     } catch {
-      // A broken package.json declares nothing.
+      unreadable.push("package.json");
+      unread.set("package.json", { reason: "notJson" });
+    }
+    const scripts = isObject(json) ? json.scripts : undefined;
+    if (isObject(scripts)) {
+      for (const name of Object.keys(scripts).sort()) {
+        if (COMMAND_SCRIPT.test(name)) commands.push(name === "test" ? "npm test" : `npm run ${name}`);
+        if (mutation !== null || !/stryker/.test(String(scripts[name]))) continue;
+        // Any name runs a stryker script: quoted for the shell the command is run by (`a; b` is one name). One
+        // npm would read as an option (`-x`), or no shell can pass (a NUL), names no command: unmeasured.
+        const word = shellWord(name);
+        if (word === null) unread.set("package.json", { reason: "scriptName", name });
+        else mutation = `npm run ${word}`;
+      }
     }
   }
   const make = read("Makefile");
   if (make) for (const m of make.matchAll(/^(test|check|lint)\s*:/gm)) commands.push(`make ${m[1]}`);
   // A project's own gate script often runs everything the commands above run, and more.
-  for (const name of ["validate", "test", "check", "ci"]) if (present(join(cwd, "scripts", `${name}.sh`))) commands.push(`./scripts/${name}.sh`);
+  for (const name of ["validate", "test", "check", "ci"]) if (pf.present(`scripts/${name}.sh`)) commands.push(`./scripts/${name}.sh`);
   const py = (read("pyproject.toml") ?? "") + (read("pytest.ini") ?? "") + (read("setup.cfg") ?? "");
   if (/pytest/.test(py)) commands.push("pytest");
   if (/\[tool\.mutmut\]|\[mutmut\]/.test(py)) mutation ??= "mutmut run";
-  if (present(join(cwd, "go.mod"))) commands.push("go test ./...");
-  if (present(join(cwd, "Cargo.toml"))) commands.push("cargo test");
-  if (present(join(cwd, ".cargo", "mutants.toml"))) mutation ??= "cargo mutants";
-  if (mutation === null && ["stryker.conf.js", "stryker.conf.mjs", "stryker.conf.json", "stryker.config.js", "stryker.config.mjs", "stryker.config.json"].some((f) => present(join(cwd, f)))) {
-    mutation = "npx stryker run";
-  }
-  return { commands: [...new Set(commands)].slice(0, 8), mutation };
+  if (pf.present("go.mod")) commands.push("go test ./...");
+  if (pf.present("Cargo.toml")) commands.push("cargo test");
+  if (pf.present(".cargo/mutants.toml")) mutation ??= "cargo mutants";
+  if (mutation === null && MUTATION_SOURCES.filter((f) => f.startsWith("stryker.")).some((f) => pf.present(f))) mutation = "npx stryker run";
+  for (const name of pf.outside) unread.set(name, { reason: "outside" });
+  const why = (/** @type {string[]} */ from) => [...unread].filter(([f]) => from.includes(f)).map(([path, u]) => ({ path, ...u }));
+  /** @type {{ commands?: Unmeasured[], mutation?: Unmeasured[] }} */
+  const unmeasured = {};
+  if (why(COMMAND_SOURCES).length) unmeasured.commands = why(COMMAND_SOURCES);
+  if (mutation === null && why(MUTATION_SOURCES).length) unmeasured.mutation = why(MUTATION_SOURCES);
+  return { commands: [...new Set(commands)].slice(0, 8), mutation, unreadable, unmeasured, outside: [...pf.outside].sort() };
 }
+
+/**
+ * A word as a POSIX shell reads it back: as it is when it holds nothing the shell parts or expands, else in
+ * single quotes; null for one npm would take for an option (a leading `-`) or no shell can pass (a NUL).
+ * @param {string} s
+ */
+const shellWord = (s) => (s.startsWith("-") || s.includes("\0") ? null : /^[\w.:@/+-]+$/.test(s) ? s : `'${s.replace(/'/g, "'\\''")}'`);
 
 /** Instruction files Claude Code loads in every session; checked on disk, as CLAUDE.local.md is never tracked. */
 const ALWAYS_FILES = ["CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"];
@@ -387,7 +548,9 @@ export const REVIEWER = /(^|[-_])(review|checker|validator|verif|critic|pentest|
 // A line that sets a commit rule names the message, its language, its length or a ban (score 2); one
 // that only starts with "commit" (a step heading) scores 1 and fills what is left. A line that only
 // mentions commits, or SQL ("COMMIT;", BEGIN / ROLLBACK), is left out.
-const RULE_START = /^[\s\-*>#`|]*(\d+[.)]\s*)?[\s*`_]*commit/i;
+// The markers before it are taken whole, as an atomic group would (`(?=(…))\1`): the two classes share
+// spaces, `*` and backticks, and backtracking between them costs the square of a long run of them.
+const RULE_START = /^(?=([\s\-*>#`|]*))\1(\d+[.)])?[\s*`_]*commit/i;
 const RULE_WORDS = /(mesaj|message|konu|subject|format|\bdil\b|language|türkçe|turkish|english|ingilizce|tek satır|one[- ]line|yasak|never|asla|co-authored|no-verify)/i;
 const SQL = /\bCOMMIT\s*;|\b(BEGIN|ROLLBACK)\b/;
 
@@ -401,71 +564,63 @@ function isFile(path) {
   }
 }
 
-/** A file's text; null when there is no such file. One that could not be read throws, naming it: it is no empty file. */
-const readText = readIfThere;
-
 /**
- * A JSON file's top-level object: `null` when absent, `"unreadable"` when it does not parse.
- * @param {string} path
+ * A JSON file's top-level object: `null` when absent or leading out of the repository (named in `outside`),
+ * `"unreadable"` when it does not parse.
+ * @param {ReturnType<typeof projectFiles>} pf
+ * @param {string} rel
  * @returns {Record<string, any> | null | "unreadable"}
  */
-function readJson(path) {
-  const text = readText(path);
-  if (text === null) return null;
+function readJson(pf, rel) {
+  const text = pf.read(rel);
+  if (text === null || text === undefined) return null;
   try {
     const v = JSON.parse(text);
-    return v && typeof v === "object" && !Array.isArray(v) ? v : "unreadable";
+    return isObject(v) ? v : "unreadable";
   } catch {
     return "unreadable";
   }
 }
 
 /**
- * Entries of a directory, following symlinks (a linked skill or agent counts), NFC-normalized.
- * @param {string} dir @param {(name: string) => boolean} keep
+ * Entries of a directory of the repository, following symlinks that stay in it (a linked skill or agent
+ * counts; one whose real path leaves the repository is named in `outside`), NFC-normalized.
+ * @param {ReturnType<typeof projectFiles>} pf @param {string} rel @param {(name: string) => boolean} keep
  */
-function names(dir, keep) {
+function names(pf, rel, keep) {
+  if (!pf.stays(rel)) return [];
   let list = [];
   try {
-    list = readdirSync(dir);
+    list = readdirSync(join(pf.cwd, rel));
   } catch (err) {
     // No such directory holds nothing; one that cannot be listed is no empty one.
     if (gone(err)) return [];
     throw err;
   }
-  return list.filter((n) => present(join(dir, n)) && keep(n)).map((n) => n.normalize("NFC")).sort();
+  return list.filter((n) => pf.present(`${rel}/${n}`) && keep(n)).map((n) => n.normalize("NFC")).sort();
 }
 
 /**
- * Markdown files below a directory, relative, "/"-separated; linked directories followed.
- * A walk of its own: readdirSync's recursive option is missing in Node 20.0.
- * @param {string} dir @param {string} [rel] @param {number} [depth]
+ * Markdown files below a directory, relative, "/"-separated: the side-copy hook's walk (linked directories
+ * followed inside the repository, each real directory once, so a link back to a parent lists nothing twice).
+ * A link out of the repository goes into `outside` (repository-relative); anything else that was not read
+ * fails the scan with the reason, never a shorter list.
+ * @param {ReturnType<typeof projectFiles>} pf the repository's reader: a link out is named by it, as every read's is
+ * @param {string} rel the directory, in it
  * @returns {string[]}
  */
-function markdownBelow(dir, rel = "", depth = 0) {
-  let entries = [];
-  try {
-    entries = readdirSync(join(dir, rel));
-  } catch (err) {
-    if (gone(err)) return [];
-    throw err;
-  }
+function markdownBelow(pf, rel) {
+  const root = pf.cwd;
+  const dir = join(root, rel);
   /** @type {string[]} */
-  const out = [];
-  for (const name of entries) {
-    const path = rel ? `${rel}/${name}` : name;
-    let st;
-    try {
-      st = statSync(join(dir, path));
-    } catch (err) {
-      // A link to nothing is no file; one that cannot be looked at may be.
-      if (gone(err)) continue;
-      throw err;
-    }
-    if (st.isDirectory() && depth < 8) out.push(...markdownBelow(dir, path, depth + 1));
-    else if (st.isFile() && name.endsWith(".md")) out.push(path);
-  }
-  return out.sort();
+  const unreadable = [];
+  /** @type {Map<string, string>} */
+  const why = new Map();
+  const files = markdownFiles(dir, root, unreadable, why);
+  const failed = unreadable.filter((p) => why.get(p) !== LEAVES);
+  if (failed.length) throw new Error(failed.map((p) => `${p} could not be read: ${reasonText(/** @type {string} */ (why.get(p)), "en")}`).join("; "));
+  for (const p of unreadable) if (why.get(p) === LEAVES) pf.stays(relative(root, p).split(sep).join("/"));
+  return files.map((f) => relative(dir, f).split(sep).join("/"));
 }
 
 /** @param {string} text */
@@ -497,32 +652,44 @@ const NO_LITERAL = /^[\s>*+-]*(\d+[.)]\s*)?(\*\*)?no\s+`/i;
 const CODE_SPAN = /`([^`\n]+)`/g;
 
 /**
+ * The lines of a Markdown text outside its fenced code blocks, fence lines left out: a block opens at a line
+ * that starts, after its indentation, with three or more backticks or tildes, and ends at a line of the same
+ * character, at least as many, and nothing after them; one left open runs to the end, as CommonMark reads
+ * it. One reader for the ban lines and the imports, read line by line: a pattern over the whole text costs
+ * the square of a run of blank lines.
+ * @param {string} text
+ * @returns {string[]}
+ */
+export function outsideFences(text) {
+  /** @type {string[]} */
+  const out = [];
+  let fence = "";
+  for (const raw of text.split("\n")) {
+    const l = raw.trim();
+    const mark = /^(`{3,}|~{3,})/.exec(l)?.[1];
+    if (mark && !fence) fence = mark;
+    else if (mark && mark[0] === fence[0] && mark.length >= fence.length && l.slice(mark.length).trim() === "") fence = "";
+    else if (!fence) out.push(raw);
+  }
+  return out;
+}
+
+/**
  * Lines that forbid a literal they name in a code span ("never use `console.log`", "`eval` yasak"): prose a
- * grep gate can hold (review.forbidden). Lines inside code blocks are examples, not rules; a block ends at a
- * fence of its own character and at least its length. A literal shorter than two characters names nothing a
- * gate could find. At most three literals a line.
+ * grep gate can hold (review.forbidden). Lines inside code blocks are examples, not rules (outsideFences). A
+ * literal shorter than two characters names nothing a gate could find, and one past LITERAL_MAX is no text a
+ * gate would hold. At most three literals a line.
  * @param {string} text
  * @returns {{ line: string, literals: string[] }[]}
  */
 export function banLines(text) {
   /** @type {{ line: string, literals: string[] }[]} */
   const out = [];
-  let fence = "";
-  for (const raw of text.split("\n")) {
+  for (const raw of outsideFences(text)) {
     const l = raw.trim();
-    const mark = /^(`{3,}|~{3,})/.exec(l)?.[1];
-    if (mark && !fence) {
-      fence = mark;
-      continue;
-    }
-    if (mark && mark[0] === fence[0] && mark.length >= fence.length && l.slice(mark.length).trim() === "") {
-      fence = "";
-      continue;
-    }
-    if (fence) continue;
     const prose = l.replace(CODE_SPAN, " ");
     if (!BAN_EN.test(prose) && !BAN_TR.test(prose) && !BAN_TR_IMPERATIVE.test(prose) && !NO_LITERAL.test(l)) continue;
-    const literals = [...l.matchAll(CODE_SPAN)].map((m) => m[1].trim()).filter((s) => s.length >= 2);
+    const literals = [...l.matchAll(CODE_SPAN)].map((m) => m[1].trim()).filter((s) => s.length >= 2 && s.length <= LITERAL_MAX);
     if (!literals.length) continue;
     out.push({ line: l.length > 160 ? l.slice(0, 157) + "…" : l, literals: [...new Set(literals)].slice(0, 3) });
   }
@@ -594,25 +761,29 @@ export function banMatches(cwd, instructions, gates, skip = []) {
 }
 
 /**
- * Files a Claude Code instruction file imports with `@path`, outside code blocks and code spans,
+ * Files a Claude Code instruction file imports with `@path`, outside code blocks (outsideFences) and code spans,
  * resolved against the importing file; a path that leaves the repository (`..`, `~`, absolute) is not
  * the repository's.
  * @param {string} text @param {string} from repository-relative path of the importing file
  * @returns {string[]}
  */
 export function importsOf(text, from) {
-  const prose = text.replace(/^\s*(```|~~~)[\s\S]*?^\s*\1.*$/gm, "").replace(/`[^`\n]*`/g, "");
   const dir = posix.dirname(from);
-  /** @type {string[]} */
-  const out = [];
-  for (const m of prose.matchAll(/(?:^|\s)@([^\s`<>]+)/g)) {
-    const raw = m[1].replace(/[.,;:)]+$/, "");
-    if (raw.startsWith("~") || raw.startsWith("/")) continue;
-    const target = posix.normalize(posix.join(dir, raw));
-    if (target.startsWith("..") || out.includes(target)) continue;
-    out.push(target);
+  /** @type {Set<string>} */
+  const out = new Set();
+  for (const line of outsideFences(text)) {
+    for (const m of line.replace(/`[^`\n]*`/g, "").matchAll(/(?:^|\s)@([^\s`<>]+)/g)) {
+      // Trailing punctuation off, read from the end: a pattern anchored at the end tries every start (a run of
+      // dots before a letter costs its square).
+      let end = m[1].length;
+      while (end > 0 && ".,;:)".includes(m[1][end - 1])) end--;
+      const raw = m[1].slice(0, end);
+      if (raw.startsWith("~") || raw.startsWith("/")) continue;
+      const target = posix.normalize(posix.join(dir, raw));
+      if (!target.startsWith("..")) out.add(target);
+    }
   }
-  return out;
+  return [...out];
 }
 
 /**
@@ -626,6 +797,8 @@ export function importsOf(text, from) {
  * @param {string[]} files tracked files (nested CLAUDE.md / AGENTS.md are found there)
  */
 export function agentSetup(cwd, files) {
+  // Every read goes through one rule: what leads out of the repository is named in `outside`, never read.
+  const pf = projectFiles(cwd);
   /** @type {Map<string, "always" | "on-demand" | "other">} */
   const kinds = new Map();
   const rank = { always: 0, "on-demand": 1, other: 2 };
@@ -635,9 +808,9 @@ export function agentSetup(cwd, files) {
     if (!prev || rank[loads] < rank[prev]) kinds.set(path, loads);
   };
   for (const path of ALWAYS_FILES) put(path, "always");
-  for (const f of markdownBelow(join(cwd, ".claude", "rules"))) {
+  for (const f of markdownBelow(pf, ".claude/rules")) {
     const path = `.claude/rules/${f}`;
-    const { frontMatter } = splitFrontMatter(readText(join(cwd, path)) ?? "");
+    const { frontMatter } = splitFrontMatter(pf.read(path) ?? "");
     const patterns = frontMatter === null ? null : parsePaths(frontMatter);
     put(path, patterns && patterns.length ? "on-demand" : "always");
   }
@@ -652,9 +825,10 @@ export function agentSetup(cwd, files) {
     const next = [];
     for (const from of frontier) {
       const loads = /** @type {"always" | "on-demand"} */ (kinds.get(from));
-      for (const target of importsOf(readText(join(cwd, from)) ?? "", from)) {
-        // Claude Code imports files: an @ that names a directory (@docs/) imports nothing.
-        if (!isFile(join(cwd, target)) || (kinds.get(target) && rank[/** @type {"always" | "on-demand" | "other"} */ (kinds.get(target))] <= rank[loads])) continue;
+      for (const target of importsOf(pf.read(from) ?? "", from)) {
+        // Claude Code imports files: an @ that names a directory (@docs/) imports nothing; one through a link out
+        // of the repository is named, not read.
+        if (!pf.isFile(target) || (kinds.get(target) && rank[/** @type {"always" | "on-demand" | "other"} */ (kinds.get(target))] <= rank[loads])) continue;
         put(target, loads);
         next.push(target);
       }
@@ -663,25 +837,34 @@ export function agentSetup(cwd, files) {
   }
   const candidates = [...kinds].map(([path, loads]) => ({ path, loads }));
   const instructions = candidates.flatMap(({ path, loads }) => {
-    const text = readText(join(cwd, path));
-    return text === null ? [] : [{ path, loads, bytes: Buffer.byteLength(text, "utf8"), commitLines: commitRuleLines(text), banLines: banLines(text) }];
+    const text = pf.read(path);
+    return text === null || text === undefined ? [] : [{ path, loads, bytes: Buffer.byteLength(text, "utf8"), commitLines: commitRuleLines(text), banLines: banLines(text) }];
   });
   const size = { always: 0, onDemand: 0, other: 0 };
   for (const i of instructions) size[i.loads === "always" ? "always" : i.loads === "on-demand" ? "onDemand" : "other"] += i.bytes;
 
-  const skills = names(join(cwd, ".claude", "skills"), (n) => present(join(cwd, ".claude", "skills", n, "SKILL.md")));
-  const agents = names(join(cwd, ".claude", "agents"), (n) => n.endsWith(".md")).map((n) => n.replace(/\.md$/, ""));
-  const commands = markdownBelow(join(cwd, ".claude", "commands")).map((f) => f.slice(0, -3).normalize("NFC"));
+  const skills = names(pf, ".claude/skills", (n) => pf.present(`.claude/skills/${n}/SKILL.md`));
+  const agents = names(pf, ".claude/agents", (n) => n.endsWith(".md")).map((n) => n.replace(/\.md$/, ""));
+  const commands = markdownBelow(pf, ".claude/commands").map((f) => f.slice(0, -3).normalize("NFC"));
   /** @type {string[]} */
   const unreadable = [];
   /** @type {Set<string>} */
   const events = new Set();
   for (const path of [".claude/settings.json", ".claude/settings.local.json"]) {
-    const json = readJson(join(cwd, path));
-    if (json === "unreadable") unreadable.push(path);
-    else for (const e of Object.keys(json?.hooks ?? {})) events.add(e);
+    const json = readJson(pf, path);
+    // A hooks value that is no object holds no events Claude Code runs: not read, said ("x" is no events "0"…).
+    if (json === "unreadable" || (json?.hooks !== undefined && !isObject(json.hooks))) unreadable.push(path);
+    else {
+      for (const [e, matchers] of Object.entries(json?.hooks ?? {})) {
+        // A list of matchers, each an object holding a list of hooks; any other shape is said, not dropped.
+        if (!Array.isArray(matchers) || !matchers.every((m) => isObject(m) && Array.isArray(m.hooks))) unreadable.push(`${path} hooks.${bounded(e, NAME_MAX)}`);
+        // An event is a hook only when one of its matchers holds a hook: `"Stop": []` runs nothing.
+        else if (matchers.some((m) => m.hooks.length)) events.add(bounded(e, NAME_MAX));
+      }
+    }
   }
-  const mcp = readJson(join(cwd, ".mcp.json"));
+  const mcpJson = readJson(pf, ".mcp.json");
+  const mcp = mcpJson !== "unreadable" && mcpJson?.mcpServers !== undefined && !isObject(mcpJson.mcpServers) ? "unreadable" : mcpJson;
   if (mcp === "unreadable") unreadable.push(".mcp.json");
   return {
     instructions,
@@ -690,8 +873,9 @@ export function agentSetup(cwd, files) {
     agents,
     commands: commands.slice(0, 20),
     hooks: [...events].sort(),
-    mcpServers: mcp === "unreadable" ? [] : Object.keys(mcp?.mcpServers ?? {}).sort(),
+    mcpServers: mcp === "unreadable" ? [] : Object.keys(mcp?.mcpServers ?? {}).map((n) => bounded(n, NAME_MAX)).sort(),
     unreadable,
+    outside: [...pf.outside].sort(),
     overlaps: {
       cycle: [...skills.filter((s) => CYCLE_SKILL.test(s)), ...commands.filter((c) => CYCLE_SKILL.test(c.split("/").pop() ?? "")).map((c) => `/${c}`)],
       reviewers: agents.filter((a) => REVIEWER.test(a)),
@@ -728,23 +912,37 @@ export function scanProject({ cwd, env = process.env }) {
   const graphPath = resolve(cwd, config.paths.graph);
   const handoffPath = resolve(cwd, config.paths.handoff);
   const setup = agentSetup(cwd, files);
+  const declared = projectCommands(cwd);
+  const churn = churnPaths(commits, cwd, patterns.re);
+  const roadmap = roadmapFiles(cwd, files);
+  const rules = countRules(cwd);
+  // What was not measured is named here with why; null in a field means none.
+  /** @type {Record<string, Unmeasured[]>} */
+  const unmeasured = { ...declared.unmeasured };
+  if (!repo) unmeasured.bans = [{ reason: "noRepo" }];
   return {
     repository: repo,
-    config: { path: configPath, loaded, problems },
+    config: { path: configPath, loaded, problems: problems.map((p) => bounded(p, PROBLEM_MAX)) },
     metrics: { excludeRe: patterns.excludeRe, testRe: patterns.testRe },
     graph: { path: graphPath, exists: present(graphPath), exports: config.graph.exports },
     handoff: { path: handoffPath, exists: present(handoffPath) },
     fixSubject: { current: config.metrics.fixSubject, ...proposeFixSubject(productionSubjects(commits, patterns.re)) },
     commitStyle: commitStyle(commits.map((c) => c.subject)),
-    churn: churnPaths(commits, cwd, patterns.re),
+    churn,
     tests: testLayout(files, patterns.testRe),
     risky: riskyPaths(files, patterns.re),
-    roadmap: roadmapFiles(cwd, files),
+    roadmap,
     github: repo ? githubRepo(cwd) : null,
-    pathScopedRules: countRules(cwd),
+    pathScopedRules: rules.n,
+    pathScopedRulesLinkedOut: rules.linkedOut,
     agentSetup: setup,
-    // Outside a repository there is no index to count in: the lines are listed, their matches unmeasured.
-    bans: repo ? banMatches(cwd, setup.instructions, config.review.forbidden, configPath ? [relative(cwd, configPath).split(sep).join("/")] : []) : null,
-    ...projectCommands(cwd),
+    // Outside a repository there is no index to count in: the lines are listed in agentSetup, `unmeasured` says why.
+    bans: repo ? banMatches(cwd, setup.instructions, config.review.forbidden, configPath ? [relative(cwd, configPath).split(sep).join("/")] : []) : [],
+    commands: declared.commands,
+    mutation: declared.mutation,
+    unreadable: declared.unreadable,
+    unmeasured,
+    // Every path a reader met that leads out of the repository: named, never read.
+    outside: [...new Set([...setup.outside, ...declared.outside, ...churn.paths.filter((p) => p.outside).map((p) => p.path), ...roadmap.filter((r) => r.outside).map((r) => r.path)])].sort(),
   };
 }

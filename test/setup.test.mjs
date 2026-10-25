@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, mkdirSync, symlinkSync, chmodSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, symlinkSync, chmodSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, delimiter } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -219,10 +219,40 @@ test("commands: entry points and fast variants only; mutation from a stryker scr
   assert.deepEqual(projectCommands(dir), {
     commands: ["npm run lint", "npm test", "npm run validate:fast", "./scripts/validate.sh", "go test ./..."],
     mutation: "npm run mut",
+    unreadable: [],
+    unmeasured: {},
+    outside: [],
   });
+  // One that does not parse declares what is unknown, which is said; npm skips a byte order mark, and so does the scan.
   const empty = mkdtempSync(join(tmpdir(), "en-cmd0-"));
   put(empty, { "package.json": "{ broken" });
-  assert.deepEqual(projectCommands(empty), { commands: [], mutation: null });
+  assert.deepEqual(projectCommands(empty), { commands: [], mutation: null, unreadable: ["package.json"], unmeasured: { commands: [{ path: "package.json", reason: "notJson" }], mutation: [{ path: "package.json", reason: "notJson" }] }, outside: [] });
+  // What the other files declare is still known (the review's case): only package.json's part is unmeasured.
+  put(empty, { Makefile: "test:\n\ttrue\n", "go.mod": "module x\n", "stryker.conf.json": "{}" });
+  assert.deepEqual(projectCommands(empty), { commands: ["make test", "go test ./..."], mutation: "npx stryker run", unreadable: ["package.json"], unmeasured: { commands: [{ path: "package.json", reason: "notJson" }] }, outside: [] });
+  // A stryker script whose name npm would take for an option, or no shell could pass, names no command.
+  const dash = mkdtempSync(join(tmpdir(), "en-cmd-dash-"));
+  put(dash, { "package.json": JSON.stringify({ scripts: { "--prefix=/elsewhere": "stryker run" } }) });
+  assert.equal(projectCommands(dash).mutation, null);
+  assert.deepEqual(projectCommands(dash).unmeasured.mutation, [{ path: "package.json", reason: "scriptName", name: "--prefix=/elsewhere" }]);
+  // A script name the shell would read as more than one word is quoted: `mutate; touch x` is one name.
+  const shell = mkdtempSync(join(tmpdir(), "en-cmd-shell-"));
+  put(shell, { "package.json": JSON.stringify({ scripts: { "mutate; touch x": "stryker run" } }) });
+  assert.equal(projectCommands(shell).mutation, "npm run 'mutate; touch x'");
+  put(shell, { "package.json": JSON.stringify({ scripts: { "it's": "stryker run" } }) });
+  assert.equal(projectCommands(shell).mutation, "npm run 'it'\\''s'");
+  put(shell, { "package.json": JSON.stringify({ scripts: { "test:mutation": "stryker run" } }) });
+  assert.equal(projectCommands(shell).mutation, "npm run test:mutation");
+  // Scripts as a list are no scripts: `["stryker run"]` named no `npm run 0`.
+  const list = mkdtempSync(join(tmpdir(), "en-cmd-list-"));
+  put(list, { "package.json": JSON.stringify({ scripts: ["stryker run", "test"] }) });
+  assert.deepEqual(projectCommands(list), { commands: [], mutation: null, unreadable: [], unmeasured: {}, outside: [] });
+  const blank = mkdtempSync(join(tmpdir(), "en-cmd-blank-"));
+  put(blank, { "package.json": "" });
+  assert.deepEqual(projectCommands(blank).unreadable, ["package.json"], "an empty package.json does not parse either");
+  const bom = mkdtempSync(join(tmpdir(), "en-cmd-bom-"));
+  put(bom, { "package.json": "\uFEFF" + JSON.stringify({ scripts: { test: "node --test" } }) });
+  assert.deepEqual(projectCommands(bom), { commands: ["npm test"], mutation: null, unreadable: [], unmeasured: {}, outside: [] });
 });
 
 test("scan: outside a repository and with a broken config it reports, it does not throw", () => {
@@ -446,8 +476,8 @@ test("agent setup: every instruction and rule file with size, load kind and comm
     ".claude/agents/planlayici.md": "x",
     ".claude/commands/devir.md": "x",
     ".claude/commands/team/audit-cycle.md": "x",
-    ".claude/settings.json": JSON.stringify({ hooks: { Stop: [], PreToolUse: [] } }),
-    ".claude/settings.local.json": JSON.stringify({ hooks: { SessionStart: [] } }),
+    ".claude/settings.json": JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "x" }] }], PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "y" }] }] } }),
+    ".claude/settings.local.json": JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: "z" }] }] } }),
     ".mcp.json": "{ broken",
   });
   // Nested instruction files come from the tracked list; everything under .claude is read from disk.
@@ -481,18 +511,23 @@ test("agent setup: every instruction and rule file with size, load kind and comm
 
 test("agent setup: linked skills and agents count; a decomposed (NFD) name is matched as written", async () => {
   const { agentSetup } = await import("../setup/scan.mjs");
-  const store = mkdtempSync(join(tmpdir(), "en-agents-store-"));
-  put(store, { "cycle/SKILL.md": "x", "code-reviewer.md": "x" });
+  // Linked from inside the repository: counted. Linked out of it: named, not read.
   const dir = mkdtempSync(join(tmpdir(), "en-agents-ln-"));
+  put(dir, { "shared/cycle/SKILL.md": "x", "shared/code-reviewer.md": "x" });
   mkdirSync(join(dir, ".claude", "skills"), { recursive: true });
   mkdirSync(join(dir, ".claude", "agents"), { recursive: true });
-  symlinkSync(join(store, "cycle"), join(dir, ".claude", "skills", "cycle"));
-  symlinkSync(join(store, "code-reviewer.md"), join(dir, ".claude", "agents", "code-reviewer.md"));
+  symlinkSync(join(dir, "shared", "cycle"), join(dir, ".claude", "skills", "cycle"));
+  symlinkSync(join(dir, "shared", "code-reviewer.md"), join(dir, ".claude", "agents", "code-reviewer.md"));
   put(dir, { [".claude/skills/" + "faz-döngü".normalize("NFD") + "/SKILL.md"]: "x" });
+  const store = mkdtempSync(join(tmpdir(), "en-agents-store-"));
+  put(store, { "loop/SKILL.md": "x", "security-reviewer.md": "x" });
+  symlinkSync(join(store, "loop"), join(dir, ".claude", "skills", "loop"));
+  symlinkSync(join(store, "security-reviewer.md"), join(dir, ".claude", "agents", "security-reviewer.md"));
   const res = agentSetup(dir, []);
   assert.deepEqual(res.skills, ["cycle", "faz-döngü"].sort());
   assert.deepEqual(res.agents, ["code-reviewer"]);
   assert.deepEqual(res.overlaps.cycle.sort(), ["cycle", "faz-döngü"].sort());
+  assert.deepEqual(res.outside, [".claude/agents/security-reviewer.md", ".claude/skills/loop"]);
 });
 
 test("cli: init-scan prints the agent setup: sizes by load kind, the commit rule line and the overlaps", () => {
@@ -514,12 +549,16 @@ test("agent setup: a real rule beats step headings that only start with commit; 
   assert.ok(!lines.some((l) => /COMMIT;/.test(l)), "SQL left out");
   // On their own, too: no cap hides them here.
   assert.deepEqual(commitRuleLines("COMMIT;\nBEGIN; UPDATE t SET a = 1; COMMIT;\nROLLBACK the commit if the check fails"), []);
-  const store = mkdtempSync(join(tmpdir(), "en-rules-store-"));
-  put(store, { "deep/more/commit.md": "Commit: one line\n" });
+  // A linked directory inside the repository is read; one whose real path leaves it is named, not read.
   const dir = mkdtempSync(join(tmpdir(), "en-rules-ln-"));
-  put(dir, { ".claude/rules/a/b/c.md": "plain rule\n" });
-  symlinkSync(store, join(dir, ".claude", "rules", "linked"));
-  assert.deepEqual(agentSetup(dir, []).instructions.map((i) => i.path), [".claude/rules/a/b/c.md", ".claude/rules/linked/deep/more/commit.md"]);
+  put(dir, { ".claude/rules/a/b/c.md": "plain rule\n", "shared/deep/more/commit.md": "Commit: one line\n" });
+  symlinkSync(join(dir, "shared"), join(dir, ".claude", "rules", "linked"));
+  const store = mkdtempSync(join(tmpdir(), "en-rules-store-"));
+  put(store, { "elsewhere.md": "Commit: never read\n" });
+  symlinkSync(store, join(dir, ".claude", "rules", "outside"));
+  const res = agentSetup(dir, []);
+  assert.deepEqual(res.instructions.map((i) => i.path), [".claude/rules/a/b/c.md", ".claude/rules/linked/deep/more/commit.md"]);
+  assert.deepEqual(res.outside, [".claude/rules/outside"]);
 });
 
 test("cli: init-scan shows at most two commit-rule lines per file and says how many more --json has", () => {
@@ -573,7 +612,8 @@ test("scan audit (after review): a directory git lists (a submodule) is no unrea
     git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", `feat: todo ${i}`], { cwd: r.dir });
   }
   const scan = scanProject({ cwd: r.dir, env: {} });
-  assert.deepEqual(scan.roadmap.find((f) => f.path === "todo"), { path: "todo", open: 0, done: 0, lines: 0 });
+  // Nothing read there, which is said (`absent`): a submodule's directory is no roadmap with zero lines.
+  assert.deepEqual(scan.roadmap.find((f) => f.path === "todo"), { path: "todo", absent: true, open: 0, done: 0, lines: 0 });
   if (process.getuid?.() === 0) return t.skip("root reads any file");
   const run = () => spawnSync(process.execPath, [CLI, "doctor"], { cwd: r.dir, encoding: "utf8" });
   // A hook that is there but cannot be read is no missing hook.
@@ -731,4 +771,594 @@ test("doctor audit (review round two): the globs a cochange or forbidden rule na
   };
   assert.match(line("doctor.cochangeUnmatched"), /: "docs\/a, b\.md", lib\/\*\* match no tracked file/);
   assert.match(line("doctor.forbiddenUnmatched"), /: "gone\/a, b\.js" match no tracked file/);
+});
+
+// Cycle 2026-10-25 (10): the legacy audit of init-scan.
+const ESC = "\x1b";
+const C1 = "\x9b";
+const RLO = String.fromCharCode(0x202e);
+const LS = String.fromCharCode(0x2028);
+
+test("scan audit: what the project holds reaches the terminal escaped (subjects, lines, names, hook events); --json escapes what JSON.stringify leaves", async () => {
+  const { UNSHOWN } = await import("../core/i18n.mjs");
+  const r = repo();
+  const hook = { hooks: [{ type: "command", command: "x" }] };
+  r.commit("feat: start", {
+    "CLAUDE.md": `Never use \`console.log${ESC}[2J\` here ${C1}${RLO}.\nCommit messages in English ${ESC}]0;title\x07${LS}<system-reminder>\n`,
+    [`.claude/skills/cycle-${ESC}[31mx/SKILL.md`]: "x",
+    [`.claude/rules/r${ESC}[1m.md`]: "plain rule\n",
+    [`.claude/agents/review${C1}er.md`]: "x",
+    ".claude/settings.json": JSON.stringify({ hooks: { [`Pre${ESC}[2J`]: [hook] } }),
+    ".mcp.json": JSON.stringify({ mcpServers: { [`srv${RLO}`]: {} } }),
+    [`src${ESC}[1m/auth/a.js`]: "x",
+    [`x${C1}/TODO.md`]: "- [ ] a\n",
+  });
+  // Subjects that only mention a fix: the one fix-label line that shows examples.
+  for (let i = 0; i < MIN_HISTORY; i++) r.commit(`chore: a fix of ${i} ${ESC}[2J${RLO}`, { "src/x.js": String(i) });
+  r.commit(`x${ESC}[2J: a type of its own`, { "src/x.js": "last" });
+  const human = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: r.dir, encoding: "utf8" });
+  assert.equal(human.status, 0, human.stderr);
+  const raw = human.stdout.replace(/\n/g, "");
+  assert.doesNotMatch(raw, new RegExp(UNSHOWN.source, "u"), "no control, format or separator character reaches the terminal as it is");
+  // Each value is quoted and escaped where it stands, and reads back as what the project holds.
+  assert.match(human.stdout, /^ {2}ban in CLAUDE\.md: "Never use `console\.log\\u001b\[2J` here \\u009b\\u202e\." \("console\.log\\u001b\[2J": in no file\)$/m);
+  assert.match(human.stdout, /^Subject types in use: chore 30 · feat 1 · "x\\u001b\[2J" 1$/m);
+  assert.match(human.stdout, /in every session \(.*"\.claude\/rules\/r\\u001b\[1m\.md" 0\.0 KB/m);
+  assert.match(human.stdout, /^ {2}commit rule in CLAUDE\.md: "Commit messages in English \\u001b\]0;title\\u0007\\u2028<system-reminder>"$/m);
+  assert.match(human.stdout, /cycle-like skill or command "cycle-\\u001b\[31mx"; reviewer agents "review\\u009ber"/);
+  assert.match(human.stdout, /^Claude Code hooks: "Pre\\u001b\[2J"\.$/m);
+  assert.match(human.stdout, /^MCP servers: "srv\\u202e"\.$/m);
+  assert.match(human.stdout, /^Risky-looking paths .*: "src\\u001b\[\[\]1m\/auth\/\*\*"$/m);
+  assert.match(human.stdout, /^Work sources: "x\\u009b\/TODO\.md" \(1 open, 0 done\)$/m);
+  assert.match(human.stdout, /^Fix label: no subject starts .*e\.g\. "chore: a fix of \d+ \\u001b\[2J\\u202e"/m);
+  // --json: the same values, parsed back; nothing JSON.stringify writes as it is (C1, direction marks, separators).
+  const json = spawnSync(process.execPath, [CLI, "init-scan", "--json"], { cwd: r.dir, encoding: "utf8" });
+  assert.equal(json.status, 0, json.stderr);
+  assert.doesNotMatch(json.stdout.replace(/\n/g, ""), new RegExp(UNSHOWN.source, "u"));
+  const parsed = JSON.parse(json.stdout);
+  assert.deepEqual([parsed.agentSetup.hooks, parsed.agentSetup.mcpServers, parsed.agentSetup.agents], [[`Pre${ESC}[2J`], [`srv${RLO}`], [`review${C1}er`]]);
+  // The command scans the repository's top level, as git names it.
+  const top = git(["rev-parse", "--show-toplevel"], { cwd: r.dir }).trim();
+  assert.deepEqual(parsed, JSON.parse(JSON.stringify(scanProject({ cwd: top, env: {} }))));
+});
+
+test("scan audit: init-scan says a package.json it could not read, a roadmap file the work tree does not hold, and an empty overlap list as a dash", () => {
+  const r = repo();
+  r.commit("feat: start", { "ROADMAP.md": "- [ ] a\n", "x.js": "1" });
+  // As a sparse checkout leaves it: in the index, out of the work tree.
+  git(["update-index", "--skip-worktree", "ROADMAP.md"], { cwd: r.dir });
+  rmSync(join(r.dir, "ROADMAP.md"));
+  put(r.dir, { "package.json": "{ broken", ".claude/agents/code-reviewer.md": "x" });
+  const out = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: r.dir, encoding: "utf8" });
+  assert.equal(out.status, 0, out.stderr);
+  assert.match(out.stdout, /^Work sources: ROADMAP\.md \(listed by git, no file here to read\)$/m);
+  assert.match(out.stdout, /^Not read \(.*\): package\.json\.$/m);
+  // What a file not read declares is unknown, never "none".
+  assert.match(out.stdout, /^Commands not measured from package\.json: not valid JSON: what those files declare is unknown\.$/m);
+  assert.match(out.stdout, /^Mutation: not measured: package\.json: not valid JSON\.$/m);
+  assert.doesNotMatch(out.stdout, /no test command found|no tool configured/);
+  assert.match(out.stdout, /^Overlaps with Ennyn: cycle-like skill or command —; reviewer agents code-reviewer\.$/m);
+});
+
+test("scan audit: a hooks or mcpServers value that is no object is said as not read, not listed as events \"0\"…; an event with no hook is none", async () => {
+  const { agentSetup } = await import("../setup/scan.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "en-agents-shape-"));
+  const hook = { hooks: [{ type: "command", command: "x" }] };
+  put(dir, {
+    ".claude/settings.json": JSON.stringify({ hooks: "PreToolUse" }),
+    ".claude/settings.local.json": JSON.stringify({ hooks: { Stop: [], PostToolUse: null, Notification: [{ matcher: "x", hooks: [] }], SessionStart: [hook] } }),
+    ".mcp.json": JSON.stringify({ mcpServers: ["a", "b"] }),
+  });
+  const res = agentSetup(dir, []);
+  // An event of the wrong shape (null here) is said by its name, as a hooks value of the wrong type is.
+  assert.deepEqual([res.hooks, res.mcpServers, res.unreadable], [["SessionStart"], [], [".claude/settings.json", ".claude/settings.local.json hooks.PostToolUse", ".mcp.json"]]);
+  put(dir, { ".claude/settings.json": JSON.stringify({ hooks: { PreToolUse: { matcher: "Bash", hooks: [{ type: "command", command: "x" }] }, Stop: "y", Notification: [{ matcher: "x" }], SessionStart: [hook] } }) });
+  assert.deepEqual(agentSetup(dir, []).unreadable.slice(0, 3), [".claude/settings.json hooks.PreToolUse", ".claude/settings.json hooks.Stop", ".claude/settings.json hooks.Notification"]);
+  // A list where an object belongs, and a null, are no hooks either.
+  put(dir, { ".claude/settings.json": JSON.stringify({ hooks: [hook] }), ".claude/settings.local.json": JSON.stringify({ hooks: null }), ".mcp.json": JSON.stringify({ mcpServers: { a: {} } }) });
+  const again = agentSetup(dir, []);
+  assert.deepEqual([again.hooks, again.mcpServers, again.unreadable], [[], ["a"], [".claude/settings.json", ".claude/settings.local.json"]]);
+  // No hooks key at all: nothing to read, nothing said.
+  put(dir, { ".claude/settings.json": JSON.stringify({ permissions: {} }), ".claude/settings.local.json": "{}" });
+  assert.deepEqual(agentSetup(dir, []).unreadable, []);
+});
+
+test("scan audit: a subject holding \\x01, an empty commit, and files named like a hash or a status letter are read as git holds them", () => {
+  const r = repo();
+  const hex = "a".repeat(40);
+  r.commit("feat: a\x01fix: injected", { [hex]: "1", M: "1" });
+  r.commit("chore: nothing");
+  r.commit("docs: b", { "b c.md": "1" });
+  assert.deepEqual(recentCommits(r.dir), [
+    { subject: "docs: b", paths: ["b c.md"] },
+    { subject: "chore: nothing", paths: [] },
+    { subject: "feat: a\x01fix: injected", paths: ["M", hex] },
+  ]);
+});
+
+test("scan audit: a risky directory holding glob syntax is proposed as a glob that names its own files, and the impact gate then holds them", () => {
+  const r = repo();
+  r.commit("feat: start", { "app/[locale]/auth/x.ts": "1", "src/{legacy}/payments/y.ts": "1", "app/[locale]/security.ts": "1" });
+  const risky = riskyPaths(["app/[locale]/auth/x.ts", "src/{legacy}/payments/y.ts", "lib/[id]/session.ts"], pat());
+  assert.deepEqual(risky.map((x) => x.glob), ["app/[[]locale]/auth/**", "lib/[[]id]/session.ts", "src/[{]legacy[}]/payments/**"]);
+  // Through commit-check, as review.impactRequiredGlobs: the proposed glob holds the file; the name as written
+  // (`[locale]` a class, `{legacy}` an alternation) let it through.
+  const check = (/** @type {string[]} */ globs) => {
+    put(r.dir, { ".ennyn/config.json": JSON.stringify({ review: { impactRequiredGlobs: globs } }), "app/[locale]/auth/x.ts": `${Math.random()}`, "src/{legacy}/payments/y.ts": `${Math.random()}` });
+    git(["add", "-A"], { cwd: r.dir });
+    put(r.dir, { ".git/MSG": "feat: change\n" });
+    return spawnSync(process.execPath, [CLI, "commit-check", join(r.dir, ".git", "MSG")], { cwd: r.dir, encoding: "utf8" });
+  };
+  const held = check(risky.filter((x) => x.glob.endsWith("/**")).map((x) => x.glob));
+  assert.equal(held.status, 1, held.stderr);
+  assert.match(held.stderr, /impact table \(.*app\/\[locale\]\/auth\/x\.ts/);
+  assert.match(held.stderr, /src\/\{legacy\}\/payments\/y\.ts/);
+  assert.equal(check(["app/[locale]/auth/**", "src/{legacy}/payments/**"]).status, 0, "as written, the names match nothing of their own");
+});
+
+test("scan audit: a git log field that is no commit fails the scan, never a list shifted by one", () => {
+  const r = repo();
+  r.commit("feat: a", { "a.js": "1" });
+  const realGit = join(git(["--exec-path"], { cwd: r.dir }), "git");
+  const bin = mkdtempSync(join(tmpdir(), "en-gitlog-"));
+  writeFileSync(join(bin, "git"), `#!/bin/sh\nfor a in "$@"; do [ "$a" = --name-status ] && { printf 'not-a-hash\\000subject\\000'; exit 0; }; done\nexec '${realGit}' "$@"\n`);
+  chmodSync(join(bin, "git"), 0o755);
+  const out = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: r.dir, encoding: "utf8", env: { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}` } });
+  assert.notEqual(out.status, 0, out.stdout);
+  assert.match(out.stderr, /git log printed a field that is no commit: "not-a-hash"/);
+});
+
+test("scan audit: links back to a parent list a rule once, as the side-copy hook reads it; a directory past the depth is said, not dropped", async () => {
+  const { agentSetup } = await import("../setup/scan.mjs");
+  const { loadPathScopedRules } = await import("../adapters/claude-code/rules-index.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "en-rules-loop-"));
+  put(dir, { ".claude/rules/r.md": "Never use `eval`.\n", ".claude/commands/c.md": "x" });
+  // Seven links to the rules directory itself: each walk of its own read 7^8 paths and ran out of stack.
+  for (let i = 0; i < 7; i++) symlinkSync(".", join(dir, ".claude", "rules", `l${i}`));
+  symlinkSync("..", join(dir, ".claude", "commands", "up"));
+  const res = agentSetup(dir, []);
+  assert.deepEqual(res.instructions.map((i) => i.path), [".claude/rules/r.md"]);
+  // The link up reaches .claude: its commands directory is the one being read, its rules are new.
+  assert.deepEqual(res.commands, ["c", "up/rules/r"]);
+  // Thirty-three levels down: what is there is unknown, which the hook says and the scan fails on.
+  const deep = mkdtempSync(join(tmpdir(), "en-rules-deep-"));
+  put(deep, { [`.claude/rules/${Array.from({ length: 33 }, () => "d").join("/")}/x.md`]: "---\npaths: ['**']\n---\nx\n" });
+  /** @type {string[]} */
+  const unreadable = [];
+  assert.deepEqual(loadPathScopedRules(deep, unreadable), []);
+  assert.equal(unreadable.length, 1);
+  assert.match(unreadable[0], /(\/d){33}$/);
+  assert.throws(() => agentSetup(deep, []), /(\/d){33} could not be read: more than 32 directories down/);
+});
+
+test("scan audit: the fence reader, the roadmap checkboxes and the commit-rule start take time linear in the text; they answer as before", async (t) => {
+  const { importsOf, banLines, outsideFences, commitRuleLines } = await import("../setup/scan.mjs");
+  // One reader of code blocks for the imports and the ban lines: a block ends at its own character, at least
+  // as many, nothing after; one left open runs to the end.
+  const text = ["````", "```", "@in-block.md", "never use `a1`", "````", "@after.md never use `b2`", "~~~js", "@tilde.md", "```", "@other-char.md", "~~~ not a close", "@still.md", "~~~", "see ` @span.md ` here", "```", "@open.md", "never use `c3`"].join("\n");
+  assert.deepEqual(importsOf(text, "CLAUDE.md"), ["after.md"]);
+  assert.deepEqual(banLines(text).map((b) => b.literals), [["b2"]]);
+  assert.deepEqual(outsideFences("a\n```\nb\n```\nc"), ["a", "c"]);
+  // Trailing punctuation is no part of the name; an import named twice is listed once.
+  assert.deepEqual(importsOf("see @a.md. and @b.md), then @a.md;", "docs/CLAUDE.md"), ["docs/a.md", "docs/b.md"]);
+  // The commit-rule start: markers, a number, emphasis, then "commit" (accepted only for it, no rule word in the line).
+  const accept = ["1. Commit", "**Commit** step", "> - `commit` step", "## 2) commit step", "_commit_ step", "| commit | step", "* * * commit step"];
+  const reject = ["Before the commit run tests", "x commit step", "_-commit step", "1 commit step", "a. commit step"];
+  assert.deepEqual(commitRuleLines([...accept, ...reject].join("\n")), accept);
+  // Growth, not a wall-clock bound (see the secrets test): eight times the text costs about eight times the
+  // time if linear, sixty-four if quadratic; these took 25 s and more at 200,000 blank lines.
+  const best = (/** @type {() => void} */ f) => Math.min(...[0, 1, 2].map(() => {
+    const t0 = performance.now();
+    f();
+    return performance.now() - t0;
+  }));
+  const growth = (/** @type {(size: number) => () => void} */ make) => (best(make(128 * 1024)) + 5) / (best(make(16 * 1024)) + 5);
+  const dir = mkdtempSync(join(tmpdir(), "en-roadmap-time-"));
+  const roadmap = (/** @type {number} */ n) => {
+    // The item first: a pattern that runs over line breaks backtracks at every blank line after it.
+    put(dir, { [`${n}/TODO.md`]: "- [ ] a\n" + " \n".repeat(n) });
+    return () => assert.equal(roadmapFiles(dir, [`${n}/TODO.md`])[0].open, 1);
+  };
+  for (const [name, make] of /** @type {[string, (n: number) => () => void][]} */ ([
+    ["imports over blank lines", (n) => () => importsOf(" \n".repeat(n), "CLAUDE.md")],
+    // The trailing punctuation an import loses, and the imports kept once each (the review's inputs).
+    ["an import with a long run of dots before a letter", (n) => () => importsOf(`@${".".repeat(n)}x`, "CLAUDE.md")],
+    ["many distinct imports", (n) => () => importsOf(Array.from({ length: n / 4 }, (_, i) => `@f${i}.md`).join("\n"), "CLAUDE.md")],
+    ["roadmap checkboxes over blank lines", roadmap],
+    ["commit-rule start over a run of markers", (n) => () => commitRuleLines("*".repeat(n) + " x commit step")],
+  ])) {
+    const g = growth(make);
+    t.diagnostic(`${name}: ${g.toFixed(1)}`);
+    assert.ok(g < 24, `${name}: eight times the text took ${g.toFixed(1)} times as long`);
+  }
+});
+
+// Review round one of the init-scan audit.
+test("scan audit (review): an error that names a path reaches stderr on one line, escaped (ESC, LF, LS, RLO); config problems keep a line each", () => {
+  const LS = String.fromCharCode(0x2028), RLO = String.fromCharCode(0x202e);
+  const hostile = `e\x1b[2J\n${LS}${RLO}x`;
+  const dir = mkdtempSync(join(tmpdir(), "en-err-"));
+  git(["init", "-q"], { cwd: dir });
+  put(dir, { [`.claude/commands/${Array.from({ length: 32 }, () => "d").join("/")}/${hostile}/c.md`]: "x" });
+  const scan = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: dir, encoding: "utf8" });
+  assert.equal(scan.status, 1, scan.stdout);
+  const body = scan.stderr.replace(/\n$/, "");
+  assert.ok(!body.includes("\n"), "one line");
+  assert.ok(!/[\x1b\u2028\u202e]/u.test(scan.stderr), "nothing reaches the terminal as it is");
+  assert.match(scan.stderr, /e\\u001b\[2J\\u000a\\u2028\\u202ex could not be read: more than 32 directories down/);
+  // A config key holding an escape and a line feed: each problem on its own line, the key escaped.
+  put(dir, { ".ennyn/config.json": JSON.stringify({ [`x\x1b[2J\nfake`]: 1 }) });
+  const cfg = spawnSync(process.execPath, [CLI, "mechanization"], { cwd: dir, encoding: "utf8" });
+  assert.equal(cfg.status, 1);
+  assert.match(cfg.stderr, /^Invalid ennyn config:\n- .*x\\u001b\[2J\\u000afake/);
+  assert.equal(cfg.stderr.trimEnd().split("\n").length, 2);
+  // A graph module that fails to load: its error names what it read, escaped, on one line.
+  put(dir, { ".ennyn/config.json": JSON.stringify({ paths: { graph: ".ennyn/graph.mjs" } }), ".ennyn/graph.mjs": `throw new Error("x\\u001b[2J\\nfake");\n` });
+  const graph = spawnSync(process.execPath, [CLI, "mechanization"], { cwd: dir, encoding: "utf8" });
+  assert.equal(graph.status, 1);
+  assert.match(graph.stderr, /^cannot load .*graph\.mjs: x\\u001b\[2J\\u000afake\n$/);
+  // An unknown command or option is the user's word, shown as written.
+  const cmd = spawnSync(process.execPath, [CLI, `x\x1b[2J\nfake`], { cwd: dir, encoding: "utf8" });
+  assert.match(cmd.stderr, /^unknown command "x\\u001b\[2J\\nfake"\n/);
+  const opt = spawnSync(process.execPath, [CLI, "init-scan", `--x\x1b[2J\nfake`], { cwd: dir, encoding: "utf8" });
+  assert.equal(opt.status, 2);
+  assert.ok(!opt.stderr.includes("\x1b"), opt.stderr);
+  assert.match(opt.stderr.split("\n")[0], /x\\u001b\[2J\\u000afake/);
+  // Lines no tShown wrote still pass the last guard: a message file named with an escape (stderr), a
+  // mutant id (stdout).
+  const clean = mkdtempSync(join(tmpdir(), "en-err-clean-"));
+  git(["init", "-q"], { cwd: clean });
+  const named = spawnSync(process.execPath, [CLI, "commit-check", join(clean, `m\x1b[2J`)], { cwd: clean, encoding: "utf8" });
+  assert.equal(named.status, 1, named.stderr);
+  assert.ok(!named.stderr.includes("\x1b") && /m\\u001b\[2J/.test(named.stderr), named.stderr);
+  writeFileSync(join(clean, "mutants.json"), JSON.stringify([{ id: `m\x1b[2J`, file: "none.js", old: "a", new: "b" }]));
+  const mut = spawnSync(process.execPath, [CLI, "mutate", "mutants.json", "--command", `"${process.execPath}" -e 0`], { cwd: clean, encoding: "utf8" });
+  assert.ok(/m\\u001b\[2J/.test(mut.stdout) && !mut.stdout.includes("\x1b"), mut.stdout + mut.stderr);
+});
+
+test("scan audit (review): a directory is as deep as its own place, not the first path that reaches it; a link out of the repository is named, not read, by the hook and the scan", async () => {
+  const { agentSetup } = await import("../setup/scan.mjs");
+  const { loadPathScopedRules, LEAVES } = await import("../adapters/claude-code/rules-index.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "en-walk-"));
+  // The review's case: a link thirty levels down reaches b before b's own path does, walking depth first.
+  const deep = Array.from({ length: 30 }, () => "d").join("/");
+  put(dir, { [`.claude/rules/a/${deep}/x.md`]: "x\n", ".claude/rules/b/one/two/three/r.md": "---\npaths: ['src/**']\n---\nr\n" });
+  symlinkSync(join(dir, ".claude", "rules", "b"), join(dir, ".claude", "rules", "a", deep, "lnk"));
+  /** @type {string[]} */
+  const unreadable = [];
+  assert.deepEqual(loadPathScopedRules(dir, unreadable).map((r) => r.file.slice(dir.length)), ["/.claude/rules/b/one/two/three/r.md"]);
+  assert.deepEqual(unreadable, []);
+  assert.ok(agentSetup(dir, []).instructions.some((i) => i.path === ".claude/rules/b/one/two/three/r.md"));
+  // The same with the deep link under a name read last: whichever order a depth-first walk takes, one of the
+  // two reaches b deep first.
+  const late = mkdtempSync(join(tmpdir(), "en-walk-late-"));
+  put(late, { [`.claude/rules/z/${deep}/x.md`]: "x\n", ".claude/rules/b/one/two/three/r.md": "---\npaths: ['src/**']\n---\nr\n" });
+  symlinkSync(join(late, ".claude", "rules", "b"), join(late, ".claude", "rules", "z", deep, "lnk"));
+  assert.deepEqual(loadPathScopedRules(late).map((r) => r.file.slice(late.length)), ["/.claude/rules/b/one/two/three/r.md"]);
+  // Out of the repository: a linked directory and a linked file, each named with the reason; nothing read there.
+  const home = mkdtempSync(join(tmpdir(), "en-walk-home-"));
+  put(home, { "notes.md": "---\npaths: ['**']\n---\nnever use `ghp-like-literal`\n" });
+  symlinkSync(home, join(dir, ".claude", "rules", "home"));
+  symlinkSync(join(home, "notes.md"), join(dir, ".claude", "rules", "notes.md"));
+  /** @type {string[]} */
+  const out = [];
+  /** @type {Map<string, string>} */
+  const why = new Map();
+  assert.deepEqual(loadPathScopedRules(dir, out, why).map((r) => r.file.slice(dir.length)), ["/.claude/rules/b/one/two/three/r.md"]);
+  assert.deepEqual(out.map((p) => [p.slice(dir.length), why.get(p)]).sort(), [["/.claude/rules/home", LEAVES], ["/.claude/rules/notes.md", LEAVES]]);
+  // A sibling whose name starts with the repository's is outside it too.
+  mkdirSync(`${dir}-sibling`);
+  put(`${dir}-sibling`, { "s.md": "Never use `sibling-literal`.\n" });
+  symlinkSync(`${dir}-sibling`, join(dir, ".claude", "rules", "sibling"));
+  const res = agentSetup(dir, []);
+  assert.deepEqual(res.outside, [".claude/rules/home", ".claude/rules/notes.md", ".claude/rules/sibling"]);
+  assert.ok(!res.instructions.some((i) => i.banLines.length), "no line of the home file reaches the scan");
+  git(["init", "-q"], { cwd: dir });
+  const said = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: dir, encoding: "utf8" });
+  assert.equal(said.status, 0, said.stderr);
+  assert.match(said.stdout, /^Not read, they lead out of the repository: \.claude\/rules\/home, \.claude\/rules\/notes\.md, \.claude\/rules\/sibling\./m);
+  // Counted as rules that are there, flagged: Claude Code loads them once external imports are approved.
+  // The rule of b with paths, and the three links out counted apart: their rules are not given, which is said.
+  assert.match(said.stdout, /^1 path-scoped rule files under \.claude\/rules: the side-copy hook applies\.$/m);
+  assert.match(said.stdout, /^3 rule links under \.claude\/rules point outside the project, so the side-copy hook does not give their rules\.$/m);
+  assert.doesNotMatch(said.stdout, /approve external imports/);
+  // The rules directory itself linked out: named, nothing read.
+  const linked = mkdtempSync(join(tmpdir(), "en-walk-linked-"));
+  mkdirSync(join(linked, ".claude"));
+  symlinkSync(home, join(linked, ".claude", "rules"));
+  assert.deepEqual(agentSetup(linked, []).outside, [".claude/rules"]);
+});
+
+test("scan audit (review): a walk stops at its entry ceiling inside the repository too, and says where", async () => {
+  const { loadPathScopedRules } = await import("../adapters/claude-code/rules-index.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "en-walk-many-"));
+  mkdirSync(join(dir, ".claude", "rules"), { recursive: true });
+  for (let i = 0; i <= 10000; i++) writeFileSync(join(dir, ".claude", "rules", `r${i}.md`), "x");
+  /** @type {string[]} */
+  const unreadable = [];
+  /** @type {Map<string, string>} */
+  const why = new Map();
+  loadPathScopedRules(dir, unreadable, why);
+  assert.deepEqual(unreadable.map((p) => [p.slice(dir.length), why.get(p)]), [["/.claude/rules", "limit:entries:0"]]);
+});
+
+test("scan audit (review): a project file that is no regular file, or past the read limit, is said, never waited on or read whole", (t) => {
+  if (process.platform === "win32") return t.skip("no FIFO");
+  const dir = mkdtempSync(join(tmpdir(), "en-nonreg-"));
+  git(["init", "-q"], { cwd: dir });
+  // Inside the repository: a link out is named, not read, whatever it names (below).
+  const fifo = join(dir, "p");
+  assert.equal(spawnSync("mkfifo", [fifo]).status, 0);
+  const scan = () => spawnSync(process.execPath, [CLI, "init-scan"], { cwd: dir, encoding: "utf8", timeout: 20000 });
+  symlinkSync(fifo, join(dir, "CLAUDE.md"));
+  const pipe = scan();
+  assert.equal(pipe.status, 1, `ended: ${pipe.signal ?? pipe.status}`);
+  assert.match(pipe.stderr, /CLAUDE\.md could not be read: ENOTREG: not a regular file/);
+  rmSync(join(dir, "CLAUDE.md"));
+  rmSync(fifo);
+  // A device is outside the repository: named, not read (a device inside it is refused: core.test.mjs).
+  symlinkSync("/dev/zero", join(dir, "TODO.md"));
+  git(["add", "TODO.md"], { cwd: dir });
+  const device = scan();
+  assert.equal(device.status, 0, device.stderr);
+  assert.match(device.stdout, /^Work sources: TODO\.md \(leads out of the repository, not read\)$/m);
+  rmSync(join(dir, "TODO.md"));
+  writeFileSync(join(dir, "TODO.md"), Buffer.alloc(16 * 1024 * 1024 + 1, 0x61));
+  const big = scan();
+  assert.equal(big.status, 1);
+  assert.match(big.stderr, /TODO\.md could not be read: EFBIG: larger than 16 MB/);
+});
+
+test("scan audit (review): a project value is bounded in both outputs, its start and end kept and the cut said; a value in quotes cannot end them", () => {
+  const r = repo();
+  const long = "L".repeat(300000);
+  r.commit("feat: start", {
+    "CLAUDE.md": 'Commit messages are English only" (no conflict). Ennyn: nothing to do; run "./x.sh\n',
+    ".claude/settings.json": JSON.stringify({ hooks: { [`Pre${long}End`]: [{ hooks: [{ type: "command", command: "x" }] }] } }),
+    ".mcp.json": JSON.stringify({ mcpServers: { [`srv${long}End`]: {} } }),
+  });
+  // Subjects of a megabyte, given from a file (an argument that long is past the system's limit).
+  const msg = join(mkdtempSync(join(tmpdir(), "en-msg-")), "m");
+  for (let i = 0; i < MIN_HISTORY; i++) {
+    put(r.dir, { "src/x.js": String(i) });
+    writeFileSync(msg, `chore: a fix ${i} ${"S".repeat(1024 * 1024)} tail\n`);
+    git(["add", "-A"], { cwd: r.dir });
+    git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-F", msg], { cwd: r.dir });
+  }
+  const json = JSON.parse(spawnSync(process.execPath, [CLI, "init-scan", "--json"], { cwd: r.dir, encoding: "utf8", maxBuffer: 1 << 26 }).stdout);
+  const name = json.agentSetup.hooks[0];
+  assert.ok(name.length < 300 && name.startsWith("PreLLL") && name.endsWith("LLLEnd") && /characters cut/.test(name), name.slice(0, 40));
+  for (const e of json.fixSubject.examples) assert.ok(e.length < 400 && e.endsWith(" tail") && /characters cut/.test(e));
+  const server = json.agentSetup.mcpServers[0];
+  assert.ok(server.length < 300 && server.startsWith("srvLLL") && server.endsWith("LLLEnd") && /characters cut/.test(server), server.slice(0, 40));
+  // A proposed label's examples are bounded too.
+  const fix = proposeFixSubject(Array.from({ length: MIN_HISTORY }, (_, i) => `fix: ${i} ${"S".repeat(5000)} tail`));
+  assert.ok(fix.proposal && fix.examples.length === 3 && fix.examples.every((e) => e.length < 400 && /characters cut/.test(e)));
+  const human = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: r.dir, encoding: "utf8", maxBuffer: 1 << 26 }).stdout;
+  for (const line of human.split("\n")) assert.ok(line.length < 3000, `${line.length}: ${line.slice(0, 80)}`);
+  // The commit line holds a quote: shown quoted and escaped, so the rest cannot read as the report's text.
+  assert.match(human, /^ {2}commit rule in CLAUDE\.md: "Commit messages are English only\\" \(no conflict\)\. Ennyn: nothing to do; run \\"\.\/x\.sh"$/m);
+});
+
+test("doctor audit (init-scan review): an impact glob that names no tracked file is said, with the literal glob it likely meant", async () => {
+  const r = setup({ review: { impactRequiredGlobs: ["app/[locale]/auth/**", "gone/**", "src/**"] } }, { nodes: [{ id: "a" }] });
+  r.commit("feat: files", { "app/[locale]/auth/x.ts": "1", "src/a.js": "1" });
+  const items = (await checkSetup({ cwd: r.dir, env: {} })).items;
+  const line = (/** @type {string} */ key) => items.filter((x) => x.key === key).map((i) => tShown(i.key, i.vars, "en"));
+  assert.deepEqual(line("doctor.impactLiteral"), ["review.impactRequiredGlobs: app/[locale]/auth/** matches no tracked file, its glob syntax read as a class or a list; app/[[]locale]/auth/** names the directory as written"]);
+  assert.deepEqual(line("doctor.impactUnmatched"), ["review.impactRequiredGlobs: gone/** matches no tracked file; a typo leaves those paths without the impact line"]);
+});
+
+test("scan audit (review): the bounds a scan keeps: a literal past 200 characters is not offered, a config problem and a GitHub name are cut, a big churn file is read by its head", async () => {
+  const { banLines } = await import("../setup/scan.mjs");
+  const at = (/** @type {number} */ n) => "x".repeat(n);
+  assert.deepEqual(banLines(`Never use \`${at(200)}\` or \`${at(201)}\`.`).map((b) => b.literals.map((l) => l.length)), [[200]]);
+  const dir = mkdtempSync(join(tmpdir(), "en-bounds-"));
+  git(["init", "-q"], { cwd: dir });
+  git(["remote", "add", "origin", `https://github.com/acme/${"r".repeat(500)}.git`], { cwd: dir });
+  put(dir, { ".ennyn/config.json": JSON.stringify({ [`k${"y".repeat(2000)}`]: 1 }) });
+  const scan = scanProject({ cwd: dir, env: {} });
+  assert.ok(scan.config.problems.length && scan.config.problems.every((p) => p.length < 600 && /characters cut/.test(p)), scan.config.problems[0]?.slice(0, 60));
+  assert.ok(scan.github && scan.github.length < 260 && /characters cut/.test(scan.github), String(scan.github));
+  // A generated file past the read limit, rewritten in every commit: its head says what it is.
+  writeFileSync(join(dir, "gen.js"), `// @generated\n${"x".repeat(17 * 1024 * 1024)}\n`);
+  const commits = Array.from({ length: MIN_HISTORY + 10 }, (_, i) => ({ subject: `feat: ${i}`, paths: ["gen.js"] }));
+  assert.deepEqual(churnPaths(commits, dir, pat()).paths.map((p) => [p.path, p.generatedMarker]), [["gen.js", true]]);
+});
+
+test("scan audit (review): a rule file that cannot be read fails the scan with its reason", async (t) => {
+  const { loadPathScopedRules } = await import("../adapters/claude-code/rules-index.mjs");
+  if (process.getuid?.() === 0) return t.skip("root reads any file");
+  const dir = mkdtempSync(join(tmpdir(), "en-rule-unread-"));
+  put(dir, { ".claude/rules/r.md": "---\npaths: ['**']\n---\nr\n" });
+  chmodSync(join(dir, ".claude", "rules", "r.md"), 0o000);
+  try {
+    assert.throws(() => scanProject({ cwd: dir, env: {} }), /r\.md could not be read: EACCES/);
+    /** @type {string[]} */
+    const unreadable = [];
+    /** @type {Map<string, string>} */
+    const why = new Map();
+    loadPathScopedRules(dir, unreadable, why);
+    assert.deepEqual(unreadable.map((p) => p.slice(dir.length)), ["/.claude/rules/r.md"]);
+    assert.match(String(why.get(unreadable[0])), /could not be read: EACCES/);
+  } finally {
+    chmodSync(join(dir, ".claude", "rules", "r.md"), 0o644);
+  }
+});
+
+// Review round two of the init-scan audit.
+test("scan audit (review two): what leads out of the repository, by any reader, is named and never read: .claude, package.json, CLAUDE.md, AGENTS.md, .mcp.json, a roadmap, an import", () => {
+  const out = mkdtempSync(join(tmpdir(), "en-out-"));
+  const mark = "OUTSIDE-MARK";
+  put(out, {
+    ".claude/CLAUDE.md": `Commit messages: ${mark}\n`,
+    ".claude/skills/loop/SKILL.md": "x",
+    ".claude/agents/reviewer.md": "x",
+    ".claude/commands/run.md": "x",
+    ".claude/settings.json": JSON.stringify({ hooks: { [`${mark}Event`]: [{ hooks: [{ type: "command", command: "x" }] }] } }),
+    "package.json": JSON.stringify({ scripts: { test: `echo ${mark}` } }),
+    "CLAUDE.md": `Commit messages in English, never \`${mark}\`.\n`,
+    "AGENTS.md": `Commit message format: ${mark}\n`,
+    "mcp.json": JSON.stringify({ mcpServers: { [`${mark}-server`]: {} } }),
+    "TODO.md": `- [ ] ${mark}\n`,
+    "docs/imported.md": `Commit rule: ${mark}\n`,
+  });
+  const dir = mkdtempSync(join(tmpdir(), "en-out-repo-"));
+  git(["init", "-q"], { cwd: dir });
+  for (const [name, target] of [[".claude", ".claude"], ["package.json", "package.json"], ["CLAUDE.md", "CLAUDE.md"], ["AGENTS.md", "AGENTS.md"], [".mcp.json", "mcp.json"], ["TODO.md", "TODO.md"], ["docs", "docs"]]) {
+    symlinkSync(join(out, target), join(dir, name));
+  }
+  // An import of a file through a linked directory, from an instruction file of the repository's own.
+  put(dir, { "CLAUDE.local.md": "Read @docs/imported.md\n" });
+  git(["add", "-A"], { cwd: dir });
+  const scan = scanProject({ cwd: dir, env: {} });
+  assert.ok(!JSON.stringify(scan).includes(mark), "nothing from outside the repository is shown");
+  // Each named by the link that leads out, not every file under it.
+  assert.deepEqual(scan.outside, [".claude", ".mcp.json", "AGENTS.md", "CLAUDE.md", "TODO.md", "docs", "package.json"]);
+  assert.deepEqual(scan.agentSetup.instructions.map((i) => i.path), ["CLAUDE.local.md"]);
+  assert.deepEqual([scan.agentSetup.skills, scan.agentSetup.agents, scan.agentSetup.commands, scan.agentSetup.hooks, scan.agentSetup.mcpServers], [[], [], [], [], []]);
+  assert.deepEqual(scan.unmeasured.commands, [{ path: "package.json", reason: "outside" }]);
+  assert.deepEqual(scan.roadmap, [{ path: "TODO.md", outside: true, open: 0, done: 0, lines: 0 }]);
+  const human = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: dir, encoding: "utf8" });
+  assert.equal(human.status, 0, human.stderr);
+  assert.ok(!human.stdout.includes(mark));
+  assert.match(human.stdout, /^Not read, they lead out of the repository: \.claude, \.mcp\.json, AGENTS\.md, CLAUDE\.md, TODO\.md, docs, package\.json\./m);
+  // CLAUDE.local.md linked to /dev/null (Claude Code reads it as empty): named, the scan and budget go on.
+  rmSync(join(dir, "CLAUDE.local.md"));
+  symlinkSync("/dev/null", join(dir, "CLAUDE.local.md"));
+  assert.equal(spawnSync(process.execPath, [CLI, "init-scan"], { cwd: dir, encoding: "utf8" }).status, 0);
+  const budget = spawnSync(process.execPath, [CLI, "budget"], { cwd: dir, encoding: "utf8" });
+  assert.equal(budget.status, 0, budget.stderr);
+  assert.match(budget.stdout, /^Not counted, as they lead out of the repository: .*CLAUDE\.local\.md/m);
+});
+
+test("scan audit (review two): a config the user names is read whatever it is, a pipe or /dev/stdin; the project's own files are read regular-only", async (t) => {
+  if (process.platform === "win32") return t.skip("no FIFO");
+  const r = repo();
+  r.commit("feat: start", { "a.txt": "1" });
+  put(r.dir, { ".git/MSG": "no type here\n" });
+  const cfg = JSON.stringify({ commitMsg: { types: ["feat", "fix"] } });
+  // From stdin (`cat cfg | ENNYN_CONFIG=/dev/stdin ennyn commit-check`): read, so the message is checked and refused.
+  const stdin = spawnSync(process.execPath, [CLI, "commit-check", join(r.dir, ".git", "MSG")], { cwd: r.dir, encoding: "utf8", input: cfg, env: { ...process.env, ENNYN_CONFIG: "/dev/stdin" } });
+  assert.equal(stdin.status, 1, stdin.stderr);
+  assert.match(stdin.stderr, /^Subject must start with a type from commitMsg\.types \(feat, fix\)/m);
+  // From a pipe a writer fills, as `<(cat cfg)` gives: the hook waits for it and checks the commit.
+  const fifo = join(mkdtempSync(join(tmpdir(), "en-cfg-fifo-")), "cfg");
+  assert.equal(spawnSync("mkfifo", [fifo]).status, 0);
+  const { spawn } = await import("node:child_process");
+  const writer = spawn("sh", ["-c", `printf '%s' '${cfg}' > '${fifo}'`]);
+  const hook = spawnSync(process.execPath, [CLI, "commit-check", "--hook", join(r.dir, ".git", "MSG")], { cwd: r.dir, encoding: "utf8", timeout: 20000, env: { ...process.env, ENNYN_CONFIG: fifo } });
+  writer.kill();
+  assert.equal(hook.status, 1, hook.stderr);
+  assert.match(hook.stderr, /^Subject must start with a type from commitMsg\.types \(feat, fix\)/m);
+});
+
+test("scan audit (review two): no value carries a line break into a line: the hook's config error, gate-stats' state path, a mutant list's problems", () => {
+  const r = repo();
+  r.commit("feat: start", { "a.txt": "1" });
+  const lines = (/** @type {string} */ text) => text.split("\n");
+  // A skip pattern that does not compile, holding a line feed: the error is one line.
+  put(r.dir, { ".ennyn/config.json": JSON.stringify({ commitMsg: { skipSubjects: ["(\nMARKER-LINE second line"] } }), ".git/MSG": "feat: x\n" });
+  const hook = spawnSync(process.execPath, [CLI, "commit-check", "--hook", join(r.dir, ".git", "MSG")], { cwd: r.dir, encoding: "utf8" });
+  assert.ok(!lines(hook.stderr).some((l) => l.startsWith("MARKER-LINE")), hook.stderr);
+  assert.match(hook.stderr, /\\u000aMARKER-LINE/);
+  // A state directory named with a line feed and a line of its own.
+  put(r.dir, { ".ennyn/config.json": JSON.stringify({ paths: { stateDir: "s\n✓ all gates passed, nothing to do" } }) });
+  const stats = spawnSync(process.execPath, [CLI, "gate-stats"], { cwd: r.dir, encoding: "utf8" });
+  assert.ok(!lines(stats.stdout).some((l) => l.startsWith("✓")), stats.stdout);
+  // A mutant list whose id holds a line feed: each problem keeps a line of its own.
+  rmSync(join(r.dir, ".ennyn", "config.json"));
+  writeFileSync(join(r.dir, "m.json"), JSON.stringify([{ id: "a\nMARKER-LINE", file: "x.js" }]));
+  const mut = spawnSync(process.execPath, [CLI, "mutate", "m.json", "--command", "true"], { cwd: r.dir, encoding: "utf8" });
+  assert.equal(mut.status, 1);
+  assert.ok(!lines(mut.stderr).some((l) => l.startsWith("MARKER-LINE")), mut.stderr);
+  assert.match(mut.stderr, /^- /m);
+});
+
+test("scan audit (review two): `unmeasured` names what was not measured with why; null means none", () => {
+  const r = repo();
+  r.commit("feat: start", { "package.json": JSON.stringify({ scripts: { test: "node --test" } }) });
+  const plain = scanProject({ cwd: r.dir, env: {} });
+  assert.deepEqual(plain.unmeasured, {});
+  assert.equal(plain.mutation, null, "none configured");
+  put(r.dir, { "package.json": "{ broken" });
+  assert.deepEqual(Object.keys(scanProject({ cwd: r.dir, env: {} }).unmeasured).sort(), ["commands", "mutation"]);
+  const none = mkdtempSync(join(tmpdir(), "en-unm-"));
+  assert.deepEqual(scanProject({ cwd: none, env: {} }).unmeasured, { bans: [{ reason: "noRepo" }] });
+});
+
+test("scan audit (review two): at the entry ceiling the directories still waiting are counted; a proposal is shown whole; an error line is bounded", async () => {
+  const { loadPathScopedRules } = await import("../adapters/claude-code/rules-index.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "en-ceiling-"));
+  mkdirSync(join(dir, ".claude", "rules", "a-assets"), { recursive: true });
+  for (let i = 0; i < 10050; i++) writeFileSync(join(dir, ".claude", "rules", "a-assets", `f${i}.png`), "");
+  put(dir, { ".claude/rules/z/r.md": "---\npaths: ['**']\n---\nr\n" });
+  /** @type {string[]} */
+  const unreadable = [];
+  /** @type {Map<string, string>} */
+  const why = new Map();
+  loadPathScopedRules(dir, unreadable, why);
+  assert.deepEqual(unreadable.map((p) => [p.slice(dir.length), why.get(p)]), [["/.claude/rules/a-assets", "limit:entries:1"]]);
+  // A test pattern of nearly a thousand characters: the proposal built on it is copied into the config whole.
+  const r = setup({ metrics: { testRe: `(${Array.from({ length: 200 }, (_, i) => `x${i}y`).join("|")}|\\.test\\.)` } }, { nodes: [{ id: "a" }] });
+  r.commit("feat: tests", { "tests/a.py": "x" });
+  const json = JSON.parse(spawnSync(process.execPath, [CLI, "init-scan", "--json"], { cwd: r.dir, encoding: "utf8" }).stdout);
+  assert.ok(json.tests.proposal.length > 1000);
+  const human = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: r.dir, encoding: "utf8" }).stdout;
+  assert.ok(human.includes(`Proposed: ${json.tests.proposal}`), "the proposal whole");
+  // An error line past its bound keeps its start and end: a config key of ten thousand characters.
+  put(r.dir, { ".ennyn/config.json": JSON.stringify({ [`k${"y".repeat(10000)}z`]: 1 }) });
+  const long = spawnSync(process.execPath, [CLI, "mechanization"], { cwd: r.dir, encoding: "utf8" });
+  assert.equal(long.status, 1);
+  const line = long.stderr.split("\n")[1];
+  assert.ok(line.length < 4200 && /characters cut/.test(line) && line.includes("kyyy") && line.includes("yyz"), line.slice(0, 80));
+});
+
+test("scan audit (review two): an empty directory linked out is named too; a churn path that leads out is named, its marker not read", () => {
+  const out = mkdtempSync(join(tmpdir(), "en-out2-"));
+  mkdirSync(join(out, "skills"));
+  const dir = mkdtempSync(join(tmpdir(), "en-out2-repo-"));
+  git(["init", "-q"], { cwd: dir });
+  mkdirSync(join(dir, ".claude"));
+  symlinkSync(join(out, "skills"), join(dir, ".claude", "skills"));
+  // A link rewritten in every commit to a generated file outside: a churn path, its head never read.
+  for (let i = 0; i < MIN_HISTORY + 2; i++) {
+    writeFileSync(join(out, `gen${i}.js`), `// @generated OUTSIDE-MARK ${i}\n`);
+    rmSync(join(dir, "gen.js"), { force: true });
+    symlinkSync(join(out, `gen${i}.js`), join(dir, "gen.js"));
+    git(["add", "-A"], { cwd: dir });
+    git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", `feat: ${i}`], { cwd: dir });
+  }
+  const scan = scanProject({ cwd: dir, env: {} });
+  assert.deepEqual(scan.churn.paths.map((p) => [p.path, p.generatedMarker, p.outside]), [["gen.js", false, true]]);
+  assert.deepEqual(scan.outside, [".claude/skills", "gen.js"]);
+});
+
+// Review round three of the init-scan audit.
+test("scan audit (review three): budget reads a listing as the scan does: one linked out of the repository is neither counted nor read", () => {
+  const out = mkdtempSync(join(tmpdir(), "en-b-out-"));
+  put(out, { "a.md": `---\nname: a\ndescription: ${"d".repeat(1500)}\n---\nx\n` });
+  const r = repo();
+  r.commit("feat: start", { "CLAUDE.md": "x\n" });
+  mkdirSync(join(r.dir, ".claude", "agents"), { recursive: true });
+  symlinkSync(join(out, "a.md"), join(r.dir, ".claude", "agents", "a.md"));
+  r.commit("feat: link");
+  const json = JSON.parse(spawnSync(process.execPath, [CLI, "budget", "--json"], { cwd: r.dir, encoding: "utf8" }).stdout);
+  assert.equal(json.listings, 0, "not counted");
+  assert.deepEqual(json.outside, [".claude/agents/a.md"]);
+});
+
+test("scan audit (review three): what was not measured, and a walk's limit, read in the project's language", async () => {
+  const { reasonText } = await import("../adapters/claude-code/rules-index.mjs");
+  const r = setup({ language: "tr" }, { nodes: [{ id: "a" }] });
+  put(r.dir, { "package.json": "{ broken" });
+  const out = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: r.dir, encoding: "utf8" }).stdout;
+  assert.match(out, /^Komutlar şuradan ölçülmedi: package\.json: geçerli JSON değil; o dosyaların tanımladığı bilinmiyor\.$/m);
+  assert.match(out, /^Kırma: ölçülmedi: package\.json: geçerli JSON değil\.$/m);
+  assert.doesNotMatch(out, /not valid JSON/);
+  assert.equal(reasonText("limit:entries:1", "tr"), "10000 girdiden fazla; bir dizin daha okunmadı");
+  assert.equal(reasonText("limit:entries:3", "en"), "more than 10000 entries; 3 more directories not read");
+  assert.equal(reasonText("limit:entries:0", "en"), "more than 10000 entries");
+  assert.equal(reasonText("limit:depth", "tr"), "32 dizinden daha derinde");
+  assert.equal(reasonText("EACCES: permission denied", "tr"), "EACCES: permission denied");
 });

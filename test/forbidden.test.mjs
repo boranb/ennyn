@@ -422,7 +422,8 @@ test("init-scan: ban lines with what the index holds of each literal, the instru
   const plain = mkdtempSync(join(tmpdir(), "en-fb-plain-"));
   put(plain, { "CLAUDE.md": "- Never use `eval`.\n" });
   const outside = scanProject({ cwd: plain, env: {} });
-  assert.equal(outside.bans, null);
+  assert.deepEqual(outside.bans, []);
+  assert.deepEqual(outside.unmeasured.bans, [{ reason: "noRepo" }]);
   assert.deepEqual(outside.agentSetup.instructions[0].banLines, [{ line: "- Never use `eval`.", literals: ["eval"] }]);
 });
 

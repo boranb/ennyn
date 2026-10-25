@@ -10,12 +10,33 @@
  *     - server/src/**
  */
 
-import { readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { gone } from "../../core/files.mjs";
-import { join } from "node:path";
+import { readdirSync, realpathSync, statSync } from "node:fs";
+import { gone, readIfThere } from "../../core/files.mjs";
+import { join, sep } from "node:path";
 import { matchAny } from "../../core/glob.mjs";
+import { t } from "../../core/i18n.mjs";
 
 const MAX_DEPTH = 32;
+/** Entries a walk reads at most, inside the repository too: past them it stops and says where. */
+const MAX_ENTRIES = 10000;
+/** Whether a walk's reason is one of its limits (depth, entries), a code reasonText renders. @param {string | undefined} reason */
+export const isLimit = (reason) => typeof reason === "string" && reason.startsWith("limit:");
+
+/**
+ * A walk's reason in a reader's language: its limits are codes (`limit:depth`, `limit:entries:<directories left>`);
+ * anything else (an error's own message) is as it is.
+ * @param {string} reason @param {string} lang
+ */
+export function reasonText(reason, lang) {
+  if (reason === "limit:depth") return t("walk.depth", { max: MAX_DEPTH }, lang);
+  const m = /^limit:entries:(\d+)$/.exec(reason);
+  if (!m) return reason;
+  const left = Number(m[1]);
+  return t(left === 0 ? "walk.entries" : left === 1 ? "walk.entriesLeftOne" : "walk.entriesLeft", { max: MAX_ENTRIES, left }, lang);
+}
+
+/** The reason a walk gives for a link whose real path leaves the repository. */
+export const LEAVES = "a link out of the repository, not followed";
 
 /**
  * @param {string} text
@@ -164,70 +185,122 @@ export function parsePaths(frontMatter) {
 }
 
 /**
+ * Markdown files below a directory, linked directories and files followed while their real path stays inside
+ * `root` (the repository: a link out of it is a file Claude Code may load or not, and these names reach the
+ * model through a trusted channel, so it is said, not read), each directory once by its real path (a link back
+ * to a parent, or two links to one directory, is read once), breadth first so a directory's depth is its own,
+ * at most MAX_DEPTH levels and MAX_ENTRIES entries. One walk for the hook and init-scan, so the rules one counts
+ * are the rules the other reads.
  * @param {string} dir
- * @param {string[]} out
- * @param {Set<string>} seen real paths of visited directories (symlink cycles)
- * @param {number} depth
- * @param {string[]} unreadable paths there that could not be read (not "no rules")
+ * @param {string} root
+ * @param {string[]} [unreadable] filled with what is there but was not read: could not be, past the depth or the
+ *   entries, or a link out of `root`
+ * @param {Map<string, string>} [why] filled with each unreadable path's reason
+ * @returns {string[]} absolute paths, sorted
  */
-function walk(dir, out, seen, depth, unreadable) {
-  if (depth > MAX_DEPTH) return;
-  let real;
+export function markdownFiles(dir, root, unreadable = [], why = new Map()) {
+  /** @param {string} path @param {string} reason */
+  const cannot = (path, reason) => {
+    unreadable.push(path);
+    why.set(path, reason);
+  };
+  /** @type {string[]} */
+  const files = [];
+  let top;
   try {
-    real = realpathSync.native(dir);
+    top = realpathSync.native(root);
   } catch (err) {
-    if (!gone(err)) unreadable.push(dir);
-    return;
+    cannot(dir, /** @type {Error} */ (err).message);
+    return files;
   }
-  if (seen.has(real)) return;
-  seen.add(real);
-  let entries;
-  try {
-    entries = readdirSync(dir, { withFileTypes: true });
-  } catch (err) {
-    if (!gone(err)) unreadable.push(dir);
-    return;
-  }
-  for (const e of entries) {
-    const p = join(dir, e.name);
-    let isDir = e.isDirectory();
-    let isFile = e.isFile();
-    if (e.isSymbolicLink()) {
-      try {
-        const st = statSync(p);
-        isDir = st.isDirectory();
-        isFile = st.isFile();
-      } catch (err) {
-        // A link to nothing is no rule; one that cannot be looked at may be.
-        if (!gone(err)) unreadable.push(p);
-        continue;
-      }
+  const inside = (/** @type {string} */ real) => real === top || real.startsWith(top.endsWith(sep) ? top : top + sep);
+  /** @type {Set<string>} real paths of the directories reached */
+  const seen = new Set();
+  /** @type {[string, number][]} */
+  const queue = [[dir, 0]];
+  let entries = 0;
+  for (let q = 0; q < queue.length; q++) {
+    const [at, depth] = queue[q];
+    let real;
+    try {
+      real = realpathSync.native(at);
+    } catch (err) {
+      if (!gone(err)) cannot(at, /** @type {Error} */ (err).message);
+      continue;
     }
-    if (isDir) walk(p, out, seen, depth + 1, unreadable);
-    else if (isFile && e.name.endsWith(".md")) out.push(p);
+    if (seen.has(real)) continue;
+    seen.add(real);
+    if (!inside(real)) {
+      cannot(at, LEAVES);
+      continue;
+    }
+    // Deeper than this is not read, which is said: what it holds is unknown, not nothing.
+    if (depth > MAX_DEPTH) {
+      cannot(at, "limit:depth");
+      continue;
+    }
+    let list;
+    try {
+      list = readdirSync(at, { withFileTypes: true });
+    } catch (err) {
+      if (!gone(err)) cannot(at, /** @type {Error} */ (err).message);
+      continue;
+    }
+    for (const e of list) {
+      if (++entries > MAX_ENTRIES) {
+        // The directories still waiting are not read either: said with this one, by count.
+        const left = queue.length - q - 1;
+        cannot(at, `limit:entries:${left}`);
+        return files.sort();
+      }
+      const p = join(at, e.name);
+      let isDir = e.isDirectory();
+      let isFile = e.isFile();
+      if (e.isSymbolicLink()) {
+        try {
+          const st = statSync(p);
+          isDir = st.isDirectory();
+          isFile = st.isFile();
+          // A linked directory is judged when it is reached; a linked file here.
+          if (isFile && !inside(realpathSync.native(p))) {
+            cannot(p, LEAVES);
+            continue;
+          }
+        } catch (err) {
+          // A link to nothing is no rule; one that cannot be looked at may be.
+          if (!gone(err)) cannot(p, /** @type {Error} */ (err).message);
+          continue;
+        }
+      }
+      if (isDir) queue.push([p, depth + 1]);
+      else if (isFile && e.name.endsWith(".md")) files.push(p);
+    }
   }
+  return files.sort();
 }
 
 /**
  * @param {string} projectDir
  * @param {string[]} [unreadable] filled with the rule files and directories that are there but could not be
  *   read: whether they apply is unknown, which the caller says
+ * @param {Map<string, string>} [why] filled with each unreadable path's reason
  * @returns {Array<{ file: string, patterns: string[] }>} absolute rule file paths, sorted
  */
-export function loadPathScopedRules(projectDir, unreadable = []) {
-  /** @type {string[]} */
-  const files = [];
-  walk(join(projectDir, ".claude", "rules"), files, new Set(), 0, unreadable);
+export function loadPathScopedRules(projectDir, unreadable = [], why = new Map()) {
+  const files = markdownFiles(join(projectDir, ".claude", "rules"), projectDir, unreadable, why);
   /** @type {Array<{ file: string, patterns: string[] }>} */
   const rules = [];
-  for (const file of files.sort()) {
+  for (const file of files) {
     let text;
     try {
-      text = readFileSync(file, "utf8");
+      // A regular file only, up to the read limit: a pipe put in a rule's place would hold the hook.
+      text = readIfThere(file);
     } catch (err) {
-      if (!gone(err)) unreadable.push(file);
+      unreadable.push(file);
+      why.set(file, /** @type {Error} */ (err).message);
       continue;
     }
+    if (text === null) continue;
     const { frontMatter } = splitFrontMatter(text);
     const patterns = frontMatter === null ? null : parsePaths(frontMatter);
     if (patterns && patterns.length) rules.push({ file, patterns });
@@ -251,7 +324,8 @@ export function rulesForPath(rules, relPath) {
  */
 export function readRuleBody(file) {
   try {
-    return splitFrontMatter(readFileSync(file, "utf8")).body.replace(/^\n+/, "").trimEnd();
+    const text = readIfThere(file);
+    return text === null ? null : splitFrontMatter(text).body.replace(/^\n+/, "").trimEnd();
   } catch {
     return null;
   }

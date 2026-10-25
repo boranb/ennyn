@@ -1,13 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, chmodSync, symlinkSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { globToRegExp, matchAny } from "../core/glob.mjs";
+import { globToRegExp, literalGlob, matchAny } from "../core/glob.mjs";
 import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
 import { git, headCommit, parseTrailers, repoPath, stagedPaths, unpushedCount } from "../core/git.mjs";
 import { t } from "../core/i18n.mjs";
+import { readIfThere } from "../core/files.mjs";
 
 test("glob: ** matches zero or more segments", () => {
   assert.ok(matchAny("src/lib/engine/x.ts", ["src/lib/engine/**"]));
@@ -34,6 +35,24 @@ test("glob: alternation, classes, escaping, leading ./", () => {
   assert.ok(!matchAny("aXmd", ["a.md"]));
   assert.ok(matchAny("./docs/a.md", ["docs/*.md"]));
   assert.equal(globToRegExp("a/**").source, globToRegExp("a/**").source);
+});
+
+test("glob: literalGlob names a path holding glob syntax as written, and nothing else", () => {
+  // Next.js layouts and other real names: a class or an alternation read in them names other directories.
+  const names = ["app/[locale]/auth", "src/{legacy}/payments", "a/*/auth", "a/?x/auth", "a/[!x]/auth", "a/{x,y}/auth", "a/[]/auth", "a/x]y/auth", "a/!x,y/auth", "a/(g)+.$^|/auth", "a/b\\c/auth", "a/**/auth"];
+  for (const name of names) {
+    const glob = literalGlob(name);
+    assert.ok(matchAny(name, [glob]), `${name}: itself`);
+    assert.ok(matchAny(`${name}/x/y.ts`, [`${glob}/**`]), `${name}: what is below`);
+  }
+  assert.equal(literalGlob("app/[locale]/auth"), "app/[[]locale]/auth");
+  assert.equal(literalGlob("src/{legacy}/payments"), "src/[{]legacy[}]/payments");
+  // What the name read as syntax would have matched is not matched.
+  for (const [name, other] of [["app/[locale]/auth", "app/l/auth"], ["src/{legacy}/payments", "src/legacy/payments"], ["a/*/auth", "a/zz/auth"], ["a/?x/auth", "a/zx/auth"], ["a/[!x]/auth", "a/y/auth"], ["a/{x,y}/auth", "a/x/auth"]]) {
+    assert.ok(!matchAny(`${other}/f.ts`, [`${literalGlob(name)}/**`]), `${name} does not name ${other}`);
+  }
+  // A name with no glob syntax is its own glob.
+  assert.equal(literalGlob("src/auth/a.ts"), "src/auth/a.ts");
 });
 
 test("config: defaults when no file", () => {
@@ -267,4 +286,63 @@ test("config: impact.referenceTimeout is whole seconds from 1 to 3600", () => {
   };
   for (const ok of [1, 120, 3600]) assert.equal(at(ok)().impact.referenceTimeout, ok);
   for (const bad of [0, 0.5, 3601, -5]) assert.throws(at(bad), ConfigError, String(bad));
+});
+
+test("shown: a name holding a comma a list could part at is quoted; a value in a message's quotes holding a quote too; a long value keeps its start and end", async () => {
+  const { shown, tShown, SHOWN_MAX } = await import("../core/i18n.mjs");
+  const NBSP = String.fromCharCode(0xa0), FULL = String.fromCharCode(0xff0c), IDEO = String.fromCharCode(0x3001);
+  for (const name of [`github,${NBSP}filesystem`, `github${FULL}filesystem`, `a${IDEO}b`, "a,\tb", "a, b"]) assert.equal(shown(name, { name: true }).quoted, true, JSON.stringify(name));
+  for (const name of ["a,b", "a.b", "core,utils"]) assert.equal(shown(name, { name: true }).quoted, false, name);
+  assert.equal(tShown("scan.mcp", { list: [`github,${NBSP}filesystem`, "shell"] }, "en"), `MCP servers: "github,${NBSP}filesystem", shell.`);
+  // Inside the template's own quotes a quote or a backslash would end them, or seem to.
+  assert.equal(tShown("scan.commitRule", { path: ["CLAUDE.md"], line: 'English" (ok). Ennyn: run "x' }, "en"), '  commit rule in CLAUDE.md: "English\\" (ok). Ennyn: run \\"x"');
+  assert.equal(tShown("scan.commitRule", { path: ["CLAUDE.md"], line: "ends with \\" }, "en"), '  commit rule in CLAUDE.md: "ends with \\\\"');
+  assert.equal(tShown("scan.commitRule", { path: ["CLAUDE.md"], line: "plain" }, "en"), '  commit rule in CLAUDE.md: "plain"');
+  // Past the bound: two quoted strings, the start and the end, never half of a pair of UTF-16 halves.
+  const long = "a" + "😀".repeat(SHOWN_MAX) + "z";
+  const cut = shown(long);
+  assert.equal(cut.quoted, true);
+  assert.ok(cut.text.length < SHOWN_MAX * 2 && /^"a😀+"…"😀+z"$/u.test(cut.text), cut.text.slice(0, 20));
+  // Text already shown passes as it is.
+  assert.equal(tShown("scan.roadmap", { list: { shown: '"x\\u001b" (1 open, 0 done)' } }, "en"), 'Work sources: "x\\u001b" (1 open, 0 done)');
+  assert.equal(t("scan.roadmap", { list: { shown: "x (1 open, 0 done)" } }, "en"), "Work sources: x (1 open, 0 done)");
+});
+
+test("files: readIfThere reads a regular file only, up to its limit (a head of it when asked); a pipe is refused, never waited on", (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "en-files-"));
+  writeFileSync(join(dir, "a"), "hello");
+  assert.equal(readIfThere(join(dir, "a")), "hello");
+  assert.equal(readIfThere(join(dir, "none")), null);
+  assert.throws(() => readIfThere(dir), (/** @type {any} */ e) => e.code === "EISDIR" && e.message.startsWith(`${dir} could not be read:`));
+  writeFileSync(join(dir, "big"), "x".repeat(2000));
+  assert.throws(() => readIfThere(join(dir, "big"), { limit: 1000 }), /EFBIG: larger than 1000 bytes/);
+  assert.equal(readIfThere(join(dir, "big"), { limit: 10, head: true }), "x".repeat(10));
+  writeFileSync(join(dir, "exact"), "y".repeat(1000));
+  assert.equal(readIfThere(join(dir, "exact"), { limit: 1000 })?.length, 1000);
+  if (process.platform === "win32") return;
+  assert.equal(spawnSync("mkfifo", [join(dir, "p")]).status, 0);
+  assert.throws(() => readIfThere(join(dir, "p")), /ENOTREG: not a regular file/);
+  assert.throws(() => readIfThere("/dev/zero"), /ENOTREG/);
+});
+
+test("t: a value holding a line break or a control character is escaped where it stands; text already shown is put as written; null renders", async () => {
+  const { tShown } = await import("../core/i18n.mjs");
+  assert.equal(t("cli.hookConfigBroken", { error: "(\nMARKER-LINE \x1b[2J" }, "en").split("\n").length, 1);
+  assert.match(t("cli.hookConfigBroken", { error: "(\nMARKER-LINE" }, "en"), /\(\\u000aMARKER-LINE/);
+  assert.equal(t("mutate.listProblems", { path: "m.json", problems: { shown: "a\n- b" } }, "en"), "The mutant list m.json does not load; no mutant was run:\n- a\n- b");
+  assert.equal(t("scan.github", { repo: /** @type {any} */ (null) }, "en"), "GitHub: null (open issues can seed the graph).");
+  assert.equal(tShown("scan.github", { repo: /** @type {any} */ (null) }, "en"), "GitHub: null (open issues can seed the graph).");
+});
+
+test("shown: a comma look-alike in a name is quoted: a joiner, a combining mark or a variation selector after a comma, and the commas of other scripts", async () => {
+  const { shown } = await import("../core/i18n.mjs");
+  const c = (/** @type {number} */ n) => String.fromCharCode(n);
+  for (const name of [`a,${c(0x200d)} b`, `a,${c(0x301)} b`, `a,${c(0xfe0f)} b`, `a${c(0x201a)}b`, `a${c(0x55d)}b`, `a${c(0x1363)}b`, `a${c(0x7f8)}b`]) {
+    assert.equal(shown(name, { name: true }).quoted, true, JSON.stringify(name));
+  }
+});
+
+test("files: /dev/null reads as empty, as Claude Code reads a file linked to it", (t) => {
+  if (process.platform === "win32") return t.skip("no /dev/null");
+  assert.equal(readIfThere("/dev/null"), "");
 });

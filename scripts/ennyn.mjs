@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { relative, resolve, sep } from "node:path";
 import { loadConfig, ConfigError } from "../core/config.mjs";
 import { READ_BUDGET, git, headBlob, headCommit, hookIndexFile, indexKinds, indexNames, mergeHeads, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
-import { UNSHOWN, shown, t, tShown } from "../core/i18n.mjs";
+import { ends, jsonShown, shown, t, tShown, unshownEscaped } from "../core/i18n.mjs";
 import { globToRegExp, matchAny } from "../core/glob.mjs";
 import { checkCommitShape, nameShown, secretErrors, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
 import { ciCallees, ciMessages } from "../checks/ci.mjs";
@@ -312,10 +312,26 @@ async function secretScan(cwd, cfg, staged, notUtf8, hook) {
   return done(secretErrors({ config: cfg, hits: scan.hits, names, secretsExcept: except }), namesUnread);
 }
 
+// Every line written passes unshownEscaped: a value that reached a line without tShown (an error that quotes a
+// path, git's own words) still cannot drive the terminal. Line feeds the program put there stay.
 /** @param {string} s */
-const out = (s) => process.stdout.write(s.endsWith("\n") ? s : s + "\n");
+const out = (s) => process.stdout.write(unshownEscaped(s.endsWith("\n") ? s : s + "\n", { keepLines: true }));
+/** The longest line written to stderr: past it a line keeps its start and end, the cut said (an error naming thousands of paths). */
+const ERROR_LINE_MAX = 4000;
 /** @param {string} s */
-const err = (s) => process.stderr.write(s.endsWith("\n") ? s : s + "\n");
+const err = (s) =>
+  process.stderr.write(
+    unshownEscaped(s.endsWith("\n") ? s : s + "\n", { keepLines: true }).replace(/[^\n]+/g, (line) => {
+      if (line.length <= ERROR_LINE_MAX) return line;
+      const { head, tail, cut } = ends(line, ERROR_LINE_MAX);
+      return `${head}…(${cut} characters cut)…${tail}`;
+    }),
+  );
+/** A value in quotes; one shown quoted and escaped brings its own. @param {string} s */
+const inQuotes = (s) => {
+  const v = shown(s, { inQuotes: true });
+  return v.quoted ? v.text : `"${v.text}"`;
+};
 
 /**
  * Up to 60 characters of `s` around the first match of `re`, so a match deep in a long subject stays visible.
@@ -387,7 +403,7 @@ const COMMANDS = {
     if (help) return (out(USAGE), 0);
     const cwd = projectDir();
     const res = scanProject({ cwd });
-    if (opts.json) return (out(JSON.stringify(res, null, 2)), 0);
+    if (opts.json) return (out(jsonShown(res)), 0);
     // A broken config is part of the report, not a reason to stop.
     let lang = "en";
     try {
@@ -395,38 +411,55 @@ const COMMANDS = {
     } catch {
       // English until the config loads.
     }
-    const say = (/** @type {string} */ key, /** @type {Record<string, string | number>} */ vars = {}) => out(t(key, vars, lang));
+    // Every value comes from the project (names, subjects, lines of its files): shown as one line can show it
+    // (tShown), so a control or direction character neither drives the terminal nor passes for the report's own text.
+    const say = (/** @type {string} */ key, /** @type {import("../core/i18n.mjs").Vars} */ vars = {}) => out(tShown(key, vars, lang));
+    /** A name inside a value the line puts together itself. @param {string} name */
+    const name = (name) => shown(name, { name: true }).text;
+    /** A proposal for the config: escaped, never cut. @param {string} s */
+    const whole = (s) => ({ shown: shown(s, { max: Infinity }).text });
+    /** What was not measured and why, in the project's language. @param {{ path?: string, reason: string, name?: string }[]} list */
+    const why = (list) => ({ shown: list.map((u) => tShown(`scan.why.${u.reason}`, { path: [u.path ?? ""], name: u.name ?? "" }, lang)).join("; ") });
     if (!res.config.path) say("scan.configNone");
-    else if (res.config.problems.length) say("scan.configProblems", { path: res.config.path, problems: res.config.problems.join("; ") });
-    else say("scan.configOk", { path: res.config.path });
-    say(res.graph.exists ? "scan.graphOk" : "scan.graphNone", { path: res.graph.path });
+    else if (res.config.problems.length) say("scan.configProblems", { path: [res.config.path], problems: res.config.problems.join("; ") });
+    else say("scan.configOk", { path: [res.config.path] });
+    say(res.graph.exists ? "scan.graphOk" : "scan.graphNone", { path: [res.graph.path] });
     if (!res.repository) say("scan.noRepo");
     else {
       const fx = res.fixSubject;
       if (fx.commits) say("scan.conventional", { commits: fx.commits, pct: percent(fx.conventionalShare, lang) });
       const cs = res.commitStyle;
       if (cs.language.guess) say("scan.commitLanguage", { guess: cs.language.guess, tr: cs.language.tr, en: cs.language.en });
-      if (cs.types.length) say("scan.subjectTypes", { list: cs.types.map((x) => `${x.type} ${x.n}`).join(" · ") });
+      if (cs.types.length) say("scan.subjectTypes", { list: { shown: cs.types.map((x) => `${shown(x.type).text} ${x.n}`).join(" · ") } });
       // A weak result proposes nothing; its examples show the mentions.
       const pattern = fx.proposal ?? fx.candidates.find((c) => c.id === fx.pick)?.pattern ?? null;
-      const vars = { commits: fx.commits, min: MIN_HISTORY, pattern: pattern ?? "", matches: fx.matches, pct: percent(fx.share, lang) };
-      const examples = fx.examples.map((e) => `"${excerpt(e, pattern ? new RegExp(pattern) : null)}"`).join(", ");
+      // A proposal is copied into the config: shown whole, never cut.
+      const vars = { commits: fx.commits, min: MIN_HISTORY, pattern: whole(pattern ?? ""), matches: fx.matches, pct: percent(fx.share, lang) };
+      const examples = { shown: fx.examples.map((e) => inQuotes(excerpt(e, pattern ? new RegExp(pattern) : null))).join(", ") };
       say({ ok: "scan.fixOk", majority: "scan.fixMajority", weak: "scan.fixWeak", none: "scan.fixNone", tooFew: "scan.fixTooFew" }[fx.reason], { ...vars, examples });
       if (res.churn.paths.length) {
         say("scan.churn", { min: res.churn.min ?? 0, commits: res.churn.commits });
-        for (const p of res.churn.paths) say("scan.churnItem", { path: p.path, n: p.commits, marker: p.generatedMarker ? t("scan.generatedMarker", {}, lang) : "" });
+        for (const p of res.churn.paths) say("scan.churnItem", { path: [p.path], n: p.commits, marker: p.generatedMarker ? t("scan.generatedMarker", {}, lang) : "" });
       }
     }
     say("scan.tests", { n: res.tests.matched });
-    if (res.tests.proposal) say("scan.testsProposal", { examples: res.tests.alternatives.flatMap((a) => a.examples).slice(0, 3).join(", "), pattern: res.tests.proposal });
-    if (res.risky.length) say("scan.risky", { list: res.risky.map((r) => r.glob).join(", ") });
-    if (res.roadmap.length) say("scan.roadmap", { list: res.roadmap.map((r) => (r.open + r.done ? t("scan.roadmapItem", { path: r.path, open: r.open, done: r.done }, lang) : t("scan.roadmapItemLines", { path: r.path, lines: r.lines }, lang))).join(" · ") });
+    if (res.tests.proposal) say("scan.testsProposal", { examples: res.tests.alternatives.flatMap((a) => a.examples).slice(0, 3), pattern: whole(res.tests.proposal) });
+    if (res.risky.length) say("scan.risky", { list: { shown: res.risky.map((r) => shown(r.glob, { name: true, max: Infinity }).text).join(", ") } });
+    if (res.roadmap.length) {
+      const item = (/** @type {typeof res.roadmap[number]} */ r) =>
+        r.absent ? "scan.roadmapItemAbsent" : r.outside ? "scan.roadmapItemOutside" : r.open + r.done ? "scan.roadmapItem" : "scan.roadmapItemLines";
+      say("scan.roadmap", { list: { shown: res.roadmap.map((r) => tShown(item(r), { path: [r.path], open: r.open, done: r.done, lines: r.lines }, lang)).join(" · ") } });
+    }
     if (res.github) say("scan.github", { repo: res.github });
+    // What a file not read declares is unknown, never "none"; what the others declare is listed.
     if (res.commands.length) say("scan.commands", { list: res.commands.join(" · ") });
-    else say("scan.commandsNone");
+    if (res.unmeasured.commands) say("scan.commandsUnmeasured", { reason: why(res.unmeasured.commands) });
+    else if (!res.commands.length) say("scan.commandsNone");
     if (res.mutation) say("scan.mutation", { command: res.mutation });
+    else if (res.unmeasured.mutation) say("scan.mutationUnmeasured", { reason: why(res.unmeasured.mutation) });
     else say("scan.mutationNone");
     if (res.pathScopedRules) say("scan.rules", { n: res.pathScopedRules });
+    if (res.pathScopedRulesLinkedOut) say("scan.rulesLinkedOut", { linked: res.pathScopedRulesLinkedOut });
     const ag = res.agentSetup;
     const kb = (/** @type {number} */ b) => `${(b / 1024).toFixed(1)} KB`;
     if (ag.instructions.length) {
@@ -435,41 +468,46 @@ const COMMANDS = {
         always: kb(ag.size.always),
         onDemand: kb(ag.size.onDemand),
         other: kb(ag.size.other),
-        list: biggest.map((i) => `${i.path} ${kb(i.bytes)}`).join(" · ") || "—",
+        list: { shown: biggest.map((i) => `${name(i.path)} ${kb(i.bytes)}`).join(" · ") || "—" },
       });
       // Every-session files first: those are the rules the cycle would contradict each time.
       const order = { always: 0, "on-demand": 1, other: 2 };
       // At most two lines per file, so a rule file is not hidden behind a long CLAUDE.md; --json has them all.
       const files = [...ag.instructions].sort((a, b) => order[a.loads] - order[b.loads]);
       const all = files.reduce((n, i) => n + i.commitLines.length, 0);
-      const shown = files.flatMap((i) => i.commitLines.slice(0, 2).map((line) => ({ path: i.path, line }))).slice(0, 8);
-      for (const r of shown) say("scan.commitRule", r);
-      if (all > shown.length) say("scan.commitRuleMore", { n: all - shown.length });
+      const lines = files.flatMap((i) => i.commitLines.slice(0, 2).map((line) => ({ path: [i.path], line }))).slice(0, 8);
+      for (const r of lines) say("scan.commitRule", r);
+      if (all > lines.length) say("scan.commitRuleMore", { n: all - lines.length });
     }
     // Ban lines with what the index holds of each literal today; the same two-a-file, eight in all as above.
     if (res.bans?.length) {
       /** @type {Map<string, number>} */
       const perFile = new Map();
-      const shown = res.bans.filter((b) => {
+      const lines = res.bans.filter((b) => {
         const n = (perFile.get(b.path) ?? 0) + 1;
         perFile.set(b.path, n);
         return n <= 2;
       }).slice(0, 8);
-      for (const b of shown) {
-        const literals = b.literals
-          .map((l) => t(l.lines ? "scan.banLiteral" : "scan.banLiteralNone", { text: l.text, lines: l.lines, files: l.files, examples: l.examples.join(", "), gated: l.gated ? t("scan.banGated", {}, lang) : "" }, lang))
-          .join("; ");
-        say("scan.ban", { path: b.path, line: b.line, literals });
+      for (const b of lines) {
+        const literals = {
+          shown: b.literals
+            .map((l) => tShown(l.lines ? "scan.banLiteral" : "scan.banLiteralNone", { text: l.text, lines: l.lines, files: l.files, examples: l.examples, gated: l.gated ? t("scan.banGated", {}, lang) : "" }, lang))
+            .join("; "),
+        };
+        say("scan.ban", { path: [b.path], line: b.line, literals });
       }
-      if (res.bans.length > shown.length) say("scan.banMore", { n: res.bans.length - shown.length });
+      if (res.bans.length > lines.length) say("scan.banMore", { n: res.bans.length - lines.length });
     }
+    if (res.unmeasured.bans) say("scan.bansUnmeasured", { reason: why(res.unmeasured.bans) });
     if (ag.skills.length || ag.agents.length || ag.commands.length) say("scan.agentParts", { skills: ag.skills.length, agents: ag.agents.length, commands: ag.commands.length });
     if (ag.overlaps.cycle.length || ag.overlaps.reviewers.length) {
-      say("scan.overlaps", { cycle: ag.overlaps.cycle.join(", ") || "—", reviewers: ag.overlaps.reviewers.join(", ") || "—" });
+      say("scan.overlaps", { cycle: ag.overlaps.cycle.length ? ag.overlaps.cycle : "—", reviewers: ag.overlaps.reviewers.length ? ag.overlaps.reviewers : "—" });
     }
-    if (ag.hooks.length) say("scan.hooks", { list: ag.hooks.join(", ") });
-    if (ag.mcpServers.length) say("scan.mcp", { list: ag.mcpServers.join(", ") });
-    if (ag.unreadable.length) say("scan.unreadable", { list: ag.unreadable.join(", ") });
+    if (ag.hooks.length) say("scan.hooks", { list: ag.hooks });
+    if (ag.mcpServers.length) say("scan.mcp", { list: ag.mcpServers });
+    const unreadable = [...res.unreadable, ...ag.unreadable];
+    if (unreadable.length) say("scan.unreadable", { list: unreadable });
+    if (res.outside.length) say("scan.outside", { list: res.outside });
     return 0;
   },
 
@@ -518,7 +556,7 @@ const COMMANDS = {
     const why = before?.reason === "off" ? t("budget.markOff", {}, cfg.language) : t("budget.markSince", { since: before?.since ?? 0, every: before?.every ?? 0 }, cfg.language);
     // A refused mark still records the cycle: the record is what counts it.
     if (refused) err(t("budget.markRefused", { why }, cfg.language));
-    if (opts.json) return (out(JSON.stringify({ ...b, previous, skipped: log.skipped, unusable: log.unusable, recorded: recorded ? { ...recorded.entry, replaced: recorded.replaced } : null, markRefused: refused }, null, 2)), refused ? 1 : 0);
+    if (opts.json) return (out(jsonShown({ ...b, previous, skipped: log.skipped, unusable: log.unusable, recorded: recorded ? { ...recorded.entry, replaced: recorded.replaced } : null, markRefused: refused })), refused ? 1 : 0);
     const lang = cfg.language;
     const delta = previous
       ? t("budget.delta", { d: signedKb(b.always - previous.always), bytes: b.always - previous.always, commit: previous.commit.slice(0, 10) || "—" }, lang)
@@ -530,6 +568,7 @@ const COMMANDS = {
       for (const r of b.repeated.slice(0, 5)) out(tShown("budget.repeatedItem", { line: r.line, files: r.files }, lang));
     }
     if (b.untracked.length) out(tShown("budget.untracked", { list: b.untracked }, lang));
+    if (b.outside.length) out(tShown("budget.outside", { list: b.outside }, lang));
     if (log.skipped) out(t("budget.skipped", { n: log.skipped, path: resolve(cwd, cfg.paths.metricsLog) }, lang));
     if (log.unusable) out(t("budget.unusable", { n: log.unusable, path: resolve(cwd, cfg.paths.metricsLog) }, lang));
     if (recorded) out(t(recorded.replaced ? "budget.replaced" : "budget.recorded", { path: recorded.path, commit: recorded.entry.commit.slice(0, 10) }, lang));
@@ -555,7 +594,7 @@ const COMMANDS = {
     const paths = due.due === false ? [] : sensitivePaths(git(["-c", "core.quotePath=false", "ls-files", "-z"], { cwd }).split("\0").filter(Boolean), cfg, own);
     const code = due.due === null ? 1 : 0;
     // Names a terminal would act on (direction overrides, C1 controls, line separators) as \u escapes: still JSON.
-    if (opts.json) return (out(JSON.stringify({ slot: due.due === false ? "feature" : "security", ...due, log: cfg.paths.metricsLog, paths }, null, 2).replace(/[\u007f-\u{10ffff}]/gu, (c) => (UNSHOWN.test(c) ? Array.from({ length: c.length }, (_, i) => `\\u${c.charCodeAt(i).toString(16).padStart(4, "0")}`).join("") : c))), code);
+    if (opts.json) return (out(jsonShown({ slot: due.due === false ? "feature" : "security", ...due, log: cfg.paths.metricsLog, paths })), code);
     const lang = cfg.language;
     // The log's name as the config gives it, and an error's text, shown on one line (tShown).
     const vars = { every: due.every, cycles: due.cycles, since: due.since ?? 0, left: due.every - (due.since ?? 0) - 1, path: [cfg.paths.metricsLog], error: due.error ?? "" };
@@ -982,7 +1021,7 @@ const COMMANDS = {
     const summary = t("deps.summary", { files: locks.length, entries: entries.length, advisories: found.advisories.length, scripts: scripts.length, refused: mismatched.length + refusedSources.length, unchecked }, lang);
     if (opts.json) {
       const text = (/** @type {import("../checks/deps.mjs").Reason} */ r) => ({ code: r.key, reason: reasonText(r, lang) });
-      out(JSON.stringify({ files: locks, npmrc: npmrcs, untracked, npmrcChanged, lockless: lockless.map((d) => (d ? `${d}/package.json` : "package.json")), entries: entries.length, advisories: found.advisories.map((a) => ({ ...a, entries: [...new Set(a.entries.map(where))], ...(a.unread ? { unread: text(a.unread) } : {}) })), scripts: scripts.map(where), mismatched: mismatched.map((m) => ({ entry: where(m.entry), ...text(m.reason) })), refused: refusedSources.map((r) => ({ entry: where(r.entry), kind: r.kind, ...text(r.reason) })), npmrcLines: npmrcLines.map((l) => ({ path: l.path, line: l.line, ...(l.reason ? text(l.reason) : { refused: true }) })), unchecked: [...found.unread.map((u) => ({ entry: where(u.entry), ...text(u.reason) })), ...unmeasuredHere.map((u) => ({ entry: where(u.entry), ...text(u.reason) }))], unread: unreadFiles.map((u) => ({ path: u.path, ...text(u.reason) })), clean }, null, 2));
+      out(jsonShown({ files: locks, npmrc: npmrcs, untracked, npmrcChanged, lockless: lockless.map((d) => (d ? `${d}/package.json` : "package.json")), entries: entries.length, advisories: found.advisories.map((a) => ({ ...a, entries: [...new Set(a.entries.map(where))], ...(a.unread ? { unread: text(a.unread) } : {}) })), scripts: scripts.map(where), mismatched: mismatched.map((m) => ({ entry: where(m.entry), ...text(m.reason) })), refused: refusedSources.map((r) => ({ entry: where(r.entry), kind: r.kind, ...text(r.reason) })), npmrcLines: npmrcLines.map((l) => ({ path: l.path, line: l.line, ...(l.reason ? text(l.reason) : { refused: true }) })), unchecked: [...found.unread.map((u) => ({ entry: where(u.entry), ...text(u.reason) })), ...unmeasuredHere.map((u) => ({ entry: where(u.entry), ...text(u.reason) }))], unread: unreadFiles.map((u) => ({ path: u.path, ...text(u.reason) })), clean }));
       // The exit code says it; so does a line on stderr, for a reader of the JSON who only sees the failure.
       if (!clean) err(summary);
       return clean ? 0 : 1;
@@ -1039,7 +1078,7 @@ const COMMANDS = {
     const cfg = config(cwd);
     const windowDays = days ?? cfg.metrics.reworkDays;
     const res = reworkRate({ cwd, since, until, days: windowDays, config: cfg });
-    if (opts.json) return (out(JSON.stringify({ ...res, days: windowDays }, null, 2)), 0);
+    if (opts.json) return (out(jsonShown({ ...res, days: windowDays })), 0);
     const lang = cfg.language;
     if (res.rate === null) out(t("rework.none", {}, lang));
     else {
@@ -1051,7 +1090,8 @@ const COMMANDS = {
     if (res.skewed) out(t("rework.skewed", { n: res.skewed }, lang));
     if (res.shallow) out(t("rework.shallow", {}, lang));
     for (const p of res.pairs) {
-      out(t("rework.pair", { origin: p.origin.slice(0, 10), fix: p.fix.slice(0, 10), files: p.files.join(", "), lines: p.lines, days: p.days }, lang));
+      // File names from history: shown as one line can show them.
+      out(tShown("rework.pair", { origin: p.origin.slice(0, 10), fix: p.fix.slice(0, 10), files: p.files, lines: p.lines, days: p.days }, lang));
     }
     return 0;
   },
@@ -1067,7 +1107,7 @@ const COMMANDS = {
     const cwd = projectDir();
     const cfg = config(cwd);
     const res = bypassUses({ cwd, config: cfg, since, until, from });
-    if (opts.json) return (out(JSON.stringify(res, null, 2)), 0);
+    if (opts.json) return (out(jsonShown(res)), 0);
     const lang = cfg.language;
     if (res.shallow) out(t("bypass.shallow", {}, lang));
     if (!res.commits) return (out(t("bypass.noCommits", {}, lang)), 0);
@@ -1077,7 +1117,8 @@ const COMMANDS = {
       const d = new Date(u.time * 1000);
       // A commit object with no committer time has no day.
       const date = Number.isFinite(u.time) ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : "—";
-      out(t("bypass.item", { hash: u.hash.slice(0, 10), date, subject: u.subject, reason: u.reason || t("bypass.noReason", {}, lang) }, lang));
+      // A subject and a reason from history: shown as one line can show them.
+      out(tShown("bypass.item", { hash: u.hash.slice(0, 10), date, subject: u.subject, reason: u.reason || t("bypass.noReason", {}, lang) }, lang));
     }
     return 0;
   },
@@ -1094,7 +1135,7 @@ const COMMANDS = {
     if (problems.some((p) => p.level === "fail")) return (err(t("mechanization.refused", {}, cfg.language)), 1);
     const node = pickMechanization(graph, cfg);
     const score = node ? scoreNode(node, cfg) : null;
-    if (opts.json) return (out(JSON.stringify(node ? { node, score } : null, null, 2)), 0);
+    if (opts.json) return (out(jsonShown(node ? { node, score } : null)), 0);
     if (!node) out(t("mechanization.none", {}, cfg.language));
     else out(tShown("mechanization.pick", { id: String(node[cfg.graph.fields.id]), score: Number(score).toFixed(2) }, cfg.language));
     return 0;
@@ -1128,7 +1169,8 @@ const COMMANDS = {
       return 1;
     }
     const { mutants, problems } = parseMutants(text);
-    if (problems.length) return (err(t("mutate.listProblems", { path: positional[0], problems: problems.join("\n- ") }, lang)), 1);
+    // One problem a line: each escaped on its own, so none starts a line the list did not.
+    if (problems.length) return (err(t("mutate.listProblems", { path: positional[0], problems: { shown: problems.map((p) => unshownEscaped(p)).join("\n- ") } }, lang)), 1);
     const say = (/** @type {string} */ key, /** @type {Record<string, string | number>} */ vars = {}) => (opts.json ? undefined : out(t(key, vars, lang)));
     const res = await runMutants({
       cwd,
@@ -1149,11 +1191,11 @@ const COMMANDS = {
     if (res.restored) err(t("mutate.restored", { file: res.restored }, lang));
     if (res.baseline.exit !== 0) {
       const how = res.baseline.error ?? (res.baseline.exit === null ? res.baseline.signal : `exit ${res.baseline.exit}`);
-      err(t("mutate.baselineFailed", { how: String(how), tail: res.baseline.tail.trimEnd().split("\n").slice(-15).join("\n") }, lang));
+      err(t("mutate.baselineFailed", { how: String(how), tail: { shown: res.baseline.tail.trimEnd().split("\n").slice(-15).map((l) => unshownEscaped(l)).join("\n") } }, lang));
       return 1;
     }
     const sum = summarizeMutants(res.results);
-    if (opts.json) return (out(JSON.stringify({ ...res, summary: sum }, null, 2)), 0);
+    if (opts.json) return (out(jsonShown({ ...res, summary: sum })), 0);
     say("mutate.summary", sum);
     const survived = res.results.filter((r) => r.outcome === "survived").map((r) => r.id);
     if (survived.length) say("mutate.survivors", { list: survived.join(", ") });
@@ -1212,7 +1254,7 @@ const COMMANDS = {
     const path = gateLogPath(cwd, cfg.paths.stateDir);
     const log = readAttempts(path);
     const sum = summarizeAttempts(log.attempts, { since, until });
-    if (opts.json) return (out(JSON.stringify({ path, exists: log.exists, skipped: log.skipped, ...sum }, null, 2)), 0);
+    if (opts.json) return (out(jsonShown({ path, exists: log.exists, skipped: log.skipped, ...sum })), 0);
     if (!log.exists) return (out(t("gate.none", { path }, lang)), 0);
     if (log.skipped) out(t("gate.skipped", { n: log.skipped, path }, lang));
     if (!sum.attempts) return (out(t("gate.emptyWindow", {}, lang)), 0);
@@ -1237,23 +1279,29 @@ export async function main(argv) {
     out(USAGE);
     return 0;
   }
+  // An error names what it read (a path, a key, git's words about a file): each is one line, a line feed in
+  // a value escaped too, so a name cannot start a line of its own; a config's problems keep a line each.
   if (!cmd || !Object.hasOwn(COMMANDS, cmd)) {
-    err(cmd ? `unknown command "${cmd}"\n\n${USAGE}` : USAGE);
+    err(cmd ? `unknown command ${inQuotes(cmd)}\n\n${USAGE}` : USAGE);
     return 2;
   }
   try {
     return await COMMANDS[cmd](rest);
   } catch (e) {
     if (e instanceof UsageError) {
-      err(`${e.message}\n\n${USAGE}`);
+      err(`${unshownEscaped(e.message)}\n\n${USAGE}`);
       return 2;
     }
-    if (e instanceof ConfigError || e instanceof GraphError || e instanceof MutationError) {
-      err(e.message);
+    if (e instanceof ConfigError) {
+      err(["Invalid ennyn config:", ...e.problems.map((p) => `- ${unshownEscaped(p)}`)].join("\n"));
+      return 1;
+    }
+    if (e instanceof GraphError || e instanceof MutationError) {
+      err(unshownEscaped(e.message));
       return 1;
     }
     const error = /** @type {Error & { stderr?: unknown }} */ (e);
-    err(`ennyn ${cmd}: ${error.stderr ? String(error.stderr).trim() : error.message}`);
+    err(`ennyn ${cmd}: ${unshownEscaped(error.stderr ? String(error.stderr).trim() : error.message)}`);
     return 1;
   }
 }

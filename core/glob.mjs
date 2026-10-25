@@ -94,6 +94,16 @@ export function globToRegExp(pattern) {
   return out;
 }
 
+/**
+ * A glob that matches this path as written, and only it: each letter globToRegExp reads as syntax (`*`, `?`,
+ * `[`, `{`, `}`) in a class of its own, which reads as that letter (`app/[locale]` → `app/[[]locale]`). The
+ * others (`]`, `,`, `!`, `\`) are already letters outside a class and a group. Append `/**` for what is below.
+ * @param {string} path
+ */
+export function literalGlob(path) {
+  return path.replace(/[*?[{}]/g, "[$&]");
+}
+
 /** @param {string} s */
 const plain = (s) => !/[^\x00-\x7f]/.test(s);
 

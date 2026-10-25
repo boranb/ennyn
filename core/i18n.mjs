@@ -17,7 +17,7 @@ export function catalog(lang) {
   return catalogs[lang];
 }
 
-/** @typedef {Record<string, string | number | string[]>} Vars a list (string[]) is names, joined ", " */
+/** @typedef {Record<string, string | number | string[] | { shown: string }>} Vars a list (string[]) is names, joined ", "; `{ shown }` is text already shown */
 
 /** @param {string} key @param {string} lang */
 function template(key, lang) {
@@ -27,12 +27,22 @@ function template(key, lang) {
 }
 
 /**
+ * A message with its values in place. A value carries no character UNSHOWN names: each is written as a `\u`
+ * escape where it stands, a line feed too, so no value starts a line of its own (an error quoting a config's
+ * pattern, a path); `{ shown }` is put as its caller wrote it. tShown quotes as well, for a report on what the
+ * project holds.
  * @param {string} key
  * @param {Vars} [vars]
  * @param {string} [lang]
  */
 export function t(key, vars = {}, lang = "en") {
-  return template(key, lang).replace(/\{(\w+)\}/g, (_, name) => (name in vars ? (Array.isArray(vars[name]) ? vars[name].join(", ") : String(vars[name])) : `{${name}}`));
+  return template(key, lang).replace(/\{(\w+)\}/g, (_, name) => {
+    if (!(name in vars)) return `{${name}}`;
+    const v = vars[name];
+    // `{ shown }` is text its caller already escaped, lines of its own included (a list of problems).
+    if (v !== null && typeof v === "object" && !Array.isArray(v)) return v.shown;
+    return (Array.isArray(v) ? v.join(", ") : String(v)).replace(UNSHOWN_ALL, escaped);
+  });
 }
 
 /**
@@ -42,22 +52,81 @@ export function t(key, vars = {}, lang = "en") {
  */
 export const UNSHOWN = /(?![\u200c\u200d])[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
 
+/** One character as JSON's `\u` escapes (a pair of UTF-16 halves for an astral one). @param {string} c */
+const escaped = (c) => Array.from({ length: c.length }, (_, i) => `\\u${c.charCodeAt(i).toString(16).padStart(4, "0")}`).join("");
+
+/** Every character UNSHOWN names. */
+const UNSHOWN_ALL = new RegExp(UNSHOWN.source, "gu");
+/** The same, a line feed aside. */
+const UNSHOWN_BUT_LF = new RegExp(`(?!\\n)${UNSHOWN.source}`, "gu");
+/**
+ * A comma a list could be read as parted at: one with a space, a mark (combining, a variation selector) or a
+ * joiner after it, or a comma of another script, or a low quotation mark that looks like one.
+ */
+const LIST_COMMA = /,[\s\p{M}\u200c\u200d]|[\u055d\u060c\u07f8\u1363\u1802\u1808\u201a\u2e41\u2e4c\u3001\ua4fe\ua60d\ua6f5\ufe10\ufe11\ufe50\ufe51\uff0c\uff64]/u;
+/** A value longer than this is shown by its start and its end. */
+export const SHOWN_MAX = 1000;
+
+/** @param {string} s */
+const quoted = (s) => JSON.stringify(s).replace(UNSHOWN_ALL, escaped);
+
+/**
+ * A long text's start and end, cut between letters, never inside a pair of UTF-16 halves.
+ * @param {string} s @param {number} max
+ */
+export function ends(s, max) {
+  let head = s.slice(0, Math.ceil(max * 0.6));
+  let tail = s.slice(s.length - Math.floor(max * 0.3));
+  if (/[\ud800-\udbff]$/.test(head)) head = head.slice(0, -1);
+  if (/^[\udc00-\udfff]/.test(tail)) tail = tail.slice(1);
+  return { head, tail, cut: s.length - head.length - tail.length };
+}
+
 /**
  * A value as one line of a report: as it is, or quoted and escaped (JSON's escapes; \u for every other
  * character UNSHOWN names) when it holds a character a line cannot show. A name is quoted also when it holds
- * `"` or `\`, so `a<LF>b.js` and a file named `"a\nb.js"` print apart, and, in a list, when it holds the ", "
- * that joins the list. On Windows, where `\` parts a path and no name holds `"`, a `\` alone quotes nothing:
- * a path stays as a user copies it.
+ * `"` or `\`, so `a<LF>b.js` and a file named `"a\nb.js"` print apart, and, in a list, when it holds a comma
+ * the list could be read as parted at (", ", a comma and any other space, a comma of another script); so is
+ * a value set inside a message's own quotes when it holds `"` or `\`, which would end them or seem to. On
+ * Windows, where `\` parts a path and no name holds `"`, a `\` alone quotes nothing: a path stays as a user
+ * copies it. A value longer than `max` is shown by its start and end, two quoted strings with `…` between.
  * @param {string | number} value
- * @param {{ name?: boolean, platform?: string }} [opts]
+ * @param {{ name?: boolean, inQuotes?: boolean, platform?: string, max?: number }} [opts]
  * @returns {{ text: string, quoted: boolean }}
  */
-export function shown(value, { name = false, platform = process.platform } = {}) {
+export function shown(value, { name = false, inQuotes = false, platform = process.platform, max = SHOWN_MAX } = {}) {
   const v = String(value);
-  const special = platform === "win32" ? /"|, / : /["\\]|, /;
-  if (!UNSHOWN.test(v) && !(name && special.test(v))) return { text: v, quoted: false };
-  const text = JSON.stringify(v).replace(new RegExp(UNSHOWN.source, "gu"), (c) => Array.from({ length: c.length }, (_, i) => `\\u${c.charCodeAt(i).toString(16).padStart(4, "0")}`).join(""));
-  return { text, quoted: true };
+  if (v.length > max) {
+    const { head, tail } = ends(v, max);
+    return { text: `${quoted(head)}…${quoted(tail)}`, quoted: true };
+  }
+  const special = platform === "win32" ? /"/ : /["\\]/;
+  if (!UNSHOWN.test(v) && !((name || inQuotes) && special.test(v)) && !(name && LIST_COMMA.test(v))) return { text: v, quoted: false };
+  return { text: quoted(v), quoted: true };
+}
+
+/**
+ * Every character UNSHOWN names written as a `\u` escape where it stands, nothing quoted: the last guard of a
+ * line the program writes. `keepLines` leaves a line feed as it is, for text of several lines it put together.
+ * @param {string} text
+ * @param {{ keepLines?: boolean }} [opts]
+ */
+export function unshownEscaped(text, { keepLines = false } = {}) {
+  return text.replace(keepLines ? UNSHOWN_BUT_LF : UNSHOWN_ALL, escaped);
+}
+
+/** What UNSHOWN names that JSON.stringify writes as it is: it escapes the C0 controls itself, and a raw one in its output is its own line break. */
+const JSON_UNSHOWN = new RegExp(`(?![\\u0000-\\u001f])${UNSHOWN.source}`, "gu");
+
+/**
+ * A command's --json output: JSON.stringify's, with every character UNSHOWN names that it leaves as it is (DEL,
+ * C1 controls, direction marks and other format characters, line and paragraph separators) written as `\u`
+ * escapes. It parses to the same value; a terminal or a reader sees what a name or a line holds.
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function jsonShown(value) {
+  return String(JSON.stringify(value, null, 2)).replace(JSON_UNSHOWN, escaped);
 }
 
 /**
@@ -68,16 +137,17 @@ export function shown(value, { name = false, platform = process.platform } = {})
  * @param {string} [lang]
  */
 export function tShown(key, vars = {}, lang = "en") {
-  /** @param {string} name */
-  const one = (name) => {
+  /** @param {string} name @param {boolean} inQuotes */
+  const one = (name, inQuotes) => {
     const v = vars[name];
-    if (!Array.isArray(v)) return shown(v);
-    return { text: v.map((x) => shown(x, { name: true }).text).join(", "), quoted: false };
+    if (Array.isArray(v)) return { text: v.map((x) => shown(x, { name: true }).text).join(", "), quoted: false };
+    if (v !== null && typeof v === "object") return { text: v.shown, quoted: false };
+    return shown(v, { inQuotes });
   };
   return template(key, lang).replace(/"\{(\w+)\}"|\{(\w+)\}/g, (all, inQuotes, bare) => {
     const name = inQuotes ?? bare;
     if (!(name in vars)) return all;
-    const s = one(name);
+    const s = one(name, inQuotes !== undefined);
     return inQuotes && !s.quoted ? `"${s.text}"` : s.text;
   });
 }

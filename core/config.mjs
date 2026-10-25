@@ -234,8 +234,9 @@ export function loadConfig({ cwd, env = process.env, override }) {
   /** @type {Record<string, unknown>} */
   let user = {};
   let found = null;
-  // A config that is there but cannot be read is no config problem to report and go on from: it throws.
-  const text = readIfThere(configPath);
+  // A config that is there but cannot be read is no config problem to report and go on from: it throws. One
+  // the user named (ENNYN_CONFIG) is read whatever it is (`<(…)`, /dev/stdin); the project's own, regular only.
+  const text = readIfThere(configPath, { given: Boolean(env.ENNYN_CONFIG) });
   if (text !== null) {
     found = configPath;
     try {

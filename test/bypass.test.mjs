@@ -87,6 +87,15 @@ test("cli: bypass prints the count and each use; --json is the result; a bad dat
   assert.equal(run("bypass", "--since", "March").status, 2);
 });
 
+test("cli: bypass shows a subject and a reason from history as one line can show them (a terminal escape in them is escaped)", () => {
+  const r = repo();
+  r.commit("feat: long \x1b]0;title\x07 [commit-shape-allow: imported \x1b[2J upstream]", "2026-03-02");
+  const text = spawnSync(process.execPath, [CLI, "bypass"], { cwd: r.dir, encoding: "utf8" });
+  assert.equal(text.status, 0, text.stderr);
+  assert.ok(!text.stdout.includes("\x1b"), "no escape reaches the terminal");
+  assert.match(text.stdout, /· "feat: long \\u001b\]0;title\\u0007 .*" · reason: "imported \\u001b\[2J upstream"$/m);
+});
+
 test("bypass: counted as the hook decides — a revert of a bypass commit is not a use", () => {
   const r = repo();
   r.commit("feat: long [commit-shape-allow: imported from upstream]", "2026-03-02");

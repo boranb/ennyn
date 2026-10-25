@@ -17,7 +17,7 @@ import { relative, resolve, sep } from "node:path";
 import { git, repoPath, gitVersion, parseVersion, versionAtLeast, stagedVersions, GIT_FLOOR } from "../core/git.mjs";
 import { ciSet, ciText } from "../checks/ci.mjs";
 import { t } from "../core/i18n.mjs";
-import { matchAny } from "../core/glob.mjs";
+import { literalGlob, matchAny } from "../core/glob.mjs";
 import { secretsOff } from "../checks/secrets.mjs";
 
 /**
@@ -248,6 +248,16 @@ export async function checkSetup({ cwd, env = process.env }) {
         if (unmatched.length) add("warn", "doctor.cochangeUnmatched", { rule: i + 1, globs: unmatched });
         else if (!tracked.some((f) => matchAny(f, rule.paths) && !matchAny(f, rule.docs))) add("warn", "doctor.cochangeSilent", { rule: i + 1 });
       });
+      // An impact glob that names no file never asks for the line. One written from a directory holding glob
+      // syntax (init-scan proposed `app/[locale]/auth/**` so before it escaped it) reads as a class: when the
+      // glob read as a path names files, that literal glob is named with it.
+      for (const g of config.review.impactRequiredGlobs) {
+        if (tracked.some((f) => matchAny(f, [g]))) continue;
+        const below = g.endsWith("/**");
+        const meant = below ? `${literalGlob(g.slice(0, -3))}/**` : literalGlob(g);
+        if (meant !== g && tracked.some((f) => matchAny(f, [meant]))) add("warn", "doctor.impactLiteral", { glob: [g], meant: [meant] });
+        else add("warn", "doctor.impactUnmatched", { glob: [g] });
+      }
       // What each rule covers holds today: new lines fail the commit, these stay until the file is touched.
       const configRel = config.configPath ? relative(cwd, config.configPath).split(sep).join("/") : null;
       /** @type {Map<string, { path: string, n: number }[]> | null} */

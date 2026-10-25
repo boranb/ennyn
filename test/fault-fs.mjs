@@ -55,7 +55,9 @@ if (DIR) {
       if (inside) return real.apply(this, args);
       const path = pathOf(args[0]);
       // A file descriptor, Ennyn's own files, or a write: not counted.
-      const write = name === "openSync" && args[1] !== undefined && args[1] !== "r" && args[1] !== fs.constants.O_RDONLY;
+      // Flags as a number are a read unless they ask to write (O_RDONLY is 0; O_NONBLOCK and the like add no write).
+      const flags = args[1];
+      const write = name === "openSync" && flags !== undefined && (typeof flags === "number" ? (flags & (fs.constants.O_WRONLY | fs.constants.O_RDWR)) !== 0 : flags !== "r");
       if (path === null || path.startsWith(OWN) || write || !(/** @type {readonly string[]} */ (kinds)).includes(KIND)) return real.apply(this, args);
       seen.push(`${name} ${path}`);
       if (seen.length === AT) {
