@@ -255,7 +255,7 @@
       "cluster": "distribution",
       "needs": [],
       "gate": "user",
-      "source": "cycle 2026-10-21 (5), engine-floor-check; security reason added cycle 2026-10-24 (8)"
+      "source": "cycle 2026-10-21 (5), engine-floor-check; security reason added cycle 2026-10-24 (8); cycle 2026-10-25 (10): Node 20 has had no security fixes since April 2026; the October 21 release fixed ten (four high) in 22.23.4, 24.22.1 and 26.12.1 only"
     },
     {
       "id": "graph-id-types",
@@ -381,19 +381,6 @@
     {
       "status": "planned",
       "needs": [
-        "deps-check",
-        "ci-check"
-      ],
-      "id": "security-axis",
-      "title": "The cycle's security axis: every plan carries a security line; every N cycles (security.everyCycles) the audit slot is a security audit of the project's sensitive paths with a path table; `ennyn deps` and the CI check run at cycle end; /ennyn:init asks the thresholds",
-      "value": "high",
-      "cost": "S",
-      "cluster": "method",
-      "source": "cycle 2026-10-24 (8), user decision: periodic checks run locally in every cycle, no cloud routine"
-    },
-    {
-      "status": "planned",
-      "needs": [
         "hook-trust-audit"
       ],
       "id": "agent-setup-risk",
@@ -412,19 +399,7 @@
       "cost": "S",
       "cluster": "security",
       "gate": "user",
-      "source": "cycle 2026-10-24 (8), user: security; only the account owner can do these"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "verdict-baseline",
-      "title": "A gate's corpus keeps its verdicts: the input-shape matrix (and the hook and declaration corpora) record each cell's verdict; a change that turns a refused or said cell into a silent pass fails unless the recorded verdict changes in the same commit",
-      "value": "high",
-      "cost": "M",
-      "cluster": "gates",
-      "mechanization": true,
-      "sourceClass": "a fix that replaces a reading instead of adding to it",
-      "source": "cycle 2026-10-24 (8), convergence: about 9 times, 8 of them fix-introduced and found by reviewers in rounds 2-4 (NFC over raw bytes, decoding over git's lines, a normalized glob, a string-stripping hook reader, a declaration rewrite); cycle 2026-10-24 (9), convergence again: a fix that narrows a reading opened silent passes in every security task (ci-check 37 fix-introduced findings in rounds two to four, deps-check 18, secret-scan 13): reviewers' probe corpora kept as cells with their verdicts would have failed each"
+      "source": "cycle 2026-10-24 (8), user: security; only the account owner can do these; cycle 2026-10-25 (10): still open; nothing measurable from here"
     },
     {
       "status": "planned",
@@ -434,7 +409,7 @@
       "value": "medium",
       "cost": "M",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (8), review round 1 of guards-under-load; measured in the T4 landing run"
+      "source": "cycle 2026-10-24 (8), review round 1 of guards-under-load; measured in the T4 landing run; cycle 2026-10-25 (10): the secrets linear-time ratio failed two full runs at load 8-40 (fixed with CPU time, 1ccb39b); the other wall-clock reads remain"
     },
     {
       "status": "planned",
@@ -689,16 +664,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "deps-allowed-hosts",
-      "title": "A new lock entry resolved from a host no list names fails instead of being said; git dependencies and their prepare script judged",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "security",
-      "source": "cycle 2026-10-24 (9), deps-check: an unlisted origin is said, not refused"
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "deps-doctor",
       "title": "doctor reports install-script entries not in allowScripts and a project .npmrc without ignore-scripts, offline",
       "value": "low",
@@ -795,6 +760,148 @@
       "cost": "S",
       "cluster": "gates",
       "source": "cycle 2026-10-24 (9), cleanup after the cycle"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "reference-differentials",
+      "title": "A check that models another program's reading keeps that program's recorded answers: a corpus of inputs with the real program's own reading (npm-package-arg and arborist for lock entries, Claude Code's rules loader, git's parsing), replayed against the model; a test fails when they disagree, and the record is taken again on a version bump of that program",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "mechanization": true,
+      "sourceClass": "a check that re-implements another program's reading drifts from it",
+      "source": "cycle 2026-10-25 (10), convergence: about 21 findings: deps-allowed-hosts 14 (lock shape, name@spec, version as spec, v1 precedence, hosted URLs, scp-like specs, bundles twice), init-scan audit 3 (Claude Code's rules loader: the docs and the installed 2.1.207 disagree), verdict-baseline 2 (replay through a copy of the hook's glue), security-axis 2 (the file system's case folding); the deps reviewers' 720-spelling differential against npm's own consistentResolve and npa found what reading the source missed"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "config-paths-outside",
+      "title": "A path in .ennyn/config.json (paths.metricsLog, paths.stateDir, paths.handoff, paths.graph) that resolves outside the repository and the git dir is refused, for writes first: a commit that sets paths.metricsLog to ../../x makes budget --record append a line to that file (a git config then fails)",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-10-25 (10), init-scan audit round 3 (cell r3-config-path-out) and security round 1 (p5); security-axis kept a configured outside log on purpose (round 4), to be revisited"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "audit-snapshot",
+      "title": "ennyn audit keeps its answer and the keys it saw uncovered in paths.stateDir at the cycle's start; the mark covers that snapshot only and the --security-audit guard reuses the start's answer, so records merged in mid-cycle stay uncovered",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 2026-10-25 (10), security-axis security round 5 (V10): coverage is taken when the mark is written"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "deps-cycle-scope",
+      "title": "The cycle now runs ennyn deps at every end: security.deps.online false does not stop it from asking OSV (only advisories \"\" does), and security.deps.paths [] makes it exit 0 with nothing measured",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-10-25 (10), security-axis review rounds 1-2 (N01, D01)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "deps-unproven-listed",
+      "title": "A tarball on a listed registry in another layout (GitHub Packages /download/, Artifactory scoped or another repository on the host) is said, not proven: prove its identity through that registry's own API",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-10-25 (10), deps-allowed-hosts (round 2: refusing them broke private packages)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "deps-user-npmrc",
+      "title": "An entry with no resolved is judged by the .npmrc beside the lock as the commit holds it; a registry set in the user's or the machine's .npmrc is not seen, so such locks are refused with advice",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-10-25 (10), deps-allowed-hosts"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "deps-v1-bundle-lists",
+      "title": "A lockfileVersion 1 lock holds no bundle lists; nested v1 bundled entries are read from their flag",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-10-25 (10), deps-allowed-hosts"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "deps-peer-bundle-edges",
+      "title": "Peer edges are left out of the bundle computation (legacy-peer-deps drops them), so an entry bundled only through a peer edge is judged, never passed",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-10-25 (10), deps-allowed-hosts"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "side-copy-linked-rules",
+      "title": "The side-copy hook gives no rules a .claude/rules link points to outside the project; Claude Code's docs say such links load after an approval, the installed 2.1.207 loads them without one: an opt-in list of trusted outside rule directories",
+      "value": "low",
+      "cost": "M",
+      "cluster": "side-copy",
+      "source": "cycle 2026-10-25 (10), init-scan audit rounds 2-3"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "project-reads-regular",
+      "title": "The graph, gate log, lock files, impact, mutation journal and map-path still read with readFileSync directly: a FIFO hangs them, a device streams; read them regular-only like readIfThere",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-25 (10), init-scan audit round 1 (S2)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "scan-ban-literal-cap",
+      "title": "init-scan's ban-literal search costs quadratic time in an instruction file's size (20,000 literals take 110 s)",
+      "value": "low",
+      "cost": "S",
+      "cluster": "init",
+      "source": "cycle 2026-10-25 (10), init-scan audit"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "fence-reader-shared",
+      "title": "setup/budget.mjs toggles code blocks at any fence line; the scan's code-block reader ends a block only at a fence of its own character and length: one reader",
+      "value": "low",
+      "cost": "S",
+      "cluster": "init",
+      "source": "cycle 2026-10-25 (10), init-scan audit"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "settings-bom",
+      "title": "How Claude Code reads a settings.json that starts with a byte order mark is unmeasured; init-scan reads it",
+      "value": "low",
+      "cost": "S",
+      "cluster": "init",
+      "source": "cycle 2026-10-25 (10), init-scan audit"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "schema-file-missing",
+      "title": "DESIGN.md's layout names schema/config.schema.json; the repository has none",
+      "value": "low",
+      "cost": "S",
+      "cluster": "distribution",
+      "source": "cycle 2026-10-25 (10), security-axis"
     }
   ],
   "done": [
@@ -1076,6 +1183,30 @@
       "title": "Each test file removes its temporary root at exit: the suite had left ~15 MB a file per run, ~160 GB and a full disk by cycle 9 (f8d5048)",
       "status": "done",
       "finished": "2026-10-24"
+    },
+    {
+      "id": "verdict-baseline",
+      "title": "A gate's probes kept as cells with their exact verdict and reason (test/verdicts/, seven gates, the commit-msg hook's four through the hook itself); a moved verdict fails npm test until the record changes in the same commit; gaps name open nodes (acef97b)",
+      "status": "done",
+      "finished": "2026-10-25"
+    },
+    {
+      "id": "security-axis",
+      "title": "ennyn audit: every security.everyCycles cycles the audit slot is a security audit of the sensitive paths, counted by content coverage of the metrics log; plans carry a security line; the cycle ends with ennyn deps and doctor's CI line; init asks the thresholds (ba3491a)",
+      "status": "done",
+      "finished": "2026-10-25"
+    },
+    {
+      "id": "deps-allowed-hosts",
+      "title": "The deps check lets a new lock entry through only from a source it can prove (listed-registry tarball, tracked path inside the repository, exact sources entry, no resolved with a registry the project's .npmrc names); git, other hosts, specs and odd fields refused; the lock read as npm 10 reads it, bundles too (7f47f49)",
+      "status": "done",
+      "finished": "2026-10-25"
+    },
+    {
+      "id": "init-scan-audit",
+      "title": "Legacy audit of init-scan: project values escaped and bounded in every command's output and errors; links out of the repository named, never read (scan, budget, side-copy hook); pipes and devices in the project refused; unread is said; three quadratic patterns linear; risky globs escaped; doctor names dead impact globs (6dc35aa)",
+      "status": "done",
+      "finished": "2026-10-25"
     }
   ]
 }
