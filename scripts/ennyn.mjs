@@ -505,6 +505,15 @@ const COMMANDS = {
     }
     if (ag.hooks.length) say("scan.hooks", { list: ag.hooks });
     if (ag.mcpServers.length) say("scan.mcp", { list: ag.mcpServers });
+    // The rules for what leaves the machine, by where each is held; a file that gives no rule is said as unmeasured.
+    const held = { shared: "scan.askShared", uncommitted: "scan.askUncommitted", local: "scan.askLocal", unknown: "scan.askUnknown", none: "scan.askNone" };
+    const askParts = Object.entries(held).flatMap(([where, key]) => {
+      const rules = ag.ask.rules.filter((r) => (r.where ?? "none") === where).map((r) => r.rule);
+      return rules.length ? [tShown(key, { rules }, lang)] : [];
+    });
+    if (ag.ask.unread.length) askParts.push(tShown("scan.askUnread", { list: ag.ask.unread }, lang));
+    if (res.repository && !ag.ask.githubRemotes.length) askParts.push(t("scan.askNoGithub", {}, lang));
+    say("scan.ask", { list: { shown: askParts.join(" · ") } });
     const unreadable = [...res.unreadable, ...ag.unreadable];
     if (unreadable.length) say("scan.unreadable", { list: unreadable });
     if (res.outside.length) say("scan.outside", { list: res.outside });

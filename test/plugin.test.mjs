@@ -5,6 +5,8 @@ import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { t } from "../core/i18n.mjs";
 import { FILE_TOOLS } from "../adapters/claude-code/hooks/side-copy-rules.mjs";
+import { askRules, outwardCommands } from "../setup/permissions.mjs";
+import { projectFiles } from "../setup/scan.mjs";
 
 // What `claude plugin validate --strict` checks, for machines without the claude CLI.
 // Origin: a ": " inside an unquoted agent description made the YAML unparsable, and
@@ -56,6 +58,15 @@ test("plugin: every agent and skill has front matter a YAML parser reads, named 
 
 test("plugin: every SKILL.md stays under 8 KB (DESIGN.md: skills are read whole, every time)", () => {
   for (const { path } of skills) assert.ok(statSync(join(ROOT, path)).size < 8 * 1024, `${path}: ${statSync(join(ROOT, path)).size} bytes`);
+});
+
+test("plugin: the repository asks before every command that leaves the machine, as /ennyn:init proposes", () => {
+  // Read as the work tree holds it: whether git holds it committed is doctor's line, not this test's.
+  const pf = projectFiles(ROOT);
+  const res = askRules(pf, outwardCommands(["package.json"], true), { committed: (path) => ({ text: pf.read(path) ?? "" }) });
+  assert.deepEqual(res.unread, []);
+  assert.equal(res.rules.length, 10, "git push, npm publish and three gh commands, each for Bash and PowerShell");
+  for (const r of res.rules) assert.equal(r.where, "shared", `${r.rule} in .claude/settings.json`);
 });
 
 test("plugin: hook commands point at files that exist; manifests agree on name and version", () => {

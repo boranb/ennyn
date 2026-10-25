@@ -10,12 +10,13 @@
 
 import { loadConfig, ConfigError } from "../core/config.mjs";
 import { loadGraph, readyNodes, readyMechanization, graphProblems, GraphError } from "../plan/mechanization.mjs";
-import { MIN_HISTORY, indexMatches, recentCommits, productionSubjects } from "./scan.mjs";
+import { MIN_HISTORY, indexMatches, recentCommits, productionSubjects, projectFiles, githubRemotes } from "./scan.mjs";
+import { askRules, outwardCommands, GH_COMMANDS, SETTINGS, SETTINGS_LIMIT } from "./permissions.mjs";
 import { hookStatus, idleReason } from "./hook.mjs";
 import { instructionBudget, readBudgets } from "./budget.mjs";
 import { relative, resolve, sep } from "node:path";
 import { readRegular } from "../core/files.mjs";
-import { git, repoPath, gitVersion, parseVersion, versionAtLeast, stagedVersions, GIT_FLOOR } from "../core/git.mjs";
+import { git, repoPath, gitVersion, parseVersion, versionAtLeast, stagedVersions, headFile, GIT_FLOOR } from "../core/git.mjs";
 import { ciSet, ciText } from "../checks/ci.mjs";
 import { t } from "../core/i18n.mjs";
 import { literalGlob, matchAny } from "../core/glob.mjs";
@@ -96,6 +97,68 @@ function ciReport(cwd, tracked, config, add) {
   // The caller was read; what its callee checks out was not.
   for (const m of missing) add("unmeasured", "doctor.ciCalleeMissing", { path: [m.path], callee: [m.callee || "./"] });
   if (!unpinned.length && !pwn.size && !unpermitted.length && !writeAll.size && !forms.size && !unread.size && !missing.length) add("ok", "doctor.ciClean", { files: files.length });
+}
+
+/**
+ * Which of the project's settings files holds an ask or deny rule for each command that leaves the machine, and
+ * whether git holds that file as committed. It says what it read, not what Claude Code will do: the ok line
+ * carries where Claude Code applies the file and what a rule does not match. A read or a git call that fails
+ * is said with its error, and what it would have decided is unmeasured, never judged: a file not read is not
+ * "missing", a HEAD not read is not "uncommitted", a remote list not read names the gh commands not checked.
+ * `read` replaces the readers (tests).
+ * @param {string} cwd @param {string[] | null} files tracked files; null when git could not list them
+ * @param {(level: DoctorItem["level"], key: string, vars?: DoctorItem["vars"]) => void} add
+ * @param {{ read?: (rel: string, opts?: { limit?: number }) => string | null | undefined, githubRemotes?: (cwd: string) => string[], headFile?: typeof headFile }} [readers]
+ */
+export function askReport(cwd, files, add, readers = {}) {
+  const project = projectFiles(cwd);
+  const read = readers.read ?? project.read;
+  /** @type {Set<string>} */
+  const failed = new Set();
+  /** @type {string[]} */
+  const errors = [];
+  const pf = {
+    read: (/** @type {string} */ rel, /** @type {{ limit?: number } | undefined} */ opts) => {
+      try {
+        return read(rel, opts);
+      } catch (e) {
+        // Too large is no failure: readSettings says it.
+        if (/** @type {NodeJS.ErrnoException} */ (e)?.code === "EFBIG") throw e;
+        failed.add(rel);
+        errors.push(oneLine(e));
+        return undefined;
+      }
+    },
+  };
+  let github = false;
+  /** @type {string | null} */
+  let remotesError = null;
+  try {
+    github = (readers.githubRemotes ?? githubRemotes)(cwd).length > 0;
+  } catch (e) {
+    remotesError = oneLine(e);
+  }
+  const committed = (/** @type {string} */ path) => {
+    try {
+      return (readers.headFile ?? headFile)(cwd, path, SETTINGS_LIMIT);
+    } catch (e) {
+      errors.push(oneLine(e));
+      return undefined;
+    }
+  };
+  const { rules, unread, head } = askRules(pf, outwardCommands(files, github, (rel) => project.present(rel)), { committed, failed });
+  const left = unread.filter((p) => !failed.has(p));
+  if (left.length) add("unmeasured", "doctor.askUnread", { list: left });
+  for (const error of errors) add("unmeasured", "doctor.askUnmeasured", { error });
+  if (remotesError !== null) add("unmeasured", "doctor.askGithubUnmeasured", { error: remotesError, commands: GH_COMMANDS });
+  if (head) add("unmeasured", "doctor.askHeadKind", { path: [SETTINGS[0]] });
+  const at = (/** @type {string | null} */ where) => rules.filter((r) => r.where === where);
+  const named = (/** @type {typeof rules} */ list) => list.map((r) => r.rule);
+  if (at("unknown").length) add("unmeasured", "doctor.askUnknown", { rules: named(at("unknown")) });
+  if (at(null).length) add("warn", "doctor.askMissing", { rules: named(at(null)) });
+  if (at("uncommitted").length) add("warn", "doctor.askUncommitted", { rules: named(at("uncommitted")) });
+  if (at("local").length) add("warn", "doctor.askLocal", { rules: named(at("local")) });
+  if (at("shared").length) add("ok", "doctor.askOk", { rules: named(at("shared")) });
 }
 
 /**
@@ -224,6 +287,8 @@ export async function checkSetup({ cwd, env = process.env }) {
     } catch (e) {
       add("unmeasured", "doctor.filesUnmeasured", { error: oneLine(e) });
     }
+    // The cycle asks the user before any push; an ask rule is the harness's backstop.
+    askReport(cwd, files, add);
     /** @type {ReturnType<typeof instructionBudget> | null} */
     let b = null;
     try {

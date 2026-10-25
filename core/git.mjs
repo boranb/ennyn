@@ -645,6 +645,39 @@ export function stagedBlobs(cwd, paths, { env, limit = WIDE_LIMIT, total = READ_
 }
 
 /**
+ * A settings file as HEAD holds it: `{ text }` for a regular file of at most `limit` bytes; `{ kind }` for what
+ * is no such file: `link` when it, or a directory on its way, is a symbolic link (clones reach a file through
+ * it, which is not read here), `other` for a submodule or a directory, `large` past `limit`; null with no commit
+ * yet or nothing there. Objects as they are: no replace refs, and no lazy fetch in a partial clone
+ * (GIT_NO_LAZY_FETCH; git before 2.44 ignores it and may fetch a missing object). A git that fails throws.
+ * @param {string} cwd @param {string} path "/"-separated, from the repository's top @param {number} limit
+ * @returns {{ text: string } | { kind: "link" | "other" | "large" } | null}
+ */
+export function headFile(cwd, path, limit) {
+  if (!headCommit(cwd)) return null;
+  const env = { ...process.env, GIT_NO_REPLACE_OBJECTS: "1", GIT_NO_LAZY_FETCH: "1" };
+  const parts = path.split("/");
+  const specs = parts.map((_, i) => parts.slice(0, i + 1).join("/"));
+  /** @type {Map<string, { mode: string, oid: string, size: string }>} */
+  const entries = new Map();
+  const out = gitBytes(["-c", "core.precomposeUnicode=false", "ls-tree", "-l", "-z", "HEAD", "--", ...specs], { cwd, env }).toString("utf8");
+  for (const entry of out.split("\0")) {
+    const m = /^(\d+) \w+ ([0-9a-f]+) +(\S+)\t(.*)$/s.exec(entry);
+    if (m) entries.set(m[4], { mode: m[1], oid: m[2], size: m[3] });
+  }
+  for (const spec of specs.slice(0, -1)) {
+    const on = entries.get(spec);
+    if (on) return { kind: on.mode === "120000" ? "link" : "other" };
+  }
+  const file = entries.get(path);
+  if (!file) return null;
+  if (file.mode === "120000") return { kind: "link" };
+  if (file.mode !== "100644" && file.mode !== "100755") return { kind: "other" };
+  if (Number(file.size) > limit) return { kind: "large" };
+  return { text: gitBytes(["cat-file", "blob", file.oid], { cwd, env }).toString("utf8") };
+}
+
+/**
  * A file as HEAD's tree holds it, or null with no commit yet or no such file there. A git that fails throws.
  * @param {string} cwd @param {string} path
  * @returns {Buffer | null}

@@ -13,11 +13,12 @@
 import { readdirSync, realpathSync, statSync } from "node:fs";
 import { gone, present, readIfThere } from "../core/files.mjs";
 import { join, relative, resolve, posix, sep } from "node:path";
-import { git, gitError, gitMaybe, gitRun, headCommit, repoPath } from "../core/git.mjs";
+import { git, gitError, gitMaybe, gitRun, headCommit, headFile, repoPath } from "../core/git.mjs";
 import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
 import { literalGlob } from "../core/glob.mjs";
 import { ends } from "../core/i18n.mjs";
 import { LEAVES, loadPathScopedRules, markdownFiles, reasonText, splitFrontMatter, parsePaths } from "../adapters/claude-code/rules-index.mjs";
+import { askRules, isGithubHost, outwardCommands, readSettings, SETTINGS, SETTINGS_LIMIT, urlHost } from "./permissions.mjs";
 
 /** Fewer commits than this and a share says little: the default stays. */
 export const MIN_HISTORY = 30;
@@ -429,6 +430,21 @@ export function roadmapFiles(cwd, files) {
         lines: text === "" ? 0 : text.split("\n").length,
       };
     });
+}
+
+/**
+ * The remotes whose fetch or push URL is on a GitHub host (isGithubHost), each name once, as `git remote -v`
+ * lists them; none without a remote. A git that fails throws.
+ * @param {string} cwd
+ */
+export function githubRemotes(cwd) {
+  /** @type {Set<string>} */
+  const names = new Set();
+  for (const line of git(["remote", "-v"], { cwd }).split("\n")) {
+    const m = /^(\S+)\t(.*) \((?:fetch|push)\)$/.exec(line);
+    if (m && isGithubHost(urlHost(m[2]))) names.add(m[1]);
+  }
+  return [...names];
 }
 
 /** @param {string} cwd */
@@ -850,12 +866,15 @@ export function agentSetup(cwd, files) {
   const unreadable = [];
   /** @type {Set<string>} */
   const events = new Set();
-  for (const path of [".claude/settings.json", ".claude/settings.local.json"]) {
-    const json = readJson(pf, path);
-    // A hooks value that is no object holds no events Claude Code runs: not read, said ("x" is no events "0"…).
-    if (json === "unreadable" || (json?.hooks !== undefined && !isObject(json.hooks))) unreadable.push(path);
+  for (const path of SETTINGS) {
+    // Read as the ask rules read it (readSettings): a file Claude Code skips whole, such as one whose hooks value
+    // is no object ("x" is no events "0"…) or whose permissions it rejects, runs no hook either: said, not read.
+    const read = readSettings(pf, path);
+    if (!read) continue;
+    if ("unread" in read) unreadable.push(read.unread);
     else {
-      for (const [e, matchers] of Object.entries(json?.hooks ?? {})) {
+      unreadable.push(...(read.dropped ?? []));
+      for (const [e, matchers] of Object.entries(read.json.hooks ?? {})) {
         // A list of matchers, each an object holding a list of hooks; any other shape is said, not dropped.
         if (!Array.isArray(matchers) || !matchers.every((m) => isObject(m) && Array.isArray(m.hooks))) unreadable.push(`${path} hooks.${bounded(e, NAME_MAX)}`);
         // An event is a hook only when one of its matchers holds a hook: `"Stop": []` runs nothing.
@@ -912,6 +931,11 @@ export function scanProject({ cwd, env = process.env }) {
   const graphPath = resolve(cwd, config.paths.graph);
   const handoffPath = resolve(cwd, config.paths.handoff);
   const setup = agentSetup(cwd, files);
+  // Which settings file holds a rule for each command that leaves the machine: /ennyn:init proposes the missing.
+  const pf = projectFiles(cwd);
+  const remotes = repo ? githubRemotes(cwd) : [];
+  const commands = outwardCommands(files, remotes.length > 0, (rel) => pf.present(rel));
+  const ask = { ...askRules(pf, commands, { committed: (path) => (repo ? headFile(cwd, path, SETTINGS_LIMIT) : null) }), githubRemotes: remotes };
   const declared = projectCommands(cwd);
   const churn = churnPaths(commits, cwd, patterns.re);
   const roadmap = roadmapFiles(cwd, files);
@@ -935,7 +959,7 @@ export function scanProject({ cwd, env = process.env }) {
     github: repo ? githubRepo(cwd) : null,
     pathScopedRules: rules.n,
     pathScopedRulesLinkedOut: rules.linkedOut,
-    agentSetup: setup,
+    agentSetup: { ...setup, ask },
     // Outside a repository there is no index to count in: the lines are listed in agentSetup, `unmeasured` says why.
     bans: repo ? banMatches(cwd, setup.instructions, config.review.forbidden, configPath ? [relative(cwd, configPath).split(sep).join("/")] : []) : [],
     commands: declared.commands,
@@ -943,6 +967,6 @@ export function scanProject({ cwd, env = process.env }) {
     unreadable: declared.unreadable,
     unmeasured,
     // Every path a reader met that leads out of the repository: named, never read.
-    outside: [...new Set([...setup.outside, ...declared.outside, ...churn.paths.filter((p) => p.outside).map((p) => p.path), ...roadmap.filter((r) => r.outside).map((r) => r.path)])].sort(),
+    outside: [...new Set([...setup.outside, ...pf.outside, ...declared.outside, ...churn.paths.filter((p) => p.outside).map((p) => p.path), ...roadmap.filter((r) => r.outside).map((r) => r.path)])].sort(),
   };
 }

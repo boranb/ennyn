@@ -431,9 +431,11 @@ test("cli: init-scan --json is the scan; doctor prints marks and exits 1 on a pr
   const doc = run("doctor");
   assert.equal(doc.status, 1);
   assert.match(doc.stdout, /^✗ work graph: duplicate ids: a$/m);
-  // security.secrets is on by default, and only the hook checks it: with no hook, the one warning.
+  // security.secrets is on by default, and only the hook checks it: with no hook, a warning; no ask rule for a
+  // push, the other.
   assert.match(doc.stdout, /^! commit-msg hook: none, so these are rules on paper: security\.secrets; run ennyn install-hook$/m);
-  assert.match(doc.stdout, /^problems: 1 · warnings: 1 · unmeasured: 1$/m, "the one unmeasured: too few commits for the fix label");
+  assert.match(doc.stdout, /^! ask rules: no ask or deny rule for Bash\(git push \*\), PowerShell\(git push \*\) in \.claude\/settings\.json; add them to permissions\.ask \(\/ennyn:init proposes them\)$/m);
+  assert.match(doc.stdout, /^problems: 1 · warnings: 2 · unmeasured: 1$/m, "the one unmeasured: too few commits for the fix label");
 });
 
 test("commit style: language guessed from subjects, also Turkish typed without diacritics; types counted, 'faz 8:' is not one", () => {
@@ -873,14 +875,15 @@ test("scan audit: a hooks or mcpServers value that is no object is said as not r
     ".mcp.json": JSON.stringify({ mcpServers: ["a", "b"] }),
   });
   const res = agentSetup(dir, []);
-  // An event of the wrong shape (null here) is said by its name, as a hooks value of the wrong type is.
-  assert.deepEqual([res.hooks, res.mcpServers, res.unreadable], [["SessionStart"], [], [".claude/settings.json", ".claude/settings.local.json hooks.PostToolUse", ".mcp.json"]]);
+  // An event of the wrong shape (null here) is said by its name, as a hooks value of the wrong type is (Claude
+  // Code drops that field and keeps the file).
+  assert.deepEqual([res.hooks, res.mcpServers, res.unreadable], [["SessionStart"], [], [".claude/settings.json hooks", ".claude/settings.local.json hooks.PostToolUse", ".mcp.json"]]);
   put(dir, { ".claude/settings.json": JSON.stringify({ hooks: { PreToolUse: { matcher: "Bash", hooks: [{ type: "command", command: "x" }] }, Stop: "y", Notification: [{ matcher: "x" }], SessionStart: [hook] } }) });
   assert.deepEqual(agentSetup(dir, []).unreadable.slice(0, 3), [".claude/settings.json hooks.PreToolUse", ".claude/settings.json hooks.Stop", ".claude/settings.json hooks.Notification"]);
   // A list where an object belongs, and a null, are no hooks either.
   put(dir, { ".claude/settings.json": JSON.stringify({ hooks: [hook] }), ".claude/settings.local.json": JSON.stringify({ hooks: null }), ".mcp.json": JSON.stringify({ mcpServers: { a: {} } }) });
   const again = agentSetup(dir, []);
-  assert.deepEqual([again.hooks, again.mcpServers, again.unreadable], [[], ["a"], [".claude/settings.json", ".claude/settings.local.json"]]);
+  assert.deepEqual([again.hooks, again.mcpServers, again.unreadable], [[], ["a"], [".claude/settings.json hooks", ".claude/settings.local.json hooks"]]);
   // No hooks key at all: nothing to read, nothing said.
   put(dir, { ".claude/settings.json": JSON.stringify({ permissions: {} }), ".claude/settings.local.json": "{}" });
   assert.deepEqual(agentSetup(dir, []).unreadable, []);
@@ -1385,4 +1388,330 @@ test("scan audit (review three): what was not measured, and a walk's limit, read
   assert.equal(reasonText("limit:entries:0", "en"), "more than 10000 entries");
   assert.equal(reasonText("limit:depth", "tr"), "32 dizinden daha derinde");
   assert.equal(reasonText("EACCES: permission denied", "tr"), "EACCES: permission denied");
+});
+
+// push-approval-gate: a Claude Code ask rule as the backstop to the cycle's push approval. Cells named as the
+// reviewers' probes of round one.
+test("ask rules: a content rule counts in the forms whose reading the docs fix; a tool-wide rule and any other form do not", async () => {
+  const { ruleCovers } = await import("../setup/permissions.mjs");
+  // ask-plain-shared, ask-deny-colon-form, ask-nospace-star: each matches every command that starts with "git push".
+  const accept = ["Bash(git push *)", "Bash(git push:*)", "Bash(git *)", "Bash(git:*)", "Bash(git push*)", "Bash(git p*)", "Bash(g*)"];
+  // ask-bare-bash-*: a tool-wide rule is skipped for a sandboxed command; ask-empty-parens. The rest: an exact rule
+  // (bare `git push` only), a narrower prefix, a wildcard before the end, another tool or spelling, spaces Claude
+  // Code may or may not trim, a `*` tool glob, no string.
+  const reject = [
+    "Bash",
+    "Bash(*)",
+    "Bash(:*)",
+    "Bash()",
+    "Bash(git push)",
+    "Bash(git push origin *)",
+    "Bash(git push -*)",
+    "Bash(git * push)",
+    "Bash(git * push *)",
+    "Bash(* push *)",
+    "Bash(git push :*)",
+    "Bash(git  push *)",
+    "Bash(git pushx *)",
+    "bash(git push *)",
+    "Bash (git push *)",
+    " Bash(git push *)",
+    "Bash(git push *) ",
+    "Bash(git push *",
+    "Bash(git push **",
+    "PowerShell(git push *)",
+    "Bash(npm publish *)",
+    "*",
+    "",
+    42,
+    null,
+    ["Bash(git push *)"],
+  ];
+  for (const r of accept) assert.equal(ruleCovers(r, "git push"), true, `accept ${r}`);
+  for (const r of reject) assert.equal(ruleCovers(r, "git push"), false, `reject ${String(r)}`);
+  // A push through PowerShell is checked against PowerShell rules only.
+  assert.equal(ruleCovers("PowerShell(git push *)", "git push", "PowerShell"), true);
+  assert.equal(ruleCovers("Bash(git push *)", "git push", "PowerShell"), false);
+  assert.equal(ruleCovers("PowerShell", "git push", "PowerShell"), false);
+  assert.equal(ruleCovers("Bash(npm *)", "npm publish"), true);
+  assert.equal(ruleCovers("Bash(npm publish --dry-run *)", "npm publish"), false);
+  assert.equal(ruleCovers("Bash(gh release create *)", "gh release"), false, "gh release upload is not asked about");
+});
+
+test("ask rules: what is asked about, and where each rule is: committed, uncommitted, local; a file Claude Code skips gives none", async () => {
+  const { askRules, outwardCommands, parseSettings, SETTINGS_LIMIT } = await import("../setup/permissions.mjs");
+  const { projectFiles } = await import("../setup/scan.mjs");
+  // ask-monorepo-private-root: a package.json anywhere proposes npm publish; a GitHub remote, the gh commands.
+  assert.deepEqual(outwardCommands([], false), ["git push"]);
+  assert.deepEqual(outwardCommands(["packages/a/package.json"], false), ["git push", "npm publish"]);
+  assert.deepEqual(outwardCommands(["package.json"], true), ["git push", "npm publish", "gh pr merge", "gh repo sync", "gh release"]);
+  assert.deepEqual(outwardCommands(["xpackage.json", "package.jsonx"], false), ["git push"]);
+  assert.deepEqual(outwardCommands(null, false), ["git push", "npm publish"], "files git could not list: asked about");
+
+  const at = (/** @type {Record<string, string>} */ files, /** @type {string | null} */ head = null) => {
+    const dir = mkdtempSync(join(tmpdir(), "en-ask-"));
+    put(dir, files);
+    // HEAD as core/git.mjs headFile gives it: a file over 2 MB is no text.
+    return askRules(projectFiles(dir), ["git push"], { committed: () => (head === null ? null : Buffer.byteLength(head) > SETTINGS_LIMIT ? { kind: "large" } : { text: head }) });
+  };
+  const where = (/** @type {ReturnType<typeof at>} */ r) => r.rules.map((x) => `${x.tool} ${x.where}`);
+  const shared = JSON.stringify({ permissions: { ask: ["Bash(git push *)"], deny: ["PowerShell(git push:*)"] } });
+  // ask-empty-settings: no file, no rule, nothing unread.
+  assert.deepEqual(at({}), { rules: [{ command: "git push", tool: "Bash", rule: "Bash(git push *)", where: null }, { command: "git push", tool: "PowerShell", rule: "PowerShell(git push *)", where: null }], unread: [], head: null });
+  // ask-plain-shared: committed, as HEAD holds it. ask-gitignored-shared: the work tree's file only.
+  assert.deepEqual(where(at({ ".claude/settings.json": shared }, shared)), ["Bash shared", "PowerShell shared"]);
+  assert.deepEqual(where(at({ ".claude/settings.json": shared })), ["Bash uncommitted", "PowerShell uncommitted"]);
+  assert.deepEqual(where(at({ ".claude/settings.json": shared }, JSON.stringify({ permissions: { ask: ["Bash(git push *)"] } }))), ["Bash shared", "PowerShell uncommitted"]);
+  // In both files: the shared one says where every clone has it.
+  assert.deepEqual(where(at({ ".claude/settings.json": shared, ".claude/settings.local.json": shared }, shared)), ["Bash shared", "PowerShell shared"]);
+  // HEAD's file holds the rule, the work tree's does not: this machine does not have it.
+  assert.deepEqual(where(at({}, shared)), ["Bash null", "PowerShell null"]);
+  // allow is no ask; ask-local-only.
+  assert.deepEqual(where(at({ ".claude/settings.json": JSON.stringify({ permissions: { allow: ["Bash(git push *)"] } }) })), ["Bash null", "PowerShell null"]);
+  assert.deepEqual(where(at({ ".claude/settings.local.json": shared })), ["Bash local", "PowerShell local"]);
+  // A settings file with no permissions gives no rule and is no problem; an entry that is no string is skipped.
+  assert.deepEqual(at({ ".claude/settings.json": JSON.stringify({ hooks: {} }), ".claude/settings.local.json": "{}" }).unread, []);
+  assert.deepEqual(where(at({ ".claude/settings.local.json": JSON.stringify({ permissions: { ask: [7, { x: 1 }, "Bash(git push *)"] } }) })), ["Bash local", "PowerShell null"]);
+  // ask-bom-applies: Claude Code skips a byte order mark, and so does the reader.
+  assert.deepEqual(where(at({ ".claude/settings.local.json": `\uFEFF${shared}` })), ["Bash local", "PowerShell local"]);
+  // Shapes of the keys Ennyn reads that Claude Code rejects: the file gives nothing, and is named.
+  const shapes = at({ ".claude/settings.json": JSON.stringify({ permissions: { ask: "Bash(git push *)" } }), ".claude/settings.local.json": JSON.stringify({ permissions: { ask: ["Bash(git push *)"], deny: {} } }) });
+  assert.deepEqual([where(shapes), shapes.unread], [["Bash null", "PowerShell null"], [".claude/settings.json permissions.ask", ".claude/settings.local.json permissions.deny"]]);
+  const roots = at({ ".claude/settings.json": "[]", ".claude/settings.local.json": JSON.stringify({ permissions: ["Bash(git push *)"] }) });
+  assert.deepEqual([where(roots), roots.unread], [["Bash null", "PowerShell null"], [".claude/settings.json", ".claude/settings.local.json permissions"]]);
+  // A hooks value that is no object Claude Code drops and keeps the file: its rules count.
+  const hooks = at({ ".claude/settings.local.json": JSON.stringify({ hooks: "x", permissions: { ask: ["Bash(git push *)"] } }) });
+  assert.deepEqual([where(hooks), hooks.unread], [["Bash local", "PowerShell null"], []]);
+  // Other keys are not checked (Ennyn does not mirror the schema; doctor's line says a file with any setting
+  // Claude Code rejects is skipped whole).
+  assert.deepEqual(where(at({ ".claude/settings.local.json": JSON.stringify({ permissions: { ask: ["Bash(git push *)"], defaultMode: "yolo", allow: "x" } }) })), ["Bash local", "PowerShell null"]);
+  // A file over 2 MB is skipped by Claude Code, and named; HEAD's copy over 2 MB gives nothing.
+  const big = JSON.stringify({ permissions: { ask: ["Bash(git push *)"] }, pad: "x".repeat(SETTINGS_LIMIT) });
+  const large = at({ ".claude/settings.json": big }, big);
+  assert.deepEqual([where(large), large.unread], [["Bash null", "PowerShell null"], [".claude/settings.json (over 2 MB)"]]);
+  // HEAD's copy is no regular file of at most 2 MB: not judged, and said.
+  const headLarge = at({ ".claude/settings.json": shared }, big);
+  assert.deepEqual([where(headLarge), headLarge.head], [["Bash unknown", "PowerShell unknown"], "large"]);
+  assert.deepEqual(parseSettings(`\uFEFF{"permissions":{}}`, "p"), { json: { permissions: {} } });
+  assert.deepEqual(parseSettings("{", "p"), { unread: "p" });
+  // A read that fails throws, as every read of the scan does (doctor says it on its own line).
+  const dirInPlace = mkdtempSync(join(tmpdir(), "en-ask-dir-"));
+  mkdirSync(join(dirInPlace, ".claude", "settings.json"), { recursive: true });
+  assert.throws(() => askRules(projectFiles(dirInPlace), ["git push"]), /settings\.json could not be read: EISDIR/);
+  // A .claude that leads out of the repository is not read: its rules are not the repository's.
+  const out = mkdtempSync(join(tmpdir(), "en-ask-out-"));
+  put(out, { "settings.json": shared });
+  const linked = mkdtempSync(join(tmpdir(), "en-ask-link-"));
+  symlinkSync(out, join(linked, ".claude"));
+  const pf = projectFiles(linked);
+  const res = askRules(pf, ["git push"]);
+  assert.deepEqual([where(res), res.unread, [...pf.outside]], [["Bash null", "PowerShell null"], [".claude/settings.json"], [".claude"]]);
+});
+
+test("ask rules: init-scan's hooks reader and the ask rules count the same files (one predicate): a file Claude Code skips runs no hook", async () => {
+  const { agentSetup } = await import("../setup/scan.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "en-ask-hooks-"));
+  const hook = { hooks: [{ type: "command", command: "x" }] };
+  put(dir, {
+    ".claude/settings.json": JSON.stringify({ permissions: "x", hooks: { Stop: [hook] } }),
+    ".claude/settings.local.json": `\uFEFF${JSON.stringify({ hooks: { SessionStart: [hook] } })}`,
+  });
+  const res = agentSetup(dir, []);
+  assert.deepEqual([res.hooks, res.unreadable], [["SessionStart"], [".claude/settings.json permissions"]]);
+});
+
+test("ask rules: doctor says which file holds each rule and whether it is committed, with where Claude Code applies it; init-scan lists them", async () => {
+  const graph = { nodes: [{ id: "a" }] };
+  const ask = (/** @type {Awaited<ReturnType<typeof checkSetup>>} */ res) => res.items.filter((i) => i.key.startsWith("doctor.ask")).map((i) => ({ level: i.level, key: i.key, vars: i.vars }));
+  const both = (/** @type {string} */ c) => [`Bash(${c} *)`, `PowerShell(${c} *)`];
+  const none = setup({}, graph);
+  assert.deepEqual(ask(await checkSetup({ cwd: none.dir, env: {} })), [{ level: "warn", key: "doctor.askMissing", vars: { rules: both("git push") } }]);
+  const r = setup({}, graph);
+  r.commit("feat: ask", { "packages/p/package.json": JSON.stringify({ name: "p" }), ".claude/settings.json": JSON.stringify({ permissions: { ask: ["Bash(git push *)", "PowerShell(git push *)"] } }) });
+  assert.deepEqual(ask(await checkSetup({ cwd: r.dir, env: {} })), [
+    { level: "warn", key: "doctor.askMissing", vars: { rules: both("npm publish") } },
+    { level: "ok", key: "doctor.askOk", vars: { rules: both("git push") } },
+  ]);
+  // Written but not committed; only in the local file.
+  put(r.dir, { ".claude/settings.json": JSON.stringify({ permissions: { ask: [...both("git push"), "Bash(npm publish *)"] } }), ".claude/settings.local.json": JSON.stringify({ permissions: { deny: ["PowerShell(npm publish:*)"] } }) });
+  assert.deepEqual(ask(await checkSetup({ cwd: r.dir, env: {} })), [
+    { level: "warn", key: "doctor.askUncommitted", vars: { rules: ["Bash(npm publish *)"] } },
+    { level: "warn", key: "doctor.askLocal", vars: { rules: ["PowerShell(npm publish *)"] } },
+    { level: "ok", key: "doctor.askOk", vars: { rules: both("git push") } },
+  ]);
+  // The ✓ line says what was read and where Claude Code applies it, not that a push is asked about.
+  const okLine = tShown("doctor.askOk", { rules: ["Bash(git push *)"] }, "en");
+  assert.match(okLine, /^ask rules: \.claude\/settings\.json, as committed, holds Bash\(git push \*\)\. Claude Code applies them only in a session started at the repository's top/);
+  assert.match(okLine, /skips the file whole and shows a Settings Error/);
+  assert.match(okLine, /not matched: git -C <dir> push, a full path, sh -c, an alias, a script that pushes, gh api, an MCP tool$/);
+  assert.doesNotMatch(okLine, /unasked|in every permission mode/);
+  // A file that gives no rule is said; a read that fails is said once, with its error.
+  r.commit("feat: broken", { ".claude/settings.json": "{" });
+  rmSync(join(r.dir, ".claude", "settings.local.json"));
+  mkdirSync(join(r.dir, ".claude", "settings.local.json"));
+  const broken = ask(await checkSetup({ cwd: r.dir, env: {} }));
+  // A file that cannot be read might hold the rule: unmeasured, not missing.
+  assert.deepEqual(broken.map((i) => `${i.level} ${i.key}`), ["unmeasured doctor.askUnread", "unmeasured doctor.askUnmeasured", "unmeasured doctor.askUnknown"]);
+  assert.deepEqual(broken[0].vars, { list: [".claude/settings.json"] });
+  assert.match(String(broken[1].vars.error), /settings\.local\.json could not be read: EISDIR/);
+  // A file over 2 MB is no failed read: Claude Code skips it, and doctor names it as giving no rule.
+  rmSync(join(r.dir, ".claude", "settings.local.json"), { recursive: true });
+  const { SETTINGS_LIMIT } = await import("../setup/permissions.mjs");
+  put(r.dir, { ".claude/settings.local.json": JSON.stringify({ pad: "x".repeat(SETTINGS_LIMIT) }) });
+  assert.deepEqual(ask(await checkSetup({ cwd: r.dir, env: {} }))[0], { level: "unmeasured", key: "doctor.askUnread", vars: { list: [".claude/settings.json", ".claude/settings.local.json (over 2 MB)"] } });
+  // Outside a repository there is no push to ask about.
+  const dir = mkdtempSync(join(tmpdir(), "en-ask-norepo-"));
+  put(dir, { ".ennyn/config.json": "{}", ".ennyn/graph.json": JSON.stringify(graph) });
+  assert.deepEqual(ask(await checkSetup({ cwd: dir, env: {} })), []);
+
+  const scan = setup({}, graph);
+  scan.commit("feat: ask", { ".claude/settings.json": JSON.stringify({ permissions: { ask: ["Bash(git push *)"] } }), "package.json": JSON.stringify({ name: "p" }) });
+  git(["remote", "add", "origin", "https://github.com/acme/demo.git"], { cwd: scan.dir });
+  put(scan.dir, { ".claude/settings.local.json": JSON.stringify({ permissions: { ask: ["PowerShell(git push *)"] } }) });
+  const json = JSON.parse(spawnSync(process.execPath, [CLI, "init-scan", "--json"], { cwd: scan.dir, encoding: "utf8" }).stdout);
+  assert.deepEqual(json.agentSetup.ask.rules.map((/** @type {any} */ x) => `${x.rule} ${x.where}`), [
+    "Bash(git push *) shared",
+    "PowerShell(git push *) local",
+    ...["npm publish", "gh pr merge", "gh repo sync", "gh release"].flatMap((c) => both(c).map((x) => `${x} null`)),
+  ]);
+  const text = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: scan.dir, encoding: "utf8" }).stdout;
+  assert.match(text, /^Ask rules before what leaves the machine: committed in \.claude\/settings\.json: Bash\(git push \*\) · only in \.claude\/settings\.local\.json \(this machine\): PowerShell\(git push \*\) · none: Bash\(npm publish \*\), /m);
+  // A settings file that does not parse: the hooks reader names it, and the ask line says it as unmeasured.
+  put(scan.dir, { ".claude/settings.json": "{" });
+  const bad = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: scan.dir, encoding: "utf8" }).stdout;
+  assert.match(bad, /· unmeasured: \.claude\/settings\.json gives no rule\.$/m);
+  assert.match(bad, /^Not read \(.*\): \.claude\/settings\.json\.$/m);
+});
+
+// Review round two of push-approval-gate.
+test("ask rules (review two): a HEAD that cannot be read, or holds no regular file, is unmeasured, never uncommitted", async () => {
+  const { askReport } = await import("../setup/doctor.mjs");
+  const graph = { nodes: [{ id: "a" }] };
+  const all = JSON.stringify({ permissions: { ask: ["Bash(git push *)", "PowerShell(git push *)"] } });
+  const items = (/** @type {string} */ cwd, /** @type {any} */ read) => {
+    /** @type {{ level: string, key: string, vars: any }[]} */
+    const out = [];
+    askReport(cwd, [], (level, key, vars = {}) => out.push({ level, key, vars }), read);
+    return out;
+  };
+  const r = setup({}, graph);
+  r.commit("feat: ask", { ".claude/settings.json": all });
+  // A git that fails on HEAD: said, and the rules are neither ✓ nor "commit the file".
+  const failing = items(r.dir, { headFile: () => { throw Object.assign(new Error("x"), { stderr: "fatal: ls-tree failed" }); } });
+  assert.deepEqual(failing.map((i) => `${i.level} ${i.key}`), ["unmeasured doctor.askUnmeasured", "unmeasured doctor.askUnknown"]);
+  assert.deepEqual([failing[0].vars.error, failing[1].vars.rules], ["fatal: ls-tree failed", ["Bash(git push *)", "PowerShell(git push *)"]]);
+  // A committed symbolic link: clones have the file through it; HEAD holds no regular file there, not judged.
+  const link = setup({}, graph);
+  put(link.dir, { "shared/settings.json": all });
+  mkdirSync(join(link.dir, ".claude"));
+  symlinkSync("../shared/settings.json", join(link.dir, ".claude", "settings.json"));
+  link.commit("feat: linked settings");
+  const linked = (await checkSetup({ cwd: link.dir, env: {} })).items.filter((i) => i.key.startsWith("doctor.ask"));
+  assert.deepEqual(linked.map((i) => `${i.level} ${i.key}`), ["unmeasured doctor.askHeadKind", "unmeasured doctor.askUnknown"]);
+  // A link in HEAD on the way to the file is the same.
+  const dirLink = setup({}, graph);
+  put(dirLink.dir, { "conf/settings.json": all });
+  symlinkSync("conf", join(dirLink.dir, ".claude"));
+  dirLink.commit("feat: linked directory");
+  assert.ok((await checkSetup({ cwd: dirLink.dir, env: {} })).items.some((i) => i.key === "doctor.askHeadKind"));
+  // init-scan says it in the ask line too.
+  const linkScan = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: link.dir, encoding: "utf8" }).stdout;
+  assert.match(linkScan, /^Ask rules before what leaves the machine: in \.claude\/settings\.json, unmeasured whether committed \(HEAD holds no regular file there\): Bash\(git push \*\), PowerShell\(git push \*\) · /m);
+  // HEAD is read only when the work tree's file holds a rule: with none, a HEAD that cannot be read says nothing.
+  const bare = setup({}, graph);
+  assert.deepEqual(items(bare.dir, { headFile: () => { throw new Error("no"); } }).map((i) => i.key), ["doctor.askMissing"]);
+  // headFile: a regular file (executable too), a link (itself or a directory on its way), something else, past
+  // the limit, nothing there, no commit yet.
+  const { headFile } = await import("../core/git.mjs");
+  assert.deepEqual(headFile(link.dir, ".claude/settings.json", 1e6), { kind: "link" });
+  assert.deepEqual(headFile(dirLink.dir, ".claude/settings.json", 1e6), { kind: "link" });
+  assert.deepEqual(headFile(link.dir, "shared/settings.json", 1e6), { text: all });
+  assert.deepEqual(headFile(link.dir, "shared/settings.json", 10), { kind: "large" });
+  assert.deepEqual(headFile(link.dir, "shared", 1e6), { kind: "other" });
+  assert.equal(headFile(link.dir, ".claude/nothing.json", 1e6), null);
+  chmodSync(join(link.dir, "shared", "settings.json"), 0o755);
+  link.commit("chore: executable");
+  assert.deepEqual(headFile(link.dir, "shared/settings.json", 1e6), { text: all });
+  const unborn = mkdtempSync(join(tmpdir(), "en-ask-unborn-"));
+  git(["init", "-q"], { cwd: unborn });
+  assert.equal(headFile(unborn, ".claude/settings.json", 1e6), null);
+  // A settings file that cannot be read: what it holds is unknown, not missing.
+  const { projectFiles } = await import("../setup/scan.mjs");
+  const pf = projectFiles(r.dir);
+  const unread = items(r.dir, {
+    read: (/** @type {string} */ rel, /** @type {any} */ opts) => {
+      if (rel === ".claude/settings.json") throw Object.assign(new Error(".claude/settings.json could not be read: EACCES"), { code: "EACCES" });
+      return pf.read(rel, opts);
+    },
+  });
+  assert.deepEqual(unread.map((i) => `${i.level} ${i.key}`), ["unmeasured doctor.askUnmeasured", "unmeasured doctor.askUnknown"]);
+});
+
+test("ask rules (review two): doctor reads every remote for a GitHub host; a remote read that fails names the gh commands not checked", async () => {
+  const { askReport } = await import("../setup/doctor.mjs");
+  const { urlHost, isGithubHost } = await import("../setup/permissions.mjs");
+  const graph = { nodes: [{ id: "a" }] };
+  const gh = ["gh pr merge", "gh repo sync", "gh release"];
+  const r = setup({}, graph);
+  // A GitHub Enterprise remote not named origin.
+  git(["remote", "add", "upstream", "git@github.mycorp.com:org/repo.git"], { cwd: r.dir });
+  const missing = (await checkSetup({ cwd: r.dir, env: {} })).items.find((i) => i.key === "doctor.askMissing");
+  assert.deepEqual(missing?.vars.rules, ["git push", ...gh].flatMap((c) => [`Bash(${c} *)`, `PowerShell(${c} *)`]));
+  /** @type {{ level: string, key: string, vars: any }[]} */
+  const out = [];
+  askReport(r.dir, [], (level, key, vars = {}) => out.push({ level, key, vars }), { githubRemotes: () => { throw Object.assign(new Error("x"), { stderr: "fatal: remote failed" }); } });
+  assert.deepEqual(out.find((i) => i.key === "doctor.askGithubUnmeasured")?.vars, { error: "fatal: remote failed", commands: gh });
+  assert.deepEqual(out.find((i) => i.key === "doctor.askMissing")?.vars.rules, ["Bash(git push *)", "PowerShell(git push *)"]);
+  // Hosts: github.com, ssh.github.com and github.<domain>, in every URL form git takes.
+  const hosts = {
+    "https://github.com/a/b.git": "github.com",
+    "git@github.com:a/b.git": "github.com",
+    "ssh://git@ssh.github.com:443/a/b.git": "ssh.github.com",
+    "git@github.mycorp.com:org/repo.git": "github.mycorp.com",
+    "https://user@GitHub.com/a/b": "github.com",
+    "git://github.com/a/b": "github.com",
+    "/srv/git/a.git": null,
+    "../a.git": null,
+    "file:///srv/a.git": "",
+    "https://gitlab.com/a/b": "gitlab.com",
+  };
+  for (const [url, host] of Object.entries(hosts)) assert.equal(urlHost(url), host, url);
+  for (const h of ["github.com", "ssh.github.com", "github.mycorp.com", "GITHUB.com"]) assert.equal(isGithubHost(h), true, h);
+  for (const h of ["gitlab.com", "notgithub.com", "github.com.evil.net.", "mygithub.com", "", null]) assert.equal(isGithubHost(h), false, String(h));
+});
+
+test("ask rules (review two): a hooks value Claude Code drops leaves the file counting; a package.json git does not list still brings npm publish; init-scan says why no gh rule", async () => {
+  const { parseSettings, outwardCommands } = await import("../setup/permissions.mjs");
+  const { agentSetup } = await import("../setup/scan.mjs");
+  // 2.1.207 deletes a hooks value that is no object ("This field was ignored") and keeps the file.
+  assert.deepEqual(parseSettings(JSON.stringify({ hooks: "x", permissions: { ask: ["Bash(git push *)"] } }), "p"), { json: { permissions: { ask: ["Bash(git push *)"] } }, dropped: ["p hooks"] });
+  assert.deepEqual(parseSettings(JSON.stringify({ hooks: null }), "p"), { json: {}, dropped: ["p hooks"] });
+  const dir = mkdtempSync(join(tmpdir(), "en-ask-drop-"));
+  put(dir, { ".claude/settings.json": JSON.stringify({ hooks: ["x"], permissions: { ask: ["Bash(git push *)"] } }) });
+  assert.deepEqual([agentSetup(dir, []).hooks, agentSetup(dir, []).unreadable], [[], [".claude/settings.json hooks"]]);
+  assert.deepEqual(outwardCommands([], false, (/** @type {string} */ p) => p === "package.json"), ["git push", "npm publish"]);
+  assert.deepEqual(outwardCommands([], false, () => false), ["git push"]);
+  // doctor: a package.json git does not list, in a repository.
+  const untracked = setup({}, { nodes: [{ id: "a" }] });
+  put(untracked.dir, { "package.json": "{}" });
+  const doc = (await checkSetup({ cwd: untracked.dir, env: {} })).items.find((i) => i.key === "doctor.askMissing");
+  assert.deepEqual(doc?.vars.rules, ["git push", "npm publish"].flatMap((c) => [`Bash(${c} *)`, `PowerShell(${c} *)`]));
+  // init-scan outside a repository: the work tree's package.json counts.
+  const out = mkdtempSync(join(tmpdir(), "en-ask-norepo-scan-"));
+  put(out, { "package.json": "{}", ".ennyn/config.json": "{}" });
+  const json = JSON.parse(spawnSync(process.execPath, [CLI, "init-scan", "--json"], { cwd: out, encoding: "utf8" }).stdout);
+  assert.deepEqual([...new Set(json.agentSetup.ask.rules.map((/** @type {any} */ x) => x.command))], ["git push", "npm publish"]);
+  // No remote on a GitHub host: the gh rules are not proposed, and init-scan says why.
+  const r = setup({}, { nodes: [{ id: "a" }] });
+  git(["remote", "add", "origin", "https://gitlab.com/a/b.git"], { cwd: r.dir });
+  const text = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: r.dir, encoding: "utf8" }).stdout;
+  assert.match(text, /^Ask rules before what leaves the machine: .* · gh pr merge, gh repo sync and gh release not proposed: no remote names a GitHub host\.$/m);
+  // A push URL on GitHub counts as well as a fetch URL.
+  const push = setup({}, { nodes: [{ id: "a" }] });
+  git(["remote", "add", "up", "https://gitlab.com/a/b.git"], { cwd: push.dir });
+  git(["remote", "set-url", "--push", "up", "git@github.com:a/b.git"], { cwd: push.dir });
+  assert.deepEqual(JSON.parse(spawnSync(process.execPath, [CLI, "init-scan", "--json"], { cwd: push.dir, encoding: "utf8" }).stdout).agentSetup.ask.githubRemotes, ["up"]);
+  git(["remote", "add", "fork", "ssh://git@ssh.github.com:443/a/b.git"], { cwd: r.dir });
+  const scan = JSON.parse(spawnSync(process.execPath, [CLI, "init-scan", "--json"], { cwd: r.dir, encoding: "utf8" }).stdout);
+  assert.deepEqual([scan.agentSetup.ask.githubRemotes, scan.agentSetup.ask.rules.some((/** @type {any} */ x) => x.command === "gh release")], [["fork"], true]);
 });

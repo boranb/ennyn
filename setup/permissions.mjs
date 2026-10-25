@@ -1,0 +1,187 @@
+/**
+ * The commands that leave the machine, and which of the project's Claude Code settings files holds an ask or
+ * deny rule for each. The cycle asks the user before any push; such a rule is the harness's backstop, not the
+ * gate: it prompts in every permission mode, bypassPermissions included, over any allow rule, and a project's
+ * .claude/settings.json applies it without the workspace trust step (code.claude.com/docs/en/permissions).
+ *
+ * This says what Ennyn read, not what Claude Code will do. Claude Code applies the file only in a session
+ * started at the repository's top, skips it whole when any setting in it is one it rejects (Ennyn does not
+ * mirror that schema), and matches a rule against the command as written: a push written another way
+ * (`git -C dir push`, a full path, `sh -c`, an alias, a script that pushes, `gh api`, an MCP tool) is not
+ * matched. The reports say these limits instead of claiming the push is asked about.
+ *
+ * Only the project's own files are read, through the scan's projectFiles rule; user and managed settings are
+ * not the repository's. A read that fails throws, as the scan's reads do; doctor names it.
+ */
+
+/** The project's settings files, shared first: committed, it reaches every clone. */
+export const SETTINGS = /** @type {const} */ ([".claude/settings.json", ".claude/settings.local.json"]);
+/** The shell tools a rule names; a push through PowerShell is checked against PowerShell rules only. */
+export const TOOLS = /** @type {const} */ (["Bash", "PowerShell"]);
+/** Claude Code skips a settings file larger than this. */
+export const SETTINGS_LIMIT = 2 * 1024 * 1024;
+
+/** @param {unknown} v @returns {v is Record<string, any>} */
+const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+
+/**
+ * A settings file's text as Ennyn reads it: the one predicate the hooks reader (init-scan) and the ask rules
+ * share, so they agree on which files count. `{ json }`, or `{ unread }` naming what gives nothing: no JSON
+ * object (a byte order mark is skipped, as Claude Code skips it), or `permissions`, `permissions.ask` or
+ * `permissions.deny` in a shape Claude Code rejects, which makes it skip the whole file. A `hooks` value that
+ * is no object Claude Code drops before its check ("This field was ignored") and keeps the file: it is left
+ * out of `json` and named in `dropped`. Other keys are not checked: the reports say a file with any setting
+ * Claude Code rejects is skipped whole.
+ * @param {string} text @param {string} path
+ * @returns {{ json: Record<string, any>, dropped?: string[] } | { unread: string }}
+ */
+export function parseSettings(text, path) {
+  /** @type {unknown} */
+  let parsed;
+  try {
+    parsed = JSON.parse(text.replace(/^\uFEFF/, ""));
+  } catch {
+    return { unread: path };
+  }
+  if (!isObject(parsed)) return { unread: path };
+  const { hooks, ...rest } = parsed;
+  const json = hooks === undefined || isObject(hooks) ? parsed : rest;
+  const dropped = json === rest ? { dropped: [`${path} hooks`] } : {};
+  const perms = json.permissions;
+  if (perms === undefined) return { json, ...dropped };
+  if (!isObject(perms)) return { unread: `${path} permissions` };
+  const bad = ["ask", "deny"].find((k) => perms[k] !== undefined && !Array.isArray(perms[k]));
+  return bad ? { unread: `${path} permissions.${bad}` } : { json, ...dropped };
+}
+
+/**
+ * A project settings file read through projectFiles: null when it is not there, undefined when it leads out
+ * of the repository (projectFiles names it), else parseSettings's answer; a file over 2 MB is `unread`.
+ * @param {{ read: (rel: string, opts?: { limit?: number }) => string | null | undefined }} pf
+ * @param {string} path
+ */
+export function readSettings(pf, path) {
+  /** @type {string | null | undefined} */
+  let text;
+  try {
+    text = pf.read(path, { limit: SETTINGS_LIMIT });
+  } catch (e) {
+    if (/** @type {NodeJS.ErrnoException} */ (e)?.code === "EFBIG") return { unread: `${path} (over 2 MB)` };
+    throw e;
+  }
+  return text === null || text === undefined ? text : parseSettings(text, path);
+}
+
+/**
+ * Whether a permission rule, in `ask` or `deny`, matches every command `tool` runs that starts with `command`
+ * ("git push" and "git push origin main"). Only a content rule whose one wildcard is the trailing `*` or `:*`
+ * counts (`Bash(git push *)`, `Bash(git push:*)`, `Bash(git *)`, `PowerShell(git push *)`). A tool-wide rule
+ * (`Bash`, `Bash(*)`) does not: with the sandbox on, Claude Code auto-allows a sandboxed command past it. Any
+ * other form is not counted either: a missed rule is a warning, never a push read as asked about.
+ * @param {unknown} rule @param {string} command @param {string} [tool]
+ */
+export function ruleCovers(rule, command, tool = "Bash") {
+  if (typeof rule !== "string" || !rule.startsWith(`${tool}(`) || !rule.endsWith(")")) return false;
+  const body = rule.slice(tool.length + 1, -1);
+  // `:*` is the trailing ` *` written the older way; a `*` without a space before it continues the word.
+  const prefix = body.endsWith(":*") ? `${body.slice(0, -2)} ` : body.endsWith("*") ? body.slice(0, -1) : "";
+  // Compared as text: a `*` left in the prefix (`Bash(git * push *)`) matches no command, so it is not counted.
+  // A trailing ` *` also matches the bare command.
+  return prefix !== "" && `${command} `.startsWith(prefix);
+}
+
+/** The gh commands asked about with a remote on a GitHub host. */
+export const GH_COMMANDS = ["gh pr merge", "gh repo sync", "gh release"];
+
+/**
+ * The commands Ennyn asks a rule for: `git push` always; `npm publish` when the repository holds a
+ * package.json anywhere (a private root still publishes its workspaces), git could not list its files, or the
+ * work tree has one git does not list (an unborn repository, or none); with a remote on a GitHub host,
+ * GH_COMMANDS (`gh release`: create, upload, edit).
+ * @param {string[] | null} files tracked files; null when git could not list them
+ * @param {boolean} github
+ * @param {(rel: string) => boolean} [present] whether the work tree holds a file
+ */
+export function outwardCommands(files, github, present = () => false) {
+  const pkg = files === null || files.some((f) => /(^|\/)package\.json$/.test(f)) || present("package.json");
+  return ["git push", ...(pkg ? ["npm publish"] : []), ...(github ? GH_COMMANDS : [])];
+}
+
+/**
+ * The host a remote URL names, lowercased: `scheme://[user@]host[:port]/…` or scp-like `[user@]host:path`;
+ * null for a local path.
+ * @param {string} url
+ */
+export function urlHost(url) {
+  const m = /^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]*@)?(\[[^\]]*\]|[^/:?#]*)/i.exec(url) ?? /^(?:[^@/:]+@)?([^/:]+):(?!\/\/)/.exec(url);
+  return m ? m[1].toLowerCase() : null;
+}
+
+/**
+ * Whether a host serves GitHub: github.com, ssh.github.com (SSH over 443), or GitHub Enterprise on a host
+ * named github.<domain>.
+ * @param {unknown} host
+ */
+export function isGithubHost(host) {
+  if (typeof host !== "string") return false;
+  const h = host.toLowerCase();
+  return h === "github.com" || h === "ssh.github.com" || /^github(\.[a-z0-9-]+)+$/.test(h);
+}
+
+/**
+ * Where a rule for each command and tool is: `shared` (.claude/settings.json, and the same file as HEAD holds
+ * it: every clone has it), `uncommitted` (.claude/settings.json only as the work tree holds it: untracked,
+ * ignored or changed), `local` (.claude/settings.local.json only: this machine), `unknown` (a read that failed,
+ * or a HEAD that could not be read or holds no regular file there: not judged), or null. A file that gives
+ * nothing (readSettings) or leads out of the repository is named in `unread` and gives no rule. An entry that
+ * is no string is skipped, as Claude Code skips a malformed rule and keeps the rest.
+ * @param {{ read: (rel: string, opts?: { limit?: number }) => string | null | undefined }} pf
+ * @param {string[]} commands
+ * @param {{ committed?: (path: string) => { text: string } | { kind: string } | null | undefined, failed?: Set<string> }} [opts]
+ *   `committed`: a file as HEAD holds it (core/git.mjs headFile), undefined when it could not be read (the caller
+ *   says why); `failed`: the files whose read failed (pf.read gave undefined for them, so they are also in
+ *   `unread`; the caller says their error instead)
+ * @returns {{ rules: { command: string, tool: string, rule: string, where: "shared" | "uncommitted" | "local" | "unknown" | null }[], unread: string[], head: string | null }}
+ */
+export function askRules(pf, commands, { committed = () => null, failed = new Set() } = {}) {
+  /** @type {string[]} */
+  const unread = [];
+  const rulesOf = (/** @type {ReturnType<typeof parseSettings> | null | undefined} */ read) =>
+    read && "json" in read ? [...(read.json.permissions?.ask ?? []), ...(read.json.permissions?.deny ?? [])] : [];
+  const [shared, local] = SETTINGS.map((path) => {
+    const read = readSettings(pf, path);
+    if (read === undefined) unread.push(path);
+    else if (read && "unread" in read) unread.push(read.unread);
+    return rulesOf(read);
+  });
+  /** @type {string | null} */
+  let head = null;
+  /** @type {unknown[] | null | undefined} HEAD's rules; null: not judged; undefined: not read yet */
+  let headRules;
+  // HEAD is read only when the work tree's file holds a rule: whether it is committed is asked of nothing else.
+  const committedHas = (/** @type {(list: unknown[]) => boolean} */ has) => {
+    if (headRules === undefined) {
+      const at = committed(SETTINGS[0]);
+      if (at === undefined) headRules = null;
+      else if (at === null) headRules = [];
+      else if ("kind" in at) [head, headRules] = [at.kind, null];
+      else headRules = rulesOf(parseSettings(at.text, SETTINGS[0]));
+    }
+    return headRules === null ? null : has(headRules);
+  };
+  return {
+    rules: commands.flatMap((command) =>
+      TOOLS.map((tool) => {
+        const has = (/** @type {unknown[]} */ list) => list.some((r) => ruleCovers(r, command, tool));
+        const atHead = has(shared) ? committedHas(has) : false;
+        /** @type {"shared" | "uncommitted" | "local" | "unknown" | null} */
+        const where = has(shared)
+          ? atHead === null ? "unknown" : atHead ? "shared" : "uncommitted"
+          : failed.has(SETTINGS[0]) ? "unknown" : has(local) ? "local" : failed.has(SETTINGS[1]) ? "unknown" : null;
+        return { command, tool, rule: `${tool}(${command} *)`, where };
+      }),
+    ),
+    unread,
+    head,
+  };
+}
