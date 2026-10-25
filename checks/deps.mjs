@@ -9,8 +9,11 @@
  * listed registry whose tarball path, in npm's layout (`…/<name>/-/<name without scope>-<version>.tgz`), names
  * another package or version fails, as does one with no integrity, two digests of one algorithm, an integrity
  * that is not the registry's, or install scripts the registry's manifest shows and the lock leaves out. A path
- * in another layout cannot prove the identity: that is said. A staged `.npmrc` that points npm at a registry no
- * list names fails too, read as npm reads it. `allow` and `allowScripts` name an identity the tarball path
+ * in another layout proves nothing. Before the name is read, the source must have one meaning the check can
+ * prove (judgeEntry): a listed registry's tarball, a path inside the repository the index tracks, an exact
+ * `sources` entry, or no `resolved` and a registry the `.npmrc` beside the lock names. Everything else fails,
+ * whatever npm would make of it: re-reading npm-package-arg's spellings is how a gate opens holes. A staged
+ * `.npmrc` that points npm at a registry no list names fails too, read as npm reads it. `allow` and `allowScripts` name an identity the tarball path
  * proves (or, for scripts, an exact `resolved`), never a name the lock merely writes.
  * Install scripts are read from the lock (npm writes `hasInstallScript`); age, adoption, the registry's
  * integrity and manifest come from the registry the entry was resolved from: the full packument (`time`,
@@ -29,8 +32,8 @@ import { matchAny } from "../core/glob.mjs";
 import { t, tShown } from "../core/i18n.mjs";
 
 /**
- * @typedef {{ key: string, name: string, version: string, resolved: string | null, integrity: string | null, scripts: boolean, bundled: boolean }} LockEntry
- * @typedef {{ paths: string[], cooldownDays: number, minShare: number, minWeekly: number, allow: string[], allowScripts: string[], online: boolean, timeout: number, registries: Record<string, string | null>, advisories: string, advisoryRegistries: string[] }} DepsRule
+ * @typedef {{ key: string, name: string, version: string, resolved: string | null, integrity: string | null, scripts: boolean, bundled: boolean, odd?: { field: string, kind: string, raw?: string } | null }} LockEntry
+ * @typedef {{ paths: string[], cooldownDays: number, minShare: number, minWeekly: number, allow: string[], allowScripts: string[], sources: string[], online: boolean, timeout: number, registries: Record<string, string | null>, advisories: string, advisoryRegistries: string[] }} DepsRule
  * @typedef {{ key: string, vars?: Record<string, string | number> }} Reason why something was not measured: `deps.reason.<key>`
  * @typedef {{ held: number }} Meter the answer bytes held at once in one run
  */
@@ -70,25 +73,145 @@ export function lockText(bytes) {
   return bytes.toString("utf8").replace(/^﻿/, "");
 }
 
-/** @param {any} v @param {string} key @param {string} name */
-const entryOf = (v, key, name) => ({
-  key,
-  name: typeof v.name === "string" ? v.name : name,
-  version: typeof v.version === "string" ? v.version : "",
-  resolved: typeof v.resolved === "string" ? v.resolved : null,
-  integrity: typeof v.integrity === "string" ? v.integrity : null,
-  scripts: v.hasInstallScript === true,
-  bundled: v.inBundle === true || v.bundled === true,
-});
+/** The fields npm reads from a lock entry as text, and as a flag (arborist's shrinkwrap.js and load-virtual.js). */
+const TEXT_FIELDS = ["resolved", "version", "integrity", "name", "from"];
+const FLAG_FIELDS = ["link", "inBundle", "bundled", "hasInstallScript"];
 
 /**
- * The installed packages a lock file names. Version 2 and 3: every `packages` entry under a `node_modules/` path
- * (a `\` read as `/`, as npm on Windows reads it), but a link (a workspace's own code). Version 1 (npm 6): its
- * `dependencies` tree, an alias (`"version": "npm:real@5.0.0"`) as the package it is, none at all an empty lock;
- * it records no install scripts (`v1`). A lock that is not JSON (a merge left its conflict markers), of another
- * version, or with no packages is `unread`.
+ * A lock entry as the checks read it: its name (an alias's `name`, else its folder), version, resolved and
+ * integrity; `odd` the first field npm reads that is not the kind it reads (a string, or a boolean flag): npm
+ * still makes something of it (`String()` of an array, a truthy flag), so the entry is refused, never read as
+ * absent; its value as written (`raw`) is part of what makes the entry new.
+ * @param {any} v @param {string} key @param {string} name @returns {LockEntry}
+ */
+function entryOf(v, key, name) {
+  const kind = (/** @type {unknown} */ x) => (Array.isArray(x) ? "array" : x === null ? "null" : typeof x);
+  const odd =
+    TEXT_FIELDS.filter((k) => v[k] !== undefined && v[k] !== null && typeof v[k] !== "string").map((field) => ({ field, kind: kind(v[field]), raw: JSON.stringify(v[field]) }))[0] ??
+    FLAG_FIELDS.filter((k) => v[k] !== undefined && typeof v[k] !== "boolean").map((field) => ({ field, kind: kind(v[field]), raw: JSON.stringify(v[field]) }))[0] ??
+    null;
+  return {
+    key,
+    name: typeof v.name === "string" ? v.name : name,
+    version: typeof v.version === "string" ? v.version : "",
+    // An empty or null resolved is none: npm then asks the registry for name@version.
+    resolved: typeof v.resolved === "string" && v.resolved !== "" ? v.resolved : null,
+    integrity: typeof v.integrity === "string" ? v.integrity : null,
+    scripts: v.hasInstallScript === true,
+    bundled: false,
+    odd,
+  };
+}
+
+/** An exact version, as npm writes one for a registry package (semver 2.0, no range, no leading `v`). */
+const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*)?(?:\+[0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*)?$/;
+export const exactVersion = (/** @type {string} */ v) => SEMVER.test(v);
+
+/**
+ * A version 1 entry as npm 10 converts it (arborist's spec-from-lock.js and #metaFromLock): a `version` that is
+ * no exact version is the source itself, `lock.resolved` then ignored: `file:` to a directory is a link, `file:`
+ * to a tarball or a URL the entry's `resolved`, an alias (`npm:real@5.0.0`) the package it names; anything else
+ * stays a source to judge. With no integrity, npm reads `from` before `resolved`: such an entry is `odd`.
+ * @param {any} v @param {string} key @param {string} name
+ * @returns {{ entry?: LockEntry, link?: LockEntry }}
+ */
+function v1Entry(v, key, name) {
+  const e = entryOf(v, key, name);
+  const alias = /^npm:(.+)@([^@]+)$/.exec(e.version);
+  if (alias) return { entry: { ...e, name: alias[1], version: alias[2] } };
+  if (!e.version || exactVersion(e.version)) return { entry: !e.odd && !e.integrity && typeof v.from === "string" ? { ...e, odd: { field: "from", kind: "from", raw: JSON.stringify(v.from) } } : e };
+  if (/^file:/.test(e.version) && !/\.(?:tgz|tar\.gz|tar)$/i.test(e.version)) return { link: { ...e, resolved: e.version.slice(5), version: "" } };
+  return { entry: { ...e, resolved: e.version, version: "" } };
+}
+
+/**
+ * Whether an entry comes inside a dependency's tarball, as npm 10 decides it: each package's bundle list as
+ * read-package-json-fast normalizes it (the old spelling `bundledDependencies`, `true`, an object); in a lock
+ * whose lockfileVersion is not 2 or more (`reconstruct`: npm 6's, or none given) arborist's load-virtual.js then
+ * adds back to a parent's `bundleDependencies` an entry the lock flags `inBundle` when the parent is not so
+ * flagged and depends on it (a later lock's flag counts for nothing); then node.js getBundler: an entry is bundled by its parent's bundler, else by its parent when the
+ * parent lists it, else by its parent when something bundled by that parent, at any depth of its tree, depends on
+ * it and resolves to it. An entry the root project (or nobody) bundles is installed like any other. Edges are a
+ * package's `dependencies` and `optionalDependencies` (a top's `devDependencies` too); peer edges, which npm
+ * leaves out under legacy-peer-deps, are not counted, so an entry they alone would bundle is judged. Computed
+ * over the whole lock in passes until nothing changes, with no recursion.
+ * @param {Record<string, any>} packages @param {{ reconstruct: boolean }} opts @returns {(key: string) => boolean}
+ */
+function bundledIn(packages, { reconstruct }) {
+  const has = (/** @type {string} */ k) => Object.hasOwn(packages, k) && packages[k] !== null && typeof packages[k] === "object" && !Array.isArray(packages[k]);
+  const keys = Object.keys(packages).filter(has);
+  const nameOf = (/** @type {string} */ key) => key.slice(key.lastIndexOf("node_modules/") + "node_modules/".length);
+  /** The tree parent: "" the root; null for the root and a top folder (a workspace), which have none. */
+  const parentOf = (/** @type {string} */ key) => {
+    const at = key.lastIndexOf("/node_modules/");
+    return at !== -1 ? key.slice(0, at) : key.startsWith("node_modules/") ? "" : null;
+  };
+  const names = (/** @type {any} */ x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.keys(x) : []);
+  const edgesOut = (/** @type {string} */ k) => {
+    const m = packages[k];
+    return new Set([...names(m.dependencies), ...names(m.optionalDependencies), ...(parentOf(k) === null ? names(m.devDependencies) : [])]);
+  };
+  // A package's bundle list as npm normalizes it (read-package-json-fast's fixBundled): bundledDependencies when
+  // bundleDependencies is not given, `true` for every dependency, an object's keys, an array as it is.
+  const listOf = (/** @type {any} */ m) => {
+    const bd = m.bundleDependencies === undefined ? m.bundledDependencies : m.bundleDependencies;
+    if (bd === true) return names(m.dependencies);
+    if (!bd || typeof bd !== "object") return [];
+    return Array.isArray(bd) ? bd.filter((n) => typeof n === "string") : Object.keys(bd);
+  };
+  /** @type {Map<string, Set<string>>} */
+  const lists = new Map(keys.map((k) => [k, new Set(listOf(packages[k]))]));
+  for (const k of reconstruct ? keys : []) {
+    const p = parentOf(k);
+    if (p !== null && has(p) && packages[k].inBundle === true && packages[p].inBundle !== true && edgesOut(p).has(nameOf(k))) lists.get(p)?.add(nameOf(k));
+  }
+  // An edge resolves as node resolution walks: the node's own node_modules, then each parent's, a top folder's to the root.
+  const resolveFrom = (/** @type {string} */ from, /** @type {string} */ name) => {
+    for (let at = from; ; ) {
+      const k = at === "" ? `node_modules/${name}` : `${at}/node_modules/${name}`;
+      if (has(k)) return k;
+      if (at === "") return null;
+      at = parentOf(at) ?? "";
+    }
+  };
+  /** Edges into entries below another package's node_modules, the only ones a dependency can bundle. @type {Map<string, string[]>} */
+  const edgesIn = new Map();
+  for (const k of keys) {
+    for (const n of edgesOut(k)) {
+      const to = resolveFrom(k, n);
+      if (!to || !parentOf(to)) continue;
+      const from = edgesIn.get(to);
+      if (from) from.push(k);
+      else edgesIn.set(to, [k]);
+    }
+  }
+  const nested = keys.filter((k) => parentOf(k)).sort((a, b) => a.split("node_modules/").length - b.split("node_modules/").length);
+  /** @type {Map<string, string>} the bundler of each entry a dependency bundles */
+  const bundler = new Map();
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const k of nested) {
+      if (bundler.has(k)) continue;
+      const p = /** @type {string} */ (parentOf(k));
+      const by = bundler.get(p) ?? (lists.get(p)?.has(nameOf(k)) || (edgesIn.get(k) ?? []).some((f) => bundler.get(f) === p) ? p : undefined);
+      if (by !== undefined) {
+        bundler.set(k, by);
+        changed = true;
+      }
+    }
+  }
+  return (key) => bundler.has(key);
+}
+
+/**
+ * The installed packages a lock file names, read as npm 10 reads it: `packages` whenever it is there, whatever
+ * `lockfileVersion` says, every entry under a `node_modules/` path (a `\` read as `/`, as npm on Windows reads
+ * it), a link (`link`) in `links` with the directory it points at; else the `dependencies` tree (npm 6, `v1`:
+ * it records no install scripts), converted as npm converts it (v1Entry); neither is an empty lock. `bundled`
+ * as npm decides it (bundledIn). A lock that is not JSON (a merge left its conflict markers), not an object, or whose
+ * `packages` is not an object (npm installs nothing from it) is `unread`.
  * @param {string} text
- * @returns {{ entries: LockEntry[], v1?: boolean, unread?: undefined } | { unread: Reason, entries?: undefined, v1?: undefined }}
+ * @returns {{ entries: LockEntry[], links: LockEntry[], v1?: boolean, unread?: undefined } | { unread: Reason, entries?: undefined, links?: undefined, v1?: undefined }}
  */
 export function lockEntries(text) {
   /** @type {any} */
@@ -101,37 +224,48 @@ export function lockEntries(text) {
   if (!lock || typeof lock !== "object" || Array.isArray(lock)) return { unread: { key: "notObject" } };
   /** @type {LockEntry[]} */
   const entries = [];
-  if (lock.lockfileVersion === 1) {
-    const walk = (/** @type {any} */ deps, /** @type {string} */ at, /** @type {number} */ depth) => {
-      if (!deps || typeof deps !== "object" || Array.isArray(deps) || depth > 200) return;
-      for (const [name, v] of Object.entries(deps)) {
-        if (!v || typeof v !== "object") continue;
-        const key = `${at}node_modules/${name}`;
-        const e = entryOf(v, key, name);
-        const alias = /^npm:(.+)@([^@]+)$/.exec(e.version);
-        entries.push(alias ? { ...e, name: alias[1], version: alias[2] } : e);
-        walk(v.dependencies, `${key}/`, depth + 1);
-      }
-    };
-    walk(lock.dependencies, "", 0);
-    return { entries, v1: true };
-  }
-  if (lock.lockfileVersion !== 2 && lock.lockfileVersion !== 3) return { unread: { key: "lockVersion", vars: { version: JSON.stringify(lock.lockfileVersion) ?? "none" } } };
+  /** @type {LockEntry[]} */
+  const links = [];
   const packages = lock.packages;
-  if (!packages || typeof packages !== "object" || Array.isArray(packages)) return { unread: { key: "noPackages" } };
-  for (const [raw, v] of Object.entries(packages)) {
-    const key = raw.replace(/\\/g, "/");
-    const at = key.lastIndexOf("node_modules/");
-    if (at === -1 || !v || typeof v !== "object" || v.link === true) continue;
-    entries.push(entryOf(v, key, key.slice(at + "node_modules/".length)));
+  if (packages) {
+    if (typeof packages !== "object" || Array.isArray(packages)) return { unread: { key: "noPackages" } };
+    // npm's own test: load-virtual.js reads the flags back when `!(originalLockfileVersion >= 2)`, the raw value.
+    const bundled = bundledIn(packages, { reconstruct: !(lock.lockfileVersion >= 2) });
+    for (const [raw, v] of Object.entries(packages)) {
+      const key = raw.replace(/\\/g, "/");
+      const at = key.lastIndexOf("node_modules/");
+      if (at === -1 || !v || typeof v !== "object") continue;
+      const e = entryOf(v, key, key.slice(at + "node_modules/".length));
+      (v.link ? links : entries).push(v.link ? e : { ...e, bundled: bundled(raw) });
+    }
+    return { entries, links };
   }
-  return { entries };
+  const deps = lock.dependencies;
+  if (!deps || typeof deps !== "object" || Array.isArray(deps)) return { entries, links };
+  // npm 6's tree as npm converts it: `bundled` the flag, `requires` the edges; bundles read back as below version 2.
+  /** @type {Record<string, any>} */
+  const tree = {};
+  const walk = (/** @type {any} */ level, /** @type {string} */ at, /** @type {number} */ depth) => {
+    if (!level || typeof level !== "object" || Array.isArray(level) || depth > 200) return;
+    for (const [name, v] of Object.entries(level)) {
+      if (!v || typeof v !== "object") continue;
+      const key = `${at}node_modules/${name}`;
+      tree[key] = { inBundle: v.bundled === true, dependencies: v.requires };
+      const { entry, link } = v1Entry(v, key, name);
+      if (link) links.push(link);
+      if (entry) entries.push(entry);
+      walk(v.dependencies, `${key}/`, depth + 1);
+    }
+  };
+  walk(deps, "", 0);
+  const bundled = bundledIn(tree, { reconstruct: true });
+  return { entries: entries.map((e) => ({ ...e, bundled: bundled(e.key) })), links, v1: true };
 }
 
+/** name@version, or the name alone for an entry with no version (a link, a version 1 source). @param {LockEntry} e */
+const idOf = (e) => (e.version ? `${e.name}@${e.version}` : e.name);
 /** @param {LockEntry} e */
-const idOf = (e) => `${e.name}@${e.version}`;
-/** @param {LockEntry} e */
-const sealOf = (e) => `${idOf(e)} ${e.resolved ?? ""} ${e.integrity ?? ""}`;
+const sealOf = (e) => `${idOf(e)} ${e.resolved ?? ""} ${e.integrity ?? ""} ${e.odd?.raw ?? ""} ${e.bundled ? "bundled" : ""}`;
 /** Sorted by name, then version: messages do not depend on the order answers arrived in. @param {LockEntry} a @param {LockEntry} b */
 const byIdentity = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.version < b.version ? -1 : a.version > b.version ? 1 : 0);
 
@@ -182,7 +316,7 @@ export function registryOf(e, rule) {
     return { reason: { key: "badUrl" } };
   }
   const listed = Object.keys(rule.registries).filter((k) => new URL(k).origin === url.origin);
-  if (url.origin === "null" || !listed.length) return { reason: { key: "unlisted", vars: { from: url.origin === "null" ? e.resolved.split(/[#?]/)[0] : url.origin } } };
+  if (url.origin === "null" || !listed.length) return { reason: { key: "unlisted", vars: { from: url.origin === "null" ? shownSource(e.resolved.split(/[#?]/)[0]) : url.origin } } };
   const href = `${url.origin}${url.pathname}`;
   // The longest listed URL the tarball sits under.
   const registry = listed.filter((k) => href.startsWith(`${k}/`)).sort((a, b) => b.length - a.length)[0];
@@ -195,6 +329,298 @@ export function registryOf(e, rule) {
   const end = LAYOUT.exec(url.pathname);
   if (end && !(decoded(end[2]) === e.name && decoded(end[3]) === file)) return mismatch;
   return { reason: { key: "unproven", vars: { path: url.pathname } } };
+}
+
+/** npm's default registry: what it asks for an entry with no `resolved` when no config names another. */
+export const DEFAULT_REGISTRY = "https://registry.npmjs.org";
+
+/** The hosts whose repository URLs npm reads as git (hosted-git-info 8), `www.` aside. */
+const GIT_HOSTS = new Set(["github.com", "bitbucket.org", "gitlab.com", "gist.github.com", "git.sr.ht"]);
+/** A full commit id: 40 hex digits (SHA-1) or 64 (SHA-256), lower case, as npm compares one. */
+const COMMIT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+/** A tarball's name, as npm-package-arg tells a file from a directory. */
+const TARBALL = /\.(?:tgz|tar\.gz|tar)$/i;
+/** @param {URL} u */
+const hostOf = (u) => u.hostname.toLowerCase().replace(/^www\./, "");
+
+/**
+ * A path npm reads from the lock's directory, as a repository path ("" the top), or null when it leaves the
+ * repository (a root, `~`, `..` past the top) or holds a `\` or a `:` (npm on Windows reads them as a separator
+ * and a drive). npm escapes `%`, `#` and `?` before it resolves a path: they are letters of a name.
+ * @param {string} path @param {string} lockDir the lock file's directory, "" at the top
+ */
+export function pathFromLock(path, lockDir) {
+  if (/[\\:]/.test(path) || /^[/~]/.test(path)) return null;
+  const parts = lockDir ? lockDir.split("/") : [];
+  for (const seg of path.split("/")) {
+    if (seg === "..") {
+      if (!parts.length) return null;
+      parts.pop();
+    } else if (seg !== "." && seg !== "") parts.push(seg);
+  }
+  return parts.join("/");
+}
+
+/** Whether pathFromLock reads a path inside the repository. @param {string} path @param {string} lockDir */
+export const pathInside = (path, lockDir) => pathFromLock(path, lockDir) !== null;
+
+/**
+ * A `resolved` npm would read as git, loosely: a git protocol, a hosted shortcut or repository URL, ssh,
+ * scp-like `user@host:path`, GitHub shorthand. It chooses the message only: whatever it says, an entry it is
+ * asked about is refused.
+ * @param {string} s
+ */
+function gitLooking(s) {
+  // consistentResolve reads `name@spec` as the spec.
+  const spec = s.replace(/^(?:@[^/@]+\/)?[^/@:]+@(?=[a-z][a-z0-9+.-]*:)/i, "");
+  if (/^(?:git[+:]|ssh:|(?:github|gitlab|bitbucket|gist|sourcehut):)/i.test(spec)) return true;
+  // scp-like: npm-package-arg's isGit (a dotted host before the colon), with or without a user.
+  if (/^(?:[^/@]+@)?[^/@:]+\.[^/@:]+:/.test(spec)) return true;
+  if (/^[^/:@\s.][^/:@\s]*\/[^/:@\s]+(?:#.*)?$/.test(spec)) return true;
+  // A repository URL on a hosted domain (user and project, a gist's id), in any spelling.
+  const hosted = /^[a-z][a-z0-9+.-]*:\/\/(?:[^/@]*@)?(?:www\.)?(?:github\.com|gitlab\.com|bitbucket\.org|gist\.github\.com|git\.sr\.ht)(?:[:/](.*))?$/i.exec(spec);
+  return Boolean(hosted && (hosted[1] ?? "").split(/[?#]/)[0].split("/").filter(Boolean).length <= 2);
+}
+
+/** An http or https URL written as a URL reads it, case aside (no tab, space, default port or other spelling npm reads otherwise). @param {string} s */
+function canonicalUrl(s) {
+  if (!/^https?:\/\//i.test(s)) return null;
+  try {
+    const u = new URL(s);
+    return u.href.toLowerCase() === s.toLowerCase() ? u : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The form of a `sources` entry, when it has one reading only: `git`, a URL npm writes for git
+ * (`git+ssh://` or `git+https://`) pinned to a full commit; `tarball`, an http or https URL as a URL writes it,
+ * with no fragment, on no host whose URLs npm reads as git; `path`, `file:` and a path, or a path that starts
+ * with `./`, `../` or `/`, with no `:` or `\` in it. Any other entry is not honored.
+ * @param {string} s @returns {"git" | "tarball" | "path" | null}
+ */
+export function sourceForm(s) {
+  if (/^git\+(?:ssh|https):\/\/[^\s#\\]+#[0-9a-f]+$/.test(s)) return COMMIT.test(s.slice(s.indexOf("#") + 1)) ? "git" : null;
+  if (/^https?:\/\//.test(s)) {
+    try {
+      const u = new URL(s);
+      return u.href === s && !u.hash && !GIT_HOSTS.has(hostOf(u)) ? "tarball" : null;
+    } catch {
+      return null;
+    }
+  }
+  const p = s.startsWith("file:") ? s.slice(5) : /^\.{0,2}\//.test(s) ? s : null;
+  return p !== null && p !== "" && !/[\\:]/.test(p) ? "path" : null;
+}
+
+/**
+ * A source as shown: no credential in it is printed. A URL's user and password (up to its last `@`), its query
+ * values, and the user of a source written without a scheme (`token@host:path`) are cut; ssh's conventional user
+ * `git` is none.
+ * @param {string} s
+ */
+export const shownSource = (s) =>
+  s
+    .replace(/^([a-z][a-z0-9+.-]*:\/\/)(?!git@[^@/]*(?:[/?#]|$))[^/?#]*@/i, "$1…@")
+    .replace(/^(?![a-z][a-z0-9+.-]*:\/\/)(?!git@[^@/]*:)[^/]*@(?=[^/@:]+\.[^/@:]*[:/])/i, "…@")
+    .replace(/([?&][^=&#]*=)[^&#]*/g, "$1…");
+
+/**
+ * Where npm asks a registry for an entry with no `resolved`: the `@scope:registry` or `registry` the `.npmrc`
+ * beside the lock sets (as the commit holds it; npm reads a key as written, the last line of it wins), read once
+ * for every entry. What cannot be told is a reason, and so is no `.npmrc` naming one: npm would then ask what a
+ * user's or the machine's config names, which the check does not read.
+ * @param {{ staged: Buffer | null, unread?: string } | undefined} npmrc
+ * @returns {(name: string) => { url: string } | { reason: Reason }}
+ */
+export function registryResolver(npmrc) {
+  /** @type {Reason | null} */
+  let failed = null;
+  /** @type {Map<string, string>} */
+  const set = new Map();
+  if (!npmrc || (!npmrc.staged && !npmrc.unread)) failed = { key: "noResolvedNone" };
+  else {
+    const text = npmrc.staged ? lockText(npmrc.staged) : null;
+    if (text === null) failed = { key: "noResolvedUnread" };
+    else
+      for (const x of npmrcEntries(text)) {
+        if (!x.top) continue;
+        if (x.key.includes("${")) failed = { key: "noResolvedEnv" };
+        else if (x.key === "registry" || x.key.endsWith(":registry")) set.set(x.key, x.value);
+      }
+  }
+  return (name) => {
+    if (failed) return { reason: failed };
+    const scope = name.startsWith("@") ? `${name.slice(0, name.indexOf("/"))}:registry` : null;
+    const value = (scope && set.get(scope)) ?? set.get("registry");
+    if (value === undefined) return { reason: { key: "noResolvedNone" } };
+    if (value.includes("${")) return { reason: { key: "noResolvedEnv" } };
+    try {
+      const url = new URL(value);
+      return { url: `${url.origin}${url.pathname.replace(/\/+$/, "")}${url.search}${url.hash}` };
+    } catch {
+      return { reason: { key: "noResolvedNotUrl" } };
+    }
+  };
+}
+
+/**
+ * Whether a new entry's source is accepted. An entry passes only on a reading that has one meaning, whatever
+ * else npm might make of it: (a) `listed`, a `resolved` that is, as a URL reads it, npm's tarball of this name
+ * and version right after a registry `registries` lists (a version 1 entry's version taken from that tarball's
+ * name); (b) `inside`, a link's directory or `file:` and a path inside the repository (the caller then asks the
+ * index whether a commit holds it); (c) `sourced`, the exact `resolved` in `sources`, in a form with one reading
+ * (sourceForm; a tarball still needs its integrity); (d) `listed`, no `resolved`, an exact version and a name
+ * the registry serves, proven as the tarball of the registry the `.npmrc` beside the lock names (`registry`).
+ * Everything else is refused, naming what was seen and what to do: a field of the wrong kind, a host or path no
+ * list names, git, a registry spec, another package's tarball (`mismatch`). Said: an entry inside a dependency's
+ * tarball (`bundled`, fetched by nobody), another layout on a listed registry (only the identity is unproven),
+ * and an `.npmrc` beside the lock that could not be read.
+ * @param {LockEntry} e @param {DepsRule} rule
+ * @param {{ lockDir?: string, registry?: { url: string } | { reason: Reason }, link?: boolean }} [opts]
+ * @returns {{ listed: LockEntry } | { sourced: LockEntry, sealed: boolean } | { inside: string, tarball: boolean } | { refuse: "unlisted" | "git" | "mismatch", reason: Reason } | { said: Reason }}
+ */
+export function judgeEntry(e, rule, { lockDir = "", registry = { reason: { key: "noResolvedNone" } }, link = false } = {}) {
+  const from = shownSource(e.resolved ?? "");
+  if (e.odd) return { refuse: "unlisted", reason: e.odd.kind === "from" ? { key: "fromNoIntegrity" } : { key: "odd", vars: { field: e.odd.field, kind: e.odd.kind } } };
+  if (e.bundled && !link) return { said: { key: "bundled" } };
+  const form = e.resolved !== null && rule.sources.includes(e.resolved) ? sourceForm(e.resolved) : null;
+  if (form) return { sourced: e, sealed: form === "tarball" || (form === "path" && !link && TARBALL.test(/** @type {string} */ (e.resolved))) };
+  if (link) {
+    // A link with no resolved points at nothing outside the project.
+    if (e.resolved === null) return { inside: "", tarball: false };
+    const at = pathFromLock(e.resolved, lockDir);
+    return at === null ? { refuse: "unlisted", reason: { key: "outside", vars: { from } } } : { inside: at, tarball: false };
+  }
+  if (e.resolved === null) {
+    if (!exactVersion(e.version)) return { refuse: "unlisted", reason: { key: "noResolvedVersion", vars: { version: shownSource(e.version) || "—" } } };
+    if (!NAME.test(e.name)) return { refuse: "unlisted", reason: { key: "noResolvedName", vars: { name: shownSource(e.name) } } };
+    if ("reason" in registry) {
+      // A .npmrc that could not be read is unmeasured, never refused; one read that proves nothing is refused, with the line to write.
+      const file = lockDir ? `${lockDir}/.npmrc` : ".npmrc";
+      const reason = { ...registry.reason, vars: { ...registry.reason.vars, file, registry: Object.keys(rule.registries)[0] ?? DEFAULT_REGISTRY } };
+      return registry.reason.key === "noResolvedUnread" ? { said: reason } : { refuse: "unlisted", reason };
+    }
+    // Proven only right after a registry the list names, as that URL (registryOf), never a prefix of one.
+    const proven = { ...e, resolved: `${registry.url}/${e.name}/-/${e.name.replace(/^@[^/]+\//, "")}-${e.version}.tgz` };
+    return Object.hasOwn(rule.registries, registry.url) && "origin" in registryOf(proven, rule) ? { listed: proven } : { refuse: "unlisted", reason: { key: "noResolvedUnlisted", vars: { from: shownSource(registry.url) } } };
+  }
+  const url = canonicalUrl(e.resolved);
+  if (url) {
+    if (!Object.keys(rule.registries).some((k) => new URL(k).origin === url.origin)) {
+      return gitLooking(e.resolved) ? { refuse: "git", reason: { key: COMMIT.test(url.hash.slice(1)) ? "git" : "gitMoving", vars: { from } } } : { refuse: "unlisted", reason: { key: "from", vars: { from: shownSource(url.origin) } } };
+    }
+    // A version 1 entry holds its version in the tarball's name, as npm reads it back (versionFromTgz).
+    const tail = /\/-\/([^/]+)\.tgz$/.exec(url.pathname);
+    const stem = `${e.name.replace(/^@[^/]+\//, "")}-`;
+    const file = tail ? decoded(tail[1]) : "";
+    const version = e.version || (file.startsWith(stem) ? file.slice(stem.length) : "");
+    if (!exactVersion(version)) return { refuse: "unlisted", reason: { key: "noExactVersion", vars: { from } } };
+    const where = registryOf({ ...e, version }, rule);
+    if ("origin" in where) return { listed: { ...e, version } };
+    if (where.refuse) return { refuse: "mismatch", reason: where.reason };
+    // Another layout on a registry the list names (GitHub Packages' /download/…, another repository of the host):
+    // the registry is the project's, only the identity is unproven.
+    return where.reason.key === "unproven" ? { said: where.reason } : { refuse: "unlisted", reason: where.reason };
+  }
+  if (e.resolved.startsWith("file:")) {
+    const at = pathFromLock(e.resolved.slice(5), lockDir);
+    return at === null ? { refuse: "unlisted", reason: { key: "outside", vars: { from } } } : { inside: at, tarball: TARBALL.test(e.resolved) };
+  }
+  if (gitLooking(e.resolved)) {
+    const hash = e.resolved.indexOf("#");
+    return { refuse: "git", reason: { key: hash !== -1 && COMMIT.test(e.resolved.slice(hash + 1)) ? "git" : "gitMoving", vars: { from } } };
+  }
+  return { refuse: "unlisted", reason: { key: "notSource", vars: { from } } };
+}
+
+/**
+ * Each repository path as the index holds it, its symbolic links followed (at most 8): a link whose target stays
+ * inside the repository is followed to what it names (`via` the first link), one that leaves it, or a chain past
+ * 8 links, is `symlink`; `tracked`, `absent` or `submodule` where the walk ends.
+ * @param {string[]} paths
+ * @param {(paths: string[]) => Map<string, { kind: string, link?: string, target?: string | null, rest?: string }>} kinds
+ * @returns {Map<string, { kind: string, via?: string }>}
+ */
+function followLinks(paths, kinds) {
+  /** @type {Map<string, { kind: string, via?: string }>} */
+  const out = new Map();
+  /** @type {Map<string, string>} */
+  const via = new Map();
+  let pending = new Map(paths.map((p) => [p, p]));
+  for (let hop = 0; pending.size; hop++) {
+    const now = kinds([...new Set(pending.values())]);
+    /** @type {Map<string, string>} */
+    const next = new Map();
+    for (const [path, at] of pending) {
+      const k = now.get(at) ?? { kind: "absent" };
+      if (k.kind !== "symlink") {
+        out.set(path, { kind: k.kind, via: via.get(path) });
+        continue;
+      }
+      const to = typeof k.target === "string" && k.link ? pathFromLock(k.target, dirOf(k.link)) : null;
+      // Eight links followed, a ninth met: refused, as a link that leaves.
+      if (to === null || hop === 8) out.set(path, { kind: "symlink" });
+      else {
+        if (!via.has(path)) via.set(path, /** @type {string} */ (k.link));
+        next.set(path, [to, k.rest].filter(Boolean).join("/"));
+      }
+    }
+    pending = next;
+  }
+  return out;
+}
+
+/**
+ * A lock's new entries and links judged (judgeEntry), the registry for an entry with no resolved URL from
+ * `registryFor` (asked only for such an entry), and a path inside the repository asked of the index (`kinds`):
+ * it holds what the commit holds there only when the index tracks it and no symbolic link or submodule is on the
+ * way; with no `kinds`, not asked. The hook and `ennyn deps` read one judgment.
+ * @param {LockEntry[]} entries @param {LockEntry[]} links @param {DepsRule} rule
+ * @param {{ lockDir: string, registryFor: (name: string) => { url: string } | { reason: Reason }, kinds?: (paths: string[]) => Map<string, { kind: string, link?: string, target?: string | null, rest?: string }> }} opts
+ */
+export function judgeLock(entries, links, rule, { lockDir, registryFor, kinds }) {
+  /** @type {Map<LockEntry, ReturnType<typeof judgeEntry>>} */
+  const judged = new Map(entries.map((e) => [e, judgeEntry(e, rule, { lockDir, registry: e.resolved === null && !e.odd && !e.bundled ? registryFor(e.name) : undefined })]));
+  for (const entry of links) judged.set(entry, judgeEntry(entry, rule, { lockDir, link: true }));
+  /** @type {Record<"mismatch" | "unlisted" | "git", { entry: LockEntry, reason: Reason }[]>} */
+  const refused = { mismatch: [], unlisted: [], git: [] };
+  /** @type {LockEntry[]} */
+  const listed = [];
+  /** @type {LockEntry[]} */
+  const sealed = [];
+  /** @type {{ entry: LockEntry, reason: Reason, part: "all" | "age" | "adoption" }[]} */
+  const unread = [];
+  const insides = [...judged.values()].flatMap((j) => ("inside" in j && j.inside !== "" ? [j.inside] : []));
+  /** @type {Map<string, { kind: string, via?: string }> | null} */
+  let held = null;
+  /** @type {Reason | null} */
+  let heldUnread = null;
+  if (kinds && insides.length) {
+    try {
+      held = followLinks([...new Set(insides)], kinds);
+    } catch (e) {
+      heldUnread = { key: "indexUnread", vars: { error: String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message).trim().split("\n")[0] } };
+    }
+  }
+  for (const [entry, j] of judged) {
+    const from = shownSource(entry.resolved ?? "");
+    if ("listed" in j) listed.push(j.listed);
+    else if ("sourced" in j) {
+      if (j.sealed) sealed.push(entry);
+    } else if ("refuse" in j) refused[j.refuse].push({ entry, reason: j.reason });
+    else if ("said" in j) unread.push({ entry, reason: j.said, part: "all" });
+    else if (j.inside !== "" && heldUnread) unread.push({ entry, reason: heldUnread, part: "all" });
+    else {
+      const at = j.inside === "" || !held ? { kind: "tracked" } : (held.get(j.inside) ?? { kind: "absent" });
+      if (at.kind === "symlink" || at.kind === "submodule") refused.unlisted.push({ entry, reason: { key: at.kind === "symlink" ? "throughSymlink" : "throughSubmodule", vars: { from } } });
+      else if (at.kind === "absent") refused.unlisted.push({ entry, reason: { key: "untracked", vars: { from } } });
+      else if (at.via) unread.push({ entry, reason: { key: "symlinkInside", vars: { from, link: shownSource(at.via) } }, part: "all" });
+      else if (j.tarball) unread.push({ entry, reason: { key: "inRepo" }, part: "all" });
+    }
+  }
+  return { judged, listed, sealed, refused, unread };
 }
 
 /** Whether an install script may run: the proven name, or the exact `resolved`, is in `allowScripts`. @param {LockEntry} e @param {DepsRule} rule */
@@ -535,10 +961,13 @@ function percent(weekly, total, threshold) {
   return `${digits.slice(0, -d)}.${digits.slice(-d)}%`;
 }
 
+/** name@version as shown: a credential a name or version holds (a lock's spec) is cut. @param {LockEntry} e */
+const shownId = (e) => (e.version ? `${shownSource(e.name)}@${shownSource(e.version)}` : shownSource(e.name));
+
 /** The first three of a list as "name@version (detail)", sorted, and how many more. */
 function places(/** @type {{ entry: LockEntry }[]} */ list, /** @type {(x: any) => string} */ detail, /** @type {string} */ lang) {
   const sorted = [...list].sort((a, b) => byIdentity(a.entry, b.entry));
-  const shown = sorted.slice(0, 3).map((x) => `${idOf(x.entry)}${detail(x) ? ` (${detail(x)})` : ""}`);
+  const shown = sorted.slice(0, 3).map((x) => `${shownId(x.entry)}${detail(x) ? ` (${detail(x)})` : ""}`);
   return list.length > 3 ? [...shown, t("deps.more", { n: list.length - 3 }, lang)] : shown;
 }
 
@@ -551,14 +980,16 @@ const UNREAD_KEYS = { all: "deps.unread", age: "deps.unreadAge", adoption: "deps
  * rule its new entries (or new lines) break, the first three places; what was not checked is a warning. A file
  * the commit deletes is skipped. A HEAD version that cannot be read is said, and every entry (or line) then
  * counts as new. One time budget, and one answer meter, for every request of the commit. Values from the files
- * are shown as one line each (tShown).
+ * are shown as one line each (tShown). `beside(dir)` gives the `.npmrc` beside a lock that `versions` does not
+ * hold, asked only for an entry with no resolved URL; `kinds(paths)` says, for repository paths, what the index
+ * holds there (`tracked`, `absent`, `symlink`, `submodule` on the way).
  * @param {Map<string, import("../core/git.mjs").StagedVersion>} versions
  * @param {DepsRule} rule
  * @param {string} lang
- * @param {{ now?: number }} [opts]
+ * @param {{ now?: number, beside?: (dir: string) => { staged: Buffer | null, unread?: string } | undefined, kinds?: (paths: string[]) => Map<string, { kind: string, link?: string, target?: string | null, rest?: string }> }} [opts]
  * @returns {Promise<{ errors: string[], warnings: string[] }>}
  */
-export async function depsMessages(versions, rule, lang, { now = Date.now() } = {}) {
+export async function depsMessages(versions, rule, lang, { now = Date.now(), beside, kinds } = {}) {
   /** @type {string[]} */
   const errors = [];
   /** @type {string[]} */
@@ -566,6 +997,22 @@ export async function depsMessages(versions, rule, lang, { now = Date.now() } = 
   const signal = AbortSignal.timeout(rule.timeout * 1000);
   const meter = { held: 0 };
   const said = (/** @type {string} */ path, /** @type {Reason} */ reason) => warnings.push(tShown("deps.lockUnread", { path: [path], reason: reasonText(reason, lang) }, lang));
+  // The .npmrc npm reads beside each lock, as the commit holds it (`.npmrc` itself before another case of it):
+  // it names the registry npm asks for an entry with no resolved URL.
+  /** @type {Map<string, import("../core/git.mjs").StagedVersion>} */
+  const npmrcBeside = new Map();
+  const rcs = [...versions].filter(([p]) => npmrcPath(p));
+  const exact = (/** @type {string} */ p) => p === ".npmrc" || p.endsWith("/.npmrc");
+  for (const [path, v] of [...rcs.filter(([p]) => !exact(p)), ...rcs.filter(([p]) => exact(p))]) npmrcBeside.set(dirOf(path), v);
+  // One reading of it per directory, asked for only when an entry has no resolved URL (`beside` gives one the
+  // commit does not stage).
+  /** @type {Map<string, ReturnType<typeof registryResolver>>} */
+  const resolvers = new Map();
+  const resolverFor = (/** @type {string} */ dir) => {
+    let r = resolvers.get(dir);
+    if (!r) resolvers.set(dir, (r = registryResolver(npmrcBeside.has(dir) ? npmrcBeside.get(dir) : beside?.(dir))));
+    return r;
+  };
   for (const [path, v] of [...versions].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
     if (v.unread) {
       said(path, { key: v.unread });
@@ -603,30 +1050,31 @@ export async function depsMessages(versions, rule, lang, { now = Date.now() } = 
     if (!lost && headLock?.unread) lost = headLock.unread;
     if (lost) warnings.push(tShown("deps.baselineUnread", { path: [path], reason: reasonText(lost, lang) }, lang));
     const fresh = newEntries(staged.entries, lost ? [] : (headLock?.entries ?? []));
-    const scripts = fresh.filter((e) => e.scripts && !scriptsAllowed(e, rule));
-    if (scripts.length) errors.push(tShown("deps.scripts", { path: [path], n: scripts.length, where: places(scripts.map((entry) => ({ entry })), () => "", lang) }, lang));
-    // From the lock alone, online or not: npm installs the tarball `resolved` names, checked by its integrity.
-    /** @type {{ entry: LockEntry, reason: Reason }[]} */
-    const mismatched = [];
-    /** @type {LockEntry[]} */
-    const listed = [];
+    // From the lock alone, online or not: where npm fetches each new entry from, judged before its name.
+    const lockDir = dirOf(path);
+    const links = newEntries(staged.links, lost ? [] : (headLock?.links ?? []));
+    const { judged, listed, sealed, refused, unread: saidHere } = judgeLock(fresh, links, rule, { lockDir, registryFor: (name) => resolverFor(lockDir)(name), kinds });
     /** @type {{ entry: LockEntry, reason: Reason, part: "all" | "age" | "adoption" }[]} */
-    let unread = [];
-    for (const entry of fresh) {
-      const where = registryOf(entry, rule);
-      if ("origin" in where) listed.push(entry);
-      else if (where.refuse) mismatched.push({ entry, reason: where.reason });
-      else unread.push({ entry, reason: where.reason, part: "all" });
+    let unread = saidHere;
+    const proven = (/** @type {LockEntry} */ e) => {
+      const j = judged.get(e);
+      return j && "listed" in j ? j.listed : e;
+    };
+    const scripts = fresh.filter((e) => e.scripts && !scriptsAllowed(proven(e), rule));
+    if (scripts.length) errors.push(tShown("deps.scripts", { path: [path], n: scripts.length, where: places(scripts.map((entry) => ({ entry })), () => "", lang) }, lang));
+    for (const [kind, key] of /** @type {const} */ ([["mismatch", "deps.mismatch"], ["unlisted", "deps.unlisted"], ["git", "deps.git"]])) {
+      const list = refused[kind];
+      if (list.length) errors.push(tShown(key, { path: [path], n: list.length, where: places(list, (m) => reasonText(m.reason, lang), lang) }, lang));
     }
-    if (mismatched.length) errors.push(tShown("deps.mismatch", { path: [path], n: mismatched.length, where: places(mismatched, (m) => reasonText(m.reason, lang), lang) }, lang));
-    const unsealed = listed.filter((e) => !digests(e.integrity).length);
+    const unsealed = [...listed, ...sealed].filter((e) => !digests(e.integrity).length);
     if (unsealed.length) errors.push(tShown("deps.integrity", { path: [path], n: unsealed.length, where: places(unsealed.map((entry) => ({ entry })), () => "", lang) }, lang));
-    const twice = listed.filter((e) => doubled(e.integrity));
+    const twice = [...listed, ...sealed].filter((e) => doubled(e.integrity));
     if (twice.length) errors.push(tShown("deps.integrityDouble", { path: [path], n: twice.length, where: places(twice.map((entry) => ({ entry })), () => "", lang) }, lang));
     const weak = listed.filter((e) => digests(e.integrity).length && !digests(e.integrity).some((d) => d.algo === "sha512"));
     if (weak.length) warnings.push(tShown("deps.integrityWeak", { path: [path], n: weak.length, where: places(weak.map((entry) => ({ entry })), () => "", lang) }, lang));
     const asked = listed.filter((e) => digests(e.integrity).length && !doubled(e.integrity));
-    if (asked.length && !rule.online) warnings.push(tShown("deps.offline", { path: [path], n: asked.length }, lang));
+    // The mode, with no count: which entries reach this line depends on reads that may fail, and each of those says so.
+    if (asked.length && !rule.online) warnings.push(tShown("deps.offline", { path: [path] }, lang));
     else if (asked.length) {
       const r = await registryVerdicts(asked, rule, { now, signal, meter });
       if (r.tampered.length) errors.push(tShown("deps.tampered", { path: [path], n: r.tampered.length, where: places(r.tampered, () => "", lang) }, lang));

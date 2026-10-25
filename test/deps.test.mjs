@@ -7,8 +7,8 @@ import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ANSWER_LIMIT, HELD_LIMIT, advisoriesOf, depsMessages, fetchJson, lockEntries, lockPath, newEntries, npmrcFindings, reasonText, registryOf, registryVerdicts, thresholdPercent } from "../checks/deps.mjs";
-import { git } from "../core/git.mjs";
+import { ANSWER_LIMIT, HELD_LIMIT, advisoriesOf, depsMessages, fetchJson, lockEntries, lockPath, newEntries, npmrcFindings, judgeEntry, pathInside, reasonText, registryOf, registryResolver, registryVerdicts, shownSource, sourceForm, thresholdPercent } from "../checks/deps.mjs";
+import { git, indexKinds } from "../core/git.mjs";
 import { loadConfig, ConfigError } from "../core/config.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
@@ -108,17 +108,54 @@ test("deps lock: entries under node_modules are read, links and the project's ow
       ["node_modules/@s/b", "@s/b", "2.0.0", false, false],
       ["node_modules/a/node_modules/c", "c", "3.0.0", false, false],
       ["node_modules/alias", "real", "4.0.0", false, false],
-      ["node_modules/d", "d", "5.0.0", false, true],
+      // Bundled by the root project: npm still installs it (arborist's inDepBundle).
+      ["node_modules/d", "d", "5.0.0", false, false],
       // A key written with a backslash, as npm on Windows reads it: no entry slips past.
       ["node_modules/win", "win", "6.0.0", false, false],
     ],
   );
-  assert.equal(lockEntries(text.replace('"lockfileVersion": 3', '"lockfileVersion": 2')).entries?.length, 6);
+  // npm reads packages whenever it is there, whatever lockfileVersion says (arborist's shrinkwrap.js).
+  for (const v of ["2", "1", "4", '"3"', "null"]) assert.equal(lockEntries(text.replace('"lockfileVersion": 3', `"lockfileVersion": ${v}`)).entries?.length, 6, v);
+  const benign = JSON.stringify({ lockfileVersion: 1, dependencies: { a: { version: "1.0.0", resolved: "https://registry.npmjs.org/a/-/a-1.0.0.tgz", integrity: "sha512-a" } }, packages: { "node_modules/evil": { version: "1.0.0", resolved: `git+ssh://git@github.com/o/evil.git#${SHA}` } } });
+  assert.deepEqual(lockEntries(benign).entries?.map((e) => e.name), ["evil"]);
+  // dependencies alone, under any version, is read as npm 6 wrote it.
+  assert.deepEqual(lockEntries(JSON.stringify({ lockfileVersion: 3, dependencies: { a: { version: "1.0.0" } } })).entries?.map((e) => e.name), ["a"]);
   const key = (/** @type {string} */ t) => /** @type {any} */ (lockEntries(t)).unread?.key;
-  assert.equal(key(text.replace('"lockfileVersion": 3', '"lockfileVersion": 4')), "lockVersion");
   assert.equal(key(`<<<<<<< HEAD\n${text}=======\n${text}>>>>>>> side\n`), "notJson");
   assert.equal(key("[]"), "notObject");
-  assert.equal(key('{"lockfileVersion": 3}'), "noPackages");
+  assert.equal(key('{"lockfileVersion": 3, "packages": []}'), "noPackages");
+  assert.deepEqual(lockEntries('{"lockfileVersion": 3}'), { entries: [], links: [] });
+  // A dependency's bundle, as npm decides it: the parent's bundleDependencies, its bundled entries' own trees,
+  // a sibling's dependency it bundles; never the inBundle flag alone.
+  const bundles = lockEntries(lock({
+    "node_modules/p": { version: "1.0.0", bundleDependencies: ["a"] },
+    "node_modules/p/node_modules/a": { version: "1.0.0", inBundle: true, dependencies: { c: "1" } },
+    "node_modules/p/node_modules/a/node_modules/b": { version: "1.0.0", inBundle: true },
+    "node_modules/p/node_modules/c": { version: "1.0.0", inBundle: true },
+    "node_modules/p/node_modules/flagged": { version: "1.0.0", inBundle: true },
+  })).entries ?? [];
+  assert.deepEqual(bundles.map((e) => [e.key.replace(/^node_modules\/p\/node_modules\//, ""), e.bundled]), [["node_modules/p", false], ["a", true], ["a/node_modules/b", true], ["c", true], ["flagged", false]]);
+  // The root's bundle is installed; a bundled sibling's dependency it holds a copy of is its own, not the parent's.
+  const rooted = lockEntries(JSON.stringify({ lockfileVersion: 3, packages: { "": { name: "root", bundleDependencies: ["d"] }, "node_modules/d": { version: "1.0.0", inBundle: true }, "node_modules/p": { version: "1.0.0", bundleDependencies: ["a"] }, "node_modules/p/node_modules/a": { version: "1.0.0", dependencies: { c: "1" } }, "node_modules/p/node_modules/a/node_modules/c": { version: "2.0.0" }, "node_modules/p/node_modules/c": { version: "1.0.0" } } })).entries ?? [];
+  assert.deepEqual(rooted.map((e) => [e.key, e.bundled]), [["node_modules/d", false], ["node_modules/p", false], ["node_modules/p/node_modules/a", true], ["node_modules/p/node_modules/a/node_modules/c", true], ["node_modules/p/node_modules/c", false]]);
+  // A version 1 lock: a top-level bundled entry is the root's, installed, and so is what it holds; a nested one comes
+  // in its parent when the parent requires it, and is fetched when it does not.
+  assert.deepEqual(lockEntries(JSON.stringify({ lockfileVersion: 1, dependencies: { top: { version: "1.0.0", bundled: true, requires: { inner: "1" }, dependencies: { inner: { version: "1.0.0", bundled: true } } }, mid: { version: "1.0.0", requires: { kept: "1" }, dependencies: { kept: { version: "1.0.0", bundled: true }, stray: { version: "1.0.0", bundled: true } } } } })).entries?.map((e) => [e.key, e.bundled]), [["node_modules/top", false], ["node_modules/top/node_modules/inner", false], ["node_modules/mid", false], ["node_modules/mid/node_modules/kept", true], ["node_modules/mid/node_modules/stray", false]]);
+  // An entry that stops being bundled is new: npm now fetches it.
+  const was = lockEntries(lock({ "node_modules/p": { version: "1.0.0", bundleDependencies: ["a"] }, "node_modules/p/node_modules/a": { version: "1.0.0" } })).entries ?? [];
+  const now = lockEntries(lock({ "node_modules/p": { version: "1.0.0" }, "node_modules/p/node_modules/a": { version: "1.0.0" } })).entries ?? [];
+  assert.deepEqual(newEntries(now, was).map((e) => e.key), ["node_modules/p/node_modules/a"]);
+  // A field of another kind than npm reads is marked, and the raw value makes the entry new.
+  const odd = lockEntries(lock({
+    "node_modules/r": { version: "1.0.0", resolved: ["https://evil.example/r.tgz"] },
+    "node_modules/v": { version: 1 },
+    "node_modules/n": { version: "1.0.0", resolved: null, integrity: null },
+    "node_modules/l": { resolved: "packages/l", link: "yes" },
+    "node_modules/b": { version: "1.0.0", inBundle: "true" },
+  }));
+  assert.deepEqual([...(odd.entries ?? []), ...(odd.links ?? [])].map((e) => [e.name, e.odd?.field ?? null, e.odd?.kind ?? null]), [["r", "resolved", "array"], ["v", "version", "number"], ["n", null, null], ["b", "inBundle", "string"], ["l", "link", "string"]]);
+  const plain = lockEntries(lock({ "node_modules/r": { version: "1.0.0" } })).entries ?? [];
+  assert.equal(newEntries(odd.entries ?? [], plain).some((e) => e.name === "r"), true);
 });
 
 test("deps v1: a lockfileVersion 1 lock is read from its dependency tree, an alias as the package it is, no tree as an empty lock", () => {
@@ -133,7 +170,64 @@ test("deps v1: a lockfileVersion 1 lock is read from its dependency tree, an ali
   assert.deepEqual(aliased.map((e) => [e.key, e.name, e.version]), [["node_modules/alias", "@s/real", "5.0.0"]]);
   assert.deepEqual(newEntries(lockEntries(lock({ "node_modules/alias": { name: "@s/real", version: "5.0.0", resolved: "https://registry.npmjs.org/@s/real/-/real-5.0.0.tgz", integrity: "sha512-r" } })).entries ?? [], aliased), []);
   // npm 6 writes no tree for a project with no dependencies: an empty lock, not one it cannot read.
-  assert.deepEqual(lockEntries(JSON.stringify({ name: "x", version: "1.0.0", lockfileVersion: 1 })), { entries: [], v1: true });
+  assert.deepEqual(lockEntries(JSON.stringify({ name: "x", version: "1.0.0", lockfileVersion: 1 })), { entries: [], links: [] });
+  // A version that is no exact version is the source itself, as npm converts it: lock.resolved is then ignored.
+  const specs = lockEntries(JSON.stringify({ lockfileVersion: 1, dependencies: { g: { version: `git+https://github.com/o/g.git#${SHA}`, resolved: "https://registry.npmjs.org/g/-/g-1.0.0.tgz", integrity: "sha512-g" }, t: { version: "https://registry.npmjs.org/t/-/t-1.0.0.tgz", integrity: "sha512-t" }, d: { version: "file:packages/d" }, f: { version: "file:vendor/f-1.0.0.tgz", integrity: "sha512-f" }, o: { version: "1.0.0", from: "git+https://github.com/o/o.git" } } }));
+  assert.deepEqual(specs.entries?.map((e) => [e.name, e.version, e.resolved, e.odd?.field ?? null]), [["g", "", `git+https://github.com/o/g.git#${SHA}`, null], ["t", "", "https://registry.npmjs.org/t/-/t-1.0.0.tgz", null], ["f", "", "file:vendor/f-1.0.0.tgz", null], ["o", "1.0.0", null, "from"]]);
+  assert.deepEqual(specs.links?.map((e) => [e.name, e.resolved]), [["d", "packages/d"]]);
+});
+
+test("deps bundles: npm's own bundled tree, written by npm, is bundled entry for entry; an edge from deep inside a bundle counts, a flag counts where npm reads it back", async () => {
+  // npm 10.9.7's lock for a project that depends on npm: 195 entries npm flags inBundle, none of them fetched.
+  const real = fixture("lock-npm-bundled.json");
+  const flagged = Object.entries(real.packages).filter(([, v]) => /** @type {any} */ (v).inBundle).map(([k]) => k);
+  const read = lockEntries(JSON.stringify(real)).entries ?? [];
+  assert.deepEqual(read.filter((e) => e.bundled).map((e) => e.key), flagged);
+  real.packages["node_modules/npm"].resolved = "https://registry.npmjs.org/npm/-/npm-10.9.7.tgz";
+  const judged = await depsMessages(new Map([["package-lock.json", { staged: Buffer.from(JSON.stringify(real)), head: Buffer.from(lock({})) }]]), rule({ online: false }), "en");
+  assert.deepEqual(judged.errors, []);
+  // Bundled by the parent through something it bundles at any depth: cross-spawn's own which depends on isexe,
+  // which resolves to the parent's copy (npm's getBundler follows the edge).
+  const deep = lockEntries(lock({
+    "node_modules/p": { version: "1.0.0", bundleDependencies: ["cross-spawn"] },
+    "node_modules/p/node_modules/cross-spawn": { version: "1.0.0", dependencies: { which: "1" } },
+    "node_modules/p/node_modules/cross-spawn/node_modules/which": { version: "1.0.0", dependencies: { isexe: "1" } },
+    "node_modules/p/node_modules/isexe": { version: "1.0.0" },
+    // In a lock of version 2 or later npm reads no flag back (load-virtual.js only does so below version 2): fetched.
+    "node_modules/q": { version: "1.0.0", dependencies: { f: "1" } },
+    "node_modules/q/node_modules/f": { version: "1.0.0", inBundle: true },
+    // A flag it does not: the parent has no edge to it.
+    "node_modules/q/node_modules/g": { version: "1.0.0", inBundle: true },
+    // The bundle list as npm normalizes it: the old spelling, true for every dependency, an object's keys.
+    "node_modules/r": { version: "1.0.0", bundledDependencies: ["old"] },
+    "node_modules/r/node_modules/old": { version: "1.0.0" },
+    "node_modules/s": { version: "1.0.0", dependencies: { all: "1" }, bundleDependencies: true },
+    "node_modules/s/node_modules/all": { version: "1.0.0" },
+    "node_modules/t": { version: "1.0.0", bundleDependencies: { keyed: "1" } },
+    "node_modules/t/node_modules/keyed": { version: "1.0.0" },
+    "node_modules/u": { version: "1.0.0", bundleDependencies: [], bundledDependencies: ["shadowed"] },
+    "node_modules/u/node_modules/shadowed": { version: "1.0.0" },
+    // A dependency the parent does not bundle and the lock does not flag is installed.
+    "node_modules/v": { version: "1.0.0", dependencies: { h: "1" } },
+    "node_modules/v/node_modules/h": { version: "1.0.0" },
+    // A devDependency is an edge of a top only, never of a bundled package.
+    "node_modules/w": { version: "1.0.0", bundleDependencies: ["s"] },
+    "node_modules/w/node_modules/s": { version: "1.0.0", devDependencies: { c: "1" } },
+    "node_modules/w/node_modules/c": { version: "1.0.0" },
+    // An edge from something another package bundles is no edge of this parent's bundle.
+    "node_modules/x": { version: "1.0.0" },
+    "node_modules/x/node_modules/z": { version: "1.0.0", bundleDependencies: ["inner"] },
+    "node_modules/x/node_modules/z/node_modules/inner": { version: "1.0.0", dependencies: { c: "1" } },
+    "node_modules/x/node_modules/c": { version: "1.0.0" },
+  })).entries ?? [];
+  // Below version 2 (npm 6, or none given) npm adds a flagged entry back to its parent's bundle when the parent depends on it.
+  for (const version of [1, undefined, null]) {
+    const old = lockEntries(JSON.stringify({ lockfileVersion: version, packages: { "": {}, "node_modules/q": { version: "1.0.0", dependencies: { f: "1" } }, "node_modules/q/node_modules/f": { version: "1.0.0", inBundle: true }, "node_modules/q/node_modules/g": { version: "1.0.0", inBundle: true } } })).entries ?? [];
+    assert.deepEqual(old.filter((e) => e.bundled).map((e) => e.key), ["node_modules/q/node_modules/f"], String(version));
+  }
+  const v1 = lockEntries(JSON.stringify({ lockfileVersion: 1, dependencies: { q: { version: "1.0.0", requires: { f: "1" }, dependencies: { f: { version: "1.0.0", bundled: true }, g: { version: "1.0.0", bundled: true } } } } })).entries ?? [];
+  assert.deepEqual(v1.filter((e) => e.bundled).map((e) => e.key), ["node_modules/q/node_modules/f"]);
+  assert.deepEqual(deep.filter((e) => e.bundled).map((e) => e.key), ["node_modules/p/node_modules/cross-spawn", "node_modules/p/node_modules/cross-spawn/node_modules/which", "node_modules/p/node_modules/isexe", "node_modules/r/node_modules/old", "node_modules/s/node_modules/all", "node_modules/t/node_modules/keyed", "node_modules/w/node_modules/s", "node_modules/x/node_modules/z/node_modules/inner"]);
 });
 
 test("deps new: a package that moves in the tree is not new; a new version, a new package, one resolved elsewhere and a new integrity are, once each", () => {
@@ -188,6 +282,253 @@ test("deps identity: an entry is the registry's tarball of its own name and vers
   assert.deepEqual(unproven("https://corp.example/download/@s/a/1.0.0/0123abcd", prefixed), [undefined, "unproven"]);
   const github = /** @type {any} */ (registryOf(e({ name: "@s/a", resolved: "https://corp.example/download/@s/a/1.0.0/0123abcd" }), prefixed));
   assert.equal(reasonText(github.reason, "en"), "/download/@s/a/1.0.0/0123abcd is in no layout that names the package and version, so its identity is not proven");
+});
+
+/** A full commit id. */
+const SHA = "0123456789abcdef0123456789abcdef01234567";
+
+test("deps verdicts by source: an entry passes only on a reading with one meaning; every other spelling npm reads is refused, whatever npm makes of it", () => {
+  const r = rule({ registries: { "https://registry.npmjs.org": null, "https://corp.example/npm": null }, sources: [`git+ssh://git@github.com/o/listed.git#${SHA}`, "git+ssh://git@github.com/o/moving.git#main", "https://github.com/o/r.tgz", "https://mirror.example/x-1.0.0.tgz", "file:../shared/x.tgz", "../dir", "FILE:../y"] });
+  const proven = registryResolver({ staged: Buffer.from("registry=https://registry.npmjs.org/\n@corp:registry=https://corp.example/npm\n") });
+  /** @param {Partial<import("../checks/deps.mjs").LockEntry>} x @param {string} [dir] @param {boolean} [link] */
+  const verdict = (x, dir = "", link = false) => {
+    const e = { key: "node_modules/x", name: "x", version: "1.0.0", resolved: null, integrity: "sha512-x", scripts: false, bundled: false, odd: null, ...x };
+    const j = /** @type {any} */ (judgeEntry(e, r, { lockDir: dir, registry: e.resolved === null ? proven(e.name) : undefined, link }));
+    return "listed" in j ? "listed" : "sourced" in j ? "sourced" : "inside" in j ? "inside" : "said" in j ? "said" : `refused ${j.refuse}`;
+  };
+  /** @type {[string | null, string, string][]} each npm 10.9.7 reads one way or another */
+  const CORPUS = [
+    ["https://registry.npmjs.org/x/-/x-1.0.0.tgz", "", "listed"],
+    ["HTTPS://REGISTRY.NPMJS.ORG/x/-/x-1.0.0.tgz", "", "listed"],
+    // Spellings a URL reads one way and npm another (a leading space is a file to npm, a tab is dropped by URL):
+    [" https://registry.npmjs.org/x/-/x-1.0.0.tgz", "", "refused unlisted"],
+    ["https://registry.npmjs.org/x/-/x-1.0.0.t\tgz", "", "refused unlisted"],
+    ["https://registry.npmjs.org:443/x/-/x-1.0.0.tgz", "", "refused unlisted"],
+    ["https:registry.npmjs.org/x/-/x-1.0.0.tgz", "", "refused unlisted"],
+    ["https://evil.example/x-1.0.0.tgz", "", "refused unlisted"],
+    ["http://registry.npmjs.org/x/-/x-1.0.0.tgz", "", "refused unlisted"],
+    ["https://registry.npmjs.org./x/-/x-1.0.0.tgz", "", "refused unlisted"],
+    ["https://registry.npmjs.org/evil/-/evil-1.0.0.tgz", "", "refused mismatch"],
+    ["https://registry.npmjs.org/prefix/x/-/x-1.0.0.tgz", "", "said"],
+    ["https://corp.example/download/x/1.0.0/abc", "", "said"],
+    ["https://github.com/o/r/archive/main.tar.gz", "", "refused unlisted"],
+    // git in every spelling, pinned or not
+    [`git+ssh://git@github.com/o/r.git#${SHA}`, "", "refused git"],
+    ["git+https://github.com/o/r.git#main", "", "refused git"],
+    ["git://github.com/o/r.git", "", "refused git"],
+    ["git+file:///srv/r.git", "", "refused git"],
+    [`github:o/r#${SHA}`, "", "refused git"],
+    ["gitlab:o/r", "", "refused git"],
+    ["o/r", "", "refused git"],
+    ["vendor/x.tgz", "", "refused git"],
+    ["git@github.com:o/r.git", "", "refused git"],
+    ["user:tok@github.com:o/r.git", "", "refused git"],
+    ["ssh://git@github.com:o/r.git", "", "refused git"],
+    ["https://github.com:o/r", "", "refused git"],
+    ["https://github.com/o/r", "", "refused git"],
+    // what npm reads as scp-like git on an unscoped name, or a registry spec: never the registry's tarball
+    ["github.com:abc", "", "refused git"],
+    ["evil.example:payload", "", "refused git"],
+    ["127.0.0.1:x", "", "refused git"],
+    ["1.0.0", "", "refused unlisted"],
+    ["latest", "", "refused unlisted"],
+    ["npm:real@1.0.0", "", "refused unlisted"],
+    // name@spec: npm reads the spec after the name
+    ["foo@https://evil.example/x.tgz", "", "refused unlisted"],
+    ["foo@git+file:///srv/r.git", "", "refused git"],
+    ["foo@npm:evil@1.0.0", "", "refused unlisted"],
+    ["foo@file:../x", "", "refused unlisted"],
+    ["ftp://host.example/x.tgz", "", "refused unlisted"],
+    ["foo:bar", "", "refused unlisted"],
+    // a path: file: and a relative path inside the repository, nothing else
+    ["file:vendor/x.tgz", "", "inside"],
+    ["file:../x.tgz", "app", "inside"],
+    ["file:vendor/@s/x-1.0.0.tgz", "", "inside"],
+    ["file:%2e%2e/x", "", "inside"],
+    ["file:../x.tgz", "", "refused unlisted"],
+    ["file:/srv/x.tgz", "", "refused unlisted"],
+    ["file:~/x", "", "refused unlisted"],
+    ["file:C:/x", "", "refused unlisted"],
+    ["file:a\\b", "", "refused unlisted"],
+    ["FILE:vendor/x.tgz", "", "refused unlisted"],
+    ["./x", "", "refused unlisted"],
+    ["../x", "", "refused unlisted"],
+    ["x.tgz", "", "refused unlisted"],
+    ["a/b/c", "", "refused unlisted"],
+    // sources: exact, and in a form with one reading
+    [`git+ssh://git@github.com/o/listed.git#${SHA}`, "", "sourced"],
+    ["git+ssh://git@github.com/o/moving.git#main", "", "refused git"],
+    ["https://github.com/o/r.tgz", "", "refused git"],
+    ["https://mirror.example/x-1.0.0.tgz", "", "sourced"],
+    ["file:../shared/x.tgz", "", "sourced"],
+    ["FILE:../y", "", "refused unlisted"],
+  ];
+  const wrong = CORPUS.filter(([resolved, dir, want]) => verdict({ resolved }, dir) !== want).map(([resolved, dir, want]) => `${JSON.stringify(resolved)} in ${JSON.stringify(dir)}: ${verdict({ resolved }, dir)}, not ${want}`);
+  assert.deepEqual(wrong, []);
+  // No resolved: an exact version and a name, from a registry the .npmrc names; anything else is refused.
+  assert.deepEqual(
+    [{}, { name: "@corp/y" }, { version: "1.0.0-rc.1+build.5" }, { version: "git+file:///srv/r.git" }, { version: "https://evil.example/x.tgz" }, { version: "^1.0.0" }, { name: "foo@https://evil.example/x#" }].map((x) => verdict(x)),
+    ["listed", "listed", "listed", "refused unlisted", "refused unlisted", "refused unlisted", "refused unlisted"],
+  );
+  const reasonOf = (/** @type {Partial<import("../checks/deps.mjs").LockEntry>} */ x) => /** @type {any} */ (judgeEntry({ key: "node_modules/x", name: "x", version: "1.0.0", resolved: null, integrity: "sha512-x", scripts: false, bundled: false, ...x }, r, { registry: proven(x.name ?? "x") })).reason?.key;
+  assert.deepEqual([reasonOf({ name: "foo@https://evil.example/x#" }), reasonOf({ version: "^1" })], ["noResolvedName", "noResolvedVersion"]);
+  // A name no registry serves, on a listed registry's tarball: refused, never said as another layout.
+  assert.equal(verdict({ name: ".hidden", resolved: "https://registry.npmjs.org/.hidden/-/.hidden-1.0.0.tgz" }), "refused unlisted");
+  // A tarball a listed registry proves needs an exact version, in the entry or in the file's name.
+  assert.equal(verdict({ version: "^1.0.0", resolved: "https://registry.npmjs.org/x/-/x-^1.0.0.tgz" }), "refused unlisted");
+  assert.equal(verdict({ version: "", resolved: "https://registry.npmjs.org/x/-/x-1.0.0.tgz" }), "listed");
+  // A link to a folder named like a tarball, which sources names: no integrity is asked of a link.
+  assert.deepEqual(/** @type {any} */ (judgeEntry({ key: "node_modules/l", name: "l", version: "", resolved: "../dir", integrity: null, scripts: false, bundled: false }, rule({ sources: ["../dir.tgz", "../dir"] }), { link: true })).sealed, false);
+  assert.deepEqual(/** @type {any} */ (judgeEntry({ key: "node_modules/l", name: "l", version: "", resolved: "../dir.tgz", integrity: null, scripts: false, bundled: false }, rule({ sources: ["../dir.tgz"] }), { link: true })).sealed, false);
+  assert.equal(verdict({}, "", false), "listed");
+  const none = /** @type {any} */ (judgeEntry({ key: "node_modules/x", name: "x", version: "1.0.0", resolved: null, integrity: "sha512-x", scripts: false, bundled: false }, r, { registry: registryResolver(undefined)("x") }));
+  assert.equal(reasonText(none.reason, "en"), "no resolved URL and no .npmrc beside the lock naming its registry: add the line registry=https://registry.npmjs.org/ to .npmrc");
+  // A field of another kind than npm reads is refused, never read as absent.
+  for (const odd of [{ field: "resolved", kind: "array" }, { field: "resolved", kind: "object" }, { field: "version", kind: "number" }, { field: "link", kind: "string" }]) assert.equal(verdict({ odd, resolved: "https://registry.npmjs.org/x/-/x-1.0.0.tgz" }), "refused unlisted");
+  // A link is a directory, never a spec: packages/a is the project's own folder, not a GitHub repository.
+  assert.deepEqual([verdict({ resolved: "packages/a" }, "", true), verdict({ resolved: "../shared" }, "app", true), verdict({ resolved: "../shared" }, "", true), verdict({ resolved: "/srv/shared" }, "", true), verdict({ resolved: "../dir" }, "", true), verdict({ resolved: null }, "", true)], ["inside", "inside", "refused unlisted", "refused unlisted", "sourced", "inside"]);
+  assert.deepEqual([pathInside("packages/a", ""), pathInside("a/../../x", ""), pathInside("C:\\x", "")], [true, false, false]);
+  // The forms sources honors.
+  assert.deepEqual([`git+https://github.com/o/r.git#${SHA}`, "git+https://github.com/o/r.git", "git+ssh://git@github.com/o/r.git#ABC", "https://mirror.example/x.tgz", "https://mirror.example/x.tgz#frag", "HTTPS://mirror.example/x.tgz", "https://gist.github.com/x.tgz", "file:../x", "file:C:/x", "../x", "/srv/x", "x", "o/r"].map(sourceForm), ["git", null, null, "tarball", null, null, null, "path", null, "path", "path", null, null]);
+  assert.deepEqual(["git+https://github.com/o/r.git#abc", "https://mirror.example/a/../x.tgz"].map(sourceForm), [null, null]);
+  // No credential is shown: a password with @, a query token, a token as the user of a scheme-less source.
+  assert.deepEqual(
+    ["https://user:p@ss@host.example/x.tgz", "https://host.example/x.tgz?access_token=s3cret&a=1", "TOKEN@github.com:o/r.git", "user:pw@github.com/o/r", "git+ssh://git@github.com/o/r.git", "git@github.com:o/r.git", "npm:real@1.0.0"].map(shownSource),
+    ["https://…@host.example/x.tgz", "https://host.example/x.tgz?access_token=…&a=…", "…@github.com:o/r.git", "…@github.com/o/r", "git+ssh://git@github.com/o/r.git", "git@github.com:o/r.git", "npm:real@1.0.0"],
+  );
+});
+
+test("deps sources: an entry from a place no list names fails, a git dependency fails unless sources names it pinned, a path outside the repository fails, and sources lets through only exact, sealed entries", async () => {
+  const LISTED = "https://registry.example";
+  const r = rule({ registries: { [LISTED]: null }, online: false });
+  const withSources = rule({ registries: { [LISTED]: null }, online: false, sources: [`git+ssh://git@github.com/o/pinned.git#${SHA}`, "git+ssh://git@github.com/o/moving.git#main", "https://mirror.example/sealed-1.0.0.tgz", "https://mirror.example/open-1.0.0.tgz", "file:../shared/x.tgz", "../linked"] });
+  /** @param {string} text @param {import("../checks/deps.mjs").DepsRule} on @param {string} [path] */
+  const check = (text, on, path = "package-lock.json") => depsMessages(new Map([[path, { staged: Buffer.from(text), head: Buffer.from(lock({})) }]]), on, "en");
+  const brought = lock({
+    "node_modules/tarball": { version: "1.0.0", resolved: "https://evil.example/tarball-1.0.0.tgz", integrity: "sha512-x" },
+    "node_modules/plain": { version: "1.0.0", resolved: "http://evil.example/plain-1.0.0.tgz", integrity: "sha512-x" },
+    "node_modules/pinned": { version: "1.0.0", resolved: `git+ssh://git@github.com/o/pinned.git#${SHA}` },
+    "node_modules/moving": { version: "1.0.0", resolved: "git+ssh://git@github.com/o/moving.git#main" },
+    "node_modules/hosted": { version: "1.0.0", resolved: "github:o/hosted", integrity: "sha512-x" },
+    "node_modules/scp": { version: "1.0.0", resolved: `git@github.com:o/scp.git#${SHA}` },
+    "node_modules/far": { version: "1.0.0", resolved: "file:../shared/x.tgz", integrity: "sha512-x" },
+    "node_modules/near": { version: "1.0.0", resolved: "file:vendor/near-1.0.0.tgz", integrity: "sha512-x" },
+    "node_modules/aliased": { version: "1.0.0", resolved: "npm:real@1.0.0", integrity: "sha512-x" },
+    "node_modules/odd": { version: "1.0.0", resolved: "ftp://host.example/odd.tgz", integrity: "sha512-x" },
+    "node_modules/linked": { resolved: "../linked", link: true },
+    "node_modules/workspace": { resolved: "packages/workspace", link: true },
+    "node_modules/sealed": { version: "1.0.0", resolved: "https://mirror.example/sealed-1.0.0.tgz", integrity: "sha512-x" },
+    "node_modules/open": { version: "1.0.0", resolved: "https://mirror.example/open-1.0.0.tgz" },
+  });
+  const none = await check(brought, r);
+  // Nothing listed: every place no list names is refused, git apart; a file the repository holds is said.
+  assert.equal(none.errors.find((e) => /cannot prove/.test(e)), "package-lock.json: 8 new entries come from a source the check cannot prove, and nothing measured them: aliased@1.0.0 (npm:real@1.0.0: neither a listed registry's tarball nor a path inside the repository: install it from a listed registry or list this exact resolved in security.deps.sources), far@1.0.0 (file:../shared/x.tgz: outside the repository: list this exact resolved in security.deps.sources), linked (../linked: outside the repository: list this exact resolved in security.deps.sources), and 5 more");
+  assert.equal(none.errors.find((e) => /git dependencies/.test(e)), "package-lock.json: 4 new entries are git dependencies, which npm builds by running their prepare script, even with ignore-scripts, and checks no integrity: hosted@1.0.0 (github:o/hosted: not pinned to a full commit), moving@1.0.0 (git+ssh://git@github.com/o/moving.git#main: not pinned to a full commit), pinned@1.0.0 (git+ssh://git@github.com/o/pinned.git#0123456789abcdef0123456789abcdef01234567), and 1 more; list the exact resolved, pinned to a full commit, in security.deps.sources");
+  assert.ok(none.warnings.some((w) => /near@1\.0\.0/.test(w) && /a file the repository holds/.test(w)), none.warnings.join("\n"));
+  assert.ok(![...none.errors, ...none.warnings].some((x) => /workspace/.test(x)), "a link inside the repository is the project's own code");
+  // Listed in sources: exact, sealed or pinned entries pass; a moving git ref and an unsealed tarball do not.
+  const listed = await check(brought, withSources);
+  assert.match(listed.errors.find((e) => /git dependencies/.test(e)) ?? "", /^package-lock\.json: 3 new entries are git dependencies.*: hosted@1\.0\.0 \(github:o\/hosted: not pinned to a full commit\), moving@1\.0\.0 \(git\+ssh:\/\/git@github\.com\/o\/moving\.git#main: not pinned to a full commit\), scp@1\.0\.0/);
+  assert.match(listed.errors.find((e) => /cannot prove/.test(e)) ?? "", /^package-lock\.json: 4 new entries come from a source the check cannot prove.*: aliased@1\.0\.0 .*, odd@1\.0\.0 .*, plain@1\.0\.0 .*and 1 more/);
+  assert.match(listed.errors.find((e) => /new entries have no integrity/.test(e)) ?? "", /1 new entries have no integrity.*: open@1\.0\.0/);
+  assert.ok(![...listed.errors, ...listed.warnings].some((x) => /pinned@|sealed@|far@|linked/.test(x)), [...listed.errors, ...listed.warnings].join("\n"));
+  // Credentials in a git URL are never shown, in a URL or scp-like.
+  const token = await check(lock({ "node_modules/t": { version: "1.0.0", resolved: `git+https://user:s3cret@github.com/o/t.git#${SHA}` }, "node_modules/u": { version: "1.0.0", resolved: `user:s3cret@github.com:o/u.git#${SHA}` } }), r);
+  assert.ok(!JSON.stringify(token).includes("s3cret"), JSON.stringify(token));
+  assert.match(token.errors.join("\n"), /2 new entries are git dependencies/);
+  // A directory outside the repository has no integrity to need; a tarball named twice by one algorithm still fails;
+  // a listed host's tarball in another layout passes once sources names it.
+  const more = rule({ registries: { [LISTED]: null }, online: false, sources: ["file:../dir", "https://mirror.example/twice-1.0.0.tgz", `${LISTED}/download/@s/p/1.0.0/abc`] });
+  const extra = await check(lock({ "node_modules/dir": { version: "1.0.0", resolved: "file:../dir" }, "node_modules/twice": { version: "1.0.0", resolved: "https://mirror.example/twice-1.0.0.tgz", integrity: "sha512-a sha512-b" }, "node_modules/@s/p": { version: "1.0.0", resolved: `${LISTED}/download/@s/p/1.0.0/abc`, integrity: "sha512-x" } }), more);
+  assert.deepEqual(extra.errors.length, 1, extra.errors.join("\n"));
+  assert.match(extra.errors[0], /1 new entries hold two digests of one algorithm.*twice@1\.0\.0/);
+  assert.deepEqual(extra.warnings, []);
+  // Another layout on a listed registry (GitHub Packages' /download/…): the registry is the project's, only the identity is unproven: said.
+  const ghp = await check(lock({ "node_modules/@o/p": { version: "1.0.0", resolved: `${LISTED}/download/@o/p/1.0.0/abcdef`, integrity: "sha512-x" } }), r);
+  assert.deepEqual(ghp.errors, []);
+  assert.match(ghp.warnings.join("\n"), /\/download\/@o\/p\/1\.0\.0\/abcdef is in no layout that names the package and version/);
+  // lockfileVersion 1 keeps the source in `version`: read as the spec it is.
+  const v1 = JSON.stringify({ lockfileVersion: 1, dependencies: { g: { version: `git+https://github.com/o/g.git#${SHA}`, from: "git+https://github.com/o/g.git" }, t: { version: "https://evil.example/t-1.0.0.tgz", integrity: "sha512-x" }, f: { version: "file:../f" } } });
+  const old = await check(v1, r);
+  // A version 1 tarball URL on a listed registry is that registry's tarball, its version from the file's name.
+  const v1url = await check(JSON.stringify({ lockfileVersion: 1, dependencies: { x: { version: `${LISTED}/x/-/x-1.0.0.tgz`, integrity: "sha512-x" } } }), r);
+  assert.deepEqual(v1url.errors, []);
+  // A version 1 entry whose version is a source is that source, as npm converts it: its resolved is ignored.
+  const both = await check(JSON.stringify({ lockfileVersion: 1, dependencies: { b: { version: "https://evil.example/b-1.0.0.tgz", resolved: `${LISTED}/b/-/b-1.0.0.tgz`, integrity: "sha512-x" } } }), r);
+  assert.match(both.errors.join("\n"), /1 new entries come from a source the check cannot prove.*b \(from https:\/\/evil\.example: list that registry/);
+  assert.match(old.errors.find((e) => /git dependencies/.test(e)) ?? "", /1 new entries are git dependencies.*: g \(git\+https:\/\/github\.com\/o\/g\.git#0123/);
+  assert.match(old.errors.find((e) => /cannot prove/.test(e)) ?? "", /2 new entries come from a source the check cannot prove.*: f \(\.\.\/f: outside the repository: list this exact resolved in security\.deps\.sources\), t \(from https:\/\/evil\.example: list that registry/);
+  // A link that moves out of the repository is new; one HEAD already holds is not.
+  const before = lock({ "node_modules/linked": { resolved: "../linked", link: true } });
+  const kept = await depsMessages(new Map([["package-lock.json", { staged: Buffer.from(before), head: Buffer.from(before) }]]), r, "en");
+  assert.deepEqual(kept.errors, []);
+});
+
+test("deps no resolved: an entry with no resolved URL is the tarball of the registry the .npmrc beside the lock names, as the commit holds it; with none, or one it cannot tell, it is refused and nothing is asked", async () => {
+  const reg = await npm({ times: { "1.2.7": new Date(Date.now() - 2 * DAY).toISOString() } });
+  try {
+    const r = rule({ registries: { [reg.origin]: reg.origin } });
+    /** @param {Record<string, string>} files lock files new, .npmrc files as HEAD holds them */
+    const at = (files) => depsMessages(new Map(Object.entries(files).map(([p, t]) => [p, { staged: Buffer.from(t), head: Buffer.from(p.endsWith(".npmrc") ? t : lock({})) }])), r, "en");
+    const bare = lock({ "node_modules/minimist": { version: "1.2.7", integrity: SEALS["1.2.7"] } });
+    const named = await at({ "package-lock.json": bare, ".npmrc": `registry=${reg.origin}/\n` });
+    assert.match(named.errors.join("\n"), /1 new versions are younger than 7 days.*minimist@1\.2\.7/);
+    assert.ok(reg.hits.includes("GET /minimist"));
+    // None beside the lock (one in another directory is not the one npm reads for it): npm would ask what a user's
+    // config names, which the check does not read; refused, and no name leaves the machine.
+    const before = reg.hits.length;
+    const unnamed = await at({ "package-lock.json": bare, "other/.npmrc": `registry=${reg.origin}/\n` });
+    assert.match(unnamed.errors.join("\n"), /1 new entries come from a source the check cannot prove.*minimist@1\.2\.7 \(no resolved URL and no \.npmrc beside the lock naming its registry/);
+    assert.equal(reg.hits.length, before);
+    // The advice names the line and the file to write it in.
+    const nested = await at({ "app/package-lock.json": bare });
+    assert.match(nested.errors.join("\n"), new RegExp(`add the line registry=${reg.origin.replace(/[.]/g, "\\.")}/ to app/\\.npmrc`));
+    // A scope's registry is the one for its packages; the lock in a directory reads the .npmrc there.
+    const scoped = await at({ "app/package-lock.json": lock({ "node_modules/@scope/minimist": { version: "1.2.7", integrity: SEALS["1.2.7"] } }), "app/.npmrc": `registry=https://evil.example/\n@scope:registry=${reg.origin}\n` });
+    assert.match(scoped.errors.join("\n"), /app\/package-lock\.json: 1 new versions are younger than 7 days.*@scope\/minimist@1\.2\.7/);
+    // npm reads a key as written: REGISTRY is none of npm's.
+    const upper = await at({ "package-lock.json": bare, ".npmrc": `REGISTRY=${reg.origin}/\nregistry=https://evil.example/\nregistry=${reg.origin}\n` });
+    assert.match(upper.errors.join("\n"), /younger than 7 days/, "the last registry line wins");
+    const ignored = await at({ "package-lock.json": bare, ".npmrc": `REGISTRY=${reg.origin}/\n` });
+    assert.match(ignored.errors.join("\n"), /no \.npmrc beside the lock naming its registry/);
+    // A registry from the environment, or no URL, cannot be told: refused, never asked of a guess.
+    const quiet = reg.hits.length;
+    for (const [rc, why] of [["registry=${NPM_REGISTRY}\n", "is set from the environment"], ["${KEY}=x\n", "is set from the environment"], ["registry=not a url\n", "is not a URL"]]) {
+      const told = await at({ "package-lock.json": bare, ".npmrc": rc });
+      assert.match(told.errors.join("\n"), new RegExp(`minimist@1\\.2\\.7 \\(no resolved URL and .*${why}`), rc);
+    }
+    assert.equal(reg.hits.length, quiet);
+    // An empty resolved is none, as npm reads it; a registry under a [section] is none of npm's.
+    assert.match((await at({ "package-lock.json": lock({ "node_modules/minimist": { version: "1.2.7", resolved: "", integrity: SEALS["1.2.7"] } }), ".npmrc": `registry=${reg.origin}\n` })).errors.join("\n"), /younger than 7 days/);
+    assert.match((await at({ "package-lock.json": bare, ".npmrc": `[x]\nregistry=${reg.origin}\n` })).errors.join("\n"), /no \.npmrc beside the lock naming its registry/);
+    // A registry with a query is no registry a list names.
+    assert.match((await at({ "package-lock.json": bare, ".npmrc": `registry=${reg.origin}/?x=1\n` })).errors.join("\n"), /npm asks .*\?x=… for it/);
+    // The commit deletes the .npmrc beside the lock: no file names a registry, which is not a file that cannot be read.
+    const deleted = await depsMessages(new Map([["package-lock.json", { staged: Buffer.from(bare), head: Buffer.from(lock({})) }], [".npmrc", { staged: null, head: Buffer.from(`registry=${reg.origin}\n`) }]]), r, "en");
+    assert.match(deleted.errors.join("\n"), /no \.npmrc beside the lock naming its registry/);
+    // .npmrc and .NPMRC beside one lock: npm opens .npmrc.
+    const cased = await at({ "package-lock.json": bare, ".NPMRC": "registry=https://evil.example/\n", ".npmrc": `registry=${reg.origin}\n` });
+    assert.match(cased.errors.join("\n"), /younger than 7 days/);
+    // allowScripts names a package the registry npm asks proves: its install script is allowed.
+    const scripted = await depsMessages(new Map([["package-lock.json", { staged: Buffer.from(lock({ "node_modules/minimist": { version: "1.2.8", integrity: SEALS["1.2.8"], hasInstallScript: true } })), head: Buffer.from(lock({})) }], [".npmrc", { staged: Buffer.from(`registry=${reg.origin}\n`), head: Buffer.from(`registry=${reg.origin}\n`) }]]), rule({ registries: { [reg.origin]: reg.origin }, allowScripts: ["minimist"] }), "en");
+    assert.ok(!scripted.errors.some((e) => /install scripts/.test(e)), scripted.errors.join("\n"));
+    // A resolved holding a version or a tag is a registry spec npm resolves itself: refused.
+    const tagged = await at({ "package-lock.json": lock({ "node_modules/minimist": { version: "1.2.8", resolved: "latest", integrity: SEALS["1.2.8"] } }), ".npmrc": `registry=${reg.origin}\n` });
+    assert.match(tagged.errors.join("\n"), /1 new entries come from a source the check cannot prove.*minimist@1\.2\.8 \(latest: neither/);
+    // The .npmrc beside the lock that cannot be read: unmeasured, said, never refused and never clean.
+    const unread = await depsMessages(new Map([["package-lock.json", { staged: Buffer.from(bare), head: Buffer.from(lock({})) }], [".npmrc", { staged: null, head: null, unread: "symlink" }]]), r, "en");
+    assert.deepEqual(unread.errors, []);
+    assert.match(unread.warnings.join("\n"), /unmeasured for 1 new versions \(no resolved URL and the \.npmrc beside the lock could not be read\): minimist@1\.2\.7/);
+    // The .npmrc a loader gives (one the commit does not stage) is read once per directory, and only when an entry needs it.
+    let asked = 0;
+    const loaded = (/** @type {string} */ text) => depsMessages(new Map([["package-lock.json", { staged: Buffer.from(text), head: Buffer.from(lock({})) }]]), r, "en", { beside: () => (asked++, { staged: Buffer.from(`registry=${reg.origin}\n`) }) });
+    await loaded(lock(Object.assign({}, ...["1.2.6", "1.2.7", "1.2.8"].map((v) => ({ [`node_modules/m${v}/node_modules/minimist`]: { version: v, integrity: SEALS[v] } })))));
+    assert.equal(asked, 1);
+    await loaded(lock(entry(reg.origin, "minimist", "1.2.8")));
+    assert.equal(asked, 1);
+  } finally {
+    await reg.close();
+  }
 });
 
 test("deps verdicts: age, adoption, the registry's integrity and its manifest's scripts are each read; allowed and measured-clean entries are not found", async () => {
@@ -463,6 +804,155 @@ test("deps hook: a lock npm reads under another case is read, and a staged .npmr
   }
 });
 
+test("deps hook: the .npmrc beside a staged lock names the registry for entries with no resolved URL, staged or not", async () => {
+  const reg = await npm({ times: { "1.2.7": new Date(Date.now() - 2 * DAY).toISOString() } });
+  try {
+    const r = repo(reg.origin);
+    r.put({ ".npmrc": `registry=${reg.origin}/\n`, "app/.npmrc": `registry=${reg.origin}/\n`, "package-lock.json": lock({}), "app/package-lock.json": lock({}) });
+    r.commit();
+    r.put({ "package-lock.json": lock({ "node_modules/minimist": { version: "1.2.7", integrity: SEALS["1.2.7"] } }) });
+    const top = await r.check();
+    assert.equal(top.status, 1);
+    assert.match(top.stderr, /package-lock\.json: 1 new versions are younger than 7 days.*minimist@1\.2\.7/);
+    // Both at once: each lock reads its own .npmrc.
+    r.put({ "app/package-lock.json": lock({ "node_modules/minimist": { version: "1.2.7", integrity: SEALS["1.2.7"] } }) });
+    const both = await r.check();
+    assert.match(both.stderr, /^package-lock\.json: 1 new versions are younger than 7 days/m);
+    assert.match(both.stderr, /^app\/package-lock\.json: 1 new versions are younger than 7 days/m);
+    // A lock at the top with no .npmrc of its own reads none, not one in a subdirectory.
+    git(["reset", "-q", "--hard"], { cwd: r.dir });
+    git(["rm", "-q", ".npmrc"], { cwd: r.dir });
+    r.commit();
+    r.put({ "package-lock.json": lock({ "node_modules/minimist": { version: "1.2.7", integrity: SEALS["1.2.7"] } }) });
+    assert.match((await r.check()).stderr, /no \.npmrc beside the lock naming its registry/);
+    // An .npmrc beside no lock is not the one npm reads: staged, it is not judged.
+    git(["reset", "-q", "--hard"], { cwd: r.dir });
+    r.put({ "package-lock.json": lock(entry(reg.origin, "minimist", "1.2.8")), "other/.npmrc": "registry=https://evil.example/\n" });
+    assert.equal((await r.check()).status, 0);
+  } finally {
+    await reg.close();
+  }
+});
+
+test("deps hook: a path inside the repository holds what the commit holds only when the index tracks it and no symbolic link is on the way; an .npmrc the commit leaves alone is read only when an entry needs it", async () => {
+  const reg = await npm();
+  try {
+    const r = repo(reg.origin);
+    mkdirSync(join(r.dir, "packages"), { recursive: true });
+    symlinkSync("../../outside", join(r.dir, "packages", "a"));
+    symlinkSync("../outside-vendor", join(r.dir, "vendor"));
+    symlinkSync("/nonexistent/npmrc", join(r.dir, ".npmrc"));
+    r.put({ "packages/b/package.json": "{}\n", "package-lock.json": lock({}) });
+    r.commit();
+    r.put({
+      "package-lock.json": lock({
+        "node_modules/a": { resolved: "packages/a", link: true },
+        "node_modules/b": { resolved: "packages/b", link: true },
+        "node_modules/u": { resolved: "packages/untracked", link: true },
+        "node_modules/t": { version: "1.0.0", resolved: "file:vendor/t-1.0.0.tgz", integrity: "sha512-t" },
+        ...entry(reg.origin, "minimist", "1.2.8"),
+      }),
+    });
+    // A symbolic link to a folder the repository holds is followed (through a second link too): said, naming the link.
+    mkdirSync(join(r.dir, "shared", "a"), { recursive: true });
+    writeFileSync(join(r.dir, "shared", "a", "package.json"), "{}\n");
+    symlinkSync("../shared/a", join(r.dir, "packages", "in"));
+    symlinkSync("in", join(r.dir, "packages", "chain"));
+    git(["add", "shared", "packages/in", "packages/chain"], { cwd: r.dir });
+    writeFileSync(join(r.dir, "package-lock.json"), lock({ "node_modules/in": { resolved: "packages/in", link: true }, "node_modules/chain": { resolved: "packages/chain", link: true } }));
+    git(["add", "package-lock.json"], { cwd: r.dir });
+    const inside = await r.check();
+    assert.equal(inside.status, 0, inside.stderr);
+    assert.match(inside.stderr, /\(packages\/chain: through the symbolic link packages\/chain, to a folder the repository holds\): chain$/m);
+    assert.match(inside.stderr, /\(packages\/in: through the symbolic link packages\/in, to a folder the repository holds\): in$/m);
+    // Past the link, the rest of the path must be held too; a cycle of links leads nowhere the commit holds.
+    symlinkSync("l2", join(r.dir, "packages", "l1"));
+    symlinkSync("l1", join(r.dir, "packages", "l2"));
+    git(["add", "packages/l1", "packages/l2"], { cwd: r.dir });
+    writeFileSync(join(r.dir, "package-lock.json"), lock({ "node_modules/rest": { resolved: "packages/in/missing", link: true }, "node_modules/loop": { resolved: "packages/l1", link: true } }));
+    git(["add", "package-lock.json"], { cwd: r.dir });
+    const walked = await r.check();
+    assert.match(walked.stderr, /rest \(packages\/in\/missing: the index holds nothing there/);
+    assert.match(walked.stderr, /loop \(packages\/l1: a symbolic link the index holds leads out of the repository/);
+    git(["rm", "-q", "--cached", "packages/l1", "packages/l2"], { cwd: r.dir });
+    // A name npm writes decomposed (macOS) against the composed one the index holds: the same folder.
+    git(["update-index", "--add", "--cacheinfo", `100644,${git(["hash-object", "-w", "--stdin"], { cwd: r.dir, input: "{}\n" }).trim()},packages/caf\u00e9/package.json`], { cwd: r.dir });
+    writeFileSync(join(r.dir, "package-lock.json"), lock({ "node_modules/cafe": { resolved: "packages/cafe\u0301", link: true } }));
+    git(["add", "package-lock.json"], { cwd: r.dir });
+    const nfd = await r.check();
+    assert.ok(!/cafe/.test(nfd.stderr), nfd.stderr);
+    // A top folder (no directory above it to list) is asked in both forms; a link the index holds decomposed is one.
+    const oid = (/** @type {string} */ text) => git(["hash-object", "-w", "--stdin"], { cwd: r.dir, input: text }).trim();
+    git(["update-index", "--add", "--cacheinfo", `100644,${oid("{}\n")},caf\u00e9/package.json`], { cwd: r.dir });
+    git(["-c", "core.precomposeUnicode=false", "update-index", "--add", "--cacheinfo", `120000,${oid("../../outside")},packages/lie\u0301n`], { cwd: r.dir });
+    writeFileSync(join(r.dir, "package-lock.json"), lock({ "node_modules/top": { resolved: "cafe\u0301", link: true }, "node_modules/lien": { resolved: "packages/li\u00e9n", link: true } }));
+    git(["add", "package-lock.json"], { cwd: r.dir });
+    const forms = await r.check();
+    assert.ok(!/top \(/.test(forms.stderr), forms.stderr);
+    assert.match(forms.stderr, /lien \(packages\/li\u00e9n: a symbolic link the index holds leads out of the repository/);
+    git(["-c", "core.precomposeUnicode=false", "rm", "-q", "--cached", "caf\u00e9/package.json", "packages/lie\u0301n"], { cwd: r.dir });
+    git(["rm", "-q", "--cached", "-r", "shared", "packages/in", "packages/chain", "packages/caf\u00e9"], { cwd: r.dir });
+    // A submodule on the way: its commit holds the folder, not this one.
+    git(["update-index", "--add", "--cacheinfo", `160000,${SHA},packages/sub`], { cwd: r.dir });
+    git(["add", "package-lock.json"], { cwd: r.dir });
+    const subbed = lock({ "node_modules/s": { resolved: "packages/sub/pkg", link: true } });
+    writeFileSync(join(r.dir, "package-lock.json"), subbed);
+    git(["add", "package-lock.json"], { cwd: r.dir });
+    assert.match((await r.check()).stderr, /s \(packages\/sub\/pkg: a submodule holds it and not this commit: list this exact resolved in security\.deps\.sources\)/);
+    git(["rm", "-q", "--cached", "packages/sub"], { cwd: r.dir });
+    r.put({
+      "package-lock.json": lock({
+        "node_modules/a": { resolved: "packages/a", link: true },
+        "node_modules/b": { resolved: "packages/b", link: true },
+        "node_modules/u": { resolved: "packages/untracked", link: true },
+        "node_modules/t": { version: "1.0.0", resolved: "file:vendor/t-1.0.0.tgz", integrity: "sha512-t" },
+        ...entry(reg.origin, "minimist", "1.2.8"),
+      }),
+    });
+    const out = await r.check();
+    assert.equal(out.status, 1);
+    assert.match(out.stderr, /3 new entries come from a source the check cannot prove.*a \(packages\/a: a symbolic link the index holds leads out of the repository: link the folder itself or list this exact resolved in security\.deps\.sources\), t@1\.0\.0 \(file:vendor\/t-1\.0\.0\.tgz: a symbolic link/);
+    assert.match(out.stderr, /u \(packages\/untracked: the index holds nothing there/);
+    assert.ok(!/ b \(|\.npmrc/.test(out.stderr), out.stderr);
+    // An entry with no resolved URL asks for the .npmrc: one the check cannot read is named then.
+    r.put({ "package-lock.json": lock({ "node_modules/minimist": { version: "1.2.8", integrity: SEALS["1.2.8"] } }) });
+    const unreadRc = await r.check();
+    assert.equal(unreadRc.status, 0);
+    assert.match(unreadRc.stderr, /unmeasured for 1 new versions \(no resolved URL and the \.npmrc beside the lock could not be read\): minimist@1\.2\.8/);
+    // The index holds .npmrc and .NPMRC: npm opens .npmrc.
+    const blob = (/** @type {string} */ text) => git(["hash-object", "-w", "--stdin"], { cwd: r.dir, input: text }).trim();
+    git(["rm", "-q", "--cached", ".npmrc"], { cwd: r.dir });
+    git(["update-index", "--add", "--cacheinfo", `100644,${blob("registry=https://evil.example/\n")},.NPMRC`], { cwd: r.dir });
+    git(["update-index", "--add", "--cacheinfo", `100644,${blob(`registry=${reg.origin}\n`)},.npmrc`], { cwd: r.dir });
+    git(["checkout", "-q", "HEAD", "--", "package-lock.json"], { cwd: r.dir });
+    r.commit();
+    // Only the lock is staged (a case-insensitive work tree holds one of the two names).
+    writeFileSync(join(r.dir, "package-lock.json"), lock({ "node_modules/minimist": { version: "1.2.8", integrity: SEALS["1.2.8"] } }));
+    git(["add", "package-lock.json"], { cwd: r.dir });
+    const cased = await r.check();
+    assert.ok(!/cannot prove/.test(cased.stderr), cased.stderr);
+    assert.ok(reg.hits.includes("GET /minimist"), "asked of the registry .npmrc names");
+  } finally {
+    await reg.close();
+  }
+});
+
+test("deps command: the registry of an entry with no resolved URL comes from the committed .npmrc, and one changed in the work tree is said", async () => {
+  const osv = await osvServer();
+  try {
+    const r = repo(osv.origin);
+    r.put({ ".npmrc": `registry=${osv.origin}\n`, "package-lock.json": lock({ "node_modules/minimist": { version: "1.2.8", integrity: "sha512-x" } }) });
+    r.commit();
+    writeFileSync(join(r.dir, ".npmrc"), "registry=https://evil.example/\n");
+    const out = await cli(["deps"], r.dir);
+    assert.match(out.stdout, /^! \.npmrc differs from the one the index holds: an entry with no resolved URL is judged by the committed one$/m);
+    assert.ok(!/✗ minimist/.test(out.stdout), out.stdout);
+    assert.ok(osv.bodies.some((b) => b.includes('"minimist"')), "the entry is asked about as the committed registry's");
+  } finally {
+    await osv.close();
+  }
+});
+
 test("deps hook: allow and allowScripts name an identity the tarball proves; a name the lock writes over another source is not allowed", async () => {
   const reg = await npm({ times: { "1.2.7": new Date(Date.now() - 2 * DAY).toISOString() } });
   const young = lock({ ...entry(reg.origin, "minimist", "1.2.7", { hasInstallScript: true }) });
@@ -475,14 +965,19 @@ test("deps hook: allow and allowScripts name an identity the tarball proves; a n
     const spoofed = repo(reg.origin, { allowScripts: ["minimist"] });
     spoofed.put({ "package-lock.json": lock({ "node_modules/minimist": { version: "1.2.7", resolved: "https://elsewhere.example/minimist.tgz", integrity: "sha512-e", hasInstallScript: true } }) });
     assert.match((await spoofed.check()).stderr, /1 new packages run install scripts.*minimist@1\.2\.7/);
-    const byUrl = repo(reg.origin, { allowScripts: ["https://elsewhere.example/minimist.tgz"] });
-    byUrl.put({ "package-lock.json": lock({ "node_modules/minimist": { version: "1.2.7", resolved: "https://elsewhere.example/minimist.tgz", integrity: "sha512-e", hasInstallScript: true } }) });
-    assert.equal((await byUrl.check()).status, 0, "an exact resolved URL allows its scripts");
+    // An exact resolved URL allows its scripts; the source itself is accepted by sources, not by allowScripts.
+    const elsewhere = lock({ "node_modules/minimist": { version: "1.2.7", resolved: "https://elsewhere.example/minimist.tgz", integrity: "sha512-e", hasInstallScript: true } });
+    const byUrl = repo(reg.origin, { allowScripts: ["https://elsewhere.example/minimist.tgz"], sources: ["https://elsewhere.example/minimist.tgz"] });
+    byUrl.put({ "package-lock.json": elsewhere });
+    assert.deepEqual([(await byUrl.check()).status], [0], "an exact resolved URL allows its scripts");
+    const scriptsOnly = repo(reg.origin, { allowScripts: ["https://elsewhere.example/minimist.tgz"] });
+    scriptsOnly.put({ "package-lock.json": elsewhere });
+    assert.match((await scriptsOnly.check()).stderr, /1 new entries come from a source the check cannot prove.*minimist@1\.2\.7 \(from https:\/\/elsewhere\.example: list that registry/);
     const off = repo(reg.origin, { allowScripts: ["minimist"], online: false });
     off.put({ "package-lock.json": young });
     const said = await off.check();
     assert.equal(said.status, 0);
-    assert.match(said.stderr, /age, adoption, the registry's integrity and install scripts unmeasured for 1 new versions: security\.deps\.online is false/);
+    assert.match(said.stderr, /age, adoption, the registry's integrity and install scripts unmeasured for the new versions: security\.deps\.online is false/);
   } finally {
     await reg.close();
   }
@@ -575,7 +1070,7 @@ test("deps command: known advisories with every place that holds them, install s
     const r = repo(osv.origin);
     r.put({ "package-lock.json": lock(entry(osv.origin, "minimist", "1.2.8")) });
     const clean = await cli(["deps"], r.dir);
-    assert.deepEqual([clean.status, clean.stdout], [0, "lock files: 1 · entries: 1 · advisories: 0 · install scripts: 0 · unmeasured: 0\n"]);
+    assert.deepEqual([clean.status, clean.stdout], [0, "lock files: 1 · entries: 1 · advisories: 0 · install scripts: 0 · refused: 0 · unmeasured: 0\n"]);
     r.put({
       "package-lock.json": lock({ ...under("a", entry(osv.origin, "minimist", "1.2.5")), ...under("b", entry(osv.origin, "minimist", "1.2.5")), ...entry(osv.origin, "nat", "1.0.0", { hasInstallScript: true }), ...under("c", entry(osv.origin, "nat", "1.0.0", { hasInstallScript: true })), ...entry("https://other.example", "o", "1.0.0") }),
       "sub/package-lock.json": lock({ ...entry(osv.origin, "minimist", "1.2.5"), "node_modules/spoof": { version: "1.0.0", resolved: `${osv.origin}/evil/-/evil-0.0.1.tgz`, integrity: "sha512-e" } }),
@@ -586,10 +1081,12 @@ test("deps command: known advisories with every place that holds them, install s
     assert.equal(found.stdout.match(/runs install scripts/g)?.length, 1, found.stdout);
     assert.match(found.stdout, /^✗ spoof@1\.0\.0 \(sub\/package-lock\.json\) names one package and installs another: resolved is \/evil\/-\/evil-0\.0\.1\.tgz/m);
     assert.ok(!osv.bodies.some((b) => b.includes('"spoof"')), "an entry whose tarball is another package's is not asked about by its name");
-    assert.match(found.stdout, /^\? advisories unmeasured for 1 entries \(from https:\/\/other\.example, which security\.deps\.registries does not list\): o@1\.0\.0/m);
-    assert.match(found.stdout, /entries: 5 · advisories: 1 · install scripts: 1 · unmeasured: 1$/m);
+    // An entry from a host no list names is a problem, as in the hook, and is not named to OSV.
+    assert.match(found.stdout, /^✗ o@1\.0\.0 \(package-lock\.json\) comes from a source the check cannot prove: from https:\/\/other\.example: list that registry in security\.deps\.registries/m);
+    assert.ok(!osv.bodies.some((b) => b.includes('"o"')));
+    assert.match(found.stdout, /entries: 5 · advisories: 1 · install scripts: 1 · refused: 2 · unmeasured: 0$/m);
     const json = JSON.parse((await cli(["deps", "--json"], r.dir)).stdout);
-    assert.deepEqual([json.advisories.map((/** @type {any} */ a) => a.id), json.scripts, json.clean, json.unchecked[0].code], [["GHSA-xvch-5gv4-984h"], ["nat@1.0.0 (package-lock.json)"], false, "unlisted"]);
+    assert.deepEqual([json.advisories.map((/** @type {any} */ a) => a.id), json.scripts, json.clean, json.refused], [["GHSA-xvch-5gv4-984h"], ["nat@1.0.0 (package-lock.json)"], false, [{ entry: "o@1.0.0 (package-lock.json)", kind: "unlisted", code: "from", reason: "from https://other.example: list that registry in security.deps.registries or this exact resolved in security.deps.sources" }]]);
   } finally {
     await osv.close();
   }
@@ -604,6 +1101,94 @@ test("deps command: known advisories with every place that holds them, install s
   const none = await cli(["deps"], off.dir);
   assert.equal(none.status, 1);
   assert.match(none.stdout, /advisories unmeasured for 1 entries \(security\.deps\.advisories is empty\)/);
+});
+
+test("deps command: a source no list names, git and a link out of the repository are problems; an entry with no resolved is asked about as the registry npm asks", async () => {
+  const osv = await osvServer();
+  try {
+    const r = repo(osv.origin);
+    r.put({ ".npmrc": `registry=${osv.origin}\n`, "package-lock.json": lock({ "node_modules/minimist": { version: "1.2.5", integrity: "sha512-x" } }) });
+    const asked = await cli(["deps"], r.dir);
+    assert.match(asked.stdout, /^✗ GHSA-xvch-5gv4-984h .*: minimist@1\.2\.5 \(package-lock\.json\)$/m);
+    assert.match(asked.stdout, /unmeasured: 0$/m);
+    r.put({ "package-lock.json": lock({ "node_modules/g": { version: "1.0.0", resolved: `git+ssh://git@github.com/o/g.git#${SHA}` } }) });
+    const git = await cli(["deps"], r.dir);
+    assert.equal(git.status, 1);
+    assert.match(git.stdout, /^✗ g@1\.0\.0 \(package-lock\.json\) is a git dependency, which npm builds by running its prepare script/m);
+    r.put({ "packages/w/package.json": "{}\n", "package-lock.json": lock({ "node_modules/l": { resolved: "../outside", link: true }, "node_modules/w": { resolved: "packages/w", link: true } }) });
+    const link = await cli(["deps"], r.dir);
+    assert.equal(link.status, 1);
+    assert.match(link.stdout, /^✗ l \(package-lock\.json\) comes from a source the check cannot prove: \.\.\/outside: outside the repository: list this exact resolved/m);
+    assert.ok(!link.stdout.includes("w ("), link.stdout);
+    // A link through a symbolic link to a folder the repository holds is said, as in the hook.
+    mkdirSync(join(r.dir, "shared"), { recursive: true });
+    writeFileSync(join(r.dir, "shared", "package.json"), "{}\n");
+    symlinkSync("../shared", join(r.dir, "packages", "via"));
+    r.put({ "package-lock.json": lock({ "node_modules/via": { resolved: "packages/via", link: true } }) });
+    const via = await cli(["deps"], r.dir);
+    assert.match(via.stdout, /^\? via \(package-lock\.json\) was not checked: packages\/via: through the symbolic link packages\/via, to a folder the repository holds$/m);
+    assert.equal(via.status, 1);
+    // A link into a folder the index holds as a symbolic link: the command asks the index as the hook does.
+    symlinkSync("../../elsewhere", join(r.dir, "packages", "s"));
+    r.put({ "package-lock.json": lock({ "node_modules/s": { resolved: "packages/s", link: true } }) });
+    assert.match((await cli(["deps"], r.dir)).stdout, /^✗ s \(package-lock\.json\) comes from a source the check cannot prove: packages\/s: a symbolic link/m);
+  } finally {
+    await osv.close();
+  }
+});
+
+test("deps command: outside a repository the .npmrc beside a lock is the work tree's, and it says so; the index is asked in batches", async () => {
+  const osv = await osvServer();
+  try {
+    const dir = mkdtempSync(join(tmpdir(), "en-deps-out-"));
+    mkdirSync(join(dir, ".ennyn"));
+    writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ security: { deps: { registries: { [osv.origin]: null }, advisories: osv.origin, advisoryRegistries: [osv.origin] } } }));
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: { minimist: "1" } }));
+    writeFileSync(join(dir, ".npmrc"), `registry=${osv.origin}\n`);
+    writeFileSync(join(dir, "package-lock.json"), lock({ "node_modules/minimist": { version: "1.2.8", integrity: "sha512-x" } }));
+    const out = await cli(["deps"], dir);
+    assert.ok(!/✗/.test(out.stdout), out.stdout);
+    assert.match(out.stdout, /^! not in a git repository: the \.npmrc beside each lock is read from the work tree/m);
+    // Where the file system tells .NPMRC from .npmrc (Linux), npm opens .npmrc.
+    writeFileSync(join(dir, ".NPMRC"), "registry=https://evil.example/\n");
+    if (readFileSync(join(dir, ".npmrc"), "utf8").includes(osv.origin)) assert.ok(!/✗ minimist/.test((await cli(["deps"], dir)).stdout));
+  } finally {
+    await osv.close();
+  }
+  // Tens of thousands of paths: pathspecs go 500 a call, never past what one command line holds.
+  const repoDir = mkdtempSync(join(tmpdir(), "en-deps-kinds-"));
+  git(["init", "-q", "-b", "main"], { cwd: repoDir });
+  const many = Array.from({ length: 30000 }, (_, i) => `packages/a-folder-name-long-enough-to-fill-a-command-line-${i}`);
+  git(["update-index", "--add", "--cacheinfo", `100644,${git(["hash-object", "-w", "--stdin"], { cwd: repoDir, input: "{}\n" }).trim()},${many[29999]}/package.json`], { cwd: repoDir });
+  // Top folders (one pathspec each) and, last, the one the index holds: a reader that stops early misses it.
+  const kinds = indexKinds(repoDir, many.map((p, i) => (i < 29999 ? p.slice("packages/".length) : p)));
+  assert.deepEqual([kinds.size, [...kinds.values()].filter((k) => k.kind === "tracked").length], [30000, 1]);
+});
+
+test("deps command: a read made to fail is unmeasured and exits non-zero, never clean: a staged .npmrc that is a symbolic link, one that is not UTF-8, a name git cannot be asked for, an .npmrc the index holds as a submodule", async () => {
+  const osv = await osvServer();
+  try {
+    const bare = lock({ "node_modules/a": { version: "1.0.0", integrity: "sha512-x" } });
+    const oid = (/** @type {string} */ dir, /** @type {string} */ text) => git(["hash-object", "-w", "--stdin"], { cwd: dir, input: text }).trim();
+    /** @type {[string, (dir: string) => void][]} */
+    const cases = [
+      ["an .npmrc that is a symbolic link", (dir) => { symlinkSync("/nonexistent/npmrc", join(dir, ".npmrc")); git(["add", ".npmrc"], { cwd: dir }); }],
+      ["an .npmrc that is not UTF-8", (dir) => { writeFileSync(join(dir, ".npmrc"), Buffer.from("registry=https://café.example/\n", "latin1")); git(["add", ".npmrc"], { cwd: dir }); }],
+      ["a lock name git cannot be asked for", (dir) => git(["update-index", "--add", "-z", "--index-info"], { cwd: dir, input: Buffer.concat([Buffer.from(`100644 ${oid(dir, bare)}\t`), Buffer.from([0x61, 0xff, 0x2f]), Buffer.from("package-lock.json"), Buffer.from([0])]) })],
+      ["an .npmrc the index holds as a submodule", (dir) => git(["update-index", "--add", "--cacheinfo", `160000,${SHA},.npmrc`], { cwd: dir })],
+    ];
+    for (const [what, make] of cases) {
+      const r = repo(osv.origin);
+      r.put({ "package-lock.json": bare });
+      make(r.dir);
+      const out = await cli(["deps"], r.dir);
+      assert.notEqual(out.status, 0, `${what}: ${out.stdout}`);
+      assert.match(out.stdout, /^\? /m, `${what}: ${out.stdout}`);
+      assert.doesNotMatch(out.stdout, /unmeasured: 0$/m, what);
+    }
+  } finally {
+    await osv.close();
+  }
 });
 
 test("deps command: the lock beside each package.json is read, tracked or not; dependencies with no lock beside or above are no clean result", async () => {
@@ -669,9 +1254,9 @@ test("deps command: OSV hears only of packages from a public registry; a bundled
     const r = repo(osv.origin, { registries: { [osv.origin]: null, "https://corp.example/npm": null } });
     r.put({
       "package-lock.json": lock({
-        ...entry(osv.origin, "minimist", "1.2.8"),
+        ...entry(osv.origin, "minimist", "1.2.8", { bundleDependencies: ["inside"] }),
         ...under("minimist", { "node_modules/inside": { version: "1.0.0", inBundle: true } }),
-        ...entry("https://corp.example/npm", "@corp/secret-sauce", "1.0.0"),
+        ...entry("https://corp.example/npm", "@corp/secret-sauce", "1.0.0", { bundleDependencies: ["@corp/inner"] }),
         ...under("@corp/secret-sauce", { "node_modules/@corp/inner": { version: "1.0.0", inBundle: true } }),
       }),
     });
@@ -842,7 +1427,7 @@ test("deps process: a refusal that ends through the forced exit still exits 1, a
     });
     const parsed = JSON.parse(/** @type {string} */ (json));
     assert.ok(String(json).length > 65536, `${String(json).length} bytes`);
-    assert.equal(parsed.unchecked.length, 1500);
+    assert.equal(parsed.refused.length, 1500);
   } finally {
     await reg.close();
   }
@@ -859,6 +1444,8 @@ test("deps config: security.deps checks its kinds and ranges, and a registries m
     { timeout: 0 },
     { allow: ["minimist"] },
     { allowScripts: [""] },
+    { sources: [""] },
+    { sources: [3] },
     { paths: ["[z-a]"] },
     { registries: { "https://npm.example/": "https://api.example" } },
     { registries: { "https://npm.example": "ftp://x" } },

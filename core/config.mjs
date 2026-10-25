@@ -87,9 +87,11 @@ export const DEFAULTS = Object.freeze({
       except: [],
     },
     // Lock files the commit-msg hook reads (checks/deps.mjs): new entries with install scripts, younger than the
-    // cooldown, or used by few. Only the origins in `registries` are contacted (registry → downloads API, null
-    // for none; a registry URL may hold a path); `advisories` is the OSV API `ennyn deps` asks ("" for none), and
-    // only about packages from the public registries in `advisoryRegistries`. `paths: []` turns the check off.
+    // cooldown, used by few, or whose source has no one meaning the check can prove (another host, git, a path
+    // outside the repository): `sources` holds the exact `resolved` values a project accepts from such places. Only the origins in `registries` are
+    // contacted (registry → downloads API, null for none; a registry URL may hold a path); `advisories` is the OSV
+    // API `ennyn deps` asks ("" for none), and only about packages from the public registries in
+    // `advisoryRegistries`. `paths: []` turns the check off.
     deps: {
       paths: ["**/package-lock.json", "**/npm-shrinkwrap.json"],
       cooldownDays: 7,
@@ -97,6 +99,7 @@ export const DEFAULTS = Object.freeze({
       minWeekly: 1000,
       allow: [],
       allowScripts: [],
+      sources: [],
       online: true,
       timeout: 20,
       registries: { "https://registry.npmjs.org": "https://api.npmjs.org" },
@@ -296,7 +299,7 @@ export function loadConfig({ cwd, env = process.env, override }) {
   inRange("minShare", 0, 1, false);
   inRange("minWeekly", 0, 1e9, true);
   inRange("timeout", 1, 600, false);
-  for (const k of ["paths", "allowScripts"]) if (deps[k].some((/** @type {unknown} */ g) => typeof g !== "string" || g === "")) problems.push(`"security.deps.${k}" must be a list of ${k === "paths" ? "globs" : "package names"}`);
+  for (const k of ["paths", "allowScripts", "sources"]) if (deps[k].some((/** @type {unknown} */ g) => typeof g !== "string" || g === "")) problems.push(`"security.deps.${k}" must be a list of ${k === "paths" ? "globs" : k === "sources" ? "resolved values" : "package names"}`);
   if (deps.allow.some((/** @type {unknown} */ a) => typeof a !== "string" || !/^.+@[^@]+$/.test(a))) problems.push(`"security.deps.allow" entries must be "name@version"`);
   // An origin, as a URL's own origin reads: a path or a trailing slash would never equal one.
   const isOrigin = (/** @type {unknown} */ u) => {

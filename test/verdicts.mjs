@@ -24,7 +24,8 @@
  * `verdict`, `why`, `from` (where the probe came from, never a project's name) and, for a known silent pass,
  * `gap`: the open graph node that closes it (test/verdicts.test.mjs checks the graph). Byte values (`bytesOf`)
  * are a string (UTF-8), `{ hex }`, `{ latin1 }`, `{ utf16le | utf16be | utf32le | utf32be, bom? }`, `{ json }` or
- * a list of these, joined; a file given as null is deleted. The secrets and deps gates read `{{name}}` in a cell
+ * a list of these, joined; a file given as null is deleted, `{ symlink: "<target>" }` is a symbolic link and
+ * `{ gitlink: "<commit>" }` a submodule's entry, as the index holds them. The secrets and deps gates read `{{name}}` in a cell
  * as a token of test/secret-shapes.mjs (`{{npm}}`, `{{begin:RSA PRIVATE KEY}}`, `{{end:…}}`,
  * `{{body:<lines>:<seed>[:escaped]}}`, `{{rand:<n>:<alphabet>:<seed>}}`, `{{b64pem:<label>:<lines>:<seed>[:<width>[:<indent>]]}}`),
  * the cell's registry (`{{registry}}`) or
@@ -337,10 +338,13 @@ async function stage(dir, files) {
   if (!isObject(files)) return;
   const entries = Object.entries(files);
   for (const [name] of entries) if (!plainName(name)) throw new Error(`${JSON.stringify(name)} is no plain relative name`);
-  const blobs = entries.filter(([, v]) => v !== null);
-  blobs.forEach(([, v], k) => writeFileSync(join(dir, ".git", `cell-${k}`), bytesOf(v)));
+  const link = (/** @type {unknown} */ v) => (isObject(v) && Object.keys(v).length === 1 && typeof v.symlink === "string" ? v.symlink : null);
+  const gitlink = (/** @type {unknown} */ v) => (isObject(v) && Object.keys(v).length === 1 && typeof v.gitlink === "string" && /^[0-9a-f]{40}$/.test(v.gitlink) ? v.gitlink : null);
+  const blobs = entries.filter(([, v]) => v !== null && gitlink(v) === null);
+  blobs.forEach(([, v], k) => writeFileSync(join(dir, ".git", `cell-${k}`), link(v) !== null ? Buffer.from(/** @type {string} */ (link(v))) : bytesOf(v)));
   const oids = blobs.length ? (await g(dir, ["hash-object", "-w", "--no-filters", "--stdin-paths"], blobs.map((_, k) => join(dir, ".git", `cell-${k}`)).join("\n") + "\n")).trim().split("\n") : [];
-  const info = entries.map(([name, v]) => Buffer.concat([Buffer.from(v === null ? `0 ${"0".repeat(40)}\t` : `100644 ${oids[blobs.findIndex(([n]) => n === name)]}\t`), Buffer.from(name), Buffer.from([0])]));
+  const mode = (/** @type {string} */ name, /** @type {unknown} */ v) => (gitlink(v) !== null ? `160000 ${gitlink(v)}` : `${link(v) !== null ? "120000" : "100644"} ${oids[blobs.findIndex(([n]) => n === name)]}`);
+  const info = entries.map(([name, v]) => Buffer.concat([Buffer.from(v === null ? `0 ${"0".repeat(40)}\t` : `${mode(name, v)}\t`), Buffer.from(name), Buffer.from([0])]));
   await g(dir, ["update-index", "--add", "-z", "--index-info"], Buffer.concat(info));
 }
 

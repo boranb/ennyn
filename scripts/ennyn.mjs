@@ -10,12 +10,12 @@ import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { relative, resolve, sep } from "node:path";
 import { loadConfig, ConfigError } from "../core/config.mjs";
-import { READ_BUDGET, git, headBlob, headCommit, hookIndexFile, indexNames, mergeHeads, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
+import { READ_BUDGET, git, headBlob, headCommit, hookIndexFile, indexKinds, indexNames, mergeHeads, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
 import { UNSHOWN, shown, t, tShown } from "../core/i18n.mjs";
 import { globToRegExp, matchAny } from "../core/glob.mjs";
 import { checkCommitShape, nameShown, secretErrors, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
 import { ciCallees, ciMessages } from "../checks/ci.mjs";
-import { advisoriesOf, depsMessages, dirOf, lockEntries, lockPath, lockText, npmrcFindings, npmrcPath, reasonText, registryOf } from "../checks/deps.mjs";
+import { advisoriesOf, depsMessages, dirOf, judgeEntry, judgeLock, lockEntries, lockPath, lockText, npmrcFindings, npmrcPath, reasonText, registryOf, registryResolver } from "../checks/deps.mjs";
 import { readIfThere } from "../core/files.mjs";
 import { SecretScanner, masked, secretsOff } from "../checks/secrets.mjs";
 import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
@@ -361,6 +361,24 @@ const signedKb = (b) => `${b > 0 ? "+" : b < 0 ? "−" : "±"}${(Math.abs(b) / 1
 
 /** @param {number | null} share @param {string} lang */
 const percent = (share, lang) => (share === null ? "—" : lang === "tr" ? `%${Math.round(share * 100)}` : `${Math.round(share * 100)}%`);
+
+/**
+ * The `.npmrc` npm reads in a directory, as the index holds it (`.npmrc` itself before another case of it), for
+ * the registry of an entry with no resolved URL; undefined when the index holds none. A read that fails is a
+ * file that could not be read, never no file.
+ * @param {string} cwd @param {string} dir @param {NodeJS.ProcessEnv} [env]
+ * @returns {{ staged: Buffer | null, unread?: string } | undefined}
+ */
+function npmrcHeld(cwd, dir, env) {
+  try {
+    const listed = indexNames(cwd, { env, paths: [dir || "."] });
+    const names = listed.paths.filter((p) => npmrcPath(p) && dirOf(p) === dir && !listed.notUtf8.includes(p));
+    const name = names.find((p) => p === ".npmrc" || p.endsWith("/.npmrc")) ?? names[0];
+    return name === undefined ? undefined : stagedVersions(cwd, [name], { env }).get(name);
+  } catch {
+    return { staged: null, unread: "notBlob" };
+  }
+}
 
 /** @type {Record<string, (args: string[]) => Promise<number> | number>} */
 const COMMANDS = {
@@ -782,7 +800,11 @@ const COMMANDS = {
         const error = /** @type {Error & { stderr?: unknown }} */ (e);
         err(t("cli.depsUnmeasured", { error: String(error.stderr || error.message).trim().split("\n")[0] }, cfg.language));
       }
-      if (versions) deps = await depsMessages(versions, depsRule, cfg.language);
+      // The .npmrc beside a staged lock the commit leaves alone names the registry npm asks for an entry with no
+      // resolved URL: read from the index, and only when such an entry asks for it.
+      const beside = (/** @type {string} */ dir) => npmrcHeld(cwd, dir, process.env);
+      const kinds = (/** @type {string[]} */ paths) => indexKinds(cwd, paths, { env: process.env });
+      if (versions) deps = await depsMessages(versions, depsRule, cfg.language, { beside, kinds });
     }
     if (namesUnread) {
       if (!opts.hook) throw new Error(namesUnread);
@@ -842,6 +864,8 @@ const COMMANDS = {
     const untracked = inRepo ? [...locks, ...npmrcs].filter((f) => !tracked.includes(f)) : [];
     /** @type {(import("../checks/deps.mjs").LockEntry & { path: string })[]} */
     const entries = [];
+    /** @type {(import("../checks/deps.mjs").LockEntry & { path: string })[]} */
+    const links = [];
     /** @type {{ path: string, line: string, reason?: import("../checks/deps.mjs").Reason, kind?: "registry" | "indirect" }[]} */
     const npmrcLines = [];
     const read = (/** @type {string} */ path) => {
@@ -866,20 +890,68 @@ const COMMANDS = {
           const k = `${e.name}@${e.version} ${e.resolved ?? ""} ${e.integrity ?? ""}`;
           if (!seen.has(k)) seen.add(k), entries.push({ ...e, path });
         }
+        links.push(...lock.links.map((e) => ({ ...e, path })));
       }
     }
+    /** @type {string[]} */
+    const npmrcChanged = [];
     for (const path of npmrcs) {
       const text = rule.paths.length ? read(path) : null;
       if (text === null) continue;
+      // The registry of an entry with no resolved URL is read from the .npmrc the index holds, as the hook reads it.
+      if (inRepo && tracked.includes(path)) {
+        const held = npmrcHeld(cwd, dirOf(path));
+        if (held && held.staged && lockText(held.staged) !== text) npmrcChanged.push(path);
+      }
       const f = npmrcFindings(text, rule);
       npmrcLines.push(...f.refuse.map((r) => ({ path, line: `${r.n}: ${r.line}`, kind: r.kind })), ...f.said.map((x) => ({ path, line: `${x.n}: ${x.line}`, reason: x.reason })));
     }
-    const scripts = entries.filter((e) => e.scripts && !rule.allowScripts.includes(String(e.resolved)) && !("origin" in registryOf(e, rule) && rule.allowScripts.includes(e.name)));
-    const mismatched = entries.flatMap((e) => {
-      const where = registryOf(e, rule);
-      return "refuse" in where && where.refuse ? [{ entry: e, reason: where.reason }] : [];
+    // Where npm fetches each entry from, judged as the hook judges it (judgeLock): a source no list names, git, a
+    // path out of the repository is a problem; an entry a listed registry proves is asked about as that registry's.
+    // The .npmrc beside each lock and the paths inside the repository are read from the index.
+    /** @type {Map<import("../checks/deps.mjs").LockEntry, ReturnType<typeof judgeEntry>>} */
+    const judged = new Map();
+    /** @type {{ entry: import("../checks/deps.mjs").LockEntry & { path: string }, reason: import("../checks/deps.mjs").Reason }[]} */
+    const mismatched = [];
+    /** @type {{ entry: import("../checks/deps.mjs").LockEntry & { path: string }, reason: import("../checks/deps.mjs").Reason, kind: "unlisted" | "git" }[]} */
+    const refusedSources = [];
+    /** @type {Map<string, (name: string) => { url: string } | { reason: import("../checks/deps.mjs").Reason }>} */
+    const resolvers = new Map();
+    /** @type {{ entry: import("../checks/deps.mjs").LockEntry & { path: string }, reason: import("../checks/deps.mjs").Reason }[]} */
+    const unmeasuredHere = [];
+    // Outside a repository there is no index: the .npmrc beside a lock is the work tree's (said below).
+    const npmrcOnDisk = (/** @type {string} */ dir) => {
+      const here = npmrcs.filter((p) => dirOf(p) === dir);
+      const name = here.find((p) => p === ".npmrc" || p.endsWith("/.npmrc")) ?? here[0];
+      if (name === undefined) return undefined;
+      try {
+        return { staged: readFileSync(resolve(cwd, name)) };
+      } catch {
+        return { staged: null, unread: "readFailed" };
+      }
+    };
+    for (const path of locks) {
+      const dir = dirOf(path);
+      const registryFor = (/** @type {string} */ name) => {
+        let r = resolvers.get(dir);
+        if (!r) resolvers.set(dir, (r = registryResolver(inRepo ? npmrcHeld(cwd, dir) : npmrcOnDisk(dir))));
+        return r(name);
+      };
+      const mine = links.filter((e) => e.path === path);
+      const r = judgeLock(entries.filter((e) => e.path === path), mine, rule, { lockDir: dir, registryFor, kinds: inRepo ? (paths) => indexKinds(cwd, paths) : undefined });
+      for (const [e, j] of r.judged) judged.set(e, j);
+      const at = (/** @type {import("../checks/deps.mjs").LockEntry} */ e) => ({ ...e, path });
+      // What the judgment could not measure and no advisory query will name: links, and reads that failed.
+      unmeasuredHere.push(...r.unread.filter((u) => mine.includes(/** @type {any} */ (u.entry)) || ["indexUnread", "noResolvedUnread"].includes(u.reason.key)).map((u) => ({ entry: at(u.entry), reason: u.reason })));
+      mismatched.push(...r.refused.mismatch.map((x) => ({ entry: at(x.entry), reason: x.reason })));
+      refusedSources.push(...r.refused.unlisted.map((x) => ({ entry: at(x.entry), reason: x.reason, kind: /** @type {const} */ ("unlisted") })), ...r.refused.git.map((x) => ({ entry: at(x.entry), reason: x.reason, kind: /** @type {const} */ ("git") })));
+    }
+    const proven = entries.map((e) => {
+      const j = judged.get(e);
+      return j && "listed" in j ? { ...j.listed, path: e.path } : e;
     });
-    const found = await advisoriesOf(entries.filter((e) => !mismatched.some((m) => m.entry === e)), rule);
+    const scripts = entries.filter((e, i) => e.scripts && !rule.allowScripts.includes(String(e.resolved)) && !("origin" in registryOf(proven[i], rule) && rule.allowScripts.includes(e.name)));
+    const found = await advisoriesOf(proven.filter((_, i) => !("refuse" in (judged.get(entries[i]) ?? {}))), rule);
     // One name@version from two places: the place shows, so two lines never read alike.
     const originOf = (/** @type {import("../checks/deps.mjs").LockEntry} */ e) => {
       try {
@@ -892,7 +964,7 @@ const COMMANDS = {
     const sources = new Map();
     for (const e of entries) sources.set(`${e.path}\0${e.name}@${e.version}`, new Set([...(sources.get(`${e.path}\0${e.name}@${e.version}`) ?? []), originOf(e)]));
     const where = (/** @type {(import("../checks/deps.mjs").LockEntry & { path?: string }) | null} */ e) =>
-      e ? `${e.name}@${e.version} (${e.path}${(sources.get(`${e.path}\0${e.name}@${e.version}`)?.size ?? 0) > 1 ? `; ${originOf(e)}` : ""})` : "—";
+      e ? `${e.version ? `${e.name}@${e.version}` : e.name} (${e.path}${(sources.get(`${e.path}\0${e.name}@${e.version}`)?.size ?? 0) > 1 ? `; ${originOf(e)}` : ""})` : "—";
     // A package.json with dependencies and no lock beside it or above it (a workspace's lock sits at its root):
     // what npm installs there is unmeasured. One it cannot read may have some.
     const hasDeps = (/** @type {string} */ dir) => {
@@ -904,13 +976,13 @@ const COMMANDS = {
       }
     };
     const lockless = pkgDirs.filter((d) => ![...lockDirs].some((l) => l === "" || l === d || d.startsWith(`${l}/`)) && hasDeps(d));
-    const unchecked = found.unread.length + unreadFiles.length + npmrcLines.filter((l) => l.reason).length + lockless.length;
-    const problems = found.advisories.length + scripts.length + mismatched.length + npmrcLines.filter((l) => !l.reason).length;
+    const unchecked = found.unread.length + unreadFiles.length + npmrcLines.filter((l) => l.reason).length + lockless.length + unmeasuredHere.length;
+    const problems = found.advisories.length + scripts.length + mismatched.length + refusedSources.length + npmrcLines.filter((l) => !l.reason).length;
     const clean = !problems && !unchecked;
-    const summary = t("deps.summary", { files: locks.length, entries: entries.length, advisories: found.advisories.length, scripts: scripts.length, unchecked }, lang);
+    const summary = t("deps.summary", { files: locks.length, entries: entries.length, advisories: found.advisories.length, scripts: scripts.length, refused: mismatched.length + refusedSources.length, unchecked }, lang);
     if (opts.json) {
       const text = (/** @type {import("../checks/deps.mjs").Reason} */ r) => ({ code: r.key, reason: reasonText(r, lang) });
-      out(JSON.stringify({ files: locks, npmrc: npmrcs, untracked, lockless: lockless.map((d) => (d ? `${d}/package.json` : "package.json")), entries: entries.length, advisories: found.advisories.map((a) => ({ ...a, entries: [...new Set(a.entries.map(where))], ...(a.unread ? { unread: text(a.unread) } : {}) })), scripts: scripts.map(where), mismatched: mismatched.map((m) => ({ entry: where(m.entry), ...text(m.reason) })), npmrcLines: npmrcLines.map((l) => ({ path: l.path, line: l.line, ...(l.reason ? text(l.reason) : { refused: true }) })), unchecked: found.unread.map((u) => ({ entry: where(u.entry), ...text(u.reason) })), unread: unreadFiles.map((u) => ({ path: u.path, ...text(u.reason) })), clean }, null, 2));
+      out(JSON.stringify({ files: locks, npmrc: npmrcs, untracked, npmrcChanged, lockless: lockless.map((d) => (d ? `${d}/package.json` : "package.json")), entries: entries.length, advisories: found.advisories.map((a) => ({ ...a, entries: [...new Set(a.entries.map(where))], ...(a.unread ? { unread: text(a.unread) } : {}) })), scripts: scripts.map(where), mismatched: mismatched.map((m) => ({ entry: where(m.entry), ...text(m.reason) })), refused: refusedSources.map((r) => ({ entry: where(r.entry), kind: r.kind, ...text(r.reason) })), npmrcLines: npmrcLines.map((l) => ({ path: l.path, line: l.line, ...(l.reason ? text(l.reason) : { refused: true }) })), unchecked: [...found.unread.map((u) => ({ entry: where(u.entry), ...text(u.reason) })), ...unmeasuredHere.map((u) => ({ entry: where(u.entry), ...text(u.reason) }))], unread: unreadFiles.map((u) => ({ path: u.path, ...text(u.reason) })), clean }, null, 2));
       // The exit code says it; so does a line on stderr, for a reader of the JSON who only sees the failure.
       if (!clean) err(summary);
       return clean ? 0 : 1;
@@ -919,12 +991,16 @@ const COMMANDS = {
     else if (!locks.length && !lockless.length) out(t("deps.noLock", {}, lang));
     for (const d of lockless) out(`? ${tShown("deps.noneMeasured", { path: [d ? `${d}/package.json` : "package.json"] }, lang)}`);
     for (const f of untracked) out(`! ${tShown("deps.untracked", { path: [f] }, lang)}`);
+    for (const f of npmrcChanged) out(`! ${tShown("deps.npmrcChanged", { path: [f] }, lang)}`);
+    if (!inRepo && locks.length) out(`! ${t("deps.workTree", {}, lang)}`);
+    for (const u of unmeasuredHere) out(`? ${tShown("deps.entryUnread", { where: [where(u.entry)], reason: reasonText(u.reason, lang) }, lang)}`);
     for (const u of unreadFiles) out(`? ${tShown("deps.lockUnread", { path: [u.path], reason: reasonText(u.reason, lang) }, lang)}`);
     for (const a of found.advisories) {
       const summaryText = a.unread ? t("deps.recordUnread", { reason: reasonText(a.unread, lang) }, lang) : a.summary;
       out(`✗ ${tShown("deps.advisory", { id: a.id, severity: a.severity || "—", aliases: a.aliases.join(", ") || "—", summary: summaryText, where: [...new Set(a.entries.map(where))] }, lang)}`);
     }
     for (const m of mismatched) out(`✗ ${tShown("deps.mismatchEntry", { where: [where(m.entry)], reason: reasonText(m.reason, lang) }, lang)}`);
+    for (const r of refusedSources) out(`✗ ${tShown(r.kind === "git" ? "deps.gitEntry" : "deps.unlistedEntry", { where: [where(r.entry)], reason: reasonText(r.reason, lang) }, lang)}`);
     for (const e of scripts) out(`! ${tShown("deps.scriptEntry", { where: [where(e)] }, lang)}`);
     for (const l of npmrcLines) out(l.reason ? `? ${tShown("deps.npmrcSaid", { path: [l.path], where: [l.line], why: reasonText(l.reason, lang) }, lang)}` : `✗ ${tShown(l.kind === "indirect" ? "deps.npmrcIndirect" : "deps.npmrc", { path: [l.path], where: [l.line] }, lang)}`);
     /** @type {Map<string, string[]>} */

@@ -758,6 +758,76 @@ export function indexNames(cwd, { env, paths: under }) {
   return { paths: [...paths], notUtf8 };
 }
 
+/**
+ * What the index holds at each repository path: `symlink` (with the link's index name, its target as the blob
+ * holds it, and the rest of the path past it) or `submodule` when one is the path or a directory on its way, else
+ * `tracked` when an entry is the path or under it, else `absent`. Names are compared composed (NFC), and every
+ * path and directory is asked as given, composed and decomposed (macOS hands npm decomposed names, the index
+ * holds what git stored). `ls-files -s` with literal pathspecs, 500 a call; the links' targets from one
+ * `cat-file --batch`; from the index a hook was given.
+ * @param {string} cwd @param {string[]} paths repository paths, `/`-separated
+ * @param {{ env?: NodeJS.ProcessEnv }} [opts]
+ * @returns {Map<string, { kind: "tracked" | "absent" | "symlink" | "submodule", link?: string, target?: string | null, rest?: string }>}
+ */
+export function indexKinds(cwd, paths, { env } = {}) {
+  const nfc = (/** @type {string} */ x) => x.normalize("NFC");
+  /** @type {Set<string>} */
+  const asked = new Set();
+  for (const p of paths) {
+    const parts = p.split("/").filter(Boolean);
+    for (let i = 1; i <= parts.length; i++) for (const form of ["NFC", "NFD"]) asked.add(parts.slice(0, i).join("/").normalize(form)), asked.add(parts.slice(0, i).join("/"));
+  }
+  /** @type {Map<string, { mode: string, sha: string, name: string }>} */
+  const entries = new Map();
+  /** @type {Set<string>} */
+  const dirs = new Set();
+  const index = env ? hookIndexFile(cwd, env) : null;
+  const opts = { cwd, env: stagedEnv(index), keepIndex: Boolean(index) };
+  const list = [...asked];
+  for (let at = 0; at < list.length; at += 500) {
+    for (const record of splitNul(gitBytes(["-c", "core.precomposeUnicode=false", "ls-files", "-s", "-z", "--", ...list.slice(at, at + 500)], opts))) {
+      const text = record.toString("utf8");
+      const tab = text.indexOf("\t");
+      const [mode, sha] = text.slice(0, tab).split(" ");
+      const name = text.slice(tab + 1);
+      entries.set(nfc(name), { mode, sha, name });
+      for (let i = nfc(name).indexOf("/"); i !== -1; i = nfc(name).indexOf("/", i + 1)) dirs.add(nfc(name).slice(0, i));
+    }
+  }
+  const shas = [...new Set([...entries.values()].filter((e) => e.mode === "120000").map((e) => e.sha))];
+  /** @type {Map<string, string | null>} */
+  const targets = new Map();
+  if (shas.length) {
+    const out = gitBytes(["cat-file", "--batch"], { ...opts, input: `${shas.join("\n")}\n` });
+    for (let at = 0, i = 0; i < shas.length && at < out.length; i++) {
+      const nl = out.indexOf(10, at);
+      const size = Number(out.subarray(at, nl).toString("latin1").split(" ")[2]);
+      targets.set(shas[i], Number.isSafeInteger(size) ? out.subarray(nl + 1, nl + 1 + size).toString("utf8") : null);
+      at = Number.isSafeInteger(size) ? nl + 1 + size + 1 : nl + 1;
+    }
+  }
+  /** @type {Map<string, { kind: "tracked" | "absent" | "symlink" | "submodule", link?: string, target?: string | null, rest?: string }>} */
+  const kinds = new Map();
+  for (const p of paths) {
+    const parts = nfc(p).split("/").filter(Boolean);
+    /** @type {{ kind: "tracked" | "absent" | "symlink" | "submodule", link?: string, target?: string | null, rest?: string }} */
+    let kind = { kind: parts.length === 0 || entries.has(parts.join("/")) || dirs.has(parts.join("/")) ? "tracked" : "absent" };
+    for (let i = 1; i <= parts.length; i++) {
+      const e = entries.get(parts.slice(0, i).join("/"));
+      if (e?.mode === "120000") {
+        kind = { kind: "symlink", link: e.name, target: targets.get(e.sha) ?? null, rest: parts.slice(i).join("/") };
+        break;
+      }
+      if (e?.mode === "160000") {
+        kind = { kind: "submodule" };
+        break;
+      }
+    }
+    kinds.set(p, kind);
+  }
+  return kinds;
+}
+
 /** @param {Buffer} out */
 function splitNul(out) {
   /** @type {Buffer[]} */

@@ -20,7 +20,7 @@ In security reviews, **evidence gaps** (a test does not pin the location of a ga
 
 ## Probes
 
-Hand back every input you tried, found or not, as a cell: an id, the input in the gate's own terms, the verdict you expect (`refused`; `said`: let through, saying what it did not check; `pass`), what its reason must hold when the verdict alone would not show the reading (`expectWhy`), and where it came from:
+Hand back every input you tried, found or not, as a cell: an id, the input in the gate's own terms, the verdict you expect (`refused`; `said`: let through, saying what it did not check; `pass`), what its reason must hold when the verdict alone would not show the reading (`expectWhy`: the catalog key of a reason, a nested reason's key too, such as `deps.reason.bundled`, never its words), and where it came from:
 
 ```json
 { "id": "checkout-in-subshell", "workflow": "on: pull_request_target\n…", "expect": "refused", "from": "cycle 9 ci review r3" }

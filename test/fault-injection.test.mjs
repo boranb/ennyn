@@ -105,8 +105,10 @@ await new Promise((r) => OSV.listen(0, "127.0.0.1", () => r(undefined)));
 OSV.unref();
 const OSV_ORIGIN = `http://127.0.0.1:${/** @type {import("node:net").AddressInfo} */ (OSV.address()).port}`;
 after(() => (OSV.closeAllConnections(), OSV.close()));
+// An entry with no resolved URL (its registry from the .npmrc beside the lock) and a link into the project (the
+// index asked for what it holds): both reads have an answer to lose.
 const LOCK = (/** @type {Record<string, unknown>} */ extra = {}) =>
-  `${JSON.stringify({ name: "demo", lockfileVersion: 3, packages: { "": { name: "demo" }, "node_modules/left": { version: "1.0.0", resolved: `${OSV_ORIGIN}/left/-/left-1.0.0.tgz`, integrity: "sha512-x" }, ...extra } }, null, 2)}\n`;
+  `${JSON.stringify({ name: "demo", lockfileVersion: 3, packages: { "": { name: "demo" }, "node_modules/left": { version: "1.0.0", resolved: `${OSV_ORIGIN}/left/-/left-1.0.0.tgz`, integrity: "sha512-x" }, "node_modules/bare": { version: "1.0.0", integrity: "sha512-x" }, "node_modules/ws": { resolved: "packages/ws", link: true }, ...extra } }, null, 2)}\n`;
 const ADD = "export function add(a, b) {\n  const sum = a + b;\n  const checked = Number(sum);\n  return checked;\n}\n";
 git(["init", "-q", "-b", "main"], { cwd: REPO });
 const FIRST = commit(0, "feat: add", {
@@ -119,6 +121,9 @@ const FIRST = commit(0, "feat: add", {
   }),
   // A lock file the hook and `deps` read: a read that fails there must be said.
   "package-lock.json": LOCK(),
+  ".npmrc": `registry=${OSV_ORIGIN}/\n`,
+  "packages/ws/package.json": "{}\n",
+  "packages/ws2/package.json": "{}\n",
   ".ennyn/graph.json": JSON.stringify({
     nodes: [
       { id: "core-one", status: "planned", value: "high", cost: "S", needs: [] },
@@ -192,7 +197,7 @@ function stageWorkflow(repo) {
 
 /** Stages a lock file whose new package runs an install script, which security.deps refuses. @param {string} repo */
 function stageLock(repo) {
-  writeFileSync(join(repo, "package-lock.json"), LOCK({ "node_modules/nat": { version: "1.0.0", resolved: `${OSV_ORIGIN}/nat/-/nat-1.0.0.tgz`, integrity: "sha512-x", hasInstallScript: true } }));
+  writeFileSync(join(repo, "package-lock.json"), LOCK({ "node_modules/nat": { version: "1.0.0", resolved: `${OSV_ORIGIN}/nat/-/nat-1.0.0.tgz`, integrity: "sha512-x", hasInstallScript: true }, "node_modules/bare2": { version: "1.0.0", integrity: "sha512-x" }, "node_modules/ws2": { resolved: "packages/ws2", link: true } }));
   git(["add", "package-lock.json"], { cwd: repo });
 }
 
