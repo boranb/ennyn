@@ -5,7 +5,7 @@ import { chmodSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync, 
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { git } from "../core/git.mjs";
+import { git, indexEntries } from "../core/git.mjs";
 import { ruleKey, instructionBudget, readBudgets, recordBudget, previousBudget } from "../setup/budget.mjs";
 import { importsOf } from "../setup/scan.mjs";
 import { lineKey } from "../plan/audit.mjs";
@@ -228,6 +228,47 @@ function auditRepo(/** @type {Record<string, string>} */ files = {}) {
 
 /** The key of one line of a log. @param {string} line */
 const keyOf = (line) => lineKey(Buffer.from(line));
+
+test("cli: audit lists every link in the index by its mode, at any depth and in a conflict, never followed, and every submodule", () => {
+  const odd = ["a\nb.txt", "-x.txt", 'q"uote.txt', "sp.txt "];
+  const { dir, commit, run, json } = auditRepo({ "meta/plugin.json": "{}\n", "cfg/h/hooks.json": "{}\n", "docs/foo/SKILL.md": "x\n", ".gitmodules": '[submodule "r"]\n\tpath = plugins/r\n\turl = https://example.invalid/r.git\n', ...Object.fromEntries(odd.map((n) => [n, "x\n"])) });
+  symlinkSync("meta", join(dir, ".claude-plugin"));
+  symlinkSync("cfg/h", join(dir, "hooks"));
+  mkdirSync(join(dir, "skills"));
+  symlinkSync("../docs/foo", join(dir, "skills", "foo"));
+  symlinkSync("../../outside", join(dir, "skills", "up"));
+  mkdirSync(join(dir, "plugins", "p", "deep"), { recursive: true });
+  symlinkSync("../../../cfg", join(dir, "plugins", "p", "deep", "x"));
+  git(["add", "-A"], { cwd: dir });
+  git(["update-index", "--add", "--cacheinfo", `160000,${"1".repeat(40)},plugins/r`], { cwd: dir });
+  commit("feat: links");
+  // In the index only: a link whose blob is not there (no blob is read), and a conflict whose third stage is a link.
+  git(["update-index", "--add", "--cacheinfo", `120000,${"2".repeat(40)},skills/a-ghost`], { cwd: dir });
+  const blob = git(["hash-object", "-w", "README.md"], { cwd: dir });
+  git(["update-index", "--index-info"], { cwd: dir, input: `100644 ${blob} 2\tsrc/conf.js\n120000 ${blob} 3\tsrc/conf.js\n` });
+  const index = indexEntries(dir);
+  assert.deepEqual([index.links, index.gitlinks, odd.map((n) => index.files.filter((f) => f === n).length), index.files.filter((f) => f === "src/conf.js").length], [
+    [".claude-plugin", "hooks", "plugins/p/deep/x", "skills/a-ghost", "skills/foo", "skills/up", "src/conf.js"],
+    ["plugins/r"],
+    [1, 1, 1, 1],
+    1,
+  ]);
+  const machine = json().paths.find((/** @type {{ source: string }} */ s) => s.source === "machine");
+  assert.deepEqual(machine.files.map((/** @type {string} */ f, /** @type {number} */ i) => [f, machine.rules[i]]), [
+    [".claude-plugin", "symlink"],
+    [".gitmodules", ".gitmodules"],
+    ["hooks", "symlink"],
+    ["plugins/p/deep/x", "symlink"],
+    ["plugins/r", "submodule"],
+    ["skills/a-ghost", "symlink"],
+    ["skills/foo", "symlink"],
+    ["skills/up", "symlink"],
+    ["src/conf.js", "symlink"],
+  ]);
+  const text = run("audit").stdout;
+  assert.match(text, /^ {4}7 symbolic links \(symlink\): listed, never followed; what each one reaches is not resolved here and is audited by hand$/m);
+  assert.match(text, /^ {4}1 submodules \(submodule\): listed; what each one holds is not listed here and is audited by hand, or in its own repository$/m);
+});
 
 test("cli: audit counts the cycles no mark covers; --security-audit lists the keys it covers, and records the cycle unmarked when the audit was not due", () => {
   const many = Object.fromEntries(Array.from({ length: 11 }, (_, i) => [`src/f${String(i).padStart(2, "0")}.js`, "x\n"]));
@@ -543,6 +584,8 @@ test("cli: audit names every file up to fifty a source, then every file's direct
   assert.match(run("audit").stdout, /^ {2}security\.ci\.paths: 51 files · (\.github\/workflows\/w\d\d\.yml, ){50}\.github\/workflows\/w50\.yml$/m);
   // A machine name with a line break stays on its directory's line, escaped, with its rule.
   assert.match(run("audit").stdout, /^ {4}\.claude\/ "a\\nb\.json \(\.claude\/\*\*\)"$/m);
+  // No link and no submodule, no line about them.
+  assert.doesNotMatch(run("audit").stdout, /symbolic link|submodules \(/);
   assert.match(run("audit").stdout, /^ {2}review\.impactRequiredGlobs: 62 files in 3 directories · src\/ \(2\), src\/a\/ \(30\), src\/b\/ \(30\)$/m);
   const out = run("audit", "--json").stdout;
   assert.doesNotMatch(out, /[\u007f-\u009f\u200b\u2028\u202e]|[\u{e0000}-\u{e007f}]/u);

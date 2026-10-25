@@ -329,8 +329,8 @@ test("audit slot: the sensitive paths are the risky globs, init-scan's risky pat
   const c = cfg({ review: { impactRequiredGlobs: ["src/app.js"] } });
   const files = ["src/auth/login.js", "src/app.js", ".github/workflows/ci.yml", "sub/Package-Lock.json", "sub/.NPMRC", ".npmrc", ".ennyn/config.json", ".ennyn/metrics.jsonl", "docs/x.md", ".claude/settings.json", "package.json", ".husky/pre-commit", "Dockerfile", "go.sum", ".env.production"];
   const own = { configRel: ".ennyn/config.json", logRel: ".ennyn/metrics.jsonl" };
-  const machine = [".github/workflows/ci.yml", "sub/.NPMRC", ".npmrc", ".claude/settings.json", "package.json", ".husky/pre-commit", "Dockerfile", "go.sum", ".env.production"];
-  const rules = [".github/**", "**/.npmrc", "**/.npmrc", ".claude/**", "**/package.json", ".husky/**", "**/Dockerfile", "**/go.sum", "**/.env.*"];
+  const machine = [".github/workflows/ci.yml", "sub/Package-Lock.json", "sub/.NPMRC", ".npmrc", ".claude/settings.json", "package.json", ".husky/pre-commit", "Dockerfile", "go.sum", ".env.production"];
+  const rules = [".github/**", "**/package-lock.json", "**/.npmrc", "**/.npmrc", ".claude/**", "**/package.json", ".husky/**", "**/Dockerfile", "**/go.sum", "**/.env.*"];
   assert.deepEqual(sensitivePaths(files, c, own), [
     { source: "review.impactRequiredGlobs", files: ["src/app.js"] },
     { source: "init-scan risky", files: ["src/auth/login.js"] },
@@ -355,6 +355,175 @@ test("audit slot: the sensitive paths are the risky globs, init-scan's risky pat
   const cased = [".Claude/settings.json", "claude.md", "Package.json", "makefile", "GNUmakefile", "api.Dockerfile", "Containerfile", "server.PEM", ".vscode/ta\u017fks.json", ".hu\u017fky/pre-commit", "\u017fcripts/x.sh", "Make\ufb01le"];
   assert.deepEqual(sensitivePaths(cased, cfg(), {}).find((s) => s.source === "machine")?.files, cased);
   assert.deepEqual(["Stra\u00dfe", "\ufb01le", "A\u017f"].map(folded), ["strasse", "file", "as"]);
+});
+
+test("audit slot: a plugin root at any depth names what Claude Code loads from it, the programs it runs and the text every session reads", () => {
+  const root = [".claude-plugin/plugin.json", "skills/cycle/SKILL.md", "agents/r.md", ".lsp.json", "monitors/monitors.json", "settings.json", "commands/x.md", "output-styles/t.md", "workflows/w.js"];
+  const nested = ["plugins/p/.claude-plugin/plugin.json", "plugins/p/hooks/hooks.json", "plugins/p/.mcp.json", "plugins/p/.lsp.json", "plugins/p/bin/tool", "plugins/p/skills/s/SKILL.md", "plugins/p/monitors/monitors.json"];
+  // A case-insensitive file system serves plugins/q/agents/ from the folder the manifest names Plugins/Q/.
+  const cased = ["Plugins/Q/.Claude-Plugin/plugin.json", "plugins/q/agents/a.md"];
+  const not = ["src/a.js", "plugins/p/README.md", "other/skills/s/SKILL.md", "other/hooks/hooks.json", "other/.lsp.json", "elsewhere/skills/x.md"];
+  const got = sensitivePaths([...root, ...nested, ...cased, ...not], cfg(), {}).find((s) => s.source === "machine");
+  assert.deepEqual(got?.files, [...root, ...nested, ...cased]);
+  assert.deepEqual(got?.rules, [
+    "**/.claude-plugin/**", "skills/**", "agents/**", ".lsp.json", "monitors/monitors.json", "settings.json", "commands/**", "output-styles/**", "workflows/**",
+    "**/.claude-plugin/**", "plugins/p/hooks/**", "plugins/p/.mcp.json", "plugins/p/.lsp.json", "plugins/p/bin/**", "plugins/p/skills/**", "plugins/p/monitors/**",
+    "**/.claude-plugin/**", "Plugins/Q/agents/**",
+  ]);
+  // With no manifest a folder is no plugin root: a project's own skills/ or settings.json is no session's text.
+  assert.deepEqual(sensitivePaths(["skills/s/SKILL.md", "settings.json", "agents/a.md", "x.claude-plugin/plugin.json"], cfg(), {}), []);
+  // A plugin whose marketplace entry is its manifest keeps its servers at the top all the same.
+  assert.deepEqual(sensitivePaths([".lsp.json", "monitors/monitors.json"], cfg(), {}), [{ source: "machine", files: [".lsp.json", "monitors/monitors.json"], rules: [".lsp.json", "monitors/monitors.json"] }]);
+});
+
+/**
+ * Probe cells for the machine source, from the cycle 11 security review: `said` lists the probe files, `pass`
+ * lists none of them (only the scaffolding a cell needs, such as a manifest). `listed` is the whole answer, file
+ * and rule; a `gap` cell holds today's answer and names the node that would list the rest, so the cell changes
+ * with that node. `links` are the index's symbolic links, by mode; `text` is what the review's link held, for the
+ * record only: no link is resolved, each is listed under its own rule and audited by hand. `gitlinks` are
+ * submodule entries.
+ * @type {{ id: string, expect: "said" | "pass", files: string[], links?: string[], text?: Record<string, string>, gitlinks?: string[], config?: object, listed: [string, string][], gap?: string }[]}
+ */
+const MACHINE_CELLS = [
+  {
+    // A link named .claude-plugin makes its folder a plugin root by its name: the root's skills are listed.
+    id: "link-root-manifest-hooks", expect: "said",
+    files: [".claude-plugin", "meta/plugin.json", "meta/marketplace.json", "hooks", "cfg/h/hooks.json", "skills/s/SKILL.md", "src/a.js"], links: [".claude-plugin", "hooks"], text: { ".claude-plugin": "meta", hooks: "cfg/h" },
+    listed: [[".claude-plugin", "symlink"], ["hooks", "symlink"], ["skills/s/SKILL.md", "skills/**"]],
+  },
+  {
+    id: "link-nested-hooks", expect: "said",
+    files: ["plugins/p/.claude-plugin/plugin.json", "plugins/p/hooks", "cfg/h2/hooks.json"], links: ["plugins/p/hooks"], text: { "plugins/p/hooks": "../../cfg/h2/" },
+    listed: [["plugins/p/.claude-plugin/plugin.json", "**/.claude-plugin/**"], ["plugins/p/hooks", "symlink"]],
+  },
+  {
+    id: "link-nested-manifest-folder", expect: "said",
+    files: ["plugins/p/.Claude-Plugin", "plugins/p/skills/x.md", "plugins/q/.claude-plugin", "plugins/q/agents/a.md"], links: ["plugins/p/.Claude-Plugin"],
+    listed: [["plugins/p/.Claude-Plugin", "symlink"], ["plugins/p/skills/x.md", "plugins/p/skills/**"]],
+  },
+  {
+    id: "link-skill-target", expect: "said",
+    files: ["plugins/p/.claude-plugin/plugin.json", "plugins/p/skills/foo", "docs/foo/SKILL.md", "docs/other.md"], links: ["plugins/p/skills/foo"], text: { "plugins/p/skills/foo": "../../../docs/foo" },
+    listed: [["plugins/p/.claude-plugin/plugin.json", "**/.claude-plugin/**"], ["plugins/p/skills/foo", "symlink"]],
+  },
+  {
+    id: "link-out", expect: "said",
+    files: [".claude-plugin/plugin.json", "skills/up", "skills/abs"], links: ["skills/up", "skills/abs"], text: { "skills/up": "../../outside", "skills/abs": "/etc" },
+    listed: [[".claude-plugin/plugin.json", "**/.claude-plugin/**"], ["skills/up", "symlink"], ["skills/abs", "symlink"]],
+  },
+  {
+    // Whatever its name and depth: a link no rule names is listed too.
+    id: "link-any-name", expect: "said",
+    files: ["src/lib/data", "src/lib/a.js", ".mcp.json"], links: ["src/lib/data", ".mcp.json"],
+    listed: [["src/lib/data", "symlink"], [".mcp.json", "symlink"]],
+  },
+  {
+    // The kernel reads x/.. after following x (deep/real), a lexical reading real/: neither is guessed.
+    id: "link-dotdot-after-link", expect: "said",
+    files: ["hooks", "x", "real/hooks.json", "deep/real/hooks.json"], links: ["hooks", "x"], text: { hooks: "x/../real", x: "deep/y" },
+    listed: [["hooks", "symlink"], ["x", "symlink"]],
+  },
+  {
+    // Claude Code clones a marketplace into marketplaces/<name>/: a link can re-enter the clone by that name.
+    id: "link-reenter-by-name", expect: "said",
+    files: ["hooks", "cfg/h/hooks.json"], links: ["hooks"], text: { hooks: "../mkt/cfg/h" },
+    listed: [["hooks", "symlink"]],
+  },
+  {
+    id: "link-to-top", expect: "said",
+    files: [".claude-plugin", "hooks", "skills/s/SKILL.md"], links: [".claude-plugin", "hooks"], text: { ".claude-plugin": ".", hooks: "." },
+    listed: [[".claude-plugin", "symlink"], ["hooks", "symlink"], ["skills/s/SKILL.md", "skills/**"]],
+  },
+  {
+    id: "link-to-top-dotdot", expect: "said",
+    files: ["hooks", "cfg/x.json"], links: ["hooks"], text: { hooks: "cfg/.." },
+    listed: [["hooks", "symlink"]],
+  },
+  {
+    // Many links, none of them followed: each keeps its own rule, with no cap to spend.
+    id: "alias-cap-own-rule", expect: "said",
+    files: [...Array.from({ length: 50 }, (_, i) => `vendor/l${i}`), "hooks"], links: [...Array.from({ length: 50 }, (_, i) => `vendor/l${i}`), "hooks"],
+    listed: [...Array.from({ length: 50 }, (_, i) => /** @type {[string, string]} */ ([`vendor/l${i}`, "symlink"])), ["hooks", "symlink"]],
+  },
+  {
+    id: "link-target-case", expect: "said",
+    files: ["hooks", "Cfg/H/hooks.json"], links: ["hooks"], text: { hooks: "cfg/h" },
+    listed: [["hooks", "symlink"]],
+  },
+  {
+    id: "link-target-nfd", expect: "said",
+    files: ["hooks", "cfg/hä/hooks.json"], links: ["hooks"], text: { hooks: "cfg/hä" },
+    listed: [["hooks", "symlink"]],
+  },
+  {
+    id: "link-in-target", expect: "said",
+    files: ["hooks", "cfg/hooks.json", "deep/x.json"], links: ["hooks", "cfg/hooks.json"], text: { hooks: "cfg", "cfg/hooks.json": "../deep/x.json" },
+    listed: [["hooks", "symlink"], ["cfg/hooks.json", "symlink"]],
+  },
+  {
+    // A conflict whose other side is a link: the name is a link (indexEntries; real git in test/budget.test.mjs).
+    id: "conflict-theirs-link", expect: "said",
+    files: ["src/conf.js"], links: ["src/conf.js"],
+    listed: [["src/conf.js", "symlink"]],
+  },
+  {
+    id: "root-skill-md", expect: "said",
+    files: [".claude-plugin/plugin.json", "SKILL.md", "plugins/p/.claude-plugin/plugin.json", "plugins/p/SKILL.md", "docs/SKILL.md"],
+    listed: [[".claude-plugin/plugin.json", "**/.claude-plugin/**"], ["SKILL.md", "SKILL.md"], ["plugins/p/.claude-plugin/plugin.json", "**/.claude-plugin/**"], ["plugins/p/SKILL.md", "plugins/p/SKILL.md"]],
+  },
+  {
+    id: "themes", expect: "said",
+    files: [".claude-plugin/plugin.json", "themes/dracula.json"],
+    listed: [[".claude-plugin/plugin.json", "**/.claude-plugin/**"], ["themes/dracula.json", "themes/**"]],
+  },
+  {
+    id: "submodule-gitlink", expect: "said",
+    files: [".gitmodules", "plugins/r", "scripts/vendored", "src/a.js"], gitlinks: ["plugins/r", "scripts/vendored"],
+    listed: [[".gitmodules", ".gitmodules"], ["plugins/r", "submodule"], ["scripts/vendored", "submodule"]],
+  },
+  {
+    // A submodule named .claude-plugin makes its folder a plugin root, as a link of that name does: a recursive
+    // clone brings the manifest in.
+    id: "gitlink-named-manifest-dir", expect: "said",
+    files: [".claude-plugin", ".gitmodules", "agents/a.md", "plugins/p/.claude-plugin", "plugins/p/skills/t/SKILL.md", "settings.json", "skills/s/SKILL.md"], gitlinks: [".claude-plugin", "plugins/p/.claude-plugin"],
+    listed: [[".claude-plugin", "submodule"], [".gitmodules", ".gitmodules"], ["agents/a.md", "agents/**"], ["plugins/p/.claude-plugin", "submodule"], ["plugins/p/skills/t/SKILL.md", "plugins/p/skills/**"], ["settings.json", "settings.json"], ["skills/s/SKILL.md", "skills/**"]],
+  },
+  {
+    id: "nested-lock-narrowed", expect: "said",
+    files: ["plugins/p/package-lock.json", "plugins/p/npm-shrinkwrap.json"], config: { security: { deps: { paths: ["package-lock.json"] } } },
+    listed: [["plugins/p/package-lock.json", "**/package-lock.json"], ["plugins/p/npm-shrinkwrap.json", "**/npm-shrinkwrap.json"]],
+  },
+  {
+    id: "mcp-server-script", expect: "said", gap: "machine-named-paths",
+    files: ["plugins/q/.claude-plugin/plugin.json", "plugins/q/.mcp.json", "plugins/q/server.js"],
+    listed: [["plugins/q/.claude-plugin/plugin.json", "**/.claude-plugin/**"], ["plugins/q/.mcp.json", "plugins/q/.mcp.json"]],
+  },
+  {
+    id: "hook-read-styles", expect: "said", gap: "machine-named-paths",
+    files: [".claude-plugin/plugin.json", "hooks/hooks.json", "styles/terse.en.md", "i18n/en.json"],
+    listed: [[".claude-plugin/plugin.json", "**/.claude-plugin/**"], ["hooks/hooks.json", "hooks/**"]],
+  },
+  {
+    id: "neg-siblings", expect: "pass",
+    files: ["plugins/p/.claude-plugin/plugin.json", "plugins/p/skillsx/a.md", "plugins/p/sub/skills/a.md", "plugins/p2/skills/a.md"],
+    listed: [["plugins/p/.claude-plugin/plugin.json", "**/.claude-plugin/**"]],
+  },
+  {
+    // A plain file named hooks is no folder of hooks; a plain file named .claude-plugin, or a link named
+    // x.claude-plugin, makes no root (the link itself is listed, as every link is).
+    id: "neg-root-elsewhere", expect: "pass",
+    files: [".claude-plugin/plugin.json", "docs/skills/x.md", "hooks", "other/.claude-plugin", "other/skills/y.md", "docs/x.claude-plugin"], links: ["docs/x.claude-plugin"],
+    listed: [[".claude-plugin/plugin.json", "**/.claude-plugin/**"], ["docs/x.claude-plugin", "symlink"]],
+  },
+];
+
+test("audit slot: the machine source's probe cells, links, submodules and gaps among them", () => {
+  for (const cell of MACHINE_CELLS) {
+    const got = sensitivePaths(cell.files, cfg(cell.config ?? {}), { links: cell.links ?? [], gitlinks: cell.gitlinks ?? [] }).find((s) => s.source === "machine");
+    const pairs = got ? got.files.map((f, i) => [f, got.rules?.[i]]) : [];
+    assert.deepEqual(pairs, cell.listed, cell.id);
+  }
 });
 
 test("config: security.everyCycles is a whole number from 0 to 100", () => {

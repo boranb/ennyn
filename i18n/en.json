@@ -419,6 +419,8 @@
   "audit.paths": "  {source}: {n} files · {list}",
   "audit.machineDir": "    {dir} {list}",
   "audit.machine": "  {source}: {n} files, each with the rule that names it",
+  "audit.submodules": "    {n} submodules ({rule}): listed; what each one holds is not listed here and is audited by hand, or in its own repository",
+  "audit.links": "    {n} symbolic links ({rule}): listed, never followed; what each one reaches is not resolved here and is audited by hand",
   "budget.replacedNote": "The record replaced was made on {date}. One record a commit: if it was another cycle's, a cycle that made no commit of its own, audit counts the two cycles as one.",
   "budget.replacedMark": "The record replaced was this commit's security-audit mark, covering {n} cycles: that coverage is dropped, and those cycles count again.",
   "budget.markOff": "security.everyCycles is 0",

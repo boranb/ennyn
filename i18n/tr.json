@@ -419,6 +419,8 @@
   "audit.paths": "  {source}: {n} dosya · {list}",
   "audit.machineDir": "    {dir} {list}",
   "audit.machine": "  {source}: {n} dosya, her biri onu adlandıran kuralla",
+  "audit.submodules": "    {n} alt modül ({rule}): listelendi; her birinin içeriği burada listelenmez, elle ya da kendi deposunda denetlenir",
+  "audit.links": "    {n} sembolik bağ ({rule}): listelendi, hiç izlenmedi; her birinin vardığı yer burada çözülmez, elle denetlenir",
   "budget.replacedNote": "Değiştirilen kayıt {date} tarihinde yapılmıştı. Commit başına bir kayıt: başka bir döngünün kaydıysa (kendi commit'i olmayan bir döngü), audit iki döngüyü bir sayar.",
   "budget.replacedMark": "Değiştirilen kayıt bu commit'in güvenlik denetimi işaretiydi ve {n} döngüyü kapsıyordu: o kapsam düştü, o döngüler yeniden sayılıyor.",
   "budget.markOff": "security.everyCycles 0",

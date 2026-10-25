@@ -828,6 +828,32 @@ export function indexKinds(cwd, paths, { env } = {}) {
   return kinds;
 }
 
+/**
+ * Every name the index holds, once, with its symbolic links and its gitlinks (submodules), by mode: one
+ * `ls-files -s`. No blob is read, so no link is followed and no object is fetched; a name a conflict holds at
+ * several stages is a link when any stage is one.
+ * @param {string} cwd
+ * @returns {{ files: string[], links: string[], gitlinks: string[] }}
+ */
+export function indexEntries(cwd) {
+  /** @type {Set<string>} */
+  const files = new Set();
+  /** @type {Set<string>} */
+  const links = new Set();
+  /** @type {Set<string>} */
+  const gitlinks = new Set();
+  for (const record of splitNul(gitBytes(["ls-files", "-s", "-z"], { cwd }))) {
+    const text = record.toString("utf8");
+    const tab = text.indexOf("\t");
+    const mode = text.slice(0, text.indexOf(" "));
+    const name = text.slice(tab + 1);
+    files.add(name);
+    if (mode === "120000") links.add(name);
+    else if (mode === "160000") gitlinks.add(name);
+  }
+  return { files: [...files], links: [...links], gitlinks: [...gitlinks] };
+}
+
 /** @param {Buffer} out */
 function splitNul(out) {
   /** @type {Buffer[]} */

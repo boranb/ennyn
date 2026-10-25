@@ -10,7 +10,7 @@ import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { relative, resolve, sep } from "node:path";
 import { loadConfig, ConfigError } from "../core/config.mjs";
-import { READ_BUDGET, git, headBlob, headCommit, hookIndexFile, indexKinds, indexNames, mergeHeads, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
+import { READ_BUDGET, git, headBlob, headCommit, hookIndexFile, indexEntries, indexKinds, indexNames, mergeHeads, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
 import { ends, jsonShown, shown, t, tShown, unshownEscaped } from "../core/i18n.mjs";
 import { globToRegExp, matchAny } from "../core/glob.mjs";
 import { checkCommitShape, nameShown, secretErrors, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
@@ -23,7 +23,7 @@ import { reworkRate } from "../metrics/szz.mjs";
 import { bypassUses } from "../metrics/bypass.mjs";
 import { gateLogPath, readAttempts, recordAttempt, summarizeAttempts, KINDS } from "../metrics/gate-log.mjs";
 import { graphProblems, loadGraph, pickMechanization, scoreNode, GraphError } from "../plan/mechanization.mjs";
-import { auditAnswer, cycleRecords, markCovers, readLog, securityDue, sensitivePaths } from "../plan/audit.mjs";
+import { LINK_RULE, SUBMODULE_RULE, auditAnswer, cycleRecords, markCovers, readLog, securityDue, sensitivePaths } from "../plan/audit.mjs";
 import { scanProject, MIN_HISTORY } from "../setup/scan.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
 import { installHook } from "../setup/hook.mjs";
@@ -590,8 +590,10 @@ const COMMANDS = {
     const due = auditAnswer(cwd, cfg);
     const rel = (/** @type {string} */ p) => relative(cwd, p).split(sep).join("/");
     const own = { configRel: cfg.configPath ? rel(cfg.configPath) : null, logRel: rel(resolve(cwd, cfg.paths.metricsLog)) };
-    // Only a security audit reads the paths; a git that fails stops the command, as everywhere.
-    const paths = due.due === false ? [] : sensitivePaths(git(["-c", "core.quotePath=false", "ls-files", "-z"], { cwd }).split("\0").filter(Boolean), cfg, own);
+    // Only a security audit reads the paths; a git that fails stops the command, as everywhere. Links and gitlinks
+    // by their mode in the index: a link is listed, never followed.
+    const index = due.due === false ? null : indexEntries(cwd);
+    const paths = index ? sensitivePaths(index.files, cfg, { ...own, links: index.links, gitlinks: index.gitlinks }) : [];
     const code = due.due === null ? 1 : 0;
     // Names a terminal would act on (direction overrides, C1 controls, line separators) as \u escapes: still JSON.
     if (opts.json) return (out(jsonShown({ slot: due.due === false ? "feature" : "security", ...due, log: cfg.paths.metricsLog, paths })), code);
@@ -614,6 +616,10 @@ const COMMANDS = {
           p.files.forEach((f, i) => dirs.set(dirOf(f), [...(dirs.get(dirOf(f)) ?? []), `${f.slice(f.lastIndexOf("/") + 1)} (${p.rules?.[i]})`]));
           out(t("audit.machine", { source, n: p.files.length }, lang));
           for (const [dir, list] of [...dirs].sort(byName)) out(tShown("audit.machineDir", { dir: [dir], list }, lang));
+          const links = p.rules.filter((r) => r === LINK_RULE).length;
+          if (links) out(t("audit.links", { n: links, rule: LINK_RULE }, lang));
+          const submodules = p.rules.filter((r) => r === SUBMODULE_RULE).length;
+          if (submodules) out(t("audit.submodules", { n: submodules, rule: SUBMODULE_RULE }, lang));
           continue;
         }
         // Only the risky sources, which can be large, are summarized: every file's directory, with its count.
