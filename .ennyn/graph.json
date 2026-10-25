@@ -738,7 +738,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (9), push-time Linux run (b859092)"
+      "source": "cycle 2026-10-24 (9), push-time Linux run (b859092); cycle 2026-10-25 (11): a full run on main hung 16 minutes in test/deps.test.mjs: the commit-msg hook waited on git cat-file --batch-check, which never got EOF on stdin (execFileSync with input); killed by hand, not reproduced in four runs of the file alone (see git-call-timeout)"
     },
     {
       "status": "planned",
@@ -749,28 +749,6 @@
       "cost": "S",
       "cluster": "gates",
       "source": "cycle 2026-10-24 (9), cleanup after the cycle"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "reference-differentials",
-      "title": "A check that models another program's reading keeps that program's recorded answers: a corpus of inputs with the real program's own reading (npm-package-arg and arborist for lock entries, Claude Code's rules loader, git's parsing), replayed against the model; a test fails when they disagree, and the record is taken again on a version bump of that program",
-      "value": "high",
-      "cost": "M",
-      "cluster": "gates",
-      "mechanization": true,
-      "sourceClass": "a check that re-implements another program's reading drifts from it",
-      "source": "cycle 2026-10-25 (10), convergence: about 21 findings: deps-allowed-hosts 14 (lock shape, name@spec, version as spec, v1 precedence, hosted URLs, scp-like specs, bundles twice), init-scan audit 3 (Claude Code's rules loader: the docs and the installed 2.1.207 disagree), verdict-baseline 2 (replay through a copy of the hook's glue), security-axis 2 (the file system's case folding); the deps reviewers' 720-spelling differential against npm's own consistentResolve and npa found what reading the source missed"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "config-paths-outside",
-      "title": "A path in .ennyn/config.json (paths.metricsLog, paths.stateDir, paths.handoff, paths.graph) that resolves outside the repository and the git dir is refused, for writes first: a commit that sets paths.metricsLog to ../../x makes budget --record append a line to that file (a git config then fails)",
-      "value": "high",
-      "cost": "S",
-      "cluster": "security",
-      "source": "cycle 2026-10-25 (10), init-scan audit round 3 (cell r3-config-path-out) and security round 1 (p5); security-axis kept a configured outside log on purpose (round 4), to be revisited"
     },
     {
       "status": "planned",
@@ -806,11 +784,11 @@
       "status": "planned",
       "needs": [],
       "id": "deps-user-npmrc",
-      "title": "An entry with no resolved is judged by the .npmrc beside the lock as the commit holds it; a registry set in the user's or the machine's .npmrc is not seen, so such locks are refused with advice",
+      "title": "An entry with no resolved is judged by the .npmrc beside the lock as the commit holds it; where that file leaves the registry, scope or @scope:registry to the user's or the machine's config, the verdict is said (noResolvedUser, 76 places in the record), never listed; reading the user config is still open",
       "value": "low",
       "cost": "S",
       "cluster": "security",
-      "source": "cycle 2026-10-25 (10), deps-allowed-hosts"
+      "source": "cycle 2026-10-25 (10), deps-allowed-hosts; cycle 2026-10-25 (11), reference-differentials code review round 1 (E7), measured with real npm ci"
     },
     {
       "status": "planned",
@@ -846,11 +824,11 @@
       "status": "planned",
       "needs": [],
       "id": "project-reads-regular",
-      "title": "The graph, gate log, lock files, impact, mutation journal and map-path still read with readFileSync directly: a FIFO hangs them, a device streams; read them regular-only like readIfThere",
+      "title": "Lock files, the files mutate edits and map-path still read with readFileSync: a FIFO hangs them, a device streams, a committed link leads out; read them with readRegular (no link at any component, regular only), not readIfThere (statSync follows links)",
       "value": "medium",
       "cost": "S",
       "cluster": "gates",
-      "source": "cycle 2026-10-25 (10), init-scan audit round 1 (S2)"
+      "source": "cycle 2026-10-25 (10), init-scan audit round 1 (S2); cycle 2026-10-25 (11): the config, graph, ceiling registry, gate log, journal and handoff moved to readRegular in a587903"
     },
     {
       "status": "planned",
@@ -875,32 +853,12 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "settings-bom",
-      "title": "How Claude Code reads a settings.json that starts with a byte order mark is unmeasured; init-scan reads it",
-      "value": "low",
-      "cost": "S",
-      "cluster": "init",
-      "source": "cycle 2026-10-25 (10), init-scan audit"
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "schema-file-missing",
       "title": "DESIGN.md's layout names schema/config.schema.json; the repository has none",
       "value": "low",
       "cost": "S",
       "cluster": "distribution",
       "source": "cycle 2026-10-25 (10), security-axis"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "push-approval-gate",
-      "title": "\"Push only with the user's approval\" kept by the harness, not by prose: /ennyn:init proposes Claude Code `permissions.ask` rules for git push, npm publish, a release or a deploy in the project's .claude/settings.json (an ask rule prompts over a more specific allow rule and in bypassPermissions mode, and a project file applies it without the trust prompt: code.claude.com/docs/en/permissions.md), doctor says when they are missing, and the cycle skill's push sentence shrinks to a pointer",
-      "value": "high",
-      "cost": "S",
-      "cluster": "init",
-      "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): its highest risk tier is never executed by an agent, only queued for approval; Ennyn's push rule is prose today (skills/cycle/SKILL.md, two places)"
     },
     {
       "status": "planned",
@@ -943,6 +901,198 @@
       "cost": "S",
       "cluster": "distribution",
       "source": "cycle 2026-10-25 (10), the user's engines decision"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "git-call-timeout",
+      "value": "high",
+      "cost": "S",
+      "cluster": "gates",
+      "title": "No git call has a time limit: a git child that waits forever (cycle 11: cat-file --batch-check never got stdin EOF under the commit-msg hook) holds the user's git commit with no end; every git call gets a limit and a hang is said, never waited on",
+      "source": "cycle 2026-10-25 (11), full suite on main at c040cc1"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ci-range-check",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "title": "Commits made on another machine (a pull request) never pass the commit-msg gates: commit-check --range base..head runs the same checks over a range, and CI runs it on pull_request",
+      "source": "cycle 2026-10-25 (11), security audit (path table rows ci, deps, secrets, commit-shape)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "doctor-security-off",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "title": "doctor says when the config switches a security check off: security.ci.paths [], security.deps.paths [], secrets.except naming every path, security.everyCycles 0, deps online false, advisories \"\"",
+      "source": "cycle 2026-10-25 (11), security audit (.ennyn/config.json row)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "gate-loosening-guard",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "title": "21 refusal lines tell the agent which config key loosens the gate that refused it (security.secrets.except, security.deps.allowScripts, sources, registries, a forbidden rule's except) and nothing flags a commit that widens them or switches a check off: the commit-msg hook refuses such a commit unless the message carries a line saying the user approved it, the cycle skill says an agent never writes that line, and security refusals say loosening is the user's call",
+      "source": "cycle 2026-10-25 (11), a second session's review (context-mode, MIT, docs/adr/0003-routing-deny-reasons.md: refusal wording drives the agent's next step); .ennyn/config.json joined review.impactRequiredGlobs in this cycle's closing commit, which an agent can still satisfy"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "machine-named-paths",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "title": "Code a listed file names is not listed: scripts named by hooks.json, .mcp.json, .lsp.json and monitors.json commands and settings.json subagentStatusLine at any plugin root, a mod's modules entry, the modules hook scripts import, files the hooks read and inject (Ennyn's styles/ and i18n/), and the commands, agents, skills, outputStyles and themes paths a marketplace entry merges under strict",
+      "source": "cycle 2026-10-25 (11), security audit and its review round 1 (R5); cells mcp-server-script and hook-read-styles are gaps"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "plugin-root-dev-deps",
+      "value": "high",
+      "cost": "M",
+      "cluster": "distribution",
+      "title": "Ennyn's plugin root is the repository root, so Claude Code 2.1.207's npm ci --ignore-scripts after the cache copy fetches typescript and @types/node onto every user's machine, and the tests (the 396 KB npm record among them) ship too: move the plugin to a subdirectory (marketplace source ./plugin), or the development dependencies and lock out of the root; measure what Claude Code installs for each before choosing, on the version the user runs (the VS Code extension carries 2.1.306, the claude CLI 2.1.207; the install step was read in 2.1.207, later docs move it), without touching the user's configuration",
+      "source": "cycle 2026-10-25 (11), security audit review round 1 (R4), binary read; the record size decision"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hook-follows-plugin-update",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "title": "install-hook writes the CLI path into the hook, and with the plugin that is the versioned cache directory: after an update the hook runs the old version's checks, and once Claude Code removes the orphaned version (14 days, docs plugins/loading) every commit passes unchecked with one stderr line",
+      "source": "cycle 2026-10-25 (11), a second session's review; setup/hook.mjs hookScript(cliPath)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "push-spellings-hook",
+      "value": "high",
+      "cost": "S",
+      "cluster": "init",
+      "title": "A PreToolUse hook in the plugin refuses push spellings the ask rule does not match (git -C, git -c, a full path, sh -c, env) with \"push as a plain git push from the project root\"; first measure that a hook's deny holds in bypassPermissions mode on the installed Claude Code",
+      "source": "cycle 2026-10-25 (11), push-approval-gate"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "reference-claude-code",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "mechanization": true,
+      "sourceClass": "a check that re-implements another program's reading drifts from it",
+      "title": "Claude Code's own readings recorded like npm's: the settings it accepts or skips whole, which rules its matcher applies to which commands, the plugin components it loads, the rules files it loads; recorded from the installed version without a model call (claude plugin validate, the CLI's own commands), replayed against setup/permissions.mjs, plan/audit.mjs and the side-copy hook, taken again on a version bump",
+      "source": "cycle 2026-10-25 (11), convergence: the class recurred in push-approval-gate (settings schema, launch directory, sandbox, PowerShell: about 12 findings) and in the security audit (plugin loader, clone folder, kernel link resolution: about 9); reference-differentials closed it for npm only"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "reference-npm-majors",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "title": "The npm record holds npm 10.9.7 only: record npm 9 and 11 too (the test:linux images carry them) and let the Linux run check each container's npm against its own record",
+      "source": "cycle 2026-10-25 (11), reference-differentials"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "reference-actions-yaml",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "gates",
+      "title": "checks/ci.mjs reads workflow YAML as GitHub's parser does, unrecorded: a corpus of GitHub's own readings",
+      "source": "cycle 2026-10-25 (11), reference-differentials (module inventory)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "deps-replace-registry-host",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "title": "With npm's default replace-registry-host every registry.npmjs.org tarball is fetched from the configured registry, and with always every registry's: the gate reads the lock's URL (recorded differs, rv-replace-host-always and rv-npmjs-resolved-npmrc-registry); also a v1 git version on a non-hosted host is fetched as a tarball URL (message only)",
+      "source": "cycle 2026-10-25 (11), reference-differentials data review round 1"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "deps-edge-missing",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "title": "An edge to a package the lock has no entry for is skipped: npm ci refuses the lock, npm install fetches it",
+      "source": "cycle 2026-10-25 (11), reference-differentials"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "deps-lock-key-places",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "title": "Lock keys such as node_modules/a/, ./… or a/../b are refused as notName while npm normalises and installs them: stricter, only the message is wrong",
+      "source": "cycle 2026-10-25 (11), reference-differentials"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "git-prefixed-paths",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "title": "Only paths.stateDir resolves a .git/ value through the common git dir: metricsLog, graph or handoff under .git/ fail in a linked worktree (ENOTDIR, said)",
+      "source": "cycle 2026-10-25 (11), config-paths-outside security review round 2"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ask-rules-file-loaded",
+      "value": "low",
+      "cost": "S",
+      "cluster": "init",
+      "title": "Whether Claude Code actually loaded the settings file that holds the ask rules is not visible to doctor (a file with any rejected setting is skipped whole); the note says it, nothing measures it",
+      "source": "cycle 2026-10-25 (11), push-approval-gate"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "core-slot-aging",
+      "value": "high",
+      "cost": "S",
+      "cluster": "method",
+      "title": "The selector starves L nodes: replaying readyNodes at each cycle start, plugin-eval (high, L, no gate, no needs) ranked 6, 12, 12, 12, 18, 20, 21, 23, 33, 48, 57 over cycles 1-11, and all 31 nodes closed in cycles 1-10 were S or M; one core slot takes the oldest high node, an L node first split into an S or M first step",
+      "source": "cycle 2026-10-25 (11), a second session's replay of the graph's history"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "finding-triage",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "title": "No rule decides which review findings are fixed now and which become nodes; cycles 2-10 had 245 fix-introduced findings against 266 real escapes",
+      "source": "cycle 2026-10-25 (11), a second session's count of the closing handoffs"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "deps-overrides-applied",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "title": "The deps gate judges a dependency's spec even where the root's overrides replace it (an override that swaps a git dependency for a registry version is still refused deps.git); npm applies the override and never touches git",
+      "source": "cycle 2026-10-25 (11), reference-differentials data review round 3 (r3-override-replaces-git, recorded stricter)"
     }
   ],
   "done": [
@@ -1254,6 +1404,36 @@
       "title": "Decision (user, 2026-10-25): engines becomes >=22; Node 20 has had no security fixes since April 2026, Node 22 is supported until April 2027",
       "status": "done",
       "finished": "2026-10-25"
+    },
+    {
+      "id": "config-paths-outside",
+      "title": "A path a config names stays in the project whoever names the config; the state dir lies under .git/; the config, metrics log, state files, graph and ceiling registry follow no link a commit holds; mutate refuses a file in a git dir; doctor fails a linked handoff (a587903)",
+      "status": "done",
+      "finished": "2026-10-26"
+    },
+    {
+      "id": "push-approval-gate",
+      "title": "Ask rules back up the cycle's push approval: init proposes them for git push, npm publish and gh merge, sync and release (each with a PowerShell twin), doctor says which file holds each and whether git holds it committed, never what Claude Code will do; Ennyn's own .claude/settings.json holds them; the cycle still asks before any push (d326b04)",
+      "status": "done",
+      "finished": "2026-10-26"
+    },
+    {
+      "id": "reference-differentials",
+      "title": "npm's own reading recorded: test/reference/npm.mjs runs npm ci's steps offline on 537 cells (npm 10.9.7), the hermetic test replays them through checks/deps.mjs, npm run test:reference (release step 3) fails on another npm or a moved reading; the gate judges the source of every spec npm reads (lock edges, package.json with overrides, workspace and link folders) and says hasShrinkwrap subtrees (T3 commits)",
+      "status": "done",
+      "finished": "2026-10-26"
+    },
+    {
+      "id": "settings-bom",
+      "title": "Measured in cycle 11: Claude Code 2.1.207 strips a byte order mark and applies the file; Ennyn's settings reader does the same (d326b04)",
+      "status": "done",
+      "finished": "2026-10-26"
+    },
+    {
+      "id": "security-audit-11",
+      "title": "First security audit (audit slot): every sensitive path ennyn audit lists, with a path table; the audit lists plugin components at any depth, every link (never resolved) and submodule, root SKILL.md, themes and npm locks at any depth; SECURITY.md names the npm ci a plugin install runs and the code a config or the handoff names (c040cc1, 8f446e0)",
+      "status": "done",
+      "finished": "2026-10-26"
     }
   ]
 }
