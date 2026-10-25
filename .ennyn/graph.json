@@ -45,13 +45,13 @@
     },
     {
       "id": "plugin-eval",
-      "title": "claude plugin eval cases that run the same tasks with and without the plugin and compare the outcome",
+      "title": "claude plugin eval cases that run the same tasks with and without the plugin and compare the outcome; each case states what is checked deterministically (commands that must and must not run, such as git push without approval or a commit with an assistant trailer; text the answer must and must not hold; an approval asked or a refusal given; a cap on tool calls), a judge only for what no check reads",
       "status": "planned",
       "value": "high",
       "cost": "L",
       "cluster": "evidence",
       "needs": [],
-      "source": "README.md, roadmap 0.2"
+      "source": "README.md, roadmap 0.2; cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): deterministic checks carry most of the score there, a judge the rest"
     },
     {
       "id": "codex-manifest",
@@ -384,11 +384,11 @@
         "hook-trust-audit"
       ],
       "id": "agent-setup-risk",
-      "title": "init-scan and doctor judge the project's agent setup: broad allow rules (Bash(*)), hooks that run remote scripts, MCP servers and plugins from unpinned sources, a Claude Code version below a known fix (2.1.179: plugin auto-update checkout)",
+      "title": "init-scan and doctor judge the project's agent setup: broad allow rules (Bash(*)), hooks that run remote scripts, MCP servers and plugins from unpinned sources, a Claude Code version below a known fix (2.1.179: plugin auto-update checkout); allow rules ranked by what they reach: read-only, local writes, many files or systems at once, and actions that leave the machine or cannot be undone (push, publish, deploy, a network fetch piped to a shell), the last warned about whenever no prompt guards them",
       "value": "high",
       "cost": "M",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (8), user: security; 2026 plugin and hook findings (trusted channel, permission rewrites, Plugin4Shell)"
+      "source": "cycle 2026-10-24 (8), user: security; 2026 plugin and hook findings (trusted channel, permission rewrites, Plugin4Shell); cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): tools carry risk tiers, the highest never run without a person's approval"
     },
     {
       "status": "planned",
@@ -902,6 +902,48 @@
       "cost": "S",
       "cluster": "distribution",
       "source": "cycle 2026-10-25 (10), security-axis"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "push-approval-gate",
+      "title": "\"Push only with the user's approval\" kept by the harness, not by prose: /ennyn:init proposes Claude Code `permissions.ask` rules for git push, npm publish, a release or a deploy in the project's .claude/settings.json (an ask rule prompts over a more specific allow rule and in bypassPermissions mode, and a project file applies it without the trust prompt: code.claude.com/docs/en/permissions.md), doctor says when they are missing, and the cycle skill's push sentence shrinks to a pointer",
+      "value": "high",
+      "cost": "S",
+      "cluster": "init",
+      "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): its highest risk tier is never executed by an agent, only queued for approval; Ennyn's push rule is prose today (skills/cycle/SKILL.md, two places)"
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "plugin-eval"
+      ],
+      "id": "skill-eval-baseline",
+      "title": "A change to skills/** or agents/** replays the plugin's eval cases; a case that passed and now fails fails the commit unless its recorded outcome changes in the same commit, as test/verdicts does for gates",
+      "value": "high",
+      "cost": "M",
+      "cluster": "evidence",
+      "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): a candidate skill version is run against the suite and blocked from promotion when a passing case fails; Ennyn's method text changed in every cycle with no such check"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "findings-ledger",
+      "title": "A findings ledger format (one JSON line per finding: task, round, id, severity, class, source, layer that caught it, duplicate of) and ennyn convergence <ledger> computing the four counts, new classes per round and the most recurring class by catalog id, instead of a hand-written count",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "metrics",
+      "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): failures are clustered by telemetry there; cycle 10 counted its 170 ledger rows with a throwaway script, though principle 6 says convergence is computed by scripts"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "reviewer-model-diversity",
+      "title": "Measure whether a reviewer on another model than the author finds classes a same-model reviewer misses (same diffs, both reviewers, findings compared by class); review.agents could then name a model per reviewer",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "evidence",
+      "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): its reviewer runs on an independent model; unmeasured here, so a measurement first"
     }
   ],
   "done": [
