@@ -234,6 +234,19 @@ export const GATES = [
     ],
   },
   {
+    test: "test/reference.test.mjs",
+    guards: [
+      { id: "reference-scope", why: "a project's scope not read: npm sends a package to its registry, the gate proves another", file: "checks/deps.mjs", old: 'else if (x.key === "registry" || x.key === "scope" || x.key.endsWith(":registry")) set.set(x.key, x);', new: 'else if (x.key === "registry" || x.key.endsWith(":registry")) set.set(x.key, x);', pattern: "reference: every npm cell compares" },
+      { id: "reference-bundle-spelling", why: "the old bundledDependencies spelling not read as npm reads it", file: "checks/deps.mjs", old: "const bd = m.bundleDependencies === undefined ? m.bundledDependencies : m.bundleDependencies;", new: "const bd = m.bundleDependencies;", pattern: "reference: every npm cell compares" },
+      { id: "reference-git-tilde", why: "a path in the home directory read as GitHub shorthand, which npm reads as a file", file: "checks/deps.mjs", old: '  if (spec.startsWith("~/")) return false;\n', new: "", pattern: "reference: every npm cell compares" },
+      { id: "reference-record-version", why: "a record that names no npm version", file: "test/reference/npm.json", old: '"npm": {"npm":"', new: '"npm": {"npmx":"', pattern: "reference: the npm record names its npm" },
+      { id: "reference-judge-same", why: "a judge that takes every reading for npm's", file: "test/reference/npm.mjs", old: 'else out.set(k, { relation: same(claim, n) ? "agree" : "differs", claim, npm: n });', new: 'else out.set(k, { relation: "agree", claim, npm: n });', pattern: "reference control: the judge" },
+      { id: "reference-judge-path", why: "a judge that takes any path npm reads for the gate's", file: "test/reference/npm.mjs", old: 'if (at.kind === "file" || at.kind === "directory" || at.kind === "link") return at.path === claim.path;', new: 'if (at.kind === "file" || at.kind === "directory" || at.kind === "link") return true;', pattern: "reference control: each reading is compared" },
+      { id: "reference-judge-gap", why: "a gap that names no open node", file: "test/reference/npm.mjs", old: 'if (rel === "gap" && openNodes && !openNodes.has(text))', new: 'if (rel === "gap" && openNodes && !openNodes.has(text) && false)', pattern: "reference control: the judge" },
+    ],
+    others: {},
+  },
+  {
     test: "test/linux-run.test.mjs",
     guards: [
       { id: "linux-skip", why: "a skipped test read as a pass", file: "test/linux-run.mjs", old: 'if (count("skipped") !== "0") wrong.push(', new: 'if (count("skipped") === "none") wrong.push(', pattern: "linux run: a container's run passes only" },

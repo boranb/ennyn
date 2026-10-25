@@ -365,17 +365,30 @@ export function pathFromLock(path, lockDir) {
 export const pathInside = (path, lockDir) => pathFromLock(path, lockDir) !== null;
 
 /**
+ * Why pathFromLock refused a path: true when it leaves the repository however its `\` and `:` are read (outside
+ * everywhere), false when only a `\` or a `:` keeps it from being read one way (notPortable).
+ * @param {string} path @param {string} lockDir
+ */
+const leaves = (path, lockDir) => pathFromLock(path.replace(/[\\:]/g, "_"), lockDir) === null;
+
+/**
  * A `resolved` npm would read as git, loosely: a git protocol, a hosted shortcut or repository URL, ssh,
  * scp-like `user@host:path`, GitHub shorthand. It chooses the message only: whatever it says, an entry it is
- * asked about is refused.
+ * asked about is refused. test/reference/npm.json holds npm's own reading of each spelling.
  * @param {string} s
  */
 function gitLooking(s) {
+  // scp-like `user@host.tld:path`: npm-package-arg's isGit, which it asks before it reads a `name@` but after
+  // its isURL; what isURL takes (`user:token@…`) is git when hosted-git-info knows the host.
+  if (/^[^@]+@[^:.]+\.[^:]+:.+$/i.test(s) && (!/^(?:git[+])?[a-z]+:/i.test(s) || /^[^@]+@(?:www\.)?(?:github\.com|gitlab\.com|bitbucket\.org|gist\.github\.com|git\.sr\.ht):/i.test(s))) return true;
   // consistentResolve reads `name@spec` as the spec.
   const spec = s.replace(/^(?:@[^/@]+\/)?[^/@:]+@(?=[a-z][a-z0-9+.-]*:)/i, "");
   if (/^(?:git[+:]|ssh:|(?:github|gitlab|bitbucket|gist|sourcehut):)/i.test(spec)) return true;
-  // scp-like: npm-package-arg's isGit (a dotted host before the colon), with or without a user.
-  if (/^(?:[^/@]+@)?[^/@:]+\.[^/@:]+:/.test(spec)) return true;
+  // npm-package-arg reads `~/` as a path in the home directory.
+  if (spec.startsWith("~/")) return false;
+  // `host.tld:path` with no user: npm reads it as a path when it holds a `/` or names a tarball; otherwise the
+  // `name@` reify puts before it makes it scp-like.
+  if (/^[^/@:]+\.[^/@:]+:[^/]*$/.test(spec) && !TARBALL.test(spec)) return true;
   if (/^[^/:@\s.][^/:@\s]*\/[^/:@\s]+(?:#.*)?$/.test(spec)) return true;
   // A repository URL on a hosted domain (user and project, a gist's id), in any spelling.
   const hosted = /^[a-z][a-z0-9+.-]*:\/\/(?:[^/@]*@)?(?:www\.)?(?:github\.com|gitlab\.com|bitbucket\.org|gist\.github\.com|git\.sr\.ht)(?:[:/](.*))?$/i.exec(spec);
@@ -427,17 +440,23 @@ export const shownSource = (s) =>
     .replace(/([?&][^=&#]*=)[^&#]*/g, "$1…");
 
 /**
- * Where npm asks a registry for an entry with no `resolved`: the `@scope:registry` or `registry` the `.npmrc`
- * beside the lock sets (as the commit holds it; npm reads a key as written, the last line of it wins), read once
- * for every entry. What cannot be told is a reason, and so is no `.npmrc` naming one: npm would then ask what a
- * user's or the machine's config names, which the check does not read.
+ * Where npm asks a registry for an entry with no `resolved`, as npm-registry-fetch's pickRegistry picks it from
+ * the `.npmrc` beside the lock (as the commit holds it; npm reads a key as written, the last line of it wins): the
+ * package's own `@scope:registry`, else that of the project's `scope` (which takes every other package, an
+ * unscoped one too), else `registry`; an empty value is none. Read once for every entry. The project's config
+ * decides only what it sets: where it leaves the package's `@scope:registry`, the `scope` line or the scope's
+ * registry unset, a user's config may set it, which the check does not read (`user`: judgeEntry says an entry it
+ * would prove, `noResolvedUser`); with no `.npmrc` naming a registry, what npm asks is not told (`noResolvedNone`). A value npm's ini reads as no
+ * plain text (`true`, `false`, `null`, a `key[]` list) is refused (`noResolvedPlain`), as is one from the
+ * environment.
  * @param {{ staged: Buffer | null, unread?: string } | undefined} npmrc
- * @returns {(name: string) => { url: string } | { reason: Reason }}
+ * @returns {(name: string) => { url: string, user?: string } | { reason: Reason }} `user`: the key the project
+ *   leaves to a user's config on the way to `url`
  */
 export function registryResolver(npmrc) {
   /** @type {Reason | null} */
   let failed = null;
-  /** @type {Map<string, string>} */
+  /** @type {Map<string, { value: string, list: boolean }>} */
   const set = new Map();
   if (!npmrc || (!npmrc.staged && !npmrc.unread)) failed = { key: "noResolvedNone" };
   else {
@@ -447,21 +466,57 @@ export function registryResolver(npmrc) {
       for (const x of npmrcEntries(text)) {
         if (!x.top) continue;
         if (x.key.includes("${")) failed = { key: "noResolvedEnv" };
-        else if (x.key === "registry" || x.key.endsWith(":registry")) set.set(x.key, x.value);
+        else if (x.key === "registry" || x.key === "scope" || x.key.endsWith(":registry")) set.set(x.key, x);
       }
   }
-  return (name) => {
-    if (failed) return { reason: failed };
-    const scope = name.startsWith("@") ? `${name.slice(0, name.indexOf("/"))}:registry` : null;
-    const value = (scope && set.get(scope)) ?? set.get("registry");
-    if (value === undefined) return { reason: { key: "noResolvedNone" } };
-    if (value.includes("${")) return { reason: { key: "noResolvedEnv" } };
+  /**
+   * A value as npm reads it: null when unset, a reason when it is no plain text or comes from the environment.
+   * @param {string} key @returns {string | null | { reason: Reason }}
+   */
+  const plain = (key) => {
+    const x = set.get(key);
+    if (!x) return null;
+    if (x.list || ["true", "false", "null"].includes(x.value)) return { reason: { key: "noResolvedPlain", vars: { what: key } } };
+    if (x.value.includes("${")) return { reason: { key: "noResolvedEnv" } };
+    return x.value;
+  };
+  /** @param {string} value @returns {{ url: string } | { reason: Reason }} */
+  const urlOf = (value) => {
     try {
       const url = new URL(value);
       return { url: `${url.origin}${url.pathname.replace(/\/+$/, "")}${url.search}${url.hash}` };
     } catch {
       return { reason: { key: "noResolvedNotUrl" } };
     }
+  };
+  return (name) => {
+    if (failed) return { reason: failed };
+    /** The first key the project leaves unset that a user's config may set, on the way to the registry. */
+    let user = "";
+    /** @param {string} key */
+    const step = (key) => {
+      const v = plain(key);
+      if (v === null && !user) user = key;
+      return v;
+    };
+    // The package's own scope first, whatever the project's scope says; set empty it is none.
+    if (name.startsWith("@")) {
+      const own = step(`${name.slice(0, name.indexOf("/"))}:registry`);
+      if (typeof own === "object" && own) return own;
+      if (own) return urlOf(own);
+    }
+    const scope = step("scope");
+    if (typeof scope === "object" && scope) return scope;
+    if (scope) {
+      const its = step(`${scope.replace(/^@?/, "@")}:registry`);
+      if (typeof its === "object" && its) return its;
+      if (its) return { ...urlOf(its), ...(user ? { user } : {}) };
+    }
+    const registry = plain("registry");
+    if (typeof registry === "object" && registry) return registry;
+    if (registry === null) return { reason: { key: "noResolvedNone" } };
+    const url = urlOf(registry);
+    return "url" in url && user ? { ...url, user } : url;
   };
 }
 
@@ -478,7 +533,7 @@ export function registryResolver(npmrc) {
  * tarball (`bundled`, fetched by nobody), another layout on a listed registry (only the identity is unproven),
  * and an `.npmrc` beside the lock that could not be read.
  * @param {LockEntry} e @param {DepsRule} rule
- * @param {{ lockDir?: string, registry?: { url: string } | { reason: Reason }, link?: boolean }} [opts]
+ * @param {{ lockDir?: string, registry?: { url: string, user?: string } | { reason: Reason }, link?: boolean }} [opts]
  * @returns {{ listed: LockEntry } | { sourced: LockEntry, sealed: boolean } | { inside: string, tarball: boolean } | { refuse: "unlisted" | "git" | "mismatch", reason: Reason } | { said: Reason }}
  */
 export function judgeEntry(e, rule, { lockDir = "", registry = { reason: { key: "noResolvedNone" } }, link = false } = {}) {
@@ -491,7 +546,7 @@ export function judgeEntry(e, rule, { lockDir = "", registry = { reason: { key: 
     // A link with no resolved points at nothing outside the project.
     if (e.resolved === null) return { inside: "", tarball: false };
     const at = pathFromLock(e.resolved, lockDir);
-    return at === null ? { refuse: "unlisted", reason: { key: "outside", vars: { from } } } : { inside: at, tarball: false };
+    return at === null ? { refuse: "unlisted", reason: { key: leaves(e.resolved, lockDir) ? "outside" : "notPortable", vars: { from } } } : { inside: at, tarball: false };
   }
   if (e.resolved === null) {
     if (!exactVersion(e.version)) return { refuse: "unlisted", reason: { key: "noResolvedVersion", vars: { version: shownSource(e.version) || "—" } } };
@@ -502,9 +557,11 @@ export function judgeEntry(e, rule, { lockDir = "", registry = { reason: { key: 
       const reason = { ...registry.reason, vars: { ...registry.reason.vars, file, registry: Object.keys(rule.registries)[0] ?? DEFAULT_REGISTRY } };
       return registry.reason.key === "noResolvedUnread" ? { said: reason } : { refuse: "unlisted", reason };
     }
-    // Proven only right after a registry the list names, as that URL (registryOf), never a prefix of one.
+    // Proven only right after a registry the list names, as that URL (registryOf), never a prefix of one; a key on
+    // the way that a user's config may set leaves it unproven, said.
     const proven = { ...e, resolved: `${registry.url}/${e.name}/-/${e.name.replace(/^@[^/]+\//, "")}-${e.version}.tgz` };
-    return Object.hasOwn(rule.registries, registry.url) && "origin" in registryOf(proven, rule) ? { listed: proven } : { refuse: "unlisted", reason: { key: "noResolvedUnlisted", vars: { from: shownSource(registry.url) } } };
+    if (!(Object.hasOwn(rule.registries, registry.url) && "origin" in registryOf(proven, rule))) return { refuse: "unlisted", reason: { key: "noResolvedUnlisted", vars: { from: shownSource(registry.url) } } };
+    return registry.user ? { said: { key: "noResolvedUser", vars: { what: registry.user, file: lockDir ? `${lockDir}/.npmrc` : ".npmrc" } } } : { listed: proven };
   }
   const url = canonicalUrl(e.resolved);
   if (url) {
@@ -526,7 +583,7 @@ export function judgeEntry(e, rule, { lockDir = "", registry = { reason: { key: 
   }
   if (e.resolved.startsWith("file:")) {
     const at = pathFromLock(e.resolved.slice(5), lockDir);
-    return at === null ? { refuse: "unlisted", reason: { key: "outside", vars: { from } } } : { inside: at, tarball: TARBALL.test(e.resolved) };
+    return at === null ? { refuse: "unlisted", reason: { key: leaves(e.resolved.slice(5), lockDir) ? "outside" : "notPortable", vars: { from } } } : { inside: at, tarball: TARBALL.test(e.resolved) };
   }
   if (gitLooking(e.resolved)) {
     const hash = e.resolved.indexOf("#");
@@ -578,7 +635,7 @@ function followLinks(paths, kinds) {
  * it holds what the commit holds there only when the index tracks it and no symbolic link or submodule is on the
  * way; with no `kinds`, not asked. The hook and `ennyn deps` read one judgment.
  * @param {LockEntry[]} entries @param {LockEntry[]} links @param {DepsRule} rule
- * @param {{ lockDir: string, registryFor: (name: string) => { url: string } | { reason: Reason }, kinds?: (paths: string[]) => Map<string, { kind: string, link?: string, target?: string | null, rest?: string }> }} opts
+ * @param {{ lockDir: string, registryFor: (name: string) => { url: string, user?: string } | { reason: Reason }, kinds?: (paths: string[]) => Map<string, { kind: string, link?: string, target?: string | null, rest?: string }> }} opts
  */
 export function judgeLock(entries, links, rule, { lockDir, registryFor, kinds }) {
   /** @type {Map<LockEntry, ReturnType<typeof judgeEntry>>} */
@@ -852,12 +909,12 @@ function iniUnsafe(val) {
 /**
  * The settings of an `.npmrc`, read as npm's ini reads them: lines end at CR, LF or both; a line whose first
  * character past spaces is `;` or `#` is a comment; keys and values are unquoted and unescaped, and a `;` or `#`
- * ends an unquoted one; `key[]` is the key; a key under a `[section]` is not one of npm's (`top` false).
+ * ends an unquoted one; `key[]` is the key, a list (`list`); a key under a `[section]` is not one of npm's (`top` false).
  * @param {string} text
- * @returns {{ n: number, line: string, key: string, value: string, top: boolean }[]}
+ * @returns {{ n: number, line: string, key: string, value: string, top: boolean, list: boolean }[]}
  */
 export function npmrcEntries(text) {
-  /** @type {{ n: number, line: string, key: string, value: string, top: boolean }[]} */
+  /** @type {{ n: number, line: string, key: string, value: string, top: boolean, list: boolean }[]} */
   const out = [];
   let section = false;
   text.split(/\r\n|\r|\n/).forEach((line, i) => {
@@ -869,9 +926,10 @@ export function npmrcEntries(text) {
       return;
     }
     let key = iniUnsafe(m[2]);
-    if (key.length > 2 && key.endsWith("[]")) key = key.slice(0, -2);
+    const list = key.length > 2 && key.endsWith("[]");
+    if (list) key = key.slice(0, -2);
     // The line as shown: credentials in a URL are not printed.
-    out.push({ n: i + 1, line: line.trim().replace(/(\/\/)[^/@\s]*@/g, "$1…@"), key, value: m[3] ? iniUnsafe(m[4]) : "true", top: !section });
+    out.push({ n: i + 1, line: line.trim().replace(/(\/\/)[^/@\s]*@/g, "$1…@"), key, value: m[3] ? iniUnsafe(m[4]) : "true", top: !section, list });
   });
   return out;
 }
@@ -895,13 +953,24 @@ const SAID_KEYS = {
 /** Keys that make npm read another config file, which the check does not read: a project has no use for them. */
 const INDIRECT_KEYS = new Set(["userconfig", "globalconfig", "prefix"]);
 
+/** Whether a registry value is, as npm parses it, one `registries` lists (its origin and path, a trailing slash aside). @param {string} value @param {string[]} listed */
+function registryListed(value, listed) {
+  try {
+    const url = new URL(value);
+    return url.origin !== "null" && !url.search && !url.hash && listed.includes(`${url.origin}${url.pathname.replace(/\/+$/, "")}`);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The lines of an `.npmrc` that change where npm fetches packages from, which config it reads, or what it runs.
- * `refuse` (`kind`): a `registry` or `<scope>:registry` (any spelling npm reads as one) whose URL, parsed as npm
- * parses it, is not one `registries` lists (its origin and its path, a trailing slash aside: another path on a
+ * `refuse` (`kind`): a `registry` or `<scope>:registry` (any spelling npm reads as one), or a `scope` whose
+ * `<scope>:registry` in the file is such a line, whose URL, parsed as npm parses it, is not one `registries` lists (its origin and its path, a trailing slash aside: another path on a
  * listed origin is another registry, npmjs answers `/@x/<name>` with the scoped package); `userconfig`,
  * `globalconfig` and `prefix` (`indirect`: npm would read a file the check does not). `said`: a key or value read
- * from the environment (`${…}`), a registry value that is no URL, the keys in SAID_KEYS, and `cache` beside
+ * from the environment (`${…}`), a registry value that is no URL, a `scope` whose registry the file leaves to a
+ * user's config (`scopeUnset`), the keys in SAID_KEYS, and `cache` beside
  * `offline` or `prefer-offline` (a cache committed with the project would be what npm installs).
  * @param {string} text @param {DepsRule} rule
  */
@@ -912,7 +981,7 @@ export function npmrcFindings(text, rule) {
   const said = [];
   const entries = npmrcEntries(text).filter((x) => x.top);
   const listed = Object.keys(rule.registries);
-  for (const { n, line, key: raw, value } of entries) {
+  for (const { n, line, key: raw, value, list } of entries) {
     if (raw.includes("${")) {
       said.push({ n, line, reason: { key: "fromEnvKey" } });
       continue;
@@ -922,19 +991,31 @@ export function npmrcFindings(text, rule) {
       refuse.push({ n, line, kind: "indirect" });
       continue;
     }
+    // A `scope` sends every package with no scope of its own to that scope's registry: judged as that registry.
+    // One npm's ini reads as no plain text names none (registryResolver refuses what it would decide).
+    if (raw === "scope") {
+      const scope = value.replace(/^@?/, "@");
+      const its = entries.filter((x) => x.key === `${scope}:registry`).at(-1);
+      if (value === "" || list || ["true", "false", "null"].includes(value) || its?.value === "") continue;
+      if (value.includes("${")) said.push({ n, line, reason: { key: "fromEnv" } });
+      else if (!its) said.push({ n, line, reason: { key: "scopeUnset", vars: { what: `${scope}:registry` } } });
+      else if (!registryListed(its.value, listed)) refuse.push({ n, line, kind: "registry" });
+      continue;
+    }
     if (key === "registry" || key.endsWith(":registry")) {
+      // An empty value is none to npm: it goes on to the scope's or the default registry.
+      if (value === "") continue;
       if (value.includes("${")) {
         said.push({ n, line, reason: { key: "fromEnv" } });
         continue;
       }
-      let url;
       try {
-        url = new URL(value);
+        new URL(value);
       } catch {
         said.push({ n, line, reason: { key: "notUrl" } });
         continue;
       }
-      if (url.origin === "null" || url.search || url.hash || !listed.includes(`${url.origin}${url.pathname.replace(/\/+$/, "")}`)) refuse.push({ n, line, kind: "registry" });
+      if (!registryListed(value, listed)) refuse.push({ n, line, kind: "registry" });
       continue;
     }
     const why = Object.hasOwn(SAID_KEYS, key) ? SAID_KEYS[key](value) : null;
