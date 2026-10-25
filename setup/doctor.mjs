@@ -227,7 +227,7 @@ export async function checkSetup({ cwd, env = process.env }) {
     /** @type {ReturnType<typeof readBudgets> | null} */
     let log = null;
     try {
-      log = readBudgets(resolve(cwd, config.paths.metricsLog));
+      log = readBudgets(resolve(cwd, config.paths.metricsLog), cwd);
     } catch (e) {
       // A log that is there but cannot be read is no empty log: growth since its last record is unmeasured.
       add("unmeasured", "doctor.budgetLogUnmeasured", { error: oneLine(e) });

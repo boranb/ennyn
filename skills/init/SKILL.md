@@ -5,11 +5,11 @@ description: Set up Ennyn in a project. Survey the repository, ask only what it 
 
 # Init: config and a starting graph from the repository
 
-The helper is `node "${CLAUDE_PLUGIN_ROOT}/scripts/ennyn.mjs"`, written `ennyn` below. Every proposal comes from a command's output. The user is asked only what the repository cannot answer.
+The helper is `node "${CLAUDE_PLUGIN_ROOT}/scripts/ennyn.mjs"`, written `ennyn` below. Every proposal comes from a command's output.
 
 ## 1. Survey (no questions yet)
 
-Run `ennyn init-scan --json`. If `config.path` or `graph.exists` is set, this is an **update**: keep what is there, change only what the user agrees to, and never overwrite the graph. Add or adjust nodes instead. If `config.loaded` is false, every value in the scan is a default, not the project's: fix the listed `config.problems` in the config file, then run the scan again before going on.
+Run `ennyn init-scan --json`. If `config.path` or `graph.exists` is set, this is an **update**: keep what is there, change only what the user agrees to, and never overwrite the graph: add or adjust nodes. If `config.loaded` is false, every value in the scan is a default, not the project's: fix the listed `config.problems` in the config file, then run the scan again before going on.
 
 ## 2. Ask once
 
@@ -18,7 +18,7 @@ Send one message with at most six questions. Each question carries the survey's 
 1. **Languages and voice** (`en` | `tr`):
    - `language`: reports and the conversation during a cycle. Default: the language the user writes in.
    - `commitMsg.language`: commit text. Default: `commitStyle.language.guess`, the language the history is written in; `language` when there is no guess.
-   - `conversation.style`: `normal`; `focused` (result or next action first, numbered steps, one next step, no preamble); `terse` (answer first, short sentences, no filler). Default `normal`. A hook gives each session the rules; numbers, paths, commands, negations and money or data-loss warnings are never shortened.
+   - `conversation.style`: `normal`; `focused` (result or next action first, numbered steps, one next step, no preamble); `terse` (answer first, short sentences, no filler). Default `normal`. Numbers, paths, commands, negations and money or data-loss warnings are never shortened.
    - `commitMsg.style`: `normal`, or `terse` (subject + structured lines, no prose body). Default `normal`.
 2. **Commit convention.** It decides how every cycle commit is written and what the rework rate counts as a repair. Show `commitStyle.types` and the fix-label result (`fixSubject`: share and up to three examples), then offer:
    - the history's own types, when it has a convention (`commitStyle.typedShare` ≥ 0.5); ask which one marks a repair;
@@ -26,7 +26,7 @@ Send one message with at most six questions. Each question carries the survey's 
    - or a free subject: `types` stays empty.
    The fix type is only for repairs of earlier commits. Then the rework rate measures rework, not churn. A `majority` result means the history's rate is a trend only; the convention fixes that from now on.
 3. **Generated files and test layout.** From `churn.paths`, ask which are build output; a `generatedMarker` is a strong hint, not proof. Confirmed paths go into `metrics.excludeRe`. When `tests.proposal` is set, show its example files and ask whether they are tests; a production file that matches would leave the rework rate.
-4. **Risky paths** (`risky`). These paths require an impact table before any edit. The user adds or removes.
+4. **Risky paths and security** (`risky`): they need an impact table before any edit, and the security audit reads them; the user adds or removes. Confirm the config's values, else the defaults: a security audit every 3 cycles (`security.everyCycles`); a new dependency version waits 7 days (`security.deps.cooldownDays`), refused under 1% of its package's weekly downloads and 1,000 of its own (`minShare`, `minWeekly`); the cycle asks OSV about public packages (`security.deps.advisories`; `""`: none).
 5. **Where the work comes from**:
    - the `roadmap` files (with open/done counts);
    - open GitHub issues (`gh issue list --state open --limit 50 --json number,title,labels`, only when `github` is set and `gh` works);
@@ -41,7 +41,7 @@ Write only the keys that differ from the defaults (DESIGN.md has the table). JSO
 
 - `commitMsg.language`: only when it differs from `language`. `conversation.style` and `commitMsg.style`: only when not `normal`.
 - `commitMsg.types` and `commitMsg.fixType`: the agreed convention. The fix type must be one of the types.
-- `metrics.fixSubject`: covers the history and the new fix type, `(?:<fixSubject.proposal>)|(?:^<fixType>(\(|:))`, or `^<fixType>(\(|:)` when there is no proposal. Omit it when it equals the default. `doctor` warns when it misses the fix type.
+- `metrics.fixSubject`: covers the history and the new fix type, `(?:<fixSubject.proposal>)|(?:^<fixType>(\(|:))`, or `^<fixType>(\(|:)` when there is no proposal. `doctor` warns when it misses the fix type.
 - `metrics.excludeRe`: the scan's `metrics.excludeRe`, then `|` and the `excludePattern` of each confirmed churn path. Always start from the scan's value: a bare path pattern replaces the default and puts docs, lockfiles and `dist/` back into the rework rate.
 - `metrics.testRe`: `tests.proposal`, when the user confirmed it.
 - `review.impactRequiredGlobs`: the agreed globs. `review.agents`: the reviewers chosen in question 6.
@@ -53,13 +53,13 @@ Follow [graph.md](graph.md): where the graph goes, a module when the roadmap is 
 
 ## 5. The project's own instructions
 
-The cycle follows Ennyn's convention. When an instruction or rule file sets another commit format or language (`commitLines` of `agentSetup.instructions`; every-session files first, then on-demand ones, then those of other agents; for example "one-line commits"), show each such line and propose replacing it with one that points at `.ennyn/config.json`. Edit it only on the user's yes, so the agent never gets two rules.
+The cycle follows Ennyn's convention. When an instruction or rule file sets another commit format or language (`commitLines` of `agentSetup.instructions`; every-session files first, then on-demand ones, then those of other agents), show each such line and propose replacing it with one that points at `.ennyn/config.json`. Edit it only on the user's yes, so the agent never gets two rules.
 
 A line that forbids a literal (`bans`: "never use `console.log`") can become a `review.forbidden` rule, which the commit-msg hook enforces: follow [gates.md](gates.md). The line goes only once doctor shows that hook.
 
 ## 6. Handoff stub
 
-Write this only when `handoff.exists` is false. An existing handoff gets nothing but the one line from question 6, and only on the user's yes. Write it to `paths.handoff`:
+Write this only when `handoff.exists` is false. An existing handoff gets only question 6's line. Write it to `paths.handoff`:
 
 - the commands the cycle runs: the fast test command from `commands`, then lint and typecheck when present;
 - the mutation tool from `mutation`, or "none configured: hand-picked mutants, run with `ennyn mutate`";
@@ -68,7 +68,7 @@ Write this only when `handoff.exists` is false. An existing handoff gets nothing
 
 ## 7. Check and report
 
-When the config sets a rule only the commit-msg hook checks (doctor names them), offer `ennyn install-hook`: the commit convention becomes a gate in this clone (machine-local; with `core.hooksPath` it says what to add instead). Then run `ennyn doctor` and fix every ✗ in the files you wrote. Two kinds are not yours to fix alone. A ✗ about the machine's git (older than the floor): tell the user the version and the floor, and change nothing on their machine. A ✗ about the items of a roadmap the graph module reads: follow [graph.md](graph.md), "When doctor fails on the items". A `!` stays only when the user has seen and accepted it, for example the fix-label majority.
+When the config sets a rule only the commit-msg hook checks (doctor names them), offer `ennyn install-hook`: the commit convention becomes a gate in this clone. Then run `ennyn doctor` and fix every ✗ in the files you wrote. Two kinds are not yours to fix alone. A ✗ about the machine's git (older than the floor): tell the user the version and the floor, and change nothing on their machine. A ✗ about the items of a roadmap the graph module reads: follow [graph.md](graph.md), "When doctor fails on the items". A `!` stays only when the user has seen and accepted it, for example the fix-label majority.
 
 Report in at most thirteen lines:
 

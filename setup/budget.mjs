@@ -13,10 +13,9 @@
  * first request (docs/evidence.md).
  */
 
-import { writeFileSync, appendFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { agentSetup } from "./scan.mjs";
-import { readIfThere } from "../core/files.mjs";
+import { readIfThere, readRegular, writeRegular } from "../core/files.mjs";
 import { splitFrontMatter } from "../adapters/claude-code/rules-index.mjs";
 
 /** A line this short is a heading, a label or a fragment, not a rule worth counting twice. */
@@ -130,7 +129,9 @@ export function instructionBudget(cwd, files) {
 }
 
 /**
- * @typedef {{ kind: "budget", date: string, commit: string, always: number, onDemand: number, repeatedLines: number }} BudgetRecord
+ * One a cycle: `securityAudit` marks a cycle whose audit slot was the security audit, and `covers` lists the keys of
+ * the records it covers (plan/audit.mjs counts the cycles no mark covers).
+ * @typedef {{ kind: "budget", date: string, commit: string, always: number, onDemand: number, repeatedLines: number, securityAudit?: true, covers?: string[] }} BudgetRecord
  */
 
 /**
@@ -139,10 +140,12 @@ export function instructionBudget(cwd, files) {
  * string, empty when recorded outside a repository) or no whole, non-negative size in bytes is counted apart
  * (`unusable`). doctor and the budget command name each.
  * @param {string} path
+ * @param {string} [root] the repository: inside it no link leads to the log (core/files.mjs readRegular)
  * @returns {{ records: BudgetRecord[], skipped: number, unusable: number }}
  */
-export function readBudgets(path) {
-  const text = readOrNull(path);
+export function readBudgets(path, root = dirname(path)) {
+  const bytes = readRegular(root, path);
+  const text = bytes === null ? null : bytes.toString("utf8");
   if (text === null) return { records: [], skipped: 0, unusable: 0 };
   /** @type {BudgetRecord[]} */
   const records = [];
@@ -175,35 +178,42 @@ export function previousBudget(records, commit) {
 /**
  * Record the budget, one record per commit (the full hash: a short one changes length from machine to
  * machine). At a commit that already has the last record, that record is replaced: an edit made after
- * recording (the cycle's own clean-up) is counted, and the log keeps one line per commit.
+ * recording (the cycle's own clean-up) is counted, and the log keeps one line per commit. The replacement
+ * holds what this call says, so a security audit is marked again when it is recorded again.
  * @param {string} cwd project directory
  * @param {string} metricsLog `paths.metricsLog`
  * @param {{ always: number, onDemand: number, repeatedLines: number }} budget
- * @param {{ date: string, commit: string }} at
- * @returns {{ path: string, entry: BudgetRecord, replaced: boolean }}
+ * @param {{ date: string, commit: string, covers?: string[] }} at `covers`: given for a mark, the keys it covers
+ * @returns {{ path: string, entry: BudgetRecord, replaced: boolean, replacedDate?: string, replacedEntry?: any }}
+ *   `replacedDate` and `replacedEntry`: the record replaced
  */
 export function recordBudget(cwd, metricsLog, budget, at) {
   const path = resolve(cwd, metricsLog);
   /** @type {BudgetRecord} */
   const entry = { kind: "budget", date: at.date, commit: at.commit, always: budget.always, onDemand: budget.onDemand, repeatedLines: budget.repeatedLines };
-  const before = readOrNull(path) ?? "";
-  const lines = before.split("\n").filter((l) => l.trim() !== "");
-  let lastAt = -1;
-  for (let i = lines.length - 1; i >= 0 && lastAt === -1; i--) {
-    try {
-      if (JSON.parse(lines[i])?.kind === "budget") lastAt = i;
-    } catch {
-      // Not a record; readBudgets counts it.
+  if (at.covers) Object.assign(entry, { securityAudit: true, covers: at.covers });
+  /** @type {any} */
+  let last = null;
+  // Read and written as a regular file, through one descriptor: a link inside the repository, a FIFO or a device is refused.
+  writeRegular(cwd, path, (before) => {
+    const lines = before.split("\n").filter((l) => l.trim() !== "");
+    let lastAt = -1;
+    for (let i = lines.length - 1; i >= 0 && lastAt === -1; i--) {
+      try {
+        if (JSON.parse(lines[i])?.kind === "budget") lastAt = i;
+      } catch {
+        // Not a record; readBudgets counts it.
+      }
     }
-  }
-  const last = lastAt === -1 ? null : JSON.parse(lines[lastAt]);
-  if (last && at.commit && last.commit === at.commit) {
-    lines[lastAt] = JSON.stringify(entry);
-    writeFileSync(path, lines.join("\n") + "\n");
-    return { path, entry, replaced: true };
-  }
-  mkdirSync(dirname(path), { recursive: true });
-  // A last line cut short (a write that was killed) stays a line of its own: glued onto it, the record would never be read.
-  appendFileSync(path, (before === "" || before.endsWith("\n") ? "" : "\n") + JSON.stringify(entry) + "\n");
+    const found = lastAt === -1 ? null : JSON.parse(lines[lastAt]);
+    if (found && at.commit && found.commit === at.commit) {
+      last = found;
+      lines[lastAt] = JSON.stringify(entry);
+      return { replace: lines.join("\n") + "\n" };
+    }
+    // A last line cut short (a write that was killed) stays a line of its own: glued onto it, the record would never be read.
+    return { append: (before === "" || before.endsWith("\n") ? "" : "\n") + JSON.stringify(entry) + "\n" };
+  });
+  if (last) return { path, entry, replaced: true, replacedDate: typeof last.date === "string" ? last.date : "", replacedEntry: last };
   return { path, entry, replaced: false };
 }

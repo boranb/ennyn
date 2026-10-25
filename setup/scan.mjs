@@ -272,8 +272,9 @@ export function testLayout(files, testRe) {
  * file itself is listed (`app/security.py`). Test and excluded paths do not count.
  * @param {string[]} files
  * @param {PathPatterns} re
+ * @param {number} [limit] how many to list (the security audit reads them all)
  */
-export function riskyPaths(files, re) {
+export function riskyPaths(files, re, limit = MAX_LISTED) {
   /** @type {Map<string, { files: number, glob: string }>} */
   const found = new Map();
   for (const f of files) {
@@ -290,7 +291,7 @@ export function riskyPaths(files, re) {
   }
   return [...found.keys()]
     .sort()
-    .slice(0, MAX_LISTED)
+    .slice(0, limit)
     .map((path) => ({ path, .../** @type {{ files: number, glob: string }} */ (found.get(path)) }));
 }
 

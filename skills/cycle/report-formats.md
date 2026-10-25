@@ -9,7 +9,8 @@ Write reports in the project's `language`.
 **Tasks:**
 1-2. [core tasks] — impact table: [required/not needed + why] — checks: [tests, mutation, reviewers]
 3. [mechanization: node] — class it turns into a gate: [catalog id]
-4. [legacy audit: feature] — chosen because: [rule]
+4. [legacy audit: feature, or the security audit `ennyn.mjs audit` did not rule out] — chosen because: [rule]
+**Security:** [threat this cycle meets · measure] or [none, because …]
 ```
 
 ## End of task
@@ -21,10 +22,10 @@ Write reports in the project's `language`.
 ```md
 ## Cycle complete
 ### Done            → results 1-4
-### Checks          → commit gate / build / viewport checks [result or not applicable] · commit-shape bypass: N (`ennyn.mjs bypass --from <cycle start>`; each use with its reason) · instruction budget: N KB every session (± since the last record), repeated rule lines
+### Checks          → commit gate / build / viewport checks [result or not applicable] · security: `ennyn.mjs deps` and doctor's CI line [found / clean / unmeasured: what did not run] · commit-shape bypass: N (`ennyn.mjs bypass --from <cycle start>`; each use with its reason) · instruction budget: N KB every session (± since the last record), repeated rule lines
 ### Commits         → subjects
 ### Documents       → documents updated
-### Audit           → feature / why chosen / result / next candidate
+### Audit           → feature or security audit / why chosen / result / next candidate
 ### Convergence     → format below
 ### Remaining risks → none, or each risk with its permanent home
 ### Push            → N commits waiting; approval asked

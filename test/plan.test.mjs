@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { loadConfig } from "../core/config.mjs";
 import { t, tShown } from "../core/i18n.mjs";
 import { graphProblems, loadGraph, pickMechanization, readyMechanization, scoreNode, GraphError } from "../plan/mechanization.mjs";
+import { cycleRecords, folded, lineKey, markCovers, securityDue, sensitivePaths, uncovered } from "../plan/audit.mjs";
 
 const cfg = (override = {}) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-p-")), env: {}, override });
 
@@ -265,4 +266,99 @@ test("graphProblems (doctor audit, review round two): ZWNJ and ZWJ in a source s
   const where = String(graphProblems({ open: dup, done: [] }, cfg()).find((p) => p.key === "doctor.idDuplicate")?.vars.where);
   assert.ok(where.includes("نقشه\u200cراه.md:1"), JSON.stringify(where));
   assert.ok(where.includes("x \u200cy.md:2"), `a mark before it goes, the ZWNJ stays: ${JSON.stringify(where)}`);
+});
+
+test("audit slot: a record's key is a digest of its line, CR and byte order mark dropped; budget records and lines that do not parse are cycles, other JSON is not", () => {
+  const rec = (/** @type {object} */ more = {}) => JSON.stringify({ kind: "budget", date: "2026-10-01", commit: "a".repeat(40), always: 1, onDemand: 0, repeatedLines: 0, ...more });
+  const k = (/** @type {string} */ line) => lineKey(Buffer.from(line));
+  assert.match(k(rec()), /^[0-9a-f]{16}$/);
+  assert.equal(k(rec()), k(`${rec()}\r`), "a trailing CR");
+  assert.equal(k(rec()), k(`\uFEFF${rec()}`), "a leading byte order mark");
+  assert.notEqual(k(rec()), k(rec({ always: 2 })), "an edited record is another key");
+  const mark = rec({ securityAudit: true, covers: ["0123456789abcdef", "NOT-A-KEY", 7, "0123456789ABCDEF"] });
+  const text = [`\uFEFF${rec()}\r`, mark, "{ cut", "", "   ", "null", "[]", JSON.stringify({ kind: "gate" }), rec({ securityAudit: "true", covers: ["0123456789abcdef"] }), rec({ commit: 5 })].join("\n");
+  // A line that is not UTF-8 keeps its own key.
+  const bytes = Buffer.concat([Buffer.from(`${text}\n`), Buffer.from([0xff, 0xfe, 0x0a, 0xff, 0xfd, 0x0a])]);
+  const records = cycleRecords(bytes);
+  assert.deepEqual(
+    records.map((r) => [r.budget, r.commit, r.mark, r.covers]),
+    [
+      [true, "a".repeat(40), false, []],
+      [true, "a".repeat(40), true, ["0123456789abcdef"]],
+      [false, null, false, []],
+      [true, "a".repeat(40), false, []],
+      [true, null, false, []],
+      [false, null, false, []],
+      [false, null, false, []],
+    ],
+  );
+  assert.equal(records[0].key, k(rec()));
+  assert.notEqual(records[5].key, records[6].key, "two lines that are not UTF-8 are two keys");
+  assert.deepEqual(cycleRecords(null), []);
+});
+
+test("audit slot: due with no mark, or every N cycles no mark covers; a mark covers what it lists and itself; copies are one cycle", () => {
+  /** @param {string} key @param {string[] | null} [covers] a mark when given */
+  const r = (key, covers = null) => ({ key, budget: true, commit: null, mark: covers !== null, covers: covers ?? [] });
+  const due = (/** @type {ReturnType<typeof r>[]} */ records, every = 3) => {
+    const d = securityDue(records, every);
+    return [d.due, d.reason, d.since];
+  };
+  assert.deepEqual(due([]), [true, "never", 0], "no audit recorded: the first is due");
+  assert.deepEqual(due([r("a"), r("b"), r("c")]), [true, "never", 3]);
+  assert.deepEqual(due([r("m", [])]), [false, "since", 0]);
+  assert.deepEqual(due([r("m", []), r("a")]), [false, "since", 1]);
+  assert.deepEqual(due([r("m", []), r("a"), r("b")]), [true, "since", 2]);
+  // What a mark covers stops counting; what it does not list (a branch's audit that never saw them) keeps counting.
+  assert.deepEqual(due([r("a"), r("b"), r("m", ["a", "b"])]), [false, "since", 0]);
+  assert.deepEqual(due([r("a"), r("b"), r("x"), r("y"), r("m", ["a", "b"])]), [true, "since", 2]);
+  // The order of the lines decides nothing; a line twice is one cycle; a mark without covers covers only itself.
+  assert.deepEqual(due([r("m", ["a"]), r("a")]), [false, "since", 0]);
+  assert.deepEqual(due([r("m", []), r("a"), r("a")]), [false, "since", 1]);
+  assert.deepEqual(due([r("a"), r("b"), r("m", [])]), [true, "since", 2]);
+  // 1: every cycle; 0: off.
+  assert.deepEqual(due([r("m", [])], 1), [true, "since", 0]);
+  assert.deepEqual(due([r("m", []), r("a"), r("b")], 0), [false, "off", 2]);
+  assert.equal(securityDue([r("a"), r("a"), r("m", ["a"])], 3).cycles, 2);
+  // A new mark lists each key no earlier mark covers, once.
+  assert.deepEqual(markCovers([r("a"), r("m", ["a"]), r("b"), r("b"), r("c")]), ["b", "c"]);
+  assert.deepEqual([...uncovered([r("a"), r("m", ["a"]), r("n", [])])], []);
+});
+
+test("audit slot: the sensitive paths are the risky globs, init-scan's risky paths, CI and lock files whether their check is on or not, the code that runs on the machines with its rule, and Ennyn's own files", () => {
+  const c = cfg({ review: { impactRequiredGlobs: ["src/app.js"] } });
+  const files = ["src/auth/login.js", "src/app.js", ".github/workflows/ci.yml", "sub/Package-Lock.json", "sub/.NPMRC", ".npmrc", ".ennyn/config.json", ".ennyn/metrics.jsonl", "docs/x.md", ".claude/settings.json", "package.json", ".husky/pre-commit", "Dockerfile", "go.sum", ".env.production"];
+  const own = { configRel: ".ennyn/config.json", logRel: ".ennyn/metrics.jsonl" };
+  const machine = [".github/workflows/ci.yml", "sub/.NPMRC", ".npmrc", ".claude/settings.json", "package.json", ".husky/pre-commit", "Dockerfile", "go.sum", ".env.production"];
+  const rules = [".github/**", "**/.npmrc", "**/.npmrc", ".claude/**", "**/package.json", ".husky/**", "**/Dockerfile", "**/go.sum", "**/.env.*"];
+  assert.deepEqual(sensitivePaths(files, c, own), [
+    { source: "review.impactRequiredGlobs", files: ["src/app.js"] },
+    { source: "init-scan risky", files: ["src/auth/login.js"] },
+    { source: "security.ci.paths", files: [".github/workflows/ci.yml"] },
+    { source: "security.deps.paths", files: ["sub/Package-Lock.json", "sub/.NPMRC", ".npmrc"] },
+    { source: "machine", files: machine, rules },
+    { source: "ennyn", files: [".ennyn/config.json", ".ennyn/metrics.jsonl"] },
+  ]);
+  // A commit check turned off still has its files read, by the default globs, and says so.
+  const off = cfg({ security: { ci: { paths: [] }, deps: { paths: [] } } });
+  assert.deepEqual(sensitivePaths(files, off, { configRel: "elsewhere.json" }).filter((s) => s.source.startsWith("security.")), [
+    { source: "security.ci.paths", files: [".github/workflows/ci.yml"], off: true },
+    { source: "security.deps.paths", files: ["sub/Package-Lock.json", "sub/.NPMRC", ".npmrc"], off: true },
+  ]);
+  // A config git does not track is no path, and a source with no file is left out.
+  assert.deepEqual(sensitivePaths(["docs/x.md"], c, own), []);
+  // Every directory init-scan calls risky, past the ten its report lists, matched as written: glob characters too.
+  const risky = ["auth", "billing", "crypto", "ledger", "login", "migrations", "oauth", "payments", "rbac", "secrets", "sessions"].map((d) => `src/${d}/a.js`);
+  const literal = ["app/[locale]/auth/login.tsx", "src/{legacy}/payments/charge.js", "app/[locale]/login.tsx", "src/authx/a.js"];
+  assert.deepEqual(sensitivePaths([...risky, ...literal], cfg(), {}).find((s) => s.source === "init-scan risky")?.files, [...risky, ...literal.slice(0, 3)]);
+  // A file system that ignores case serves these as names the list holds: case, compatibility forms, full folding.
+  const cased = [".Claude/settings.json", "claude.md", "Package.json", "makefile", "GNUmakefile", "api.Dockerfile", "Containerfile", "server.PEM", ".vscode/ta\u017fks.json", ".hu\u017fky/pre-commit", "\u017fcripts/x.sh", "Make\ufb01le"];
+  assert.deepEqual(sensitivePaths(cased, cfg(), {}).find((s) => s.source === "machine")?.files, cased);
+  assert.deepEqual(["Stra\u00dfe", "\ufb01le", "A\u017f"].map(folded), ["strasse", "file", "as"]);
+});
+
+test("config: security.everyCycles is a whole number from 0 to 100", () => {
+  assert.equal(cfg().security.everyCycles, 3);
+  for (const v of [0, 1, 100]) assert.equal(cfg({ security: { everyCycles: v } }).security.everyCycles, v);
+  for (const v of [-1, 101, 2.5, "3", null]) assert.throws(() => cfg({ security: { everyCycles: v } }), /security\.everyCycles/, JSON.stringify(v));
 });

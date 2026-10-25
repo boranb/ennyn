@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { relative, resolve, sep } from "node:path";
 import { loadConfig, ConfigError } from "../core/config.mjs";
 import { READ_BUDGET, git, headBlob, headCommit, hookIndexFile, indexNames, mergeHeads, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
-import { shown, t, tShown } from "../core/i18n.mjs";
+import { UNSHOWN, shown, t, tShown } from "../core/i18n.mjs";
 import { globToRegExp, matchAny } from "../core/glob.mjs";
 import { checkCommitShape, nameShown, secretErrors, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
 import { ciCallees, ciMessages } from "../checks/ci.mjs";
@@ -23,6 +23,7 @@ import { reworkRate } from "../metrics/szz.mjs";
 import { bypassUses } from "../metrics/bypass.mjs";
 import { gateLogPath, readAttempts, recordAttempt, summarizeAttempts, KINDS } from "../metrics/gate-log.mjs";
 import { graphProblems, loadGraph, pickMechanization, scoreNode, GraphError } from "../plan/mechanization.mjs";
+import { auditAnswer, cycleRecords, markCovers, readLog, securityDue, sensitivePaths } from "../plan/audit.mjs";
 import { scanProject, MIN_HISTORY } from "../setup/scan.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
 import { installHook } from "../setup/hook.mjs";
@@ -35,13 +36,14 @@ Commands:
   init-scan [--json]                                survey the repository for /init: fix label, churn, tests, risky paths, work sources
   doctor                                            check config, work graph and fix label; exit 1 on a problem
   install-hook                                      run commit-check as this repository's commit-msg hook (machine-local)
-  budget [--json] [--record]                        instruction text loaded every session / by path, rule lines repeated across files; --record appends to paths.metricsLog
+  budget [--json] [--record [--security-audit]]     instruction text loaded every session / by path, rule lines repeated across files; --record appends to paths.metricsLog, --security-audit marks the cycle's security audit
   commit-check [--hook] <message-file>              check commit message shape (commit-msg hook; --hook: a config that does not load warns instead of failing)
   deps [--json]                                     known advisories (OSV), install scripts and unlisted sources of the lock files; exit 1 unless all measured clean
   impact --symbol <s> [--files a,b]                 five-row impact table (markdown)
   rework [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--days N] [--json]
                                                     SZZ-style rework rate
   mechanization [--json]                            best ready mechanization node
+  audit [--json]                                    whether this cycle's audit slot is the security audit (security.everyCycles), and the sensitive paths it reads
   bypass [--from <rev>] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--json]
                                                     commits that used the commit-shape bypass marker, with their reasons
   mutate <list.json> --command <cmd> [--check <cmd>] [--timeout <s>] [--json]
@@ -59,6 +61,9 @@ Options:
 Config: .ennyn/config.json in the repository root (override with ENNYN_CONFIG).`;
 
 class UsageError extends Error {}
+
+/** Past this many files a risky source of `audit` is listed by directory, each with its count: every file's directory is named. */
+const AUDIT_NAMES = 50;
 
 /** How many levels of local callees the commit-msg hook reads, one git round each; past it they are said unread. */
 const CALLEE_ROUNDS = 20;
@@ -463,21 +468,39 @@ const COMMANDS = {
   },
 
   budget(args) {
-    const { opts, help } = parseArgs(args, { flags: ["json", "record"] });
+    const { opts, help } = parseArgs(args, { flags: ["json", "record", "security-audit"] });
     if (help) return (out(USAGE), 0);
+    if (opts["security-audit"] && !opts.record) throw new UsageError("--security-audit marks a record: give it with --record");
     const cwd = projectDir();
     const cfg = config(cwd);
     const files = git(["-c", "core.quotePath=false", "ls-files", "-z"], { cwd }).split("\0").filter(Boolean);
     const b = instructionBudget(cwd, files);
     // No commit yet: the record has no commit. A git that fails stops here, before anything is recorded.
     const head = headCommit(cwd) ?? "";
-    const log = readBudgets(resolve(cwd, cfg.paths.metricsLog));
+    // Only a mark reads the count; a plain record never depends on it. The count leaves out this cycle's own record
+    // (the one at this commit, which the new record replaces), and the mark covers what no earlier mark did.
+    /** @type {import("../plan/audit.mjs").SecurityDue | null} */
+    let before = null;
+    /** @type {string[] | undefined} */
+    let covers;
+    if (opts["security-audit"]) {
+      const records = cycleRecords(readLog(cwd, resolve(cwd, cfg.paths.metricsLog)));
+      const last = [...records].reverse().find((r) => r.budget);
+      const kept = head && last?.commit === head ? records.filter((r) => r !== last) : records;
+      before = securityDue(kept, cfg.security.everyCycles);
+      if (before.due !== false) covers = markCovers(kept);
+    }
+    const refused = before?.due === false;
+    const log = readBudgets(resolve(cwd, cfg.paths.metricsLog), cwd);
     // Measured against the newest record made at another commit: recording twice in a cycle hides nothing.
     const previous = previousBudget(log.records, head);
     const d = new Date();
     const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    const recorded = opts.record ? recordBudget(cwd, cfg.paths.metricsLog, b, { date: today, commit: head }) : null;
-    if (opts.json) return (out(JSON.stringify({ ...b, previous, skipped: log.skipped, unusable: log.unusable, recorded: recorded ? { ...recorded.entry, replaced: recorded.replaced } : null }, null, 2)), 0);
+    const recorded = opts.record ? recordBudget(cwd, cfg.paths.metricsLog, b, { date: today, commit: head, covers }) : null;
+    const why = before?.reason === "off" ? t("budget.markOff", {}, cfg.language) : t("budget.markSince", { since: before?.since ?? 0, every: before?.every ?? 0 }, cfg.language);
+    // A refused mark still records the cycle: the record is what counts it.
+    if (refused) err(t("budget.markRefused", { why }, cfg.language));
+    if (opts.json) return (out(JSON.stringify({ ...b, previous, skipped: log.skipped, unusable: log.unusable, recorded: recorded ? { ...recorded.entry, replaced: recorded.replaced } : null, markRefused: refused }, null, 2)), refused ? 1 : 0);
     const lang = cfg.language;
     const delta = previous
       ? t("budget.delta", { d: signedKb(b.always - previous.always), bytes: b.always - previous.always, commit: previous.commit.slice(0, 10) || "—" }, lang)
@@ -492,7 +515,59 @@ const COMMANDS = {
     if (log.skipped) out(t("budget.skipped", { n: log.skipped, path: resolve(cwd, cfg.paths.metricsLog) }, lang));
     if (log.unusable) out(t("budget.unusable", { n: log.unusable, path: resolve(cwd, cfg.paths.metricsLog) }, lang));
     if (recorded) out(t(recorded.replaced ? "budget.replaced" : "budget.recorded", { path: recorded.path, commit: recorded.entry.commit.slice(0, 10) }, lang));
-    return 0;
+    // One record a commit. Recorded again today with the same mark is this cycle's step 6 again: silent. A mark
+    // replaced by a plain record drops what it covered; anything else may be another cycle's record (one that made
+    // no commit of its own), said with its date.
+    const was = recorded?.replacedEntry;
+    if (was && was.securityAudit === true && !recorded?.entry.securityAudit) out(t("budget.replacedMark", { n: Array.isArray(was.covers) ? was.covers.length : 0 }, lang));
+    else if (was && (recorded?.replacedDate !== today || (was.securityAudit === true) !== Boolean(recorded?.entry.securityAudit))) out(t("budget.replacedNote", { date: recorded?.replacedDate || "?" }, lang));
+    if (recorded?.entry.securityAudit) out(t("budget.securityAudit", {}, lang));
+    return refused ? 1 : 0;
+  },
+
+  audit(args) {
+    const { opts, help } = parseArgs(args, { flags: ["json"] });
+    if (help) return (out(USAGE), 0);
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    const due = auditAnswer(cwd, cfg);
+    const rel = (/** @type {string} */ p) => relative(cwd, p).split(sep).join("/");
+    const own = { configRel: cfg.configPath ? rel(cfg.configPath) : null, logRel: rel(resolve(cwd, cfg.paths.metricsLog)) };
+    // Only a security audit reads the paths; a git that fails stops the command, as everywhere.
+    const paths = due.due === false ? [] : sensitivePaths(git(["-c", "core.quotePath=false", "ls-files", "-z"], { cwd }).split("\0").filter(Boolean), cfg, own);
+    const code = due.due === null ? 1 : 0;
+    // Names a terminal would act on (direction overrides, C1 controls, line separators) as \u escapes: still JSON.
+    if (opts.json) return (out(JSON.stringify({ slot: due.due === false ? "feature" : "security", ...due, log: cfg.paths.metricsLog, paths }, null, 2).replace(/[\u007f-\u{10ffff}]/gu, (c) => (UNSHOWN.test(c) ? Array.from({ length: c.length }, (_, i) => `\\u${c.charCodeAt(i).toString(16).padStart(4, "0")}`).join("") : c))), code);
+    const lang = cfg.language;
+    // The log's name as the config gives it, and an error's text, shown on one line (tShown).
+    const vars = { every: due.every, cycles: due.cycles, since: due.since ?? 0, left: due.every - (due.since ?? 0) - 1, path: [cfg.paths.metricsLog], error: due.error ?? "" };
+    if (due.due === false) out(t(due.reason === "off" ? "audit.off" : "audit.feature", vars, lang));
+    else out(t("audit.security", { why: tShown(due.error ? "audit.why.error" : `audit.why.${due.reason}`, vars, lang) }, lang));
+    if (due.due !== false) {
+      if (!paths.length) out(t("audit.noPaths", {}, lang));
+      // The cycle reads this list as the audit's scope: every name, or past AUDIT_NAMES every file's directory.
+      const dirOf = (/** @type {string} */ f) => (f.includes("/") ? `${f.slice(0, f.lastIndexOf("/"))}/` : "./");
+      const byName = (/** @type {[string, unknown]} */ [a], /** @type {[string, unknown]} */ [b]) => (a < b ? -1 : 1);
+      for (const p of paths) {
+        const source = p.off ? t("audit.sourceOff", { source: p.source }, lang) : p.source;
+        if (p.rules) {
+          // What runs on the machines is named file by file, each with the rule that named it, under its directory.
+          /** @type {Map<string, string[]>} */
+          const dirs = new Map();
+          p.files.forEach((f, i) => dirs.set(dirOf(f), [...(dirs.get(dirOf(f)) ?? []), `${f.slice(f.lastIndexOf("/") + 1)} (${p.rules?.[i]})`]));
+          out(t("audit.machine", { source, n: p.files.length }, lang));
+          for (const [dir, list] of [...dirs].sort(byName)) out(tShown("audit.machineDir", { dir: [dir], list }, lang));
+          continue;
+        }
+        // Only the risky sources, which can be large, are summarized: every file's directory, with its count.
+        const summed = p.files.length > AUDIT_NAMES && ["review.impactRequiredGlobs", "init-scan risky"].includes(p.source);
+        /** @type {Map<string, number>} */
+        const dirs = new Map();
+        for (const f of p.files) dirs.set(dirOf(f), (dirs.get(dirOf(f)) ?? 0) + 1);
+        out(tShown(summed ? "audit.pathsDirs" : "audit.paths", { source, n: p.files.length, d: dirs.size, list: summed ? [...dirs].sort(byName).map(([d, n]) => `${d} (${n})`) : p.files }, lang));
+      }
+    }
+    return code;
   },
 
   async doctor(args) {

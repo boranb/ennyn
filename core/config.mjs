@@ -77,6 +77,9 @@ export const DEFAULTS = Object.freeze({
   },
   push: { warnAtUnpushed: 20 },
   security: {
+    // Every this many cycles the audit slot is a security audit of the sensitive paths (plan/audit.mjs, `ennyn
+    // audit`); 0 turns it off.
+    everyCycles: 3,
     // CI files the commit-msg hook and doctor read (checks/ci.mjs): a `uses` by tag, a pull_request_target that
     // checks out the pull request's code, a workflow without permissions. [] turns the check off.
     ci: {
@@ -280,6 +283,8 @@ export function loadConfig({ cwd, env = process.env, override }) {
     if (rule.except !== undefined && !isGlobs(rule.except)) problems.push(`${at}.except must be a list of globs`);
     if (rule.note !== undefined && typeof rule.note !== "string") problems.push(`${at}.note must be a string`);
   });
+  const every = /** @type {any} */ (cfg).security.everyCycles;
+  if (!(Number.isInteger(every) && every >= 0 && every <= 100)) problems.push(`"security.everyCycles" must be a whole number from 0 to 100`);
   const ci = /** @type {any} */ (cfg).security.ci;
   for (const k of ["paths", "except"]) if (ci[k].some((/** @type {unknown} */ g) => typeof g !== "string" || g === "")) problems.push(`"security.ci.${k}" must be a list of globs`);
   const deps = /** @type {any} */ (cfg).security.deps;

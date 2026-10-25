@@ -293,6 +293,11 @@ const CASES = [
   { args: ["bypass", "--from", FIRST, "--json"] },
   { args: ["mechanization"] },
   { args: ["mechanization"], cwd: "src", first: true },
+  // The metrics log holds one budget record with no mark: the security audit is due, and the paths are read.
+  { args: ["audit"] },
+  { args: ["audit", "--json"] },
+  // A mark reads the count first: a failed read there must not mark, or pass unsaid.
+  { args: ["budget", "--record", "--security-audit"], writes: true },
   { args: ["mutate", ".git/mutants.json", "--command", `${NODE} .git/check.mjs`], writes: true },
   { args: ["mutate", "--restore"], writes: true },
   { args: ["push-check"] },

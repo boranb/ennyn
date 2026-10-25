@@ -1,0 +1,231 @@
+/**
+ * The audit slot: every `security.everyCycles` cycles it holds a security audit of the project's sensitive
+ * paths, with a path table; otherwise a finished feature is audited. Whether this cycle is one comes from the
+ * metrics log, not from memory: each cycle ends with one budget record (`budget --record`), and the record of a
+ * cycle whose audit was the security audit carries `securityAudit: true` and `covers`, the keys of the records
+ * no earlier mark covered.
+ *
+ * The question is which cycles an audit saw, not where it stands in history: a record's key is a digest of its
+ * line, and a cycle counts until a mark covers its key. No git is asked, so a squash or rebase merge, a
+ * cherry-pick, an amend, a revert or a moved line changes nothing: a branch's audit covers only the records its
+ * log held, a record edited since is another key and counts again, and a line that does not parse is a cycle.
+ */
+
+import { createHash } from "node:crypto";
+import { resolve } from "node:path";
+import { DEFAULTS } from "../core/config.mjs";
+import { readRegular } from "../core/files.mjs";
+import { globToRegExp, matchAny } from "../core/glob.mjs";
+import { lockPath, npmrcPath } from "../checks/deps.mjs";
+import { pathPatterns, riskyPaths } from "../setup/scan.mjs";
+
+/** A key as a mark lists it: the first 16 hex digits of the line's SHA-256. */
+const KEY = /^[0-9a-f]{16}$/;
+
+/**
+ * Code and configuration that runs on the project's machines (a developer's, CI's) or holds their secrets,
+ * whatever gate reads it: a starting set the security audit reads in every project, matched as a file system
+ * that ignores case serves them (`Makeﬁle`, `.huſky/pre-commit`). DESIGN.md lists them; a project adds its own
+ * through `review.impactRequiredGlobs`.
+ */
+export const MACHINE_GLOBS = Object.freeze([
+  // An agent's setup and instructions, and a plugin's own layout: hooks and MCP servers run programs.
+  ".claude/**", ".claude-plugin/**", "hooks/**", ".mcp.json", "**/CLAUDE.md", "**/CLAUDE.local.md", "**/AGENTS.md", "**/GEMINI.md", ".gemini/**",
+  ".cursor/**", "**/.cursorrules", "**/.windsurfrules",
+  // Package scripts, package managers, their locks and pinned tools, in any ecosystem.
+  "**/package.json", "**/.npmrc", "**/.nvmrc", "**/.node-version", "**/pnpm-lock.yaml", "**/pnpm-workspace.yaml", "**/.pnpmfile.cjs", "**/yarn.lock",
+  "**/.yarnrc", "**/.yarnrc.yml", ".yarn/releases/**", ".yarn/plugins/**", "**/bun.lock", "**/bun.lockb", "**/bunfig.toml", "**/deno.json", "**/deno.jsonc",
+  "**/Cargo.lock", "**/build.rs", ".cargo/**", "**/go.sum", "**/poetry.lock", "**/Pipfile", "**/Pipfile.lock", "**/uv.lock", "**/requirements*.txt",
+  "**/setup.py", "**/pyproject.toml", "**/conftest.py", "**/.pypirc", "**/Gemfile", "**/Gemfile.lock", "**/Rakefile", "**/composer.json", "**/composer.lock",
+  "**/gradlew", "**/gradlew.bat", "**/gradle/wrapper/**", "**/build.gradle", "**/build.gradle.kts", "**/settings.gradle", "**/settings.gradle.kts",
+  "**/mvnw", "**/mvnw.cmd", "**/.mvn/**", "**/.envrc", "**/mise.toml", "**/.mise.toml", "**/.tool-versions", "**/flake.nix", "**/shell.nix",
+  "**/renovate.json", "**/.renovaterc", "**/.renovaterc.json",
+  // Git hooks.
+  ".husky/**", ".githooks/**", "lefthook.yml", "lefthook.yaml", ".lefthook.yml", ".pre-commit-config.yaml",
+  // CI and the forges' own files (workflows, actions, dependabot, CODEOWNERS).
+  ".github/**", ".gitlab/**", ".gitlab-ci.yml", ".gitea/**", ".forgejo/**", ".circleci/**", "**/Jenkinsfile", "azure-pipelines.yml", ".buildkite/**",
+  ".travis.yml", "bitbucket-pipelines.yml", ".drone.yml", ".woodpecker.yml", ".woodpecker/**", "**/CODEOWNERS",
+  // Builds, task runners and development environments.
+  "**/Dockerfile", "**/Dockerfile.*", "**/*.Dockerfile", "**/Containerfile", "**/docker-compose*.yml", "**/docker-compose*.yaml", "**/compose.yml",
+  "**/compose.yaml", "**/Makefile", "**/GNUmakefile", "**/Taskfile.yml", "**/justfile", ".devcontainer/**", ".vscode/tasks.json", ".vscode/launch.json",
+  ".vscode/settings.json", "**/*.code-workspace", ".idea/**", "scripts/**", "**/scripts/**", "script/**", "bin/**", "tools/**",
+  // Repository plumbing (filters and submodules fetch or run code), secrets and keys.
+  ".gitmodules", "**/.gitattributes", "**/.env", "**/.env.*", "**/.netrc", "**/*.pem", "**/*.key", "**/id_rsa*", "**/id_ed25519*", "**/id_ecdsa*",
+]);
+/**
+ * A name as a case-insensitive file system compares it: compatibility forms composed (`ﬁ` is `fi`, `ſ` is `s`),
+ * then full case folding (`ß` is `ss`). ASCII only needs lower case.
+ * @param {string} s
+ */
+export const folded = (s) => (/^[\x00-\x7f]*$/.test(s) ? s.toLowerCase() : s.normalize("NFKC").toUpperCase().toLowerCase());
+/** The list as one expression over folded names: one test a path. */
+const MACHINE_RE = new RegExp(MACHINE_GLOBS.map((g) => globToRegExp(folded(g)).source).join("|"));
+/** For the paths it matched: the first rule that names each, shown beside it. */
+const MACHINE_EACH = MACHINE_GLOBS.map((g) => /** @type {const} */ ([g, globToRegExp(folded(g))]));
+
+/**
+ * @typedef {{ key: string, budget: boolean, commit: string | null, mark: boolean, covers: string[] }} CycleRecord
+ *   `key`: the line's digest; `budget`: the line is a budget record (else it does not parse, and is a cycle all
+ *   the same); `commit`: the commit a budget record names; `mark`: `securityAudit: true`; `covers`: the keys a
+ *   mark lists (entries that are no key are dropped; a mark without the list covers only itself).
+ * @typedef {{
+ *   due: boolean | null,
+ *   reason: "off" | "never" | "since" | "unread",
+ *   every: number,
+ *   cycles: number,
+ *   since: number | null,
+ *   marks: number,
+ *   error?: string,
+ * }} SecurityDue
+ *   `cycles`: distinct keys; `since`: those no mark covers (null on an error); `marks`: the marks in the log.
+ */
+
+/**
+ * A record's key: the first 16 hex digits of the SHA-256 of its line, a trailing CR and a leading byte order mark
+ * dropped (a checkout with CRLF, an editor's mark: the same record).
+ * @param {Buffer} line
+ */
+export function lineKey(line) {
+  let bytes = line;
+  if (bytes.length && bytes[bytes.length - 1] === 0x0d) bytes = bytes.subarray(0, -1);
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) bytes = bytes.subarray(3);
+  return createHash("sha256").update(bytes).digest("hex").slice(0, 16);
+}
+
+/**
+ * The cycle records of a metrics log (null: no log): every budget record, and every line that does not parse;
+ * other JSON (another kind of record) is no cycle. Read as bytes, so a line that is not UTF-8 keeps its key.
+ * @param {Buffer | null} bytes
+ * @returns {CycleRecord[]}
+ */
+export function cycleRecords(bytes) {
+  /** @type {CycleRecord[]} */
+  const records = [];
+  if (!bytes) return records;
+  let start = 0;
+  while (start < bytes.length) {
+    const end = bytes.indexOf(0x0a, start);
+    const line = bytes.subarray(start, end === -1 ? bytes.length : end);
+    start = end === -1 ? bytes.length : end + 1;
+    const text = line.toString("utf8").replace(/^\uFEFF/, "");
+    if (!text.trim()) continue;
+    let o;
+    try {
+      o = JSON.parse(text);
+    } catch {
+      records.push({ key: lineKey(line), budget: false, commit: null, mark: false, covers: [] });
+      continue;
+    }
+    if (!o || typeof o !== "object" || o.kind !== "budget") continue;
+    const mark = o.securityAudit === true;
+    const covers = mark && Array.isArray(o.covers) ? o.covers.filter((/** @type {unknown} */ k) => typeof k === "string" && KEY.test(k)) : [];
+    records.push({ key: lineKey(line), budget: true, commit: typeof o.commit === "string" ? o.commit : null, mark, covers });
+  }
+  return records;
+}
+
+/**
+ * The keys no mark covers: a mark covers the keys it lists and its own.
+ * @param {CycleRecord[]} records
+ * @returns {Set<string>}
+ */
+export function uncovered(records) {
+  const covered = new Set(records.flatMap((r) => (r.mark ? [r.key, ...r.covers] : [])));
+  return new Set(records.map((r) => r.key).filter((k) => !covered.has(k)));
+}
+
+/**
+ * @param {CycleRecord[]} records
+ * @param {number} every `security.everyCycles`; 0 turns the security audit off
+ * @returns {SecurityDue}
+ */
+export function securityDue(records, every) {
+  const since = uncovered(records).size;
+  const marks = records.filter((r) => r.mark).length;
+  const base = { every, cycles: new Set(records.map((r) => r.key)).size, since, marks };
+  if (every === 0) return { due: false, reason: "off", ...base };
+  // No audit recorded yet: the first one is due now.
+  if (!marks) return { due: true, reason: "never", ...base };
+  // This cycle is the (since + 1)th no audit covered.
+  return { due: since + 1 >= every, reason: "since", ...base };
+}
+
+/**
+ * The metrics log's bytes, null when there is none; read only as a regular file reached through no symbolic link
+ * inside the repository (core/files.mjs readRegular). One that is refused or cannot be read throws, naming it.
+ * @param {string} root the repository @param {string} path absolute
+ */
+export function readLog(root, path) {
+  return readRegular(root, path);
+}
+
+/**
+ * The answer `ennyn audit` gives, from the project's metrics log.
+ * @param {string} cwd
+ * @param {{ paths: { metricsLog: string }, security: { everyCycles: number } }} config
+ * @returns {SecurityDue}
+ */
+export function auditAnswer(cwd, config) {
+  const every = config.security.everyCycles;
+  let records;
+  try {
+    records = cycleRecords(readLog(cwd, resolve(cwd, config.paths.metricsLog)));
+  } catch (e) {
+    return { due: null, reason: "unread", every, cycles: 0, since: null, marks: 0, error: /** @type {Error} */ (e).message };
+  }
+  return securityDue(records, every);
+}
+
+/**
+ * What a new mark lists: the keys of the records no earlier mark covers, each once (marks stay small, and a key
+ * is covered once).
+ * @param {CycleRecord[]} records the log before the mark, without the record it replaces
+ */
+export function markCovers(records) {
+  return [...uncovered(records)];
+}
+
+/**
+ * The machine source: every tracked file a rule of MACHINE_GLOBS names, as the file system would serve it, with
+ * the first rule that names it.
+ * @param {string[]} files
+ */
+function machine(files) {
+  const named = files.filter((f) => MACHINE_RE.test(folded(f)));
+  return { source: "machine", files: named, rules: named.map((f) => /** @type {[string, RegExp]} */ (MACHINE_EACH.find(([, re]) => re.test(folded(f))))[0]) };
+}
+
+/**
+ * The paths a security audit reads, by where they come from: the paths the project marked risky
+ * (`review.impactRequiredGlobs`), those init-scan calls risky (matched as directories, literally), the CI and
+ * lock files (by the default globs when the commit check is off, `off` then), the code that runs on the
+ * project's machines (MACHINE_GLOBS), and Ennyn's own config and metrics log, which can turn a check off or reset
+ * the audit.
+ * @param {string[]} files tracked files
+ * @param {typeof DEFAULTS} config
+ * @param {{ configRel?: string | null, logRel?: string | null }} [own] the config's and the log's paths in the repository
+ * @returns {{ source: string, files: string[], off?: true, rules?: string[] }[]} only the sources that name a tracked file;
+ *   the machine source gives the rule that named each file
+ */
+export function sensitivePaths(files, config, { configRel = null, logRel = null } = {}) {
+  const ci = config.security.ci.paths;
+  const deps = config.security.deps.paths;
+  const ciGlobs = ci.length ? ci : DEFAULTS.security.ci.paths;
+  const depsGlobs = deps.length ? deps : DEFAULTS.security.deps.paths;
+  // A risky path is a directory (or a flat file) as the scan names it: `app/[locale]/auth` is that directory, no glob.
+  const risky = new Set(riskyPaths(files, pathPatterns(config, []).re, Infinity).map((r) => r.path));
+  const underRisky = (/** @type {string} */ f) => {
+    if (risky.has(f)) return true;
+    for (let i = f.indexOf("/"); i !== -1; i = f.indexOf("/", i + 1)) if (risky.has(f.slice(0, i))) return true;
+    return false;
+  };
+  const sources = [
+    { source: "review.impactRequiredGlobs", files: files.filter((f) => matchAny(f, config.review.impactRequiredGlobs)) },
+    { source: "init-scan risky", files: risky.size ? files.filter(underRisky) : [] },
+    { source: "security.ci.paths", files: files.filter((f) => matchAny(f, ciGlobs)), ...(ci.length ? {} : { off: /** @type {const} */ (true) }) },
+    { source: "security.deps.paths", files: files.filter((f) => lockPath(f, depsGlobs) || npmrcPath(f)), ...(deps.length ? {} : { off: /** @type {const} */ (true) }) },
+    machine(files),
+    { source: "ennyn", files: [configRel, logRel].filter((p) => p !== null && files.includes(p)) },
+  ];
+  return /** @type {{ source: string, files: string[], off?: true, rules?: string[] }[]} */ (sources.filter((s) => s.files.length));
+}
