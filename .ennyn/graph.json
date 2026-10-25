@@ -45,13 +45,13 @@
     },
     {
       "id": "plugin-eval",
-      "title": "claude plugin eval cases that run the same tasks with and without the plugin and compare the outcome; each case states what is checked deterministically (commands that must and must not run, such as git push without approval or a commit with an assistant trailer; text the answer must and must not hold; an approval asked or a refusal given; a cap on tool calls), a judge only for what no check reads",
+      "title": "claude plugin eval cases that run the same tasks with and without the plugin and compare the outcome; each case states what is checked deterministically (commands that must and must not run, such as git push without approval or a commit with an assistant trailer; text the answer must and must not hold; an approval asked or a refusal given; a cap on tool calls), a judge only for what no check reads; each arm runs with only the plugin under test and proves it (a fresh directory outside any repository, CLAUDE.md, auto memory and user settings off, strict MCP, a pinned model, the plugin by --plugin-dir; a finished cell's transcript read for what the arm was given), a spending cap per arm, runs resumable per case, trial and arm, arms interleaved case by case; every deterministic check ships a passing and a failing reference that a self-test proves with no model call before any paid run; a cell that runs commands runs in a sandbox (no network beyond the model's API, an empty environment, writes only in the cell's directory); results name the date, CLI and model versions, cases, trials and cost, and say their limits",
       "status": "planned",
       "value": "high",
       "cost": "L",
       "cluster": "evidence",
       "needs": [],
-      "source": "README.md, roadmap 0.2; cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): deterministic checks carry most of the score there, a judge the rest"
+      "source": "README.md, roadmap 0.2; cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): deterministic checks carry most of the score there, a judge the rest; reviews of ponytail and i-have-adhd (open-source agent skills, MIT), 2026-10-25: each published a result its own SessionStart hook had leaked into the baseline (ponytail's 2026-06-17 run superseded; i-have-adhd's README warns of its always-on flag); i-have-adhd's agent-owned-edit case could not pass under --tools \"\" and still counted against both arms"
     },
     {
       "id": "codex-manifest",
@@ -61,20 +61,21 @@
       "cost": "M",
       "cluster": "distribution",
       "needs": [],
-      "source": "README.md, roadmap 0.2"
+      "source": "README.md, roadmap 0.2; reviews of ponytail and i-have-adhd (MIT), 2026-10-25: both ship .codex-plugin/plugin.json with .agents/plugins/marketplace.json, and Codex asks the user to trust a plugin's hooks in /hooks before they run"
     },
     {
       "id": "release-0-1-0",
-      "title": "Release v0.1.0: final read of both READMEs, CHANGELOG section, version in package.json, package-lock.json and plugin.json, tag",
+      "title": "Release v0.1.0: final read of both READMEs, CHANGELOG section, version in package.json, package-lock.json and plugin.json, tag; README and SECURITY.md name the one source to install from and what a genuine copy never holds (binaries, runtime dependencies, install scripts)",
       "status": "planned",
       "value": "high",
       "cost": "S",
       "cluster": "distribution",
       "needs": [
-        "second-project-cycles"
+        "second-project-cycles",
+        "external-audit-before-release"
       ],
       "gate": "user",
-      "source": "user plan: open source after the second-project trial; the repository stays private until then"
+      "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release)"
     },
     {
       "id": "bypass-first-parent",
@@ -373,11 +374,11 @@
         "hook-trust-audit"
       ],
       "id": "agent-setup-risk",
-      "title": "init-scan and doctor judge the project's agent setup: broad allow rules (Bash(*)), hooks that run remote scripts, MCP servers and plugins from unpinned sources, a Claude Code version below a known fix (2.1.179: plugin auto-update checkout); allow rules ranked by what they reach: read-only, local writes, many files or systems at once, and actions that leave the machine or cannot be undone (push, publish, deploy, a network fetch piped to a shell), the last warned about whenever no prompt guards them",
+      "title": "init-scan and doctor judge the project's agent setup: broad allow rules (Bash(*)), hooks that run remote scripts, MCP servers and plugins from unpinned sources, a Claude Code version below a known fix (2.1.179: plugin auto-update checkout); allow rules ranked by what they reach: read-only, local writes, many files or systems at once, and actions that leave the machine or cannot be undone (push, publish, deploy, a network fetch piped to a shell), the last warned about whenever no prompt guards them; a plugin hook that installs packages or rebuilds native modules at run time (npm install from a hook on first run or after a Node change), and an MCP server started with npx -y and no version, which fetches whatever the registry serves at each start",
       "value": "high",
       "cost": "M",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (8), user: security; 2026 plugin and hook findings (trusted channel, permission rewrites, Plugin4Shell); cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): tools carry risk tiers, the highest never run without a person's approval"
+      "source": "cycle 2026-10-24 (8), user: security; 2026 plugin and hook findings (trusted channel, permission rewrites, Plugin4Shell); cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): tools carry risk tiers, the highest never run without a person's approval; review of context-mode (MIT), 2026-10-25: hooks/ensure-deps.mjs runs npm install of a native module on first run and rebuilds it when the Node ABI changes; its README offers an MCP-only install as npx -y context-mode"
     },
     {
       "status": "planned",
@@ -866,21 +867,21 @@
         "plugin-eval"
       ],
       "id": "skill-eval-baseline",
-      "title": "A change to skills/** or agents/** replays the plugin's eval cases; a case that passed and now fails fails the commit unless its recorded outcome changes in the same commit, as test/verdicts does for gates",
+      "title": "A change to skills/** or agents/** replays the plugin's eval cases; a case that passed and now fails fails the commit unless its recorded outcome changes in the same commit, as test/verdicts does for gates; three arms (no plugin, main, the change), one case the change should help and one it could break, per-case medians compared as ratios (geometric mean, bootstrap interval, sign test over the cases)",
       "value": "high",
       "cost": "M",
       "cluster": "evidence",
-      "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): a candidate skill version is run against the suite and blocked from promotion when a passing case fails; Ennyn's method text changed in every cycle with no such check"
+      "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): a candidate skill version is run against the suite and blocked from promotion when a passing case fails; Ennyn's method text changed in every cycle with no such check; review of ponytail (MIT), 2026-10-25: every rule change had to beat the current version in a paired run, one change at a time; eight SKILL.md edits that did not move the number were not shipped"
     },
     {
       "status": "planned",
       "needs": [],
       "id": "findings-ledger",
-      "title": "A findings ledger format (one JSON line per finding: task, round, id, severity, class, source, layer that caught it, duplicate of) and ennyn convergence <ledger> computing the four counts, new classes per round and the most recurring class by catalog id, instead of a hand-written count",
+      "title": "A findings ledger format (one JSON line per finding: task, round, id, severity, class, source, layer that caught it, duplicate of) and ennyn convergence <ledger> computing the four counts, new classes per round and the most recurring class by catalog id, instead of a hand-written count; a schema and a zero-dependency validator run whenever the ledger changes (a row missing a field does not count, as finding-schema.md says in prose today); each finding carries a fingerprint from its root cause (no line, round or reviewer in it), so the same finding seen again, in another round, cycle or by another reviewer, is one row",
       "value": "medium",
       "cost": "M",
       "cluster": "metrics",
-      "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): failures are clustered by telemetry there; cycle 10 counted its 170 ledger rows with a throwaway script, though principle 6 says convergence is computed by scripts"
+      "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): failures are clustered by telemetry there; cycle 10 counted its 170 ledger rows with a throwaway script, though principle 6 says convergence is computed by scripts; review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: report-schema.json checked by validate-findings.cjs, and source-derived fingerprints that stay the same across verdicts and runs"
     },
     {
       "status": "planned",
@@ -1093,6 +1094,231 @@
       "cluster": "security",
       "title": "The deps gate judges a dependency's spec even where the root's overrides replace it (an override that swaps a git dependency for a registry version is still refused deps.git); npm applies the override and never touches git",
       "source": "cycle 2026-10-25 (11), reference-differentials data review round 3 (r3-override-replaces-git, recorded stricter)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "cycle-journal",
+      "title": "The cycle writes its state to the state dir as it goes (the HEAD it started at, the four tasks and their state, worktrees, the findings ledger's path, the review round), and the SessionStart hook gives one short line of it after compaction, so a compacted session resumes the cycle without guessing; first count from the session transcripts how often a cycle session compacts",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "cycle",
+      "source": "review of context-mode (MIT), 2026-10-25: a PreCompact hook builds a snapshot of at most 2 KB (files, tasks, decisions, errors, the last request) and SessionStart restores it after compaction; Ennyn re-injects only the conversation style after compaction, and the cycle's bypass count needs the HEAD noted at its start"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "threat-model",
+      "title": "SECURITY.md gets a table of Ennyn's principals and boundaries: the user, a contributor whose commit lands in a project, a cloned repository before the user trusts it, a package registry, the model reading project text, another plugin; each boundary with the part of Ennyn that guards it (commit-msg hook, deps check, side-copy hook, init-scan's escaping, config paths). The security reviewer and the audit name the lower-trust principal and the crossed boundary for every security finding; an effect only the user can cause on their own machine (their own environment variable, a git config they wrote) is a robustness note, not a security finding",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: 'require a boundary and result': the lower-trust principal, the accepted input, the intended control, the crossed boundary, the affected resource; same-principal authority and self-impact are not cross-boundary results. Several of Ennyn's open security and gate nodes are shapes only the user's own environment produces (ENNYN_CONFIG naming a pipe, trace2 targets in the user's git config)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "finding-refuter",
+      "title": "A serious finding (🔴/🟠) goes to a fresh agent that did not find it and tries to refute it, re-reading every quoted line and running the check again, before the author fixes it: a confirmed one is fixed; a refuted one is recorded as rejected with why; one whose deciding fact is out of reach is needs-validation, with that exact fact, no severity, and a graph node. Convergence counts the refuted ones, so fixes of findings that were not real are measured",
+      "value": "high",
+      "cost": "M",
+      "cluster": "method",
+      "source": "review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: 'the agent that checks a finding is never the agent that found it'; three verdicts: confirmed, needs_validation (an exact unresolved fact, no severity) and rejected. Ennyn's evidence: fixes introduced more defects than first drafts missed (99 against 80 in the origin project; in Ennyn's cycles 2-10, 245 fix-introduced against 266 real escapes), and fixing a finding that was not real is pure risk"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "audit-coverage-ledger",
+      "title": "The security audit keeps a coverage ledger in the repository: one unit per group of the paths ennyn audit lists, times each attack class that applies, each planned, covered (the paths read and the checks run, named), candidate (finding ids), blocked (the exact missing fact), or deferred or out of scope with why; a zero-dependency validator checks it. The next audit starts from units never covered, deferred, blocked or whose files changed since; a final critic agent reads the ledger for unmapped entry points and parallel paths; the report claims 'audited' per unit only",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "source": "review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: the coverage ledger and validate-coverage-ledger.cjs are its coverage claim ('an architecture summary, agent count, or generic \"auth reviewed\" sentence is not coverage evidence'); runs are additive and changed source is revalidated; its README: in their test runs one run found about half of the vulnerabilities that repeated runs found in total. Ennyn's metrics log marks which cycles an audit covered, not which paths"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "severity-anchors",
+      "title": "finding-schema.md anchors each severity on the demonstrated result, in Ennyn's terms (for example: a gate silently lets through what it exists to refuse; a write leaves the project; a narrow shape or a condition the user sets; a wrong message or a valid input refused with a way around it), and says: a missing second layer where the first one holds is a hardening note, listed apart, never a reason for a round; no result stronger than the one observed is claimed; with no concrete damage the severity is lower than it feels",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: severity anchors with a high/medium test (does the result fully defeat an explicit control, or only weaken it?); defense-in-depth gaps are hardening notes. Ennyn's finding schema names four severities without defining them, while the cycle's rule 'a critical or high finding left after round two is still fixed' depends on them"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "agent-context-audit",
+      "title": "A security audit takes the agent-context classes: every channel by which project text reaches the model (side-copy rules, the style, init-scan's JSON, the handoff, graph titles, reviewer probes) with who can write it, and every committed text that names a command something runs (the handoff's test and mutation commands, impact.referenceCommand, a graph module)",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25, AI-AND-LLM.md: model context, memory and tool descriptions are untrusted inputs; persistent memory poisoning (who writes what a later privileged session reads). SECURITY.md names impact.referenceCommand and the graph module as commands a commit can name, but not the handoff's commands, which skills/cycle/SKILL.md runs; the SECURITY.md line for the handoff's commands came in 8f446e0"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "external-audit-before-release",
+      "title": "Before v0.1.0, run cloudflare/security-audit-skill at a pinned commit, read in full first, on Ennyn: standard profile, scoped to what ennyn audit lists, output outside the repository, with an agent budget the user sets. Confirmed findings are fixed, needs-validation ones become nodes, and its findings are compared with what Ennyn's own audits found, as a measure of what Ennyn's method misses",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "gate": "user",
+      "source": "user, 2026-10-25: a request; review of cloudflare/security-audit-skill (MIT, c1c8a8c): a skill with no hooks or install scripts and two zero-dependency validators; its README: one run found about half of what repeated runs found"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "smallest-change-row",
+      "title": "Before writing, every core task answers a smallest-change row by command: the line of the task that asks for each new piece (a piece no line asks for is left out and named in one line), what the repository already has for it (`git grep -w` of its names and verbs), the platform, git or an installed dependency that does it, and only then new code. Never cut: validation at trust boundaries, data-loss handling, security, accessibility, anything the task asks for. The row lives in impact-table.md, read on demand, not in text every session loads",
+      "value": "high",
+      "cost": "S",
+      "cluster": "method",
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its ladder (does it need to exist? already in this codebase? the platform? an installed dependency? one line? the minimum) cut delivered code 53% against the same agent with no skill, at the same hidden-check pass rate (39 tasks x 5 runs, Opus 5.5); its rung 'already in this codebase' came from duplicated code (its issue 217); bare 'follow YAGNI' prompts dropped safety guards (98.9% and 94.4% safe against 100%), hence the never-cut list; Ennyn's source grew from 5,593 lines (cycle 5) to 12,680 (cycle 11)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "duplicate-code",
+      "title": "Copies a commit adds get a warning from the commit-msg hook that names where the other copy is: a top-level definition (function, class, exported constant) whose name, ignoring case, `_` and `-`, another tracked source file already defines, and a block of N or more meaningful lines (whitespace collapsed; blank, comment and brace lines skipped) that another tracked source file already holds. The same check runs over the cycle's whole range at its end, since rebase and cherry-pick run no commit-msg hook and parallel tasks cannot see each other's helpers; doctor counts the copies the tree holds. A helper rewritten under another name with other text is not found, and the warning says so",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its band counts a new definition whose normalized name an existing one has as a duplicate rather than reuse (hooks/band/metrics.ts, duplicateOf); here the same reading becomes a gate, with no text loaded into the session. A throwaway scan of Ennyn at d326b04 (6-line windows): 4 copied blocks in 30 source files, among them isFile in setup/hook.mjs and setup/scan.mjs and the stdin and EPIPE handling of the Claude Code hooks"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "centralize-candidates",
+      "title": "The cycle-end report lists where one decision lives in several places, read from history: a fix that adds the same lines to two or more files, and pairs of source files that change together in most commits touching either and are no declared impact.twins or review.cochange pair. The strongest becomes a graph node (one reader for that decision, or a declared twin when the copies answer different questions); copies that only look alike are left apart",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "metrics",
+      "source": "user, 2026-10-25: a request; Ennyn's most recurring class is one decision read in two places that drift (reference-differentials, ~21 findings; fence-reader-shared; the settings reader unified in d326b04), while copied text is rare (duplicate-code); ponytail (MIT): merge near-copies that must change together, no abstraction with one implementation; impact-table.md S1: two different questions mean two predicates"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "lean-audit",
+      "title": "The legacy audit also lists what the audited feature could lose: dead code, options no config sets, a hand-written reader the platform or git already gives, near-copies that must change together, each with its lines. A deletion lands in the same task only with the tests and the mutation pass green; a larger one becomes a node. Lean items are their own group: never counted as findings, never a reason for another review round",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: /ponytail-audit ranks correct, safe, holds under load, tested, fast, lean, in that order, and gives the lines that could go; Ennyn's evidence: fixing review findings made more defects than first drafts missed (99 against 80), so a cut waits for green tests, not for a round"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "graph-prune",
+      "title": "Every few cycles the plan reads the open low-value nodes no cycle has touched for N cycles and no real use has hit: each is kept with a reason or moved to done as dropped, with why; a reviewer who later finds the same limit reads it as known (review-not-checked)",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "plan",
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its first rung, 'does it need to exist?', applied to the backlog; Ennyn's open nodes grew from 33 to 89 over six cycles while done nodes grew from 30 to 52, and 54 of the 93 open ones are low value"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "code-growth-report",
+      "title": "budget --record also records the lines of production and test code the index holds (production by the rework rate's path rule), and the cycle report says the growth, with the largest files and functions and how they grew; like the instruction text, growth past a share the config names needs a reason in the report. No line-count gate: the legacy audit splits a function by job, never by its length",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: delivered lines of code are its first measure; Ennyn's source was 5,593 lines at cycle 5, 12,118 at cycle 10 and 12,680 now, and nothing reports it; the largest files now: scripts/ennyn.mjs 1,355 lines, core/git.mjs 1,196, checks/deps.mjs 1,186, checks/ci.mjs 1,017"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "review-not-checked",
+      "title": "finding-schema.md: a reviewer's report ends with `Not checked:` (what it could not read or run, or none), and a limit an open graph node or a verdict gap cell already names is reported as `known: <id>`, not as a finding, unless the change crosses it; convergence counts the known ones apart",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its review and audit end with `Not checked:` and name the parts not read; a shortcut comment that names its limit is a decision, not a finding, unless the expected load already crosses it"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "style-evidence-lines",
+      "title": "Conversation styles, en and tr: focused states an error as cause and fix only where the evidence shows the cause, else what is known and the check that would show it; a hedge that carries real uncertainty stays; after a third 'still broken' turn it stops patching, names the assumption that may be wrong and asks one diagnostic question; in both styles a reply about finished work ends with what was not checked or run and any risk. The bytes added are said in the cycle report; eval-first-cases measures them",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "review of i-have-adhd (an open-source agent skill, MIT; Ennyn's focused style follows its rules), 2026-10-25: its blind eval (Opus 4.8, 14 cases x 3 trials, evals/RESULTS.md) found one consistent regression, partial-success -0.63, a cause asserted without evidence, traced to its own 'cause, then fix' rule, which styles/focused.*.md holds too; its 'debug spiral' exception and pre-send check (a hedge that carries real uncertainty stays). ponytail (MIT): a blind judge preferred Ponytail 5's replies 110:67 over the previous version, mainly for the closing line on what was skipped or not checked"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "deferral-markers",
+      "title": "A deferral comment a commit adds (TODO, FIXME, `shortcut:`, or the words `review.deferMarkers` lists) that names no open work-graph node id gets a warning from the commit-msg hook, and doctor counts the ones the tree holds; a known limit then lives in the graph, not in a comment",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: `shortcut: <limit>, <when to upgrade>` comments and /ponytail-debt, which tags a marker with no upgrade trigger as the one that rots; Ennyn's evidence: proposals that became graph nodes got done 8 of 11 times, those without a node 0 of 5"
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "plugin-eval"
+      ],
+      "id": "eval-first-cases",
+      "title": "First eval cases, each with a passing and a failing reference: a bug reported on one caller of a shared function, counted fixed only when the shared function is (does the impact table's S1/S2 do what ponytail's root-cause rule did?); a multi-turn scenario in one resumed session (the style holds across a topic switch and after compaction, a push is asked before it runs, a third 'still broken' turn stops patching); the session's own tests run against mutants of the code it wrote (ennyn mutate), counting what they catch; an arm with the smallest-change row, judged on the lines it delivers and on the hidden safety checks, so a lean rule that drops a guard shows; the terse style is run beside normal on the same cases, so a correctness drop shows before it is offered",
+      "value": "high",
+      "cost": "M",
+      "cluster": "evidence",
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: trace-transfer, root-cause fix 1 of 6 without its rule and 6 of 6 with (Sonnet 4.6, Opus 4.8); injected bugs caught by the agent's own tests, 46% without and 66% with; i-have-adhd (MIT): evals/scenarios/persistence-topic-switch-stop, a six-turn resumed session; context-mode (MIT) README: aggressive brevity prompts have been reported to degrade coding and reasoning benchmarks (Moonshot AI on kimi-k2.5, opencode issue 20258)"
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "plugin-eval"
+      ],
+      "id": "eval-blind-judge",
+      "title": "Where no deterministic check reads a case, a judge compares the arms blind: labels permuted per case from a digest of the case key (a resumed run gives the same labels), only a marked block of the rubric reaches it, a self-test gates it (it must rank a known-good outcome above a known-bad one), and the release rule is comparative: no blocker the baseline lacks, correctness and safety within 0.1 of baseline, a higher weighted score",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "evidence",
+      "source": "review of i-have-adhd (an open-source agent skill, MIT), 2026-10-25: scripts/judge.py, evals/rubric.md; its absolute 'no blocking findings' rule could not pass while one broken case stayed in the set (evals/RESULTS.md); ponytail (MIT): its over-engineering and completeness judges must pass a self-test before they score"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "cycle-cost",
+      "title": "budget --record also records what the cycle cost: tokens (input, cache write, cache read, output), agent time and, where Claude Code wrote it, dollars, summed from this project's session transcripts since the previous record, numbers only, never text; unmeasured when no transcript is there; the cycle report gives the cost per task, per review round and per real escape",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "metrics",
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its band reads Claude Code session transcripts for cost, agent time and tokens per task, and leaves a cost empty rather than guess it (an unknown model, fast mode); Ennyn counts defects per cycle but not what a cycle or a review round costs"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "contributing-guide",
+      "title": "CONTRIBUTING.md before the public release: a change to skills/, agents/, styles/ or a hook's injected text shows eval numbers in three arms (no plugin, main, the change), with one case it should help and one it could break; hooks stay bounded, fail open and connect nowhere; scripts and tests touch nothing outside the repository and temporary directories; a pull request lists the commands it ran with their results and never claims a check it did not run; one change per pull request",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "distribution",
+      "source": "review of ponytail and i-have-adhd (open-source agent skills, MIT), 2026-10-25: ponytail merges a rule change only with a three-arm benchmark, a case it should help and one it could break, 6 or more runs; i-have-adhd: hooks fast, bounded, fail-safe and opt-in, a write outside the repository needs an opt-in and an undo path"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "uninstall-path",
+      "title": "ennyn uninstall-hook removes only a commit-msg hook Ennyn wrote (as install-hook reads it) and the state dir, and lists what stays for the user to decide: the config, graph, handoff, metrics log and the ask rules init wrote",
+      "value": "low",
+      "cost": "S",
+      "cluster": "init",
+      "source": "review of i-have-adhd and ponytail (open-source agent skills, MIT), 2026-10-25: a write outside the repository needs an easy undo path; ponytail ships scripts/uninstall.js; Ennyn's hook says only 'delete this file to remove it'"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hook-stdin-bound",
+      "title": "The Claude Code hooks read stdin to its end with no bound of their own: where the payload's pipe stays open (Windows shells) the hook waits for Claude Code's timeout and gives nothing; read with a short fallback, parse a payload led by a byte order mark, and give each hook a timeout that leaves room for a slow Node start",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its issues 443 and 790 (stdin never ended on Windows; the hook hung to the outer timeout), fixed by a one-second fallback and a BOM strip before JSON.parse; its issue 1165 raised its hook timeout to 15 s for a slow Node start"
     }
   ],
   "done": [
