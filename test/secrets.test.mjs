@@ -203,24 +203,26 @@ test("secrets round two: a line with NULs is read as text with each NUL a bounda
 });
 
 test("secrets round two: every pattern runs in time linear in the line, on long lines built to make one backtrack", () => {
-  // Growth, not a wall-clock bound: eight times the line costs about eight times the time if linear, sixty-four if
-  // quadratic (these took 19 s and more at 512 KB); the gap is wide enough for a loaded machine, where four times
-  // the line once measured 12 times (a 2026-10-24 full run). The best of five runs each.
+  // Growth, not a wall-clock bound: sixteen times the line costs about sixteen times the time if linear, 256 if
+  // quadratic (these took 19 s and more at 512 KB; a quadratic cost past about 0.6 s at 512 KB fails). Measured in CPU time, the best of five runs each: wall time
+  // counts the waits of a loaded machine, where eight times the line once measured 28.5 times (two full runs of
+  // cycle 10, at load 8 to 40), and the file alone passed.
   const fill = (/** @type {string} */ unit, /** @type {number} */ size) => unit.repeat(Math.ceil(size / unit.length)).slice(0, size);
   const best = (/** @type {string[]} */ lines) => Math.min(...[0, 1, 2, 3, 4].map(() => {
-    const t0 = performance.now();
+    const t0 = process.cpuUsage();
     scan(lines);
-    return performance.now() - t0;
+    const { user, system } = process.cpuUsage(t0);
+    return (user + system) / 1000;
   }));
-  const growth = (/** @type {(size: number) => string[]} */ make) => (best(make(512 * 1024)) + 5) / (best(make(64 * 1024)) + 5);
+  const growth = (/** @type {(size: number) => string[]} */ make) => (best(make(512 * 1024)) + 5) / (best(make(32 * 1024)) + 5);
   const hostile = [`-${P.ghs}1_eyJ`, `-${P.ghs}1_eyJa.b`, `-${P.pat}a`, ` ${P.glpat}aaaaaaaaaaaaaaaaaaaaa`, `.${P.xoxb}1-1-1`, `.${P.xoxb}${"1".repeat(50)}-`, ` ${P.sk}a`, `_${P.ant}${"a".repeat(80)}-`, ` ${P.pypi}a`, ` ${P.akia}A`, `secret_access_key=${" ".repeat(64)}`, "secret_access_key=", "\\", `${P.ghs}${"a.".repeat(20)}`];
   for (const unit of hostile) {
     const g = growth((size) => [fill(unit, size)]);
-    assert.ok(g < 24, `${JSON.stringify(unit.slice(0, 20))}: eight times the line took ${g.toFixed(1)} times as long`);
+    assert.ok(g < 48, `${JSON.stringify(unit.slice(0, 20))}: sixteen times the line took ${g.toFixed(1)} times as long`);
   }
   // A key header, then a line of backslashes the body reader takes apart.
   const g = growth((size) => [pem("PRIVATE KEY").begin, "\\".repeat(size)]);
-  assert.ok(g < 24, `header + backslashes: ${g.toFixed(1)} times`);
+  assert.ok(g < 48, `header + backslashes: ${g.toFixed(1)} times`);
 });
 
 test("secrets round two: every repeat a line meets is bounded, so a run of megabytes does not crash the hook", () => {
