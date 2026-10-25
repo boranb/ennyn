@@ -15,8 +15,8 @@ import { ends, jsonShown, shown, t, tShown, unshownEscaped } from "../core/i18n.
 import { globToRegExp, matchAny } from "../core/glob.mjs";
 import { checkCommitShape, nameShown, secretErrors, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
 import { ciCallees, ciMessages } from "../checks/ci.mjs";
-import { advisoriesOf, depsMessages, dirOf, judgeEntry, judgeLock, lockEntries, lockPath, lockText, npmrcFindings, npmrcPath, reasonText, registryOf, registryResolver } from "../checks/deps.mjs";
-import { readIfThere } from "../core/files.mjs";
+import { advisoriesOf, depsMessages, dirOf, judgeEntry, judgeLock, lockEntries, lockPath, lockText, npmrcFindings, npmrcPath, pkgJson, pkgJsonPath, pkgPathOf, reasonText, registryOf, registryResolver } from "../checks/deps.mjs";
+import { readIfThere, readRegular } from "../core/files.mjs";
 import { SecretScanner, masked, secretsOff } from "../checks/secrets.mjs";
 import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
 import { reworkRate } from "../metrics/szz.mjs";
@@ -821,21 +821,27 @@ const COMMANDS = {
     const depsRule = cfg.security.deps;
     /** @type {{ errors: string[], warnings: string[] }} */
     let deps = { errors: [], warnings: [] };
-    const stagedLocks = staged.filter((p) => lockPath(p, depsRule.paths));
+    let stagedLocks = staged.filter((p) => lockPath(p, depsRule.paths));
     // An .npmrc counts where npm reads it for the project: at the top, or next to a lock file the paths name.
     const npmrcs = depsRule.paths.length ? staged.filter(npmrcPath) : [];
     let readNpmrc = npmrcs.filter((p) => dirOf(p) === "" || stagedLocks.some((l) => dirOf(l) === dirOf(p)));
     const besideNone = npmrcs.filter((p) => !readNpmrc.includes(p));
-    if (besideNone.length) {
+    // A package.json holds dependency specs npm may fetch from (the root's, a workspace's, a linked folder's): a
+    // staged one outside node_modules brings in every lock the index holds at or above its folder.
+    const pkgs = depsRule.paths.length ? staged.filter((p) => pkgJsonPath(p) && !p.split("/").includes("node_modules")) : [];
+    const above = (/** @type {string} */ lock, /** @type {string} */ p) => dirOf(lock) === "" || dirOf(p) === dirOf(lock) || dirOf(p).startsWith(`${dirOf(lock)}/`);
+    if (besideNone.length || pkgs.length) {
       try {
-        const listed = indexNames(cwd, { env: process.env, paths: [...new Set(besideNone.map(dirOf))] }).paths;
+        const dirs = [...new Set(besideNone.map(dirOf))];
+        const listed = indexNames(cwd, { env: process.env, paths: pkgs.length || dirs.includes("") ? [] : dirs }).paths;
         readNpmrc = [...readNpmrc, ...besideNone.filter((p) => listed.some((l) => dirOf(l) === dirOf(p) && lockPath(l, depsRule.paths)))];
+        stagedLocks = [...new Set([...stagedLocks, ...listed.filter((l) => lockPath(l, depsRule.paths) && pkgs.some((p) => above(l, p)))])];
       } catch (e) {
         if (!opts.hook) throw e;
         err(t("cli.depsUnmeasured", { error: String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message).trim().split("\n")[0] }, cfg.language));
       }
     }
-    const depsPaths = [...stagedLocks, ...readNpmrc];
+    const depsPaths = [...new Set([...stagedLocks, ...stagedLocks.map((l) => (dirOf(l) ? `${dirOf(l)}/package.json` : "package.json")), ...readNpmrc])];
     const depsUnnamed = depsPaths.filter((p) => notUtf8.includes(p));
     if (depsUnnamed.length) {
       // Shown as a report shows a name: a direction mark or a control character in it is escaped.
@@ -858,7 +864,22 @@ const COMMANDS = {
       // resolved URL: read from the index, and only when such an entry asks for it.
       const beside = (/** @type {string} */ dir) => npmrcHeld(cwd, dir, process.env);
       const kinds = (/** @type {string[]} */ paths) => indexKinds(cwd, paths, { env: process.env });
-      if (versions) deps = await depsMessages(versions, depsRule, cfg.language, { beside, kinds });
+      // The package.json files a lock names in folders of their own (workspaces, links' targets), read from the
+      // index in one go.
+      const pkgRead = (/** @type {string[]} */ paths) => {
+        try {
+          const read = stagedVersions(cwd, paths, { env: process.env });
+          return new Map(paths.map((p) => {
+            const v = read.get(p);
+            return [p, { staged: pkgJson(v?.staged ?? null, v?.unread ? { key: v.unread } : undefined), head: pkgJson(v?.head ?? null, v?.headUnread ? { key: v.headUnread } : undefined) }];
+          }));
+        } catch (e) {
+          if (!opts.hook) throw e;
+          const unread = { unread: { key: "indexUnread", vars: { error: String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message).trim().split("\n")[0] } } };
+          return new Map(paths.map((p) => [p, { staged: unread, head: unread }]));
+        }
+      };
+      if (versions) deps = await depsMessages(versions, depsRule, cfg.language, { beside, kinds, pkgRead });
     }
     if (namesUnread) {
       if (!opts.hook) throw new Error(namesUnread);
@@ -920,6 +941,8 @@ const COMMANDS = {
     const entries = [];
     /** @type {(import("../checks/deps.mjs").LockEntry & { path: string })[]} */
     const links = [];
+    /** @type {(import("../checks/deps.mjs").LockEntry & { path: string })[]} */
+    const specs = [];
     /** @type {{ path: string, line: string, reason?: import("../checks/deps.mjs").Reason, kind?: "registry" | "indirect" }[]} */
     const npmrcLines = [];
     const read = (/** @type {string} */ path) => {
@@ -935,7 +958,17 @@ const COMMANDS = {
     for (const path of locks) {
       const text = read(path);
       if (text === null) continue;
-      const lock = lockEntries(text);
+      // The package.json files npm reads for dependency specs, as the work tree holds them, regular files only.
+      /** @param {string} folder @returns {import("../checks/deps.mjs").Pkg} */
+      const pkgAt = (folder) => {
+        const at = pkgPathOf(path, folder);
+        try {
+          return pkgJson(readRegular(cwd, resolve(cwd, at)));
+        } catch (e) {
+          return { unread: { key: "readFailed", vars: { error: oneLine(/** @type {Error} */ (e).message) } } };
+        }
+      };
+      const lock = lockEntries(text, { pkg: pkgAt(""), folders: pkgAt });
       if (lock.unread !== undefined) unreadFiles.push({ path, reason: lock.unread });
       else {
         // One line for each entry, however many places in the tree hold it.
@@ -945,6 +978,10 @@ const COMMANDS = {
           if (!seen.has(k)) seen.add(k), entries.push({ ...e, path });
         }
         links.push(...lock.links.map((e) => ({ ...e, path })));
+        // Dependency specs npm may fetch from: judged by their source only, never counted as entries or asked of OSV;
+        // a package.json it cannot read is unmeasured.
+        specs.push(...lock.specs.map((e) => ({ ...e, path })));
+        for (const u of lock.pkgUnread) unreadFiles.push({ path: pkgPathOf(path, u.folder), reason: u.reason });
       }
     }
     /** @type {string[]} */
@@ -992,7 +1029,7 @@ const COMMANDS = {
         return r(name);
       };
       const mine = links.filter((e) => e.path === path);
-      const r = judgeLock(entries.filter((e) => e.path === path), mine, rule, { lockDir: dir, registryFor, kinds: inRepo ? (paths) => indexKinds(cwd, paths) : undefined });
+      const r = judgeLock([...entries.filter((e) => e.path === path), ...specs.filter((e) => e.path === path)], mine, rule, { lockDir: dir, registryFor, kinds: inRepo ? (paths) => indexKinds(cwd, paths) : undefined });
       for (const [e, j] of r.judged) judged.set(e, j);
       const at = (/** @type {import("../checks/deps.mjs").LockEntry} */ e) => ({ ...e, path });
       // What the judgment could not measure and no advisory query will name: links, and reads that failed.
@@ -1018,7 +1055,7 @@ const COMMANDS = {
     const sources = new Map();
     for (const e of entries) sources.set(`${e.path}\0${e.name}@${e.version}`, new Set([...(sources.get(`${e.path}\0${e.name}@${e.version}`) ?? []), originOf(e)]));
     const where = (/** @type {(import("../checks/deps.mjs").LockEntry & { path?: string }) | null} */ e) =>
-      e ? `${e.version ? `${e.name}@${e.version}` : e.name} (${e.path}${(sources.get(`${e.path}\0${e.name}@${e.version}`)?.size ?? 0) > 1 ? `; ${originOf(e)}` : ""})` : "—";
+      e ? `${e.spec ? `${e.name} ← ${e.spec.from}` : e.version ? `${e.name}@${e.version}` : e.name} (${e.path}${(sources.get(`${e.path}\0${e.name}@${e.version}`)?.size ?? 0) > 1 ? `; ${originOf(e)}` : ""})` : "—";
     // A package.json with dependencies and no lock beside it or above it (a workspace's lock sits at its root):
     // what npm installs there is unmeasured. One it cannot read may have some.
     const hasDeps = (/** @type {string} */ dir) => {

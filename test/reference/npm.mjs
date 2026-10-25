@@ -45,7 +45,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, posix, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { DEFAULT_REGISTRY, exactVersion, judgeLock, lockEntries, pathFromLock, registryResolver, sourceForm } from "../../checks/deps.mjs";
+import { DEFAULT_REGISTRY, exactVersion, judgeLock, specTag, lockEntries, pathFromLock, registryResolver, sourceForm } from "../../checks/deps.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const RECORD = join(HERE, "npm.json");
@@ -157,7 +157,8 @@ export function claims(c) {
     } else {
       const reason = "said" in j ? j.said : j.reason;
       const verdict = "said" in j ? `said ${reason.key}` : `refused ${reason.key}`;
-      const k = reason.key;
+      // A spec's refusal names its source's reason first (`inner`), then the remedy.
+      const k = (reason.inner ?? reason).key;
       if (k === "bundled") claim = { kind: "bundled", reads: true, verdict };
       else if (k === "git" || k === "gitMoving") claim = { kind: "git", reads: true, verdict };
       else if (k === "outside") claim = { kind: link ? "link" : "path", path: OUTSIDE, reads: true, verdict };
@@ -226,8 +227,11 @@ export function compare(c) {
       out.set(k, { relation: met ? "agree" : "differs", claim: met ?? list[0], npm: n });
       continue;
     }
+    // From the registry: a tag npm fetches anew must meet a refusal (what it names, nothing checked); a version or
+    // range validateLockfile holds to the lock's version, which the entry did not satisfy, so npm ci stops there.
     if (n?.refetch) {
-      out.set(k, { relation: "agree", claim: list[0], npm: n });
+      const refused = refusing ?? list.find((x) => x.verdict.startsWith("refused"));
+      out.set(k, refused ? { relation: "agree", claim: refused, npm: n } : n.kind === "registry" && specTag(n.version) ? { relation: "differs", claim: list[0], npm: n } : { relation: "extra", claim: list[0], npm: n });
       continue;
     }
     // Two claims of one place: the one furthest from npm's reading speaks for it.

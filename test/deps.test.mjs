@@ -3,11 +3,11 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
 import { gzipSync } from "node:zlib";
-import { mkdtempSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ANSWER_LIMIT, HELD_LIMIT, advisoriesOf, depsMessages, fetchJson, lockEntries, lockPath, newEntries, npmrcFindings, judgeEntry, pathInside, reasonText, registryOf, registryResolver, registryVerdicts, shownSource, sourceForm, thresholdPercent } from "../checks/deps.mjs";
+import { ANSWER_LIMIT, HELD_LIMIT, advisoriesOf, depsMessages, fetchJson, lockEntries, lockPath, newEntries, npmrcFindings, judgeEntry, pathInside, pkgJson, pkgPathOf, folderKeys, reasonText, registryOf, registryResolver, registryVerdicts, shownSource, sourceForm, specSource, thresholdPercent } from "../checks/deps.mjs";
 import { git, indexKinds } from "../core/git.mjs";
 import { loadConfig, ConfigError } from "../core/config.mjs";
 
@@ -124,7 +124,7 @@ test("deps lock: entries under node_modules are read, links and the project's ow
   assert.equal(key(`<<<<<<< HEAD\n${text}=======\n${text}>>>>>>> side\n`), "notJson");
   assert.equal(key("[]"), "notObject");
   assert.equal(key('{"lockfileVersion": 3, "packages": []}'), "noPackages");
-  assert.deepEqual(lockEntries('{"lockfileVersion": 3}'), { entries: [], links: [] });
+  assert.deepEqual(lockEntries('{"lockfileVersion": 3}'), { entries: [], links: [], specs: [], pkgUnread: [] });
   // A dependency's bundle, as npm decides it: the parent's bundleDependencies, its bundled entries' own trees,
   // a sibling's dependency it bundles; never the inBundle flag alone.
   const bundles = lockEntries(lock({
@@ -170,7 +170,7 @@ test("deps v1: a lockfileVersion 1 lock is read from its dependency tree, an ali
   assert.deepEqual(aliased.map((e) => [e.key, e.name, e.version]), [["node_modules/alias", "@s/real", "5.0.0"]]);
   assert.deepEqual(newEntries(lockEntries(lock({ "node_modules/alias": { name: "@s/real", version: "5.0.0", resolved: "https://registry.npmjs.org/@s/real/-/real-5.0.0.tgz", integrity: "sha512-r" } })).entries ?? [], aliased), []);
   // npm 6 writes no tree for a project with no dependencies: an empty lock, not one it cannot read.
-  assert.deepEqual(lockEntries(JSON.stringify({ name: "x", version: "1.0.0", lockfileVersion: 1 })), { entries: [], links: [] });
+  assert.deepEqual(lockEntries(JSON.stringify({ name: "x", version: "1.0.0", lockfileVersion: 1 })), { entries: [], links: [], specs: [], pkgUnread: [] });
   // A version that is no exact version is the source itself, as npm converts it: lock.resolved is then ignored.
   const specs = lockEntries(JSON.stringify({ lockfileVersion: 1, dependencies: { g: { version: `git+https://github.com/o/g.git#${SHA}`, resolved: "https://registry.npmjs.org/g/-/g-1.0.0.tgz", integrity: "sha512-g" }, t: { version: "https://registry.npmjs.org/t/-/t-1.0.0.tgz", integrity: "sha512-t" }, d: { version: "file:packages/d" }, f: { version: "file:vendor/f-1.0.0.tgz", integrity: "sha512-f" }, o: { version: "1.0.0", from: "git+https://github.com/o/o.git" } } }));
   assert.deepEqual(specs.entries?.map((e) => [e.name, e.version, e.resolved, e.odd?.field ?? null]), [["g", "", `git+https://github.com/o/g.git#${SHA}`, null], ["t", "", "https://registry.npmjs.org/t/-/t-1.0.0.tgz", null], ["f", "", "file:vendor/f-1.0.0.tgz", null], ["o", "1.0.0", null, "from"]]);
@@ -183,7 +183,9 @@ test("deps bundles: npm's own bundled tree, written by npm, is bundled entry for
   const flagged = Object.entries(real.packages).filter(([, v]) => /** @type {any} */ (v).inBundle).map(([k]) => k);
   const read = lockEntries(JSON.stringify(real)).entries ?? [];
   assert.deepEqual(read.filter((e) => e.bundled).map((e) => e.key), flagged);
+  // From the registry: the root then asks for that version, or npm would fetch its own tarball anew (refetch).
   real.packages["node_modules/npm"].resolved = "https://registry.npmjs.org/npm/-/npm-10.9.7.tgz";
+  real.packages[""].dependencies.npm = "10.9.7";
   const judged = await depsMessages(new Map([["package-lock.json", { staged: Buffer.from(JSON.stringify(real)), head: Buffer.from(lock({})) }]]), rule({ online: false }), "en");
   assert.deepEqual(judged.errors, []);
   // Bundled by the parent through something it bundles at any depth: cross-spawn's own which depends on isexe,
@@ -286,6 +288,92 @@ test("deps identity: an entry is the registry's tarball of its own name and vers
 
 /** A full commit id. */
 const SHA = "0123456789abcdef0123456789abcdef01234567";
+
+test("deps specs: every dependency spec npm may fetch from that is no registry spec is judged by its source, wherever npm reads one", async () => {
+  // npm-package-arg's order: a path, an alias, git, a URL, a path again; the rest is the registry's (null).
+  assert.deepEqual(
+    ["^1.0.0", "1.0.0", "latest", "", "*", "x", "npm:a@1", "npm:@s/a@^2", " https://evil.example/a.tgz ", "github:u/a", "u/a", "vendor/a.tgz", "git+ssh://git@h.example/u/a.git", "file:vendor/a", "./vendor/a", "~/a", "/abs/a", "a.tgz", "a/b/c", "ftp://h/a.tgz", "workspace:*", ".", "..", "C:a"].map(specSource),
+    [null, null, null, null, null, null, null, null, "https://evil.example/a.tgz", "github:u/a", "u/a", "vendor/a.tgz", "git+ssh://git@h.example/u/a.git", "file:vendor/a", "file:./vendor/a", "file:~/a", "file:/abs/a", "file:a.tgz", "file:a/b/c", "ftp://h/a.tgz", "workspace:*", "file:.", "file:..", "file:C:a"],
+  );
+  const R = "https://registry.npmjs.org";
+  const reg = (/** @type {string} */ n) => ({ version: "1.0.0", resolved: `${R}/${n}/-/${n}-1.0.0.tgz`, integrity: "sha512-x" });
+  const EVIL = "https://evil.example/a.tgz";
+  /** @param {Record<string, any>} packages @param {any} [opts] */
+  const specs = (packages, opts) => {
+    const r = lockEntries(JSON.stringify({ lockfileVersion: 3, packages: { "": {}, ...packages } }), opts);
+    return (r.specs ?? []).map((e) => `${e.key} ${e.spec?.from} ${e.resolved}`).concat((r.pkgUnread ?? []).map((u) => `unread ${u.folder} ${u.reason.key}`));
+  };
+  // An entry's dependencies, optional and peer ones (not its dev ones); a registry spec is none of them.
+  assert.deepEqual(specs({ "node_modules/p": { ...reg("p"), dependencies: { a: EVIL, b: "^1" }, optionalDependencies: { c: "github:u/c" }, peerDependencies: { d: "file:../d" }, devDependencies: { e: EVIL } }, "node_modules/a": reg("a") }), [`node_modules/a node_modules/p ${EVIL}`, "node_modules/c node_modules/p github:u/c", "node_modules/d node_modules/p file:../d"]);
+  // The root's package.json, its dev dependencies and overrides at any depth ("$" names the root's own), else the lock's root entry.
+  const pkg = JSON.stringify({ devDependencies: { a: EVIL }, overrides: { p: { ".": "github:u/p", a: "u/a2" }, "b@^1": "file:../b", c: "$c", "@s/e": "$@s/e", d: "1.0.0" } });
+  assert.deepEqual(specs({ "node_modules/a": reg("a") }, { pkg }), [`node_modules/a package.json ${EVIL}`, "node_modules/a package.json u/a2", "node_modules/p package.json github:u/p", "node_modules/b package.json file:../b"]);
+  assert.deepEqual(specs({ "": { dependencies: { a: EVIL } } }), [`node_modules/a package.json ${EVIL}`]);
+  assert.deepEqual(specs({ "": { dependencies: { a: EVIL } } }, { pkg: null }), [`node_modules/a package.json ${EVIL}`]);
+  // A folder the lock names outside node_modules (a workspace, a link's target): its package.json as npm reads it from disk, else the lock's entry.
+  const folder = { "node_modules/w": { resolved: "packages/w", link: true }, "packages/w": { name: "w", version: "1.0.0", dependencies: { a: "^1" } }, "node_modules/a": reg("a") };
+  assert.deepEqual(specs(folder), []);
+  assert.deepEqual(specs(folder, { folders: (/** @type {string} */ k) => (k === "packages/w" ? JSON.stringify({ devDependencies: { a: EVIL } }) : undefined) }), [`node_modules/a packages/w ${EVIL}`]);
+  // One that cannot be read is said so, never read as no dependencies; a byte order mark is no problem.
+  assert.deepEqual(specs(folder, { folders: () => "{", pkg: { unread: { key: "symlink" } } }), ["unread  symlink", "unread packages/w notJson"]);
+  assert.deepEqual(specs({}, { pkg: "[]" }), ["unread  notObject"]);
+  assert.deepEqual(specs({}, { pkg: `\uFEFF${JSON.stringify({ dependencies: { a: EVIL } })}` }), [`node_modules/a package.json ${EVIL}`]);
+  assert.deepEqual([pkgJson(null), pkgJson(Buffer.from("\uFEFF{}")), pkgJson(Buffer.from([0x7b, 0xe9, 0x7d])), pkgJson(Buffer.from("{}"), { key: "symlink" })], [null, "{}", { unread: { key: "notText" } }, { unread: { key: "symlink" } }]);
+  // A version 1 lock: `requires` are an entry's dependencies.
+  assert.equal(lockEntries(JSON.stringify({ lockfileVersion: 1, dependencies: { p: { version: "1.0.0", resolved: `${R}/p/-/p-1.0.0.tgz`, requires: { a: "github:u/a" } } } })).specs?.length, 1);
+  // Judged as a resolved is, its paths read from the folder that asks: git refused, a listed tarball proven, a path inside proven.
+  const judge = (/** @type {Record<string, any>} */ packages, /** @type {any} */ opts) => (lockEntries(JSON.stringify({ lockfileVersion: 3, packages: { "": {}, ...packages } }), opts).specs ?? []).map((e) => { const j = /** @type {any} */ (judgeEntry(e, rule({}), {})); return "inside" in j ? `inside ${j.inside}` : Object.keys(j)[0] === "refuse" ? `refused ${(j.reason.inner ?? j.reason).key}` : Object.keys(j)[0]; });
+  assert.deepEqual(judge({ "node_modules/p": { ...reg("p"), dependencies: { a: "github:u/a", b: `${R}/b/-/b-1.0.0.tgz`, c: EVIL } } }), ["refused gitMoving", "listed", "refused from"]);
+  assert.deepEqual(judge(folder, { folders: () => JSON.stringify({ dependencies: { a: "file:../a", b: "file:../../../b" } }) }), ["inside packages/a", "refused outside"]);
+
+  // A spec its source proves is no lock entry: nothing of it is asked of a registry, no integrity is asked of it.
+  const proven = await depsMessages(new Map([["package-lock.json", { staged: Buffer.from(lock({})), head: Buffer.from(lock({})) }], ["package.json", { staged: Buffer.from(JSON.stringify({ dependencies: { a: `${R}/a/-/a-1.0.0.tgz` } })), head: Buffer.from("{}") }]]), rule({ online: false }), "en");
+  assert.deepEqual(proven.errors, []);
+  // Said as who asks for what: a package.json read beside the lock, one that cannot be read refused, then said.
+  const asked = await depsMessages(new Map([["package-lock.json", { staged: Buffer.from(lock({})), head: Buffer.from(lock({})) }], ["package.json", { staged: Buffer.from(JSON.stringify({ dependencies: { a: EVIL } })), head: Buffer.from("{}") }]]), rule({ online: false }), "en");
+  assert.match(asked.errors.join("\n"), /package-lock\.json: 1 new entries come from a source the check cannot prove.*a ← package\.json \(from https:\/\/evil\.example/);
+  const unreadable = (/** @type {Buffer | null} */ head) => depsMessages(new Map([["package-lock.json", { staged: Buffer.from(lock({})), head: Buffer.from(lock({})) }], ["package.json", { staged: Buffer.from([0x7b, 0xe9, 0x7d]), head }]]), rule({ online: false }), "en");
+  assert.match((await unreadable(Buffer.from("{}"))).errors.join("\n"), /^package-lock\.json: npm reads package\.json \(not UTF-8 text\) for the dependencies it fetches, and the check could not/m);
+  const still = await unreadable(Buffer.from([0x7b, 0xe9, 0x7d]));
+  assert.deepEqual(still.errors, []);
+  assert.match(still.warnings.join("\n"), /package-lock\.json was not checked against package\.json \(not UTF-8 text\)/);
+  // A tag over an entry from no registry URL (a link, a file, git, none): npm fetches the tag from the registry. A
+  // version, a range, an alias with none (`*`) or a tag over an entry from a URL is the registry's, held by validateLockfile.
+  const tagged = (/** @type {string} */ spec, /** @type {any} */ entry) => specs({ "": { dependencies: { a: spec } }, "node_modules/a": entry, "vendor/a": { name: "a", version: "1.0.0" } });
+  const fileEntry = { version: "1.0.0", resolved: "file:vendor/a-1.0.0.tgz" };
+  assert.deepEqual(
+    [tagged("latest", fileEntry), tagged("npm:evilpkg@latest", { resolved: "vendor/a", link: true }), tagged("next", { version: "1.0.0" }), tagged("latest", reg("a")), tagged("npm:evilpkg", fileEntry), tagged("^1.0.0", fileEntry), tagged("npm:evilpkg@^1", fileEntry), tagged("V2", fileEntry), tagged("x", fileEntry), tagged("x.1", fileEntry), tagged("v1", fileEntry)],
+    [["node_modules/a package.json latest"], ["node_modules/a package.json npm:evilpkg@latest"], ["node_modules/a package.json next"], [], [], [], [], ["node_modules/a package.json V2"], [], [], []],
+  );
+  const [tagEntry] = lockEntries(JSON.stringify({ lockfileVersion: 3, packages: { "": { dependencies: { a: "latest" } }, "node_modules/a": fileEntry } })).specs ?? [];
+  assert.equal(reasonText(/** @type {any} */ (judgeEntry(tagEntry, rule({}), {})).reason, "en"), "latest is a tag, and the lock's entry there comes from no registry URL (file:vendor/a-1.0.0.tgz): npm fetches the tag from the registry instead, which nothing here checks; write the lock again with npm");
+  // `$` names the root's own spec in overrides only; in dependencies it is a spelling like any other.
+  assert.deepEqual(specs({ "": { dependencies: { a: "$x/a.tgz" } } }), ["node_modules/a package.json $x/a.tgz"]);
+  // sources may name a spec exactly as written, and a refusal says so; a bundled entry's specs are judged too
+  // (npm asks a git one for its manifest, cloning it: recorded).
+  const gitSpec = lockEntries(JSON.stringify({ lockfileVersion: 3, packages: { "": { dependencies: { y: "github:x/y" } } } })).specs ?? [];
+  assert.deepEqual(Object.keys(judgeEntry(gitSpec[0], rule({ sources: ["github:x/y"] }), {})), ["sourced", "sealed"]);
+  assert.equal(reasonText(/** @type {any} */ (judgeEntry(gitSpec[0], rule({}), {})).reason, "en"), "github:x/y: not pinned to a full commit; or list this exact spec, github:x/y, in security.deps.sources");
+  assert.deepEqual(specs({ "node_modules/p": { ...reg("p"), bundleDependencies: ["c"], dependencies: { c: "*" } }, "node_modules/p/node_modules/c": { version: "1.0.0", inBundle: true, dependencies: { d: "github:u/d" } } }), ["node_modules/d node_modules/p/node_modules/c github:u/d"]);
+  // A folder outside the lock's own is none npm reads; a path to one is read as the repository's.
+  assert.deepEqual(folderKeys(JSON.stringify({ packages: { "": {}, "packages/w": {}, "../shared": {}, "./a/../b": {}, "node_modules/x": {}, "node_modules/l": { link: true }, "vendor/l": {} } })), ["packages/w", "./a/../b", "vendor/l"]);
+  assert.deepEqual([pkgPathOf("app/package-lock.json", "./a/../b"), pkgPathOf("package-lock.json", "")], ["app/b/package.json", "package.json"]);
+  assert.deepEqual(specs({ "node_modules/s": { resolved: "../shared", link: true }, "../shared": { name: "s", version: "1.0.0", dependencies: { a: EVIL } } }, { folders: () => JSON.stringify({ dependencies: { a: EVIL } }) }), []);
+  // The folders' package.json files are read in one go, both sides together.
+  /** @type {string[][]} */
+  const batches = [];
+  const ws = lock({ "node_modules/w1": { resolved: "packages/w1", link: true }, "packages/w1": { name: "w1", version: "1.0.0" }, "node_modules/w2": { resolved: "packages/w2", link: true }, "packages/w2": { name: "w2", version: "1.0.0" } });
+  const batched = await depsMessages(new Map([["package-lock.json", { staged: Buffer.from(ws), head: Buffer.from(lock({})) }]]), rule({ online: false }), "en", { pkgRead: (paths) => (batches.push(paths), new Map(paths.map((p) => [p, { staged: p === "packages/w2/package.json" ? JSON.stringify({ dependencies: { a: EVIL } }) : "{}", head: null }]))) });
+  assert.deepEqual(batches, [["packages/w1/package.json", "packages/w2/package.json"]]);
+  assert.match(batched.errors.join("\n"), /a ← packages\/w2/);
+  // An override does not lift a refusal, and the refusal says so.
+  const over = await depsMessages(new Map([["package-lock.json", { staged: Buffer.from(lock({ "node_modules/p": { ...reg("p"), dependencies: { x: "github:u/x" } }, "node_modules/x": reg("x") })), head: Buffer.from(lock({})) }], ["package.json", { staged: Buffer.from(JSON.stringify({ dependencies: { p: "*" }, overrides: { x: "1.0.0" } })), head: Buffer.from("{}") }]]), rule({ online: false }), "en");
+  assert.match(over.errors.join("\n"), /^package-lock\.json: an override in package\.json does not lift these refusals \(x ← node_modules\/p\)/m);
+  // New against HEAD as a place and who asks: the same spec asked by another package is new.
+  const byP = lockEntries(JSON.stringify({ lockfileVersion: 3, packages: { "": {}, "node_modules/p": { ...reg("p"), dependencies: { a: "github:u/a" } }, "node_modules/a": reg("a") } })).specs ?? [];
+  const byQ = lockEntries(JSON.stringify({ lockfileVersion: 3, packages: { "": {}, "node_modules/q": { ...reg("q"), dependencies: { a: "github:u/a" } }, "node_modules/a": reg("a") } })).specs ?? [];
+  assert.deepEqual([newEntries(byP, byP).length, newEntries(byQ, byP).length], [0, 1]);
+});
 
 test("deps verdicts by source: an entry passes only on a reading with one meaning; every other spelling npm reads is refused, whatever npm makes of it", () => {
   const r = rule({ registries: { "https://registry.npmjs.org": null, "https://corp.example/npm": null }, sources: [`git+ssh://git@github.com/o/listed.git#${SHA}`, "git+ssh://git@github.com/o/moving.git#main", "https://github.com/o/r.tgz", "https://mirror.example/x-1.0.0.tgz", "file:../shared/x.tgz", "../dir", "FILE:../y"] });
@@ -1144,6 +1232,52 @@ test("deps command: known advisories with every place that holds them, install s
   const none = await cli(["deps"], off.dir);
   assert.equal(none.status, 1);
   assert.match(none.stdout, /advisories unmeasured for 1 entries \(security\.deps\.advisories is empty\)/);
+});
+
+test("deps specs through the hook and the command: every package.json a lock names is read, and a staged one brings in that lock", async () => {
+  const osv = await osvServer();
+  try {
+    const r = repo(osv.origin, { online: false });
+    const pkg = (/** @type {Record<string, unknown>} */ more) => `${JSON.stringify({ name: "demo", version: "1.0.0", ...more })}\n`;
+    const top = pkg({ dependencies: { minimist: "^1.2.0" }, workspaces: ["packages/w"] });
+    r.put({ "package-lock.json": lock({ ...entry(osv.origin, "minimist", "1.2.8"), "node_modules/w": { resolved: "packages/w", link: true }, "packages/w": { name: "w", version: "1.0.0" } }), "package.json": top, "packages/w/package.json": pkg({}) });
+    r.commit();
+    // The root's package.json alone: the lock beside it is read with it.
+    r.put({ "package.json": pkg({ dependencies: { minimist: "https://evil.example/m.tgz" }, workspaces: ["packages/w"] }) });
+    const root = await r.check();
+    assert.equal(root.status, 1);
+    assert.match(root.stderr, /minimist ← package\.json \(from https:\/\/evil\.example/);
+    // A workspace's package.json alone: the lock that names its folder is read with it, from the index.
+    r.put({ "package.json": top, "packages/w/package.json": pkg({ dependencies: { minimist: "github:u/minimist" } }) });
+    const ws = await r.check();
+    assert.equal(ws.status, 1);
+    assert.match(ws.stderr, /minimist ← packages\/w \(github:u\/minimist: not pinned to a full commit/);
+    // A registry spec goes to the registry, which the .npmrc rule judges.
+    r.put({ "packages/w/package.json": pkg({ dependencies: { minimist: "^1.2.0" } }) });
+    assert.equal((await r.check()).status, 0);
+    // The command reads them from the work tree, as regular files.
+    writeFileSync(join(r.dir, "packages/w/package.json"), pkg({ dependencies: { minimist: "https://evil.example/m.tgz" } }));
+    const cmd = await cli(["deps"], r.dir);
+    assert.equal(cmd.status, 1);
+    assert.match(cmd.stdout, /^✗ minimist ← packages\/w \(package-lock\.json\) comes from a source the check cannot prove: from https:\/\/evil\.example/m);
+    rmSync(join(r.dir, "packages/w/package.json"));
+    symlinkSync("../../package.json", join(r.dir, "packages/w/package.json"));
+    const linked = await cli(["deps"], r.dir);
+    assert.equal(linked.status, 1);
+    assert.match(linked.stdout, /packages\/w\/package\.json.*could not be read/);
+    rmSync(join(r.dir, "packages/w/package.json"));
+    writeFileSync(join(r.dir, "packages/w/package.json"), pkg({}));
+    // A spec a source proves is judged for its source only: no entry, nothing asked of OSV, nothing unmeasured.
+    writeFileSync(join(r.dir, "packages/w/package.json"), pkg({ dependencies: { v: "file:../../vendor/v" } }));
+    mkdirSync(join(r.dir, "vendor/v"), { recursive: true });
+    writeFileSync(join(r.dir, "vendor/v/package.json"), pkg({}));
+    git(["add", "-A"], { cwd: r.dir });
+    const proven = await cli(["deps"], r.dir);
+    assert.match(proven.stdout, /^lock files: 1 · entries: 1 · advisories: 0 · install scripts: 0 · refused: 0 · unmeasured: 0$/m);
+    writeFileSync(join(r.dir, "packages/w/package.json"), pkg({}));
+  } finally {
+    await osv.close();
+  }
 });
 
 test("deps command: a source no list names, git and a link out of the repository are problems; an entry with no resolved is asked about as the registry npm asks", async () => {

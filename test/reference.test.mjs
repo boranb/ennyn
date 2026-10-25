@@ -47,7 +47,7 @@ test("reference: the npm record names its npm and holds well-formed cells, each 
   // The record holds what the comparison needs on each side: npm installing something the gate refuses, reads
   // otherwise, or agrees with, at listed, inside, git and bundled places.
   const seen = new Set(rec.cells.flatMap((c) => [...compare(c).values()].map((r) => `${r.relation} ${r.claim?.verdict.split(" ")[0] ?? "-"} ${r.npm?.kind ?? "-"}`)));
-  for (const want of ["agree listed remote", "agree listed registry", "agree inside file", "agree inside directory", "agree inside link", "agree refused git", "agree said bundled", "agree sourced git", "unread refused remote", "unread said registry", "extra listed -", "unmeasured listed -", "unmeasured listed remote"]) assert.ok(seen.has(want), want);
+  for (const want of ["agree listed remote", "agree listed registry", "agree inside file", "agree inside directory", "agree inside link", "agree refused git", "agree said bundled", "agree sourced git", "unread refused remote", "unread said registry", "extra listed -", "unmeasured listed -", "unmeasured listed remote", "agree spec remote", "stricter spec remote"]) assert.ok(seen.has(want), want);
 });
 
 test("reference control: the judge finds a reading that moved", () => {
@@ -109,4 +109,9 @@ test("reference control: each reading is compared in full: the URL, the origin, 
     npm: { ci: "ok", at: { "node_modules/a": { kind: "remote", url: "https://evil.example/a.tgz", spec: "a@https://evil.example/a.tgz" } } },
   };
   assert.match(moves([twice]).join("\n"), /twice node_modules\/a: differs, recorded agree — gate listed/);
+  // npm fetching a tag anew from the registry, which the gate lets through: a hole; a version or range there npm ci refuses (extra).
+  const tagged = { ...listed.c, npm: { ...listed.c.npm, at: { ...listed.c.npm.at, [listed.place]: { kind: "registry", name: "evilpkg", version: "latest", registry: "https://registry.npmjs.org/", spec: "a@npm:evilpkg@latest", refetch: true } } } };
+  assert.match(moves([tagged]).join("\n"), /differs, recorded agree/);
+  const ranged = { ...listed.c, npm: { ...listed.c.npm, at: { ...listed.c.npm.at, [listed.place]: { kind: "registry", name: "a", version: "^2.0.0", registry: "https://registry.npmjs.org/", spec: "a@^2.0.0", refetch: true } } } };
+  assert.match(moves([ranged]).join("\n"), /extra, recorded agree/);
 });

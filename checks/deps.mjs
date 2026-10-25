@@ -28,13 +28,15 @@
  */
 
 import { isUtf8 } from "node:buffer";
+import { posix } from "node:path";
 import { matchAny } from "../core/glob.mjs";
 import { t, tShown } from "../core/i18n.mjs";
 
 /**
- * @typedef {{ key: string, name: string, version: string, resolved: string | null, integrity: string | null, scripts: boolean, bundled: boolean, odd?: { field: string, kind: string, raw?: string } | null }} LockEntry
+ * @typedef {{ key: string, name: string, version: string, resolved: string | null, integrity: string | null, scripts: boolean, bundled: boolean, odd?: { field: string, kind: string, raw?: string } | null, spec?: { from: string, dir: string, raw?: string, tag?: string, overridden?: true } }} LockEntry
+ *   `spec`: a dependency's spec npm may fetch from, as a `resolved` (specsOf), not the lock's entry
  * @typedef {{ paths: string[], cooldownDays: number, minShare: number, minWeekly: number, allow: string[], allowScripts: string[], sources: string[], online: boolean, timeout: number, registries: Record<string, string | null>, advisories: string, advisoryRegistries: string[] }} DepsRule
- * @typedef {{ key: string, vars?: Record<string, string | number> }} Reason why something was not measured: `deps.reason.<key>`
+ * @typedef {{ key: string, vars?: Record<string, string | number>, inner?: Reason }} Reason why something was not measured: `deps.reason.<key>`, after `inner`'s
  * @typedef {{ held: number }} Meter the answer bytes held at once in one run
  */
 
@@ -46,8 +48,8 @@ export const ANSWER_LIMIT = 160 * 1024 * 1024;
 /** The answer bytes one run holds at once, whatever the number of requests: memory stays bounded. */
 export const HELD_LIMIT = 256 * 1024 * 1024;
 
-/** @param {Reason} r @param {string} lang */
-export const reasonText = (r, lang) => t(`deps.reason.${r.key}`, r.vars ?? {}, lang);
+/** A reason as shown, after its `inner` one. @type {(r: Reason, lang: string) => string} */
+export const reasonText = (r, lang) => (r.inner ? `${reasonText(r.inner, lang)}; ${t(`deps.reason.${r.key}`, r.vars ?? {}, lang)}` : t(`deps.reason.${r.key}`, r.vars ?? {}, lang));
 
 /**
  * Whether npm reads `path` as one of the lock files `paths` names. A case-insensitive file system (macOS,
@@ -60,6 +62,27 @@ export function lockPath(path, paths) {
 
 /** An `.npmrc`, in any case: the caller decides which ones npm reads for the project. @param {string} path */
 export const npmrcPath = (path) => /(^|\/)\.npmrc$/i.test(path);
+
+/** A package.json, as npm names it (the root's dependencies beside a lock). @param {string} path */
+export const pkgJsonPath = (path) => /(^|\/)package\.json$/.test(path);
+
+/** The package.json of a folder a lock at `path` names ("" its own), as a repository path. @param {string} path @param {string} folder */
+export const pkgPathOf = (path, folder) => posix.normalize([dirOf(path), folder, "package.json"].filter(Boolean).join("/"));
+
+/**
+ * The folders a lock names whose package.json npm reads (specsOf): `packages` keys outside node_modules, no link,
+ * none outside the lock's own folder; none from a lock that does not parse.
+ * @param {string} text
+ */
+export function folderKeys(text) {
+  try {
+    const p = JSON.parse(text)?.packages;
+    if (!p || typeof p !== "object" || Array.isArray(p)) return [];
+    return Object.keys(p).filter((k) => k && !k.replace(/\\/g, "/").includes("node_modules/") && p[k]?.link !== true && !/^(?:\.\.(?:\/|$)|\/)/.test(posix.normalize(k.replace(/\\/g, "/"))));
+  } catch {
+    return [];
+  }
+}
 
 /** The directory of a repository path, "" at the top. @param {string} path */
 export const dirOf = (path) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
@@ -203,6 +226,154 @@ function bundledIn(packages, { reconstruct }) {
   return (key) => bundler.has(key);
 }
 
+/** The dependency fields npm reads of a package: a top one (the root, a workspace folder) also its dev dependencies. */
+const EDGE_FIELDS = ["dependencies", "optionalDependencies", "peerDependencies"];
+const TOP_EDGE_FIELDS = [...EDGE_FIELDS, "devDependencies"];
+
+/**
+ * A spec as the source npm would fetch it from, judged as a `resolved` is (npm-package-arg's order: a path, an
+ * alias, git, a URL, a path again): null for a registry spec (a version, range or tag, an `npm:` alias, which npm
+ * takes only to a registry name), which goes to the registry the configured `.npmrc` names (registryResolver,
+ * npmrcFindings) and whose version validateLockfile holds npm ci to; else the spec trimmed (npm trims it), a path
+ * written as `file:`.
+ * @param {string} spec
+ */
+export function specSource(spec) {
+  const s = spec.trim();
+  if (/^npm:/i.test(s)) return null;
+  if (/^file:/i.test(s)) return s;
+  if (/^(?:\.|~\/|\/|[a-zA-Z]:)/.test(s)) return `file:${s}`;
+  if (gitLooking(s) || /^[a-z][a-z0-9+.-]*:/i.test(s)) return s;
+  if (/[\\/]/.test(s) || TARBALL.test(s)) return `file:${s}`;
+  return null;
+}
+
+/**
+ * Whether a registry spec is a tag, as npm-package-arg tells one from a version or range without asking semver: a
+ * word that starts with a letter, not `v` and a digit (a loose version) nor an x-range.
+ * @param {string} s
+ */
+export const specTag = (s) => /^[A-Za-z][\w.~-]*$/.test(s) && !/^v\d/.test(s) && !/^[xX](?:\.(?:[xX*]|\d+))*$/.test(s);
+
+/**
+ * A package.json as npm reads it, from its bytes, for the hook and `ennyn deps` alike: its text (UTF-8, a byte
+ * order mark dropped: lockText), null when there is none, or why it cannot be read (`unread`, the reader's reason:
+ * a link, a file past the limit; `notText`).
+ * @param {Buffer | null} bytes @param {Reason} [unread] @returns {Pkg}
+ */
+export function pkgJson(bytes, unread) {
+  if (unread) return { unread };
+  if (bytes === null) return null;
+  const text = lockText(bytes);
+  return text === null ? { unread: { key: "notText" } } : text;
+}
+
+/**
+ * Every dependency spec npm may fetch from that is no registry spec (specSource), wherever npm reads one: each
+ * lock entry's dependencies, optional and peer dependencies; the root's package.json (`root`), with its overrides
+ * at any depth, else, with none, the lock's root entry; and the package.json of each folder the lock names outside
+ * node_modules (a workspace, a link's target), which npm reads from disk (`folders`), else the lock's entry for
+ * it. The gate does not decide whether npm keeps the entry a spec resolves to (arborist's dep-valid.js): each such
+ * spec is judged by its own source, as an entry keyed at the place it names with `spec` (`from`: what asks, `dir`:
+ * the folder its paths are read from). A package.json given that cannot be read is `pkgUnread`, never no
+ * dependencies.
+ * @param {Record<string, any>} packages lock keys, or a version 1 tree as lockEntries builds it
+ * @param {Pkg} root @param {(key: string) => Pkg} folders
+ * A registry spec that is a tag, over an entry resolved from no URL, is such an entry too (`spec.tag`: what the lock
+ * holds there), which judgeEntry refuses: npm fetches the tag from the registry.
+ * @returns {{ specs: LockEntry[], pkgUnread: { folder: string, reason: Reason }[] }}
+ * @typedef {string | null | undefined | { unread: Reason }} Pkg a package.json as read (pkgJson): text, none (null), not read (undefined), or why it could not be
+ */
+function specsOf(packages, root, folders) {
+  const isObj = (/** @type {any} */ x) => x !== null && typeof x === "object" && !Array.isArray(x);
+  const has = (/** @type {string} */ k) => k !== "" && Object.hasOwn(packages, k) && isObj(packages[k]);
+  const parentOf = (/** @type {string} */ key) => {
+    const at = key.lastIndexOf("/node_modules/");
+    return at !== -1 ? key.slice(0, at) : key.startsWith("node_modules/") ? "" : null;
+  };
+  const outside = (/** @type {string} */ k) => /^(?:\.\.(?:\/|$)|\/)/.test(posix.normalize(k.replace(/\\/g, "/")));
+  /** The place a name resolves to from a folder, as node resolution walks; where none, the top's. */
+  const placeOf = (/** @type {string} */ from, /** @type {string} */ name) => {
+    for (let at = from; ; ) {
+      const k = at === "" ? `node_modules/${name}` : `${at}/node_modules/${name}`;
+      if (has(k)) return k;
+      if (at === "") return k;
+      at = parentOf(at) ?? "";
+    }
+  };
+  /** @type {Map<string, LockEntry>} */
+  const out = new Map();
+  /** @type {{ folder: string, reason: Reason }[]} */
+  const pkgUnread = [];
+  /** @type {Set<string>} */
+  const overridden = new Set();
+  /** @param {string} from @param {string} dir @param {string} name @param {unknown} spec */
+  const add = (from, dir, name, spec) => {
+    if (typeof spec !== "string") return;
+    const source = specSource(spec);
+    const key = placeOf(dir, name);
+    const by = from === "" ? "package.json" : from;
+    if (source !== null) {
+      out.set(`${key}\0${by}\0${source}`, { key, name, version: "", resolved: source, integrity: null, scripts: false, bundled: false, odd: null, spec: { from: by, dir, raw: spec.trim() } });
+      return;
+    }
+    // A registry spec goes to the configured registry, and validateLockfile holds a version or range to the lock's
+    // version. A tag holds only an entry resolved from a URL (dep-valid.js): over a link, a file, git or none npm
+    // fetches the tag from the registry, whatever version it names, the alias's package too.
+    const s = spec.trim();
+    // An alias with no spec of its own is `*` (recorded: npm keeps a file entry under `npm:x`).
+    const sub = /^npm:/i.test(s) ? (s.lastIndexOf("@") > 4 ? s.slice(s.lastIndexOf("@") + 1) : "*") : s;
+    const held = has(key) ? packages[key].resolved : undefined;
+    if (has(key) && specTag(sub) && !(typeof held === "string" && /^https?:\/\//i.test(held))) {
+      out.set(`${key}\0${by}\0${s}`, { key, name, version: "", resolved: s, integrity: null, scripts: false, bundled: false, odd: null, spec: { from: by, dir, tag: typeof held === "string" && held ? held : "—" } });
+    }
+  };
+  /** @param {string} from @param {Record<string, any>} pkg @param {string[]} fields */
+  const edges = (from, pkg, fields) => {
+    for (const field of fields) if (isObj(pkg[field])) for (const [name, spec] of Object.entries(pkg[field])) add(from, from, name, spec);
+  };
+  /** overrides: a key is a name, with a spec after its last `@`; a value a spec, or more overrides with "." for its own. */
+  const overrides = (/** @type {any} */ o) => {
+    if (!isObj(o)) return;
+    for (const [k, v] of Object.entries(o)) {
+      const at = k.lastIndexOf("@");
+      const name = at > 0 ? k.slice(0, at) : k;
+      if (isObj(v)) {
+        if (k !== ".") overrides(v);
+        if (typeof v["."] === "string" && !v["."].startsWith("$")) add("", "", name, v["."]);
+      } else if (k !== "." && !(typeof v === "string" && v.startsWith("$"))) add("", "", name, v);
+      // An override replaces what it names, which the check does not model: its refusals say so.
+      if (k !== ".") overridden.add(name);
+    }
+  };
+  /** A package.json as npm reads it: the dependencies of `from`, or why it cannot be read. @param {string} from @param {Pkg} text @param {any} fallback */
+  const top = (from, text, fallback) => {
+    if (text !== null && typeof text === "object") return void pkgUnread.push({ folder: from, reason: text.unread });
+    if (typeof text !== "string") {
+      if (isObj(fallback)) edges(from, fallback, TOP_EDGE_FIELDS);
+      return;
+    }
+    let pkg;
+    try {
+      pkg = JSON.parse(text.replace(/^\uFEFF/, ""));
+    } catch {
+      return void pkgUnread.push({ folder: from, reason: { key: "notJson" } });
+    }
+    if (!isObj(pkg)) return void pkgUnread.push({ folder: from, reason: { key: "notObject" } });
+    edges(from, pkg, TOP_EDGE_FIELDS);
+    if (from === "") overrides(pkg.overrides);
+  };
+  top("", root, packages[""]);
+  for (const k of Object.keys(packages)) {
+    // npm reads no folder outside the lock's own. A bundled entry's specs are read too: npm asks a git one for
+    // its manifest, cloning it (recorded), though it installs the bundle from its parent's tarball.
+    if (!has(k) || packages[k].link === true || outside(k)) continue;
+    if (parentOf(k) === null) top(k, folders(k), packages[k]);
+    else edges(k, packages[k], EDGE_FIELDS);
+  }
+  return { specs: [...out.values()].map((e) => (overridden.has(e.name) && e.spec ? { ...e, spec: { ...e.spec, overridden: true } } : e)), pkgUnread };
+}
+
 /**
  * The installed packages a lock file names, read as npm 10 reads it: `packages` whenever it is there, whatever
  * `lockfileVersion` says, every entry under a `node_modules/` path (a `\` read as `/`, as npm on Windows reads
@@ -210,10 +381,12 @@ function bundledIn(packages, { reconstruct }) {
  * it records no install scripts), converted as npm converts it (v1Entry); neither is an empty lock. `bundled`
  * as npm decides it (bundledIn). A lock that is not JSON (a merge left its conflict markers), not an object, or whose
  * `packages` is not an object (npm installs nothing from it) is `unread`.
- * @param {string} text
- * @returns {{ entries: LockEntry[], links: LockEntry[], v1?: boolean, unread?: undefined } | { unread: Reason, entries?: undefined, links?: undefined, v1?: undefined }}
+ * `specs` and `pkgUnread` (specsOf): the dependency specs npm may fetch from that are no registry spec, from the
+ * lock, the root's package.json (`pkg`, as the commit holds it) and each folder's (`folders`, by its lock key).
+ * @param {string} text @param {{ pkg?: Pkg, folders?: (key: string) => Pkg }} [opts]
+ * @returns {{ entries: LockEntry[], links: LockEntry[], specs: LockEntry[], pkgUnread: { folder: string, reason: Reason }[], v1?: boolean, unread?: undefined } | { unread: Reason, entries?: undefined, links?: undefined, specs?: undefined, pkgUnread?: undefined, v1?: undefined }}
  */
-export function lockEntries(text) {
+export function lockEntries(text, { pkg, folders = () => undefined } = {}) {
   /** @type {any} */
   let lock;
   try {
@@ -238,10 +411,10 @@ export function lockEntries(text) {
       const e = entryOf(v, key, key.slice(at + "node_modules/".length));
       (v.link ? links : entries).push(v.link ? e : { ...e, bundled: bundled(raw) });
     }
-    return { entries, links };
+    return { entries, links, ...specsOf(packages, pkg, folders) };
   }
   const deps = lock.dependencies;
-  if (!deps || typeof deps !== "object" || Array.isArray(deps)) return { entries, links };
+  if (!deps || typeof deps !== "object" || Array.isArray(deps)) return { entries, links, ...specsOf({}, pkg, folders) };
   // npm 6's tree as npm converts it: `bundled` the flag, `requires` the edges; bundles read back as below version 2.
   /** @type {Record<string, any>} */
   const tree = {};
@@ -250,8 +423,8 @@ export function lockEntries(text) {
     for (const [name, v] of Object.entries(level)) {
       if (!v || typeof v !== "object") continue;
       const key = `${at}node_modules/${name}`;
-      tree[key] = { inBundle: v.bundled === true, dependencies: v.requires };
       const { entry, link } = v1Entry(v, key, name);
+      tree[key] = { inBundle: v.bundled === true, dependencies: v.requires, version: (entry ?? link)?.version, resolved: (entry ?? link)?.resolved, link: Boolean(link) };
       if (link) links.push(link);
       if (entry) entries.push(entry);
       walk(v.dependencies, `${key}/`, depth + 1);
@@ -259,13 +432,13 @@ export function lockEntries(text) {
   };
   walk(deps, "", 0);
   const bundled = bundledIn(tree, { reconstruct: true });
-  return { entries: entries.map((e) => ({ ...e, bundled: bundled(e.key) })), links, v1: true };
+  return { entries: entries.map((e) => ({ ...e, bundled: bundled(e.key) })), links, ...specsOf(tree, pkg, folders), v1: true };
 }
 
 /** name@version, or the name alone for an entry with no version (a link, a version 1 source). @param {LockEntry} e */
 const idOf = (e) => (e.version ? `${e.name}@${e.version}` : e.name);
 /** @param {LockEntry} e */
-const sealOf = (e) => `${idOf(e)} ${e.resolved ?? ""} ${e.integrity ?? ""} ${e.odd?.raw ?? ""} ${e.bundled ? "bundled" : ""}`;
+const sealOf = (e) => `${idOf(e)} ${e.resolved ?? ""} ${e.integrity ?? ""} ${e.odd?.raw ?? ""} ${e.bundled ? "bundled" : ""} ${e.spec ? `spec ${e.key} ${e.spec.from}` : ""}`;
 /** Sorted by name, then version: messages do not depend on the order answers arrived in. @param {LockEntry} a @param {LockEntry} b */
 const byIdentity = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.version < b.version ? -1 : a.version > b.version ? 1 : 0);
 
@@ -538,6 +711,14 @@ export function registryResolver(npmrc) {
  */
 export function judgeEntry(e, rule, { lockDir = "", registry = { reason: { key: "noResolvedNone" } }, link = false } = {}) {
   const from = shownSource(e.resolved ?? "");
+  // A spec npm may fetch from: its source judged as a resolved is, its paths read from the folder that asks.
+  if (e.spec?.tag) return { refuse: "unlisted", reason: { key: "specTag", vars: { from: shownSource(e.resolved ?? ""), held: shownSource(e.spec.tag) } } };
+  if (e.spec) {
+    // `sources` may name a spec exactly as written (a hosted shortcut, an unpinned git spec): the project's word.
+    if (e.spec.raw !== undefined && rule.sources.includes(e.spec.raw)) return { sourced: e, sealed: false };
+    const j = judgeEntry({ ...e, spec: undefined }, rule, { lockDir: e.spec.dir ? (lockDir ? `${lockDir}/${e.spec.dir}` : e.spec.dir) : lockDir, registry });
+    return "refuse" in j ? { ...j, reason: { key: "specSources", vars: { spec: shownSource(e.spec.raw ?? "") }, inner: j.reason } } : j;
+  }
   if (e.odd) return { refuse: "unlisted", reason: e.odd.kind === "from" ? { key: "fromNoIntegrity" } : { key: "odd", vars: { field: e.odd.field, kind: e.odd.kind } } };
   if (e.bundled && !link) return { said: { key: "bundled" } };
   const form = e.resolved !== null && rule.sources.includes(e.resolved) ? sourceForm(e.resolved) : null;
@@ -663,9 +844,11 @@ export function judgeLock(entries, links, rule, { lockDir, registryFor, kinds })
   }
   for (const [entry, j] of judged) {
     const from = shownSource(entry.resolved ?? "");
-    if ("listed" in j) listed.push(j.listed);
-    else if ("sourced" in j) {
-      if (j.sealed) sealed.push(entry);
+    // A spec proven by its source is no lock entry: nothing of it is asked of a registry or sealed by the lock.
+    if ("listed" in j) {
+      if (!entry.spec) listed.push(j.listed);
+    } else if ("sourced" in j) {
+      if (j.sealed && !entry.spec) sealed.push(entry);
     } else if ("refuse" in j) refused[j.refuse].push({ entry, reason: j.reason });
     else if ("said" in j) unread.push({ entry, reason: j.said, part: "all" });
     else if (j.inside !== "" && heldUnread) unread.push({ entry, reason: heldUnread, part: "all" });
@@ -1043,7 +1226,7 @@ function percent(weekly, total, threshold) {
 }
 
 /** name@version as shown: a credential a name or version holds (a lock's spec) is cut. @param {LockEntry} e */
-const shownId = (e) => (e.version ? `${shownSource(e.name)}@${shownSource(e.version)}` : shownSource(e.name));
+const shownId = (e) => (e.spec ? `${shownSource(e.name)} ← ${shownSource(e.spec.from)}` : e.version ? `${shownSource(e.name)}@${shownSource(e.version)}` : shownSource(e.name));
 
 /** The first three of a list as "name@version (detail)", sorted, and how many more. */
 function places(/** @type {{ entry: LockEntry }[]} */ list, /** @type {(x: any) => string} */ detail, /** @type {string} */ lang) {
@@ -1067,10 +1250,11 @@ const UNREAD_KEYS = { all: "deps.unread", age: "deps.unreadAge", adoption: "deps
  * @param {Map<string, import("../core/git.mjs").StagedVersion>} versions
  * @param {DepsRule} rule
  * @param {string} lang
- * @param {{ now?: number, beside?: (dir: string) => { staged: Buffer | null, unread?: string } | undefined, kinds?: (paths: string[]) => Map<string, { kind: string, link?: string, target?: string | null, rest?: string }> }} [opts]
+ * @param {{ now?: number, beside?: (dir: string) => { staged: Buffer | null, unread?: string } | undefined, kinds?: (paths: string[]) => Map<string, { kind: string, link?: string, target?: string | null, rest?: string }>, pkgRead?: (paths: string[]) => Map<string, { staged: Pkg, head: Pkg }> }} [opts]
+ *   `pkgRead(paths)`: both sides of the package.json files the paths given do not hold, read with pkgJson in one go (the hook reads the index)
  * @returns {Promise<{ errors: string[], warnings: string[] }>}
  */
-export async function depsMessages(versions, rule, lang, { now = Date.now(), beside, kinds } = {}) {
+export async function depsMessages(versions, rule, lang, { now = Date.now(), beside, kinds, pkgRead } = {}) {
   /** @type {string[]} */
   const errors = [];
   /** @type {string[]} */
@@ -1094,7 +1278,20 @@ export async function depsMessages(versions, rule, lang, { now = Date.now(), bes
     if (!r) resolvers.set(dir, (r = registryResolver(npmrcBeside.has(dir) ? npmrcBeside.get(dir) : beside?.(dir))));
     return r;
   };
+  /** @type {Map<string, { staged: Pkg, head: Pkg }>} */
+  let read = new Map();
+  /** The package.json of a folder a lock names ("" its own), as one side of the commit holds it. @param {string} path @param {string} folder @param {"staged" | "head"} side @returns {Pkg} */
+  const pkgAt = (path, folder, side) => {
+    const at = pkgPathOf(path, folder);
+    const v = versions.get(at);
+    if (!v) return read.get(at)?.[side];
+    const why = side === "staged" ? v.unread : v.headUnread;
+    return pkgJson(v[side], why ? { key: why } : undefined);
+  };
+  const pkgs = (/** @type {string} */ path, /** @type {"staged" | "head"} */ side) => ({ pkg: pkgAt(path, "", side), folders: (/** @type {string} */ k) => pkgAt(path, k, side) });
   for (const [path, v] of [...versions].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    // A package.json is read beside its lock, for the root's dependencies.
+    if (pkgJsonPath(path)) continue;
     if (v.unread) {
       said(path, { key: v.unread });
       continue;
@@ -1121,20 +1318,32 @@ export async function depsMessages(versions, rule, lang, { now = Date.now(), bes
       for (const s of /** @type {{ n: number, line: string, reason: Reason }[]} */ (fresh(current.said, had.said))) warnings.push(tShown("deps.npmrcSaid", { path: [path], where: [`${s.n}: ${s.line}`], why: reasonText(s.reason, lang) }, lang));
       continue;
     }
-    const staged = lockEntries(text);
+    // The folders' package.json files both sides name, read in one go.
+    const want = [...new Set([...folderKeys(text), ...(before === null ? [] : folderKeys(before))].map((k) => pkgPathOf(path, k)))].filter((p) => !versions.has(p));
+    read = want.length && pkgRead ? pkgRead(want) : new Map();
+    const staged = lockEntries(text, pkgs(path, "staged"));
     if (staged.unread !== undefined) {
       said(path, staged.unread);
       continue;
     }
     if (staged.v1) warnings.push(tShown("deps.v1", { path: [path] }, lang));
-    const headLock = before === null ? null : lockEntries(before);
+    const headLock = before === null ? null : lockEntries(before, pkgs(path, "head"));
     if (!lost && headLock?.unread) lost = headLock.unread;
     if (lost) warnings.push(tShown("deps.baselineUnread", { path: [path], reason: reasonText(lost, lang) }, lang));
     const fresh = newEntries(staged.entries, lost ? [] : (headLock?.entries ?? []));
+    // The places npm fetches anew from a dependency's own spec, new against HEAD's lock and package.json.
+    const specs = newEntries(staged.specs, lost ? [] : (headLock?.specs ?? []));
+    // A package.json npm reads for the specs it fetches that cannot be read: refused when it turns so, said after.
+    const pkgLine = (/** @type {{ folder: string, reason: Reason }} */ u) => `${pkgPathOf(path, u.folder)} (${reasonText(u.reason, lang)})`;
+    const known = new Set((headLock?.pkgUnread ?? []).map(pkgLine));
+    const unreadNew = staged.pkgUnread.filter((u) => !known.has(pkgLine(u)));
+    if (unreadNew.length) errors.push(tShown("deps.pkgUnread", { path: [path], where: unreadNew.map(pkgLine) }, lang));
+    const unreadOld = staged.pkgUnread.filter((u) => known.has(pkgLine(u)));
+    if (unreadOld.length) warnings.push(tShown("deps.pkgUnreadStill", { path: [path], where: unreadOld.map(pkgLine) }, lang));
     // From the lock alone, online or not: where npm fetches each new entry from, judged before its name.
     const lockDir = dirOf(path);
     const links = newEntries(staged.links, lost ? [] : (headLock?.links ?? []));
-    const { judged, listed, sealed, refused, unread: saidHere } = judgeLock(fresh, links, rule, { lockDir, registryFor: (name) => resolverFor(lockDir)(name), kinds });
+    const { judged, listed, sealed, refused, unread: saidHere } = judgeLock([...fresh, ...specs], links, rule, { lockDir, registryFor: (name) => resolverFor(lockDir)(name), kinds });
     /** @type {{ entry: LockEntry, reason: Reason, part: "all" | "age" | "adoption" }[]} */
     let unread = saidHere;
     const proven = (/** @type {LockEntry} */ e) => {
@@ -1147,6 +1356,8 @@ export async function depsMessages(versions, rule, lang, { now = Date.now(), bes
       const list = refused[kind];
       if (list.length) errors.push(tShown(key, { path: [path], n: list.length, where: places(list, (m) => reasonText(m.reason, lang), lang) }, lang));
     }
+    const overridden = [...refused.unlisted, ...refused.git].filter((x) => x.entry.spec?.overridden);
+    if (overridden.length) errors.push(tShown("deps.overrideNotLifted", { path: [path], where: [...new Set(overridden.map((x) => shownId(x.entry)))].slice(0, 3) }, lang));
     const unsealed = [...listed, ...sealed].filter((e) => !digests(e.integrity).length);
     if (unsealed.length) errors.push(tShown("deps.integrity", { path: [path], n: unsealed.length, where: places(unsealed.map((entry) => ({ entry })), () => "", lang) }, lang));
     const twice = [...listed, ...sealed].filter((e) => doubled(e.integrity));
