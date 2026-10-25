@@ -49,7 +49,7 @@ Other agents that read [Agent Skills](https://agentskills.io) can use `skills/cy
 
 ## Configure
 
-One file per project, `.ennyn/config.json`, written by `/ennyn:init`. Override only what differs from the defaults. Unknown keys and type mismatches are reported together, so a typo cannot silently disable a check.
+One file per project, `.ennyn/config.json`, written by `/ennyn:init`. Override only what differs from the defaults. Unknown keys and type mismatches are reported together, so a typo cannot silently disable a check. Every path a config names stays in the project, machine-local state in its git dir, and Ennyn reads and writes its files through no symbolic link a commit could hold, so a commit cannot point them outside it.
 
 ```json
 {

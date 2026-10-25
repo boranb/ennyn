@@ -9,7 +9,7 @@ No `.ennyn/` in the project yet: run the init skill first. Project settings come
 
 ## 1. Pick the four tasks
 
-Read first, in one turn: the config, the handoff (`paths.handoff`; unset → `HANDOFF.md` at the root) and the graph. The handoff names the commands later steps run (fast test, lint, typecheck, the mutation tool; one it does not name → `commands` and `mutation` of `ennyn.mjs init-scan --json`), the previous cycle's next step and its open risks. Note HEAD: the cycle's bypass count starts there.
+Read in one turn, once `ennyn.mjs doctor` shows no ✗ (else stop): the config, the handoff (`paths.handoff`; unset → `HANDOFF.md`) and the graph. The handoff names the commands later steps run (fast test, lint, typecheck, the mutation tool; one it does not name → `commands` and `mutation` of `ennyn.mjs init-scan --json`), the previous cycle's next step and its open risks. Note HEAD: the cycle's bypass count starts there.
 
 | Slot | Source | Rule |
 |---|---|---|

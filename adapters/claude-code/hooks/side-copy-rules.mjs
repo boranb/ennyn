@@ -17,11 +17,12 @@
  * never `systemMessage` (shown only to the user).
  */
 
-import { resolveStateDir } from "../../../core/git.mjs";
+import { resolveStateDir, stateRoot } from "../../../core/git.mjs";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
+import { realpathSync } from "node:fs";
+import { readRegular, writeState } from "../../../core/files.mjs";
 import { fileURLToPath } from "node:url";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { loadConfig } from "../../../core/config.mjs";
 import { shown, t } from "../../../core/i18n.mjs";
 import { mapSideCopyPath } from "../../../side-copy/map-path.mjs";
@@ -98,12 +99,13 @@ function most(max, fits) {
 }
 
 /**
- * @param {string} path
+ * @param {string} root the directory it is read below with no link (stateRoot) @param {string} path
  * @returns {Set<string>}
  */
-function readEmitted(path) {
+function readEmitted(root, path) {
   try {
-    const data = JSON.parse(readFileSync(path, "utf8"));
+    // Nothing there yet reads as "null": no list.
+    const data = JSON.parse(readRegular(root, path)?.toString("utf8") ?? "null");
     return new Set(Array.isArray(data?.emitted) ? data.emitted.filter((/** @type {unknown} */ x) => typeof x === "string") : []);
   } catch {
     return new Set();
@@ -111,17 +113,14 @@ function readEmitted(path) {
 }
 
 /**
- * Best effort: a state file that cannot be written only costs a repeated
- * injection, so the rules are emitted anyway.
- * @param {string} path
+ * Best effort: a state file that cannot be written (a link a commit holds among its directories, say) only costs
+ * a repeated injection, so the rules are emitted anyway.
+ * @param {string} root @param {string} path
  * @param {Set<string>} emitted
  */
-function writeEmitted(path, emitted) {
+function writeEmitted(root, path, emitted) {
   try {
-    mkdirSync(dirname(path), { recursive: true });
-    const tmp = `${path}.${process.pid}.tmp`;
-    writeFileSync(tmp, JSON.stringify({ emitted: [...emitted].sort() }) + "\n");
-    renameSync(tmp, path);
+    writeState(root, path, JSON.stringify({ emitted: [...emitted].sort() }) + "\n", "replace");
   } catch {
     // ignored on purpose, see above
   }
@@ -297,7 +296,8 @@ async function main() {
   const limits = new Map(unreadable.filter((p) => isLimit(why.get(p))).map((p) => [p, reasonText(/** @type {string} */ (why.get(p)), config.language)]));
 
   const state = sideCopyStatePath(projectDir, config.paths.stateDir, input.session_id, input.agent_id);
-  const emitted = readEmitted(state);
+  const root = stateRoot(projectDir, state);
+  const emitted = readEmitted(root, state);
   const outside = linkedOut.filter((p) => !emitted.has(outsideKey(p)));
   if (!matching.length && !unreadable.length && !outside.length) return 0;
   /** @type {Array<{ file: string, body: string, changed: boolean }>} */
@@ -322,7 +322,7 @@ async function main() {
   }
   for (const f of saidOutside) emitted.add(outsideKey(f));
   process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: text } }), (err) => {
-    if (!err && (given.size || saidOutside.size)) writeEmitted(state, emitted);
+    if (!err && (given.size || saidOutside.size)) writeEmitted(root, state, emitted);
   });
   return 0;
 }

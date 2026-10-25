@@ -23,11 +23,11 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, statSync, unlinkSync, utimesSync, writeFileSync, writeSync } from "node:fs";
-import { gone, present } from "../core/files.mjs";
+import { lstatSync, mkdirSync, readFileSync, realpathSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { gone, linkBelow, present, readRegular, removeState, writeState } from "../core/files.mjs";
 import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { commonDir, resolveStateDir } from "../core/git.mjs";
+import { commonDir, resolveStateDir, stateRoot, underGitDir } from "../core/git.mjs";
 
 /** @typedef {{ id: string, file: string, old: string, new: string }} Mutant */
 /** @typedef {"killed" | "timeout" | "survived" | "invalid" | "unchecked" | "unapplied"} Outcome */
@@ -108,20 +108,26 @@ export function summarizeMutants(results) {
   };
 }
 
+/**
+ * Whether a path relative to the tree has a ".git" component in any case: a git dir, or a gitdir file that names
+ * one. Git tracks no such path, so no mutant names one, and a journal that does would write git's config or hooks.
+ * @param {string} rel
+ */
+const inGit = (rel) => rel.split(/[\\/]/).some((part) => part.toLowerCase() === ".git");
+
 /** This user's own directory under the temporary one, for a journal outside a repository. */
 const userDir = () => join(tmpdir(), `ennyn-${process.getuid?.() ?? "user"}`);
 
 /**
- * The journal's directory, made if missing. The per-user one sits in a temporary directory other users can
- * write to: one of them could make it first and plant a journal naming any file, so it must be a directory
- * this user owns that no one else can write to, before a journal in it is read.
+ * The per-user journal directory, made if missing. It sits in a temporary directory other users can write to:
+ * one of them could make it first and plant a journal naming any file, so it must be a directory this user owns
+ * that no one else can write to, before a journal in it is read. A state dir is made by writeState, through no link.
  * @param {string} path the journal
  */
 function journalDir(path) {
   const dir = dirname(path);
-  const own = dir === userDir();
-  mkdirSync(dir, { recursive: true, ...(own ? { mode: 0o700 } : {}) });
-  if (!own) return;
+  if (dir !== userDir()) return;
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
   if (process.platform === "win32") return;
   const st = lstatSync(dir);
   if (!st.isDirectory() || st.uid !== process.getuid?.() || (st.mode & 0o022) !== 0) {
@@ -138,7 +144,7 @@ export function journalPath(cwd, stateDir) {
   const tree = createHash("sha256").update(realpathSync(cwd)).digest("hex").slice(0, 12);
   // Outside a repository a state dir under .git would create a .git directory that is no repository; the
   // temporary directory is shared on a multi-user machine, so the journal goes into one of this user's own.
-  const underGit = /^\.git([\\/]|$)/.test(stateDir);
+  const underGit = underGitDir(stateDir) !== null;
   const dir = underGit && !commonDir(cwd) ? userDir() : resolveStateDir(cwd, stateDir);
   return join(dir, `mutate-${tree}.json`);
 }
@@ -270,13 +276,12 @@ function parseCheck(abs, rel, original, { cwd, check, limit, onChild }) {
 }
 
 /**
- * @param {string} path @param {Record<string, unknown>} data
+ * @param {string} root the directory it is written below with no link (stateRoot) @param {string} path
+ * @param {Record<string, unknown>} data
  * Written whole and renamed: a journal is there complete or not at all.
  */
-function writeJournal(path, data) {
-  const tmp = `${path}.${process.pid}.tmp`;
-  writeFileSync(tmp, JSON.stringify(data));
-  renameSync(tmp, path);
+function writeJournal(root, path, data) {
+  writeState(root, path, JSON.stringify(data), "replace");
 }
 
 /** @param {number} pid */
@@ -292,10 +297,10 @@ function alive(pid) {
 /**
  * Undo what a journal holds: the file goes back while it still holds the mutant, a file changed since is
  * refused (the journal keeps its original bytes), then the journal goes.
- * @param {string} cwd @param {string} path @param {any} j the journal's content
+ * @param {string} cwd @param {string} at the journal's state root @param {string} path @param {any} j the journal's content
  * @returns {string | null} the file restored
  */
-function undo(cwd, path, j) {
+function undo(cwd, at, path, j) {
   /** @type {string | null} */
   let restored = null;
   if (typeof j?.file === "string") {
@@ -306,6 +311,10 @@ function undo(cwd, path, j) {
     if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
       throw new MutationError(`the mutation journal ${path} names ${j.file}, outside this tree: no run here wrote it. Check it, then delete it`);
     }
+    if (inGit(rel)) throw new MutationError(`the mutation journal ${path} names ${j.file}, in a git directory: no run here wrote it. Check it, then delete it`);
+    // A run journals the file's real path (prepare), so a link on the way is no run's: it may lead anywhere.
+    const link = linkBelow(root, abs);
+    if (link) throw new MutationError(`the mutation journal ${path} names ${j.file}, reached through the symbolic link ${link}: no run here wrote it. Check it, then delete it`);
     const original = Buffer.from(String(j.original), "base64");
     const mutated = Buffer.from(String(j.mutated), "base64");
     const now = present(abs) ? readFileSync(abs) : null;
@@ -318,7 +327,7 @@ function undo(cwd, path, j) {
       throw new MutationError(`an interrupted run left a mutant in ${j.file}, and the file changed since; its original bytes are in ${path} (base64), the mutant was ${JSON.stringify(j.id)}`);
     }
   }
-  unlinkSync(path);
+  removeState(at, path);
   return restored;
 }
 
@@ -338,10 +347,21 @@ function newerSecond(abs, after) {
   return t;
 }
 
-/** @param {string} path */
-function readJournal(path) {
+/**
+ * The journal's content, read below `root` with no link; undefined when there is none.
+ * @param {string} root @param {string} path
+ */
+function readJournal(root, path) {
+  /** @type {Buffer | null} */
+  let bytes;
   try {
-    return JSON.parse(readFileSync(path, "utf8"));
+    bytes = readRegular(root, path);
+  } catch (e) {
+    throw new MutationError(`${/** @type {Error} */ (e).message}; check the files of the last run by hand`);
+  }
+  if (bytes === null) return undefined;
+  try {
+    return JSON.parse(bytes.toString("utf8"));
   } catch {
     throw new MutationError(`the mutation journal ${path} does not read; check the files of the last run by hand, then delete it`);
   }
@@ -356,12 +376,13 @@ function readJournal(path) {
  */
 export function restoreJournal(cwd, path, { force = false } = {}) {
   if (dirname(path) === userDir() && present(dirname(path))) journalDir(path);
-  if (!present(path)) return { restored: null, found: false };
-  const j = readJournal(path);
+  const root = stateRoot(cwd, path);
+  const j = readJournal(root, path);
+  if (j === undefined) return { restored: null, found: false };
   if (!force && typeof j?.pid === "number" && j.pid !== process.pid && alive(j.pid)) {
     throw new MutationError(`pid ${j.pid} of the journal is alive: an ennyn mutate may be running in this tree. If that pid is no such run (reused after a reboot), add --force`);
   }
-  return { restored: undo(cwd, path, j), found: true };
+  return { restored: undo(cwd, root, path, j), found: true };
 }
 
 /**
@@ -373,20 +394,19 @@ function takeJournal(cwd, path) {
   /** @type {string | null} */
   let restored = null;
   journalDir(path);
-  if (present(path)) {
-    const j = readJournal(path);
+  const root = stateRoot(cwd, path);
+  const j = readJournal(root, path);
+  if (j !== undefined) {
     if (typeof j?.pid === "number" && j.pid !== process.pid && alive(j.pid)) {
       const held = typeof j.file === "string" ? `; it holds the original bytes of ${j.file}` : "";
       throw new MutationError(`another ennyn mutate (pid ${j.pid}) is running in this tree${held}. If it is not, run ennyn mutate --restore --force (never delete the journal)`);
     }
-    restored = undo(cwd, path, j);
+    restored = undo(cwd, root, path, j);
   }
   // wx: of two runs that start together, one gets the journal. A state dir in the repository keeps the
   // repository's own modes, also when the repository sits under the temporary directory (/tmp on Linux).
   try {
-    const fd = openSync(path, "wx");
-    writeSync(fd, JSON.stringify({ pid: process.pid }));
-    closeSync(fd);
+    writeState(root, path, JSON.stringify({ pid: process.pid }), "create");
   } catch (e) {
     if (/** @type {NodeJS.ErrnoException} */ (e).code === "EEXIST") throw new MutationError(`another ennyn mutate started in this tree at the same time (${path})`);
     throw e;
@@ -418,6 +438,7 @@ function prepare(cwd, m) {
   }
   const rel = relative(root, real);
   if (rel === "" || rel.startsWith(`..${sep}`) || rel === ".." || isAbsolute(rel)) return { reason: { key: "mutate.reason.outside" } };
+  if (inGit(rel)) return { reason: { key: "mutate.reason.gitDir" } };
   if (!statSync(real).isFile()) return { reason: { key: "mutate.reason.missing" } };
   const original = readFileSync(real);
   const text = original.toString("utf8");
@@ -443,6 +464,7 @@ function prepare(cwd, m) {
  */
 export async function runMutants({ cwd, mutants, command, check = null, journal, timeoutMs = null, onResult = () => {}, onBaseline = () => {} }) {
   const { restored } = takeJournal(cwd, journal);
+  const root = stateRoot(cwd, journal);
   /** @type {import("node:child_process").ChildProcess | null} */
   let child = null;
   /** @type {{ abs: string, original: Buffer } | null} */
@@ -462,7 +484,7 @@ export async function runMutants({ cwd, mutants, command, check = null, journal,
     for (const s of signals) process.off(s, onSignal);
     process.off("exit", onExit);
     try {
-      unlinkSync(journal);
+      removeState(root, journal);
     } catch {
       // Already gone.
     }
@@ -507,7 +529,7 @@ export async function runMutants({ cwd, mutants, command, check = null, journal,
         const answer = parses ? originalParses.get(p.abs) : undefined;
         /** @type {Reason | null} */
         let noCheck = !parses ? { key: "mutate.reason.noCheck" } : answer === null ? { key: "mutate.reason.checkNoAnswer" } : answer ? null : { key: "mutate.reason.originalFails" };
-        writeJournal(journal, { pid: process.pid, id: m.id, file: p.rel, original: p.original.toString("base64"), mutated: p.mutated.toString("base64") });
+        writeJournal(root, journal, { pid: process.pid, id: m.id, file: p.rel, original: p.original.toString("base64"), mutated: p.mutated.toString("base64") });
         applied = { abs: p.abs, original: p.original };
         if (!stamps.has(p.abs)) stamps.set(p.abs, Math.floor(statSync(p.abs).mtimeMs / 1000));
         try {
@@ -527,7 +549,7 @@ export async function runMutants({ cwd, mutants, command, check = null, journal,
           }
         } finally {
           putBack();
-          writeJournal(journal, { pid: process.pid });
+          writeJournal(root, journal, { pid: process.pid });
         }
       }
       results.push(r);

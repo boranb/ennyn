@@ -1,7 +1,7 @@
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
 import childProcess, { spawn, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -323,6 +323,66 @@ test("mutate: outside a repository the journal is not put under a .git directory
   assert.ok(!journalPath(dir, ".git/ennyn").startsWith(realpathSync(dir)));
   assert.equal(existsSync(join(dir, ".git")), false);
   assert.ok(journalPath(dir, "state").startsWith(join(dir, "state")), "a state dir of the project's own is used as is");
+  // However a .git value is spelled, outside a repository it goes to the user's own directory, never under ./.git.
+  for (const v of ["./.git/ennyn", ".git\\ennyn", ".git"]) assert.ok(!journalPath(dir, v).startsWith(dir), v);
+  assert.equal(existsSync(join(dir, ".git")), false);
+  // In a linked worktree a .git value goes to the common git dir (".git" is a file there); a work-tree value stays.
+  const p = project();
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "a"], { cwd: p.dir });
+  const wt = join(realpathSync(mkdtempSync(join(tmpdir(), "en-mut-wt-"))), "wt");
+  git(["worktree", "add", "-q", "--detach", wt], { cwd: p.dir });
+  assert.equal(dirname(journalPath(wt, "./.git/ennyn")), join(p.dir, ".git", "ennyn"));
+  assert.equal(dirname(journalPath(wt, "state")), join(wt, "state"));
+});
+
+test("mutate: a journal naming a file in a git directory is refused, and so is a mutant of one (journal-names-git-config)", async () => {
+  const p = project();
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "a"], { cwd: p.dir });
+  const config = readFileSync(join(p.dir, ".git", "config"));
+  mkdirSync(join(p.dir, "sub"));
+  writeFileSync(join(p.dir, "sub", ".git"), "gitdir: ../.git\n");
+  mkdirSync(dirname(p.journal), { recursive: true });
+  // The git config with core.fsmonitor added would run a command on the next git call.
+  const payload = Buffer.concat([config, Buffer.from("[core]\n\tfsmonitor = touch PWNED\n")]);
+  for (const file of [".git/config", ".GIT/config", "sub/.git", "./.git/hooks/../config"]) {
+    const now = file === "sub/.git" ? readFileSync(join(p.dir, "sub", ".git")) : config;
+    writeFileSync(p.journal, JSON.stringify({ pid: 999999, id: "x", file, original: payload.toString("base64"), mutated: now.toString("base64") }));
+    assert.throws(() => restoreJournal(p.dir, p.journal), /names .*, in a git directory: no run here wrote it/, file);
+  }
+  assert.deepEqual([readFileSync(join(p.dir, ".git", "config")).equals(config), existsSync(join(p.dir, "PWNED"))], [true, false]);
+  // A mutant of a git dir's file, by its path or through a link into it, is never applied.
+  rmSync(p.journal);
+  symlinkSync(join(p.dir, ".git"), join(p.dir, "lnk"));
+  const res = await runMutants({ cwd: p.dir, mutants: [m("g1", ".git/config", "[core]", "[core]\n\tfsmonitor = x"), m("g2", "lnk/config", "[core]", "[core]\n\tfsmonitor = x")], command: `${NODE} check.mjs`, journal: p.journal });
+  assert.deepEqual(res.results.map((r) => `${r.id} ${r.outcome} ${r.reason?.key}`), ["g1 unapplied mutate.reason.gitDir", "g2 unapplied mutate.reason.gitDir"]);
+  assert.ok(readFileSync(join(p.dir, ".git", "config")).equals(config));
+});
+
+test("mutate: a journal reached through a symbolic link, or one naming a file through one, writes nothing there", async () => {
+  const p = project();
+  const away = realpathSync(mkdtempSync(join(tmpdir(), "en-mut-away-")));
+  writeFileSync(join(away, "profile"), "export A=1\n");
+  // A committed journal under a work-tree state dir naming lnk/profile, lnk a link out (journal-through-link).
+  symlinkSync(away, join(p.dir, "lnk"));
+  const journal = journalPath(p.dir, "state");
+  mkdirSync(dirname(journal), { recursive: true });
+  const planted = { pid: 999999, id: "x", file: "lnk/profile", original: Buffer.from("payload\n").toString("base64"), mutated: Buffer.from("export A=1\n").toString("base64") };
+  writeFileSync(journal, JSON.stringify(planted));
+  assert.throws(() => restoreJournal(p.dir, journal), /names lnk\/profile, reached through the symbolic link lnk: no run here wrote it/);
+  await assert.rejects(runMutants({ cwd: p.dir, mutants: [m("k1", "src/add.mjs", "a + b", "a - b")], command: `${NODE} check.mjs`, journal }), /reached through the symbolic link lnk/);
+  assert.equal(readFileSync(join(away, "profile"), "utf8"), "export A=1\n");
+  // The journal itself a link out (state-leaf-link): not read, not removed, nothing written through it.
+  writeFileSync(join(away, "journal.json"), JSON.stringify({ ...planted, file: "src/add.mjs" }));
+  const linked = journalPath(p.dir, "state2");
+  mkdirSync(dirname(linked), { recursive: true });
+  symlinkSync(join(away, "journal.json"), linked);
+  assert.throws(() => restoreJournal(p.dir, linked), /could not be read: state2\/mutate-[0-9a-f]{12}\.json is a symbolic link/);
+  await assert.rejects(runMutants({ cwd: p.dir, mutants: [m("k1", "src/add.mjs", "a + b", "a - b")], command: `${NODE} check.mjs`, journal: linked }), /is a symbolic link/);
+  // Its directory a link out: the run takes no journal there.
+  symlinkSync(away, join(p.dir, "state3"));
+  await assert.rejects(runMutants({ cwd: p.dir, mutants: [m("k1", "src/add.mjs", "a + b", "a - b")], command: `${NODE} check.mjs`, journal: journalPath(p.dir, "state3") }), /state3 is a symbolic link/);
+  assert.deepEqual([readdirSync(away).sort(), readFileSync(join(away, "profile"), "utf8")], [["journal.json", "profile"], "export A=1\n"]);
+  assert.deepEqual(p.snapshot(), p.before);
 });
 
 test("mutate: a per-user directory another user could write to is refused before a journal in it is read", async () => {

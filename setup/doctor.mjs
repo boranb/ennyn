@@ -14,6 +14,7 @@ import { MIN_HISTORY, indexMatches, recentCommits, productionSubjects } from "./
 import { hookStatus, idleReason } from "./hook.mjs";
 import { instructionBudget, readBudgets } from "./budget.mjs";
 import { relative, resolve, sep } from "node:path";
+import { readRegular } from "../core/files.mjs";
 import { git, repoPath, gitVersion, parseVersion, versionAtLeast, stagedVersions, GIT_FLOOR } from "../core/git.mjs";
 import { ciSet, ciText } from "../checks/ci.mjs";
 import { t } from "../core/i18n.mjs";
@@ -160,6 +161,13 @@ export async function checkSetup({ cwd, env = process.env }) {
     const mech = readyMechanization(graph, config).length;
     if (core + mech === 0) add("warn", "doctor.readyNone");
     else add("ok", "doctor.ready", { core, mech });
+  }
+  // The cycle reads the handoff, and writes it at its end: a link a commit holds would lead that read and that
+  // write anywhere. Looked at as the graph is read; none there yet is fine.
+  try {
+    readRegular(cwd, resolve(cwd, config.paths.handoff));
+  } catch (e) {
+    add("fail", "doctor.handoffBad", { error: /** @type {Error} */ (e).message });
   }
 
   const cm = config.commitMsg;

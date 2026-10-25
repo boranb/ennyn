@@ -4,7 +4,7 @@
  * graph as "not found", a test as missing. test/fault-injection.test.mjs fails every file read in turn.
  */
 
-import { closeSync, constants, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeSync } from "node:fs";
+import { closeSync, constants, fstatSync, ftruncateSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, rmSync, statSync, writeSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 
 /**
@@ -123,47 +123,75 @@ export function readIfThere(path, { limit = READ_LIMIT, head = false, given = fa
 }
 
 /**
- * Where a file that must be a regular one stands: when `path` lies inside `root` by its own spelling, no component
- * below `root` may be a symbolic link (each looked at with lstat; a component not there yet is not there, and
- * neither is anything below it). Outside `root` the path is the configuration's choice and links there are
- * followed. Either way the file is opened without blocking (a FIFO or a device holds no command) and its
- * descriptor must be a regular file.
- * @param {string} root the repository's top directory
+ * Where a file Ennyn reads or writes in the project stands: below `root` by its own spelling, and no component
+ * below `root` a symbolic link (each looked at with lstat; a component not there yet is not there, and neither is
+ * anything below it). A commit can hold a link, and it may lead anywhere. The last component is left to the
+ * open (O_NOFOLLOW), which also does not block (a FIFO or a device holds no command); its descriptor must be a
+ * regular file.
+ * @param {string} root the project directory, or the git dir for a file in it
  * @param {string} path absolute
  * @param {string} what "could not be read" or "was not written", the start of a refusal
- * @returns {{ inside: boolean }}
+ * @param {{ last?: boolean }} [opts] `last`: the final component is looked at here too
  */
-function noLinkBelow(root, path, what) {
-  const rel = relative(root, path);
-  if (rel.split(sep)[0] === ".." || isAbsolute(rel)) return { inside: false };
-  const parts = rel === "" ? [] : rel.split(sep);
-  for (let i = 1; i < parts.length; i++) {
-    const at = join(root, ...parts.slice(0, i));
-    let st;
-    try {
-      st = lstatSync(at);
-    } catch (e) {
-      if (gone(e)) return { inside: true };
-      throw new Error(`${path} ${what}: ${/** @type {Error} */ (e).message}`);
-    }
-    if (st.isSymbolicLink()) throw new Error(`${path} ${what}: ${parts.slice(0, i).join("/")} is a symbolic link`);
+function noLinkBelow(root, path, what, { last = false } = {}) {
+  if (leavesRoot(root, path)) throw new Error(`${path} ${what}: it lies outside ${root}`);
+  let found;
+  try {
+    found = linkBelow(root, path, { last });
+  } catch (e) {
+    throw new Error(`${path} ${what}: ${/** @type {Error} */ (e).message}`);
   }
-  return { inside: true };
+  if (found) throw new Error(`${path} ${what}: ${found} is a symbolic link`);
 }
 
-/** Opens `path` as noLinkBelow allows; null when nothing is there and `create` is not set. @param {string} root @param {string} path @param {number} flags @param {string} what */
+/** Whether `path` lies outside `root` by its spelling. @param {string} root @param {string} path */
+const leavesRoot = (root, path) => {
+  const rel = relative(root, path);
+  return rel.split(sep)[0] === ".." || isAbsolute(rel);
+};
+
+/**
+ * The first component of `path` below `root` that is a symbolic link, as `a/b`; null when there is none, or when
+ * `path` lies outside `root` by its spelling. Each component is looked at with lstat; one not there yet is not
+ * there, and neither is anything below it. A component that cannot be looked at throws.
+ * @param {string} root @param {string} path absolute
+ * @param {{ last?: boolean }} [opts] `last: false` leaves the final component to the caller (an O_NOFOLLOW open)
+ * @returns {string | null}
+ */
+export function linkBelow(root, path, { last = true } = {}) {
+  if (leavesRoot(root, path)) return null;
+  const rel = relative(root, path);
+  const parts = rel === "" ? [] : rel.split(sep);
+  for (let i = 1; i <= parts.length - (last ? 0 : 1); i++) {
+    let st;
+    try {
+      st = lstatSync(join(root, ...parts.slice(0, i)));
+    } catch (e) {
+      if (gone(e)) return null;
+      throw e;
+    }
+    if (st.isSymbolicLink()) return parts.slice(0, i).join("/");
+  }
+  return null;
+}
+
+/**
+ * Opens `path` as noLinkBelow allows; null when nothing is there and `create` is not set. The last component is
+ * looked at with lstat too: where O_NOFOLLOW is missing (Windows) that look is all, a window until the open.
+ * @param {string} root @param {string} path @param {number} flags @param {string} what
+ */
 function openRegular(root, path, flags, what) {
-  const { inside } = noLinkBelow(root, path, what);
+  noLinkBelow(root, path, what, { last: true });
   const rel = relative(root, path).split(sep).join("/");
   let fd;
   try {
-    fd = openSync(path, flags | (constants.O_NONBLOCK ?? 0) | (inside ? constants.O_NOFOLLOW ?? 0 : 0), 0o644);
+    fd = openSync(path, flags | (constants.O_NONBLOCK ?? 0) | (constants.O_NOFOLLOW ?? 0), 0o644);
   } catch (e) {
     const err = /** @type {NodeJS.ErrnoException} */ (e);
     // O_NOFOLLOW meets a link as ELOOP (EMLINK on some BSDs): the last component is one.
-    if (inside && (err.code === "ELOOP" || err.code === "EMLINK")) throw new Error(`${path} ${what}: ${rel} is a symbolic link`);
+    if (err.code === "ELOOP" || err.code === "EMLINK") throw new Error(`${path} ${what}: ${rel} is a symbolic link`);
     if (gone(err)) return null;
-    throw new Error(`${path} ${what}: ${err.message}`);
+    throw Object.assign(new Error(`${path} ${what}: ${err.message}`), { code: err.code });
   }
   try {
     if (!fstatSync(fd).isFile()) throw new Error(`${path} ${what}: it is no regular file`);
@@ -175,8 +203,8 @@ function openRegular(root, path, flags, what) {
 }
 
 /**
- * A file's bytes, read only as a regular file (see noLinkBelow); null when nothing is there. A link inside
- * `root`, a FIFO, a device or a directory is refused, naming the path: "could not be read: …".
+ * A file's bytes, read only as a regular file below `root` (see noLinkBelow); null when nothing is there. A path
+ * outside `root`, a link below it, a FIFO, a device or a directory is refused, naming the path: "could not be read: …".
  * @param {string} root @param {string} path absolute
  * @returns {Buffer | null}
  */
@@ -192,21 +220,26 @@ export function readRegular(root, path) {
   }
 }
 
-/**
- * Rewrites or appends to a file only as a regular file (see noLinkBelow), creating it and its directories when
- * they are not there: `edit` gets the text it holds ("" for a new file) and returns the text to write in its
- * place, or `{ append }`. Everything goes through the one descriptor that was checked. A refusal writes nothing:
- * "was not written: …".
- * @param {string} root @param {string} path absolute
- * @param {(text: string) => { replace: string } | { append: string }} edit
- */
-export function writeRegular(root, path, edit) {
+/** Makes the directories of `path` below `root`, once no link stands among them. @param {string} root @param {string} path */
+function parents(root, path) {
   noLinkBelow(root, path, "was not written");
   try {
     mkdirSync(dirname(path), { recursive: true });
   } catch (e) {
     throw new Error(`${path} was not written: ${/** @type {Error} */ (e).message}`);
   }
+}
+
+/**
+ * Rewrites or appends to a file only as a regular file below `root` (see noLinkBelow), creating it and its
+ * directories when they are not there: `edit` gets the text it holds ("" for a new file) and returns the text to
+ * write in its place, or `{ append }`. Everything goes through the one descriptor that was checked. A refusal
+ * writes nothing: "was not written: …".
+ * @param {string} root @param {string} path absolute
+ * @param {(text: string) => { replace: string } | { append: string }} edit
+ */
+export function writeRegular(root, path, edit) {
+  parents(root, path);
   const fd = /** @type {number} */ (openRegular(root, path, constants.O_RDWR | constants.O_CREAT, "was not written"));
   try {
     const text = readFileSync(fd, "utf8");
@@ -217,5 +250,64 @@ export function writeRegular(root, path, edit) {
     } else writeSync(fd, change.append, Buffer.byteLength(text));
   } finally {
     closeSync(fd);
+  }
+}
+
+/**
+ * Writes a file of Ennyn's machine-local state below `root` (the project directory, or the git dir for a state dir
+ * under .git), as writeRegular does: no link from `root` to the file, a regular file only, its directories made.
+ * `append` adds `text` in one write at the end (two processes append whole lines), closing a last line cut short
+ * first; `replace` writes a new file whole and renames it over the old one (a temporary name that is already
+ * there, a link planted at it too, is removed, never followed); `create` makes it only when nothing is there, and
+ * throws with code EEXIST otherwise.
+ * @param {string} root @param {string} path absolute @param {string} text
+ * @param {"append" | "replace" | "create"} how
+ */
+export function writeState(root, path, text, how) {
+  parents(root, path);
+  if (how === "replace") {
+    const tmp = `${path}.${process.pid}.tmp`;
+    rmSync(tmp, { force: true });
+    writeState(root, tmp, text, "create");
+    renameSync(tmp, path);
+    return;
+  }
+  const flags = how === "create" ? constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL : constants.O_RDWR | constants.O_APPEND | constants.O_CREAT;
+  const fd = /** @type {number} */ (openRegular(root, path, flags, "was not written"));
+  try {
+    let torn = false;
+    if (how === "append") {
+      const size = fstatSync(fd).size;
+      const last = Buffer.alloc(1);
+      torn = size > 0 && readSync(fd, last, 0, 1, size - 1) === 1 && last[0] !== 0x0a;
+    }
+    writeSync(fd, (torn ? "\n" : "") + text);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * Removes a file of Ennyn's state below `root`: no link may stand among its directories (the file itself, a link
+ * or not, is what goes). Nothing there is no error.
+ * @param {string} root @param {string} path absolute
+ */
+export function removeState(root, path) {
+  noLinkBelow(root, path, "was not removed");
+  rmSync(path, { force: true });
+}
+
+/**
+ * The names in a directory of Ennyn's state below `root`, no link from `root` to it; [] when it is not there.
+ * @param {string} root @param {string} dir absolute
+ * @returns {string[]}
+ */
+export function listState(root, dir) {
+  noLinkBelow(root, dir, "could not be read", { last: true });
+  try {
+    return readdirSync(dir);
+  } catch (e) {
+    if (gone(e)) return [];
+    throw e;
   }
 }

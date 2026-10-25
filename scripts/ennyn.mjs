@@ -10,7 +10,7 @@ import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { relative, resolve, sep } from "node:path";
 import { loadConfig, ConfigError } from "../core/config.mjs";
-import { READ_BUDGET, git, headBlob, headCommit, hookIndexFile, indexEntries, indexKinds, indexNames, mergeHeads, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
+import { READ_BUDGET, git, headBlob, headCommit, hookIndexFile, indexEntries, indexKinds, indexNames, mergeHeads, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, stateRoot, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
 import { ends, jsonShown, shown, t, tShown, unshownEscaped } from "../core/i18n.mjs";
 import { globToRegExp, matchAny } from "../core/glob.mjs";
 import { checkCommitShape, nameShown, secretErrors, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
@@ -1258,7 +1258,7 @@ const COMMANDS = {
     const cfg = config(cwd);
     const lang = cfg.language;
     const path = gateLogPath(cwd, cfg.paths.stateDir);
-    const log = readAttempts(path);
+    const log = readAttempts(path, stateRoot(cwd, path));
     const sum = summarizeAttempts(log.attempts, { since, until });
     if (opts.json) return (out(jsonShown({ path, exists: log.exists, skipped: log.skipped, ...sum })), 0);
     if (!log.exists) return (out(t("gate.none", { path }, lang)), 0);

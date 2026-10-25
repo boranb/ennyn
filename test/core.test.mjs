@@ -1,13 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, chmodSync, symlinkSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, chmodSync, symlinkSync, linkSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join, posix, win32 } from "node:path";
 import { globToRegExp, literalGlob, matchAny } from "../core/glob.mjs";
 import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
 import { git, headCommit, parseTrailers, repoPath, stagedPaths, unpushedCount } from "../core/git.mjs";
 import { t } from "../core/i18n.mjs";
+import * as filesModule from "../core/files.mjs";
 import { readIfThere } from "../core/files.mjs";
 
 test("glob: ** matches zero or more segments", () => {
@@ -150,6 +151,125 @@ test("config: ENNYN_CONFIG points elsewhere; broken JSON is a ConfigError", () =
   }
 });
 
+test("config: every path a config names stays in the project, whoever names the config", () => {
+  // As POSIX and Windows read them: the inside ones resolve below the project directory on both.
+  const inside = ["", ".", "HANDOFF.md", ".ennyn/metrics.jsonl", ".git/ennyn", "./x", "a/../b", "a/b/..", ".git/../x", "~/x", "..x", "x..", "...", "a\\b", "file:///etc/x", "a/.../b"];
+  const outside = ["..", "../x", "../../x", "a/../../x", ".git/../../x", ".git/ennyn/../../../x", "./../x", "/", "/abs/x", "//host/x", "\\\\host\\share\\x", "\\x", "C:\\x", "C:x", "c:/x", "..\\x", "a\\..\\..\\x", "a/..\\..\\x"];
+  // The reference: Node's own reading on each system, the project on another drive than C: on Windows.
+  const out = (/** @type {string} */ v) => {
+    const p = posix.relative("/proj", posix.resolve("/proj", v));
+    const w = win32.relative("D:\\proj", win32.resolve("D:\\proj", v));
+    return p.split("/")[0] === ".." || posix.isAbsolute(p) || w.split("\\")[0] === ".." || win32.isAbsolute(w);
+  };
+  assert.deepEqual([inside.filter(out), outside.filter((v) => !out(v))], [[], []]);
+  const dir = mkdtempSync(join(tmpdir(), "pl-cfg-in-"));
+  mkdirSync(join(dir, ".ennyn"));
+  const own = (/** @type {object} */ cfg) => {
+    writeFileSync(join(dir, ".ennyn/config.json"), JSON.stringify(cfg));
+    return () => loadConfig({ cwd: dir, env: {} });
+  };
+  const refused = (/** @type {string} */ key, /** @type {string} */ value) => (/** @type {unknown} */ e) =>
+    e instanceof ConfigError && e.problems.length === 1 && e.problems[0] === `"${key}": ${JSON.stringify(value)} leads outside the project directory; every path a config names stays inside it`;
+  for (const key of ["handoff", "changelog", "graph", "metricsLog"]) {
+    for (const p of inside) assert.equal(/** @type {any} */ (own({ paths: { [key]: p } })()).paths[key], p, `${key} ${JSON.stringify(p)}`);
+  }
+  for (const key of ["handoff", "changelog", "graph", "metricsLog", "stateDir"]) {
+    for (const p of outside) assert.throws(own({ paths: { [key]: p } }), refused(`paths.${key}`, p), `${key} ${JSON.stringify(p)}`);
+  }
+  // The state dir lies in the git dir, however spelled: state a commit can write is never trusted
+  // (journal-names-git-config, a work-tree journal naming .git/config).
+  for (const p of [".git", ".git/ennyn", "./.git/ennyn", ".git\\ennyn", ".git/a/../b"]) assert.equal(own({ paths: { stateDir: p } })().paths.stateDir, p, p);
+  for (const p of ["state", ".", "", "src/..", ".git/..", ".git/../state", ".gitx/a", "a/.git", "~/x"]) {
+    assert.throws(own({ paths: { stateDir: p } }), (e) => e instanceof ConfigError && e.problems.length === 1 && e.problems[0] === `"paths.stateDir": ${JSON.stringify(p)} must lie under .git/: a commit can write the work tree, and Ennyn trusts its state`, JSON.stringify(p));
+  }
+  for (const p of outside) assert.throws(own({ impact: { ceilingRegistry: p } }), refused("impact.ceilingRegistry", p), JSON.stringify(p));
+  assert.equal(own({ impact: { ceilingRegistry: "ceilings.json" } })().impact.ceilingRegistry, "ceilings.json");
+  // impact.twins: each directory of a pair is looked up below the project (a presence probe).
+  for (const p of outside) assert.throws(own({ impact: { twins: [["src", p]] } }), refused("impact.twins[0][1]", p), JSON.stringify(p));
+  assert.deepEqual(own({ impact: { twins: [["src/lib/engine", "server/lib"]] } })().impact.twins, [["src/lib/engine", "server/lib"]]);
+  // Every spelling up to four characters from the ones that matter, against the reference.
+  own({});
+  let spellings = [""];
+  for (let n = 0; n < 4; n++) spellings = [...new Set([...spellings, ...spellings.flatMap((s) => [".", "/", "\\", "a", "C", ":"].map((c) => s + c))])];
+  const differ = spellings.filter((v) => {
+    try {
+      loadConfig({ cwd: dir, env: {}, override: { paths: { graph: v } } });
+      return out(v);
+    } catch {
+      return !out(v);
+    }
+  });
+  assert.deepEqual([spellings.length, differ], [1555, []]);
+  // A NUL names no file on any system.
+  assert.throws(own({ paths: { graph: "a\u0000b" } }), (e) => e instanceof ConfigError && /"paths\.graph": "a\\u0000b" holds a NUL/.test(e.message));
+  // Every key that leads out is named, not only the first.
+  assert.throws(own({ paths: { metricsLog: "../m", stateDir: "/s" } }), (e) => e instanceof ConfigError && e.problems.length === 2);
+
+  // A config ENNYN_CONFIG names is held to the same: outside the project, in it under another spelling (a case,
+  // a hard link, a parent's path), through a link into it, or the project's own config linked out.
+  const box = mkdtempSync(join(tmpdir(), "pl-cfg-out-"));
+  writeFileSync(join(box, "machine.json"), JSON.stringify({ paths: { metricsLog: join(box, "m.jsonl") } }));
+  assert.throws(() => loadConfig({ cwd: dir, env: { ENNYN_CONFIG: join(box, "machine.json") } }), refused("paths.metricsLog", join(box, "m.jsonl")));
+  writeFileSync(join(dir, "alt.json"), JSON.stringify({ paths: { metricsLog: "../m" } }));
+  symlinkSync(join(dir, "alt.json"), join(box, "link.json"));
+  linkSync(join(dir, "alt.json"), join(box, "hard.json"));
+  for (const named of ["alt.json", join(dir, "alt.json"), join(dir, "sub/../alt.json"), join(dir, "ALT.json"), join(box, "link.json"), join(box, "hard.json"), `../${basename(dir)}/alt.json`]) {
+    // ALT.json reads only where the disk folds case.
+    if (named.endsWith("ALT.json") && !existsSync(named)) continue;
+    assert.throws(() => loadConfig({ cwd: dir, env: { ENNYN_CONFIG: named } }), refused("paths.metricsLog", "../m"), named);
+  }
+  writeFileSync(join(box, "linked.json"), JSON.stringify({ paths: { metricsLog: "../m" } }));
+  symlinkSync(join(box, "linked.json"), join(dir, ".ennyn/config.json.link"));
+  assert.throws(() => loadConfig({ cwd: dir, env: { ENNYN_CONFIG: ".ennyn/config.json.link" } }), refused("paths.metricsLog", "../m"));
+  // The project's own config linked to a file outside (config-file-link): not read, its bytes in no message.
+  writeFileSync(join(box, "secret"), "SECRET-TOKEN-BYTES");
+  const linkedOwn = mkdtempSync(join(tmpdir(), "pl-cfg-link-"));
+  mkdirSync(join(linkedOwn, ".ennyn"));
+  symlinkSync(join(box, "secret"), join(linkedOwn, ".ennyn/config.json"));
+  assert.throws(() => loadConfig({ cwd: linkedOwn, env: {} }), (e) => /config\.json could not be read: \.ennyn\/config\.json is a symbolic link$/.test(/** @type {Error} */ (e).message) && !/SECRET/.test(/** @type {Error} */ (e).message));
+  // Machine-local files go under the git dir, as the state dir does by default.
+  writeFileSync(join(box, "local.json"), JSON.stringify({ paths: { metricsLog: ".git/ennyn/metrics.jsonl", stateDir: ".git/ennyn" } }));
+  assert.equal(loadConfig({ cwd: dir, env: { ENNYN_CONFIG: join(box, "local.json") } }).paths.metricsLog, ".git/ennyn/metrics.jsonl");
+});
+
+test("files: state is written, removed and listed below its root through no symbolic link, the last component too", () => {
+  const { writeState, removeState, listState, readRegular } = /** @type {any} */ (filesModule);
+  const root = mkdtempSync(join(tmpdir(), "pl-state-"));
+  const away = mkdtempSync(join(tmpdir(), "pl-state-away-"));
+  writeFileSync(join(away, "victim"), "mine\n");
+  const kept = () => [readdirSync(away).sort(), readFileSync(join(away, "victim"), "utf8")];
+  // A link at the file (state-leaf-link), at a directory on the way (state-sidecopy-dir-link), at the root's own level.
+  mkdirSync(join(root, "s"));
+  symlinkSync(join(away, "victim"), join(root, "s/log.jsonl"));
+  symlinkSync(away, join(root, "s/side-copy"));
+  symlinkSync(join(away, "victim"), join(root, "top.jsonl"));
+  for (const [path, how] of [["s/log.jsonl", "append"], ["s/side-copy/x.json", "replace"], ["s/side-copy/x.json", "create"], ["s/side-copy/x.json", "append"], ["top.jsonl", "append"]]) {
+    assert.throws(() => writeState(root, join(root, path), "x\n", how), /was not written: .*is a symbolic link/, `${path} ${how}`);
+  }
+  // Create at a link: refused as a link (O_EXCL alone would take it for a file that is there, and not follow it).
+  assert.throws(() => writeState(root, join(root, "s/log.jsonl"), "x\n", "create"), /was not written: s\/log\.jsonl is a symbolic link/);
+  assert.deepEqual(kept(), [["victim"], "mine\n"]);
+  assert.throws(() => readRegular(root, join(root, "s/side-copy/x.json")), /could not be read: s\/side-copy is a symbolic link/);
+  assert.throws(() => removeState(root, join(root, "s/side-copy/victim")), /was not removed: s\/side-copy is a symbolic link/);
+  assert.throws(() => listState(root, join(root, "s/side-copy")), /could not be read: s\/side-copy is a symbolic link/);
+  // A path outside the root is refused, whatever it names.
+  assert.throws(() => writeState(root, join(away, "victim"), "x\n", "append"), /was not written: it lies outside/);
+  // A link planted at the temporary name a replace writes first is removed, never followed.
+  symlinkSync(join(away, "victim"), join(root, `s/list.json.${process.pid}.tmp`));
+  writeState(root, join(root, "s/list.json"), "{}\n", "replace");
+  assert.deepEqual(kept(), [["victim"], "mine\n"]);
+  assert.equal(readFileSync(join(root, "s/list.json"), "utf8"), "{}\n");
+  // The link itself goes on a remove; what it named stays.
+  removeState(root, join(root, "top.jsonl"));
+  assert.deepEqual([existsSync(join(root, "top.jsonl")), kept()], [false, [["victim"], "mine\n"]]);
+  // Append closes a last line cut short; create refuses what is there.
+  writeFileSync(join(root, "s/torn.jsonl"), "{\"a\":1}\n{\"b\"");
+  writeState(root, join(root, "s/torn.jsonl"), "{\"c\":3}\n", "append");
+  assert.equal(readFileSync(join(root, "s/torn.jsonl"), "utf8"), '{"a":1}\n{"b"\n{"c":3}\n');
+  assert.throws(() => writeState(root, join(root, "s/torn.jsonl"), "x", "create"), (e) => /** @type {any} */ (e).code === "EEXIST");
+  assert.deepEqual(listState(root, join(root, "s/none")), []);
+});
+
 test("git: hook environment does not leak into helpers", () => {
   const a = mkdtempSync(join(tmpdir(), "pl-git-a-"));
   const b = mkdtempSync(join(tmpdir(), "pl-git-b-"));
@@ -220,6 +340,15 @@ test("git: state dir under .git resolves through the common dir in a linked work
   assert.ok(!fromWorktree.startsWith(join(wt, ".git") + "/"));
   assert.equal(resolveStateDir(repo, "state/x"), join(repo, "state/x"));
   assert.equal(resolveStateDir(repo, "/abs/dir"), "/abs/dir");
+  // Spelled another way, a .git value is still one: "./.git/ennyn" goes to the common dir, ".git/../x" is x.
+  assert.equal(resolveStateDir(wt, "./.git/ennyn"), join(commonDir(repo), "ennyn"));
+  assert.equal(resolveStateDir(wt, ".git/../state"), join(wt, "state"));
+  // Its files are read and written below the common git dir for a .git value, below the project for another.
+  const { stateRoot } = await import("../core/git.mjs");
+  // In the git dir its own directory: no commit writes there, a link on the way is this machine's (user-git-state-link).
+  assert.equal(stateRoot(wt, join(fromWorktree, "gate-attempts.jsonl")), fromWorktree);
+  assert.equal(stateRoot(wt, join(wt, "state/x")), wt);
+  assert.equal(stateRoot(repo, "/elsewhere/x"), "/elsewhere");
 });
 
 test("git: stagedPaths reads the index a hook was given, but only from the same repository", async () => {

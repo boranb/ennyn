@@ -9,8 +9,8 @@
  * ties break by id so the pick is deterministic.
  */
 
-import { readFileSync, statSync } from "node:fs";
-import { present } from "../core/files.mjs";
+import { statSync } from "node:fs";
+import { readRegular } from "../core/files.mjs";
 import { UNSHOWN } from "../core/i18n.mjs";
 
 /** Runs of what a report line cannot show (core/i18n.mjs), each made one space in a place a problem names. */
@@ -38,26 +38,21 @@ export class GraphError extends Error {
  */
 export async function loadGraph({ cwd, config }) {
   const path = resolve(cwd, config.paths.graph);
-  let there;
+  // Read as a regular file below the project through no link a commit may hold, a module too before it is imported.
+  let bytes;
   try {
-    there = present(path);
+    bytes = readRegular(cwd, path);
   } catch (err) {
-    throw new GraphError(`work graph ${path} could not be read: ${/** @type {Error} */ (err).message}`);
+    throw new GraphError(`work graph ${/** @type {Error} */ (err).message}`);
   }
-  if (!there) throw new GraphError(`work graph not found: ${path}`);
+  if (bytes === null) throw new GraphError(`work graph not found: ${path}`);
   const { open: openName, done: doneName } = config.graph.exports;
   /** @type {Record<string, unknown>} */
   let data;
   const ext = extname(path);
   if (ext === ".json") {
-    let text;
     try {
-      text = readFileSync(path, "utf8");
-    } catch (err) {
-      throw new GraphError(`work graph ${path} could not be read: ${/** @type {Error} */ (err).message}`);
-    }
-    try {
-      data = JSON.parse(text.replace(BOM, ""));
+      data = JSON.parse(bytes.toString("utf8").replace(BOM, ""));
     } catch (err) {
       throw new GraphError(`cannot parse ${path}: ${/** @type {Error} */ (err).message}`);
     }

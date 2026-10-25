@@ -98,8 +98,8 @@ writeFileSync(brokenConfig, "{");
 const unknownKeyConfig = join(configs, "unknown.json");
 writeFileSync(unknownKeyConfig, JSON.stringify({ sideCopy: { rootz: [] } }));
 const noStateConfig = join(configs, "nostate.json");
-// stateDir under a regular file: the directory can never be created.
-writeFileSync(noStateConfig, JSON.stringify({ paths: { stateDir: "package.json/state" } }));
+// stateDir under a regular file (.git/HEAD): the directory can never be created.
+writeFileSync(noStateConfig, JSON.stringify({ paths: { stateDir: ".git/HEAD/state" } }));
 
 const engineRule = join(project, ".claude/rules/engine.md");
 const inlineRule = join(project, ".claude/rules/inline.md");
@@ -321,6 +321,44 @@ test("hook: state that cannot be written does not stop the injection", () => {
     assert.equal(r.status, 0, r.stderr);
     assert.ok(context(r).includes("ENGINE-RULE-BODY"));
   }
+});
+
+test("hooks: the state dir lies in the git dir; a directory link made there is followed; a list that is itself a link is not read, and the rules are given", () => {
+  // In the work tree, where a commit could plant a list or a link: the config is refused.
+  const work = join(configs, "work-state.json");
+  writeFileSync(work, JSON.stringify({ paths: { stateDir: "state" }, sideCopy: { roots: [scratch] } }));
+  const refused = runHook(readInput("s-work", join(copy, "src/lib/engine/x.ts")), { CLAUDE_PROJECT_DIR: project, ENNYN_CONFIG: work });
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /"paths\.stateDir": "state" must lie under \.git\//);
+  // A state dir this machine put on another disk through a link in the git dir (user-git-state-link): kept there.
+  const away = tmp("pl-sc-disk-");
+  const proj = tmp("pl-sc-linkproj-");
+  cpSync(project, proj, { recursive: true });
+  rmSync(join(proj, ".git", "ennyn"), { recursive: true, force: true });
+  symlinkSync(away, join(proj, ".git", "ennyn"));
+  const cfg = join(configs, "git-state.json");
+  writeFileSync(cfg, JSON.stringify({ sideCopy: { roots: [scratch] } }));
+  const env = { CLAUDE_PROJECT_DIR: proj, ENNYN_CONFIG: cfg };
+  const read = (/** @type {string} */ session) => runHook(readInput(session, join(copy, "src/lib/engine/x.ts")), env);
+  assert.ok(context(read("s-disk")).includes("ENGINE-RULE-BODY"));
+  assert.equal(read("s-disk").stdout, "", "the list is kept through the machine's own link");
+  assert.deepEqual(readdirSync(join(away, "side-copy")), ["s-disk.json"]);
+  // A list that is a link, holding a valid list that says the rule was given: not read, the rule is given, and
+  // the list written in its place leaves the file it named alone.
+  const planted = readFileSync(join(away, "side-copy", "s-disk.json"), "utf8");
+  writeFileSync(join(away, "planted.json"), planted);
+  symlinkSync(join(away, "planted.json"), join(away, "side-copy", "s-leaf.json"));
+  assert.ok(context(read("s-leaf")).includes("ENGINE-RULE-BODY"), "a list that is a link is not read");
+  assert.equal(readFileSync(join(away, "planted.json"), "utf8"), planted);
+  // The reset clears the session's list through the machine's link.
+  const reset = spawnSync(process.execPath, [resetPath], {
+    input: JSON.stringify({ session_id: "s-disk", hook_event_name: "SessionStart", source: "clear", cwd: proj }),
+    env: hookEnv(env),
+    cwd: neutralCwd,
+    encoding: "utf8",
+  });
+  assert.deepEqual([reset.status, reset.stdout], [0, ""]);
+  assert.deepEqual(readdirSync(join(away, "side-copy")).sort(), ["s-leaf.json"]);
 });
 
 test("hook (e): malformed or empty stdin exits 0 with no output", () => {

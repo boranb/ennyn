@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
+import { chmodSync, mkdtempSync, writeFileSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../core/config.mjs";
@@ -31,6 +31,20 @@ function graphFile(name, content) {
   writeFileSync(join(dir, ".ennyn", name), content);
   return dir;
 }
+
+test("graph: one reached through a symbolic link a commit may hold is not read, a module not imported; its bytes reach no message", async () => {
+  const away = mkdtempSync(join(tmpdir(), "pl-graph-away-"));
+  writeFileSync(join(away, "secret.json"), "SECRET-TOKEN-BYTES not json");
+  writeFileSync(join(away, "graph.mjs"), "globalThis.__graphImported = true; export const nodes = [];\n");
+  for (const [name, at, to] of [["graph.json", ".ennyn/graph.json", "secret.json"], ["graph.mjs", ".ennyn/graph.mjs", "graph.mjs"], ["graph.json", ".ennyn", ""]]) {
+    const dir = mkdtempSync(join(tmpdir(), "pl-graph-"));
+    if (at !== ".ennyn") mkdirSync(join(dir, ".ennyn"));
+    symlinkSync(join(away, to), join(dir, at));
+    if (at === ".ennyn") writeFileSync(join(away, name), "SECRET-TOKEN-BYTES not json");
+    await assert.rejects(loadGraph({ cwd: dir, config: cfg({ paths: { graph: `.ennyn/${name}` } }) }), (e) => e instanceof GraphError && /could not be read: \.ennyn(\/graph\.(json|mjs))? is a symbolic link$/.test(e.message) && !e.message.includes("SECRET"), `${at}`);
+  }
+  assert.equal(/** @type {any} */ (globalThis).__graphImported, undefined);
+});
 
 test("ready: gate closed, need unmet, done status and unflagged nodes are excluded", () => {
   const ids = readyMechanization({ open: OPEN, done: DONE }, cfg()).map((n) => n.id);

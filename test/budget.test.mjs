@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { basename, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { git, indexEntries } from "../core/git.mjs";
 import { ruleKey, instructionBudget, readBudgets, recordBudget, previousBudget } from "../setup/budget.mjs";
@@ -504,10 +504,14 @@ test("cli: a metrics log reached through a symbolic link inside the repository i
   mkdirSync(join(box, "ennyn"));
   writeFileSync(join(box, "ennyn", "metrics.jsonl"), real);
   symlinkSync(join(box, "ennyn"), join(dir, ".ennyn"));
-  assert.deepEqual([json().due, run("budget", "--record").status, readFileSync(join(box, "ennyn", "metrics.jsonl"), "utf8")], [null, 1, real]);
-  assert.match(run("audit").stdout, /could not be read: \.ennyn is a symbolic link/);
-  // doctor reads it the same way: unmeasured, not read through the link.
-  assert.ok((await checkSetup({ cwd: dir, env: {} })).items.some((i) => i.key === "doctor.budgetLogUnmeasured" && /\.ennyn is a symbolic link/.test(String(i.vars.error))));
+  // The project's config sits there too: it is not read through the link, so every command stops, doctor too.
+  for (const args of [["audit"], ["budget", "--record"], ["budget"]]) {
+    const r = run(...args);
+    assert.equal(r.status, 1, args.join(" "));
+    assert.match(r.stderr, /config\.json could not be read: \.ennyn is a symbolic link$/m, args.join(" "));
+  }
+  assert.equal(readFileSync(join(box, "ennyn", "metrics.jsonl"), "utf8"), real);
+  await assert.rejects(checkSetup({ cwd: dir, env: {} }), /config\.json could not be read: \.ennyn is a symbolic link/);
 });
 
 test("cli: a metrics log that is no regular file (a link to /dev/stdin or /dev/zero, a FIFO) holds no command", async () => {
@@ -531,27 +535,35 @@ test("cli: a metrics log that is no regular file (a link to /dev/stdin or /dev/z
   assert.deepEqual([b.signal, b.status, /(could not be read|was not written): it is no regular file/.test(b.stderr)], [null, 1, true]);
 });
 
-test("cli: a metrics log the config places outside the repository is the config's choice: recorded there every time, read as a regular file", (t) => {
+test("cli: a metrics log outside the repository: no config can place it there, nothing is written; one it cannot read is due", (t) => {
   const box = mkdtempSync(join(tmpdir(), "en-audit-cfg-"));
-  const outside = join(box, "m.jsonl");
-  const { run, json, commit } = auditRepo({ ".ennyn/config.json": JSON.stringify({ paths: { metricsLog: outside } }) });
-  assert.equal(run("budget", "--record", "--security-audit").status, 0);
-  for (const n of [1, 2]) {
-    commit(`feat: o${n}`);
-    assert.equal(run("budget", "--record").status, 0);
+  // A commit, or a config ENNYN_CONFIG names, sets the log to a file outside (a shell profile): every command refuses the config.
+  writeFileSync(join(box, "profile"), "export A=1\n");
+  writeFileSync(join(box, "machine.json"), JSON.stringify({ paths: { metricsLog: join(box, "profile") } }));
+  for (const metricsLog of [join(box, "profile"), "../../profile", `../${basename(box)}/profile`, null]) {
+    const own = auditRepo(metricsLog === null ? {} : { ".ennyn/config.json": JSON.stringify({ paths: { metricsLog } }) });
+    const env = metricsLog === null ? { ...process.env, ENNYN_CONFIG: join(box, "machine.json") } : process.env;
+    for (const args of [["budget", "--record"], ["budget", "--record", "--security-audit"], ["audit"], ["budget"]]) {
+      const r = spawnSync(process.execPath, [CLI, ...args], { cwd: own.dir, encoding: "utf8", env });
+      assert.equal(r.status, 1, `${metricsLog} ${args.join(" ")}`);
+      assert.match(r.stderr, /^- "paths\.metricsLog": .* leads outside the project directory; every path a config names stays inside it/m);
+    }
+    assert.equal(readFileSync(join(box, "profile"), "utf8"), "export A=1\n", String(metricsLog));
   }
-  assert.deepEqual([readFileSync(outside, "utf8").trim().split("\n").length, json().since], [3, 2]);
+  // A log in the project it cannot read: the audit is due, unmeasured; a mark is refused.
+  const { run, json, log } = auditRepo();
+  assert.equal(run("budget", "--record").status, 0);
   if (process.getuid?.() === 0) return t.skip("root reads any file");
-  chmodSync(outside, 0o000);
+  chmodSync(log, 0o000);
   try {
     const unread = run("audit");
     assert.equal(unread.status, 1);
-    assert.match(unread.stdout, /Due: unmeasured: .*m\.jsonl could not be read: EACCES.*; taken as due\.$/m);
+    assert.match(unread.stdout, /Due: unmeasured: .*metrics\.jsonl could not be read: EACCES.*; taken as due\.$/m);
     assert.equal(json().due, null);
     const mark = run("budget", "--record", "--security-audit");
     assert.deepEqual([mark.status, /could not be read/.test(mark.stderr)], [1, true]);
   } finally {
-    chmodSync(outside, 0o644);
+    chmodSync(log, 0o644);
   }
 });
 

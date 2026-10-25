@@ -5,7 +5,8 @@
  * at once: a silently ignored typo is a gate that never runs.
  */
 
-import { readIfThere } from "./files.mjs";
+import { readIfThere, readRegular } from "./files.mjs";
+import { underGitDir } from "./git.mjs";
 import { join, isAbsolute } from "node:path";
 import { globToRegExp } from "./glob.mjs";
 
@@ -13,6 +14,7 @@ export const DEFAULTS = Object.freeze({
   language: "en",
   // How the agent talks: normal | focused | terse (styles/). Never files or commits.
   conversation: { style: "normal" },
+  // Resolved against the project directory, and kept in it (see loadConfig).
   paths: {
     handoff: "HANDOFF.md",
     changelog: "CHANGELOG.md",
@@ -178,6 +180,25 @@ const NULLABLE = new Map([
   ["impact.ceilingRegistry", ["string"]],
 ]);
 
+// Keys that name a file or directory Ennyn reads or writes, resolved against the project directory.
+const PATH_KEYS = ["paths.handoff", "paths.changelog", "paths.graph", "paths.metricsLog", "paths.stateDir", "impact.ceilingRegistry"];
+
+/**
+ * Whether a path leaves the directory it is resolved against, by its spelling as POSIX and Windows read it:
+ * absolute (/x, \x, C:\x, a drive-relative C:x, \\host\x) or climbing above it (../x, a/../../x, a\..\..\x).
+ * @param {string} p
+ */
+function leaves(p) {
+  if (/^[\\/]|^[A-Za-z]:/.test(p)) return true;
+  let depth = 0;
+  for (const part of p.split(/[\\/]+/)) {
+    if (part === "..") depth--;
+    else if (part !== "" && part !== ".") depth++;
+    if (depth < 0) return true;
+  }
+  return false;
+}
+
 /**
  * @param {Record<string, unknown>} base
  * @param {Record<string, unknown>} over
@@ -235,8 +256,10 @@ export function loadConfig({ cwd, env = process.env, override }) {
   let user = {};
   let found = null;
   // A config that is there but cannot be read is no config problem to report and go on from: it throws. One
-  // the user named (ENNYN_CONFIG) is read whatever it is (`<(…)`, /dev/stdin); the project's own, regular only.
-  const text = readIfThere(configPath, { given: Boolean(env.ENNYN_CONFIG) });
+  // the user named (ENNYN_CONFIG) is read whatever it is (`<(…)`, /dev/stdin); the project's own as a regular
+  // file through no link a commit may hold (core/files.mjs), so no file outside reaches a parse error.
+  const own = env.ENNYN_CONFIG ? null : readRegular(cwd, configPath);
+  const text = env.ENNYN_CONFIG ? readIfThere(configPath, { given: true }) : own && own.toString("utf8");
   if (text !== null) {
     found = configPath;
     try {
@@ -251,6 +274,18 @@ export function loadConfig({ cwd, env = process.env, override }) {
   const problems = [];
   let cfg = merge(/** @type {any} */ (DEFAULTS), user, "", problems);
   if (override) cfg = merge(cfg, override, "", problems);
+  // Every config's paths stay in the project, whoever names the config: a commit writes the project's, and one
+  // ENNYN_CONFIG names may be the project's under another spelling (a case, a hard link, a parent's path). The
+  // state dir lies in the git dir, where no commit writes: Ennyn trusts what it finds there (a mutation journal).
+  // impact.twins: pairs of directories, each looked up below the project like a path key.
+  const twins = /** @type {unknown[]} */ (/** @type {any} */ (cfg).impact.twins);
+  const twinPaths = twins.flatMap((pair, i) => (Array.isArray(pair) ? pair.map((v, j) => [`impact.twins[${i}][${j}]`, v]) : []));
+  for (const [key, value] of [...PATH_KEYS.map((k) => [k, k.split(".").reduce((o, n) => o[n], /** @type {any} */ (cfg))]), ...twinPaths]) {
+    if (typeof value !== "string") continue;
+    if (value.includes("\0")) problems.push(`"${key}": ${JSON.stringify(value)} holds a NUL, which names no file`);
+    else if (leaves(value)) problems.push(`"${key}": ${JSON.stringify(value)} leads outside the project directory; every path a config names stays inside it`);
+    else if (key === "paths.stateDir" && underGitDir(value) === null) problems.push(`"${key}": ${JSON.stringify(value)} must lie under .git/: a commit can write the work tree, and Ennyn trusts its state`);
+  }
   if (!["en", "tr"].includes(/** @type {string} */ (cfg.language))) problems.push(`"language" must be "en" or "tr"`);
   const cm = /** @type {any} */ (cfg).commitMsg;
   if (cm.language !== null && !["en", "tr"].includes(cm.language)) problems.push(`"commitMsg.language" must be "en", "tr" or null`);

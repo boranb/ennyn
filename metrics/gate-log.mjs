@@ -11,10 +11,10 @@
  * attempts had no readable outcome.
  */
 
-import { appendFileSync, closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
-import { git, gitMaybe, resolveStateDir, stagedPaths } from "../core/git.mjs";
+import { readRegular, writeState } from "../core/files.mjs";
+import { git, gitMaybe, resolveStateDir, stagedPaths, stateRoot } from "../core/git.mjs";
 import { parseBound } from "./szz.mjs";
 
 export const GATE_LOG_FILE = "gate-attempts.jsonl";
@@ -96,32 +96,6 @@ function measuredSeconds(start, end) {
 }
 
 /**
- * True when the log exists, is not empty and does not end with a newline: an
- * earlier write was cut off (disk full, killed process). Appending right after
- * it would glue the next attempt to the fragment and lose both.
- * @param {string} path
- */
-function endsTorn(path) {
-  let fd;
-  try {
-    fd = openSync(path, "r");
-  } catch (err) {
-    // No log yet; a log that cannot be read (write-only, a directory) fails the record instead of gluing onto it.
-    if (/** @type {NodeJS.ErrnoException} */ (err).code === "ENOENT") return false;
-    throw err;
-  }
-  try {
-    const size = fstatSync(fd).size;
-    if (size === 0) return false;
-    const last = Buffer.alloc(1);
-    readSync(fd, last, 0, 1, size - 1);
-    return last[0] !== 0x0a;
-  } finally {
-    closeSync(fd);
-  }
-}
-
-/**
  * Append one attempt. Files come from the commit when one is given (the attempt
  * passed), otherwise from the index (a failed commit leaves its files staged).
  * @param {{ cwd: string, config: any, start: number, end?: number, exit: number, kind?: string,
@@ -159,10 +133,9 @@ export function recordAttempt({ cwd, config, start, end = Math.floor(Date.now() 
     ...(seconds === null ? { startGiven: start } : {}),
   };
   const path = gateLogPath(cwd, config.paths.stateDir);
-  mkdirSync(dirname(path), { recursive: true });
   // One write call per line: two sessions committing at once append whole lines. A torn last line is closed
-  // first, so it stays one skipped line instead of swallowing this attempt.
-  appendFileSync(path, (endsTorn(path) ? "\n" : "") + JSON.stringify(entry) + "\n");
+  // first, so it stays one skipped line instead of swallowing this attempt. No link a commit holds is followed.
+  writeState(stateRoot(cwd, path), path, JSON.stringify(entry) + "\n", "append");
   return { path, entry };
 }
 
@@ -197,19 +170,16 @@ export function isAttempt(o) {
 
 /**
  * @param {string} path
+ * @param {string} [root] the directory it is read below with no link (stateRoot); its own by default
  * @returns {{ exists: boolean, attempts: GateAttempt[], skipped: number }}
  *   `exists: false` means nothing was ever recorded, which is not the same as zero attempts in a window.
  *   `skipped` counts lines that are not attempts (a torn write, a hand edit): they are reported, not dropped silently.
- *   A log that is there but cannot be read (no permission on it or its directory, a directory in its place) throws.
+ *   A log that is there but cannot be read (no permission on it or its directory, a directory in its place, a link) throws.
  */
-export function readAttempts(path) {
-  let text;
-  try {
-    text = readFileSync(path, "utf8");
-  } catch (err) {
-    if (/** @type {NodeJS.ErrnoException} */ (err).code === "ENOENT") return { exists: false, attempts: [], skipped: 0 };
-    throw err;
-  }
+export function readAttempts(path, root = dirname(path)) {
+  const bytes = readRegular(root, path);
+  if (bytes === null) return { exists: false, attempts: [], skipped: 0 };
+  const text = bytes.toString("utf8");
   /** @type {GateAttempt[]} */
   const attempts = [];
   let skipped = 0;

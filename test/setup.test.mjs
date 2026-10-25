@@ -319,6 +319,29 @@ test("doctor: bad regex, missing id, duplicate id and unknown need fail; nothing
   assert.ok(!k.some((x) => x.includes("doctor.fix")), "no fix-label check with a broken pattern");
 });
 
+test("doctor: a handoff reached through a symbolic link fails, its bytes in no line; none there, or a regular one, is fine (skill-reads-linked-handoff)", async () => {
+  const away = mkdtempSync(join(tmpdir(), "pl-doc-away-"));
+  writeFileSync(join(away, "profile"), "SECRET-TOKEN-BYTES\n");
+  const graph = JSON.stringify({ nodes: [{ id: "a", mechanization: true }], done: [] });
+  for (const [handoff, link] of [["HANDOFF.md", "HANDOFF.md"], [".ennyn/handoff.md", ".ennyn"], [".ennyn/handoff.md", null], ["HANDOFF.md", null]]) {
+    const dir = mkdtempSync(join(tmpdir(), "pl-doc-handoff-"));
+    put(dir, { "cfg/config.json": JSON.stringify({ paths: { handoff, graph: "cfg/graph.json" } }), "cfg/graph.json": graph });
+    if (link === "HANDOFF.md") symlinkSync(join(away, "profile"), join(dir, "HANDOFF.md"));
+    if (link === ".ennyn") {
+      writeFileSync(join(away, "handoff.md"), "SECRET-TOKEN-BYTES\n");
+      symlinkSync(away, join(dir, ".ennyn"));
+    }
+    if (!link && handoff === "HANDOFF.md") writeFileSync(join(dir, "HANDOFF.md"), "# handoff\n");
+    const res = await checkSetup({ cwd: dir, env: { ENNYN_CONFIG: "cfg/config.json" } });
+    const bad = res.items.filter((i) => i.key === "doctor.handoffBad");
+    if (link) {
+      assert.equal(res.ok, false, handoff);
+      assert.match(String(bad[0]?.vars.error), new RegExp(`could not be read: ${link.replace(".", "\\.")} is a symbolic link$`), handoff);
+      assert.doesNotMatch(JSON.stringify(res.items), /SECRET/);
+    } else assert.deepEqual(bad, [], `${handoff}: none there or a regular file`);
+  }
+});
+
 test("doctor audit: outside a repository the git checks are skipped and the fix label says unmeasured", async () => {
   const dir = mkdtempSync(join(tmpdir(), "pl-doc-out-"));
   put(dir, { ".ennyn/config.json": "{}", ".ennyn/graph.json": JSON.stringify({ nodes: [{ id: "a", mechanization: true }], done: [] }) });

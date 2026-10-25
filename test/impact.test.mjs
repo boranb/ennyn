@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, chmodSync, realpathSync, appendFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, chmodSync, realpathSync, appendFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { loadConfig } from "../core/config.mjs";
@@ -168,6 +168,18 @@ test("impact: a missing twin, no adjacent test, and an unconfigured registry are
   writeFileSync(join(dir, "bom.json"), `\uFEFF${JSON.stringify({ registered: { "src/lib/engine/parse.js#MAX": {} } })}`);
   const bom = buildImpactTable({ cwd: dir, config: cfg({ impact: { ceilingRegistry: "bom.json" } }), symbol: "parseRow", files: ["src/lib/engine/parse.js"] });
   assert.match(bom.rows[3].answer, /1 entries mention the input files: src\/lib\/engine\/parse\.js#MAX/);
+  // A registry reached through a symbolic link a commit may hold is not read: its bytes reach no row.
+  const away = mkdtempSync(join(tmpdir(), "pl-i-away-"));
+  writeFileSync(join(away, "creds"), "SECRET-TOKEN-BYTES not json");
+  symlinkSync(join(away, "creds"), join(dir, "linked.json"));
+  const linked = buildImpactTable({ cwd: dir, config: cfg({ impact: { ceilingRegistry: "linked.json" } }), symbol: "parseRow", files: ["src/lib/engine/parse.js"] });
+  assert.match(linked.rows[3].answer, /ceiling registry: unmeasured: .*linked\.json.*linked\.json is a symbolic link/);
+  assert.doesNotMatch(JSON.stringify(linked.rows), /SECRET/);
+  // A directory on its way a link: the same.
+  symlinkSync(away, join(dir, "reg"));
+  const viaDir = buildImpactTable({ cwd: dir, config: cfg({ impact: { ceilingRegistry: "reg/creds" } }), symbol: "parseRow", files: ["src/lib/engine/parse.js"] });
+  assert.match(viaDir.rows[3].answer, /ceiling registry: unmeasured: .*: reg is a symbolic link/);
+  assert.doesNotMatch(JSON.stringify(viaDir.rows), /SECRET/);
   assert.match(rows[3].answer, /lonely\.js: 0 catch, 1 fallback returns/);
   assert.equal(rows[4].answer, "no test mocks or imports the input files");
 });

@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, appendFileSync, existsSync, realpathSync, chmodSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, readdirSync, appendFileSync, existsSync, realpathSync, chmodSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { basename, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig } from "../core/config.mjs";
 import { git } from "../core/git.mjs";
@@ -278,11 +278,45 @@ test("cli: gate-record usage errors exit 2, refused attempts and unwritable stat
   const refused = run(r.dir, "gate-record", "--start", start, "--exit", "0", "--commit", "no-such-ref");
   assert.equal(refused.code, 1);
   assert.match(refused.stderr, /^Gate attempt not recorded: not a commit: no-such-ref/);
-  const blocked = repo({ paths: { stateDir: "package.json/state" } });
+  const blocked = repo({ paths: { stateDir: ".git/HEAD/state" } });
   blocked.commit({ "package.json": "{}\n" }, "first");
   const unwritable = run(blocked.dir, "gate-record", "--start", start, "--exit", "1");
   assert.equal(unwritable.code, 1);
   assert.match(unwritable.stderr, /^ennyn gate-record: /);
+  // A state dir a commit points out of the repository, by a path or by a link: nothing is written there.
+  const away = realpathSync(mkdtempSync(join(tmpdir(), "pl-gate-away-")));
+  writeFileSync(join(away, "victim"), "mine\n");
+  const out = repo({ paths: { stateDir: `../${basename(away)}` } });
+  assert.match(run(out.dir, "gate-record", "--start", start, "--exit", "1").stderr, /"paths\.stateDir": .* leads outside the project directory/);
+  // A state dir in the work tree, where a commit could plant the log or a link (state-leaf-link-gate-log,
+  // state-root-leaf-link-dot, -empty, -descent): the config is refused, nothing is written.
+  for (const stateDir of ["state", ".", "", "src/.."]) {
+    const work = repo({ paths: { stateDir } });
+    symlinkSync(join(away, "victim"), join(work.dir, "gate-attempts.jsonl"));
+    work.commit({ "a.txt": "a\n" }, "first");
+    for (const args of [["gate-record", "--start", start, "--exit", "1"], ["gate-stats"]]) {
+      const r = run(work.dir, ...args);
+      assert.equal(r.code, 1, `${JSON.stringify(stateDir)} ${args[0]}`);
+      assert.match(r.stderr, /"paths\.stateDir": .* must lie under \.git\//, `${JSON.stringify(stateDir)} ${args[0]}`);
+    }
+  }
+  // In the git dir a directory link this machine made (a state dir on another disk) is followed (user-git-state-link);
+  // the log itself is never a link.
+  const own = repo();
+  own.commit({ "a.txt": "a\n" }, "first");
+  const disk = realpathSync(mkdtempSync(join(tmpdir(), "pl-gate-disk-")));
+  symlinkSync(disk, join(own.dir, ".git", "ennyn"));
+  assert.equal(run(own.dir, "gate-record", "--start", start, "--exit", "1").code, 0);
+  assert.equal(readFileSync(join(disk, "gate-attempts.jsonl"), "utf8").trim().split("\n").length, 1);
+  assert.equal(run(own.dir, "gate-stats").code, 0);
+  rmSync(join(disk, "gate-attempts.jsonl"));
+  symlinkSync(join(away, "victim"), join(disk, "gate-attempts.jsonl"));
+  for (const args of [["gate-record", "--start", start, "--exit", "1"], ["gate-stats"]]) {
+    const r = run(own.dir, ...args);
+    assert.equal(r.code, 1, args[0]);
+    assert.match(r.stderr, /(was not written|could not be read): gate-attempts\.jsonl is a symbolic link$/m, args[0]);
+  }
+  assert.deepEqual([readdirSync(away), readFileSync(join(away, "victim"), "utf8")], [["victim"], "mine\n"]);
 });
 
 test("gate-log audit: a log that is there but cannot be read fails; it is not \"nothing recorded\"", (t) => {

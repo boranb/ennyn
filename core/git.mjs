@@ -18,7 +18,7 @@
  */
 
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import { isUtf8 } from "node:buffer";
 import { realpathSync } from "node:fs";
 import { readIfThere } from "./files.mjs";
@@ -1110,19 +1110,54 @@ export function commonDir(cwd) {
 }
 
 /**
+ * A state dir under the git dir, however it is spelled ("./.git/ennyn", ".git\\ennyn"): the part after ".git",
+ * or null for a value elsewhere (".git/../x" is x).
+ * @param {string} stateDir config `paths.stateDir`
+ */
+export function underGitDir(stateDir) {
+  const norm = posix.normalize(stateDir.replace(/\\/g, "/"));
+  return norm === ".git" || norm.startsWith(".git/") ? norm.slice(".git".length) : null;
+}
+
+/**
  * Resolve the machine-local state directory. A value under ".git/" is resolved
  * through the common git dir: in a linked worktree ".git" is a file, and a
- * state dir under it cannot be created.
+ * state dir under it cannot be created. Its files are read and written only
+ * below stateRoot (core/files.mjs), so a link a commit holds is never followed.
  * @param {string} projectDir
  * @param {string} stateDir config `paths.stateDir`
  * @returns {string}
  */
 export function resolveStateDir(projectDir, stateDir) {
   if (isAbsolute(stateDir)) return stateDir;
-  const norm = stateDir.replace(/\\/g, "/");
-  if (norm === ".git" || norm.startsWith(".git/")) {
+  const inGit = underGitDir(stateDir);
+  if (inGit !== null) {
     const common = commonDir(projectDir);
-    if (common) return join(common, norm.slice(".git".length));
+    if (common) return join(common, inGit);
   }
   return resolve(projectDir, stateDir);
+}
+
+/**
+ * The directory a file of Ennyn's state is read and written below, no link from it to the file
+ * (core/files.mjs writeState): for a file in the common git dir its own directory, since no commit writes
+ * there and a link on the way is this machine's (a state dir on another disk); else the project directory
+ * for one in it, as spelled or as its real path; else the file's own directory, one this machine chose (the
+ * per-user temporary one). The file itself is never a link.
+ * @param {string} projectDir @param {string} path absolute
+ */
+export function stateRoot(projectDir, path) {
+  const within = (/** @type {string} */ root) => {
+    const r = relative(root, path);
+    return r.split(sep)[0] !== ".." && !isAbsolute(r);
+  };
+  const common = commonDir(projectDir);
+  if (common && within(common)) return dirname(path);
+  let real = projectDir;
+  try {
+    real = realpathSync(projectDir);
+  } catch {
+    // Not there to resolve: its spelling stands.
+  }
+  return [projectDir, real].find(within) ?? dirname(path);
 }

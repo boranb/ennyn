@@ -14,7 +14,7 @@
 
 import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync } from "node:fs";
-import { present } from "../core/files.mjs";
+import { present, readRegular } from "../core/files.mjs";
 import { isAbsolute, join, posix, relative } from "node:path";
 import { git, gitMaybe, gitRun } from "../core/git.mjs";
 import { matchAny } from "../core/glob.mjs";
@@ -462,26 +462,36 @@ function rowS4(c) {
   const regPath = config.impact.ceilingRegistry;
   if (!c.files.length) parts.push({ label: regLabel, text: t("impact.reason.noFiles", {}, lang), measured: false });
   else if (!regPath) parts.push({ label: regLabel, text: t("impact.reason.noRegistry", {}, lang), measured: false });
-  else if (!present(join(c.cwd, regPath))) {
-    parts.push({ label: regLabel, text: t("impact.reason.registryMissing", { path: regPath }, lang), measured: false });
-  } else {
-    commands.push(`grep -F -e ${c.files.join(" -e ")} ${regPath}`);
+  else {
+    // Read as a regular file below the project, through no link a commit may hold.
+    /** @type {Buffer | null | Error} */
+    let read;
     try {
-      // A byte order mark some editors write is no part of the JSON.
-      const entries = registryEntries(JSON.parse(readFileSync(join(c.cwd, regPath), "utf8").replace(/^\uFEFF/, "")));
-      const hits = entries
-        .filter(([key, value]) => {
-          const text = key + "\n" + JSON.stringify(value);
-          return c.files.some((f) => text.includes(f));
-        })
-        .map(([key]) => key);
-      parts.push({
-        label: regLabel,
-        text: hits.length ? t("impact.s4.entries", { n: hits.length, list: capList(hits, lang) }, lang) : t("impact.s4.noEntries", {}, lang),
-        measured: true,
-      });
+      read = readRegular(c.cwd, join(c.cwd, regPath));
     } catch (err) {
-      parts.push({ label: regLabel, text: t("impact.reason.registryUnreadable", { path: regPath, error: errorLine(err) }, lang), measured: false });
+      read = /** @type {Error} */ (err);
+    }
+    if (read === null) parts.push({ label: regLabel, text: t("impact.reason.registryMissing", { path: regPath }, lang), measured: false });
+    else {
+      commands.push(`grep -F -e ${c.files.join(" -e ")} ${regPath}`);
+      try {
+        if (read instanceof Error) throw read;
+        // A byte order mark some editors write is no part of the JSON.
+        const entries = registryEntries(JSON.parse(read.toString("utf8").replace(/^\uFEFF/, "")));
+        const hits = entries
+          .filter(([key, value]) => {
+            const text = key + "\n" + JSON.stringify(value);
+            return c.files.some((f) => text.includes(f));
+          })
+          .map(([key]) => key);
+        parts.push({
+          label: regLabel,
+          text: hits.length ? t("impact.s4.entries", { n: hits.length, list: capList(hits, lang) }, lang) : t("impact.s4.noEntries", {}, lang),
+          measured: true,
+        });
+      } catch (err) {
+        parts.push({ label: regLabel, text: t("impact.reason.registryUnreadable", { path: regPath, error: errorLine(err) }, lang), measured: false });
+      }
     }
   }
 

@@ -49,7 +49,7 @@ Depo herkese açılmadan önce yerel bir kopyadan kurun: `claude plugin marketpl
 
 ## Ayar
 
-Her projede tek dosya: `.ennyn/config.json`; `/ennyn:init` yazar. Yalnız varsayılandan farklı olanı yazın. Bilinmeyen anahtarlar ve tür uyuşmazlıkları birlikte raporlanır; bir yazım hatası bir denetimi sessizce kapatamaz.
+Her projede tek dosya: `.ennyn/config.json`; `/ennyn:init` yazar. Yalnız varsayılandan farklı olanı yazın. Bilinmeyen anahtarlar ve tür uyuşmazlıkları birlikte raporlanır; bir yazım hatası bir denetimi sessizce kapatamaz. Ayardaki her yol projede, makineye ait durum git dizininde kalır ve Ennyn dosyalarını bir commit'in koyabileceği hiçbir sembolik bağdan geçmeden okur ve yazar; böylece bir commit onları dışarı yönlendiremez.
 
 ```json
 {

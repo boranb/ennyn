@@ -10,9 +10,9 @@
  * otherwise never come back, and nobody would know.
  */
 
-import { readdirSync, rmSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import { gone } from "../../../core/files.mjs";
+import { listState, removeState } from "../../../core/files.mjs";
+import { stateRoot } from "../../../core/git.mjs";
 import { loadConfig } from "../../../core/config.mjs";
 import { t } from "../../../core/i18n.mjs";
 import { said, sideCopyStatePath } from "./side-copy-rules.mjs";
@@ -51,14 +51,10 @@ async function main() {
     // conversation ends the subagents in it, and their lists would only keep rules from them later.
     const main = sideCopyStatePath(projectDir, config.paths.stateDir, input.session_id);
     const prefix = `${basename(main, ".json")}+agent-`;
-    /** @type {string[]} */
-    let names = [];
-    try {
-      names = readdirSync(dirname(main));
-    } catch (err) {
-      if (!gone(err)) throw err;
-    }
-    for (const name of [basename(main), ...names.filter((n) => n.startsWith(prefix) && n.endsWith(".json"))]) rmSync(join(dirname(main), name), { force: true });
+    // Listed and removed below the state root with no link among the directories: a commit's link is not followed.
+    const root = stateRoot(projectDir, main);
+    const names = listState(root, dirname(main));
+    for (const name of [basename(main), ...names.filter((n) => n.startsWith(prefix) && n.endsWith(".json"))]) removeState(root, join(dirname(main), name));
   } catch (err) {
     notReset(err);
   }
