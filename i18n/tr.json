@@ -226,6 +226,7 @@
   "deps.reason.notPortable": "{from}: bir yoldaki \\ ya da : Windows'taki npm'de bir şekilde (ayırıcı, sürücü), başka yerlerde başka şekilde okunur: yolu / ile ve : olmadan yaz",
   "deps.reason.specTag": "{from} bir etiket, kilidin oradaki girdisi bir kayıt defteri URL'sinden gelmiyor ({held}): npm etiketi kayıt defterinden çeker, burada hiçbir şey onu denetlemez; kilidi npm ile yeniden yaz",
   "deps.reason.specSources": "ya da bu tam belirtimi, {spec}, security.deps.sources'a yaz",
+  "deps.reason.shrinkwrap": "kendi npm-shrinkwrap.json dosyasını taşıyan bir paket: npm onun altına o dosyanın adını verdiklerini kurar; bu kilit onları göstermez, hiçbir şey ölçmedi",
   "deps.reason.inRepo": "deponun tuttuğu bir dosya: içindekiler okunmuyor",
   "deps.reason.noResolvedUnlisted": "resolved URL'si yok: npm onu {from} adresine sorar: o kayıt defterini security.deps.registries'e yaz",
   "deps.reason.noResolvedEnv": "resolved URL'si yok ve npm'in ona soracağı kayıt defteri ortamdan geliyor: onu {file} dosyasında URL'siyle adlandır",

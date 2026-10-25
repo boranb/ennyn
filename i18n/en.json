@@ -226,6 +226,7 @@
   "deps.reason.notPortable": "{from}: a \\ or a : in a path is read one way by npm on Windows (a separator, a drive) and another elsewhere: write the path with / and no :",
   "deps.reason.specTag": "{from} is a tag, and the lock's entry there comes from no registry URL ({held}): npm fetches the tag from the registry instead, which nothing here checks; write the lock again with npm",
   "deps.reason.specSources": "or list this exact spec, {spec}, in security.deps.sources",
+  "deps.reason.shrinkwrap": "a package that carries its own npm-shrinkwrap.json: under it npm installs what that file names, which this lock does not show and nothing measured",
   "deps.reason.inRepo": "a file the repository holds: what it holds is not read",
   "deps.reason.noResolvedUnlisted": "no resolved URL: npm asks {from} for it: list that registry in security.deps.registries",
   "deps.reason.noResolvedEnv": "no resolved URL and the registry npm asks for it is set from the environment: name it by its URL in {file}",

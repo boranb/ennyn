@@ -1234,6 +1234,22 @@ test("deps command: known advisories with every place that holds them, install s
   assert.match(none.stdout, /advisories unmeasured for 1 entries \(security\.deps\.advisories is empty\)/);
 });
 
+test("deps shrinkwrap: a package that carries its own npm-shrinkwrap.json is said, and so is every entry under it; a flag of another kind is refused", async () => {
+  const R = "https://registry.npmjs.org";
+  const reg = (/** @type {string} */ n) => ({ version: "1.0.0", resolved: `${R}/${n}/-/${n}-1.0.0.tgz`, integrity: "sha512-x" });
+  const text = lock({ "node_modules/p": { ...reg("p"), hasShrinkwrap: true }, "node_modules/p/node_modules/c": reg("c"), "node_modules/q": reg("q") });
+  const read = lockEntries(text).entries ?? [];
+  assert.deepEqual(read.map((e) => [e.key, Boolean(e.shrinkwrap), Boolean(e.wrapped)]), [["node_modules/p", true, false], ["node_modules/p/node_modules/c", false, true], ["node_modules/q", false, false]]);
+  assert.deepEqual(read.map((e) => Object.keys(judgeEntry(e, rule({}), {}))[0]), ["listed", "said", "listed"]);
+  const m = await depsMessages(new Map([["package-lock.json", { staged: Buffer.from(text), head: Buffer.from(lock({})) }]]), rule({ online: false }), "en");
+  assert.deepEqual(m.errors, []);
+  assert.match(m.warnings.join("\n"), /unmeasured for 2 new versions \(a package that carries its own npm-shrinkwrap\.json.*c@1\.0\.0.*p@1\.0\.0|p@1\.0\.0.*c@1\.0\.0/);
+  // Turning the flag on makes the entry new.
+  assert.equal(newEntries(lockEntries(text).entries ?? [], lockEntries(lock({ "node_modules/p": reg("p"), "node_modules/p/node_modules/c": reg("c"), "node_modules/q": reg("q") })).entries ?? []).length, 2);
+  const odd = lockEntries(lock({ "node_modules/p": { ...reg("p"), hasShrinkwrap: "true" } })).entries ?? [];
+  assert.deepEqual(/** @type {any} */ (judgeEntry(odd[0], rule({}), {})).reason, { key: "odd", vars: { field: "hasShrinkwrap", kind: "string" } });
+});
+
 test("deps specs through the hook and the command: every package.json a lock names is read, and a staged one brings in that lock", async () => {
   const osv = await osvServer();
   try {
@@ -1275,6 +1291,11 @@ test("deps specs through the hook and the command: every package.json a lock nam
     const proven = await cli(["deps"], r.dir);
     assert.match(proven.stdout, /^lock files: 1 · entries: 1 · advisories: 0 · install scripts: 0 · refused: 0 · unmeasured: 0$/m);
     writeFileSync(join(r.dir, "packages/w/package.json"), pkg({}));
+    // A package with its own npm-shrinkwrap.json, and what sits under it: unmeasured, each said.
+    writeFileSync(join(r.dir, "package-lock.json"), lock({ ...entry(osv.origin, "minimist", "1.2.8", { hasShrinkwrap: true }), ...under("minimist", entry(osv.origin, "nat", "1.0.0")), "node_modules/w": { resolved: "packages/w", link: true }, "packages/w": { name: "w", version: "1.0.0" } }));
+    const wrapped = await cli(["deps"], r.dir);
+    assert.match(wrapped.stdout, /unmeasured: 2$/m);
+    assert.match(wrapped.stdout, /minimist@1\.2\.8 \(package-lock\.json\).*npm-shrinkwrap\.json/);
   } finally {
     await osv.close();
   }

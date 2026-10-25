@@ -1033,7 +1033,9 @@ const COMMANDS = {
       for (const [e, j] of r.judged) judged.set(e, j);
       const at = (/** @type {import("../checks/deps.mjs").LockEntry} */ e) => ({ ...e, path });
       // What the judgment could not measure and no advisory query will name: links, and reads that failed.
-      unmeasuredHere.push(...r.unread.filter((u) => mine.includes(/** @type {any} */ (u.entry)) || ["indexUnread", "noResolvedUnread"].includes(u.reason.key)).map((u) => ({ entry: at(u.entry), reason: u.reason })));
+      unmeasuredHere.push(...r.unread.filter((u) => mine.includes(/** @type {any} */ (u.entry)) || ["indexUnread", "noResolvedUnread", "shrinkwrap"].includes(u.reason.key)).map((u) => ({ entry: at(u.entry), reason: u.reason })));
+      // What npm installs under an entry that carries its own npm-shrinkwrap.json: that file's, unmeasured.
+      unmeasuredHere.push(...entries.filter((e) => e.path === path && e.shrinkwrap).map((e) => ({ entry: e, reason: { key: "shrinkwrap" } })));
       mismatched.push(...r.refused.mismatch.map((x) => ({ entry: at(x.entry), reason: x.reason })));
       refusedSources.push(...r.refused.unlisted.map((x) => ({ entry: at(x.entry), reason: x.reason, kind: /** @type {const} */ ("unlisted") })), ...r.refused.git.map((x) => ({ entry: at(x.entry), reason: x.reason, kind: /** @type {const} */ ("git") })));
     }

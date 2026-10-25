@@ -33,8 +33,9 @@ import { matchAny } from "../core/glob.mjs";
 import { t, tShown } from "../core/i18n.mjs";
 
 /**
- * @typedef {{ key: string, name: string, version: string, resolved: string | null, integrity: string | null, scripts: boolean, bundled: boolean, odd?: { field: string, kind: string, raw?: string } | null, spec?: { from: string, dir: string, raw?: string, tag?: string, overridden?: true } }} LockEntry
- *   `spec`: a dependency's spec npm may fetch from, as a `resolved` (specsOf), not the lock's entry
+ * @typedef {{ key: string, name: string, version: string, resolved: string | null, integrity: string | null, scripts: boolean, bundled: boolean, odd?: { field: string, kind: string, raw?: string } | null, spec?: { from: string, dir: string, raw?: string, tag?: string, overridden?: true }, shrinkwrap?: true, wrapped?: true }} LockEntry
+ *   `spec`: a dependency's spec npm may fetch from, as a `resolved` (specsOf), not the lock's entry; `shrinkwrap`:
+ *   it carries its own npm-shrinkwrap.json (`hasShrinkwrap`), `wrapped`: it sits under one that does
  * @typedef {{ paths: string[], cooldownDays: number, minShare: number, minWeekly: number, allow: string[], allowScripts: string[], sources: string[], online: boolean, timeout: number, registries: Record<string, string | null>, advisories: string, advisoryRegistries: string[] }} DepsRule
  * @typedef {{ key: string, vars?: Record<string, string | number>, inner?: Reason }} Reason why something was not measured: `deps.reason.<key>`, after `inner`'s
  * @typedef {{ held: number }} Meter the answer bytes held at once in one run
@@ -98,7 +99,7 @@ export function lockText(bytes) {
 
 /** The fields npm reads from a lock entry as text, and as a flag (arborist's shrinkwrap.js and load-virtual.js). */
 const TEXT_FIELDS = ["resolved", "version", "integrity", "name", "from"];
-const FLAG_FIELDS = ["link", "inBundle", "bundled", "hasInstallScript"];
+const FLAG_FIELDS = ["link", "inBundle", "bundled", "hasInstallScript", "hasShrinkwrap"];
 
 /**
  * A lock entry as the checks read it: its name (an alias's `name`, else its folder), version, resolved and
@@ -123,6 +124,7 @@ function entryOf(v, key, name) {
     scripts: v.hasInstallScript === true,
     bundled: false,
     odd,
+    ...(v.hasShrinkwrap === true ? { shrinkwrap: /** @type {const} */ (true) } : {}),
   };
 }
 
@@ -404,12 +406,15 @@ export function lockEntries(text, { pkg, folders = () => undefined } = {}) {
     if (typeof packages !== "object" || Array.isArray(packages)) return { unread: { key: "noPackages" } };
     // npm's own test: load-virtual.js reads the flags back when `!(originalLockfileVersion >= 2)`, the raw value.
     const bundled = bundledIn(packages, { reconstruct: !(lock.lockfileVersion >= 2) });
+    // npm installs under an entry that carries its own npm-shrinkwrap.json what that file, in its tarball, names.
+    const wrappers = Object.entries(packages).filter(([k, v]) => k && v && typeof v === "object" && v.hasShrinkwrap === true).map(([k]) => `${k.replace(/\\/g, "/")}/node_modules/`);
     for (const [raw, v] of Object.entries(packages)) {
       const key = raw.replace(/\\/g, "/");
       const at = key.lastIndexOf("node_modules/");
       if (at === -1 || !v || typeof v !== "object") continue;
       const e = entryOf(v, key, key.slice(at + "node_modules/".length));
-      (v.link ? links : entries).push(v.link ? e : { ...e, bundled: bundled(raw) });
+      const under = wrappers.some((w) => key.startsWith(w)) ? { wrapped: /** @type {const} */ (true) } : {};
+      (v.link ? links : entries).push(v.link ? e : { ...e, bundled: bundled(raw), ...under });
     }
     return { entries, links, ...specsOf(packages, pkg, folders) };
   }
@@ -438,7 +443,7 @@ export function lockEntries(text, { pkg, folders = () => undefined } = {}) {
 /** name@version, or the name alone for an entry with no version (a link, a version 1 source). @param {LockEntry} e */
 const idOf = (e) => (e.version ? `${e.name}@${e.version}` : e.name);
 /** @param {LockEntry} e */
-const sealOf = (e) => `${idOf(e)} ${e.resolved ?? ""} ${e.integrity ?? ""} ${e.odd?.raw ?? ""} ${e.bundled ? "bundled" : ""} ${e.spec ? `spec ${e.key} ${e.spec.from}` : ""}`;
+const sealOf = (e) => `${idOf(e)} ${e.resolved ?? ""} ${e.integrity ?? ""} ${e.odd?.raw ?? ""} ${e.bundled ? "bundled" : ""} ${e.spec ? `spec ${e.key} ${e.spec.from}` : ""} ${e.shrinkwrap ? "shrinkwrap" : ""} ${e.wrapped ? "wrapped" : ""}`;
 /** Sorted by name, then version: messages do not depend on the order answers arrived in. @param {LockEntry} a @param {LockEntry} b */
 const byIdentity = (a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : a.version < b.version ? -1 : a.version > b.version ? 1 : 0);
 
@@ -721,6 +726,7 @@ export function judgeEntry(e, rule, { lockDir = "", registry = { reason: { key: 
   }
   if (e.odd) return { refuse: "unlisted", reason: e.odd.kind === "from" ? { key: "fromNoIntegrity" } : { key: "odd", vars: { field: e.odd.field, kind: e.odd.kind } } };
   if (e.bundled && !link) return { said: { key: "bundled" } };
+  if (e.wrapped && !link) return { said: { key: "shrinkwrap" } };
   const form = e.resolved !== null && rule.sources.includes(e.resolved) ? sourceForm(e.resolved) : null;
   if (form) return { sourced: e, sealed: form === "tarball" || (form === "path" && !link && TARBALL.test(/** @type {string} */ (e.resolved))) };
   if (link) {
@@ -1344,8 +1350,9 @@ export async function depsMessages(versions, rule, lang, { now = Date.now(), bes
     const lockDir = dirOf(path);
     const links = newEntries(staged.links, lost ? [] : (headLock?.links ?? []));
     const { judged, listed, sealed, refused, unread: saidHere } = judgeLock([...fresh, ...specs], links, rule, { lockDir, registryFor: (name) => resolverFor(lockDir)(name), kinds });
+    // An entry that carries its own npm-shrinkwrap.json: what npm installs under it is that file's, unmeasured.
     /** @type {{ entry: LockEntry, reason: Reason, part: "all" | "age" | "adoption" }[]} */
-    let unread = saidHere;
+    let unread = [...saidHere, ...fresh.filter((e) => e.shrinkwrap).map((entry) => ({ entry, reason: { key: "shrinkwrap" }, part: /** @type {const} */ ("all") }))];
     const proven = (/** @type {LockEntry} */ e) => {
       const j = judged.get(e);
       return j && "listed" in j ? j.listed : e;
