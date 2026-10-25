@@ -311,7 +311,7 @@ test("cli: twelve cycles audit at 1, 4, 7 and 10 on the main line, squash-merged
     git(["checkout", "-q", "-b", `f${n}`], { cwd: squash.dir });
     const due = squash.cycle(n);
     git(["checkout", "-q", "main"], { cwd: squash.dir });
-    git(["merge", "-q", "--squash", `f${n}`], { cwd: squash.dir });
+    git([...ID, "merge", "-q", "--squash", `f${n}`], { cwd: squash.dir });
     git([...ID, "commit", "-q", "-m", `feat: f${n}`], { cwd: squash.dir });
     return due;
   });
@@ -350,7 +350,7 @@ test("cli: a branch's audit covers only what its log held: landed by squash or b
     git(["checkout", "-q", "main"], { cwd: r.dir });
     assert.deepEqual([r.cycle(2), r.cycle(3)], [false, false]);
     if (land === "squash") {
-      git(["merge", "-q", "--squash", "audit"], { cwd: r.dir });
+      git([...ID, "merge", "-q", "--squash", "audit"], { cwd: r.dir });
       git([...ID, "commit", "-q", "-m", "feat: the branch, squashed"], { cwd: r.dir });
     } else git([...ID, "merge", "-q", "--no-edit", "audit"], { cwd: r.dir });
     assert.deepEqual([r.json().due, r.json().since], [true, 2], land);

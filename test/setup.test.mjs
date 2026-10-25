@@ -1238,8 +1238,9 @@ test("scan audit (review two): a config the user names is read whatever it is, a
   r.commit("feat: start", { "a.txt": "1" });
   put(r.dir, { ".git/MSG": "no type here\n" });
   const cfg = JSON.stringify({ commitMsg: { types: ["feat", "fix"] } });
-  // From stdin (`cat cfg | ENNYN_CONFIG=/dev/stdin ennyn commit-check`): read, so the message is checked and refused.
-  const stdin = spawnSync(process.execPath, [CLI, "commit-check", join(r.dir, ".git", "MSG")], { cwd: r.dir, encoding: "utf8", input: cfg, env: { ...process.env, ENNYN_CONFIG: "/dev/stdin" } });
+  // From stdin (`cat cfg | ENNYN_CONFIG=/dev/stdin ennyn commit-check`): read, so the message is checked and refused. Through
+  // a shell's pipe: Node's `input` is a socket pair, which Linux will not open by /dev/stdin (ENXIO).
+  const stdin = spawnSync("sh", ["-c", 'printf "%s" "$CFG" | ENNYN_CONFIG=/dev/stdin "$NODE" "$CLI_PATH" commit-check "$MSG"'], { cwd: r.dir, encoding: "utf8", env: { ...process.env, CFG: cfg, NODE: process.execPath, CLI_PATH: CLI, MSG: join(r.dir, ".git", "MSG") } });
   assert.equal(stdin.status, 1, stdin.stderr);
   assert.match(stdin.stderr, /^Subject must start with a type from commitMsg\.types \(feat, fix\)/m);
   // From a pipe a writer fills, as `<(cat cfg)` gives: the hook waits for it and checks the commit.
