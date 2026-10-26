@@ -500,8 +500,8 @@ test("audit slot: a record's key is a digest of its line, CR and byte order mark
   assert.equal(k(rec()), k(`${rec()}\r`), "a trailing CR");
   assert.equal(k(rec()), k(`\uFEFF${rec()}`), "a leading byte order mark");
   assert.notEqual(k(rec()), k(rec({ always: 2 })), "an edited record is another key");
-  const mark = rec({ securityAudit: true, covers: ["0123456789abcdef", "NOT-A-KEY", 7, "0123456789ABCDEF"] });
-  const text = [`\uFEFF${rec()}\r`, mark, "{ cut", "", "   ", "null", "[]", JSON.stringify({ kind: "gate" }), rec({ securityAudit: "true", covers: ["0123456789abcdef"] }), rec({ commit: 5 })].join("\n");
+  const mark = rec({ commit: "b".repeat(40), securityAudit: true, covers: ["0123456789abcdef", "NOT-A-KEY", 7, "0123456789ABCDEF"] });
+  const text = [`\uFEFF${rec()}\r`, mark, "{ cut", "", "   ", "null", "[]", JSON.stringify({ kind: "gate" }), rec({ commit: "c".repeat(40), securityAudit: "true", covers: ["0123456789abcdef"] }), rec({ commit: 5 })].join("\n");
   // A line that is not UTF-8 keeps its own key.
   const bytes = Buffer.concat([Buffer.from(`${text}\n`), Buffer.from([0xff, 0xfe, 0x0a, 0xff, 0xfd, 0x0a])]);
   const records = cycleRecords(bytes);
@@ -509,9 +509,9 @@ test("audit slot: a record's key is a digest of its line, CR and byte order mark
     records.map((r) => [r.budget, r.commit, r.mark, r.covers]),
     [
       [true, "a".repeat(40), false, []],
-      [true, "a".repeat(40), true, ["0123456789abcdef"]],
+      [true, "b".repeat(40), true, ["0123456789abcdef"]],
       [false, null, false, []],
-      [true, "a".repeat(40), false, []],
+      [true, "c".repeat(40), false, []],
       [true, null, false, []],
       [false, null, false, []],
       [false, null, false, []],
@@ -520,6 +520,15 @@ test("audit slot: a record's key is a digest of its line, CR and byte order mark
   assert.equal(records[0].key, k(rec()));
   assert.notEqual(records[5].key, records[6].key, "two lines that are not UTF-8 are two keys");
   assert.deepEqual(cycleRecords(null), []);
+  // The log is only appended to: a record another names in `replaces` is replaced by it, wherever the two lines stand
+  // (merge=union orders them as it likes); two records of one commit that name nothing both count (a log from before).
+  const plainB = rec({ commit: "b".repeat(40), replaces: k(mark) });
+  for (const lines of [[rec(), mark, plainB], [plainB, mark, rec()]]) {
+    const again = cycleRecords(Buffer.from(lines.join("\n")));
+    assert.deepEqual(new Set(again.map((r) => [r.key, r.mark, r.replaces].join(" "))), new Set([`${k(rec())} false `, `${k(plainB)} false ${k(mark)}`]));
+  }
+  const both = cycleRecords(Buffer.from([rec(), rec({ always: 2 }), rec({ replaces: "NOT-A-KEY" })].join("\n")));
+  assert.equal(both.length, 3, "no key named, nothing replaced");
 });
 
 test("audit slot: due with no mark, or every N cycles no mark covers; a mark covers what it lists and itself; copies are one cycle", () => {

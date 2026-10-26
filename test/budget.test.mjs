@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync, readFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -113,6 +113,15 @@ test("budget: one record per commit; the change is measured against another comm
   assert.equal(previousBudget(log.records, "def")?.commit, "abc", "recording twice at def does not hide def's change");
   assert.equal(previousBudget(log.records, "zzz")?.commit, "def");
   assert.deepEqual(readBudgets(join(dir, "missing.jsonl")), { records: [], skipped: 0, unusable: 0 });
+  // A log an older version wrote holds two records of one commit (it replaced only the last line): recording again
+  // there replaces the newer, this cycle's own, not the earlier cycle's.
+  const old = [{ commit: "c", always: 1 }, { commit: "d", always: 2 }, { commit: "c", always: 3 }].map((r) => JSON.stringify({ kind: "budget", date: "2026-10-01", ...r, onDemand: 0, repeatedLines: 0 }));
+  writeFileSync(join(dir, "old.jsonl"), `${old.join("\n")}\n`);
+  assert.equal(recordBudget(dir, "old.jsonl", { always: 4, onDemand: 0, repeatedLines: 0 }, { date: "2026-10-26", commit: "c" }).entry.replaces, lineKey(Buffer.from(old[2])));
+  assert.deepEqual(readBudgets(join(dir, "old.jsonl")).records.map((r) => r.always), [1, 2, 4]);
+  // No commit yet: nothing tells two records apart, so neither replaces the other.
+  const none = (/** @type {number} */ always) => recordBudget(dir, "unborn.jsonl", { always, onDemand: 0, repeatedLines: 0 }, { date: "2026-10-21", commit: "" });
+  assert.deepEqual([none(1).replaced, none(2).replaced, readBudgets(join(dir, "unborn.jsonl")).records.length], [false, false, 2]);
 });
 
 test("cli and doctor: budget --record keeps a number per cycle; growth warns with its bytes; a broken log line is reported", async () => {
@@ -166,7 +175,7 @@ test("budget audit: a budget record with no commit is a line it skips, for docto
   git(["add", "-A"], { cwd: dir });
   git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "feat: x"], { cwd: dir });
   const log = join(dir, ".ennyn", "metrics.jsonl");
-  const bad = [{ always: 1 }, { commit: 7, always: 1 }, { commit: "c", always: "1" }, { commit: "c", always: -5 }, { commit: "c", always: 207.5 }, { commit: "c", always: 1e300 }];
+  const bad = [{ always: 1 }, { commit: 7, always: 1 }, { commit: "c1", always: "1" }, { commit: "c2", always: -5 }, { commit: "c3", always: 207.5 }, { commit: "c4", always: 1e300 }];
   const lines = [...bad.map((r) => JSON.stringify({ kind: "budget", ...r })), '{"kind":"budget","commit":"","always":1}', "{ cut"];
   writeFileSync(log, lines.join("\n") + "\n");
   const read = readBudgets(log);
@@ -284,7 +293,8 @@ test("cli: audit counts the cycles no mark covers; --security-audit lists the ke
   const again = run("budget", "--record", "--security-audit");
   assert.equal(again.status, 0, "marked again at the same commit: its own record is left out of the count");
   assert.doesNotMatch(again.stdout, /record replaced/, "the same commit, today, the same mark: this cycle recording again, silent");
-  assert.deepEqual(JSON.parse(readFileSync(log, "utf8").trim()).covers, []);
+  // Appended: the second record at this commit replaces the first for every reader.
+  assert.deepEqual(readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l).covers), [[], []]);
   assert.deepEqual([json().slot, json().since, json().paths], ["feature", 0, []]);
   assert.match(run("audit").stdout, /^Audit slot: a finished feature\. The security audit is due in 2 cycles \(0 cycles no security audit covered; security\.everyCycles: 3\)\.$/m);
   commit("feat: y");
@@ -462,15 +472,16 @@ test("budget: recordBudget writes only a regular file reached through no link in
   mkdirSync(join(dir, ".ennyn"));
   symlinkSync(target, join(dir, ".ennyn", "metrics.jsonl"));
   const record = () => recordBudget(dir, ".ennyn/metrics.jsonl", { always: 1, onDemand: 0, repeatedLines: 0 }, { date: "2026-10-25", commit: "a".repeat(40) });
-  assert.throws(record, /metrics\.jsonl was not written: \.ennyn\/metrics\.jsonl is a symbolic link/);
+  // The log is read before it is appended to: the read refuses, naming the link, and nothing is written.
+  assert.throws(record, /metrics\.jsonl could not be read: \.ennyn\/metrics\.jsonl is a symbolic link/);
   assert.equal(readFileSync(target, "utf8"), "kept\n");
   rmSync(join(dir, ".ennyn"), { recursive: true });
   symlinkSync(box, join(dir, ".ennyn"));
-  assert.throws(record, /was not written: \.ennyn is a symbolic link/);
+  assert.throws(record, /could not be read: \.ennyn is a symbolic link/);
   rmSync(join(dir, ".ennyn"));
   mkdirSync(join(dir, ".ennyn"));
   execFileSync("mkfifo", [join(dir, ".ennyn", "metrics.jsonl")]);
-  assert.throws(record, /was not written: it is no regular file/);
+  assert.throws(record, /could not be read: it is no regular file/);
   rmSync(join(dir, ".ennyn", "metrics.jsonl"));
   assert.equal(record().replaced, false, "a regular file, or none yet: written");
 });
@@ -607,3 +618,247 @@ test("cli: audit names every file up to fifty a source, then every file's direct
   for (const n of Object.keys(names)) assert.ok(files.includes(n), `${JSON.stringify(n)} parses back`);
 });
 
+
+test("budget audit: a log line an editor began with a byte order mark is a record for the budget, the record that replaces it and the audit alike", () => {
+  const { dir, run, json, log } = auditRepo();
+  const head = git(["rev-parse", "HEAD"], { cwd: dir });
+  mkdirSync(dirname(log), { recursive: true });
+  writeFileSync(log, `﻿${JSON.stringify({ kind: "budget", date: "2026-10-01", commit: head, always: 5, onDemand: 0, repeatedLines: 0 })}\n`);
+  assert.deepEqual([readBudgets(log).records.length, readBudgets(log).skipped], [1, 0]);
+  // JSON that is no record is neither a record nor a line that does not parse.
+  writeFileSync(log, `${readFileSync(log, "utf8")}null\n0\nfalse\n`);
+  assert.deepEqual([readBudgets(log).records.length, readBudgets(log).skipped, json().cycles], [1, 0, 1]);
+  assert.doesNotMatch(run("budget").stdout, /do not parse/);
+  // The mark at this commit replaces that record: one line, and no cycle left uncovered.
+  assert.equal(run("budget", "--record", "--security-audit").status, 0);
+  assert.equal(readBudgets(log).records.length, 1);
+  assert.deepEqual([json().since, json().marks], [0, 1]);
+});
+
+test("budget audit: a code block ends only at a fence of its own character, as long or longer, with nothing after it", () => {
+  const dir = mkdtempSync(join(tmpdir(), "en-budget-fence-"));
+  const inBlock = "A command example that sits inside the code block and is long";
+  const after = "A rule written after the code block that both files hold alike";
+  for (const [inner, close] of [["~~~", "```"], ["```js", "```"], ["```", "````"]]) {
+    const open = close === "````" ? "````" : "```";
+    const claude = `${open}\n${inner}\n${inBlock}\n${close}\n${after}\n`;
+    const files = { "CLAUDE.md": claude, ".claude/rules/r.md": `${inBlock}\n${after}\n` };
+    put(dir, files);
+    const b = instructionBudget(dir, Object.keys(files));
+    assert.deepEqual(b.repeated.map((r) => r.line), [after], `${inner} inside ${open}`);
+  }
+  // A backtick fence's info string holds no backtick: this line is a code span, and the import under it loads.
+  const claude = "```npm test``` passes first.\n@AGENTS.md\n";
+  const own = mkdtempSync(join(tmpdir(), "en-budget-span-"));
+  put(own, { "CLAUDE.md": claude, "AGENTS.md": `- ${RULE}\n` });
+  assert.equal(instructionBudget(own, ["CLAUDE.md", "AGENTS.md"]).always, Buffer.byteLength(claude) + Buffer.byteLength(`- ${RULE}\n`));
+  // A fence in a list item is a fence at any depth (CommonMark measures from the item's content column): what it
+  // holds is code, an import in it too.
+  for (const item of ["- Run:\n    ", "- Release:\n  1. Bump:\n     ", "10. Install:\n\n    "]) {
+    const block = (/** @type {string} */ inner) => `${item}\`\`\`bash\n${item.split("\n").pop()}${inner}\n${item.split("\n").pop()}\`\`\`\n`;
+    const files = { "CLAUDE.md": `${block(inBlock)}${block("@big.md")}`, ".claude/rules/r.md": `${inBlock}\n`, "big.md": "x".repeat(20000) };
+    put(dir, files);
+    const b = instructionBudget(dir, Object.keys(files));
+    assert.deepEqual([b.repeated.length, b.files], [0, 2], JSON.stringify(item));
+  }
+});
+
+test("budget audit (sweep): a text kept to its bound is never cut inside a character, in budget, init-scan and impact", async () => {
+  const { clipped } = await import("../core/i18n.mjs");
+  const { commitRuleLines, banLines } = await import("../setup/scan.mjs");
+  const cutAt = (/** @type {number} */ n) => `${"a".repeat(n)}😀${"b".repeat(200)}`;
+  assert.equal(clipped(cutAt(116), 120), `${"a".repeat(116)}…`);
+  assert.equal(clipped("x".repeat(120), 120), "x".repeat(120));
+  assert.equal(clipped("x".repeat(121), 120), `${"x".repeat(117)}…`);
+  const dir = mkdtempSync(join(tmpdir(), "en-budget-cut-"));
+  const files = { "CLAUDE.md": `${cutAt(116)}\n`, ".claude/rules/r.md": `${cutAt(116)}\n` };
+  put(dir, files);
+  // Each cut where the emoji's first half would be the last unit kept.
+  assert.equal(instructionBudget(dir, Object.keys(files)).repeated[0].line, `${"a".repeat(116)}…`);
+  const commitLine = `Commit messages are in English ${"a".repeat(125)}😀`;
+  assert.equal(commitRuleLines(`${commitLine}${"b".repeat(9)}\n`)[0], `${commitLine.slice(0, -2)}…`);
+  const banLine = `Never use \`eval\` ${"a".repeat(139)}😀`;
+  assert.equal(banLines(`${banLine}${"b".repeat(9)}\n`)[0].line, `${banLine.slice(0, -2)}…`);
+  assert.equal(clipped(`${"a".repeat(78)}😀b`, 80, 79), `${"a".repeat(78)}…`);
+  assert.equal(clipped(`${"a".repeat(78)}bcd`, 80, 79), `${"a".repeat(78)}b…`);
+  // init-scan's fix-label examples, cut at either end of their window, and impact's registry labels.
+  const repo = mkdtempSync(join(tmpdir(), "en-budget-cut-cli-"));
+  git(["init", "-q", "-b", "main"], { cwd: repo });
+  put(repo, { "src/a.js": "x\n", "ceil.json": JSON.stringify([`src/a.js ${"x".repeat(69)}😀${"y".repeat(20)}`]), ".ennyn/config.json": JSON.stringify({ impact: { ceilingRegistry: "ceil.json" } }) });
+  git(["add", "-A"], { cwd: repo });
+  const endCut = `chore: the fix ${"a".repeat(41)}😀${"b".repeat(30)}`;
+  const startCut = `chore: ${"a".repeat(23)}😀${"c".repeat(18)} fix ${"d".repeat(60)}`;
+  // The fix label reads commits that change a file.
+  for (let i = 0; i < 30; i++) {
+    put(repo, { "src/a.js": `${i}\n` });
+    git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-a", "-m", i % 2 ? endCut : startCut], { cwd: repo });
+  }
+  const scan = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: repo, encoding: "utf8" });
+  assert.equal(scan.status, 0, scan.stderr);
+  assert.ok(scan.stdout.includes(`chore: the fix ${"a".repeat(41)}…`) && scan.stdout.includes(`…${"c".repeat(18)} fix `), scan.stdout);
+  const table = spawnSync(process.execPath, [CLI, "impact", "--symbol", "nothing", "--files", "src/a.js"], { cwd: repo, encoding: "utf8" }).stdout;
+  assert.ok(table.includes(`src/a.js ${"x".repeat(69)}…`), table);
+  for (const out of [scan.stdout, table]) assert.ok(!out.includes("\uFFFD") && out.isWellFormed(), out);
+});
+
+test("budget audit: a write that stops short goes on; one that fails is said and leaves the log as it was", async () => {
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const real = fs.writeSync;
+  /** Each write takes at most `most` bytes; past `fail` bytes in all, the next write fails as a full file system does. */
+  const limited = (/** @type {number} */ most, /** @type {number} */ fail = Infinity) => {
+    let taken = 0;
+    // @ts-ignore a stand-in for the one signature core/files.mjs calls
+    fs.writeSync = (fd, buf, off, len, pos) => {
+      if (taken >= fail) throw Object.assign(new Error("EFBIG: file too large, write"), { code: "EFBIG" });
+      const n = real(fd, buf, off, Math.min(len, most), pos);
+      taken += n;
+      return n;
+    };
+    syncBuiltinESMExports();
+  };
+  const restore = () => {
+    fs.writeSync = real;
+    syncBuiltinESMExports();
+  };
+  const dir = mkdtempSync(join(tmpdir(), "en-budget-short-"));
+  const rec = (/** @type {string} */ commit, /** @type {number} */ always) => recordBudget(dir, ".ennyn/metrics.jsonl", { always, onDemand: 0, repeatedLines: 0 }, { date: "2026-10-26", commit });
+  const log = join(dir, ".ennyn", "metrics.jsonl");
+  try {
+    limited(7);
+    rec("a", 1);
+    rec("b", 2);
+    rec("b", 3);
+  } finally {
+    restore();
+  }
+  assert.deepEqual(readBudgets(log).records.map((r) => [r.commit, r.always]), [["a", 1], ["b", 3]], "short writes went on to the end");
+  // A record at a commit that has one, and one at a new commit: what a failed write put in goes again.
+  const before = readFileSync(log);
+  for (const [most, fail, commit] of /** @type {const} */ ([[40, 40, "b"], [0, Infinity, "b"], [40, 40, "c"]])) {
+    try {
+      limited(most, fail);
+      assert.throws(() => rec(commit, 4), /metrics\.jsonl was not written: (EFBIG|the file took no more bytes)/);
+    } finally {
+      restore();
+    }
+    assert.ok(readFileSync(log).equals(before), `${most}/${fail} at ${commit}: the log is as it was`);
+    assert.deepEqual(readdirSync(join(dir, ".ennyn")), ["metrics.jsonl"]);
+  }
+  // A log whose last line was cut short by a killed write: the failed append leaves that line as it was too.
+  writeFileSync(log, Buffer.concat([before, Buffer.from('{"kind":"bud')]));
+  try {
+    limited(40, 40);
+    assert.throws(() => rec("c", 5), /was not written: EFBIG/);
+  } finally {
+    restore();
+  }
+  assert.equal(readFileSync(log, "utf8"), `${before}{"kind":"bud`);
+  rec("d", 6);
+  assert.deepEqual([readBudgets(log).records.map((r) => r.commit), readBudgets(log).skipped], [["a", "b", "d"], 1]);
+  // Another writer appended after this write began: nothing is cut, its line is kept.
+  const other = fs.openSync(log, "a");
+  try {
+    let taken = 0;
+    // @ts-ignore a stand-in for the one signature core/files.mjs calls
+    fs.writeSync = (fd, buf, off, len, pos) => {
+      if (taken >= 40) {
+        real(other, Buffer.from('{"kind":"other"}\n'));
+        throw Object.assign(new Error("EFBIG: file too large, write"), { code: "EFBIG" });
+      }
+      const n = real(fd, buf, off, Math.min(len, 40 - taken), pos);
+      taken += n;
+      return n;
+    };
+    syncBuiltinESMExports();
+    assert.throws(() => rec("e", 7), /was not written: EFBIG/);
+  } finally {
+    restore();
+    fs.closeSync(other);
+  }
+  assert.ok(readFileSync(log, "utf8").endsWith('{"kind":"other"}\n'));
+  // A file other processes append to (the gate log, which worktrees share) is never cut: a cut could erase a line
+  // appended in between. What the failed append put in stays, cut short, and the next append closes it.
+  const { writeState } = await import("../core/files.mjs");
+  const shared = join(dir, "shared.jsonl");
+  writeFileSync(shared, '{"n":1}\n');
+  try {
+    limited(5, 5);
+    assert.throws(() => writeState(dir, shared, '{"mine":"a record"}\n', "append"), /was not written: EFBIG/);
+  } finally {
+    restore();
+  }
+  writeState(dir, shared, '{"n":2}\n', "append");
+  assert.equal(readFileSync(shared, "utf8"), '{"n":1}\n{"min\n{"n":2}\n');
+});
+
+test("budget audit (review round two): two records at one commit merged with merge=union, either way: each counts unless one names the other", () => {
+  const ID = ["-c", "user.name=t", "-c", "user.email=t@t"];
+  for (const into of ["main", "audit"]) {
+    const dir = mkdtempSync(join(tmpdir(), "en-budget-union-"));
+    const g = (/** @type {string[]} */ ...args) => git(args, { cwd: dir });
+    const run = (/** @type {string[]} */ ...args) => spawnSync(process.execPath, [CLI, ...args], { cwd: dir, encoding: "utf8" });
+    g("init", "-q", "-b", "main");
+    put(dir, { ".gitattributes": ".ennyn/metrics.jsonl merge=union\n", "CLAUDE.md": `${RULE}\n` });
+    g("add", "-A");
+    g(...ID, "commit", "-q", "-m", "chore: start");
+    const record = (/** @type {string[]} */ ...flags) => {
+      assert.equal(run("budget", "--record", ...flags).status, 0);
+      g("add", "-f", ".ennyn/metrics.jsonl");
+    };
+    record();
+    g(...ID, "commit", "-q", "-m", "chore: cycle 1 closed");
+    // At one commit, neither branch having made one since: main records a plain cycle, the branch its audit.
+    g("checkout", "-q", "-b", "audit");
+    record("--security-audit");
+    g(...ID, "commit", "-q", "-m", "chore: the branch's audit closed");
+    g("checkout", "-q", "main");
+    record();
+    g(...ID, "commit", "-q", "-m", "chore: cycle 2 closed");
+    if (into === "audit") g("checkout", "-q", "audit");
+    g(...ID, "merge", "-q", "--no-edit", into === "main" ? "audit" : "main");
+    const a = JSON.parse(run("audit", "--json").stdout);
+    // Three cycles; the audit covers what its log held, so main's second cycle is not covered.
+    assert.deepEqual([a.cycles, a.marks, a.since], [3, 1, 1], into);
+  }
+});
+
+test("budget audit (review): the log is only appended to; a record at a commit that has one replaces it for budget, doctor and audit alike", async (t) => {
+  const { dir, run, json, log, commit } = auditRepo();
+  const head = () => git(["rev-parse", "HEAD"], { cwd: dir });
+  // A line that is not UTF-8 keeps its bytes, so a later mark covers its key (a rewrite re-encoded it: due a cycle early).
+  mkdirSync(dirname(log), { recursive: true });
+  const odd = Buffer.concat([Buffer.from('{"kind":"budget","date":"2026-10-01","commit":"'), Buffer.from("e".repeat(40)), Buffer.from('","always":5,"onDemand":0,"repeatedLines":0,"note":"'), Buffer.from([0xe9]), Buffer.from('"}\n')]);
+  writeFileSync(log, odd);
+  chmodSync(log, 0o640);
+  assert.equal(run("budget", "--record").status, 0);
+  writeFileSync(join(dir, "CLAUDE.md"), `${RULE}\n`);
+  git(["add", "CLAUDE.md"], { cwd: dir });
+  // The cycle's clean-up, then step 6 again with the mark: appended, and the earlier record at this commit is gone for every reader.
+  assert.equal(run("budget", "--record", "--security-audit").status, 0);
+  const lines = readFileSync(log).toString("latin1").trim().split("\n");
+  assert.equal(lines.length, 3, "nothing rewritten: three lines");
+  assert.equal(JSON.parse(lines[2]).replaces, lineKey(Buffer.from(lines[1], "latin1")), "the mark names the record it replaces");
+  assert.ok(readFileSync(log).subarray(0, odd.length).equals(odd), "the first line keeps its bytes");
+  assert.equal(statSync(log).mode & 0o777, 0o640, "the log keeps its mode");
+  assert.deepEqual(readBudgets(log).records.map((r) => [r.commit, r.always, Boolean(r.securityAudit)]), [["e".repeat(40), 5, false], [head(), Buffer.byteLength(`${RULE}\n`), true]]);
+  assert.deepEqual([json().cycles, json().since, json().marks], [2, 0, 1]);
+  // A plain record at the same commit replaces the mark for audit too: its coverage is dropped, as the budget says.
+  assert.match(run("budget", "--record").stdout, /^The record replaced was this commit's security-audit mark, covering 1 cycles/m);
+  assert.deepEqual([json().cycles, json().since, json().marks], [2, 2, 0]);
+  const items = async () => (await checkSetup({ cwd: dir, env: {} })).items.map((i) => i.key);
+  assert.ok((await items()).includes("doctor.budget"), "doctor reads the newest record of the commit: no growth");
+  // At the next commit the record is a record of its own.
+  commit("feat: next");
+  assert.equal(run("budget", "--record").status, 0);
+  assert.equal(json().cycles, 3);
+  if (process.getuid?.() === 0) return t.skip("root writes any file");
+  // A log it may not write is refused for a first record and a re-record alike, and keeps its bytes.
+  chmodSync(log, 0o440);
+  const kept = readFileSync(log);
+  for (const args of [["--record"], ["--record", "--security-audit"]]) {
+    const r = run("budget", ...args);
+    assert.deepEqual([r.status, /metrics\.jsonl was not written: .*EACCES/.test(r.stderr)], [1, true], r.stderr);
+  }
+  assert.ok(readFileSync(log).equals(kept));
+});

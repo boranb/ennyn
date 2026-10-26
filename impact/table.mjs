@@ -18,7 +18,7 @@ import { present, readRegular } from "../core/files.mjs";
 import { isAbsolute, join, posix, relative } from "node:path";
 import { git, gitMaybe, gitRun } from "../core/git.mjs";
 import { matchAny } from "../core/glob.mjs";
-import { t } from "../core/i18n.mjs";
+import { clipped, t } from "../core/i18n.mjs";
 
 /**
  * @typedef {{ id: string, question: string, answer: string, commands: string[] }} ImpactRow
@@ -430,7 +430,7 @@ function registryEntries(data) {
   const isMap = (/** @type {unknown} */ v) => v !== null && typeof v === "object" && !Array.isArray(v);
   /** @param {unknown} item @param {string} fallback */
   const label = (item, fallback) => {
-    if (typeof item === "string") return item.length > 80 ? item.slice(0, 79) + "…" : item;
+    if (typeof item === "string") return clipped(item, 80, 79);
     if (isMap(item)) {
       const o = /** @type {Record<string, unknown>} */ (item);
       for (const k of ["id", "name", "key"]) if (typeof o[k] === "string") return /** @type {string} */ (o[k]);

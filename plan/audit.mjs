@@ -9,18 +9,19 @@
  * line, and a cycle counts until a mark covers its key. No git is asked, so a squash or rebase merge, a
  * cherry-pick, an amend, a revert or a moved line changes nothing: a branch's audit covers only the records its
  * log held, a record edited since is another key and counts again, and a line that does not parse is a cycle.
+ * The log is only appended to: a record that another names in `replaces` (a cycle recording again at its commit) is
+ * no cycle of its own, wherever a merge put the two lines, so a mark replaced by a plain record covers nothing.
  */
 
-import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { DEFAULTS } from "../core/config.mjs";
 import { readRegular } from "../core/files.mjs";
 import { globToRegExp, matchAny } from "../core/glob.mjs";
 import { lockPath, npmrcPath } from "../checks/deps.mjs";
+import { currentRecords, KEY, lineKey, logLines, replacesOf } from "../setup/budget.mjs";
 import { pathPatterns, riskyPaths } from "../setup/scan.mjs";
 
-/** A key as a mark lists it: the first 16 hex digits of the line's SHA-256. */
-const KEY = /^[0-9a-f]{16}$/;
+export { lineKey };
 
 /**
  * Code and configuration that runs on the project's machines (a developer's, CI's) or holds their secrets,
@@ -76,10 +77,11 @@ const MANIFEST_DIR = ".claude-plugin";
 const MANIFEST = `${MANIFEST_DIR}/plugin.json`;
 
 /**
- * @typedef {{ key: string, budget: boolean, commit: string | null, mark: boolean, covers: string[] }} CycleRecord
+ * @typedef {{ key: string, budget: boolean, commit: string | null, mark: boolean, covers: string[], replaces: string | null }} CycleRecord
  *   `key`: the line's digest; `budget`: the line is a budget record (else it does not parse, and is a cycle all
  *   the same); `commit`: the commit a budget record names; `mark`: `securityAudit: true`; `covers`: the keys a
- *   mark lists (entries that are no key are dropped; a mark without the list covers only itself).
+ *   mark lists (entries that are no key are dropped; a mark without the list covers only itself); `replaces`: the
+ *   key of the record it replaced.
  * @typedef {{
  *   due: boolean | null,
  *   reason: "off" | "never" | "since" | "unread",
@@ -93,47 +95,28 @@ const MANIFEST = `${MANIFEST_DIR}/plugin.json`;
  */
 
 /**
- * A record's key: the first 16 hex digits of the SHA-256 of its line, a trailing CR and a leading byte order mark
- * dropped (a checkout with CRLF, an editor's mark: the same record).
- * @param {Buffer} line
- */
-export function lineKey(line) {
-  let bytes = line;
-  if (bytes.length && bytes[bytes.length - 1] === 0x0d) bytes = bytes.subarray(0, -1);
-  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) bytes = bytes.subarray(3);
-  return createHash("sha256").update(bytes).digest("hex").slice(0, 16);
-}
-
-/**
- * The cycle records of a metrics log (null: no log): every budget record, and every line that does not parse;
- * other JSON (another kind of record) is no cycle. Read as bytes, so a line that is not UTF-8 keeps its key.
+ * The cycle records of a metrics log (null: no log): every budget record no other names in `replaces`
+ * (currentRecords), and every line that does not parse; other JSON (another kind of record) is no cycle. Read as
+ * bytes, so a line that is not UTF-8 keeps its key.
  * @param {Buffer | null} bytes
  * @returns {CycleRecord[]}
  */
 export function cycleRecords(bytes) {
   /** @type {CycleRecord[]} */
   const records = [];
-  if (!bytes) return records;
-  let start = 0;
-  while (start < bytes.length) {
-    const end = bytes.indexOf(0x0a, start);
-    const line = bytes.subarray(start, end === -1 ? bytes.length : end);
-    start = end === -1 ? bytes.length : end + 1;
-    const text = line.toString("utf8").replace(/^\uFEFF/, "");
-    if (!text.trim()) continue;
-    let o;
-    try {
-      o = JSON.parse(text);
-    } catch {
-      records.push({ key: lineKey(line), budget: false, commit: null, mark: false, covers: [] });
+  // Read as the budget reads the log (logLines): a line the budget reads as a record is one here.
+  for (const { key, value: o } of logLines(bytes)) {
+    if (o === undefined) {
+      records.push({ key, budget: false, commit: null, mark: false, covers: [], replaces: null });
       continue;
     }
     if (!o || typeof o !== "object" || o.kind !== "budget") continue;
     const mark = o.securityAudit === true;
     const covers = mark && Array.isArray(o.covers) ? o.covers.filter((/** @type {unknown} */ k) => typeof k === "string" && KEY.test(k)) : [];
-    records.push({ key: lineKey(line), budget: true, commit: typeof o.commit === "string" ? o.commit : null, mark, covers });
+    records.push({ key, budget: true, commit: typeof o.commit === "string" ? o.commit : null, mark, covers, replaces: replacesOf(o) });
   }
-  return records;
+  // A record another names in `replaces` is replaced by it, as the budget reads the log.
+  return currentRecords(records, (r) => r.key, (r) => r.replaces);
 }
 
 /**

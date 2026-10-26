@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, chmodSync, symlinkSync, linkSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, chmodSync, symlinkSync, linkSync, existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { basename, join, posix, win32 } from "node:path";
@@ -153,7 +153,7 @@ test("config: ENNYN_CONFIG points elsewhere; broken JSON is a ConfigError", () =
 
 test("config: every path a config names stays in the project, whoever names the config", () => {
   // As POSIX and Windows read them: the inside ones resolve below the project directory on both.
-  const inside = ["", ".", "HANDOFF.md", ".ennyn/metrics.jsonl", ".git/ennyn", "./x", "a/../b", "a/b/..", ".git/../x", "~/x", "..x", "x..", "...", "a\\b", "file:///etc/x", "a/.../b"];
+  const inside = ["", ".", "HANDOFF.md", ".ennyn/metrics.jsonl", "./x", "a/../b", "a/b/..", ".git/../x", "~/x", "..x", "x..", "...", "a\\b", "file:///etc/x", "a/.../b"];
   const outside = ["..", "../x", "../../x", "a/../../x", ".git/../../x", ".git/ennyn/../../../x", "./../x", "/", "/abs/x", "//host/x", "\\\\host\\share\\x", "\\x", "C:\\x", "C:x", "c:/x", "..\\x", "a\\..\\..\\x", "a/..\\..\\x"];
   // The reference: Node's own reading on each system, the project on another drive than C: on Windows.
   const out = (/** @type {string} */ v) => {
@@ -227,9 +227,20 @@ test("config: every path a config names stays in the project, whoever names the 
   mkdirSync(join(linkedOwn, ".ennyn"));
   symlinkSync(join(box, "secret"), join(linkedOwn, ".ennyn/config.json"));
   assert.throws(() => loadConfig({ cwd: linkedOwn, env: {} }), (e) => /config\.json could not be read: \.ennyn\/config\.json is a symbolic link$/.test(/** @type {Error} */ (e).message) && !/SECRET/.test(/** @type {Error} */ (e).message));
-  // Machine-local files go under the git dir, as the state dir does by default.
+  // Only the state dir lies in a git dir, however spelled, whoever names the config: a metrics log named
+  // .git/config or .git/hooks/commit-msg would be written into git's own files (cycle 12, budget audit review).
+  const inGit = (/** @type {string} */ key, /** @type {string} */ value) => (/** @type {unknown} */ e) =>
+    e instanceof ConfigError && e.problems.length === 1 && e.problems[0] === `"${key}": ${JSON.stringify(value)} lies in a git dir, where git reads and runs what it finds (its config, its hooks); only paths.stateDir may`;
+  // As git refuses its own paths: the code points HFS+ ignores in a name, NTFS streams and short names.
+  const gitDir = [".git/config", ".git/hooks/commit-msg", "./.git/ennyn/metrics.jsonl", ".git", "x/../.git/config", ".GIT/config", ".git./config", ".git /config", "GIT~1/config", "vendor/lib/.git/config", ".git\\config",
+    ".g\u200cit/config", "\ufeff.git/config", ".g\u202eit/config", ".git\u206f/config", ".git::$INDEX_ALLOCATION/config", ".git:x", "GIT~2/config", "GI7EBA~1/config"];
+  for (const key of ["handoff", "changelog", "graph", "metricsLog"]) {
+    for (const p of gitDir) assert.throws(own({ paths: { [key]: p } }), inGit(`paths.${key}`, p), `${key} ${JSON.stringify(p)}`);
+    for (const p of [".github/x.json", ".gitx/x.json", "a/.git/../b.json", ".gitignore.d/x", "git/x.json", "gitdata/x.json", ".git\t/x.json", "gi~1/x.json"]) assert.equal(/** @type {any} */ (own({ paths: { [key]: p } })()).paths[key], p, `${key} ${JSON.stringify(p)}`);
+  }
+  assert.throws(own({ impact: { ceilingRegistry: ".git/info/exclude" } }), inGit("impact.ceilingRegistry", ".git/info/exclude"));
   writeFileSync(join(box, "local.json"), JSON.stringify({ paths: { metricsLog: ".git/ennyn/metrics.jsonl", stateDir: ".git/ennyn" } }));
-  assert.equal(loadConfig({ cwd: dir, env: { ENNYN_CONFIG: join(box, "local.json") } }).paths.metricsLog, ".git/ennyn/metrics.jsonl");
+  assert.throws(() => loadConfig({ cwd: dir, env: { ENNYN_CONFIG: join(box, "local.json") } }), inGit("paths.metricsLog", ".git/ennyn/metrics.jsonl"));
 });
 
 test("files: state is written, removed and listed below its root through no symbolic link, the last component too", () => {
@@ -259,6 +270,11 @@ test("files: state is written, removed and listed below its root through no symb
   writeState(root, join(root, "s/list.json"), "{}\n", "replace");
   assert.deepEqual(kept(), [["victim"], "mine\n"]);
   assert.equal(readFileSync(join(root, "s/list.json"), "utf8"), "{}\n");
+  // A directory at that name is said with the file it was for, and the file is left as it was.
+  mkdirSync(join(root, `s/list.json.${process.pid}.tmp`));
+  assert.throws(() => writeState(root, join(root, "s/list.json"), "[]\n", "replace"), /list\.json was not written: .*list\.json\.\d+\.tmp could not be removed: /);
+  assert.equal(readFileSync(join(root, "s/list.json"), "utf8"), "{}\n");
+  rmSync(join(root, `s/list.json.${process.pid}.tmp`), { recursive: true });
   // The link itself goes on a remove; what it named stays.
   removeState(root, join(root, "top.jsonl"));
   assert.deepEqual([existsSync(join(root, "top.jsonl")), kept()], [false, [["victim"], "mine\n"]]);

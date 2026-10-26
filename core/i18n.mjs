@@ -83,6 +83,16 @@ export function ends(s, max) {
 }
 
 /**
+ * A text kept to `max` UTF-16 units: as it is, or its first `keep` units and "…", never cut inside a pair of halves.
+ * @param {string} s @param {number} max @param {number} [keep]
+ */
+export function clipped(s, max, keep = max - 3) {
+  if (s.length <= max) return s;
+  const head = s.slice(0, keep);
+  return (/[\ud800-\udbff]$/.test(head) ? head.slice(0, -1) : head) + "…";
+}
+
+/**
  * A value as one line of a report: as it is, or quoted and escaped (JSON's escapes; \u for every other
  * character UNSHOWN names) when it holds a character a line cannot show. A name is quoted also when it holds
  * `"` or `\`, so `a<LF>b.js` and a file named `"a\nb.js"` print apart, and, in a list, when it holds a comma

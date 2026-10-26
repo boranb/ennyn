@@ -27,7 +27,7 @@ import { LINK_RULE, SUBMODULE_RULE, auditAnswer, cycleRecords, markCovers, readL
 import { scanProject, MIN_HISTORY } from "../setup/scan.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
 import { RecordError, installHook, sessionOf } from "../setup/hook.mjs";
-import { instructionBudget, readBudgets, recordBudget, previousBudget } from "../setup/budget.mjs";
+import { instructionBudget, readBudgets, recordBudget, previousBudget, replacedAt } from "../setup/budget.mjs";
 import { journalPath, MAX_TIMEOUT_MS, MutationError, parseMutants, restoreJournal, runMutants, summarizeMutants } from "../metrics/mutation.mjs";
 
 export const USAGE = `Usage: ennyn <command> [options]
@@ -359,8 +359,12 @@ const inQuotes = (s) => {
 function excerpt(s, re) {
   if (s.length <= 60) return s;
   const at = re ? Math.max(0, (re.exec(s)?.index ?? 0) - 20) : 0;
-  const start = Math.min(at, s.length - 57);
-  return (start > 0 ? "…" : "") + s.slice(start, start + 57) + (start + 57 < s.length ? "…" : "");
+  let start = Math.min(at, s.length - 57);
+  let end = start + 57;
+  // Cut between characters, never inside a pair of UTF-16 halves.
+  if (start > 0 && /^[\udc00-\udfff]/.test(s.slice(start))) start++;
+  if (/[\ud800-\udbff]$/.test(s.slice(start, end))) end--;
+  return (start > 0 ? "…" : "") + s.slice(start, end) + (end < s.length ? "…" : "");
 }
 
 /** @param {string | true | undefined} v @param {string} name */
@@ -581,8 +585,8 @@ const COMMANDS = {
     let covers;
     if (opts["security-audit"]) {
       const records = cycleRecords(readLog(cwd, resolve(cwd, cfg.paths.metricsLog)));
-      const last = [...records].reverse().find((r) => r.budget);
-      const kept = head && last?.commit === head ? records.filter((r) => r !== last) : records;
+      const replaced = replacedAt(records.filter((r) => r.budget), head);
+      const kept = records.filter((r) => r !== replaced);
       before = securityDue(kept, cfg.security.everyCycles);
       if (before.due !== false) covers = markCovers(kept);
     }

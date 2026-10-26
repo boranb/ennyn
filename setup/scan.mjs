@@ -16,7 +16,7 @@ import { join, relative, resolve, posix, sep } from "node:path";
 import { git, gitError, gitMaybe, gitRun, headCommit, headFile, repoPath } from "../core/git.mjs";
 import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
 import { literalGlob } from "../core/glob.mjs";
-import { ends } from "../core/i18n.mjs";
+import { clipped, ends } from "../core/i18n.mjs";
 import { LEAVES, loadPathScopedRules, markdownFiles, reasonText, splitFrontMatter, parsePaths } from "../adapters/claude-code/rules-index.mjs";
 import { askRules, isGithubHost, outwardCommands, readSettings, SETTINGS, SETTINGS_LIMIT, urlHost } from "./permissions.mjs";
 
@@ -649,7 +649,7 @@ export function commitRuleLines(text) {
     .filter((x) => x.rank > 0)
     .sort((a, b) => b.rank - a.rank)
     .slice(0, 8)
-    .map(({ l }) => (l.length > 160 ? l.slice(0, 157) + "…" : l));
+    .map(({ l }) => clipped(l, 160));
 }
 
 // A line that forbids something: the words that say so in English and Turkish, outside code spans, or a line
@@ -668,11 +668,16 @@ const NO_LITERAL = /^[\s>*+-]*(\d+[.)]\s*)?(\*\*)?no\s+`/i;
 const CODE_SPAN = /`([^`\n]+)`/g;
 
 /**
- * The lines of a Markdown text outside its fenced code blocks, fence lines left out: a block opens at a line
- * that starts, after its indentation, with three or more backticks or tildes, and ends at a line of the same
- * character, at least as many, and nothing after them; one left open runs to the end, as CommonMark reads
- * it. One reader for the ban lines and the imports, read line by line: a pattern over the whole text costs
- * the square of a run of blank lines.
+ * The lines of a Markdown text outside its fenced code blocks, fence lines left out: a block opens at a line of
+ * three or more backticks or tildes after any indentation, so a fence in a list item counts (CommonMark measures
+ * its indent from the item's content column), unless a backtick fence's info string holds a backtick
+ * ("```npm test``` passes" is a code span); it ends at a line of the same character, at least as many, and nothing
+ * after them; one left open runs to the end. A byte order mark is no part of the first line. Known limits: a
+ * fence-like line in indented code opens a block, and a fence in a block quote and YAML front matter are read as
+ * text. Measured on 264 Markdown files (45,480 lines) against a CommonMark parser, 7 lines of fenced code were read
+ * as text; with an indent of at most three spaces, 18; with the list items' columns tracked by hand, more. One
+ * reader for the budget's rule lines, the ban lines and the imports, read line by line: a pattern over the whole
+ * text costs the square of a run of blank lines.
  * @param {string} text
  * @returns {string[]}
  */
@@ -680,11 +685,11 @@ export function outsideFences(text) {
   /** @type {string[]} */
   const out = [];
   let fence = "";
-  for (const raw of text.split("\n")) {
-    const l = raw.trim();
-    const mark = /^(`{3,}|~{3,})/.exec(l)?.[1];
+  for (const raw of text.replace(/^\uFEFF/, "").split("\n")) {
+    const m = /^[ \t]*(`{3,}|~{3,})([^\n]*)/.exec(raw);
+    const mark = m && !(m[1][0] === "`" && m[2].includes("`")) ? m[1] : "";
     if (mark && !fence) fence = mark;
-    else if (mark && mark[0] === fence[0] && mark.length >= fence.length && l.slice(mark.length).trim() === "") fence = "";
+    else if (mark && mark[0] === fence[0] && mark.length >= fence.length && m?.[2].trim() === "") fence = "";
     else if (!fence) out.push(raw);
   }
   return out;
@@ -707,7 +712,7 @@ export function banLines(text) {
     if (!BAN_EN.test(prose) && !BAN_TR.test(prose) && !BAN_TR_IMPERATIVE.test(prose) && !NO_LITERAL.test(l)) continue;
     const literals = [...l.matchAll(CODE_SPAN)].map((m) => m[1].trim()).filter((s) => s.length >= 2 && s.length <= LITERAL_MAX);
     if (!literals.length) continue;
-    out.push({ line: l.length > 160 ? l.slice(0, 157) + "…" : l, literals: [...new Set(literals)].slice(0, 3) });
+    out.push({ line: clipped(l, 160), literals: [...new Set(literals)].slice(0, 3) });
   }
   return out;
 }

@@ -7,7 +7,7 @@
 
 import { readIfThere, readRegular } from "./files.mjs";
 import { underGitDir } from "./git.mjs";
-import { join, isAbsolute } from "node:path";
+import { join, isAbsolute, posix } from "node:path";
 import { globToRegExp } from "./glob.mjs";
 
 export const DEFAULTS = Object.freeze({
@@ -203,6 +203,25 @@ function leaves(p) {
   return false;
 }
 
+/** Code points HFS+ ignores in a name (git's list, CVE-2014-9390): `.g<U+200C>it` is `.git` there. */
+const HFS_IGNORED = /[\u200c-\u200f\u202a-\u202e\u206a-\u206f\ufeff]/g;
+
+/**
+ * Whether a path names a file in a git dir, once `..` is applied, read in the safe direction as git reads its own
+ * paths: a part that is `.git` as a file system that ignores case, HFS+ or Windows serves it (`.GIT`, `.g<U+200C>it`,
+ * `.git.`, `.git `, a stream `.git:x` or `.git::$INDEX_ALLOCATION`, a short name `GIT~2` or `GI7EBA~1`), at any
+ * depth (a nested repository's too). A git dir of another name (--separate-git-dir inside the work tree) is not
+ * seen.
+ * @param {string} p
+ */
+function inGitDir(p) {
+  return posix
+    .normalize(p.replace(/\\/g, "/"))
+    .split("/")
+    .map((part) => part.replace(HFS_IGNORED, "").toLowerCase().split(":")[0].replace(/[. ]+$/, ""))
+    .some((name) => name === ".git" || /^gi(t|[0-9a-f]{4})~\d+$/.test(name));
+}
+
 /**
  * @param {Record<string, unknown>} base
  * @param {Record<string, unknown>} over
@@ -281,6 +300,7 @@ export function loadConfig({ cwd, env = process.env, override }) {
   // Every config's paths stay in the project, whoever names the config: a commit writes the project's, and one
   // ENNYN_CONFIG names may be the project's under another spelling (a case, a hard link, a parent's path). The
   // state dir lies in the git dir, where no commit writes: Ennyn trusts what it finds there (a mutation journal).
+  // No other path does: a metrics log named .git/config or .git/hooks/commit-msg would be written into git's own files.
   // impact.twins: pairs of directories, each looked up below the project like a path key.
   const twins = /** @type {unknown[]} */ (/** @type {any} */ (cfg).impact.twins);
   const twinPaths = twins.flatMap((pair, i) => (Array.isArray(pair) ? pair.map((v, j) => [`impact.twins[${i}][${j}]`, v]) : []));
@@ -289,6 +309,7 @@ export function loadConfig({ cwd, env = process.env, override }) {
     if (value.includes("\0")) problems.push(`"${key}": ${JSON.stringify(value)} holds a NUL, which names no file`);
     else if (leaves(value)) problems.push(`"${key}": ${JSON.stringify(value)} leads outside the project directory; every path a config names stays inside it`);
     else if (key === "paths.stateDir" && underGitDir(value) === null) problems.push(`"${key}": ${JSON.stringify(value)} must lie under .git/: a commit can write the work tree, and Ennyn trusts its state`);
+    else if (key !== "paths.stateDir" && inGitDir(value)) problems.push(`"${key}": ${JSON.stringify(value)} lies in a git dir, where git reads and runs what it finds (its config, its hooks); only paths.stateDir may`);
   }
   if (!["en", "tr"].includes(/** @type {string} */ (cfg.language))) problems.push(`"language" must be "en" or "tr"`);
   const cm = /** @type {any} */ (cfg).commitMsg;

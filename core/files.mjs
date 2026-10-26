@@ -231,57 +231,74 @@ function parents(root, path) {
 }
 
 /**
- * Rewrites or appends to a file only as a regular file below `root` (see noLinkBelow), creating it and its
- * directories when they are not there: `edit` gets the text it holds ("" for a new file) and returns the text to
- * write in its place, or `{ append }`. Everything goes through the one descriptor that was checked. A refusal
- * writes nothing: "was not written: …".
- * @param {string} root @param {string} path absolute
- * @param {(text: string) => { replace: string } | { append: string }} edit
+ * Writes all of `bytes` through `fd` at its offset: a write that stops short (a full disk, a file size limit) goes
+ * on from where it stopped, so the failure that follows is thrown, never a line cut short and said to be written.
+ * The error carries `written`, the bytes that went in before it.
+ * @param {number} fd @param {string} path named in the error @param {Buffer} bytes
  */
-export function writeRegular(root, path, edit) {
-  parents(root, path);
-  const fd = /** @type {number} */ (openRegular(root, path, constants.O_RDWR | constants.O_CREAT, "was not written"));
+function writeAll(fd, path, bytes) {
+  let done = 0;
   try {
-    const text = readFileSync(fd, "utf8");
-    const change = edit(text);
-    if ("replace" in change) {
-      ftruncateSync(fd, 0);
-      writeSync(fd, change.replace, 0);
-    } else writeSync(fd, change.append, Buffer.byteLength(text));
-  } finally {
-    closeSync(fd);
+    while (done < bytes.length) {
+      const n = writeSync(fd, bytes, done, bytes.length - done, null);
+      if (n === 0) throw new Error("the file took no more bytes");
+      done += n;
+    }
+  } catch (e) {
+    throw Object.assign(new Error(`${path} was not written: ${/** @type {Error} */ (e).message}`), { written: done });
   }
 }
 
 /**
- * Writes a file of Ennyn's machine-local state below `root` (the project directory, or the git dir for a state dir
- * under .git), as writeRegular does: no link from `root` to the file, a regular file only, its directories made.
- * `append` adds `text` in one write at the end (two processes append whole lines), closing a last line cut short
- * first; `replace` writes a new file whole and renames it over the old one (a temporary name that is already
- * there, a link planted at it too, is removed, never followed); `create` makes it only when nothing is there, and
- * throws with code EEXIST otherwise.
+ * Writes a file of Ennyn's own below `root` (the project directory, or the git dir for a state dir under .git): no
+ * link from `root` to the file, a regular file only (see openRegular), its directories made. `append` adds `text`
+ * in one write at the end (two processes append whole lines), closing a last line cut short first; with `sole`
+ * (this process alone writes the file: the metrics log) one that fails is cut off again, so the file is as it
+ * was; without it what a failed append put in stays, a line cut short that the next append closes, since cutting
+ * could erase a line another process appended in between (two worktrees share a state dir); `replace`
+ * writes a new file whole and renames it over the old one, so a write that fails leaves the old one as it was (a
+ * temporary name that is already there, a link planted at it too, is removed, never followed; one the failed write
+ * left is removed); `create` makes it only when nothing is there, and throws with code EEXIST otherwise.
  * @param {string} root @param {string} path absolute @param {string} text
  * @param {"append" | "replace" | "create"} how
+ * @param {{ sole?: boolean }} [opts]
  */
-export function writeState(root, path, text, how) {
+export function writeState(root, path, text, how, { sole = false } = {}) {
   parents(root, path);
   if (how === "replace") {
     const tmp = `${path}.${process.pid}.tmp`;
-    rmSync(tmp, { force: true });
-    writeState(root, tmp, text, "create");
-    renameSync(tmp, path);
+    try {
+      rmSync(tmp, { force: true });
+    } catch (e) {
+      throw new Error(`${path} was not written: ${tmp} could not be removed: ${/** @type {Error} */ (e).message}`);
+    }
+    try {
+      writeState(root, tmp, text, "create");
+      renameSync(tmp, path);
+    } catch (e) {
+      rmSync(tmp, { force: true });
+      throw e;
+    }
     return;
   }
   const flags = how === "create" ? constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL : constants.O_RDWR | constants.O_APPEND | constants.O_CREAT;
   const fd = /** @type {number} */ (openRegular(root, path, flags, "was not written"));
   try {
+    let size = 0;
     let torn = false;
     if (how === "append") {
-      const size = fstatSync(fd).size;
+      size = fstatSync(fd).size;
       const last = Buffer.alloc(1);
       torn = size > 0 && readSync(fd, last, 0, 1, size - 1) === 1 && last[0] !== 0x0a;
     }
-    writeSync(fd, (torn ? "\n" : "") + text);
+    try {
+      writeAll(fd, path, Buffer.from((torn ? "\n" : "") + text, "utf8"));
+    } catch (e) {
+      // What the append put in before it failed goes again, when this process alone writes the file and it ends so.
+      const written = /** @type {{ written?: number }} */ (e).written ?? 0;
+      if (sole && how === "append" && written > 0 && fstatSync(fd).size === size + written) ftruncateSync(fd, size);
+      throw e;
+    }
   } finally {
     closeSync(fd);
   }
