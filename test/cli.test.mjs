@@ -242,6 +242,45 @@ test("cli: mechanization picks from the graph; a missing graph is an error", () 
   assert.equal(json.score, 1.5);
 });
 
+test("cli: core names the oldest node of the highest value and the best of the rest by score, and refuses what mechanization refuses", () => {
+  const p = project();
+  mkdirSync(join(p.dir, ".ennyn"));
+  const write = (/** @type {unknown} */ graph) => writeFileSync(join(p.dir, ".ennyn", "graph.json"), JSON.stringify(graph));
+  write({ nodes: [{ id: "G1", status: "planned" }], done: [{ id: "G1", status: "done" }] });
+  const twice = run(p.dir, "core");
+  assert.deepEqual([twice.code, twice.stdout], [1, ""]);
+  assert.match(twice.stderr, /^✗ work graph: duplicate ids: G1$/m);
+  assert.match(twice.stderr, /nothing is picked from it/);
+  write({ nodes: [{ id: "M", mechanization: true }, { id: "G", gate: "user" }], done: [] });
+  assert.deepEqual([run(p.dir, "core").code, run(p.dir, "core").stdout.trim()], [0, "No ready core node."]);
+  // The large old node, said to be split first; then the rest by score: five, every node that ties with the
+  // fifth (at most ten), the rest counted; each with its score and its cluster when it has one.
+  const small = Array.from({ length: 12 }, (_, i) => ({ id: `s${i}`, value: "high", cost: "S", ...(i % 2 ? { cluster: "c" } : {}) }));
+  const mech = { id: "m", value: "high", cost: "S", mechanization: true };
+  write({ nodes: [{ id: "eval", value: "high", cost: "L" }, mech, ...small, { id: "low", value: "low", cost: "S" }], done: [] });
+  const ok = run(p.dir, "core");
+  assert.equal(ok.code, 0);
+  const items = (/** @type {string[]} */ ids) => ids.map((id) => `  ${id} (3.00${Number(id.slice(1)) % 2 ? ", c" : ""})\n`).join("");
+  const split = "split first: its cost L weighs 3, more than 2.5; write its first step as a node it needs, dated like the others, then run core again\n";
+  // Ids sort as strings among equal scores: s0, s1, s10, s11, s2, ...
+  assert.equal(ok.stdout, `oldest: eval (high, L)\n${split}by score:\n${items(["s0", "s1", "s10", "s11", "s2", "s3", "s4", "s5", "s6", "s7"])}  +3 more\n`, "the mechanization node is the other slot's");
+  // Below the tie: five named, the rest counted; the next score is not named.
+  write({ nodes: [{ id: "a", value: "high", cost: "S" }, { id: "b", value: "medium", cost: "S" }, { id: "c", value: "low", cost: "S" }, { id: "d", value: "low", cost: "S" }, { id: "e", value: "low", cost: "M" }, { id: "f", value: "low", cost: "L" }, { id: "g", value: "low", cost: "XL" }], done: [] });
+  assert.equal(run(p.dir, "core").stdout, "oldest: a (high, S)\nby score:\n  b (2.00)\n  c (1.00)\n  d (1.00)\n  e (0.50)\n  f (0.33)\n  +1 more\n");
+  const listed = JSON.parse(run(p.dir, "core", "--json").stdout);
+  assert.deepEqual([listed.byScore.map((/** @type {any} */ e) => e.node.id), listed.more], [["b", "c", "d", "e", "f"], 1]);
+  // Split into a first step it needs: the step is the slot's, for the node it serves; it leaves the score list.
+  write({ nodes: [{ id: "eval", value: "high", cost: "L", needs: ["eval-1"] }, { id: "a", value: "high", cost: "M" }, { id: "eval-1", value: "high", cost: "S" }], done: [] });
+  assert.equal(run(p.dir, "core").stdout, "oldest: eval-1 (high, S), for eval (high, L), which waits on it\nby score:\n  a (1.50)\n");
+  const json = JSON.parse(run(p.dir, "core", "--json").stdout);
+  assert.deepEqual([json.oldest.node.id, json.oldest.of.id, json.oldest.split, json.byScore.map((/** @type {any} */ e) => [e.node.id, e.score]), json.more], ["eval-1", "eval", false, [["a", 1.5]], 0]);
+  // One ready node: it is the oldest, and no other is left to score.
+  write({ nodes: [{ id: "only" }], done: [] });
+  assert.equal(run(p.dir, "core").stdout, "oldest: only (?, ?)\nby score: no other ready core node\n");
+  const one = JSON.parse(run(p.dir, "core", "--json").stdout);
+  assert.deepEqual([one.byScore, one.more, one.oldest.split], [[], 0, false]);
+});
+
 test("cli: push-check says unmeasured without upstream, warns above the threshold, always exits 0", () => {
   const p = project({ push: { warnAtUnpushed: 1 } });
   p.commit({ "a.txt": "1" }, "c1");

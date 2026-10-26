@@ -1,7 +1,8 @@
 /**
  * Mechanization slot: one task per cycle turns a recurring defect class into a
  * gate, test, type or lint. This module loads the work graph and picks the
- * best ready node flagged `mechanization: true`.
+ * best ready node flagged `mechanization: true`, and for the core slots the
+ * oldest node of the highest value (pickOldest).
  *
  * Ready = flagged, not done, gate open (or no gate field), every `needs` id done
  * (listed in the done export, or an open node carrying the done status).
@@ -115,6 +116,44 @@ export function scoreNode(node, config) {
 }
 
 /**
+ * A node's cost as a weight (unknown counts as 1, as in the score).
+ * @param {GraphNode} node
+ * @param {any} config
+ */
+export function costWeight(node, config) {
+  return weight(node[config.graph.fields.cost], config.graph.costScale);
+}
+
+/** The positive weights of the cost scale, smallest first. @param {any} config */
+const costWeights = (config) => Object.values(config.graph.costScale).filter((w) => typeof w === "number" && w > 0).sort((a, b) => a - b);
+
+/**
+ * The weight above which a core pick is split first: planner.splitAbove when set (costs given as numbers,
+ * such as hours), else the middle of the cost scale, so a project's own scale reads as the default one does
+ * (2.5 there: L and XL).
+ * @param {any} config
+ */
+export function splitAt(config) {
+  const set = config.planner.splitAbove;
+  if (set !== null) return set;
+  const w = costWeights(config);
+  if (!w.length) return Infinity;
+  const mid = Math.floor(w.length / 2);
+  return w.length % 2 ? w[mid] : (w[mid - 1] + w[mid]) / 2;
+}
+
+/**
+ * Whether a core pick is split first: its cost weighs more than splitAt, and more than the scale's smallest
+ * weight, so a step written at that weight is never told to split again.
+ * @param {GraphNode} node
+ * @param {any} config
+ */
+export function splitFirst(node, config) {
+  const w = costWeight(node, config);
+  return w > splitAt(config) && w > (costWeights(config)[0] ?? 0);
+}
+
+/**
  * A node's `needs` as a list (a single id is allowed).
  * @param {GraphNode} node
  * @param {any} config
@@ -158,10 +197,13 @@ export function readyNodes(graph, config) {
  * nodes that are not done: a problem there that could change it is a `fail` (a node with no id, an id
  * twice, as when a finished node stays open, a need no node has, needs that wait on each other). The same
  * kind of problem among finished nodes only is a `warn`, and so is a guess: a value or cost the scales do
- * not know, or a node with no value or cost where others have one (each scored as 1), a mechanization flag
- * that is not a boolean, and a gate that looks like "no gate" (null, false, "", 0, "false") but is not the
- * open value, unless the open value is a boolean (then false is that project's closed value). doctor lists every one; the mechanization command refuses a graph with a fail, so the two never
- * disagree on what can be picked. Message keys, rendered by the caller.
+ * not know, or a node with no value or cost where others have one (each scored as 1), among the core nodes
+ * a date that is no number or none where others have one (the core pick reads each as the newest) and a
+ * cost given as a number with no planner.splitAbove, a mechanization flag that is not a boolean, and a
+ * gate that looks like "no gate" (null, false, "", 0, "false") but is not the open value, unless the open
+ * value is a boolean (then false is that project's closed value). doctor lists every one; the core and
+ * mechanization commands refuse a graph with a fail, so they never disagree on what can be picked. Message
+ * keys, rendered by the caller.
  * @param {Graph} graph
  * @param {any} config
  * @returns {GraphProblem[]}
@@ -263,6 +305,18 @@ export function graphProblems(graph, config) {
     const absent = waitingNodes.filter((n) => n[field] === undefined).length;
     if (absent && absent < waitingNodes.length) out.push({ level: "warn", key: "doctor.weightAbsent", vars: { n: absent, field } });
   }
+  // What the core pick reads on a guess, among the nodes it reads: a date that is no number (said even when
+  // every node has one), no date where others have one, a cost in numbers with no split threshold set.
+  const core = waitingNodes.filter((n) => n[f.mechanization] !== true);
+  const unread = core.filter((n) => n[f.since] !== undefined && sinceOf(n, config) === null);
+  if (unread.length) {
+    const v = unread[0][f.since];
+    out.push({ level: "warn", key: "doctor.sinceUnread", vars: { n: unread.length, field: f.since, id: String(unread[0][f.id]), value: JSON.stringify(v) ?? String(v) } });
+  }
+  const absent = core.filter((n) => n[f.since] === undefined).length;
+  if (absent && core.some((n) => sinceOf(n, config) !== null)) out.push({ level: "warn", key: "doctor.sinceUneven", vars: { n: absent, field: f.since } });
+  const hours = core.filter((n) => known(n[f.cost], {}) !== null).length;
+  if (hours && config.planner.splitAbove === null) out.push({ level: "warn", key: "doctor.splitAboveUnset", vars: { n: hours, field: f.cost, at: splitAt(config) } });
   for (const n of waitingNodes) {
     if (f.mechanization in n && typeof n[f.mechanization] !== "boolean") {
       out.push({ level: "warn", key: "doctor.flagNotBoolean", vars: { id: String(n[f.id]), field: f.mechanization, value: JSON.stringify(n[f.mechanization]) } });
@@ -293,4 +347,78 @@ export function readyMechanization(graph, config) {
  */
 export function pickMechanization(graph, config) {
   return readyMechanization(graph, config)[0] ?? null;
+}
+
+/**
+ * A node's date, when the graph dates its nodes (graph.fields.since): a finite number, such as a cycle or
+ * Date.getTime(); smaller is older. Anything else is no date: text has no one order (graphProblems says so).
+ * @param {GraphNode} node
+ * @param {any} config
+ * @returns {number | null}
+ */
+export function sinceOf(node, config) {
+  const v = node[config.graph.fields.since];
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+/**
+ * Nodes oldest first, as `pickOldest` reads them: the dated by their date, then the undated as the newest;
+ * between equal dates and among the undated, the list's order, as a graph is written by appending.
+ * @param {GraphNode[]} nodes
+ * @param {any} config
+ * @returns {GraphNode[]}
+ */
+export function byAge(nodes, config) {
+  const at = nodes.map((n, i) => ({ n, i, d: sinceOf(n, config) }));
+  at.sort((a, b) => (a.d === null || b.d === null ? (a.d === null ? 1 : 0) - (b.d === null ? 1 : 0) : a.d - b.d) || a.i - b.i);
+  return at.map((e) => e.n);
+}
+
+/**
+ * The core slot that ages: value/cost never picks a large node while small ones score as well (replayed
+ * at the start of Ennyn's cycles 1-12, plugin-eval, high and L, sank from 5th to 92nd of the ready core
+ * nodes). This slot takes the oldest node (byAge) of the highest value. A node that waits on open needs
+ * gives the slot the nearest ready one, the needs in their listed order, so a first step split from a large
+ * node and needed by it keeps that node's age. Flagged nodes are the mechanization slot's: never a pick,
+ * though a way may pass one; a closed gate ends a way. Each node is grouped by value once, and one already
+ * walked to nothing is not walked again: the pick is linear in the graph.
+ * @param {Graph} graph
+ * @param {any} config
+ * @returns {{ node: GraphNode, oldest: GraphNode } | null} the node to work, and the old node it serves (the same one when it is ready)
+ */
+export function pickOldest(graph, config) {
+  const f = config.graph.fields;
+  const { doneStatus, openGateValue, valueScale } = config.graph;
+  const core = (/** @type {GraphNode} */ n) => n[f.mechanization] !== true;
+  const ready = new Set(readyNodes(graph, config).filter(core));
+  const waiting = graph.open.filter((n) => n[f.status] !== doneStatus);
+  const byId = new Map(waiting.map((n) => [n[f.id], n]));
+  const gateOpen = (/** @type {GraphNode} */ n) => n[f.gate] === undefined || n[f.gate] === openGateValue;
+  /** @type {Map<number, GraphNode[]>} */
+  const levels = new Map();
+  for (const n of byAge(waiting, config)) {
+    if (!core(n) || !gateOpen(n)) continue;
+    const w = weight(n[f.value], valueScale);
+    const level = levels.get(w);
+    if (level) level.push(n);
+    else levels.set(w, [n]);
+  }
+  /** @type {Set<GraphNode>} */
+  const dead = new Set();
+  for (const w of [...levels.keys()].sort((a, b) => b - a)) {
+    for (const oldest of /** @type {GraphNode[]} */ (levels.get(w))) {
+      // Breadth first with a queue of its own: the nearest ready need, and no call stack for a long chain.
+      const queue = [oldest];
+      const seen = new Set(queue);
+      for (let i = 0; i < queue.length; i++) {
+        if (ready.has(queue[i])) return { node: queue[i], oldest };
+        for (const id of needsOf(queue[i], config)) {
+          const need = byId.get(id);
+          if (need && !seen.has(need) && !dead.has(need) && gateOpen(need)) seen.add(need), queue.push(need);
+        }
+      }
+      for (const n of queue) dead.add(n);
+    }
+  }
+  return null;
 }

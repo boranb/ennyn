@@ -34,13 +34,16 @@ export const DEFAULTS = Object.freeze({
       cluster: "cluster",
       mechanization: "mechanization",
       source: "source",
+      since: "since",
     },
     openGateValue: null,
     doneStatus: "done",
     valueScale: { high: 3, medium: 2, low: 1 },
     costScale: { S: 1, M: 2, L: 3, XL: 5 },
   },
-  planner: { mechanizationSlots: 1 },
+  // A core pick whose cost weighs more than this is split first (core says so); null: the middle weight of
+  // graph.costScale. Set it when costs are numbers such as hours.
+  planner: { mechanizationSlots: 1, splitAbove: null },
   commitMsg: {
     // Language of commit text; null follows `language` (reports and conversation).
     language: null,
@@ -178,6 +181,7 @@ const NULLABLE = new Map([
   ["graph.openGateValue", ["string", "boolean", "number"]],
   ["impact.referenceCommand", ["string"]],
   ["impact.ceilingRegistry", ["string"]],
+  ["planner.splitAbove", ["number"]],
 ]);
 
 // Keys that name a file or directory Ennyn reads or writes, resolved against the project directory.
@@ -322,6 +326,8 @@ export function loadConfig({ cwd, env = process.env, override }) {
     if (rule.except !== undefined && !isGlobs(rule.except)) problems.push(`${at}.except must be a list of globs`);
     if (rule.note !== undefined && typeof rule.note !== "string") problems.push(`${at}.note must be a string`);
   });
+  const split = /** @type {any} */ (cfg).planner.splitAbove;
+  if (split !== null && !(Number.isFinite(split) && split > 0)) problems.push(`"planner.splitAbove" must be a number above 0, or null`);
   const every = /** @type {any} */ (cfg).security.everyCycles;
   if (!(Number.isInteger(every) && every >= 0 && every <= 100)) problems.push(`"security.everyCycles" must be a whole number from 0 to 100`);
   const ci = /** @type {any} */ (cfg).security.ci;

@@ -283,6 +283,7 @@ const CASES = [
   { args: ["doctor"], outside: true },
   { args: ["init-scan"], outside: true },
   { args: ["mechanization"], outside: true },
+  { args: ["core"], outside: true },
   { args: ["commit-check", "--hook", "AMEND"], outside: true },
   { args: ["impact", "--symbol", "add", "--files", "src/add.js"] },
   // A sparse checkout: the readers outside it come from the index.
@@ -300,6 +301,7 @@ const CASES = [
   { args: ["bypass", "--from", FIRST, "--json"] },
   { args: ["mechanization"] },
   { args: ["mechanization"], cwd: "src", first: true },
+  { args: ["core", "--json"] },
   // The metrics log holds one budget record with no mark: the security audit is due, and the paths are read.
   { args: ["audit"] },
   { args: ["audit", "--json"] },

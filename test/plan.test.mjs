@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../core/config.mjs";
 import { t, tShown } from "../core/i18n.mjs";
-import { graphProblems, loadGraph, pickMechanization, readyMechanization, scoreNode, GraphError } from "../plan/mechanization.mjs";
+import { byAge, costWeight, sinceOf, splitAt, graphProblems, loadGraph, pickMechanization, pickOldest, readyMechanization, readyNodes, scoreNode, splitFirst, GraphError } from "../plan/mechanization.mjs";
 import { cycleRecords, folded, lineKey, markCovers, securityDue, sensitivePaths, uncovered } from "../plan/audit.mjs";
 
 const cfg = (override = {}) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-p-")), env: {}, override });
@@ -88,6 +88,217 @@ test("ready: configured field names, open gate value and scales", () => {
     done: [],
   };
   assert.deepEqual(readyMechanization(graph, c).map((n) => n.id), ["b", "c"]);
+});
+
+/** The pick as [the node the slot works, the old node it serves]. @param {any[]} open @param {any[]} [done] */
+const oldest = (open, done = [], c = cfg()) => {
+  const p = pickOldest({ open, done }, c);
+  return p && [p.node.id, p.oldest.id];
+};
+
+test("oldest: the first node of the highest value in the open list, however it scores", () => {
+  // Accept: an old large node over a young small one of the same value (value/cost ranks it last).
+  assert.deepEqual(oldest([{ id: "big", value: "high", cost: "L" }, { id: "small", value: "high", cost: "S" }]), ["big", "big"]);
+  // The list's order, not the id's.
+  assert.deepEqual(oldest([{ id: "z", value: "high", cost: "XL" }, { id: "a", value: "high", cost: "S" }]), ["z", "z"]);
+  // The highest value first, then age: an old medium node waits for no young high one.
+  assert.deepEqual(oldest([{ id: "old", value: "medium", cost: "S" }, { id: "young", value: "high", cost: "L" }]), ["young", "young"]);
+  // A number is its own weight; a value the scale does not know weighs 1, as in the score.
+  assert.deepEqual(oldest([{ id: "a", value: "low" }, { id: "b", value: 5, cost: "XL" }]), ["b", "b"]);
+  assert.deepEqual(oldest([{ id: "a", value: "hgih" }, { id: "b", value: "low" }]), ["a", "a"]);
+  // Reject: a gated node, a mechanization node (the other slot's), a node carrying the done status, each
+  // passed over with a ready need of its own.
+  assert.deepEqual(
+    oldest([
+      { id: "gated", value: "high", gate: "user", needs: ["n1"] },
+      { id: "mech", value: "high", mechanization: true, needs: ["n2"] },
+      { id: "finished", value: "high", status: "done", needs: ["n3"] },
+      { id: "n1", value: "low" },
+      { id: "n2", value: "low" },
+      { id: "n3", value: "low" },
+      { id: "plain", value: "high" },
+    ]),
+    ["plain", "plain"],
+  );
+  assert.deepEqual(
+    oldest([
+      { id: "gated", value: "high", gate: "user" },
+      { id: "mech", value: "high", mechanization: true },
+      { id: "finished", value: "high", status: "done" },
+      { id: "plain", value: "low" },
+    ]),
+    ["plain", "plain"],
+  );
+  // Nothing open, or nothing that can start: no pick.
+  assert.equal(oldest([]), null);
+  assert.equal(oldest([{ id: "a", value: "high", gate: "user" }, { id: "m", mechanization: true }]), null);
+});
+
+test("oldest: a node waiting on open needs gives the slot the nearest ready one, so a step keeps its node's age", () => {
+  // An L node split into a first step it needs: the step was written last, and still comes first.
+  const split = [{ id: "eval", value: "high", cost: "L", needs: ["eval-step"] }, { id: "other", value: "high", cost: "S" }, { id: "eval-step", value: "high", cost: "S" }];
+  assert.deepEqual(oldest(split), ["eval-step", "eval"]);
+  // The step done (in the done list or by status): the node is ready again.
+  assert.deepEqual(oldest(split.slice(0, 2), [{ id: "eval-step" }]), ["eval", "eval"]);
+  assert.deepEqual(oldest([split[0], split[1], { ...split[2], status: "done" }]), ["eval", "eval"]);
+  // Through a chain, nearest first, in the order the needs are listed; a need of any value serves.
+  const chain = [
+    { id: "p", value: "high", needs: ["q", "r"] },
+    { id: "q", value: "low", needs: ["s"] },
+    { id: "r", value: "low", needs: ["d"] },
+    { id: "s", value: "low" },
+  ];
+  assert.deepEqual(oldest(chain, [{ id: "d" }]), ["r", "p"]);
+  assert.deepEqual(oldest(chain), ["s", "p"], "r waits on d, which is not done: s is nearer than nothing");
+  // A closed gate ends that way; with no other way the node is passed over.
+  assert.deepEqual(oldest([{ id: "release", value: "high", needs: ["trial"] }, { id: "trial", value: "high", gate: "user" }, { id: "next", value: "high" }]), ["next", "next"]);
+  assert.deepEqual(oldest([{ id: "p", value: "high", needs: ["g", "q"] }, { id: "g", gate: "user" }, { id: "q", value: "low" }]), ["q", "p"]);
+  // Nor is the way walked on past it: what a gated need waits on does not serve the node above it.
+  assert.deepEqual(oldest([{ id: "p", value: "high", needs: ["g"] }, { id: "g", gate: "user", needs: ["x"] }, { id: "x", value: "low" }, { id: "next", value: "high" }]), ["next", "next"]);
+  // Two ready needs as near: the first listed.
+  assert.deepEqual(oldest([{ id: "p", value: "high", needs: ["b", "a"] }, { id: "a", value: "low" }, { id: "b", value: "low" }]), ["b", "p"]);
+  // Needs that wait on each other lead nowhere, and end.
+  assert.deepEqual(oldest([{ id: "a", value: "high", needs: ["b"] }, { id: "b", needs: ["a"] }, { id: "c", value: "low" }]), ["c", "c"]);
+});
+
+test("oldest: a flagged node is the mechanization slot's, never the core pick, and doctor's core count agrees", () => {
+  // Review round 1: X waits on a ready flagged node; core named it while mechanization picked it too.
+  const open = [{ id: "X", value: "high", needs: ["M"] }, { id: "M", value: "low", mechanization: true }, { id: "Y", value: "medium" }];
+  assert.deepEqual(oldest(open), ["Y", "Y"]);
+  assert.equal(pickMechanization({ open, done: [] }, cfg())?.id, "M");
+  // A way may pass a flagged node that waits on a core one.
+  assert.deepEqual(oldest([{ id: "h", value: "high", needs: ["m"] }, { id: "m", mechanization: true, needs: ["x"] }, { id: "x", value: "low" }]), ["x", "h"]);
+  // Doctor's "ready: N core" counts the ready nodes not flagged: a pick exactly when that count is not zero.
+  const graphs = [open, [{ id: "a", value: "high", needs: ["m"] }, { id: "m", mechanization: true }], [{ id: "g", gate: "user" }], [{ id: "a" }, { id: "m", mechanization: true }]];
+  for (const g of graphs) {
+    const core = readyNodes({ open: g, done: [] }, cfg()).filter((n) => n.mechanization !== true).length;
+    const p = pickOldest({ open: g, done: [] }, cfg());
+    assert.equal(p !== null, core > 0, JSON.stringify(g));
+    if (p) assert.notEqual(p.node.mechanization, true);
+  }
+});
+
+test("oldest: a graph that dates its nodes is read by the date; undated ones count as the newest, and doctor says so", () => {
+  // Review round 1: a module reading a roadmap that lists the newest first gives each node its date as a number.
+  const roadmap = [
+    { id: "newest-small", value: "high", cost: "S", since: Date.parse("2026-10-20") },
+    { id: "newer-small", value: "high", cost: "S", since: Date.parse("2026-09-01") },
+    { id: "old-large", value: "high", cost: "L", since: Date.parse("2026-03-15") },
+  ];
+  assert.deepEqual(oldest(roadmap), ["old-large", "old-large"]);
+  // A cycle number the same way; equal dates keep the list's order.
+  assert.deepEqual(oldest([{ id: "b", value: "high", since: 4 }, { id: "a", value: "high", since: 2 }, { id: "c", value: "high", since: 2 }]), ["a", "a"]);
+  // Undated, or no number (text, blank, NaN, Infinity from a module): after every dated one, in list order.
+  const uneven = [{ id: "u", value: "high" }, { id: "s", value: "high", since: 9 }, { id: "x", value: "high", since: NaN }, { id: "e", value: "high", since: "" }, { id: "t", value: "high", since: 1 }, { id: "y", value: "high", since: Infinity }];
+  assert.deepEqual(byAge(uneven, cfg()).map((n) => n.id), ["t", "s", "u", "x", "e", "y"]);
+  assert.deepEqual(sinceOf(uneven[1], cfg()), 9);
+  assert.deepEqual(oldest(uneven), ["t", "t"]);
+  assert.deepEqual(graphProblems({ open: uneven, done: [] }, cfg()).map((p) => [p.key, p.vars.n]), [["doctor.sinceUnread", 3], ["doctor.sinceUneven", 1]]);
+  assert.match(tShown("doctor.sinceUneven", { n: 1, field: "since" }), /1 open core nodes have no since while others have one; the core pick reads each as the newest/);
+  // No dates anywhere, or every core node dated: no warning; finished nodes are not counted.
+  assert.deepEqual(graphProblems({ open: [{ id: "a" }, { id: "b", status: "done" }], done: [] }, cfg()), []);
+  assert.deepEqual(graphProblems({ open: [{ id: "a", since: 3 }, { id: "b", status: "done" }], done: [{ id: "c" }] }, cfg()), []);
+  // The field's name is configured.
+  const c = cfg({ graph: { fields: { since: "eklendi" } } });
+  assert.deepEqual(oldest([{ id: "y", value: "high", eklendi: 9 }, { id: "o", value: "high", eklendi: 1 }], [], c), ["o", "o"]);
+});
+
+test("oldest: split by weight, not by a cost name", () => {
+  assert.deepEqual(["S", "M", "L", "XL", undefined, "?"].map((cost) => splitFirst({ cost }, cfg())), [false, false, true, true, false, false]);
+  assert.equal(splitAt(cfg()), 2.5);
+  const hours = cfg({ planner: { splitAbove: 16 } });
+  assert.deepEqual([splitFirst({ cost: 8 }, hours), splitFirst({ cost: 40 }, hours), costWeight({ cost: 40 }, hours), splitAt(hours)], [false, true, 40, 16]);
+  // An empty scale (one given replaces the default): no middle, nothing split.
+  assert.deepEqual([splitAt(cfg({ graph: { costScale: {} } })), splitFirst({ cost: 40 }, cfg({ graph: { costScale: {} } }))], [Infinity, false]);
+});
+
+test("oldest (review round 2): a date is a number; any other since is read as undated and said, even on every node", () => {
+  const keys = (/** @type {any[]} */ open) => graphProblems({ open, done: [] }, cfg()).map((p) => [p.key, p.vars.n]);
+  // Text compared as text put "10" before "9" and "2026-10-01" before "2026-9-1", silently.
+  for (const [older, newer] of [["9", "10"], ["2026-9-1", "2026-10-01"], ["15.09.2026", "01.10.2026"], ["cycle 9", "cycle 10"]]) {
+    const open = [{ id: "listed-first", value: "high", since: newer }, { id: "listed-second", value: "high", since: older }];
+    assert.deepEqual(oldest(open), ["listed-first", "listed-first"], `${older} / ${newer}: no reading of text, the list's order`);
+    assert.deepEqual(keys(open), [["doctor.sinceUnread", 2]]);
+  }
+  // A Date object on every node (a module's) is no date the pick reads either, and is said.
+  const dates = [{ id: "newest", value: "high", since: new Date("2026-10-20") }, { id: "old", value: "high", since: new Date("2026-03-15") }];
+  assert.deepEqual(keys(dates), [["doctor.sinceUnread", 2]]);
+  assert.match(tShown("doctor.sinceUnread", graphProblems({ open: dates, done: [] }, cfg())[0].vars), /2 open core nodes have a since that is not a number, such as newest: "2026-10-20T00:00:00.000Z"; the core pick reads each as undated, the newest/);
+  // As numbers (a cycle, or Date.getTime()), they are read.
+  assert.deepEqual(oldest(dates.map((n) => ({ ...n, since: n.since.getTime() }))), ["old", "old"]);
+  for (const since of [true, null, {}, [3]]) assert.deepEqual(keys([{ id: "a", since }, { id: "b", since: 2 }]), [["doctor.sinceUnread", 1]], JSON.stringify(since));
+});
+
+test("oldest (review round 2): the age and its warnings read only open core nodes", () => {
+  // A dated flagged node listed first set the kind for the core nodes; an undated one was said to be read as the newest.
+  assert.deepEqual(oldest([{ id: "m", value: "high", mechanization: true, since: "2026-01-01" }, { id: "b", value: "high", since: 12 }, { id: "a", value: "high", since: 3 }]), ["a", "a"]);
+  assert.deepEqual(graphProblems({ open: [{ id: "m", mechanization: true }, { id: "s", mechanization: true, since: "x" }, { id: "a", since: 3 }, { id: "b", since: 4 }], done: [] }, cfg()), []);
+  // Done nodes neither.
+  assert.deepEqual(graphProblems({ open: [{ id: "d", status: "done", since: "x" }, { id: "a", since: 3 }, { id: "e", status: "done" }], done: [{ id: "f" }] }, cfg()), []);
+});
+
+test("oldest (review round 2): the split threshold follows the cost scale, and a step at its smallest weight is never split", () => {
+  const split = (/** @type {Record<string, number>} */ costScale, /** @type {any} */ over = {}) => {
+    const c = cfg({ graph: { costScale }, ...over });
+    return Object.keys(costScale).filter((cost) => splitFirst({ cost }, c));
+  };
+  assert.deepEqual(split({ S: 1, M: 2, L: 3, XL: 5 }), ["L", "XL"]);
+  assert.deepEqual(split({ S: 3, M: 5, L: 8 }), ["L"], "the split step, S, was told to split again");
+  assert.deepEqual(split({ XS: 1, S: 2, M: 3, L: 5, XL: 8 }), ["L", "XL"], "M was split");
+  assert.deepEqual(split({ S: 0.5, M: 1, L: 2, XL: 4 }), ["L", "XL"], "L was never split");
+  assert.deepEqual(split({ small: 1, large: 3 }), ["large"]);
+  // A scale written in any order, and one with a weight of 0 or less (no weight: such a cost counts as 1).
+  assert.deepEqual(split({ L: 8, S: 3, M: 5 }), ["L"]);
+  assert.deepEqual(split({ N: -10, S: 1, M: 2, L: 3 }), ["L"]);
+  // An override below the smallest weight still never splits that weight.
+  assert.deepEqual(split({ S: 1, M: 2, L: 3 }, { planner: { splitAbove: 0.5 } }), ["M", "L"]);
+  for (const v of [0, -1, "M", Infinity]) assert.throws(() => cfg({ planner: { splitAbove: v } }), /planner\.splitAbove/, JSON.stringify(v));
+  // Costs given as numbers (hours) with no threshold of their own: said; with one, not.
+  const hours = [{ id: "a", cost: 8 }, { id: "b", cost: 40 }, { id: "m", mechanization: true, cost: 3 }];
+  assert.deepEqual(graphProblems({ open: hours, done: [] }, cfg()).map((p) => [p.key, p.vars.n, p.vars.at]), [["doctor.splitAboveUnset", 2, 2.5]]);
+  assert.deepEqual(graphProblems({ open: hours, done: [] }, cfg({ planner: { splitAbove: 16 } })), []);
+  assert.deepEqual([splitFirst({ cost: 8 }, cfg({ planner: { splitAbove: 16 } })), splitFirst({ cost: 40 }, cfg({ planner: { splitAbove: 16 } }))], [false, true]);
+});
+
+test("oldest: configured field names, open gate value and scales", () => {
+  const c = cfg({
+    graph: {
+      fields: { id: "kimlik", status: "durum", gate: "kapi", value: "deger", needs: "gerekir", mechanization: "mekanizasyon" },
+      openGateValue: "yok",
+      doneStatus: "tamam",
+      valueScale: { yuksek: 3, dusuk: 1 },
+    },
+  });
+  const open = [
+    { kimlik: "a", deger: "yuksek", kapi: "talep" },
+    { kimlik: "b", deger: "yuksek", kapi: "yok", gerekir: ["c"] },
+    { kimlik: "c", deger: "dusuk", kapi: "yok", durum: "tamam" },
+    { kimlik: "d", deger: "yuksek", kapi: "yok", mekanizasyon: true },
+  ];
+  const p = pickOldest({ open, done: [] }, c);
+  assert.deepEqual(p && [p.node.kimlik, p.oldest.kimlik], ["b", "b"]);
+});
+
+test("oldest: a chain tens of thousands long, every node a candidate and its end gated, is walked once", { timeout: 30_000 }, () => {
+  // Walked again from each node it would be n²/2 steps; a node already walked to no ready one is not walked again.
+  const n = 50_000;
+  const open = Array.from({ length: n }, (_, i) => ({ id: `n${i}`, value: "high", needs: i + 1 < n ? [`n${i + 1}`] : [], ...(i + 1 === n ? { gate: "user" } : {}) }));
+  assert.equal(oldest(open), null);
+  open.push({ id: "free", value: "high" });
+  assert.deepEqual(oldest(open), ["free", "free"]);
+  open[n - 1] = { id: `n${n - 1}`, value: "high" };
+  assert.deepEqual(oldest(open), [`n${n - 1}`, "n0"]);
+  // Many nodes that need the head of one long chain to nowhere: the chain is walked for the first only.
+  const m = 30_000;
+  const chain = Array.from({ length: m }, (_, i) => ({ id: `c${i}`, value: "low", needs: i + 1 < m ? [`c${i + 1}`] : [], ...(i + 1 === m ? { gate: "user" } : {}) }));
+  const fan = Array.from({ length: m }, (_, i) => ({ id: `h${i}`, value: "high", needs: ["c0"] }));
+  assert.equal(oldest([...fan, ...chain]), null);
+  // Review round 1: a value of its own on every node, the high ones blocked: each node is grouped once, not
+  // rescanned for each value.
+  const values = Array.from({ length: m }, (_, i) => ({ id: `n${i}`, value: m - i + 1, needs: i + 1 < m ? [`n${i + 1}`] : [], ...(i + 1 === m ? { gate: "user" } : {}) }));
+  assert.deepEqual(oldest([...values, { id: "free", value: 0.5 }]), ["free", "free"]);
+  const onto = Array.from({ length: 20_000 }, (_, i) => ({ id: `f${i}`, value: 20_000 - i + 1, needs: ["G"] }));
+  assert.deepEqual(oldest([...onto, { id: "G", gate: "user", value: 1 }, { id: "free", value: 0.5 }]), ["free", "free"]);
 });
 
 test("loadGraph: JSON and module graphs with configured export names", async () => {

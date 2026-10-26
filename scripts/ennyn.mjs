@@ -22,7 +22,7 @@ import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
 import { reworkRate } from "../metrics/szz.mjs";
 import { bypassUses } from "../metrics/bypass.mjs";
 import { gateLogPath, readAttempts, recordAttempt, summarizeAttempts, KINDS } from "../metrics/gate-log.mjs";
-import { graphProblems, loadGraph, pickMechanization, scoreNode, GraphError } from "../plan/mechanization.mjs";
+import { costWeight, graphProblems, loadGraph, pickMechanization, pickOldest, readyNodes, scoreNode, splitAt, splitFirst, GraphError } from "../plan/mechanization.mjs";
 import { LINK_RULE, SUBMODULE_RULE, auditAnswer, cycleRecords, markCovers, readLog, securityDue, sensitivePaths } from "../plan/audit.mjs";
 import { scanProject, MIN_HISTORY } from "../setup/scan.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
@@ -42,6 +42,7 @@ Commands:
   impact --symbol <s> [--files a,b]                 five-row impact table (markdown)
   rework [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--days N] [--json]
                                                     SZZ-style rework rate
+  core [--json]                                     the core slots' picks: the oldest node of the highest value (or the ready need it waits on), and the best ready by value/cost
   mechanization [--json]                            best ready mechanization node
   audit [--json]                                    whether this cycle's audit slot is the security audit (security.everyCycles), and the sensitive paths it reads
   bypass [--from <rev>] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--json]
@@ -64,6 +65,10 @@ class UsageError extends Error {}
 
 /** Past this many files a risky source of `audit` is listed by directory, each with its count: every file's directory is named. */
 const AUDIT_NAMES = 50;
+
+/** How many ready nodes `core` lists by score, then every one that ties with the last of them, up to the second number; the rest are counted. */
+const CORE_LIST = 5;
+const CORE_LIST_MAX = 10;
 
 /** How many levels of local callees the commit-msg hook reads, one git round each; past it they are said unread. */
 const CALLEE_ROUNDS = 20;
@@ -112,6 +117,19 @@ function projectDir() {
 
 /** @param {string} cwd */
 const config = (cwd) => loadConfig({ cwd });
+
+/**
+ * The work graph to pick from, its problems said on stderr; null when one is a fail. What doctor fails on,
+ * the picks refuse: a pick from a graph with a node twice or no id is a guess.
+ * @param {string} cwd @param {any} cfg
+ */
+async function pickable(cwd, cfg) {
+  const graph = await loadGraph({ cwd, config: cfg });
+  const problems = graphProblems(graph, cfg);
+  for (const p of problems) err(`${p.level === "fail" ? "✗" : "!"} ${tShown(p.key, p.vars, cfg.language)}`);
+  if (problems.some((p) => p.level === "fail")) return (err(t("mechanization.refused", {}, cfg.language)), null);
+  return graph;
+}
 
 /**
  * For an amend! / squash! message, the commit it folds into: the newest of the last 500 whose subject is
@@ -1177,16 +1195,47 @@ const COMMANDS = {
     return 0;
   },
 
+  async core(args) {
+    const { opts, help } = parseArgs(args, { flags: ["json"] });
+    if (help) return (out(USAGE), 0);
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    const graph = await pickable(cwd, cfg);
+    if (!graph) return 1;
+    const f = cfg.graph.fields;
+    const lang = cfg.language;
+    const pick = pickOldest(graph, cfg);
+    const split = pick !== null && splitFirst(pick.node, cfg);
+    // The other slot: the rest of the ready core nodes by value/cost, the first few and every one that ties with the last.
+    const rest = readyNodes(graph, cfg).filter((n) => n[f.mechanization] !== true && n !== pick?.node);
+    const shown = rest.slice(0, CORE_LIST);
+    const last = shown.length ? scoreNode(shown[shown.length - 1], cfg) : null;
+    while (shown.length < Math.min(CORE_LIST_MAX, rest.length) && scoreNode(rest[shown.length], cfg) === last) shown.push(rest[shown.length]);
+    const more = rest.length - shown.length;
+    if (opts.json) return (out(jsonShown({ oldest: pick && { node: pick.node, of: pick.oldest, split }, byScore: shown.map((node) => ({ score: scoreNode(node, cfg), node })), more })), 0);
+    if (!pick) return (out(t("core.none", {}, lang)), 0);
+    const about = (/** @type {Record<string, unknown>} */ n) => ({ id: String(n[f.id]), value: String(n[f.value] ?? "?"), cost: String(n[f.cost] ?? "?") });
+    const of = about(pick.oldest);
+    if (pick.node === pick.oldest) out(tShown("core.oldest", about(pick.node), lang));
+    else out(tShown("core.oldestNeed", { ...about(pick.node), of: of.id, ofValue: of.value, ofCost: of.cost }, lang));
+    if (split) out(tShown("core.split", { cost: about(pick.node).cost, weight: costWeight(pick.node, cfg), above: splitAt(cfg) }, lang));
+    if (!shown.length) return (out(t("core.scoreNone", {}, lang)), 0);
+    out(t("core.score", {}, lang));
+    for (const n of shown) {
+      const vars = { id: String(n[f.id]), score: scoreNode(n, cfg).toFixed(2), cluster: String(n[f.cluster]) };
+      out(tShown(n[f.cluster] === undefined ? "core.scoreItem" : "core.scoreItemCluster", vars, lang));
+    }
+    if (more) out(t("core.scoreMore", { n: more }, lang));
+    return 0;
+  },
+
   async mechanization(args) {
     const { opts, help } = parseArgs(args, { flags: ["json"] });
     if (help) return (out(USAGE), 0);
     const cwd = projectDir();
     const cfg = config(cwd);
-    const graph = await loadGraph({ cwd, config: cfg });
-    // What doctor fails on, this refuses: a pick from a graph with a node twice or no id is a guess.
-    const problems = graphProblems(graph, cfg);
-    for (const p of problems) err(`${p.level === "fail" ? "✗" : "!"} ${tShown(p.key, p.vars, cfg.language)}`);
-    if (problems.some((p) => p.level === "fail")) return (err(t("mechanization.refused", {}, cfg.language)), 1);
+    const graph = await pickable(cwd, cfg);
+    if (!graph) return 1;
     const node = pickMechanization(graph, cfg);
     const score = node ? scoreNode(node, cfg) : null;
     if (opts.json) return (out(jsonShown(node ? { node, score } : null)), 0);

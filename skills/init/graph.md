@@ -7,6 +7,7 @@ Write the graph to the scan's `graph.path`, as a JSON object with two arrays nam
   Shape: `{ "id": "short-kebab-id", "title": "…", "status": "planned", "value": "high|medium|low", "cost": "S|M|L|XL", "cluster": "<area>", "needs": [], "source": "…" }`.
 - **From a roadmap file or issues:** one node per item that meets the bar. Merge duplicates. `source` points back to the item, for example `ROADMAP.md:12` or `#42`. Items too vague to verify go into one node per area, titled "Define: …", with value `medium`.
 - **value / cost:** estimate them from the item and say so in the report. The user corrects them later.
+- **Age:** one core slot takes the oldest node of the highest value. A node's age is its `since` when the graph dates its nodes (a number, smaller is older: a cycle, or a date as `Date.getTime()`), else its place in the list: a new node goes at the end. A module whose roadmap does not list the oldest item first gives every node a `since` from the roadmap. When the graph already uses `since` for something else, rename the field (`graph.fields.since`).
 - **needs:** set only when a node truly cannot start before another one.
 - **done:** finished features worth re-checking, as `{ "id", "title", "status": "done" }`. The cycle's legacy audit picks from these.
 - **mechanization: true:** only for a defect class that the user or the history names as recurring. Otherwise there are none; the first cycle's convergence report creates them.

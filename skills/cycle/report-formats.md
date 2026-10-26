@@ -5,9 +5,9 @@ Write reports in the project's `language`.
 ## Cycle plan
 
 ```md
-**Discovery:** ready set: [top 3-5 candidates with score] | mechanization slot: [node or "none ready → third core task"]
+**Discovery:** oldest: [`core`'s pick, its value and cost; the step written if it said split] · by score: [3-5 of its list, with score and cluster] | mechanization slot: [node or "none ready → third core task"]
 **Tasks:**
-1-2. [core tasks] — impact table: [required/not needed + why] — checks: [tests, mutation, reviewers]
+1-2. [core tasks: the oldest pick, then one by score] — impact table: [required/not needed + why] — checks: [tests, mutation, reviewers]
 3. [mechanization: node] — class it turns into a gate: [catalog id]
 4. [legacy audit: feature, or the security audit `ennyn.mjs audit` did not rule out] — chosen because: [rule]
 **Security:** [threat this cycle meets · measure] or [none, because …]
