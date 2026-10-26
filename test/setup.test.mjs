@@ -1621,7 +1621,7 @@ test("ask rules: doctor says which file holds each rule and whether it is commit
   const okLine = tShown("doctor.askOk", { rules: ["Bash(git push *)"] }, "en");
   assert.match(okLine, /^ask rules: \.claude\/settings\.json, as committed, holds Bash\(git push \*\)\. Claude Code applies them only in a session started at the repository's top/);
   assert.match(okLine, /skips the file whole and shows a Settings Error/);
-  assert.match(okLine, /not matched: git -C <dir> push, a full path, sh -c, an alias, a script that pushes, gh api, an MCP tool$/);
+  assert.match(okLine, /not matched: a git option before push \(git -C <dir> push, git -c k=v push\), a quoted or escaped push \(git "push"\), a command fed to a shell or another program \(sh -c, eval, xargs, find -exec\), a command word built as it runs \(\$\(…\), `…`\), an alias, a script that pushes, gh api, an MCP tool, and on older versions a full path \(before 2\.1\.309\) or a subshell \(2\.1\.207\)$/);
   assert.doesNotMatch(okLine, /unasked|in every permission mode/);
   // A file that gives no rule is said; a read that fails is said once, with its error.
   r.commit("feat: broken", { ".claude/settings.json": "{" });

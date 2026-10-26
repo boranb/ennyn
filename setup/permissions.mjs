@@ -6,9 +6,10 @@
  *
  * This says what Ennyn read, not what Claude Code will do. Claude Code applies the file only in a session
  * started at the repository's top, skips it whole when any setting in it is one it rejects (Ennyn does not
- * mirror that schema), and matches a rule against the command as written: a push written another way
- * (`git -C dir push`, a full path, `sh -c`, an alias, a script that pushes, `gh api`, an MCP tool) is not
- * matched. The reports say these limits instead of claiming the push is asked about.
+ * mirror that schema), and matches a rule against the command as it reads it: a push written another way
+ * (a git option before push, `sh -c`, `eval`, an alias, a script that pushes, `gh api`, an MCP tool) is not
+ * matched. The reports say these limits instead of claiming the push is asked about; what Claude Code did with
+ * each spelling is recorded in test/reference/claude-code.json.
  *
  * Only the project's own files are read, through the scan's projectFiles rule; user and managed settings are
  * not the repository's. A read that fails throws, as the scan's reads do; doctor names it.

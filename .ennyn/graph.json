@@ -1319,6 +1319,46 @@
       "cost": "S",
       "cluster": "gates",
       "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its issues 443 and 790 (stdin never ended on Windows; the hook hung to the outer timeout), fixed by a one-second fallback and a BOM strip before JSON.parse; its issue 1165 raised its hook timeout to 15 s for a slow Node start"
+    },
+    {
+      "id": "instruction-imports",
+      "title": "Imports are read as Claude Code reads them: an import inside an HTML comment or indented code, a file that is no text, a #fragment, a path wrapped in emphasis or a link, an escaped space, the order hops are counted in, and the import of a path-scoped rule, which loads in every session",
+      "status": "planned",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "gates",
+      "needs": [],
+      "source": "cycle 2026-10-26 (12), reference-claude-code record"
+    },
+    {
+      "id": "rule-paths-yaml",
+      "title": "A rule's front matter is read as YAML reads it: a value on the next line, a quoted key, a folded scalar, null, ~, a number, true, {}, a blank item, the ... closer, an unquoted comma; front matter YAML rejects is none, so the rule loads in every session",
+      "status": "planned",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "gates",
+      "needs": [],
+      "source": "cycle 2026-10-26 (12), reference-claude-code record"
+    },
+    {
+      "id": "rule-paths-glob-dialect",
+      "title": "A rule's paths are matched in Claude Code's own glob dialect: a negation across the rule's patterns, [!x] and [^x], an escaped star or brace, a pattern written decomposed (NFD)",
+      "status": "planned",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "needs": [],
+      "source": "cycle 2026-10-26 (12), reference-claude-code record"
+    },
+    {
+      "id": "nested-claude-folders",
+      "title": "A nested .claude/ folder is read as Claude Code reads it, by agentSetup, budget, the side-copy hook and the audit: its rules, with paths relative to it, its settings.json, and the files they import",
+      "status": "planned",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "gates",
+      "needs": [],
+      "source": "cycle 2026-10-26 (12), reference-claude-code record"
     }
   ],
   "done": [
