@@ -77,7 +77,8 @@ function listing(text, name) {
  */
 export function instructionBudget(cwd, files) {
   const tracked = new Set(files);
-  const setup = agentSetup(cwd, files);
+  // Whether AGENTS.md loads is decided by tracked files too: an untracked CLAUDE.local.md is one machine's.
+  const setup = agentSetup(cwd, files, { tracked: true });
   const loaded = setup.instructions.filter((i) => i.loads !== "other");
   const counted = loaded.filter((i) => tracked.has(i.path));
   const untracked = loaded.filter((i) => !tracked.has(i.path)).map((i) => i.path);

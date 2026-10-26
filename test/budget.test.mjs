@@ -53,6 +53,20 @@ test("budget: sizes by load kind; repeats across loaded files, marked when a cop
   assert.deepEqual([empty.always, empty.repeatedLines], [0, 0]);
 });
 
+test("budget (review): whether AGENTS.md loads is decided by tracked files, so an untracked CLAUDE.local.md moves no shared number", () => {
+  const agents = `- ${RULE}\n`;
+  const count = (/** @type {Record<string, string>} */ files) => {
+    const dir = mkdtempSync(join(tmpdir(), "en-budget-agents-"));
+    put(dir, files);
+    return instructionBudget(dir, ["AGENTS.md"]);
+  };
+  // The same tracked files: AGENTS.md loads in every session, on this machine's CLAUDE.local.md or not.
+  assert.equal(count({ "AGENTS.md": agents }).always, Buffer.byteLength(agents));
+  const local = count({ "AGENTS.md": agents, "CLAUDE.local.md": "notes of this machine\n" });
+  assert.equal(local.always, Buffer.byteLength(agents));
+  assert.deepEqual(local.untracked, ["CLAUDE.local.md"]);
+});
+
 test("budget audit: a metrics log that cannot be read is no empty log", (t) => {
   if (process.getuid?.() === 0) return t.skip("root reads any file");
   const dir = mkdtempSync(join(tmpdir(), "en-budget-log-"));
@@ -97,7 +111,7 @@ test("budget: imported files load with their importer; untracked files are this 
   assert.equal(b.always, Buffer.byteLength(claude) + Buffer.byteLength(`- ${RULE}\n`) + Buffer.byteLength("web rules, loaded every session\n") + listings);
   assert.deepEqual(b.untracked, ["CLAUDE.local.md"]);
   assert.equal(b.files, 3, "CLAUDE.md, the imported AGENTS.md and the rule-dir CLAUDE.md once");
-  assert.deepEqual(importsOf("Read @../AGENTS.md, then @x.md.\n`@no.md`\n@../../escape.md @~/home.md @/etc/abs.md\n", "docs/CLAUDE.md"), ["AGENTS.md", "docs/x.md"]);
+  assert.deepEqual(importsOf("Read @../AGENTS.md then @x.md\n`@no.md`\n@../../escape.md @~/home.md @/etc/abs.md\n", "docs/CLAUDE.md"), ["AGENTS.md", "docs/x.md"]);
 });
 
 test("budget: one record per commit; the change is measured against another commit's record; broken lines are counted", () => {

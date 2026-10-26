@@ -553,10 +553,14 @@ export function projectCommands(cwd) {
  */
 const shellWord = (s) => (s.startsWith("-") || s.includes("\0") ? null : /^[\w.:@/+-]+$/.test(s) ? s : `'${s.replace(/'/g, "'\\''")}'`);
 
-/** Instruction files Claude Code loads in every session; checked on disk, as CLAUDE.local.md is never tracked. */
+/**
+ * Instruction files Claude Code loads in every session; checked on disk, as CLAUDE.local.md is never tracked. When
+ * the top holds none of them with text, AGENTS.md and .claude/AGENTS.md load in their place (2.1.310; 2.1.207 reads
+ * neither): at the top in every session, and below on demand in a folder that holds none of its own.
+ */
 const ALWAYS_FILES = ["CLAUDE.md", ".claude/CLAUDE.md", "CLAUDE.local.md"];
-/** Files other agents read; Claude Code does not, but a rule in them still contradicts the cycle. */
-const OTHER_FILES = ["AGENTS.md", "GEMINI.md", ".cursorrules", ".github/copilot-instructions.md", "CONTRIBUTING.md"];
+/** Files other agents read; Claude Code does not (AGENTS.md aside), but a rule in them still contradicts the cycle. */
+const OTHER_FILES = ["AGENTS.md", ".claude/AGENTS.md", "GEMINI.md", ".cursorrules", ".github/copilot-instructions.md", "CONTRIBUTING.md"];
 // Names that say "this runs a development loop" or "this reviews a change", in English and Turkish,
 // as whole parts of a hyphenated name ("preview-builder" is not a reviewer).
 export const CYCLE_SKILL = /(^|[-_])(cycle|phase|faz|d[öo]ng[üu]|sprint|loop)([-_]|$)/i;
@@ -794,11 +798,8 @@ export function importsOf(text, from) {
   const out = new Set();
   for (const line of outsideFences(text)) {
     for (const m of line.replace(/`[^`\n]*`/g, "").matchAll(/(?:^|\s)@([^\s`<>]+)/g)) {
-      // Trailing punctuation off, read from the end: a pattern anchored at the end tries every start (a run of
-      // dots before a letter costs its square).
-      let end = m[1].length;
-      while (end > 0 && ".,;:)".includes(m[1][end - 1])) end--;
-      const raw = m[1].slice(0, end);
+      // The path is the whole word, trailing punctuation too: `@a.md.` imports nothing, as Claude Code reads it.
+      const raw = m[1];
       if (raw.startsWith("~") || raw.startsWith("/")) continue;
       const target = posix.normalize(posix.join(dir, raw));
       if (!target.startsWith("..")) out.add(target);
@@ -814,42 +815,100 @@ export function importsOf(text, from) {
  * other agents only) and the lines that set a commit rule. /ennyn:init asks how
  * Ennyn's cycle and reviewers sit next to what is there, and finds every
  * commit rule it would contradict.
+ * `via` names the file whose import loads one, when that is how it loads.
  * @param {string} cwd
  * @param {string[]} files tracked files (nested CLAUDE.md / AGENTS.md are found there)
+ * @param {{ tracked?: boolean }} [opts] `tracked`: whether AGENTS.md loads is decided by tracked files only, as the
+ *   budget every clone shares counts them (an untracked CLAUDE.local.md is one machine's)
  */
-export function agentSetup(cwd, files) {
+export function agentSetup(cwd, files, { tracked = false } = {}) {
   // Every read goes through one rule: what leads out of the repository is named in `outside`, never read.
   const pf = projectFiles(cwd);
+  const listed = new Set(files);
   /** @type {Map<string, "always" | "on-demand" | "other">} */
   const kinds = new Map();
+  /** @type {Map<string, string>} */
+  const via = new Map();
   const rank = { always: 0, "on-demand": 1, other: 2 };
   // One entry per file, with the widest way it loads.
   const put = (/** @type {string} */ path, /** @type {"always" | "on-demand" | "other"} */ loads) => {
     const prev = kinds.get(path);
     if (!prev || rank[loads] < rank[prev]) kinds.set(path, loads);
   };
-  for (const path of ALWAYS_FILES) put(path, "always");
+  // A name as the disk spells it: on a disk that ignores case, CLAUDE.md is a tracked claude.md, and it is that file.
+  const spelled = (/** @type {string} */ rel) => {
+    if (listed.has(rel)) return rel;
+    const alt = files.find((f) => f.toLowerCase() === rel.toLowerCase());
+    if (alt === undefined) return rel;
+    try {
+      return realpathSync.native(join(cwd, rel)) === realpathSync.native(join(cwd, alt)) ? alt : rel;
+    } catch {
+      return rel;
+    }
+  };
+  // Claude Code loads a file that holds text once its front matter and its closed HTML comments are out: an empty,
+  // blank, front-matter-only or comment-only one is not loaded (a comment left open is text), and a folder in a
+  // file's place is none. Any other file that cannot be read is said (read throws). One that leads out of the
+  // repository is not read (it is named in `outside`): Claude Code loads it, so it holds text.
+  const holds = (/** @type {string} */ rel) => {
+    if (pf.present(rel) && !pf.isFile(rel) && folder(join(cwd, rel))) return false;
+    const text = pf.read(rel);
+    if (text === undefined) return true;
+    if (typeof text !== "string") return false;
+    const { frontMatter, body } = splitFrontMatter(text);
+    return (frontMatter === null ? text : body).replace(/<!--[\s\S]*?-->/g, "").trim() !== "";
+  };
+  const folder = (/** @type {string} */ abs) => {
+    try {
+      return statSync(abs).isDirectory();
+    } catch (err) {
+      if (gone(err)) return false;
+      throw err;
+    }
+  };
+  for (const name of ALWAYS_FILES) if (holds(name)) put(spelled(name), "always");
   for (const f of markdownBelow(pf, ".claude/rules")) {
     const path = `.claude/rules/${f}`;
     const { frontMatter } = splitFrontMatter(pf.read(path) ?? "");
     put(path, frontMatter !== null && keptPaths(parsePaths(frontMatter)) ? "on-demand" : "always");
   }
-  // A CLAUDE.md inside .claude/rules is already there as a rule; put keeps its wider kind.
-  for (const f of files) if (/(^|\/)CLAUDE\.md$/.test(f) && !ALWAYS_FILES.includes(f)) put(f, "on-demand");
-  for (const path of OTHER_FILES) put(path, "other");
-  for (const f of files) if (/(^|\/)AGENTS\.md$/.test(f)) put(f, "other");
-  // @imports: an imported file loads whenever the file importing it does; Claude Code follows five hops.
+  // A tracked file is the one Claude Code asks for by name: CLAUDE.md, CLAUDE.local.md or AGENTS.md, or on a disk that
+  // ignores case one it serves for that name (x/claude.md for x/CLAUDE.md). Null for any other.
+  const kind = (/** @type {string} */ f) => {
+    const m = /(^|\/)((?:CLAUDE(?:\.local)?|AGENTS)\.md)$/i.exec(f);
+    if (!m) return null;
+    const name = /** @type {string} */ (["CLAUDE.md", "CLAUDE.local.md", "AGENTS.md"].find((n) => n.toLowerCase() === m[2].toLowerCase()));
+    const asked = f.slice(0, f.length - m[2].length) + name;
+    return asked === f || spelled(asked) === f ? name : null;
+  };
+  // A CLAUDE.md inside .claude/rules is already there as a rule; put keeps its wider kind. A nested
+  // CLAUDE.local.md loads with its folder's CLAUDE.md.
+  for (const f of files) if ((kind(f) === "CLAUDE.md" || kind(f) === "CLAUDE.local.md") && holds(f)) put(f, "on-demand");
+  // AGENTS.md (or .claude/AGENTS.md) loads in place of the instruction files when the top holds none of them, and,
+  // below it, its own folder none (with `tracked`, none tracked).
+  const stops = (/** @type {string} */ folder) => ALWAYS_FILES.some((name) => holds(folder + name) && (!tracked || listed.has(spelled(folder + name))));
+  const top = stops("");
+  const inPlace = (/** @type {string} */ f) => {
+    const folder = f.replace(/(^|\/)(\.claude\/)?AGENTS\.md$/i, "$1");
+    return top || (folder !== "" && stops(folder)) || !holds(f) ? "other" : folder === "" ? "always" : "on-demand";
+  };
+  for (const path of OTHER_FILES) if (pf.present(path) && !folder(join(cwd, path))) put(spelled(path), /(^|\/)AGENTS\.md$/.test(path) ? inPlace(path) : "other");
+  for (const f of files) if (kind(f) === "AGENTS.md") put(f, inPlace(f));
+  // @imports: an imported file loads whenever the file importing it does; Claude Code follows four hops (a fifth
+  // file in a chain is not loaded).
   let frontier = [...kinds].filter(([, k]) => k !== "other").map(([path]) => path);
-  for (let hop = 0; hop < 5 && frontier.length; hop++) {
+  for (let hop = 0; hop < 4 && frontier.length; hop++) {
     /** @type {string[]} */
     const next = [];
     for (const from of frontier) {
       const loads = /** @type {"always" | "on-demand"} */ (kinds.get(from));
-      for (const target of importsOf(pf.read(from) ?? "", from)) {
+      for (const named of importsOf(pf.read(from) ?? "", from)) {
         // Claude Code imports files: an @ that names a directory (@docs/) imports nothing; one through a link out
-        // of the repository is named, not read.
+        // of the repository is named, not read. On a disk that ignores case, @DOCS/s.md is the tracked docs/s.md.
+        const target = spelled(named);
         if (!pf.isFile(target) || (kinds.get(target) && rank[/** @type {"always" | "on-demand" | "other"} */ (kinds.get(target))] <= rank[loads])) continue;
         put(target, loads);
+        via.set(target, from);
         next.push(target);
       }
     }
@@ -858,7 +917,7 @@ export function agentSetup(cwd, files) {
   const candidates = [...kinds].map(([path, loads]) => ({ path, loads }));
   const instructions = candidates.flatMap(({ path, loads }) => {
     const text = pf.read(path);
-    return text === null || text === undefined ? [] : [{ path, loads, bytes: Buffer.byteLength(text, "utf8"), commitLines: commitRuleLines(text), banLines: banLines(text) }];
+    return text === null || text === undefined ? [] : [{ path, loads, bytes: Buffer.byteLength(text, "utf8"), commitLines: commitRuleLines(text), banLines: banLines(text), ...(via.has(path) ? { via: /** @type {string} */ (via.get(path)) } : {}) }];
   });
   const size = { always: 0, onDemand: 0, other: 0 };
   for (const i of instructions) size[i.loads === "always" ? "always" : i.loads === "on-demand" ? "onDemand" : "other"] += i.bytes;

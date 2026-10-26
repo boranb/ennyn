@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, mkdirSync, symlinkSync, chmodSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync, mkdirSync, symlinkSync, chmodSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, delimiter } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -481,6 +481,83 @@ test("agent setup: cycle-like skills and reviewer agents by name, on a corpus of
   const reviewNo = ["planlayici", "planner", "architect", "debugger", "doc-updater", "e2e-runner", "refactor-cleaner", "marketing-strategist", "error-tracker", "preview-builder"];
   for (const n of reviewYes) assert.ok(REVIEWER.test(n), `reviewer: ${n}`);
   for (const n of reviewNo) assert.ok(!REVIEWER.test(n), `not reviewer: ${n}`);
+});
+
+test("agent setup: AGENTS.md loads in place of a folder's CLAUDE.md files when it has none, untracked ones counted from disk", async () => {
+  const { agentSetup } = await import("../setup/scan.mjs");
+  const kinds = (/** @type {Record<string, string>} */ files, /** @type {string[]} */ tracked) => {
+    const dir = mkdtempSync(join(tmpdir(), "en-agents-md-"));
+    put(dir, files);
+    return Object.fromEntries(agentSetup(dir, tracked).instructions.map((i) => [i.path, i.loads]));
+  };
+  // Untracked, at the top: AGENTS.md and .claude/AGENTS.md load in every session (Claude Code 2.1.310).
+  assert.deepEqual(kinds({ "AGENTS.md": "a", ".claude/AGENTS.md": "b" }, []), { "AGENTS.md": "always", ".claude/AGENTS.md": "always" });
+  // An untracked CLAUDE.local.md is one of the folder's files: AGENTS.md is then not loaded.
+  assert.deepEqual(kinds({ "AGENTS.md": "a", "CLAUDE.local.md": "l" }, ["AGENTS.md"]), { "CLAUDE.local.md": "always", "AGENTS.md": "other" });
+  // With the top's CLAUDE.md, no AGENTS.md below loads either; a nested CLAUDE.local.md loads on demand.
+  assert.deepEqual(kinds({ "CLAUDE.md": "c", "a/AGENTS.md": "a", "b/AGENTS.md": "b", "b/CLAUDE.local.md": "l", "c/.claude/AGENTS.md": "c" }, ["CLAUDE.md", "a/AGENTS.md", "b/AGENTS.md", "b/CLAUDE.local.md", "c/.claude/AGENTS.md"]), { "CLAUDE.md": "always", "b/CLAUDE.local.md": "on-demand", "a/AGENTS.md": "other", "b/AGENTS.md": "other", "c/.claude/AGENTS.md": "other" });
+  // With none at the top, below it on demand where the folder holds none of its own; a rule stops nothing.
+  assert.deepEqual(kinds({ ".claude/rules/r.md": "r", "a/AGENTS.md": "a", "b/AGENTS.md": "b", "b/CLAUDE.local.md": "l", "c/.claude/AGENTS.md": "c" }, ["a/AGENTS.md", "b/AGENTS.md", "b/CLAUDE.local.md", "c/.claude/AGENTS.md"]), { ".claude/rules/r.md": "always", "b/CLAUDE.local.md": "on-demand", "a/AGENTS.md": "on-demand", "b/AGENTS.md": "other", "c/.claude/AGENTS.md": "on-demand" });
+  // A CLAUDE.md with no text once its HTML comments are out, or a folder of that name, is none: not loaded, and
+  // AGENTS.md loads in its place.
+  for (const files of [{ "CLAUDE.md": "" }, { "CLAUDE.md": " \n\n" }, { "CLAUDE.md": "<!-- note -->\n" }, { "CLAUDE.local.md": "" }, { "CLAUDE.md/x.txt": "x" }]) {
+    assert.deepEqual(kinds({ ...files, "AGENTS.md": "a" }, ["AGENTS.md"]), { "AGENTS.md": "always" }, JSON.stringify(files));
+  }
+  // An AGENTS.md with no text loads nothing either.
+  assert.deepEqual(kinds({ "AGENTS.md": "<!-- note -->\n" }, ["AGENTS.md"]), { "AGENTS.md": "other" });
+  // Front matter is no text, and neither is a closed comment; a comment left open is text (Claude Code 2.1.310).
+  for (const claude of ["---\nname: x\n---\n", "---\n---\n", "\uFEFF---\r\nname: x\r\n---\r\n  \r\n", "<!-- a --> \n <!-- b -->"]) {
+    assert.deepEqual(kinds({ "CLAUDE.md": claude, "AGENTS.md": "a" }, ["AGENTS.md"]), { "AGENTS.md": "always" }, JSON.stringify(claude));
+  }
+  for (const claude of ["<!-- open\ntext", "---\nname: x\n---\nbody", "<!-- a -->b"]) {
+    assert.deepEqual(kinds({ "CLAUDE.md": claude, "AGENTS.md": "a" }, ["AGENTS.md"]), { "CLAUDE.md": "always", "AGENTS.md": "other" }, JSON.stringify(claude));
+  }
+  // A CLAUDE.md that leads out of the repository is not read, and named; Claude Code loads it, so it keeps AGENTS.md
+  // out, its bytes uncounted.
+  const away = mkdtempSync(join(tmpdir(), "en-agents-away-"));
+  writeFileSync(join(away, "shared.md"), "rules kept elsewhere\n");
+  const linked = mkdtempSync(join(tmpdir(), "en-agents-linked-"));
+  put(linked, { "AGENTS.md": "a" });
+  symlinkSync(join(away, "shared.md"), join(linked, "CLAUDE.md"));
+  const out = agentSetup(linked, ["AGENTS.md", "CLAUDE.md"]);
+  assert.deepEqual(out.instructions.map((i) => [i.path, i.loads]), [["AGENTS.md", "other"]]);
+  assert.deepEqual(out.outside, ["CLAUDE.md"]);
+  // Tracked only, for the budget every clone shares: an untracked CLAUDE.local.md keeps AGENTS.md out on this
+  // machine, not in the count.
+  const dir = mkdtempSync(join(tmpdir(), "en-agents-tracked-"));
+  put(dir, { "AGENTS.md": "a", "CLAUDE.local.md": "l" });
+  const loads = (/** @type {boolean} */ tracked) => Object.fromEntries(agentSetup(dir, ["AGENTS.md"], { tracked }).instructions.map((i) => [i.path, i.loads]));
+  assert.equal(loads(false)["AGENTS.md"], "other");
+  assert.equal(loads(true)["AGENTS.md"], "always");
+});
+
+test("agent setup: on a disk that ignores case, a tracked claude.md or agents.md is the file Claude Code loads, by its own name", async (t) => {
+  const { agentSetup } = await import("../setup/scan.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "en-agents-case-"));
+  put(dir, { "claude.md": "c", "x/agents.md": "a" });
+  if (!existsSync(join(dir, "CLAUDE.md"))) {
+    // A disk that tells case apart: CLAUDE.md beside a tracked claude.md is its own file, the one Claude Code reads.
+    put(dir, { "CLAUDE.md": "upper" });
+    assert.deepEqual(agentSetup(dir, ["claude.md"]).instructions.map((i) => [i.path, i.loads]), [["CLAUDE.md", "always"]]);
+    // And a nested claude.md or agents.md is no file Claude Code asks for there.
+    const lower = mkdtempSync(join(tmpdir(), "en-agents-case-"));
+    put(lower, { "x/claude.md": "c", "y/agents.md": "a", "CLAUDE.md": "@DOCS/s.md", "docs/s.md": "s" });
+    assert.deepEqual(agentSetup(lower, ["x/claude.md", "y/agents.md", "CLAUDE.md", "docs/s.md"]).instructions.map((i) => i.path), ["CLAUDE.md"]);
+    return t.skip("this disk tells case apart: Claude Code reads no claude.md");
+  }
+  // The top's claude.md keeps the nested agents.md out, as CLAUDE.md would.
+  assert.deepEqual(agentSetup(dir, ["claude.md", "x/agents.md"]).instructions.map((i) => [i.path, i.loads]), [["claude.md", "always"], ["x/agents.md", "other"]]);
+  const other = mkdtempSync(join(tmpdir(), "en-agents-case-"));
+  put(other, { "agents.md": "a" });
+  assert.deepEqual(agentSetup(other, ["agents.md"], { tracked: true }).instructions.map((i) => [i.path, i.loads]), [["agents.md", "always"]]);
+  // An import in another case is the tracked file it is served by, by that file's name.
+  const imported = mkdtempSync(join(tmpdir(), "en-agents-case-"));
+  put(imported, { "CLAUDE.md": "@DOCS/s.md", "docs/s.md": "s" });
+  assert.deepEqual(agentSetup(imported, ["CLAUDE.md", "docs/s.md"]).instructions.map((i) => [i.path, i.loads]), [["CLAUDE.md", "always"], ["docs/s.md", "always"]]);
+  // Below the top too: Claude Code loads x/claude.md and y/agents.md on a Read below them (2.1.310 on macOS).
+  const nested = mkdtempSync(join(tmpdir(), "en-agents-case-"));
+  put(nested, { "x/claude.md": "c", "x/claude.local.md": "l", "y/agents.md": "a", "x/notes.md": "n" });
+  assert.deepEqual(agentSetup(nested, ["x/claude.md", "x/claude.local.md", "x/notes.md", "y/agents.md"]).instructions.map((i) => [i.path, i.loads]), [["x/claude.md", "on-demand"], ["x/claude.local.md", "on-demand"], ["y/agents.md", "on-demand"]]);
 });
 
 test("agent setup: every instruction and rule file with size, load kind and commit-rule lines; skills, agents, commands, hooks, MCP", async () => {
@@ -965,8 +1042,9 @@ test("scan audit: the fence reader, the roadmap checkboxes and the commit-rule s
   assert.deepEqual(importsOf(text, "CLAUDE.md"), ["after.md"]);
   assert.deepEqual(banLines(text).map((b) => b.literals), [["b2"]]);
   assert.deepEqual(outsideFences("a\n```\nb\n```\nc"), ["a", "c"]);
-  // Trailing punctuation is no part of the name; an import named twice is listed once.
-  assert.deepEqual(importsOf("see @a.md. and @b.md), then @a.md;", "docs/CLAUDE.md"), ["docs/a.md", "docs/b.md"]);
+  // The whole word is the path, trailing punctuation too, as Claude Code reads it (test/reference/claude-code.json);
+  // an import named twice is listed once.
+  assert.deepEqual(importsOf("see @a.md. and @b.md) then @a.md.", "docs/CLAUDE.md"), ["docs/a.md.", "docs/b.md)"]);
   // The commit-rule start: markers, a number, emphasis, then "commit" (accepted only for it, no rule word in the line).
   const accept = ["1. Commit", "**Commit** step", "> - `commit` step", "## 2) commit step", "_commit_ step", "| commit | step", "* * * commit step"];
   const reject = ["Before the commit run tests", "x commit step", "_-commit step", "1 commit step", "a. commit step"];
@@ -987,7 +1065,7 @@ test("scan audit: the fence reader, the roadmap checkboxes and the commit-rule s
   };
   for (const [name, make] of /** @type {[string, (n: number) => () => void][]} */ ([
     ["imports over blank lines", (n) => () => importsOf(" \n".repeat(n), "CLAUDE.md")],
-    // The trailing punctuation an import loses, and the imports kept once each (the review's inputs).
+    // A long word ending in dots, and the imports kept once each (the review's inputs).
     ["an import with a long run of dots before a letter", (n) => () => importsOf(`@${".".repeat(n)}x`, "CLAUDE.md")],
     ["many distinct imports", (n) => () => importsOf(Array.from({ length: n / 4 }, (_, i) => `@f${i}.md`).join("\n"), "CLAUDE.md")],
     ["roadmap checkboxes over blank lines", roadmap],
