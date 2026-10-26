@@ -248,6 +248,7 @@
   "rework.fixMajority": "Not: {commits} aday commit'in {fixes} tanesi düzeltme. İşin çoğu fix diye etiketlenince bu oran hata kaynaklı yeniden işi değil değişim sıklığını ölçer; metrics.fixSubject desenini daralt.",
   "sidecopy.unreadable": "Bu kural dosyaları okunamadı; {relPath} dosyası için geçerli olup olmadıkları denetlenmedi: {list}",
   "sidecopy.outside": "Bu kural bağları proje dışını gösteriyor, bu yüzden kuralları verilmedi: {list}.",
+  "sidecopy.badPattern": "Kanca bu paths kalıplarını okuyamıyor, bu yüzden atladı; her kural öteki kalıplarıyla yine geçerli (Claude Code da böyle bir kalıbı atlar): {list}.",
   "style.notApplied": "ennyn: ayar yüklenemiyor, konuşma tarzı uygulanamadı ({error}).",
   "sidecopy.notReset": "ennyn: bu oturumda verilen yan kopya kuralları sıfırlanamadı; sıkıştırmadan sonra geri gelmeyebilirler ({error}).",
   "sidecopy.cannotRun": "ennyn yan kopya kural kancası çalışamıyor: {reason}",

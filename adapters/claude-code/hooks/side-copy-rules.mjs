@@ -79,6 +79,12 @@ const givenKey = (file, body) => `${file}#${digest(body).slice(0, 16)}`;
 /** A rule link out of the project, once its note is given: said once per context, not on every file. @param {string} file */
 const outsideKey = (file) => `outside:${file}`;
 
+/** A paths pattern the hook cannot read, once its note is given: said once per context. @param {{ file: string, pattern: string }} b */
+const badKey = (b) => `bad:${b.file}#${digest(b.pattern).slice(0, 16)}`;
+
+/** How long a pattern the hook cannot read is shown: its start, as a value. */
+const PATTERN_SHOWN_MAX = 80;
+
 /** The file a given-list entry names: the key less its digest, or a plain path from before digests were kept. @param {string} entry */
 const keyFile = (entry) => (/#[0-9a-f]{16}$/.test(entry) ? entry.slice(0, -17) : entry);
 
@@ -200,9 +206,12 @@ const NOTE_MAX = 2000;
  * @param {string[]} [unreadable]
  * @param {string[]} [outside] rule links whose real path leaves the project: not followed, which the text says
  * @param {Map<string, string>} [limits] a walk's limit reached at a path (depth, entries), shown beside it
- * @returns {{ text: string, given: Set<string>, said: Set<string> }} `said`: the links out the text names
+ * @param {{ file: string, pattern: string }[]} [bad] paths patterns no expression can hold: skipped, which the text
+ *   says, with the rule's file and the pattern's start
+ * @returns {{ text: string, given: Set<string>, said: Set<string>, badSaid: Set<{ file: string, pattern: string }> }} `said`:
+ *   the links out the text names; `badSaid`: the patterns it names
  */
-export function render(relPath, rules, maxBytes, lang, unreadable = [], outside = [], limits = new Map()) {
+export function render(relPath, rules, maxBytes, lang, unreadable = [], outside = [], limits = new Map(), bad = []) {
   // The side copy's name: no trusted text (a worktree may hold a pull request under review), always a value.
   const path = value(relPath);
   const item = (/** @type {string} */ file) => named(file).text;
@@ -220,7 +229,13 @@ export function render(relPath, rules, maxBytes, lang, unreadable = [], outside 
   const outsideNote = outside.length ? outsideWith(outsideKept) : null;
   // Said: only the links the note names whole.
   const said = new Set(outside.slice(0, outsideKept).filter((f) => !named(f).cut));
-  const after = (note ? bytes(note) + 2 : 0) + (outsideNote ? bytes(outsideNote) + 2 : 0);
+  const badItem = (/** @type {{ file: string, pattern: string }} */ b) => `${item(b.file)} ${value(b.pattern, PATTERN_SHOWN_MAX)}`;
+  const badWith = (/** @type {number} */ kept) =>
+    t("sidecopy.badPattern", { list: { shown: [...bad.slice(0, kept).map(badItem), ...(kept < bad.length ? [t("sidecopy.unreadableMore", { n: bad.length - kept }, lang)] : [])].join(", ") } }, lang);
+  const badKept = most(bad.length, (n) => bytes(badWith(n)) <= NOTE_MAX);
+  const badNote = bad.length ? badWith(badKept) : null;
+  const badSaid = new Set(bad.slice(0, badKept).filter((b) => !named(b.file).cut));
+  const after = (note ? bytes(note) + 2 : 0) + (outsideNote ? bytes(outsideNote) + 2 : 0) + (badNote ? bytes(badNote) + 2 : 0);
   const budget = Math.min(maxBytes, CONTEXT_CAP) - after - bytes([top, ...rules.map((r) => `- ${item(r.file)}`)].join("\n")) - 2;
   /** @type {string[]} */
   const blocks = [];
@@ -242,7 +257,7 @@ export function render(relPath, rules, maxBytes, lang, unreadable = [], outside 
   }
   const parts = blocks.length ? [header, ...blocks] : [];
   if (listed.length) {
-    const used = (/** @type {string} */ list) => bytes([...parts, list, ...(note ? [note] : []), ...(outsideNote ? [outsideNote] : [])].join("\n\n"));
+    const used = (/** @type {string} */ list) => bytes([...parts, list, ...(note ? [note] : []), ...(outsideNote ? [outsideNote] : []), ...(badNote ? [badNote] : [])].join("\n\n"));
     const list = (/** @type {number} */ kept) => [top, ...listed.slice(0, kept).map((f) => `- ${item(f)}`), ...(kept < listed.length ? [t("sidecopy.listMore", { n: listed.length - kept }, lang)] : [])].join("\n");
     const kept = most(listed.length, (n) => used(list(n)) <= CONTEXT_CAP);
     parts.push(list(kept));
@@ -251,7 +266,8 @@ export function render(relPath, rules, maxBytes, lang, unreadable = [], outside 
   }
   if (note) parts.push(note);
   if (outsideNote) parts.push(outsideNote);
-  return { text: parts.join("\n\n"), given, said };
+  if (badNote) parts.push(badNote);
+  return { text: parts.join("\n\n"), given, said, badSaid };
 }
 
 /** @returns {Promise<number>} exit code */
@@ -287,7 +303,10 @@ async function main() {
   const found = [];
   /** @type {Map<string, string>} */
   const why = new Map();
-  const matching = rulesForPath(loadPathScopedRules(projectDir, found, why), mapped.relPath);
+  // A pattern the hook cannot read is skipped, as Claude Code skips it; its rule still applies by its others.
+  /** @type {{ file: string, pattern: string }[]} */
+  const bad = [];
+  const matching = rulesForPath(loadPathScopedRules(projectDir, found, why), mapped.relPath, bad);
   // A rule link out of the project (Claude Code's own notion, CLAUDE_PROJECT_DIR) is not followed: Claude Code
   // loads it only once the user approves external imports, which the hook cannot see. Said once per context.
   const linkedOut = found.filter((p) => why.get(p) === LEAVES);
@@ -299,7 +318,8 @@ async function main() {
   const root = stateRoot(projectDir, state);
   const emitted = readEmitted(root, state);
   const outside = linkedOut.filter((p) => !emitted.has(outsideKey(p)));
-  if (!matching.length && !unreadable.length && !outside.length) return 0;
+  const badNew = bad.filter((p) => !emitted.has(badKey(p)));
+  if (!matching.length && !unreadable.length && !outside.length && !badNew.length) return 0;
   /** @type {Array<{ file: string, body: string, changed: boolean }>} */
   const fresh = [];
   const before = (/** @type {string} */ file) => [...emitted].filter((e) => keyFile(e) === file);
@@ -309,9 +329,9 @@ async function main() {
     if (body === null) unreadable.push(file);
     else if (!emitted.has(givenKey(file, body))) fresh.push({ file, body, changed: before(file).length > 0 });
   }
-  if (!fresh.length && !unreadable.length && !outside.length) return 0;
+  if (!fresh.length && !unreadable.length && !outside.length && !badNew.length) return 0;
 
-  const { text, given, said: saidOutside } = render(mapped.relPath, fresh, config.sideCopy.maxInjectBytes, config.language, unreadable, outside, limits);
+  const { text, given, said: saidOutside, badSaid } = render(mapped.relPath, fresh, config.sideCopy.maxInjectBytes, config.language, unreadable, outside, limits, badNew);
   // Marked as given only what the text inlines or names, and only once it is written out: a rule that could not
   // be read, one in a count, or a text that never reached Claude Code comes back on the next file. One entry a
   // rule: the text it had before goes.
@@ -321,8 +341,9 @@ async function main() {
     emitted.add(givenKey(r.file, r.body));
   }
   for (const f of saidOutside) emitted.add(outsideKey(f));
+  for (const f of badSaid) emitted.add(badKey(f));
   process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: text } }), (err) => {
-    if (!err && (given.size || saidOutside.size)) writeEmitted(root, state, emitted);
+    if (!err && (given.size || saidOutside.size || badSaid.size)) writeEmitted(root, state, emitted);
   });
   return 0;
 }

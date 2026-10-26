@@ -17,7 +17,7 @@ import { git, gitError, gitMaybe, gitRun, headCommit, headFile, repoPath } from 
 import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
 import { literalGlob } from "../core/glob.mjs";
 import { clipped, ends } from "../core/i18n.mjs";
-import { LEAVES, loadPathScopedRules, markdownFiles, reasonText, splitFrontMatter, parsePaths } from "../adapters/claude-code/rules-index.mjs";
+import { LEAVES, keptPaths, loadPathScopedRules, markdownFiles, reasonText, splitFrontMatter, parsePaths } from "../adapters/claude-code/rules-index.mjs";
 import { askRules, isGithubHost, outwardCommands, readSettings, SETTINGS, SETTINGS_LIMIT, urlHost } from "./permissions.mjs";
 
 /** Fewer commits than this and a share says little: the default stays. */
@@ -832,8 +832,7 @@ export function agentSetup(cwd, files) {
   for (const f of markdownBelow(pf, ".claude/rules")) {
     const path = `.claude/rules/${f}`;
     const { frontMatter } = splitFrontMatter(pf.read(path) ?? "");
-    const patterns = frontMatter === null ? null : parsePaths(frontMatter);
-    put(path, patterns && patterns.length ? "on-demand" : "always");
+    put(path, frontMatter !== null && keptPaths(parsePaths(frontMatter)) ? "on-demand" : "always");
   }
   // A CLAUDE.md inside .claude/rules is already there as a rule; put keeps its wider kind.
   for (const f of files) if (/(^|\/)CLAUDE\.md$/.test(f) && !ALWAYS_FILES.includes(f)) put(f, "on-demand");

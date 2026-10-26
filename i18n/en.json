@@ -248,6 +248,7 @@
   "rework.fixMajority": "Note: {fixes} of {commits} candidate commits are fixes. When most work is labelled fix, this rate measures churn, not defect rework; narrow metrics.fixSubject.",
   "sidecopy.unreadable": "These rule files could not be read, so whether they apply to the file {relPath} was not checked: {list}",
   "sidecopy.outside": "These rule links point outside the project, so their rules were not given: {list}.",
+  "sidecopy.badPattern": "The hook cannot read these paths patterns, so it skipped them; each rule still applies by its other patterns (Claude Code skips such a pattern too): {list}.",
   "style.notApplied": "ennyn: the config does not load, so the conversation style could not be applied ({error}).",
   "sidecopy.notReset": "ennyn: the side-copy rules given in this session could not be reset, so after compaction they may not come back ({error}).",
   "sidecopy.cannotRun": "ennyn side-copy rule hook cannot run: {reason}",

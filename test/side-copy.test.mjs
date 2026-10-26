@@ -11,7 +11,9 @@ import { t } from "../core/i18n.mjs";
 import { mapSideCopyPath } from "../side-copy/map-path.mjs";
 import {
   loadPathScopedRules,
+  keptPaths,
   parsePaths,
+  pathRuleMatches,
   readRuleBody,
   rulesForPath,
   splitFrontMatter,
@@ -154,9 +156,10 @@ function context(r) {
 
 test("rules-index: block, inline and unquoted lists; rules without paths are not indexed", () => {
   const rules = loadPathScopedRules(project);
+  // The patterns Claude Code keeps: braces expanded, a trailing `/**` dropped, so the folder names itself (keptPaths).
   assert.deepEqual(rules, [
-    { file: engineRule, patterns: ["src/lib/engine/**"] },
-    { file: inlineRule, patterns: ["server/src/**", "docs/*.{md,txt}"] },
+    { file: engineRule, patterns: ["src/lib/engine"] },
+    { file: inlineRule, patterns: ["server/src", "docs/*.md", "docs/*.txt"] },
     { file: nestedRule, patterns: ["server/src/**/*.mjs", "web/[a-z]*.ts"] },
   ]);
   assert.deepEqual(rulesForPath(rules, "src/lib/engine/deep/q.ts"), [engineRule]);
@@ -165,6 +168,66 @@ test("rules-index: block, inline and unquoted lists; rules without paths are not
   assert.deepEqual(rulesForPath(rules, "web/ab.ts"), [nestedRule]);
   assert.deepEqual(rulesForPath(rules, "README.md"), []);
   assert.deepEqual(loadPathScopedRules(tmp("pl-sc-norules-")), []);
+});
+
+test("rules-index: a rule's paths name a path as Claude Code matches them: a .gitignore line with braces, case aside", () => {
+  /** @type {[string, string, boolean][]} */
+  const cases = [
+    ["src/", "src/a/x.ts", true],
+    ["src/", "src", false],
+    ["src/", "lib/src/x.ts", true],
+    ["/src", "lib/src/x.ts", false],
+    ["/x.ts", "x.ts", true],
+    ["/x.ts", "a/x.ts", false],
+    ["x.ts", "a/b/x.ts", true],
+    ["a/x.ts", "b/a/x.ts", false],
+    ["src/a", "src/a/b/x.ts", true],
+    ["src/*", "src/a/b/x.ts", true],
+    ["*.{ts,tsx}", "a/X.TSX", true],
+    ["SRC/**", "src/a.ts", true],
+    ["src/**   ", "src/a.ts", true],
+    ["./src/**", "src/a.ts", false],
+    ["/", "x.ts", false],
+    ["   ", "x.ts", false],
+  ];
+  for (const [pattern, path, want] of cases) assert.equal(pathRuleMatches(pattern, path), want, `${JSON.stringify(pattern)} ${path}`);
+  // Runs of slashes are one; a name written decomposed is the composed one; braces are expanded first, so one may
+  // hold a slash, until the expansion passes Claude Code's budget (1,000 results): then the pattern is kept as
+  // written, and a brace across a slash is a pattern no expression holds.
+  assert.equal(pathRuleMatches("src//a", "src/a/x.ts"), true);
+  // Braces are expanded before a trailing /** is dropped, as Claude Code does: each alternative names its folder,
+  // and alternatives that are all ** leave no path scope.
+  assert.deepEqual(keptPaths(["{src/**,lib/**}", "a/**, b"]), ["src", "lib", "a", "b"]);
+  assert.equal(keptPaths(["{**,**}"]), null);
+  assert.deepEqual(keptPaths(["{**,src/**}"]), ["**", "src"]);
+  assert.equal(pathRuleMatches("café", "cafe\u0301/x.ts"), true);
+  assert.equal(pathRuleMatches("{a/b,c}{x,y}", "a/bx/z"), true);
+  assert.throws(() => pathRuleMatches(`{a/b,c}${"{x,y}".repeat(10)}`, "a/bxxxxxxxxxx/z"));
+  // Spaces at the end are dropped, read from the end: a long run of them costs its length.
+  const t0 = performance.now();
+  assert.equal(pathRuleMatches(`a${" ".repeat(200_000)}`, "a"), true);
+  assert.ok(performance.now() - t0 < 2000);
+});
+
+test("rules-index (review): reading a rule's paths and matching a path take time linear in the text and the path", () => {
+  // Growth, not a wall-clock bound: eight times the input costs about eight times the time if linear, sixty-four if
+  // quadratic, 512 if cubic (main's reader took 40 s at 10 KB, its matcher 17 s at an 8 KB path).
+  const best = (/** @type {() => void} */ f) => Math.min(...[0, 1, 2].map(() => {
+    const t0 = performance.now();
+    f();
+    return performance.now() - t0;
+  }));
+  const growth = (/** @type {(n: number) => () => void} */ make) => (best(make(8 * 1024)) + 5) / (best(make(1024)) + 5);
+  for (const [name, make] of /** @type {[string, (n: number) => () => void][]} */ ([
+    ["a paths key whose list never closes, again on every line", (n) => () => parsePaths("paths: [a\n".repeat(n / 10))],
+    ["a run of quotes in a list", (n) => () => parsePaths(`paths: [a${'"'.repeat(n)}]`)],
+    ["a run of spaces before a word", (n) => () => parsePaths(`paths: a${" ".repeat(n)}b`)],
+    ["three ** against a path that repeats their names", (n) => () => pathRuleMatches("**/src/**/test/**/*.ts", `${"src/test/".repeat(n / 9)}x.js`)],
+    ["a name at any depth", (n) => () => pathRuleMatches("*.ts", `${"a/".repeat(n / 2)}x.js`)],
+  ])) {
+    const g = growth(make);
+    assert.ok(g < 24, `${name}: eight times the input took ${g.toFixed(1)} times as long`);
+  }
 });
 
 test("rules-index: front matter edge cases", () => {
@@ -180,6 +243,15 @@ test("rules-index: front matter edge cases", () => {
   ]);
   assert.deepEqual(parsePaths("paths:\n"), []);
   assert.equal(parsePaths("description: no paths here\n  paths: nested-is-not-top-level"), null);
+  // Of two keys the last; a block indented as a whole is read at its own indentation (a comment at the left too).
+  assert.deepEqual(parsePaths("paths: [a/**]\npaths: [b/**]"), ["b/**"]);
+  assert.deepEqual(parsePaths("  description: x\n  paths:\n# note\n    - c/**"), ["c/**"]);
+  assert.equal(parsePaths("  description: x\n paths: [d/**]"), null);
+  assert.equal(parsePaths("  description: x\npaths: [e/**]"), null);
+  // A quote after a plain word starts no quoted item: the comma in it parts two.
+  assert.deepEqual(parsePaths('paths: [a"b,c"]'), ['a"b', 'c"']);
+  // Not by cutting the indentation off such a line, which would make `paths:` of `xxpaths:`.
+  assert.equal(parsePaths("  description: x\nxxpaths: [f/**]"), null);
   const fm = splitFrontMatter("﻿---\r\npaths:\r\n  - x/**\r\n---\r\nBODY\r\n");
   assert.equal(fm.frontMatter, "paths:\n  - x/**");
   assert.equal(fm.body, "BODY\n");
@@ -1093,6 +1165,42 @@ test("side-copy (init-scan audit): a rule link out of the project is not followe
   // A walk's limit names what it left: the directory it stopped in, with the count of those still waiting.
   const text = render("src/a.ts", [], 9000, "en", ["/p/.claude/rules/a-assets"], [], new Map([["/p/.claude/rules/a-assets", "more than 10000 entries; 1 more directory not read"]])).text;
   assert.match(text, /\/p\/\.claude\/rules\/a-assets \(more than 10000 entries; 1 more directory not read\)/);
+});
+
+test("side-copy (review): a pattern the hook cannot read costs that pattern only, said once; its rule applies by its others, in any order", () => {
+  const proj = tmp("pl-sc-bad-");
+  // An unclosed brace, a class lower case would turn into no class, a pattern past the engine's size.
+  put(join(proj, ".claude/rules/unclosed.md"), "---\npaths: 'src/{a'\n---\nunclosed rule\n");
+  put(join(proj, ".claude/rules/huge.md"), `---\npaths: 'src/${"a".repeat(40000)}*'\n---\nhuge rule\n`);
+  put(join(proj, ".claude/rules/range.md"), "---\npaths: 'src/[A-_].ts'\n---\nrange rule\n");
+  put(join(proj, ".claude/rules/good.md"), "---\npaths: 'src/**'\n---\ngood rule\n");
+  // One bad pattern beside a good one, before it or after: Claude Code gives the rule (2.1.310).
+  put(join(proj, ".claude/rules/bad-first.md"), "---\npaths: ['lib/{a', 'src/**']\n---\nbad first rule\n");
+  put(join(proj, ".claude/rules/bad-last.md"), "---\npaths: ['src/**', 'lib/{a']\n---\nbad last rule\n");
+  put(join(proj, "src/B.ts"), "x");
+  git(["init", "-q", "-b", "main"], { cwd: proj });
+  git(["add", "."], { cwd: proj });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "init"], { cwd: proj });
+  const wt = join(tmp("pl-sc-bad-wt-"), "wt");
+  git(["worktree", "add", "-q", "--detach", wt], { cwd: proj });
+  const run = () => {
+    const r = runHook({ session_id: "s-bad", hook_event_name: "PostToolUse", tool_name: "Read", tool_input: { file_path: join(wt, "src/B.ts") }, cwd: proj }, { CLAUDE_PROJECT_DIR: proj });
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout ? String(JSON.parse(r.stdout).hookSpecificOutput.additionalContext) : "";
+  };
+  const first = run();
+  assert.match(first, /good rule/);
+  // `[A-_]` is a class read without case, not a pattern that fails.
+  assert.match(first, /range rule/);
+  assert.match(first, /bad first rule/);
+  assert.match(first, /bad last rule/);
+  assert.match(first, /The hook cannot read these paths patterns, so it skipped them; each rule still applies by its other patterns \(Claude Code skips such a pattern too\): .*bad-first\.md "lib\/\{a".*bad-last\.md "lib\/\{a".*huge\.md "src\/a{10}.*unclosed\.md "src\/\{a"/s);
+  // A rule with no other pattern is not given.
+  assert.doesNotMatch(first, /unclosed rule|huge rule/);
+  assert.equal(run(), "");
+  // A pattern written into a rule since, another the hook cannot read, is said in its turn.
+  writeFileSync(join(proj, ".claude/rules/bad-first.md"), "---\npaths: ['lib/{b', 'src/**']\n---\nbad first rule\n");
+  assert.match(run(), /bad-first\.md "lib\/\{b"/);
 });
 
 test("side-copy (init-scan audit): in a package of a monorepo, a link to the repository root's rules is outside the project too", () => {

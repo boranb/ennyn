@@ -13,7 +13,7 @@
 import { readdirSync, realpathSync, statSync } from "node:fs";
 import { gone, readIfThere } from "../../core/files.mjs";
 import { join, sep } from "node:path";
-import { matchAny } from "../../core/glob.mjs";
+import { globToRegExp } from "../../core/glob.mjs";
 import { t } from "../../core/i18n.mjs";
 
 const MAX_DEPTH = 32;
@@ -98,7 +98,10 @@ function readQuoted(s, i) {
 function scalar(raw) {
   const s = raw.trim();
   if (s.startsWith('"') || s.startsWith("'")) return readQuoted(s, 0).value;
-  return s.replace(/\s+#.*$/, "").trim();
+  // A comment starts at a `#` after a space; found by one scan (a pattern anchored at the end costs the square of a
+  // run of spaces).
+  for (let i = 1; i < s.length; i++) if (s[i] === "#" && /\s/.test(s[i - 1])) return s.slice(0, i).trim();
+  return s;
 }
 
 /**
@@ -112,13 +115,16 @@ function splitList(s, flow) {
   /** @type {string[]} */
   const items = [];
   let cur = "";
+  // Whether `cur` holds only spaces so far: kept, not recomputed, so a run of quotes costs its length.
+  let empty = true;
   let braces = 0;
   let brackets = 0;
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
-    if ((c === '"' || c === "'") && cur.trim() === "") {
+    if ((c === '"' || c === "'") && empty) {
       const { end } = readQuoted(s, i);
       cur += s.slice(i, end);
+      empty = false;
       i = end - 1;
       continue;
     }
@@ -140,48 +146,98 @@ function splitList(s, flow) {
     } else if (c === "," && braces === 0 && brackets === 0) {
       items.push(cur);
       cur = "";
+      empty = true;
       continue;
     }
     cur += c;
+    if (!/\s/.test(c)) empty = false;
   }
   items.push(cur);
   return { items: items.map(scalar).filter(Boolean), closed: !flow };
 }
 
 /**
- * `paths:` value of a front matter block.
+ * The value of the `paths:` key at line `i`, whose text after the colon is `rest`.
+ * @param {string[]} lines @param {number} i @param {string} rest
+ * @returns {string[]}
+ */
+function pathsAt(lines, i, rest) {
+  const inline = rest.trim();
+  // Flow sequence, possibly spanning lines: read once, to its closing `]` or the end.
+  if (inline.startsWith("[")) return splitList([inline.slice(1), ...lines.slice(i + 1)].join("\n"), true).items;
+  if (inline && !inline.startsWith("#")) return splitList(inline, false).items;
+  /** @type {string[]} */
+  const out = [];
+  for (let j = i + 1; j < lines.length; j++) {
+    const l = lines[j];
+    if (/^\s*(#.*)?$/.test(l)) continue;
+    const item = /^\s*-(?:\s+(.*))?$/.exec(l);
+    if (!item) break;
+    const v = scalar(item[1] ?? "");
+    if (v) out.push(v);
+  }
+  return out;
+}
+
+/**
+ * `paths:` value of a front matter block, as Claude Code reads it (2.1.310, test/reference/claude-code.json): of two
+ * top-level `paths:` keys the last, and a block indented as a whole is read at its own indentation; one with a line
+ * left of its first is no YAML mapping, so no paths (Claude Code loads that rule in every session).
  * @param {string} frontMatter
  * @returns {string[] | null} null when there is no top-level `paths:` key
  */
 export function parsePaths(frontMatter) {
-  const lines = frontMatter.split("\n");
-  for (let i = 0; i < lines.length; i++) {
+  let lines = frontMatter.split("\n");
+  const blank = (/** @type {string} */ l) => /^\s*(#.*)?$/.test(l);
+  const first = lines.find((l) => !blank(l));
+  const indent = first === undefined ? 0 : first.length - first.trimStart().length;
+  if (indent) {
+    if (!lines.every((l) => blank(l) || l.slice(0, indent).trim() === "")) return null;
+    lines = lines.map((l) => (blank(l) ? "" : l.slice(indent)));
+  }
+  // The last key is the one read, once: reading each in turn costs the square of the lines, the cube of a list
+  // that never closes.
+  for (let i = lines.length - 1; i >= 0; i--) {
     const m = /^paths\s*:(.*)$/.exec(lines[i]);
-    if (!m) continue;
-    const inline = m[1].trim();
-    if (inline.startsWith("[")) {
-      // Flow sequence, possibly spanning lines.
-      let text = inline.slice(1);
-      for (let j = i + 1; ; j++) {
-        const r = splitList(text, true);
-        if (r.closed || j >= lines.length) return r.items;
-        text += "\n" + lines[j];
-      }
-    }
-    if (inline && !inline.startsWith("#")) return splitList(inline, false).items;
-    /** @type {string[]} */
-    const out = [];
-    for (let j = i + 1; j < lines.length; j++) {
-      const l = lines[j];
-      if (/^\s*(#.*)?$/.test(l)) continue;
-      const item = /^\s*-(?:\s+(.*))?$/.exec(l);
-      if (!item) break;
-      const v = scalar(item[1] ?? "");
-      if (v) out.push(v);
-    }
-    return out;
+    if (m) return pathsAt(lines, i, m[1]);
   }
   return null;
+}
+
+/**
+ * The patterns Claude Code keeps of a rule's `paths` (2.1.310, test/reference/claude-code.json): each item split at
+ * the commas outside braces and trimmed, its braces expanded (expanded), then of each a trailing `/**` dropped
+ * (`src/**` names the folder `src`, `{src/**,lib/**}` both folders), empty ones left out. With none, or only `**`,
+ * the rule has no path scope and loads in every session: null.
+ * @param {string[] | null} items parsePaths's reading
+ * @returns {string[] | null}
+ */
+export function keptPaths(items) {
+  if (items === null) return null;
+  /** @type {string[]} */
+  const out = [];
+  for (const item of items) {
+    /** @type {string[]} */
+    const parts = [];
+    let depth = 0;
+    let start = 0;
+    for (let i = 0; i < item.length; i++) {
+      if (item[i] === "{") depth++;
+      else if (item[i] === "}") depth--;
+      else if (item[i] === "," && depth === 0) {
+        parts.push(item.slice(start, i));
+        start = i + 1;
+      }
+    }
+    parts.push(item.slice(start));
+    for (const part of parts) {
+      for (const one of expanded(part.trim())) {
+        const kept = one.endsWith("/**") ? one.slice(0, -3) : one;
+        if (kept) out.push(kept);
+      }
+    }
+  }
+  return out.length && !out.every((p) => p === "**") ? out : null;
 }
 
 /**
@@ -302,19 +358,145 @@ export function loadPathScopedRules(projectDir, unreadable = [], why = new Map()
     }
     if (text === null) continue;
     const { frontMatter } = splitFrontMatter(text);
-    const patterns = frontMatter === null ? null : parsePaths(frontMatter);
-    if (patterns && patterns.length) rules.push({ file, patterns });
+    const patterns = frontMatter === null ? null : keptPaths(parsePaths(frontMatter));
+    if (patterns) rules.push({ file, patterns });
   }
   return rules;
+}
+
+/** Brace expansion's budget, as Claude Code's: past it the pattern is kept unexpanded. */
+const EXPANSIONS = 1000;
+const EXPANSION_BYTES = 4 * 1024 * 1024;
+
+/**
+ * A pattern's braces expanded as Claude Code expands them (2.1.310): the first `{…}` holding no `}`, its
+ * alternatives split at commas and trimmed, again until none is left; past 1,000 results or 4 MB of text the
+ * pattern is kept as written.
+ * @param {string} pattern
+ */
+function expanded(pattern) {
+  if (!pattern.includes("{")) return [pattern];
+  /** @type {string[]} */
+  const out = [];
+  const stack = [pattern];
+  let budget = EXPANSION_BYTES;
+  for (let p = stack.pop(); p !== undefined; p = stack.pop()) {
+    const open = p.indexOf("{");
+    const close = open === -1 ? -1 : p.indexOf("}", open + 1);
+    if (open === -1 || close === -1 || close === open + 1) {
+      out.push(p);
+      continue;
+    }
+    const alternatives = p.slice(open + 1, close).split(",").map((a) => a.trim());
+    budget -= p.length;
+    const count = out.length + stack.length + alternatives.length;
+    if (budget < 0 || count > EXPANSIONS || count * pattern.length > budget) return [pattern];
+    for (const a of alternatives.reverse()) stack.push(p.slice(0, open) + a + p.slice(close + 1));
+  }
+  return out;
+}
+
+/**
+ * @typedef {{ segments: (RegExp | "**")[], anyDepth: boolean, foldersOnly: boolean }} Compiled one expanded pattern:
+ *   its segments (`**` any number of path segments, else one segment's glob, letters without case)
+ */
+/** @type {Map<string, Compiled[]>} */
+const compiled = new Map();
+
+/**
+ * A kept pattern compiled for pathRuleMatches: braces expanded, spaces at the end dropped, a leading `/` anchoring
+ * it, a trailing `/` naming folders only, runs of `/` read as one, each segment its own expression with the case
+ * flag (the pattern is not rewritten: lower case would turn `[A-_]` into no class). Throws on a segment no
+ * expression can hold (past the engine's size, an unclosed brace across a `/`).
+ * @param {string} pattern
+ * @returns {Compiled[]}
+ */
+function compile(pattern) {
+  const hit = compiled.get(pattern);
+  if (hit) return hit;
+  const out = expanded(pattern).map((one) => {
+    let end = one.length;
+    while (end > 0 && one[end - 1] === " ") end--;
+    let p = one.slice(0, end).replace(/\/{2,}/g, "/");
+    const anchored = p.startsWith("/");
+    if (anchored) p = p.slice(1);
+    const foldersOnly = p.endsWith("/");
+    if (foldersOnly) p = p.slice(0, -1);
+    const anyDepth = !anchored && !p.includes("/");
+    /** @type {(RegExp | "**")[]} */
+    const segments = p === "" ? [] : p.split("/").map((s) => (s === "**" ? "**" : new RegExp(globToRegExp(s).source, "i")));
+    return { segments, anyDepth, foldersOnly };
+  });
+  compiled.set(pattern, out);
+  return out;
+}
+
+/**
+ * Whether one compiled pattern names a path given as its segments: the pattern's segments against the path's from
+ * the top (from any depth for a name with no `/`), `**` taking any number of them; it names a folder on the way or
+ * the path itself (a folder pattern, only a folder). A table, one row a pattern segment from the last: each pair
+ * of positions is decided once, so the time is the pattern's segments times the path's whatever stars the pattern
+ * holds, with no recursion a deep path could exhaust.
+ * @param {Compiled} c @param {string[]} parts
+ */
+function namesPath(c, parts) {
+  const { segments, foldersOnly } = c;
+  if (!segments.length) return false;
+  const pattern = c.anyDepth ? /** @type {(RegExp | "**")[]} */ (["**", ...segments]) : segments;
+  const S = parts.length;
+  // The row past the pattern: what is matched so far names a folder on the way, or the path itself.
+  let next = new Uint8Array(S + 1);
+  for (let j = 0; j <= S; j++) next[j] = foldersOnly ? Number(j < S) : Number(j > 0);
+  for (let i = pattern.length - 1; i >= 0; i--) {
+    const row = new Uint8Array(S + 1);
+    const seg = pattern[i];
+    for (let j = S; j >= 0; j--) {
+      if (seg === "**") row[j] = next[j] || (j < S && row[j + 1]) ? 1 : 0;
+      else row[j] = j < S && next[j + 1] && seg.test(parts[j]) ? 1 : 0;
+    }
+    next = row;
+  }
+  return next[0] === 1;
+}
+
+/**
+ * Whether a kept pattern (keptPaths) names `relPath` as Claude Code matches it (2.1.310, test/reference/claude-code.json):
+ * as a .gitignore line names a path, with braces expanded, letters compared without case. Spaces at the end are
+ * dropped; a leading `/` anchors the pattern at the top; one with no other `/` names a file or folder at any depth;
+ * a folder it names covers what the folder holds, and a trailing `/` names folders only. A name and the pattern are
+ * also compared composed (NFC), as core/glob.mjs compares them. Throws on a pattern no expression can hold.
+ * @param {string} pattern @param {string} relPath project-relative, "/" separated
+ */
+export function pathRuleMatches(pattern, relPath) {
+  const parts = relPath.split("/");
+  if (compile(pattern).some((c) => namesPath(c, parts))) return true;
+  const ascii = (/** @type {string} */ s) => !/[^\x00-\x7f]/.test(s);
+  if (ascii(pattern) && ascii(relPath)) return false;
+  const composed = relPath.normalize("NFC").split("/");
+  return compile(pattern.normalize("NFC")).some((c) => namesPath(c, composed));
 }
 
 /**
  * @param {ReadonlyArray<{ file: string, patterns: string[] }>} rules
  * @param {string} relPath project-relative, "/" separated
+ * @param {{ file: string, pattern: string }[]} [bad] filled with each pattern no expression can hold: it is skipped,
+ *   as Claude Code skips it, and its rule still applies by its other patterns, in whatever order they stand
  * @returns {string[]} files of the rules that apply to `relPath`
  */
-export function rulesForPath(rules, relPath) {
-  return rules.filter((r) => matchAny(relPath, r.patterns)).map((r) => r.file);
+export function rulesForPath(rules, relPath, bad = []) {
+  return rules
+    .filter((r) => {
+      let hit = false;
+      for (const p of r.patterns) {
+        try {
+          if (pathRuleMatches(p, relPath)) hit = true;
+        } catch {
+          bad.push({ file: r.file, pattern: p });
+        }
+      }
+      return hit;
+    })
+    .map((r) => r.file);
 }
 
 /**
