@@ -337,6 +337,15 @@ const CASES = [
     setup: (repo) => put(repo, { ".git/ennyn/side-copy/s1.json": '{"emitted":[]}\n' }),
     input: (repo) => ({ source: "compact", session_id: "s1", cwd: repo }),
   },
+  // The plugin's version record and the session's variable: a plugin version, a data directory and an env file
+  // of their own in each run's copy.
+  {
+    args: ["hook:plugin-root"],
+    hook: "plugin-root.mjs",
+    setup: (repo) => put(repo, { ".git/plugin/scripts/ennyn.mjs": "\n", ".git/session-env": "" }),
+    env: { CLAUDE_PLUGIN_ROOT: ".git/plugin", CLAUDE_PLUGIN_DATA: ".git/plugin-data", CLAUDE_ENV_FILE: ".git/session-env" },
+    input: (repo) => ({ source: "startup", session_id: "s1", cwd: repo }),
+  },
 ];
 
 test("fault matrix: every Claude Code hook in hooks/hooks.json has a case", () => {

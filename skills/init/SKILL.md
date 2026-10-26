@@ -68,7 +68,7 @@ Write this only when `handoff.exists` is false. An existing handoff gets only qu
 
 ## 7. Check and report
 
-When the config sets a rule only the commit-msg hook checks (doctor names them), offer `ennyn install-hook`: the commit convention becomes a gate in this clone. Then run `ennyn doctor` and fix every ✗ in the files you wrote. Two kinds are not yours to fix alone. A ✗ about the machine's git (older than the floor): tell the user the version and the floor, and change nothing on their machine. A ✗ about the items of a roadmap the graph module reads: follow [graph.md](graph.md), "When doctor fails on the items". A `!` stays only when the user has seen and accepted it, for example the fix-label majority.
+When the config sets a rule only the commit-msg hook checks (doctor names them), offer `ennyn install-hook --plugin-data "${CLAUDE_PLUGIN_DATA}"`: the commit convention becomes a gate in this clone. Then run `ennyn doctor` and fix every ✗ in the files you wrote. Two kinds are not yours to fix alone. A ✗ about the machine's git (older than the floor): tell the user the version and the floor, and change nothing on their machine. A ✗ about the items of a roadmap the graph module reads: follow [graph.md](graph.md), "When doctor fails on the items". A `!` stays only when the user has seen and accepted it, for example the fix-label majority.
 
 Report in at most thirteen lines:
 

@@ -99,6 +99,7 @@ export const GATES = [
     test: "test/hermetic.test.mjs",
     guards: [
       { id: "hermetic-script", why: "npm test without the setup", file: "package.json", old: '"test": "node --test --import ./test/hermetic.mjs test/*.test.mjs"', new: '"test": "node --test test/*.test.mjs"', pattern: "hermetic: npm test loads" },
+      { id: "hermetic-plugin", why: "a plugin session's data directory left to the tests (install-hook would write its record)", file: "test/hermetic.mjs", old: 'const PLUGIN_VARS = ["ENNYN_PLUGIN_DATA", ', new: "const PLUGIN_VARS = [", pattern: "hermetic: after the hostile machine" },
       { id: "hermetic-system", why: "a setup that leaves the system config readable", file: "test/hermetic.mjs", old: '  GIT_CONFIG_NOSYSTEM: "1",\n', new: "", pattern: "hermetic: after the hostile machine" },
       { id: "hermetic-refuse", why: "a child that drops the setup, let run", file: "test/hermetic.mjs", old: "  if (!missing.length) return;\n", new: "  return;\n", pattern: "hermetic: a child given its own environment" },
       { id: "hermetic-exit", why: "a refused call the code swallowed, forgotten at exit", file: "test/hermetic.mjs", old: "  process.exitCode = 1;\n});", new: "});", pattern: "hermetic: a test file whose code swallows" },

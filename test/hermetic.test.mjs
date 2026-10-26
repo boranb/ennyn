@@ -35,7 +35,7 @@ test("hermetic: npm test loads the hostile machine, then the setup that clears i
     delete process.env.GIT_DIR;
   }
   assert.ok(existsSync(join(env.GIT_WORK_TREE, ".git", "HEAD")), "the decoy repository");
-  for (const k of ["TMPDIR", "HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_SYSTEM", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT", "GIT_DIR", "GIT_INDEX_FILE", "ENNYN_CONFIG", "TZ", "LC_ALL"]) {
+  for (const k of ["TMPDIR", "HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_SYSTEM", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT", "GIT_DIR", "GIT_INDEX_FILE", "ENNYN_CONFIG", "ENNYN_PLUGIN_DATA", "TZ", "LC_ALL"]) {
     assert.ok(env[k], k);
   }
   const read = (/** @type {string} */ key) => spawnSync("git", ["config", "--file", env.GIT_CONFIG_GLOBAL, "--get", key], { encoding: "utf8" }).stdout.trim();
@@ -51,6 +51,7 @@ test("hermetic: after the hostile machine, git here reads no config but the repo
   const global = /** @type {string} */ (process.env.GIT_CONFIG_GLOBAL);
   assert.equal(readFileSync(global, "utf8"), "[safe]\n\tdirectory = *\n");
   assert.equal(process.env.ENNYN_CONFIG, undefined);
+  assert.equal(process.env.ENNYN_PLUGIN_DATA, undefined, "a plugin session's data directory: install-hook would write its record");
   assert.deepEqual([process.env.TZ, process.env.LC_ALL], ["Asia/Kolkata", "C"]);
   assert.notEqual(new Date(Date.UTC(2026, 0, 1, 20)).getDate(), 1, "a local day is not a UTC day");
   // The temporary directory sits in the hostile machine's decoy repository; git does not find it.

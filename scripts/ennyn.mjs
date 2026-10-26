@@ -8,7 +8,7 @@
 
 import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { relative, resolve, sep } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { loadConfig, ConfigError } from "../core/config.mjs";
 import { READ_BUDGET, git, headBlob, headCommit, hookIndexFile, indexEntries, indexKinds, indexNames, mergeHeads, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, stateRoot, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
 import { ends, jsonShown, shown, t, tShown, unshownEscaped } from "../core/i18n.mjs";
@@ -26,7 +26,7 @@ import { costWeight, graphProblems, loadGraph, pickMechanization, pickOldest, re
 import { LINK_RULE, SUBMODULE_RULE, auditAnswer, cycleRecords, markCovers, readLog, securityDue, sensitivePaths } from "../plan/audit.mjs";
 import { scanProject, MIN_HISTORY } from "../setup/scan.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
-import { installHook } from "../setup/hook.mjs";
+import { RecordError, installHook, sessionOf } from "../setup/hook.mjs";
 import { instructionBudget, readBudgets, recordBudget, previousBudget } from "../setup/budget.mjs";
 import { journalPath, MAX_TIMEOUT_MS, MutationError, parseMutants, restoreJournal, runMutants, summarizeMutants } from "../metrics/mutation.mjs";
 
@@ -35,7 +35,8 @@ export const USAGE = `Usage: ennyn <command> [options]
 Commands:
   init-scan [--json]                                survey the repository for /init: fix label, churn, tests, risky paths, work sources
   doctor                                            check config, work graph and fix label; exit 1 on a problem
-  install-hook                                      run commit-check as this repository's commit-msg hook (machine-local)
+  install-hook [--plugin-data <dir>]                run commit-check as this repository's commit-msg hook (machine-local); --plugin-data
+                                                    (a plugin session gives it as ENNYN_PLUGIN_DATA and ENNYN_PLUGIN_ROOT): the hook follows plugin updates
   budget [--json] [--record [--security-audit]]     instruction text loaded every session / by path, rule lines repeated across files; --record appends to paths.metricsLog, --security-audit marks the cycle's security audit
   commit-check [--hook] <message-file>              check commit message shape (commit-msg hook; --hook: a config that does not load warns instead of failing)
   deps [--json]                                     known advisories (OSV), install scripts and unlisted sources of the lock files; exit 1 unless all measured clean
@@ -539,15 +540,27 @@ const COMMANDS = {
   },
 
   "install-hook"(args) {
-    const { help } = parseArgs(args, {});
+    const { opts, help } = parseArgs(args, { options: ["plugin-data"] });
     if (help) return (out(USAGE), 0);
+    // An unset ${CLAUDE_PLUGIN_DATA} reaches here empty: a hook written without it would name this version only.
+    const pluginData = opts["plugin-data"] === undefined ? null : strOpt(opts["plugin-data"]);
+    if (opts["plugin-data"] !== undefined && (pluginData === null || !isAbsolute(pluginData))) throw new UsageError("--plugin-data needs the plugin's data directory as an absolute path (${CLAUDE_PLUGIN_DATA})");
     const cwd = projectDir();
     const cfg = config(cwd);
-    const res = installHook({ cwd, cliPath: fileURLToPath(import.meta.url) });
+    let res;
+    try {
+      // A plugin session names its data directory and its version to its commands (adapters/claude-code/hooks/plugin-root.mjs).
+      res = installHook({ cwd, cliPath: fileURLToPath(import.meta.url), pluginData, session: sessionOf(process.env) });
+    } catch (e) {
+      if (!(e instanceof RecordError)) throw e;
+      err(t("hook.notRecorded", { error: e.message }, cfg.language));
+      return 1;
+    }
     const key = res.result === "hooksPath" ? `hook.hooksPath.${res.hooksKind}` : `hook.${res.result}`;
-    out(t(key, { path: res.path, dir: res.hooksPath ?? "", line: res.line, cli: res.cli ?? "", chmod: res.chmod, own: res.own }, cfg.language));
+    out(t(key, { path: res.path, dir: res.hooksPath ?? "", line: res.line, cli: res.cli ?? "", chmod: res.chmod, own: res.own, root: res.root, data: res.data ?? "", recorded: res.recorded }, cfg.language));
+    if (res.data !== null && ["installed", "updated", "unchanged"].includes(res.result)) out(t("hook.follows", { data: res.data }, cfg.language));
     // What doctor warns about is no "nothing to do": a hook left as it is, or one that checks nothing, exits 1.
-    return ["other", "hooksPath", "notThere", "notExecutable", "cliGone"].includes(res.result) ? 1 : 0;
+    return ["installed", "updated", "unchanged", "wired"].includes(res.result) ? 0 : 1;
   },
 
   budget(args) {

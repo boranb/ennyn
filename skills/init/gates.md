@@ -11,7 +11,7 @@
    - `note`: the line's reason, in its own words. The hook prints it when it refuses a commit.
 2. **Write** the rule into `review.forbidden` on the user's yes. Keep the line for now.
 3. **Count** after `ennyn install-hook`: `ennyn doctor` counts, per rule, the lines inside `paths` that hold the text today. Many there mean the rule is not kept. Say so: the user fixes them, narrows `paths`, or drops the rule and keeps the line. A commit that adds a line holding the text fails either way. The old lines stay until someone changes them. A moved file counts in full.
-4. **Delete the line** only when doctor shows the commit-msg hook running commit-check (`✓ commit-msg hook`). With `core.hooksPath`, a declined hook or a hook that is not Ennyn's, the line stays. The hook is this clone's own: another clone, CI or a cloud session checks nothing until it runs `ennyn install-hook` (doctor there warns). Say so in the report, so the user decides whether the line goes now.
+4. **Delete the line** only when doctor shows the commit-msg hook running commit-check (`✓ commit-msg hook`). With `core.hooksPath`, a declined hook or a hook that is not Ennyn's, the line stays. The hook is this clone's own: another clone, CI or a cloud session checks nothing until it runs `ennyn install-hook` as SKILL.md does (doctor there warns). Say so in the report, so the user decides whether the line goes now.
 
 The report names each line turned into a gate, and each one kept with why.
 

@@ -12,10 +12,11 @@ import { loadConfig, ConfigError } from "../core/config.mjs";
 import { loadGraph, readyNodes, readyMechanization, graphProblems, GraphError } from "../plan/mechanization.mjs";
 import { MIN_HISTORY, indexMatches, recentCommits, productionSubjects, projectFiles, githubRemotes } from "./scan.mjs";
 import { askRules, outwardCommands, GH_COMMANDS, SETTINGS, SETTINGS_LIMIT } from "./permissions.mjs";
-import { hookStatus, idleReason } from "./hook.mjs";
+import { ORPHANED, PLUGIN_RECORD, hookStatus, idleReason, replacedRoot, sessionOf, versionNote } from "./hook.mjs";
 import { instructionBudget, readBudgets } from "./budget.mjs";
-import { relative, resolve, sep } from "node:path";
-import { readRegular } from "../core/files.mjs";
+import { join, relative, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
+import { present, readRegular } from "../core/files.mjs";
 import { git, repoPath, gitVersion, parseVersion, versionAtLeast, stagedVersions, headFile, GIT_FLOOR } from "../core/git.mjs";
 import { ciSet, ciText } from "../checks/ci.mjs";
 import { t } from "../core/i18n.mjs";
@@ -161,11 +162,15 @@ export function askReport(cwd, files, add, readers = {}) {
   if (at("shared").length) add("ok", "doctor.askOk", { rules: named(at("shared")) });
 }
 
+/** The Ennyn root this doctor runs from. */
+const OWN_ROOT = fileURLToPath(new URL("..", import.meta.url)).replace(/[\\/]$/, "");
+
 /**
- * @param {{ cwd: string, env?: NodeJS.ProcessEnv }} opts
+ * @param {{ cwd: string, env?: NodeJS.ProcessEnv, self?: string }} opts `self`: the Ennyn root doctor runs
+ *   from (this file's own; a test gives a plugin version of its making)
  * @returns {Promise<DoctorResult>}
  */
-export async function checkSetup({ cwd, env = process.env }) {
+export async function checkSetup({ cwd, env = process.env, self = OWN_ROOT }) {
   /** @type {DoctorItem[]} */
   const items = [];
   /** @param {DoctorItem["level"]} level @param {string} key @param {DoctorItem["vars"]} [vars] */
@@ -255,9 +260,18 @@ export async function checkSetup({ cwd, env = process.env }) {
     let hook = null;
     /** @type {ReturnType<typeof idleReason>} */
     let idle = null;
+    /** @type {string | null} */
+    let replaced = null;
+    /** @type {ReturnType<typeof versionNote>} */
+    let version = null;
+    let selfReplaced = false;
     try {
       hook = hookStatus(cwd);
       if (hook.state === "ennyn" || hook.state === "wired") idle = idleReason(hook);
+      if (hook.state === "ennyn" && idle === null) replaced = replacedRoot(hook);
+      // Run from a version Claude Code has replaced (an old session): its view of "this session's version" is stale.
+      selfReplaced = present(join(self, ORPHANED));
+      if (hook.state === "ennyn" && idle === null && replaced === null && !selfReplaced) version = versionNote(hook, sessionOf(env));
     } catch (e) {
       // One check that cannot be made is said on its own line; the rest of the report stands.
       hook = null;
@@ -270,6 +284,14 @@ export async function checkSetup({ cwd, env = process.env }) {
       if (idle === "absent") add("warn", "doctor.hookAbsent", { path: [hook.path] });
       else if (idle === "mode") add("warn", "doctor.hookNotRun", { path: [hook.path] });
       else if (idle === "cli") add("warn", "doctor.hookCliGone", { path: [hook.path], cli: [String(hook.cli)] });
+      // Installed from the plugin: uninstalled (every commit passes) or the version its link names deleted (every commit is refused).
+      else if (idle === "unrecorded") add("warn", "doctor.hookPluginUnrecorded", { path: [hook.path], data: [String(hook.data)] });
+      else if (idle === "stale") add("warn", "doctor.hookPluginStale", { path: [hook.path], data: [String(hook.data)], root: [String(hook.recorded)] });
+      else if (idle === "foreign") add("warn", "doctor.hookRecordForeign", { path: [hook.path], record: [join(String(hook.data), PLUGIN_RECORD)] });
+      else if (replaced !== null) add("warn", "doctor.hookReplaced", { path: [hook.path], root: [replaced] });
+      else if (selfReplaced && hook.state === "ennyn") add("warn", "doctor.hookSelfReplaced", { path: [hook.path], own: [self] });
+      else if (version === "pinned") add("warn", "doctor.hookPinned", { path: [hook.path], cli: [String(hook.cli)] });
+      else if (version === "other") add("warn", "doctor.hookOtherVersion", { path: [hook.path], root: [String(hook.recorded)], own: [String(sessionOf(env)?.root)] });
       else add("ok", "doctor.hookOk", { path: [hook.path] });
     } else if (hook.hooksPath) add("warn", "doctor.hookPath", { dir: [hook.hooksPath] });
     else if (hook.state === "other") add("warn", "doctor.hookOther", { path: [hook.path] });

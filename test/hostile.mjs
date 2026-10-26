@@ -17,6 +17,20 @@ import { dirname, join } from "node:path";
  * @param {string} root an empty directory
  * @returns {Record<string, string>} the environment that points git and Ennyn at it
  */
+/**
+ * A plugin's data directory whose record names `root`, with a CLI there: install-hook that obeyed a leaked
+ * ENNYN_PLUGIN_DATA would write a hook reading this record, and record its own copy here.
+ * @param {string} at @param {string} root
+ */
+function pluginData(at, root) {
+  const data = join(at, "plugin-data");
+  mkdirSync(join(root, "scripts"), { recursive: true });
+  writeFileSync(join(root, "scripts", "ennyn.mjs"), "process.exit(0);\n");
+  mkdirSync(data);
+  writeFileSync(join(data, "root"), `${root}\n`);
+  return data;
+}
+
 export function hostileHome(root) {
   const reject = (/** @type {string} */ dir) => {
     mkdirSync(dir, { recursive: true });
@@ -79,6 +93,8 @@ export function hostileHome(root) {
     GIT_TEMPLATE_DIR: join(root, "template-dir"),
     GIT_AUTHOR_DATE: "2001-01-01T00:00:00",
     ENNYN_CONFIG: join(root, "ennyn.json"),
+    // A plugin session's data directory, its record naming the repository a leak would write into.
+    ENNYN_PLUGIN_DATA: pluginData(root, other),
     TZ: "Pacific/Kiritimati",
     LANG: "tr_TR.UTF-8",
     LC_ALL: "tr_TR.UTF-8",

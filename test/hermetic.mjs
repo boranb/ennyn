@@ -59,8 +59,10 @@ const home = mkdtempSync(join(tmpdir(), "en-home-"));
 mkdirSync(join(home, ".config"));
 // The one global setting: a CI checkout owned by another user is marked safe in a config dropped here.
 writeFileSync(join(home, ".gitconfig"), "[safe]\n\tdirectory = *\n");
-// ENNYN_CONFIG too: a developer's override would change which config every CLI test loads.
-for (const k of Object.keys(process.env)) if (k.startsWith("GIT_") || k === "ENNYN_CONFIG") delete process.env[k];
+// ENNYN_CONFIG too: a developer's override would change which config every CLI test loads. ENNYN_PLUGIN_DATA and
+// Claude Code's plugin variables: a suite run from a plugin session would write the developer's plugin record.
+const PLUGIN_VARS = ["ENNYN_PLUGIN_DATA", "CLAUDE_PLUGIN_ROOT", "CLAUDE_PLUGIN_DATA", "CLAUDE_ENV_FILE"];
+for (const k of Object.keys(process.env)) if (k.startsWith("GIT_") || k === "ENNYN_CONFIG" || PLUGIN_VARS.includes(k)) delete process.env[k];
 Object.assign(process.env, {
   HOME: home,
   XDG_CONFIG_HOME: join(home, ".config"),
