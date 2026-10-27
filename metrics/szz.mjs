@@ -88,7 +88,7 @@ export function readLog(cwd, within, chunk = 200) {
   /** @type {Map<string, LogCommit>} */
   const byHash = new Map();
   // Neither field holds a space or a newline.
-  for (const line of git(["log", "--no-merges", "--format=%ct %H"], { cwd }).split("\n")) {
+  for (const line of git(["log", "--no-merges", "--format=%ct %H"], { cwd, walk: true }).split("\n")) {
     const m = /^(\d*) ([0-9a-f]{40,64})$/.exec(line);
     if (!m) continue;
     const time = m[1] === "" ? NaN : Number(m[1]);
@@ -204,7 +204,7 @@ function toRanges(lines) {
  */
 function blameOrigins(cwd, fix, file, ranges) {
   const lineArgs = ranges.flatMap(([a, b]) => ["-L", `${a},${b}`]);
-  const out = git(["blame", "-w", "-M", "-C", "--ignore-revs-file", "", "--porcelain", ...lineArgs, `${fix}^`, "--", file], { cwd });
+  const out = git(["blame", "-w", "-M", "-C", "--ignore-revs-file", "", "--porcelain", ...lineArgs, `${fix}^`, "--", file], { cwd, walk: true });
   /** @type {Map<string, number>} */
   const counts = new Map();
   for (const line of out.split("\n")) {
@@ -220,7 +220,7 @@ function blameOrigins(cwd, fix, file, ranges) {
  */
 function reaches(cwd, hash) {
   try {
-    git(["merge-base", "--is-ancestor", hash, "HEAD"], { cwd });
+    git(["merge-base", "--is-ancestor", hash, "HEAD"], { cwd, walk: true });
     return true;
   } catch (e) {
     if (/** @type {{ status?: number }} */ (e).status === 1) return false;

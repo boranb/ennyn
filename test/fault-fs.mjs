@@ -8,6 +8,10 @@
  * ENNYN_FS_FAULT_DIR  where the count goes (no variable: nothing is wrapped)
  * ENNYN_FS_FAULT_AT   the call to fail, from 1 (0: none)
  * ENNYN_FS_FAULT      eacces | eisdir
+ *
+ * It also lowers the git call limits for a run whose fake git never ends, so a cell waits seconds, not minutes:
+ * ENNYN_FAULT_GIT_LIMIT_MS  the limit of any git call; a call that walks the history gets twice that. Only this
+ * file reads the variable: Ennyn's own limits come from no environment or config.
  */
 
 import fs from "node:fs";
@@ -80,4 +84,11 @@ if (DIR) {
     writeFileSync(join(DIR, "fs-count"), String(seen.length));
     writeFileSync(join(DIR, "fs-calls"), seen.join("\n"));
   });
+}
+
+const GIT_LIMIT = Number(process.env.ENNYN_FAULT_GIT_LIMIT_MS ?? 0);
+if (GIT_LIMIT > 0) {
+  const { GIT_LIMITS } = await import("../core/git.mjs");
+  GIT_LIMITS.call = GIT_LIMIT;
+  GIT_LIMITS.walk = 2 * GIT_LIMIT;
 }

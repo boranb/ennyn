@@ -56,27 +56,27 @@ export function bypassUses({ cwd, config, since, until, from }) {
   if (from) {
     const start = gitMaybe(["rev-parse", "--verify", "-q", `${from}^{commit}`], { cwd, absent: [1] });
     if (!start) throw new RangeError(`from: "${from}" is not in this repository${isShallow ? "; the clone is shallow, it may lie past the boundary" : ""}`);
-    if (gitMaybe(["merge-base", "--is-ancestor", start, "HEAD"], { cwd, absent: [1] }) === null) {
+    if (gitMaybe(["merge-base", "--is-ancestor", start, "HEAD"], { cwd, absent: [1], walk: true }) === null) {
       throw new RangeError(`from: "${from}" is not an ancestor of HEAD (amended or rebased since?); the range would count commits from before it`);
     }
     range = [`${start}..HEAD`];
     // Inside the range a merge can still reach past the boundary: then commits of the range are missing.
     if (isShallow) {
       const edge = shallowEdge(cwd);
-      shallow = git(["rev-list", ...range], { cwd }).split("\n").some((h) => edge.has(h));
+      shallow = git(["rev-list", ...range], { cwd, walk: true }).split("\n").some((h) => edge.has(h));
     }
   }
   const within = (/** @type {number} */ time) => (lo === null && hi === null) || (Number.isFinite(time) && (lo === null || time >= lo) && (hi === null || time <= hi));
 
   let commits = 0;
   // One line per commit, marked: a commit with no committer time prints an empty %ct, an empty range nothing.
-  for (const line of git(["log", "--no-merges", "--format=x%ct", ...range], { cwd }).split("\n")) if (line.startsWith("x") && within(timeOf(line.slice(1)))) commits++;
+  for (const line of git(["log", "--no-merges", "--format=x%ct", ...range], { cwd, walk: true }).split("\n")) if (line.startsWith("x") && within(timeOf(line.slice(1)))) commits++;
   // Merges are few: those the hook checks (a first line of their own) count as commits.
-  const merges = git(["log", "--merges", "-z", "--format=%ct%x00%B", ...range], { cwd }).split("\0");
+  const merges = git(["log", "--merges", "-z", "--format=%ct%x00%B", ...range], { cwd, walk: true }).split("\0");
   for (let i = 0; i + 1 < merges.length; i += 2) if (within(timeOf(merges[i].replace(/^\n/, ""))) && !skippedSubject(merges[i + 1].split("\n")[0], config)) commits++;
 
   const marker = config.commitMsg.allowMarker;
-  const fields = git(["log", "-z", "-F", `--grep=${marker}`, "--format=%H%x00%ct%x00%B", ...range], { cwd }).split("\0");
+  const fields = git(["log", "-z", "-F", `--grep=${marker}`, "--format=%H%x00%ct%x00%B", ...range], { cwd, walk: true }).split("\0");
   /** @type {BypassUse[]} */
   const uses = [];
   for (let i = 0; i + 2 < fields.length; i += 3) {

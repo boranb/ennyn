@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { basename, join, posix, win32 } from "node:path";
 import { globToRegExp, literalGlob, matchAny } from "../core/glob.mjs";
 import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
-import { git, headCommit, parseTrailers, repoPath, stagedPaths, unpushedCount } from "../core/git.mjs";
+import { DIFF_GROUP, diffGroups, git, headCommit, parseTrailers, repoPath, stagedPaths, unpushedCount } from "../core/git.mjs";
 import { t } from "../core/i18n.mjs";
 import * as filesModule from "../core/files.mjs";
 import { readIfThere } from "../core/files.mjs";
@@ -490,4 +490,19 @@ test("shown: a comma look-alike in a name is quoted: a joiner, a combining mark 
 test("files: /dev/null reads as empty, as Claude Code reads a file linked to it", (t) => {
   if (process.platform === "win32") return t.skip("no /dev/null");
   assert.equal(readIfThere("/dev/null"), "");
+});
+
+test("core: diffGroups splits a staged diff by size, in order: a file past DIFF_GROUP by the larger of its two sizes alone, the others together up to it and 500 paths", () => {
+  const M = DIFF_GROUP;
+  const changes = new Map([
+    ["big", { oldSize: M + 1, newSize: 5 }],
+    ["a", { oldSize: 10, newSize: 10 }],
+    ["b", { oldSize: 0, newSize: M - 20 }],
+    ["c", { oldSize: 30, newSize: 0 }],
+  ]);
+  // a and b come to M - 10; c would pass M; x, not in the map, counts as small.
+  assert.deepEqual(diffGroups(["big", "a", "b", "c", "x"], changes), [["big"], ["a", "b"], ["c", "x"]]);
+  assert.deepEqual(diffGroups(["a", "big", "c"], changes), [["a"], ["big"], ["c"]]);
+  assert.deepEqual(diffGroups(Array.from({ length: 1001 }, (_, i) => `f${i}`), new Map()).map((g) => g.length), [500, 500, 1]);
+  assert.deepEqual(diffGroups([], changes), []);
 });

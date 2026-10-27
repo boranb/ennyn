@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -371,16 +371,56 @@ test("secrets: a staged name that is not UTF-8 is read, by the hook and by hand:
   const r = commit("-m", "feat: a file");
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stderr, /lib\/\ufffd\.js:1 \(npm-token/);
-  // A file the commit adds is read by its object, whatever its name. One it changes, with another file past the
-  // budget, is read by pathspec, and a name that is not UTF-8 cannot be asked for: said, and by hand a failure.
+  // A file the commit adds is read by its object, whatever its name, and so is one it changes, beside a file past
+  // the budget or files past one diff call (cycle 13: a name that is not UTF-8 was said and let through there). A
+  // secret its HEAD version already holds is no new one.
   assert.equal(commit("--no-verify", "-m", "feat: a file").status, 0);
+  // Two files of 600 KB: past one diff call together.
+  const lines = (/** @type {string} */ tag) => Array.from({ length: 80_000 }, (_, i) => `${tag}${i}`).join("\n") + "\n";
+  writeFileSync(join(dir, "big1.txt"), lines("a"));
+  writeFileSync(join(dir, "big2.txt"), lines("b"));
+  git(["add", "big1.txt", "big2.txt"], { cwd: dir });
+  assert.equal(commit("--no-verify", "-m", "feat: two files").status, 0);
   const changed = spawnSync("git", ["hash-object", "-w", "--stdin"], { cwd: dir, input: `t = ${TOKENS.npm}\nu = ${TOKENS.github}\n`, encoding: "utf8" }).stdout.trim();
   assert.equal(spawnSync("git", ["update-index", "-z", "--index-info"], { cwd: dir, input: Buffer.concat([Buffer.from(`100644 ${changed}\t`), Buffer.from([...Buffer.from("lib/"), 0xff, ...Buffer.from(".js")]), Buffer.from("\0")]) }).status, 0);
+  writeFileSync(join(dir, "big1.txt"), `${lines("a")}one more\n`);
+  writeFileSync(join(dir, "big2.txt"), `${lines("b")}one more\n`);
+  git(["add", "big1.txt", "big2.txt"], { cwd: dir });
+  const past = commit("-m", "feat: a file");
+  assert.equal(past.status, 1, past.stderr);
+  assert.match(past.stderr, /lib\/\ufffd\.js:2 \(github-token/);
+  assert.doesNotMatch(past.stderr, /npm-token|not UTF-8/);
   writeFileSync(join(dir, "big.bin"), "y".repeat(65 * 1024 * 1024));
   git(["add", "big.bin"], { cwd: dir });
   const asked = commit("-m", "feat: a file");
-  assert.equal(asked.status, 0, asked.stderr);
-  assert.match(asked.stderr, /security\.secrets was not checked in 1 staged path\(s\) whose names are not UTF-8 \("lib\/\ufffd\.js"\)/);
+  assert.equal(asked.status, 1, asked.stderr);
+  assert.match(asked.stderr, /lib\/\ufffd\.js:2 \(github-token/);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+test("secrets: a submodule's new commit is no object this repository should hold: the bump is not said unread, and the files beside it are read", () => {
+  // A rule over every path: review.forbidden asks about the bump too.
+  const { dir, commit } = repo({ review: { forbidden: [{ text: "BANNED", paths: ["**"] }] } });
+  const gitlink = (/** @type {string} */ sha) => assert.equal(spawnSync("git", ["update-index", "--add", "--cacheinfo", `160000,${sha},sub`], { cwd: dir }).status, 0);
+  gitlink("1".repeat(40));
+  assert.equal(commit("--no-verify", "-m", "feat: sub").status, 0);
+  gitlink("2".repeat(40));
+  // Staged alone: `add -A` would stage the gitlink's removal, with no folder in its place.
+  writeFileSync(join(dir, "a.txt"), `t = ${TOKENS.npm}\n`);
+  git(["add", "a.txt"], { cwd: dir });
+  const r = commit("-m", "feat: bump");
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /a\.txt:1 \(npm-token/);
+  assert.doesNotMatch(r.stderr, /not checked|not on this machine/);
+  // With its diff failing, the bump is still no file to read whole.
+  const bin = mkdtempSync(join(tmpdir(), "en-sec-sub-bin-"));
+  const real = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+  writeFileSync(join(bin, "git"), `#!/bin/sh\ncase " $* " in *" -U0 "*) echo "fatal: injected" >&2; exit 128 ;; esac\nexec '${real}' "$@"\n`);
+  chmodSync(join(bin, "git"), 0o755);
+  writeFileSync(join(dir, "msg"), "feat: bump\n");
+  const failing = spawnSync(process.execPath, [CLI, "commit-check", "--hook", "msg"], { cwd: dir, encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+  assert.match(failing.stderr, /a\.txt:1 \(npm-token/);
+  assert.doesNotMatch(failing.stderr, /security\.secrets was not checked/);
   rmSync(dir, { recursive: true, force: true });
 });
 

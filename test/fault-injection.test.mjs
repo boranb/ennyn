@@ -1,8 +1,9 @@
 /**
  * Every CLI command, run with git failing under it. A fake git on PATH counts the calls of a run and
- * makes the k-th one fail (exit 128 with a message) or die (SIGKILL, as a timeout kills a child), for
- * every k a clean run makes (SIGKILL at the first and the last: the code takes the same branch for both
- * ways a git ends badly); then git is missing altogether. A run must fail (non-zero exit, a message,
+ * makes the k-th one fail (exit 128 with a message) or die (SIGKILL), for every k a clean run makes
+ * (SIGKILL at the first and the last: the code takes the same branch for both ways a git ends badly), or
+ * never end (at the first and the last: a process it started holds its output, and the run's limits are
+ * lowered to seconds); then git is missing altogether. A run must fail (non-zero exit, a message,
  * no stack trace), print exactly what the clean run prints (the failed call changed nothing), or say so
  * in every part it changed ("unmeasured", "could not be read", "was not checked"; a part is a line, or a
  * piece of one between " · ", "<br>" or "|"): never a number read from a call that failed (a part the
@@ -56,12 +57,16 @@ writeFileSync(
   join(FAKE, "git"),
   [
     "#!/bin/sh",
+    // ENNYN_FAULT_MATCH: the call whose arguments hold it never ends, wherever it comes.
+    'if [ -n "$ENNYN_FAULT_MATCH" ]; then case " $* " in *"$ENNYN_FAULT_MATCH"*) sleep 3600 & echo $! >> "$ENNYN_FAULT_DIR/held"; wait ;; esac; fi',
     'n=$(( $(cat "$ENNYN_FAULT_DIR/count" 2>/dev/null || echo 0) + 1 ))',
     'echo "$n" > "$ENNYN_FAULT_DIR/count"',
     'if [ "$n" = "$ENNYN_FAULT_AT" ]; then',
     '  case "$ENNYN_FAULT" in',
     '    fail) echo "fatal: injected failure" >&2; exit 128 ;;',
     "    kill) kill -KILL $$ ;;",
+    // Never ends: a process it starts holds its output, and it waits on that process.
+    '    hang) sleep 3600 & echo $! >> "$ENNYN_FAULT_DIR/held"; wait ;;',
     "  esac",
     "fi",
     'exec "$ENNYN_REAL_GIT" "$@"',
@@ -69,6 +74,29 @@ writeFileSync(
   ].join("\n"),
 );
 chmodSync(join(FAKE, "git"), 0o755);
+/** A hung git's limit in a run (test/fault-fs.mjs lowers Ennyn's to it); a call that walks the history gets twice that. */
+const HANG_LIMIT_MS = 2000;
+/** A run with a hung git still going after this was never stopped: it is killed, and its cell fails. */
+const HANG_WATCHDOG_MS = 120_000;
+const NOT_STOPPED = "fault matrix: the run still waited on its hung git when the watchdog killed it";
+
+/** Ends the processes the hung fake gits of a run left holding their output. @param {string} box @returns {number} how many */
+function endHeld(box) {
+  let pids = /** @type {number[]} */ ([]);
+  try {
+    pids = readFileSync(join(box, "held"), "utf8").split("\n").filter(Boolean).map(Number);
+  } catch {
+    // No git hung.
+  }
+  for (const pid of pids) {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // Already gone.
+    }
+  }
+  return pids.length;
+}
 
 // ------------------------------------------------------------------------------------------- fixture --
 
@@ -363,8 +391,9 @@ test("fault matrix: every command in USAGE has a case", () => {
 });
 
 /**
- * @typedef {{ code: number | null, signal: string | null, stdout: string, stderr: string, calls: number, reads: string[] }} Run
- * @typedef {{ at?: number, kind?: "fail" | "kill", noGit?: boolean, closed?: boolean, read?: { at: number, kind: "eacces" | "eisdir" } }} Fault
+ * @typedef {{ code: number | null, signal: string | null, stdout: string, stderr: string, calls: number, reads: string[], hung: number }} Run
+ * @typedef {{ at?: number, kind?: "fail" | "kill" | "hang", match?: string, noGit?: boolean, closed?: boolean, read?: { at: number, kind: "eacces" | "eisdir" } }} Fault
+ *   `match`: with kind "hang", the call whose arguments hold it hangs instead of the at-th.
  * @param {Case} c @param {Fault} fault
  * @returns {Promise<Run>}
  */
@@ -393,6 +422,8 @@ function run(c, fault) {
     ENNYN_FS_FAULT_DIR: box,
     ENNYN_FS_FAULT_AT: String(fault.read?.at ?? 0),
     ENNYN_FS_FAULT: fault.read?.kind ?? "eacces",
+    ...(fault.kind === "hang" ? { ENNYN_FAULT_GIT_LIMIT_MS: String(HANG_LIMIT_MS) } : {}),
+    ...(fault.match ? { ENNYN_FAULT_MATCH: fault.match } : {}),
     ...(c.hook ? { CLAUDE_PROJECT_DIR: repo } : {}),
   };
   return new Promise((done) => {
@@ -404,7 +435,11 @@ function run(c, fault) {
     if (fault.closed) child.stdout.destroy();
     else child.stdout.on("data", (d) => (stdout += d));
     child.stderr.on("data", (d) => (stderr += d));
+    // A run that waits on its hung git past every limit would hold the matrix for an hour.
+    const watchdog = fault.kind === "hang" ? setTimeout(() => ((stderr += `\n${NOT_STOPPED}`), child.kill("SIGKILL")), HANG_WATCHDOG_MS) : null;
     child.on("close", (code, signal) => {
+      if (watchdog) clearTimeout(watchdog);
+      const hung = endHeld(box);
       let calls = 0;
       try {
         calls = Number(readFileSync(join(box, "count"), "utf8"));
@@ -419,7 +454,7 @@ function run(c, fault) {
       } catch {
         // Killed before its exit handler.
       }
-      done({ code, signal, stdout: norm(stdout), stderr: norm(stderr), calls, reads: norm(reads).split("\n").filter(Boolean) });
+      done({ code, signal, stdout: norm(stdout), stderr: norm(stderr), calls, reads: norm(reads).split("\n").filter(Boolean), hung });
     });
   });
 }
@@ -503,7 +538,7 @@ async function pool(jobs, n) {
   return out;
 }
 
-test("fault matrix: with any git call failing or killed, or no git at all, a command fails or says so; a closed pipe is no crash", async () => {
+test("fault matrix: with any git call failing, killed or never ending, or no git at all, a command fails or says so; a closed pipe is no crash", async () => {
   const width = Math.max(2, Math.min(8, availableParallelism()));
   const clean = await pool(CASES.map((c) => () => run(c, {})), width);
   for (const [i, c] of CASES.entries()) assert.ok(c.hook || clean[i].calls > 0, `${c.args.join(" ")} calls git`);
@@ -512,7 +547,7 @@ test("fault matrix: with any git call failing or killed, or no git at all, a com
   for (const [i, c] of CASES.entries()) {
     const last = c.first ? 1 : clean[i].calls;
     for (let at = 1; at <= last; at++) cells.push({ c, i, fault: { at, kind: "fail" } });
-    for (const at of new Set([1, last])) cells.push({ c, i, fault: { at, kind: "kill" } });
+    for (const at of new Set([1, last])) cells.push({ c, i, fault: { at, kind: "kill" } }, { c, i, fault: { at, kind: "hang" } });
     cells.push({ c, i, fault: { noGit: true } }, { c, i, fault: { closed: true } });
   }
   const results = await pool(cells.map((cell) => () => run(cell.c, cell.fault)), width);
@@ -525,6 +560,7 @@ test("fault matrix: with any git call failing or killed, or no git at all, a com
         const why = /^\s+at .+:\d+:\d+\)?$/m.test(got.stderr) ? "a stack trace" : got.code !== clean[cell.i].code && got.code !== 141 ? `exit ${got.code}` : null;
         return { cell, why };
       }
+      if (got.stderr.includes(NOT_STOPPED)) return { cell, why: "git was never stopped: the run still waited on it" };
       return { cell, why: judge(clean[cell.i], got, cell.c.args.includes("--hook")) };
     })
     .filter((r) => r.why)
@@ -587,7 +623,258 @@ test("fault matrix: a reference command that fails, is killed, is not found or r
   assert.match(String(works.stdout.split("\n").find((l) => l.startsWith("| S1 "))), /references: src\/use\.js:1</);
 });
 
+/**
+ * The calls that walk the history or the whole tree, by the command that makes them and the arguments that tell the
+ * call apart: each gets the longer limit (GIT_LIMITS.walk). The commit path's reads of the log are bounded (500 and
+ * 300 commits) and keep the call limit: a commit waits on them.
+ * @type {[Case, string, "walk" | "call"][]}
+ */
+const LIMITED = [
+  [{ args: ["rework"] }, " log --no-merges --format=%ct %H ", "walk"],
+  [{ args: ["rework"] }, " blame ", "walk"],
+  // Asked of a shallow clone's edge.
+  [{ args: ["rework"], setup: (repo) => writeFileSync(join(repo, ".git", "shallow"), `${FIX}\n`) }, " merge-base --is-ancestor ", "walk"],
+  [{ args: ["bypass", "--from", FIRST] }, " merge-base --is-ancestor ", "walk"],
+  [{ args: ["bypass", "--from", FIRST] }, " log --no-merges --format=x%ct ", "walk"],
+  [{ args: ["bypass", "--from", FIRST] }, " log --merges ", "walk"],
+  [{ args: ["bypass", "--from", FIRST] }, " --grep=", "walk"],
+  // Asked of a shallow clone, from its edge: whether the range reaches past it.
+  [{ args: ["bypass", "--from", FIX], setup: (repo) => writeFileSync(join(repo, ".git", "shallow"), `${FIX}\n`) }, " rev-list ", "walk"],
+  [{ args: ["impact", "--symbol", "add", "--files", "src/add.js"] }, " grep --no-color ", "walk"],
+  [{ args: ["impact", "--symbol", "add", "--files", "src/add.js"] }, " log --no-merges --full-diff ", "walk"],
+  [{ args: ["init-scan"] }, " grep --cached ", "walk"],
+  [{ args: ["push-check"] }, " rev-list --count ", "walk"],
+  [{ args: ["commit-check", "--hook", ".git/AMEND"], setup: (repo) => git(["reset", "-q"], { cwd: repo }) }, " log -n501 ", "call"],
+  [{ args: ["doctor"] }, " log -z --no-merges ", "call"],
+];
+
+test("fault matrix: a call that walks the history or the whole tree gets the longer limit, the commit path's reads of the log the shorter one", async () => {
+  const width = Math.max(2, Math.min(8, availableParallelism()));
+  const runs = await pool(
+    LIMITED.map(([c, match]) => () => run(c, { kind: "hang", match })),
+    width,
+  );
+  const wrong = LIMITED.flatMap(([c, match, limit], k) => {
+    const r = runs[k];
+    const text = `${r.stdout}\n${r.stderr}`;
+    const want = `did not finish in ${(limit === "walk" ? 2 * HANG_LIMIT_MS : HANG_LIMIT_MS) / 1000} s and was stopped`;
+    if (!r.hung) return [`${c.args.join(" ")} ·${match}: no such call`];
+    return text.includes(want) ? [] : [`${c.args.join(" ")} ·${match}: wanted "${want}", got ${JSON.stringify(text.split("\n").filter((l) => l.includes("was stopped")))}`];
+  });
+  assert.deepEqual(wrong, []);
+});
+
+test("fault matrix: a file git is slow to diff is named unread, and every other file is still scanned and judged", async () => {
+  // git computes a file's whole diff before it writes any of it: 4 MB of short lines reordered took 5.8 s at load 7
+  // and 50 s at load 75, past the 2 s limit of this run. Real git, real content.
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), "en-fault-slow-")));
+  git(["init", "-q", "-b", "main"], { cwd: repo });
+  const lines = Array.from({ length: 600_000 }, (_, i) => `L${i.toString(36).padStart(5, "0")}`);
+  // A secret HEAD already holds, which the reordering moves: no new one.
+  lines.push(`const old = "${TOKENS.npm}";`);
+  put(repo, {
+    ".ennyn/config.json": JSON.stringify({ language: "en", review: { forbidden: [{ text: "BANNED", paths: ["**"] }] } }),
+    "a.txt": "one\n",
+    "big.txt": `${lines.join("\n")}\n`,
+    "y.txt": "one\n",
+    "z.txt": "one\n",
+  });
+  git(["add", "-A"], { cwd: repo });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--no-verify", "-m", "feat: start"], { cwd: repo });
+  let seed = 7;
+  for (let i = lines.length - 1; i > 0; i--) {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    const j = Math.floor((seed / 2147483648) * (i + 1));
+    [lines[i], lines[j]] = [lines[j], lines[i]];
+  }
+  // A token before the slow file, one in it and one after it, one in a file the commit adds, a ban after it.
+  put(repo, {
+    "a.txt": `one\nconst a = "${TOKENS.github}";\n`,
+    "big.txt": `${lines.join("\n")}\nconst big = "${TOKENS.github}";\n`,
+    "new.txt": `const n = "${TOKENS.npm}";\n`,
+    "y.txt": "one\nBANNED\n",
+    "z.txt": `one\nconst z = "${TOKENS.github}";\n`,
+  });
+  git(["add", "-A"], { cwd: repo });
+  writeFileSync(join(repo, "MSG"), "feat: add a thing\n");
+  const hook = () => {
+    const r = spawnSync(process.execPath, ["--import", FAULT_FS, CLI, "commit-check", "--hook", "MSG"], {
+      cwd: repo,
+      env: { ...process.env, ENNYN_FAULT_GIT_LIMIT_MS: String(HANG_LIMIT_MS) },
+      encoding: "utf8",
+      timeout: 300_000,
+    });
+    return { status: r.status, text: `${r.stdout}\n${r.stderr}` };
+  };
+  const { status, text } = hook();
+  assert.equal(status, 1, `refused:\n${text}`);
+  assert.doesNotMatch(text, /did not show/);
+  // review.forbidden names the slow file unread, with the limit that stopped it. The secret scan reads it whole
+  // instead, old and new objects: the token it adds is refused, the one HEAD already held is not.
+  assert.match(text, /review\.forbidden was not checked in 1 staged path\(s\) \("big\.txt"\): git diff: did not finish in 2 s and was stopped/);
+  assert.doesNotMatch(text, /security\.secrets was not checked/);
+  // Four places, three shown: the slow file's is checked on the run below.
+  assert.match(text, /and 1 more adds what reads as a secret/);
+  // Every other file judged: the tokens before and after it and in the added file, the ban after it.
+  for (const path of ["a.txt", "z.txt", "new.txt"]) assert.match(text, new RegExp(`${path.replace(".", "\\.")}:\\d+`), `${path}: a token refused\n${text}`);
+  assert.match(text, /y\.txt:2 adds "BANNED"/, `y.txt: the ban refused\n${text}`);
+  // With only changed files, all past one call's size: still a call of its own for the slow one.
+  git(["rm", "-q", "--cached", "new.txt"], { cwd: repo });
+  const changed = hook();
+  assert.equal(changed.status, 1, `refused:\n${changed.text}`);
+  assert.match(changed.text, /big\.txt:600002 \(github-token/);
+  assert.doesNotMatch(changed.text, /big\.txt:\d+ \(npm-token/);
+  assert.match(changed.text, /z\.txt:2 \(github-token/);
+});
+
+test("fault matrix: a diff that stops after its output is read again whole, and each secret it held is named once", () => {
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), "en-fault-again-")));
+  git(["init", "-q", "-b", "main"], { cwd: repo });
+  put(repo, { ".ennyn/config.json": JSON.stringify({ language: "en" }), "a.txt": "one\n", "b.txt": "two\n" });
+  git(["add", "-A"], { cwd: repo });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--no-verify", "-m", "feat: start"], { cwd: repo });
+  put(repo, { "a.txt": `one\nconst a = "${TOKENS.github}";\n`, "b.txt": `two\nconst b = "${TOKENS.npm}";\n` });
+  git(["add", "-A"], { cwd: repo });
+  writeFileSync(join(repo, "MSG"), "feat: add a thing\n");
+  // The streamed diff writes all it has, then a process it started holds the output.
+  const bin = mkdtempSync(join(tmpdir(), "en-fault-again-bin-"));
+  writeFileSync(join(bin, "git"), [
+    "#!/bin/sh",
+    'case " $* " in *" -U0 --src-prefix=a/ "*) "$ENNYN_REAL_GIT" "$@"; sleep 3600 & echo $! >> "$ENNYN_FAULT_DIR/held"; wait; exit 0 ;; esac',
+    'exec "$ENNYN_REAL_GIT" "$@"',
+    "",
+  ].join("\n"));
+  chmodSync(join(bin, "git"), 0o755);
+  const r = spawnSync(process.execPath, ["--import", FAULT_FS, CLI, "commit-check", "--hook", "MSG"], {
+    cwd: repo,
+    env: { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}`, ENNYN_REAL_GIT: REAL_GIT, ENNYN_FAULT_DIR: bin, ENNYN_FAULT_GIT_LIMIT_MS: String(HANG_LIMIT_MS) },
+    encoding: "utf8",
+    timeout: 120_000,
+  });
+  assert.ok(endHeld(bin) > 0, "the streamed diff was held");
+  assert.equal(r.status, 1, r.stderr);
+  assert.equal(r.stderr.split("a.txt:2 (github-token").length - 1, 1, r.stderr);
+  assert.equal(r.stderr.split("b.txt:2 (npm-token").length - 1, 1, r.stderr);
+});
+
 // ----------------------------------------------------------------------------------- positive controls --
+
+test("fault matrix control: a git call that never ends is stopped at its limit and fails naming the command and the limit, also when a process it started holds its output; one that keeps writing is not stopped", async () => {
+  // A git that starts a process holding its output, then waits on it, or exits with ENNYN_HANG_EXIT and leaves the
+  // output held (cycle 11: a cat-file whose stdin never ended held the commit for 16 minutes). ENNYN_HANG_SAY is
+  // written first; ENNYN_HANG_TRAP ignores SIGTERM; ENNYN_HANG_DRIP writes a line every 0.1 s for 1.5 s to stdout
+  // (out) or stderr (err), and ends.
+  const hang = join(BIN, "hang");
+  mkdirSync(hang, { recursive: true });
+  writeFileSync(
+    join(hang, "git"),
+    [
+      "#!/bin/sh",
+      `if [ -n "$ENNYN_HANG_DRIP" ]; then exec perl -e '$| = 1; my $to = $ENV{ENNYN_HANG_DRIP} eq "err" ? *STDERR : *STDOUT; for (1 .. 15) { print $to "line $_\\n"; select(undef, undef, undef, 0.1) }'; fi`,
+      "if [ -n \"$ENNYN_HANG_TRAP\" ]; then trap '' TERM; fi",
+      "printf '%b' \"$ENNYN_HANG_SAY\"",
+      "sleep 3600 &",
+      'echo $! >> "$ENNYN_FAULT_DIR/held"',
+      'if [ -n "$ENNYN_HANG_EXIT" ]; then exit "$ENNYN_HANG_EXIT"; fi',
+      "wait",
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(hang, "git"), 0o755);
+  const box = mkdtempSync(join(tmpdir(), "en-fault-hang-"));
+  const gitModule = JSON.stringify(new URL("../core/git.mjs", import.meta.url).href);
+  // Each call alone, timed, with its own variables. A line handed on after a call failed is counted. The probe ends
+  // by itself, and says what it still holds: a pipe, a child or a timer left behind.
+  const probe = `
+    import { git, gitBytes, gitRun, gitMaybe, streamStagedBlobs, streamStagedDiff } from ${gitModule};
+    const cwd = process.cwd();
+    const out = {};
+    let settled = false;
+    let late = 0;
+    const onLine = () => void (settled && late++);
+    async function call(name, vars, f) {
+      for (const k of ["ENNYN_HANG_EXIT", "ENNYN_HANG_SAY", "ENNYN_HANG_TRAP", "ENNYN_HANG_DRIP"]) delete process.env[k];
+      Object.assign(process.env, vars);
+      settled = false;
+      const start = Date.now();
+      try {
+        const r = await f();
+        out[name] = r && r.error
+          ? { ms: Date.now() - start, said: r.error.message, message: r.error.message }
+          : { ms: Date.now() - start, said: "answered: " + JSON.stringify(r, (k, v) => (v instanceof Set ? [...v] : v)) };
+      } catch (e) {
+        out[name] = { ms: Date.now() - start, said: String(e.stderr || e.message).split("\\n")[0], message: e.message, status: e.status ?? null };
+      }
+      settled = true;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    await call("bytes", {}, () => gitBytes(["cat-file", "--batch-check"], { cwd, input: "x\\n" }));
+    await call("bytes, git exits 0", { ENNYN_HANG_EXIT: "0" }, () => gitBytes(["-c", "a.b=c", "ls-files", "-z"], { cwd }));
+    await call("bytes, a walk", {}, () => git(["log"], { cwd, walk: true }));
+    await call("bytes, git ignores SIGTERM", { ENNYN_HANG_TRAP: "1" }, () => gitBytes(["rev-parse", "HEAD"], { cwd }));
+    await call("bytes, a walk, git exits 1", { ENNYN_HANG_EXIT: "1" }, () => git(["merge-base", "--is-ancestor", "a", "b"], { cwd, walk: true }));
+    await call("run, a walk", {}, () => gitRun(["grep", "-e", "x"], { cwd, walk: true }));
+    await call("run, git ignores SIGTERM", { ENNYN_HANG_TRAP: "1" }, () => gitRun(["grep", "-e", "x"], { cwd }));
+    await call("run, git exits 1", { ENNYN_HANG_EXIT: "1" }, () => gitRun(["grep", "-e", "x"], { cwd }));
+    await call("maybe, git exits with the absent code", { ENNYN_HANG_EXIT: "1" }, () => gitMaybe(["config", "--get", "x.y"], { cwd, absent: [1] }));
+    await call("blobs", {}, () => streamStagedBlobs(cwd, [{ path: "a", oid: "0".repeat(40) }], { onLine }));
+    await call("blobs, git ignores SIGTERM", { ENNYN_HANG_TRAP: "1" }, () => streamStagedBlobs(cwd, [{ path: "a", oid: "0".repeat(40) }], { onLine }));
+    await call("diff, git exits 0", { ENNYN_HANG_EXIT: "0" }, () => streamStagedDiff(cwd, null, { onLine }));
+    await call("diff, a line with no end, then silence", { ENNYN_HANG_EXIT: "0", ENNYN_HANG_SAY: "diff --git a/x b/x\\\\n+++ b/x\\\\n@@ -0,0 +1 @@\\\\n+partial" }, () => streamStagedDiff(cwd, null, { onLine }));
+    await call("diff, steady output", { ENNYN_HANG_DRIP: "out" }, () => streamStagedDiff(cwd, null, { onLine }));
+    await call("diff, steady warnings", { ENNYN_HANG_DRIP: "err" }, () => streamStagedDiff(cwd, null, { onLine }));
+    out.late = late;
+    out.held = process.getActiveResourcesInfo();
+    process.stdout.write(JSON.stringify(out));
+  `;
+  const env = { ...process.env, PATH: `${hang}${delimiter}${process.env.PATH}`, ENNYN_FAULT_DIR: box, ENNYN_FAULT_GIT_LIMIT_MS: "1000" };
+  /** @type {{ code: number | null, stdout: string, stderr: string }} */
+  const got = await new Promise((done) => {
+    const child = spawn(process.execPath, ["--import", FAULT_FS, "--input-type=module", "-e", probe], { cwd: box, env, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (d) => (stdout += d));
+    child.stderr.on("data", (d) => (stderr += d));
+    // Under the guard runner's own limit (its baseline plus 30 s): a guard that makes a call hang fails here.
+    const watchdog = setTimeout(() => ((stderr += `\n${NOT_STOPPED}`), child.kill("SIGKILL")), 45_000);
+    child.on("close", (code) => (clearTimeout(watchdog), done({ code, stdout, stderr })));
+  });
+  const held = endHeld(box);
+  assert.equal(got.code, 0, got.stderr);
+  const { late, held: resources, ...out } = JSON.parse(got.stdout);
+  /** @type {Record<string, string>} */
+  const said = Object.fromEntries(Object.entries(out).map(([k, v]) => [k, /** @type {{ said: string }} */ (v).said]));
+  assert.deepEqual(said, {
+    bytes: "git cat-file: did not finish in 1 s and was stopped",
+    "bytes, git exits 0": "git ls-files: did not finish in 1 s and was stopped",
+    "bytes, a walk": "git log: did not finish in 2 s and was stopped",
+    "bytes, git ignores SIGTERM": "git rev-parse: did not finish in 1 s and was stopped",
+    "bytes, a walk, git exits 1": "git merge-base: did not finish in 2 s and was stopped",
+    "run, a walk": "git grep: did not finish in 2 s and was stopped",
+    "run, git ignores SIGTERM": "git grep: did not finish in 1 s and was stopped",
+    "run, git exits 1": "git grep: did not finish in 1 s and was stopped",
+    "maybe, git exits with the absent code": "git config: did not finish in 1 s and was stopped",
+    blobs: "git cat-file: wrote nothing for 1 s and was stopped",
+    "blobs, git ignores SIGTERM": "git cat-file: wrote nothing for 1 s and was stopped",
+    "diff, git exits 0": "git diff: wrote nothing for 1 s and was stopped",
+    "diff, a line with no end, then silence": "git diff: wrote nothing for 1 s and was stopped",
+    "diff, steady output": 'answered: {"shown":[],"stopped":false}',
+    "diff, steady warnings": 'answered: {"shown":[],"stopped":false}',
+  });
+  // Each waited out its limit: none failed early on something else.
+  for (const [k, v] of Object.entries(out)) if (!k.startsWith("diff, steady")) assert.ok(/** @type {{ ms: number }} */ (v).ms >= (/a walk/.test(k) ? 1900 : 900), `${k}: ${JSON.stringify(v)}`);
+  // The stop is the message too; a thrown error has no exit status to read as an answer (merge-base's 1 is "not an
+  // ancestor"). gitRun hands back `error` beside git's own status, and its readers look at `error` first.
+  for (const [k, v] of Object.entries(out)) {
+    if (k.startsWith("diff, steady")) continue;
+    const { said: text, message, status } = /** @type {{ said: string, message: string, status?: number | null }} */ (v);
+    assert.deepEqual({ message, status }, { message: text, status: k.startsWith("run") ? undefined : null }, k);
+  }
+  assert.equal(late, 0, "a line handed on after its call failed");
+  // Its own stdout and stderr are pipes; a child, a timer or a pipe of a stopped git is held.
+  assert.ok(resources.every((/** @type {string} */ r) => r === "PipeWrap") && resources.length <= 2, `the probe still holds ${resources}`);
+  assert.equal(held, 13, "every call that should hang reached the hung git");
+});
 
 test("fault matrix control: the preload fails the read a cell names, counts only reads outside Ennyn's files, and nothing without its variable", () => {
   const dir = mkdtempSync(join(tmpdir(), "en-fault-ctl-"));
@@ -609,7 +896,7 @@ test("fault matrix control: the preload fails the read a cell names, counts only
 
 test("fault matrix control: the judge flags each way a run can hide a failure", () => {
   /** @param {Partial<Run>} r @returns {Run} */
-  const R = (r) => ({ code: 0, signal: null, stdout: "", stderr: "", calls: 1, reads: [], ...r });
+  const R = (r) => ({ code: 0, signal: null, stdout: "", stderr: "", calls: 1, reads: [], hung: 0, ...r });
   const clean = R({ stdout: "Rework: 2 of 10 lines (20%)\nCo-change: src/a.js (3 commits)\n" });
   assert.equal(judge(clean, clean, false), null);
   assert.match(String(judge(clean, R({ stdout: "Rework: 0 of 10 lines (0%)\nCo-change: src/a.js (3 commits)\n" }), false)), /a number changed/);

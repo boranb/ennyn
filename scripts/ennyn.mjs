@@ -10,7 +10,7 @@ import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { loadConfig, ConfigError } from "../core/config.mjs";
-import { READ_BUDGET, git, headBlob, headCommit, hookIndexFile, indexEntries, indexKinds, indexNames, mergeHeads, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, stateRoot, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
+import { HOOK_READ_ENV, MISSING_OBJECT, READ_BUDGET, blobBytes, diffGroups, git, headBlob, headCommit, hookIndexFile, indexEntries, indexKinds, indexNames, mergeHeads, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, stateRoot, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
 import { ends, jsonShown, shown, t, tShown, unshownEscaped } from "../core/i18n.mjs";
 import { globToRegExp, matchAny } from "../core/glob.mjs";
 import { checkCommitShape, nameShown, secretErrors, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
@@ -214,6 +214,14 @@ function committedExcept(cwd, cfg, staged, env) {
   return { except: own, before, said };
 }
 
+/** The paths a map holds, by the reason each was not read. @param {Map<string, string>} unread @returns {Map<string, string[]>} */
+function byReason(unread) {
+  /** @type {Map<string, string[]>} */
+  const out = new Map();
+  for (const [p, why] of unread) out.set(why, [...(out.get(why) ?? []), p]);
+  return out;
+}
+
 /** Up to three names as a message shows them: each quoted, a control character escaped, a secret cut. @param {string[]} list */
 const namesShown = (list) => list.slice(0, 3).map(nameShown).join(", ");
 
@@ -222,11 +230,11 @@ const namesShown = (list) => list.slice(0, 3).map(nameShown).join(", ");
  * commit adds; the lines it adds, streamed through SecretScanner, smallest files first while their new sizes fit
  * READ_BUDGET, so a commit of large files costs a bounded time and memory (the scan keeps a window, not the lines), apart
  * from review.forbidden's own read; a file whose added lines look like part of a key read whole for the key
- * around them; in a merge, which hits the other side brings. What it cannot read is said by name, with why; run
- * by hand (`hook` false) that fails instead. `namesUnread` is said after the CI check, so a CI file's name gets
- * that check's words first.
+ * around them; in a merge, which hits the other side brings. A file git cannot be asked for by name (not UTF-8),
+ * or one its diff could not read (stopped, failed), is read whole by its objects (readWhole). What it cannot read is
+ * said by name, with why, a line for each reason; run by hand (`hook` false) that fails instead.
  * @param {string} cwd @param {any} cfg @param {string[]} staged @param {string[]} notUtf8 @param {boolean} hook
- * @returns {Promise<{ errors: string[], said: string[], except: string[], namesUnread: string | null }>}
+ * @returns {Promise<{ errors: string[], said: string[], except: string[] }>}
  */
 async function secretScan(cwd, cfg, staged, notUtf8, hook) {
   const lang = cfg.language;
@@ -242,7 +250,7 @@ async function secretScan(cwd, cfg, staged, notUtf8, hook) {
   let except = cfg.security.secrets.except;
   /** @type {string[] | null} */
   let before = null;
-  const done = (/** @type {string[]} */ errors, /** @type {string | null} */ namesUnread = null) => ({ errors, said, except, namesUnread });
+  const done = (/** @type {string[]} */ errors) => ({ errors, said, except });
   try {
     // Outside a repository nothing is staged.
     if (repoPath("--git-dir", { cwd }) === null) return done([]);
@@ -278,15 +286,12 @@ async function secretScan(cwd, cfg, staged, notUtf8, hook) {
   }
   if (past.length) say("cli.secretsPastBudget", { n: past.length, paths: namesShown(past), mb: READ_BUDGET / 1024 / 1024 });
   // A file the commit adds is read whole from cat-file (git's diff would hold each of its lines in memory to
-  // compare with nothing); the others from the diff: with no pathspec when they are all there is and all are read,
-  // which names that are not UTF-8 reach too, else by pathspec.
+  // compare with nothing), and so is a changed one whose HEAD object a partial clone lacks; the others from the diff,
+  // by pathspec, in diffGroups' calls.
   const added = [...planned].filter((p) => changes.get(p)?.status === "A" && changes.get(p)?.oid);
   const addedSet = new Set(added);
   const changed = [...planned].filter((p) => !addedSet.has(p));
   const unasked = new Set(notUtf8);
-  const whole = added.length === 0 && planned.size === kept.length;
-  const unnamed = whole ? [] : changed.filter((p) => unasked.has(p));
-  const namesUnread = unnamed.length ? t("cli.secretsNamesUnread", { n: unnamed.length, paths: namesShown(unnamed) }, lang) : null;
   const scan = new SecretScanner();
   /** @type {string | null} */
   let current = null;
@@ -297,16 +302,73 @@ async function secretScan(cwd, cfg, staged, notUtf8, hook) {
     if (path !== current) scan.file((current = path));
     scan.line(n, bytes);
   };
-  try {
-    await streamStagedBlobs(cwd, added.sort().map((p) => ({ path: p, oid: /** @type {any} */ (changes.get(p)).oid })), { env: process.env, onLine });
-    const asked = changed.filter((p) => !unasked.has(p));
-    for (let at = 0; at < (whole ? 1 : asked.length); at += 500) {
-      const r = await streamStagedDiff(cwd, whole ? null : asked.slice(at, at + 500), { env: process.env, onLine });
-      for (const p of r.shown) shownPaths.add(p);
+  // A read that fails or is stopped loses its own paths, said, and the next one still runs: a file git is slow to
+  // diff gets a call of its own (diffGroups), so it costs one limit, and is then read whole. By hand, saying it fails.
+  /** @type {Map<string, string>} */
+  const unread = new Map();
+  const lost = (/** @type {string[]} */ paths, /** @type {unknown} */ e) => {
+    for (const p of paths) unread.set(p, reason(e));
+  };
+  /**
+   * A changed file read whole by its objects, its new object's lines scanned as one file's, in place of what its
+   * diff read before it stopped: a hit counts unless its secret is in the old object, which HEAD already holds
+   * (wherever the commit moves it). No old object (a partial clone lacks it): every hit counts, as in a file the
+   * commit adds.
+   * @param {string} p
+   */
+  const readWhole = (p) => {
+    const c = /** @type {import("../core/git.mjs").StagedChange} */ (changes.get(p));
+    // A submodule's commit holds no lines here.
+    if (!c.oid) return;
+    try {
+      const fresh = blobBytes(cwd, c.oid);
+      const before = c.oldOid && !c.oldMissing ? blobBytes(cwd, c.oldOid) : null;
+      scan.hits.splice(0, scan.hits.length, ...scan.hits.filter((h) => h.path !== p));
+      const from = scan.hits.length;
+      scan.file((current = p));
+      let n = 1;
+      for (let at = 0; at < fresh.length; ) {
+        const eol = fresh.indexOf(0x0a, at);
+        scan.line(n++, fresh.subarray(at, eol === -1 ? fresh.length : eol));
+        at = eol === -1 ? fresh.length : eol + 1;
+      }
+      scan.close();
+      current = null;
+      if (before) scan.hits.splice(from, scan.hits.length - from, ...scan.hits.slice(from).filter((h) => !before.includes(Buffer.from(h.value))));
+    } catch (e) {
+      lost([p], e);
     }
+  };
+  try {
+    // A change whose new object is not on this machine (a partial clone) is said, and git is not asked for it.
+    const absent = [...planned].filter((p) => changes.get(p)?.newMissing);
+    if (absent.length) lost(absent, new Error(MISSING_OBJECT));
+    const blobs = added.filter((p) => !changes.get(p)?.missing).sort();
+    try {
+      await streamStagedBlobs(cwd, blobs.map((p) => ({ path: p, oid: /** @type {any} */ (changes.get(p)).oid })), { env: process.env, onLine });
+    } catch (e) {
+      lost(blobs, e);
+    }
+    const asked = changed.filter((p) => !unasked.has(p) && !changes.get(p)?.missing);
+    for (const group of diffGroups(asked, changes)) {
+      try {
+        const r = await streamStagedDiff(cwd, group, { env: process.env, onLine });
+        for (const p of r.shown) shownPaths.add(p);
+      } catch {
+        // Read whole instead.
+        for (const p of group) readWhole(p), shownPaths.add(p);
+      }
+    }
+    // By its objects: a name git cannot be asked for, and a change whose HEAD object a partial clone lacks.
+    for (const p of changed.filter((p) => (unasked.has(p) || changes.get(p)?.oldMissing) && !changes.get(p)?.newMissing)) readWhole(p), shownPaths.add(p);
+  } finally {
+    // What was read stays read: the lines still in the window are judged whatever stopped the reads.
     scan.close();
+  }
+  for (const [why, paths] of byReason(unread)) say("cli.secretsReadFailed", { n: paths.length, paths: namesShown(paths.sort()), error: why });
+  try {
     // A path asked that no header named (a pathspec that matched nothing) was not read.
-    const unseen = changed.filter((p) => !shownPaths.has(p) && !unasked.has(p));
+    const unseen = changed.filter((p) => !shownPaths.has(p) && !unread.has(p));
     if (unseen.length) say("cli.secretsUnseen", { n: unseen.length, paths: namesShown(unseen) });
     // A key's header or material without the rest in the added lines: the file read whole for the key around them.
     const near = [...scan.near.keys()];
@@ -321,7 +383,12 @@ async function secretScan(cwd, cfg, staged, notUtf8, hook) {
       for (const parent of parents) {
         /** @type {Set<number>} */
         const theirs = new Set();
-        await streamStagedDiff(cwd, [path], { env: process.env, against: [parent], onLine: (_, n) => void theirs.add(n) });
+        try {
+          await streamStagedDiff(cwd, [path], { env: process.env, against: [parent], onLine: (_, n) => void theirs.add(n) });
+        } catch {
+          // `from` is for the message only: unread, the hit stays this commit's own.
+          continue;
+        }
         for (const h of scan.hits) if (h.path === path && !theirs.has(h.line)) h.from ??= parent;
       }
     }
@@ -329,7 +396,7 @@ async function secretScan(cwd, cfg, staged, notUtf8, hook) {
     if (!hook) throw e;
     said.push(t("cli.secretsUnmeasured", { error: reason(e) }, lang));
   }
-  return done(secretErrors({ config: cfg, hits: scan.hits, names, secretsExcept: except }), namesUnread);
+  return done(secretErrors({ config: cfg, hits: scan.hits, names, secretsExcept: except }));
 }
 
 // Every line written passes unshownEscaped: a value that reached a line without tShown (an error that quotes a
@@ -696,6 +763,8 @@ const COMMANDS = {
     const { positional, opts, help } = parseArgs(args, { positional: 1, flags: ["hook"] });
     if (help) return (out(USAGE), 0);
     if (!positional[0]) throw new UsageError("commit-check needs a message file");
+    // Every git call the check makes reads objects as they are, and fetches none a partial clone lacks.
+    Object.assign(process.env, HOOK_READ_ENV);
     let cwd;
     try {
       cwd = projectDir();
@@ -774,19 +843,22 @@ const COMMANDS = {
     }
     const named = ruled.filter((p) => !notUtf8.includes(p));
     if (named.length) {
+      // From the hook a diff call that fails or is stopped loses its own paths, said; by hand the command fails.
+      /** @type {Map<string, string>} */
+      const unread = new Map();
       try {
-        addedLines = stagedAddedLines(cwd, named, { env: process.env, wideUnread });
+        addedLines = stagedAddedLines(cwd, named, { env: process.env, wideUnread, ...(opts.hook ? { unread } : {}) });
       } catch (e) {
         if (!opts.hook) throw e;
         const error = /** @type {Error & { stderr?: unknown }} */ (e);
         err(t("cli.forbiddenUnmeasured", { error: String(error.stderr || error.message).trim().split("\n")[0] }, cfg.language));
       }
+      for (const [why, paths] of byReason(unread)) err(t("cli.forbiddenReadFailed", { n: paths.length, paths: namesShown(paths), error: why }, cfg.language));
     }
     // security.secrets: every file and name the commit adds, except as the commit's own config holds it, read
     // apart from review.forbidden and before the message: what the files bring stands when the message check fails.
     const secrets = await secretScan(cwd, cfg, staged, notUtf8, Boolean(opts.hook));
     for (const said of secrets.said) err(said);
-    const namesUnread = secrets.namesUnread;
     // CI files (security.ci): the uses, triggers and permissions the commit brings, against HEAD's version. The
     // files under the directories `security.ci.paths` names are read with the staged ones, and every local callee
     // their `uses` name, by path: a caller's change can reach a reusable workflow or an action it calls. Reading
@@ -916,10 +988,6 @@ const COMMANDS = {
         }
       };
       if (versions) deps = await depsMessages(versions, depsRule, cfg.language, { beside, kinds, pkgRead });
-    }
-    if (namesUnread) {
-      if (!opts.hook) throw new Error(namesUnread);
-      err(namesUnread);
     }
     let res;
     try {

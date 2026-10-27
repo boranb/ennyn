@@ -204,7 +204,7 @@ class Context {
         this._refs = null;
         return null;
       }
-      const runs = [[], ...(sparse ? [["--cached"]] : [])].map((extra) => gitRun(["grep", "--no-color", ...extra, "-n", "-w", "-F", "-I", "--null", "-e", /** @type {string} */ (this.symbol)], { cwd: this.cwd }));
+      const runs = [[], ...(sparse ? [["--cached"]] : [])].map((extra) => gitRun(["grep", "--no-color", ...extra, "-n", "-w", "-F", "-I", "--null", "-e", /** @type {string} */ (this.symbol)], { cwd: this.cwd, walk: true }));
       const bad = runs.find((r) => r.error || (r.status !== 0 && r.status !== 1) || r.stderr.trim());
       if (bad) {
         this.refsError = (bad.error?.message ?? bad.stderr).trim().split("\n")[0].slice(0, 200) || (bad.signal ? `git grep was killed (${bad.signal})` : `git grep exited ${bad.status}`);
@@ -321,7 +321,7 @@ function rowS1(c) {
       commands.push(`git log --no-merges --full-diff --format=%H --name-only -- ${file}`);
       let out = "";
       try {
-        out = git(args, { cwd: c.cwd });
+        out = git(args, { cwd: c.cwd, walk: true });
       } catch (err) {
         failed ||= errorLine(err);
       }

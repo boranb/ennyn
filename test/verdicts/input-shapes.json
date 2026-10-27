@@ -66,7 +66,7 @@
   {"id":"latin1-secret","verdict":"refused","from":"cycle 9 secret-scan"},
   {"id":"secret-name-not-utf8","verdict":"refused","from":"cycle 9 secret-scan"},
   {"id":"secret-past-budget","verdict":"said","from":"cycle 9 secret-scan"},
-  {"id":"secret-name-not-utf8-asked","verdict":"said","from":"cycle 9 secret-scan"},
+  {"id":"secret-name-not-utf8-asked","verdict":"refused","from":"cycle 13 git-call-timeout: a changed file whose name is not UTF-8 is read by its objects"},
   {"id":"key-body-only","verdict":"refused","from":"cycle 9 secret-scan"},
   {"id":"secret-c-strings","verdict":"refused","from":"cycle 9 secret-scan"},
   {"id":"nfd-content","verdict":"refused","from":"cycle 8 input-shape-matrix"},

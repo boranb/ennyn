@@ -742,7 +742,7 @@ export function indexMatches(cwd, texts) {
     const forms = [...new Set(batch.flatMap((t) => [t, t.normalize("NFC"), t.normalize("NFD")]))];
     // macOS git composes its arguments (core.precomposeUnicode): a decomposed text would be asked for composed.
     const args = ["-c", "core.precomposeUnicode=false", "grep", "--cached", "--no-color", "-a", "-F", "-n", "--null", ...forms.flatMap((t) => ["-e", t])];
-    const r = gitRun(args, { cwd });
+    const r = gitRun(args, { cwd, walk: true });
     if (r.error || (r.status !== 0 && r.status !== 1) || r.stderr.trim()) throw gitError(args, r);
     // "path\0line\0text\n": a path may hold a newline, never a NUL; the text ends at the line's end.
     for (let pos = 0; pos < r.stdout.length; ) {

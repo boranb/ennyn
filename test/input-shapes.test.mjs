@@ -131,8 +131,9 @@ refused("cp1254-cjk", [{ name: "src/cp1254-cjk/f.txt", data: Buffer.from([0x62, 
 const SECRET = `t = ${TOKENS.npm}`;
 for (const [shape, make, ext] of CONTENT) refused(`${shape}-secret`, [{ name: `lib/${shape}-secret/f.${ext}`, data: make(SECRET) }], undefined, { strict: true });
 // Past the budget, the scan asks by pathspec for the files a commit changes: a name that is not UTF-8 cannot be
-// asked, and is said; so is the big file. (A file the commit adds is read by its object, whatever its name.)
-refused("secret-name-not-utf8-asked", [{ name: "lib/big-s/blob.txt", data: () => Buffer.alloc(65 * 1024 * 1024, 0x61) }, { name: Buffer.from([...Buffer.from("lib/bad-s2/"), 0xff, ...Buffer.from(".js")]), data: `a\n${SECRET}\n` }], "lib/bad-s2/", { base: [{ name: Buffer.from([...Buffer.from("lib/bad-s2/"), 0xff, ...Buffer.from(".js")]), data: "a\n" }], warns: "whose names are not UTF-8" });
+// asked, so that file is read by its objects instead (cycle 13), and the big file is said. (A file the commit adds
+// is read by its object, whatever its name.)
+refused("secret-name-not-utf8-asked", [{ name: "lib/big-s/blob.txt", data: () => Buffer.alloc(65 * 1024 * 1024, 0x61) }, { name: Buffer.from([...Buffer.from("lib/bad-s2/"), 0xff, ...Buffer.from(".js")]), data: `a\n${SECRET}\n` }], "lib/bad-s2/", { base: [{ name: Buffer.from([...Buffer.from("lib/bad-s2/"), 0xff, ...Buffer.from(".js")]), data: "a\n" }], warns: "past the 64 MB" });
 landed("secret-past-budget", [{ name: "lib/past/big.txt", data: () => Buffer.alloc(65 * 1024 * 1024, 0x61) }], { warns: "security.secrets was not checked in 1 staged path" });
 // A name that is not UTF-8: the diff with no pathspec reads it, so it is refused, not said.
 refused("secret-name-not-utf8", [{ name: Buffer.from([...Buffer.from("lib/bad-s/"), 0xff, ...Buffer.from(".js")]), data: `${SECRET}\n` }], "lib/bad-s/", { strict: true });
@@ -680,8 +681,9 @@ test("input shapes: git errors name the command past -c; commit-check by hand fa
   } finally {
     process.env.PATH = path;
   }
+  // One --batch-check more sizes the staged files for the diff calls (diffGroups): still none per file.
   const calls = readFileSync(log, "utf8").split("\n").filter((l) => / cat-file /.test(` ${l} `));
-  assert.ok(calls.length <= 2, calls.join("\n"));
+  assert.ok(calls.length <= 3, calls.join("\n"));
   // A decoded file keeps git's own lines: a UTF-8 line after a byte order mark is still there.
   writeFileSync(join(repo, "w16.txt"), utf16(`x\n${LOG}(1)\n`, "utf16le", true));
   writeFileSync(join(repo, "mark.txt"), Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(`x\n${LOG}(1);\n`)]));

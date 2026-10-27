@@ -11,6 +11,7 @@ import { checkCommitShape, forbiddenHits } from "../checks/commit-shape.mjs";
 import { addedLines, git, stagedAddedLines, stagedPaths, unquotePath } from "../core/git.mjs";
 import { installHook } from "../setup/hook.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
+import { TOKENS } from "./secret-shapes.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
 const cfg = (/** @type {Record<string, unknown>} */ override = {}) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "en-fb-")), env: {}, override });
@@ -394,7 +395,59 @@ test("commit-check run by hand fails when the staged lines cannot be read; the h
   assert.match(byHand.stderr, /injected/);
   const hook = spawnSync(process.execPath, [CLI, "commit-check", "--hook", ".git/MSG"], { cwd: dir, env, encoding: "utf8" });
   assert.equal(hook.status, 0);
-  assert.match(hook.stderr, /review\.forbidden was not checked: .*injected/);
+  // The call that failed loses its own paths, named; the others would still be read. The secret scan reads the file
+  // whole by its objects instead.
+  assert.match(hook.stderr, /review\.forbidden was not checked in 1 staged path\(s\) \("src\/a\.js"\): fatal: injected/);
+  assert.doesNotMatch(hook.stderr, /security\.secrets was not checked/);
+  // By hand with the secret scan off, review.forbidden alone fails the command.
+  put(dir, { "off.json": JSON.stringify({ review: { forbidden: [RULE] }, security: { secrets: { except: ["**"] } } }) });
+  const alone = spawnSync(process.execPath, [CLI, "commit-check", ".git/MSG"], { cwd: dir, env: { ...env, ENNYN_CONFIG: join(dir, "off.json") }, encoding: "utf8" });
+  assert.notEqual(alone.status, 0, alone.stderr);
+  assert.match(alone.stderr, /injected/);
+});
+
+test("commit-check in a merge: a diff call is sized by every merge parent's version too, and a parent's diff that fails loses no line already read", () => {
+  const { dir, stage, commit } = repo();
+  stage({ "src/x.js": "x\n", "src/s.js": "s\n" });
+  assert.equal(commit("base", "--no-verify").status, 0);
+  git(["checkout", "-q", "-b", "side"], { cwd: dir });
+  // Past one diff call's size on the side only.
+  stage({ "src/x.js": Array.from({ length: 200_000 }, (_, i) => `y${i}`).join("\n") + "\n" });
+  assert.equal(commit("side", "--no-verify").status, 0);
+  const side = git(["rev-parse", "HEAD"], { cwd: dir });
+  git(["checkout", "-q", "main"], { cwd: dir });
+  stage({ "main.txt": "m\n" });
+  assert.equal(commit("main", "--no-verify").status, 0);
+  spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "merge", "-q", "--no-commit", "--no-ff", "side"], { cwd: dir });
+  // HEAD's and the index's x.js are small; MERGE_HEAD's is not.
+  stage({ "src/x.js": "x\nz\n", "src/s.js": `s\nconsole.log(1);\nconst t = "${TOKENS.npm}";\n` });
+  const bin = mkdtempSync(join(tmpdir(), "en-fb-merge-bin-"));
+  const real = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+  const calls = join(bin, "calls");
+  const fake = (/** @type {string} */ body) => {
+    writeFileSync(join(bin, "git"), `#!/bin/sh\n${body}\nexec '${real}' "$@"\n`);
+    chmodSync(join(bin, "git"), 0o755);
+  };
+  fake(`echo "$*" >> '${calls}'`);
+  const path = process.env.PATH;
+  process.env.PATH = `${bin}${delimiter}${path}`;
+  try {
+    stagedAddedLines(dir, ["src/s.js", "src/x.js"], { unread: new Map() });
+  } finally {
+    process.env.PATH = path;
+  }
+  const pathspecs = readFileSync(calls, "utf8").split("\n").filter((l) => / diff --cached /.test(` ${l}`) && l.includes(" -- ")).map((l) => l.slice(l.lastIndexOf(" -- ") + 4));
+  assert.ok(pathspecs.includes("src/x.js"), `x.js in a call of its own:\n${pathspecs.join("\n")}`);
+  // The diff against the side fails: the lines read against HEAD still count.
+  fake(`case " $* " in *" diff "*" ${side} "*) echo "fatal: injected" >&2; exit 128 ;; esac`);
+  writeFileSync(join(dir, ".git", "MSG"), "merge side\n");
+  const r = spawnSync(process.execPath, [CLI, "commit-check", "--hook", ".git/MSG"], { cwd: dir, encoding: "utf8", env: { ...process.env, PATH: `${bin}${delimiter}${path}` } });
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /src\/s\.js:2 adds "console\.log"/);
+  assert.doesNotMatch(r.stderr, /review\.forbidden was not checked/);
+  // The secret scan asks the side about each hit, for the message only: unread, the hit stays this commit's own.
+  assert.match(r.stderr, /src\/s\.js:3 \(npm-token/);
+  assert.doesNotMatch(r.stderr, /security\.secrets was not checked/);
 });
 
 test("init-scan: ban lines with what the index holds of each literal, the instruction files left out; outside a repository unmeasured", () => {

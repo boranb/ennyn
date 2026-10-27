@@ -13,8 +13,8 @@
  *
  * A git call that fails throws. Where git answers "nothing there" with an exit code of its own (an unset
  * key, a missing ref, no repository), gitMaybe and repoPath return null for that answer and throw for any
- * other: a failed, killed or missing git is never read as "nothing there". test/fault-injection.test.mjs
- * runs every CLI command with each of its git calls failing.
+ * other: a failed, killed, stopped or missing git is never read as "nothing there". test/fault-injection.test.mjs
+ * runs every CLI command with each of its git calls failing, and with the first and the last never ending.
  */
 
 import { execFileSync, spawn, spawnSync } from "node:child_process";
@@ -42,6 +42,101 @@ const FIXED_CONFIG = [
 /** ENOENT from spawn: no git on PATH, or the working directory is not there. */
 const NO_START = "git did not start (no git on PATH, or no such directory)";
 
+/**
+ * How long one git call may run, in ms, before git is stopped (SIGKILL) and the call fails, saying so: `call` for
+ * any call, `walk` for one that walks the history or the whole tree (log, blame, rev-list, grep), whose time grows
+ * with the repository. A stream counts from git's last output instead. When the limit passes, the pipes are closed
+ * too: a process git started may still hold them (cycle 11: a cat-file whose input never ended held a commit for
+ * 16 minutes). Measured in cycle 13: the commit-msg hook's slowest call, cat-file --batch of a staged 55 MB file,
+ * took 0.7 s at load 17; the slowest walk, a log of 53,000 commits, 1.7 s at load 34; at load 85-274 the test suite
+ * ran six times slower. Nothing in Ennyn changes them: no environment variable or config, so a committed file
+ * cannot shorten them and let a commit through unchecked; only a test's preload lowers them (test/fault-fs.mjs).
+ * git runs in Ennyn's own process group, never one of its own: Ctrl-C reaches the terminal's foreground group, and a
+ * git in another group would outlive Node and the limit's timer. So the limit kills git alone; a process git
+ * started and did not end loses its parent and our pipes.
+ */
+export const GIT_LIMITS = { call: 60_000, walk: 600_000 };
+
+/**
+ * The most a staged diff call reads, by the larger of each file's two sizes. git computes a file's whole diff
+ * before it writes any of it, and that time grows faster than the file: short lines reordered took 1.6 s for
+ * 0.5 MB, 5.3 s for 1 MB, 10.5 s for 2 MB and 50 s for 4 MB at load 65-75 (cycle 13). A file past it gets a call of
+ * its own, so a stop names it alone; the others go together up to it.
+ */
+export const DIFF_GROUP = 1024 * 1024;
+
+/**
+ * The calls a staged diff of `paths` is split into, in order: up to DIFF_GROUP and 500 paths a call, by the larger
+ * of each file's two sizes in `changes` (stagedChanges; a path not there counts as small), so a file past
+ * DIFF_GROUP has one of its own.
+ * @param {string[]} paths @param {Map<string, { oldSize: number, newSize: number }>} changes
+ * @returns {string[][]}
+ */
+export function diffGroups(paths, changes) {
+  const size = (/** @type {string} */ p) => Math.max(changes.get(p)?.oldSize ?? 0, changes.get(p)?.newSize ?? 0);
+  /** @type {string[][]} */
+  const groups = [];
+  /** @type {string[]} */
+  let group = [];
+  let bytes = 0;
+  for (const p of paths) {
+    const n = size(p);
+    if (group.length && (group.length === 500 || bytes + n > DIFF_GROUP)) groups.push(group), (group = []), (bytes = 0);
+    group.push(p);
+    bytes += n;
+  }
+  if (group.length) groups.push(group);
+  return groups;
+}
+
+/** @param {number} ms */
+const seconds = (ms) => `${ms / 1000} s`;
+
+/**
+ * The command's name, past any "-c key=value" in front of it.
+ * @param {string[]} args
+ */
+function commandName(args) {
+  let at = 0;
+  while (args[at] === "-c") at += 2;
+  return args[at];
+}
+
+/**
+ * The error of a call stopped at its limit. @param {string[]} args @param {number} ms
+ * @returns {Error & { code: "ETIMEDOUT", stderr: string }}
+ */
+function stopped(args, ms) {
+  const text = `git ${commandName(args)}: did not finish in ${seconds(ms)} and was stopped`;
+  return Object.assign(new Error(text), { code: /** @type {const} */ ("ETIMEDOUT"), stderr: text });
+}
+
+/**
+ * Stops a streaming git child once it has written nothing for the call limit: it is killed (with the processes
+ * it started, on Windows), its pipes are closed, and `fail` gets an error naming the command and the limit. A
+ * close handler that would hand on a line returns at once when `stopped` is set: the call has already failed.
+ * @param {import("node:child_process").ChildProcess} child @param {string} name @param {(e: Error) => void} fail
+ * @returns {{ stopped: boolean }}
+ */
+function stopWhenSilent(child, name, fail) {
+  const ms = GIT_LIMITS.call;
+  const state = { stopped: false };
+  const timer = setTimeout(() => {
+    state.stopped = true;
+    if (process.platform === "win32" && child.pid !== undefined) spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+    child.kill("SIGKILL");
+    for (const pipe of [child.stdin, child.stdout, child.stderr]) pipe?.destroy();
+    const text = `git ${name}: wrote nothing for ${seconds(ms)} and was stopped`;
+    fail(Object.assign(new Error(text), { code: "ETIMEDOUT", stderr: text }));
+  }, ms);
+  const heard = () => timer.refresh();
+  child.stdout?.on("data", heard);
+  child.stderr?.on("data", heard);
+  // A child that could not start closes too.
+  child.on("close", () => clearTimeout(timer));
+  return state;
+}
+
 /** @param {NodeJS.ProcessEnv} env @param {boolean} keepIndex */
 function cleanEnv(env, keepIndex) {
   const out = { ...env };
@@ -54,8 +149,9 @@ function cleanEnv(env, keepIndex) {
 
 /**
  * @param {string[]} args
- * @param {{ cwd: string, env?: NodeJS.ProcessEnv, keepIndex?: boolean }} opts
- *   `keepIndex` keeps GIT_INDEX_FILE (only for an index already checked by hookIndexFile).
+ * @param {{ cwd: string, env?: NodeJS.ProcessEnv, keepIndex?: boolean, walk?: boolean }} opts
+ *   `keepIndex` keeps GIT_INDEX_FILE (only for an index already checked by hookIndexFile). `walk`: the call walks
+ *   the history or the whole tree, and gets GIT_LIMITS.walk.
  * @returns {string} stdout without the trailing newline; a failure throws, with git's message as `stderr`
  */
 export function git(args, opts) {
@@ -66,57 +162,68 @@ export function git(args, opts) {
  * git() with stdout as git wrote it: bytes that are not UTF-8 (a file in another encoding, UTF-16) stay
  * as they are, where a string would hold U+FFFD for them. `input` goes to git's stdin.
  * @param {string[]} args
- * @param {{ cwd: string, env?: NodeJS.ProcessEnv, keepIndex?: boolean, input?: string | Buffer }} opts
+ * @param {{ cwd: string, env?: NodeJS.ProcessEnv, keepIndex?: boolean, input?: string | Buffer, walk?: boolean }} opts
  * @returns {Buffer}
  */
-export function gitBytes(args, { cwd, env = process.env, keepIndex = false, input }) {
+export function gitBytes(args, { cwd, env = process.env, keepIndex = false, input, walk = false }) {
+  const limit = walk ? GIT_LIMITS.walk : GIT_LIMITS.call;
   try {
+    // In Ennyn's process group: GIT_LIMITS says why.
     return execFileSync("git", [...FIXED_CONFIG, ...args], {
       cwd,
       env: cleanEnv(env, keepIndex),
       stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
       maxBuffer: 64 * 1024 * 1024,
+      timeout: limit,
+      killSignal: "SIGKILL",
       ...(input === undefined ? {} : { input }),
     });
   } catch (err) {
     // A killed git or one that did not start says nothing on stderr: say what happened instead.
     const e = /** @type {Error & { stderr?: string | Buffer, signal?: string | null, code?: string }} */ (err);
     e.stderr = Buffer.isBuffer(e.stderr) ? e.stderr.toString("utf8") : e.stderr;
-    // The command's name, past any "-c key=value" in front of it.
-    let at = 0;
-    while (args[at] === "-c") at += 2;
-    // Output past the buffer stops git with SIGTERM: that is no kill from outside.
-    if (e.code === "ENOBUFS") e.stderr = `git ${args[at]}: its output was larger than 64 MB`;
-    else if (!String(e.stderr ?? "").trim()) e.stderr = `git ${args[at]}: ${e.signal ? `killed by ${e.signal}` : e.code === "ENOENT" ? NO_START : e.message}`;
+    const name = commandName(args);
+    // A stopped git may have said something before it hung: the limit is what ended it. Output past the buffer
+    // stops git with SIGTERM: that is no kill from outside.
+    if (e.code === "ETIMEDOUT") {
+      // git may have exited, with a code that means something, while a process it started held the output.
+      const stop = stopped(args, limit);
+      Object.assign(e, { message: stop.message, stderr: stop.stderr, status: null });
+    } else if (e.code === "ENOBUFS") e.stderr = `git ${name}: its output was larger than 64 MB`;
+    else if (!String(e.stderr ?? "").trim()) e.stderr = `git ${name}: ${e.signal ? `killed by ${e.signal}` : e.code === "ENOENT" ? NO_START : e.message}`;
     throw e;
   }
 }
 
 /**
  * A git call whose exit code and error text the caller reads itself: git grep exits 1 for "no match"
- * and also when a file cannot be read, and says which on stderr.
+ * and also when a file cannot be read, and says which on stderr. A call stopped at its limit has `error`
+ * (code ETIMEDOUT), whatever its status: git may have exited, with a code that means something, while a process it
+ * started held the output. Every reader looks at `error` before the status; gitError's error has no status.
  * @param {string[]} args
- * @param {{ cwd: string, env?: NodeJS.ProcessEnv }} opts
+ * @param {{ cwd: string, env?: NodeJS.ProcessEnv, walk?: boolean }} opts
  * @returns {GitRun}
  * @typedef {{ status: number | null, signal: string | null, stdout: string, stderr: string, error?: Error }} GitRun
  */
-export function gitRun(args, { cwd, env = process.env }) {
-  const r = spawnSync("git", [...FIXED_CONFIG, ...args], { cwd, env: cleanEnv(env, false), encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
-  return { status: r.status, signal: r.signal, stdout: r.stdout ?? "", stderr: r.stderr ?? "", ...(r.error ? { error: r.error } : {}) };
+export function gitRun(args, { cwd, env = process.env, walk = false }) {
+  const limit = walk ? GIT_LIMITS.walk : GIT_LIMITS.call;
+  const r = spawnSync("git", [...FIXED_CONFIG, ...args], { cwd, env: cleanEnv(env, false), encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: limit, killSignal: "SIGKILL" });
+  const error = r.error && /** @type {NodeJS.ErrnoException} */ (r.error).code === "ETIMEDOUT" ? stopped(args, limit) : r.error;
+  return { status: r.status, signal: r.signal, stdout: r.stdout ?? "", stderr: r.stderr ?? "", ...(error ? { error } : {}) };
 }
 
 /**
- * The error for a git call that failed: git's own message, else how it ended (a signal, no git at all).
+ * The error for a git call that failed: git's own message, else how it ended (a signal, no git at all); for
+ * a call stopped at its limit, that.
  * @param {string[]} args @param {GitRun} r
  */
 export function gitError(args, r) {
-  const how = r.error ? (/** @type {NodeJS.ErrnoException} */ (r.error).code === "ENOENT" ? NO_START : r.error.message) : r.signal ? `killed by ${r.signal}` : `exit ${r.status}`;
+  const code = /** @type {NodeJS.ErrnoException | undefined} */ (r.error)?.code;
+  const how = r.error ? (code === "ENOENT" ? NO_START : r.error.message) : r.signal ? `killed by ${r.signal}` : `exit ${r.status}`;
+  if (code === "ETIMEDOUT") return Object.assign(new Error(how), { stderr: how, status: null });
   const said = r.stderr.trim();
   const err = /** @type {Error & { stderr: string, status: number | null }} */ (new Error(`git ${args.join(" ")}: ${said.split("\n")[0] || how}`));
-  // The command's name, past any "-c key=value" in front of it.
-  let at = 0;
-  while (args[at] === "-c") at += 2;
-  err.stderr = said || `git ${args[at]}: ${how}`;
+  err.stderr = said || `git ${commandName(args)}: ${how}`;
   err.status = r.status;
   return err;
 }
@@ -125,13 +232,13 @@ export function gitError(args, r) {
  * A git question whose "nothing there" answer is an exit code: `config --get` and `--get-regexp` exit 1
  * for no such key, `rev-parse --verify -q` 1 for no such revision, `remote get-url` 2 for no such remote,
  * `merge-base --is-ancestor` 1 for "no". null for those codes, stdout otherwise. Any other exit, a signal
- * (a killed git) or a git that cannot start throws.
+ * (a killed git), a git stopped at its limit or one that cannot start throws.
  * @param {string[]} args
- * @param {{ cwd: string, env?: NodeJS.ProcessEnv, absent: number[] }} opts
+ * @param {{ cwd: string, env?: NodeJS.ProcessEnv, absent: number[], walk?: boolean }} opts
  * @returns {string | null}
  */
-export function gitMaybe(args, { cwd, env = process.env, absent }) {
-  const r = gitRun(args, { cwd, env });
+export function gitMaybe(args, { cwd, env = process.env, absent, walk = false }) {
+  const r = gitRun(args, { cwd, env, walk });
   if (!r.error && r.status !== null && r.status !== 0 && absent.includes(r.status)) return null;
   if (r.error || r.status !== 0) throw gitError(args, r);
   return r.stdout.replace(/\n$/, "");
@@ -247,12 +354,32 @@ export function hookIndexFile(cwd, env) {
 }
 
 /**
+ * How the commit-msg hook reads objects: as they are, and from this machine only. A replace ref (`git replace HEAD
+ * <commit>`) would have HEAD's tree read as another commit's, and a line already there not count as added. In a
+ * partial clone a missing object would be fetched from the promisor remote, a connection the hook does not make:
+ * it is read as missing and said unread instead. git before 2.44 ignores GIT_NO_LAZY_FETCH and fetches it.
+ */
+export const HOOK_READ_ENV = { GIT_NO_REPLACE_OBJECTS: "1", GIT_NO_LAZY_FETCH: "1" };
+
+/**
+ * One object's bytes, read by its id: a file whose name git cannot be asked for, or one its diff could not read.
+ * Up to git()'s 64 MB buffer; its one caller, commit-check, runs with HOOK_READ_ENV. A git that fails throws.
+ * @param {string} cwd @param {string} oid
+ * @returns {Buffer}
+ */
+export function blobBytes(cwd, oid) {
+  return gitBytes(["cat-file", "blob", oid], { cwd });
+}
+
+/** Why a staged path whose object is not on this machine is not read (stagedChanges' `missing`). */
+export const MISSING_OBJECT = "its object is not on this machine (a partial clone), and the hook fetches nothing";
+
+/**
  * The environment of a read of what a commit will hold: the index the hook was given, and the objects as
- * they are. A replace ref (`git replace HEAD <commit>`) would have HEAD's tree read as another commit's, and
- * a line already there not count as added.
+ * HOOK_READ_ENV reads them.
  * @param {string | null} index
  */
-const stagedEnv = (index) => ({ ...process.env, ...(index ? { GIT_INDEX_FILE: index } : {}), GIT_NO_REPLACE_OBJECTS: "1" });
+const stagedEnv = (index) => ({ ...process.env, ...(index ? { GIT_INDEX_FILE: index } : {}), ...HOOK_READ_ENV });
 
 /**
  * @param {string} cwd
@@ -318,9 +445,41 @@ export function unquotePath(s) {
 }
 
 /**
+ * `changes` with each path's old size the largest of HEAD's and every merge parent's version (`ls-tree -l`, 500
+ * paths a call): a diff against a parent is no faster than its larger side. A tree that cannot be read leaves the
+ * sizes as they were; they only shape the calls.
+ * @param {string} cwd @param {NodeJS.ProcessEnv} env @param {Map<string, StagedChange>} changes @param {string[]} paths @param {string[]} parents
+ * @returns {Map<string, StagedChange>}
+ */
+function withParents(cwd, env, changes, paths, parents) {
+  const out = new Map(changes);
+  for (const parent of parents) {
+    for (let at = 0; at < paths.length; at += 500) {
+      let listed = "";
+      try {
+        listed = gitBytes(["-c", "core.precomposeUnicode=false", "ls-tree", "-r", "-l", "-z", parent, "--", ...paths.slice(at, at + 500)], { cwd, env }).toString("utf8");
+      } catch {
+        continue;
+      }
+      for (const entry of listed.split("\0")) {
+        const m = /^\d+ blob [0-9a-f]+ +(\d+)\t([^]*)$/.exec(entry);
+        if (!m) continue;
+        const c = out.get(m[2]);
+        const size = Number(m[1]);
+        if (!c || size > c.oldSize) out.set(m[2], { ...(c ?? { status: "M", mode: "", oid: "", oldOid: "", newSize: 0, missing: false, oldMissing: false, newMissing: false }), oldSize: size });
+      }
+    }
+  }
+  return out;
+}
+
+/**
  * The lines a commit adds to `paths` (the staged paths a review.forbidden rule names), numbered as in the new
- * file. Read from the index the hook was given (stagedPaths), with those paths as pathspecs, 500 a git call:
- * only the files a rule reads are diffed, so a large file elsewhere cannot fill git()'s buffer. A path is handed
+ * file. Read from the index the hook was given (stagedPaths), with those paths as pathspecs, in the calls diffGroups
+ * splits them into by their sizes (stagedChanges; in a merge, every parent's too): only the files a rule reads are
+ * diffed, so a large file elsewhere
+ * cannot fill git()'s buffer, and a call that fails or is stopped puts its paths, with why, into `unread` and the
+ * others are still read (thrown when no `unread` map is given). A path is handed
  * back as git wrote it (core.precomposeUnicode off: macOS git would compose a decomposed name); a name that
  * is not UTF-8 cannot be (stagedNames), and every path asked must show in a header, else it throws and the
  * hook says it did not check. The diff is pinned against the user's config: no color, external diff or
@@ -339,13 +498,13 @@ export function unquotePath(s) {
  * `from`, for the message only: MERGE_HEAD is a file anyone can write.
  * @param {string} cwd the repository's top
  * @param {string[]} paths
- * @param {{ env?: NodeJS.ProcessEnv, wideUnread?: Map<string, string> }} [opts]
+ * @param {{ env?: NodeJS.ProcessEnv, wideUnread?: Map<string, string>, unread?: Map<string, string> }} [opts]
  * @returns {Map<string, AddedLine[]>}
  * @typedef {{ line: number, text: string, from?: string, raw?: Buffer, decoded?: string }} AddedLine `text` is
  *   the line read as UTF-8 (U+FFFD for bytes that are not); `raw`, only for a line that holds a NUL or is not
  *   UTF-8, its bytes; `decoded`: the encoding of a line decoded from UTF-16 or UTF-32, not one of git's
  */
-export function stagedAddedLines(cwd, paths, { env, wideUnread = new Map() } = {}) {
+export function stagedAddedLines(cwd, paths, { env, wideUnread = new Map(), unread } = {}) {
   /** @type {Map<string, AddedLine[]>} */
   const out = new Map();
   if (!paths.length) return out;
@@ -358,16 +517,44 @@ export function stagedAddedLines(cwd, paths, { env, wideUnread = new Map() } = {
       keepIndex: Boolean(index),
     });
   const parents = mergeHeads(cwd);
+  // The sizes only shape the calls: unread, every file counts as small (500 a call), and a call that fails still
+  // costs only its own files.
+  /** @type {Map<string, StagedChange>} */
+  let changes = new Map();
+  try {
+    changes = stagedChanges(cwd, { env });
+  } catch {
+    // Sizes unknown.
+  }
   const unique = [...new Set(paths)];
+  const absent = unique.filter((p) => changes.get(p)?.missing);
+  if (absent.length && !unread) throw new Error(`${absent.length} staged path(s) ${MISSING_OBJECT}: ${absent.slice(0, 3).map((p) => JSON.stringify(p)).join(", ")}`);
+  for (const p of absent) unread?.set(p, MISSING_OBJECT);
+  const asked = unique.filter((p) => !changes.get(p)?.missing);
   /** @type {{ path: string, oid: string, lines: AddedLine[] }[]} */
   const candidates = [];
-  for (let at = 0; at < unique.length; at += 500) {
-    const batch = unique.slice(at, at + 500);
+  for (const batch of diffGroups(asked, parents.length ? withParents(cwd, readEnv, changes, asked, parents) : changes)) {
     /** @type {Map<string, string>} */
     const blobs = new Map();
-    const mine = addedLines(run([], batch), new Set(batch), { complete: true, blobs });
+    let mine;
+    try {
+      mine = addedLines(run([], batch), new Set(batch), { complete: true, blobs });
+    } catch (e) {
+      if (!unread) throw e;
+      const why = String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message).trim().split("\n")[0];
+      for (const p of batch) unread.set(p, why);
+      continue;
+    }
     for (const parent of parents) {
-      const theirs = addedLines(run([parent], batch), null);
+      /** @type {Map<string, AddedLine[]>} */
+      let theirs;
+      try {
+        theirs = addedLines(run([parent], batch), null);
+      } catch (e) {
+        // `from` is for the message only: with the parent's diff unread the lines count as this commit's own.
+        if (!unread) throw e;
+        continue;
+      }
       for (const [path, lines] of mine) {
         const added = new Set((theirs.get(path) ?? []).map((l) => l.line));
         for (const l of lines) if (!added.has(l.line)) l.from ??= parent;
@@ -389,10 +576,13 @@ export const READ_BUDGET = 64 * 1024 * 1024;
 /**
  * The staged changes as one `diff --raw` lists them, with no pathspec (one walk of the index, whatever the
  * count): per path its status letter (A added, M, T, D deleted…), new mode, and old and new sizes from one
- * `cat-file --batch-check` (0 for a submodule's commit). Names read as bytes, as stagedNames reads them, from
- * the index the hook was given. A git that fails throws.
+ * `cat-file --batch-check`, and both object ids (`oid`, `oldOid`). A submodule's commit is no object this repository
+ * holds: its ids are "" and its sizes 0, on either side. `oldMissing` / `newMissing`: that side's object is not on
+ * this machine (a partial clone; HOOK_READ_ENV fetches nothing), and `missing` either. Names read as bytes, as
+ * stagedNames reads them, from the index the hook was given. A git that fails throws.
  * @param {string} cwd @param {{ env?: NodeJS.ProcessEnv }} [opts]
- * @returns {Map<string, { status: string, mode: string, oid: string, oldSize: number, newSize: number }>}
+ * @returns {Map<string, StagedChange>}
+ * @typedef {{ status: string, mode: string, oid: string, oldOid: string, oldSize: number, newSize: number, missing: boolean, oldMissing: boolean, newMissing: boolean }} StagedChange
  */
 export function stagedChanges(cwd, { env } = {}) {
   const index = env ? hookIndexFile(cwd, env) : null;
@@ -404,21 +594,30 @@ export function stagedChanges(cwd, { env } = {}) {
     const meta = out.indexOf(0, at);
     if (meta === -1) break;
     const end = out.indexOf(0, meta + 1);
-    const m = /^:\d+ (\d+) ([0-9a-f]+) ([0-9a-f]+) ([A-Z])/.exec(out.toString("utf8", at, meta));
+    const m = /^:(\d+) (\d+) ([0-9a-f]+) ([0-9a-f]+) ([A-Z])/.exec(out.toString("utf8", at, meta));
     const path = out.toString("utf8", meta + 1, end === -1 ? out.length : end);
     at = end === -1 ? out.length : end + 1;
-    if (m) entries.push({ path, status: m[4], mode: m[1], old: m[2], new: m[1] === "160000" ? "" : m[3] });
+    if (m) entries.push({ path, status: m[5], mode: m[2], old: m[1] === "160000" ? "" : m[3], new: m[2] === "160000" ? "" : m[4] });
   }
   const oids = [...new Set(entries.flatMap((e) => [e.old, e.new]).filter((o) => o && !/^0+$/.test(o)))];
   /** @type {Map<string, number>} */
   const sizes = new Map();
+  /** @type {Set<string>} */
+  const missing = new Set();
   if (oids.length) {
     for (const l of gitBytes(["cat-file", "--batch-check"], { cwd, env: readEnv, input: oids.join("\n") + "\n" }).toString("utf8").split("\n")) {
-      const m = /^([0-9a-f]+) \w+ (\d+)$/.exec(l);
-      if (m) sizes.set(m[1], Number(m[2]));
+      const m = /^([0-9a-f]+) (?:\w+ (\d+)|(missing))$/.exec(l);
+      if (m?.[3]) missing.add(m[1]);
+      else if (m) sizes.set(m[1], Number(m[2]));
     }
   }
-  return new Map(entries.map((e) => [e.path, { status: e.status, mode: e.mode, oid: e.new, oldSize: sizes.get(e.old) ?? 0, newSize: sizes.get(e.new) ?? 0 }]));
+  return new Map(
+    entries.map((e) => {
+      const oldMissing = missing.has(e.old);
+      const newMissing = missing.has(e.new);
+      return [e.path, { status: e.status, mode: e.mode, oid: e.new, oldOid: e.old, oldSize: sizes.get(e.old) ?? 0, newSize: sizes.get(e.new) ?? 0, missing: oldMissing || newMissing, oldMissing, newMissing }];
+    }),
+  );
 }
 
 /**
@@ -434,6 +633,7 @@ export function streamStagedBlobs(cwd, files, { env, onLine }) {
   return new Promise((done, fail) => {
     if (!files.length) return done();
     const child = spawn("git", [...FIXED_CONFIG, "cat-file", "--batch"], { cwd, env: cleanEnv(stagedEnv(index), Boolean(index)), stdio: ["pipe", "pipe", "pipe"] });
+    stopWhenSilent(child, "cat-file", fail);
     let k = 0;
     /** Bytes of the current blob still to come; -1 while a header is awaited. */
     let left = -1;
@@ -509,7 +709,7 @@ export function streamStagedBlobs(cwd, files, { env, onLine }) {
  * `paths`: pathspecs, or null for every staged path (one walk of the index). `against`: a revision to diff
  * against instead of HEAD. `onLine` returning false stops git, and the stream ends as read so far
  * (`stopped`). Resolves with the paths a header named; a git that fails, is killed or does not start rejects,
- * with git's message as `stderr`.
+ * with git's message as `stderr`, and so does one that writes nothing for GIT_LIMITS.call.
  * @param {string} cwd @param {string[] | null} paths
  * @param {{ env?: NodeJS.ProcessEnv, against?: string[], onLine: (path: string, line: number, bytes: Buffer) => boolean | void }} opts
  * @returns {Promise<{ shown: Set<string>, stopped: boolean }>}
@@ -519,6 +719,7 @@ export function streamStagedDiff(cwd, paths, { env, against = [], onLine }) {
   const args = [...FIXED_CONFIG, "-c", "core.quotePath=false", "-c", "core.precomposeUnicode=false", "diff", "--cached", ...against, "--text", "--no-color", "--no-ext-diff", "--no-textconv", "--no-renames", "--submodule=short", "-U0", "--src-prefix=a/", "--dst-prefix=b/", ...(paths ? ["--", ...paths] : [])];
   return new Promise((done, fail) => {
     const child = spawn("git", args, { cwd, env: cleanEnv(stagedEnv(index), Boolean(index)), stdio: ["ignore", "pipe", "pipe"] });
+    const silent = stopWhenSilent(child, "diff", fail);
     /** @type {Set<string>} */
     const shown = new Set();
     /** @type {string | null} */
@@ -572,6 +773,7 @@ export function streamStagedDiff(cwd, paths, { env, against = [], onLine }) {
       fail(err);
     });
     child.on("close", (code, signal) => {
+      if (silent.stopped) return;
       if (stopped) return done({ shown, stopped });
       if (code !== 0) {
         const err = /** @type {Error & { stderr?: string }} */ (new Error(`git diff: ${stderr.trim().split("\n")[0] || (signal ? `killed by ${signal}` : `exit ${code}`)}`));
@@ -648,14 +850,13 @@ export function stagedBlobs(cwd, paths, { env, limit = WIDE_LIMIT, total = READ_
  * A settings file as HEAD holds it: `{ text }` for a regular file of at most `limit` bytes; `{ kind }` for what
  * is no such file: `link` when it, or a directory on its way, is a symbolic link (clones reach a file through
  * it, which is not read here), `other` for a submodule or a directory, `large` past `limit`; null with no commit
- * yet or nothing there. Objects as they are: no replace refs, and no lazy fetch in a partial clone
- * (GIT_NO_LAZY_FETCH; git before 2.44 ignores it and may fetch a missing object). A git that fails throws.
+ * yet or nothing there. Objects as HOOK_READ_ENV reads them. A git that fails throws.
  * @param {string} cwd @param {string} path "/"-separated, from the repository's top @param {number} limit
  * @returns {{ text: string } | { kind: "link" | "other" | "large" } | null}
  */
 export function headFile(cwd, path, limit) {
   if (!headCommit(cwd)) return null;
-  const env = { ...process.env, GIT_NO_REPLACE_OBJECTS: "1", GIT_NO_LAZY_FETCH: "1" };
+  const env = { ...process.env, ...HOOK_READ_ENV };
   const parts = path.split("/");
   const specs = parts.map((_, i) => parts.slice(0, i + 1).join("/"));
   /** @type {Map<string, { mode: string, oid: string, size: string }>} */
@@ -678,15 +879,17 @@ export function headFile(cwd, path, limit) {
 }
 
 /**
- * A file as HEAD's tree holds it, or null with no commit yet or no such file there. A git that fails throws.
+ * A file as HEAD's tree holds it, or null with no commit yet or no such file there; objects as HOOK_READ_ENV reads
+ * them. A git that fails throws.
  * @param {string} cwd @param {string} path
  * @returns {Buffer | null}
  */
 export function headBlob(cwd, path) {
   if (!headCommit(cwd)) return null;
-  const entry = gitBytes(["-c", "core.precomposeUnicode=false", "ls-tree", "-z", "HEAD", "--", path], { cwd, env: { ...process.env, GIT_NO_REPLACE_OBJECTS: "1" } }).toString("utf8").split("\0")[0];
+  const env = { ...process.env, ...HOOK_READ_ENV };
+  const entry = gitBytes(["-c", "core.precomposeUnicode=false", "ls-tree", "-z", "HEAD", "--", path], { cwd, env }).toString("utf8").split("\0")[0];
   const m = /^\d+ blob ([0-9a-f]+)\t/.exec(entry ?? "");
-  return m ? gitBytes(["cat-file", "blob", m[1]], { cwd, env: { ...process.env, GIT_NO_REPLACE_OBJECTS: "1" } }) : null;
+  return m ? gitBytes(["cat-file", "blob", m[1]], { cwd, env }) : null;
 }
 
 /**
@@ -1101,7 +1304,7 @@ export function unpushedCount(cwd) {
   // "@{u}" fails the same way for "no upstream" and for a broken git; for-each-ref prints nothing for the first.
   const upstream = git(["for-each-ref", "--format=%(upstream)", branch], { cwd });
   if (!upstream || !gitMaybe(["rev-parse", "--verify", "-q", upstream], { cwd, absent: [1] })) return null;
-  const n = git(["rev-list", "--count", `${upstream}..HEAD`], { cwd });
+  const n = git(["rev-list", "--count", `${upstream}..HEAD`], { cwd, walk: true });
   if (!/^\d+$/.test(n)) throw new Error(`git rev-list --count printed no count: ${JSON.stringify(n.slice(0, 80))}`);
   return Number(n);
 }

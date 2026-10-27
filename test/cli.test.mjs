@@ -1,11 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, realpathSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { git, gitMaybe } from "../core/git.mjs";
+import { MISSING_OBJECT, git, gitMaybe, gitVersion, stagedAddedLines, versionAtLeast } from "../core/git.mjs";
+import { TOKENS } from "./secret-shapes.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
 
@@ -423,4 +424,124 @@ test("cli: commit-check prints a cochange warning on stderr and still passes", (
   writeFileSync(join(p.dir, "README.tr.md"), "# x\n");
   git(["add", "README.tr.md"], { cwd: p.dir });
   assert.equal(run(p.dir, "commit-check", msg).stderr, "");
+});
+
+test("cli: in a partial clone the commit-msg hook fetches nothing from git 2.44 on: a change whose object is not here is said unread, the files that are here are still read", () => {
+  const box = realpathSync(mkdtempSync(join(tmpdir(), "pl-cli-partial-")));
+  const src = join(box, "src");
+  mkdirSync(src);
+  git(["init", "-q", "-b", "main"], { cwd: src });
+  writeFileSync(join(src, "a.txt"), "one\n");
+  // Contents of their own: a blob fetched for one is no other's.
+  writeFileSync(join(src, "x.txt"), "two\n");
+  writeFileSync(join(src, "w.txt"), "four\n");
+  // A committed config: the hook reads HEAD's version of it too.
+  mkdirSync(join(src, ".ennyn"));
+  writeFileSync(join(src, ".ennyn", "config.json"), JSON.stringify({ language: "en", commitMsg: { types: ["feat", "fix"] } }));
+  git(["add", "-A"], { cwd: src });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "init"], { cwd: src });
+  git(["config", "uploadpack.allowFilter", "true"], { cwd: src });
+  // Each connection to the promisor remote leaves a line.
+  const log = join(box, "connections.log");
+  writeFileSync(join(box, "up.sh"), `#!/bin/sh\necho connect >> '${log}'\nexec git-upload-pack "$@"\n`);
+  chmodSync(join(box, "up.sh"), 0o755);
+  const clone = join(box, "clone");
+  git(["clone", "-q", "--filter=blob:none", "--no-checkout", `file://${src}`, clone], { cwd: box });
+  git(["config", "remote.origin.uploadpack", join(box, "up.sh")], { cwd: clone });
+  git(["reset", "-q"], { cwd: clone });
+  // x.txt's HEAD blob is fetched now; a.txt's never is.
+  git(["cat-file", "-p", "HEAD:x.txt"], { cwd: clone });
+  mkdirSync(join(clone, ".ennyn"), { recursive: true });
+  writeFileSync(join(clone, ".ennyn", "config.json"), JSON.stringify({ language: "en", review: { forbidden: [{ text: "BANNED", paths: ["*.txt"] }] } }));
+  writeFileSync(join(clone, "a.txt"), `one\nconst a = "${TOKENS.github}";\nBANNED\n`);
+  writeFileSync(join(clone, "x.txt"), `two\nconst x = "${TOKENS.github}";\nBANNED\n`);
+  writeFileSync(join(clone, "c.txt"), `const c = "${TOKENS.npm}";\nBANNED\n`);
+  git(["add", "a.txt", "x.txt", "c.txt", ".ennyn/config.json"], { cwd: clone });
+  // d.txt: a new path staged with an object this clone does not hold.
+  git(["update-index", "--add", "--cacheinfo", `100644,${git(["rev-parse", "HEAD:a.txt"], { cwd: clone })},d.txt`], { cwd: clone });
+  // w.txt: a change to an object this clone does not hold either.
+  git(["update-index", "--cacheinfo", `100644,${git(["rev-parse", "HEAD:a.txt"], { cwd: clone })},w.txt`], { cwd: clone });
+  writeFileSync(join(clone, "MSG"), "feat: add a thing\n");
+  writeFileSync(log, "");
+  const r = run(clone, "commit-check", "--hook", "MSG");
+  assert.equal(r.code, 1, `refused\n${r.stderr}`);
+  // What is here is read whatever is missing beside it: the new file and the modified one whose objects are here.
+  // a.txt's HEAD version is not here, its staged one is: the secret scan reads that whole, as a file the commit adds.
+  const line = (/** @type {string} */ text, /** @type {string} */ mark) => text.split("\n").find((l) => l.includes(mark)) ?? "";
+  const secrets = line(r.stderr, "adds what reads as a secret");
+  const bans = line(r.stderr, 'adds "BANNED"');
+  for (const at of ["c.txt:1 (npm-token", "x.txt:2 (github-token"]) assert.ok(secrets.includes(at), `${at}\n${r.stderr}`);
+  for (const at of ["c.txt:2", "x.txt:3"]) assert.ok(bans.includes(at), `${at}\n${r.stderr}`);
+  const { version } = gitVersion({ cwd: box });
+  const fetches = !(version && versionAtLeast(version, [2, 44, 0]));
+  if (!fetches) {
+    assert.equal(readFileSync(log, "utf8"), "", "no connection to the promisor remote");
+    assert.ok(r.stderr.includes(`security.secrets was not checked in 2 staged path(s) ("d.txt", "w.txt"): ${MISSING_OBJECT}`), r.stderr);
+    assert.ok(r.stderr.includes(`review.forbidden was not checked in 3 staged path(s) ("a.txt", "d.txt", "w.txt"): ${MISSING_OBJECT}`), r.stderr);
+    assert.doesNotMatch(r.stderr, /did not show/);
+    assert.ok(secrets.includes("a.txt:2 (github-token"), r.stderr);
+    assert.ok(!bans.includes("a.txt"), "review.forbidden did not read a.txt");
+    // Each reason on a line of its own, with its own paths: every cat-file read but the sizes fails here.
+    const bin = join(box, "bin");
+    mkdirSync(bin);
+    const real = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+    writeFileSync(join(bin, "git"), `#!/bin/sh\ncase " $* " in *" --batch-check "*) ;; *" cat-file "*) echo "fatal: injected" >&2; exit 128 ;; esac\nexec '${real}' "$@"\n`);
+    chmodSync(join(bin, "git"), 0o755);
+    const failing = spawnSync(process.execPath, [CLI, "commit-check", "--hook", "MSG"], { cwd: clone, encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+    for (const want of [
+      `security.secrets was not checked in 2 staged path(s) ("d.txt", "w.txt"): ${MISSING_OBJECT}`,
+      'security.secrets was not checked in 1 staged path(s) ("c.txt"): git cat-file: fatal: injected',
+      'security.secrets was not checked in 2 staged path(s) (".ennyn/config.json", "a.txt"): fatal: injected',
+    ])
+      assert.ok(failing.stderr.includes(want), `${want}\n${failing.stderr}`);
+    // stagedAddedLines run by hand fails on it; given a map, it names it there.
+    assert.throws(() => stagedAddedLines(clone, ["a.txt", "x.txt"]), new RegExp(MISSING_OBJECT.replace(/[()]/g, "\\$&")));
+    const unread = new Map();
+    assert.deepEqual([...stagedAddedLines(clone, ["a.txt", "x.txt"], { unread }).keys()], ["x.txt"]);
+    assert.deepEqual([...unread], [["a.txt", MISSING_OBJECT]]);
+    // With only changed files, one call could read them all: the missing one still stays out of it.
+    git(["rm", "-q", "--cached", "c.txt", "d.txt"], { cwd: clone });
+    git(["reset", "-q", "--", "w.txt"], { cwd: clone });
+    writeFileSync(log, "");
+    const changed = run(clone, "commit-check", "--hook", "MSG");
+    assert.ok(line(changed.stderr, "adds what reads as a secret").includes("x.txt:2 (github-token"), changed.stderr);
+    assert.equal(readFileSync(log, "utf8"), "", "no connection on the run with changed files only");
+  } else {
+    // Older git ignores GIT_NO_LAZY_FETCH (SECURITY.md says so): the blobs are fetched and read.
+    assert.notEqual(readFileSync(log, "utf8"), "", "older git fetches the missing blob");
+    assert.ok(secrets.includes("a.txt:2 (github-token"), r.stderr);
+  }
+});
+
+test("cli: in a clone without trees the commit-msg hook's amend! lookup fetches nothing from git 2.44 on", () => {
+  const box = realpathSync(mkdtempSync(join(tmpdir(), "pl-cli-treeless-")));
+  const src = join(box, "src");
+  mkdirSync(src);
+  git(["init", "-q", "-b", "main"], { cwd: src });
+  const ID = ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"];
+  for (const [name, text] of [["a.txt", "one\n"], ["b.txt", "two\n"], ["c.txt", "three\n"]]) {
+    writeFileSync(join(src, name), text);
+    git(["add", name], { cwd: src });
+    git([...ID, "commit", "-q", "-m", `feat: add ${name}`], { cwd: src });
+  }
+  git(["config", "uploadpack.allowFilter", "true"], { cwd: src });
+  const log = join(box, "connections.log");
+  writeFileSync(join(box, "up.sh"), `#!/bin/sh\necho connect >> '${log}'\nexec git-upload-pack "$@"\n`);
+  chmodSync(join(box, "up.sh"), 0o755);
+  const clone = join(box, "clone");
+  // HEAD's trees come with the checkout; the older commits' do not.
+  git(["clone", "-q", "--filter=tree:0", `file://${src}`, clone], { cwd: box });
+  git(["config", "remote.origin.uploadpack", join(box, "up.sh")], { cwd: clone });
+  mkdirSync(join(clone, ".ennyn"));
+  writeFileSync(join(clone, ".ennyn", "config.json"), JSON.stringify({ language: "en" }));
+  writeFileSync(join(clone, "a.txt"), "one\nmore\n");
+  git(["add", "a.txt", ".ennyn/config.json"], { cwd: clone });
+  // The target is the first commit: its paths come from its tree.
+  writeFileSync(join(clone, "MSG"), "amend! feat: add a.txt\n\nfeat: add a.txt, and more\n");
+  writeFileSync(log, "");
+  const r = run(clone, "commit-check", "--hook", "MSG");
+  const { version } = gitVersion({ cwd: box });
+  if (version && versionAtLeast(version, [2, 44, 0])) assert.equal(readFileSync(log, "utf8"), "", `no connection to the promisor remote\n${r.stderr}`);
+  // Older git ignores GIT_NO_LAZY_FETCH (SECURITY.md says so) and fetches the tree.
+  else assert.notEqual(readFileSync(log, "utf8"), "", "older git fetches the tree");
 });
