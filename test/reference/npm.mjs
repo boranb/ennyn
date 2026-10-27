@@ -298,7 +298,8 @@ export function cellProblems(c) {
   /** @type {string[]} */
   const out = [];
   if (!isObject(c)) return ["a cell is an object"];
-  if (typeof c.id !== "string" || !c.id) out.push("no id");
+  // A plain id: messages print it, and a control byte in it would reach the terminal.
+  if (typeof c.id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(c.id)) return [`id ${JSON.stringify(c.id)} is no plain id (letters, digits, -)`];
   if (typeof c.from !== "string" || !c.from) out.push(`${c.id}: no from`);
   if (!("lock" in c)) out.push(`${c.id}: no lock`);
   // The recorder writes each path under a directory of its own: one that could leave it is no cell's.

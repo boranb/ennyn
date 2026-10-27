@@ -15,13 +15,13 @@
 
 import { createHash } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
-import { agentSetup, outsideFences, projectFiles } from "./scan.mjs";
+import { agentSetup, outsideFenceLines, projectFiles } from "./scan.mjs";
 import { readIfThere, readRegular, writeState } from "../core/files.mjs";
 import { clipped } from "../core/i18n.mjs";
 import { splitFrontMatter } from "../adapters/claude-code/rules-index.mjs";
 
 /** A line this short is a heading, a label or a fragment, not a rule worth counting twice. */
-const MIN_RULE = 40;
+export const MIN_RULE = 40;
 
 /**
  * The words of a line, without list markers, numbering, quotes, table pipes or emphasis, lower case.
@@ -34,6 +34,23 @@ export function ruleKey(raw) {
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
+}
+
+/**
+ * The rule lines of an instruction file, the ones compared across files: outside code blocks as the scan reads them
+ * (`outsideFenceLines`), not a heading, with a key of at least MIN_RULE characters; `at` is the line's index in the
+ * text split at "\n".
+ * @param {string} text
+ * @returns {{ at: number, line: string, key: string }[]}
+ */
+export function ruleLines(text) {
+  const lines = text.replace(/^\uFEFF/, "").split("\n");
+  return outsideFenceLines(text).flatMap((at) => {
+    const raw = lines[at];
+    if (/^\s*#/.test(raw)) return [];
+    const key = ruleKey(raw);
+    return key.length < MIN_RULE ? [] : [{ at, line: raw, key }];
+  });
 }
 
 /** No such file is nothing to count; one that could not be read is no empty file, and the error names it. */
@@ -99,11 +116,7 @@ export function instructionBudget(cwd, files) {
   for (const i of counted) {
     const text = readOrNull(join(cwd, i.path));
     if (text === null) continue;
-    // Code blocks as the scan reads them (a block ends at a fence of its own character, as long or longer).
-    for (const raw of outsideFences(text)) {
-      if (/^\s*#/.test(raw)) continue;
-      const key = ruleKey(raw);
-      if (key.length < MIN_RULE) continue;
+    for (const { line: raw, key } of ruleLines(text)) {
       const entry = seen.get(key) ?? { line: raw.trim(), files: new Map() };
       entry.files.set(i.path, i.loads);
       seen.set(key, entry);

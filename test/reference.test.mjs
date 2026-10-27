@@ -6,19 +6,29 @@
  * loads, a plugin's files) with what Claude Code itself did with each cell (test/reference/claude-code.mjs). A
  * comparison that moved from the one the cell lists fails here. The records never ask the machine: each
  * recorder's `check` does, and fails when the machine's program reads a cell otherwise or is another version.
+ * Ennyn's Markdown readings (code blocks, headings, imports) are compared with the parser Claude Code reads
+ * instruction files with, and the steps around it (test/reference/markdown.mjs).
  * git's readings are replayed against git itself (test/git-oracle.test.mjs).
  */
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
 import { loadConfig } from "../core/config.mjs";
 import { t } from "../core/i18n.mjs";
 import { loadGraph } from "../plan/mechanization.mjs";
 import { RECORD, RELATIONS, cellProblems, compare, moves, readRecord, unmeasuredOf } from "./reference/npm.mjs";
 import * as cc from "./reference/claude-code.mjs";
+import * as md from "./reference/markdown.mjs";
+import { MIN_RULE, ruleKey, ruleLines } from "../setup/budget.mjs";
+import { banLiterals, outsideFenceLines } from "../setup/scan.mjs";
 
 /** The open nodes of the work graph: a `gap:` names one. */
 async function openNodes() {
@@ -323,4 +333,493 @@ test("reference control: a cell runs no command of its own and reaches nothing o
   }
   // Another version of Claude Code: the message names the record's and how to point at a binary.
   assert.match(cc.otherVersion("2.1.310", "claude", "2.1.207"), /record is Claude Code 2\.1\.310, claude is 2\.1\.207: point at a 2\.1\.310 binary \(npm run test:reference -- --claude <path>/);
+});
+
+
+/** The extensions the Markdown judge's controls read an import of. */
+const EXT = [".md", ".txt"];
+
+test("reference: every Markdown cell compares as recorded", async () => {
+  const rec = md.readRecord();
+  assert.ok(rec.cells.length > 0, "test/reference/markdown.json holds no cell");
+  const lines = md.moves(md.compareAll(rec.cells, rec.claudeCode.textExtensions), await openNodes());
+  assert.equal(
+    lines.join("\n"),
+    "",
+    `test/reference/markdown.json: ${lines.length} comparison(s) moved. A Markdown reader that reads a code block, a heading, hidden text or an import otherwise than the parser does is fixed, or the place lists why ("extra: … (<open node>)", "differs: …", "gap: <open node>"), in the commit that moves it.`,
+  );
+});
+
+test("reference: the Markdown record names its parser and Claude Code's steps, and holds well-formed cells, each with the parser's reading", () => {
+  const rec = md.readRecord();
+  assert.equal(rec.parser, `marked@${md.PARSER.version}`);
+  assert.match(md.PARSER.integrity, /^sha512-[A-Za-z0-9+/]{86}==$/);
+  assert.equal(md.PARSER.tarball, `https://registry.npmjs.org/marked/-/marked-${md.PARSER.version}.tgz`);
+  assert.match(rec.claudeCode.version, /^\d+\.\d+\.\d+$/);
+  for (const k of /** @type {const} */ (["read", "frontMatter", "bom", "comments", "walk", "parserRules"])) assert.match(rec.claudeCode[k], /^[0-9a-f]{16}$/, k);
+  assert.ok(rec.claudeCode.textExtensions.includes(".md") && rec.claudeCode.textExtensions.includes(".txt") && !rec.claudeCode.textExtensions.includes(".png"));
+  const ids = rec.cells.map((c) => c.id);
+  assert.deepEqual(ids.filter((id, i) => ids.indexOf(id) !== i), [], "an id twice");
+  assert.deepEqual(rec.cells.flatMap(md.cellProblems), []);
+  for (const c of rec.cells) assert.ok(c.md, `${c.id}: no reading`);
+  // The record holds what each reader's comparison needs on both sides.
+  const seen = new Set(
+    md.compareAll(rec.cells, rec.claudeCode.textExtensions).flatMap(({ got }) =>
+      [...got].map(([k, r]) => {
+        const kind = k.split(":")[0];
+        return kind === "ban" ? `${r.relation} ban` : `${r.relation} ${kind} ${r.md.split(":")[0]}`;
+      }),
+    ),
+  );
+  for (const want of ["agree line prose", "agree line code", "agree line heading", "agree line front matter", "extra line code", "extra line front matter", "extra line hidden", "differs line prose", "agree rule prose", "agree rule heading", "extra rule heading", "extra rule short", "differs rule prose", "agree ban", "extra ban", "agree import imports", "extra import no import", "differs import imports"]) assert.ok(seen.has(want), want);
+});
+
+test("reference control: the Markdown judge finds a reading that moved", () => {
+  const judged = (/** @type {md.Cell} */ c, /** @type {Set<string> | undefined} */ open = undefined) => md.moves([{ cell: c, got: md.compare(c, EXT) }], open).join("\n");
+  /** @type {md.Cell} */
+  const cell = { id: "x", from: "control", text: "```\nNever use `zz` in code.\n```\nAfter the block, never use `yy` in this repository at all.\nsee @docs/a.md\n", md: { lines: "ccctt" + "t", imports: ["docs/a.md"] } };
+  assert.equal(judged(cell), "");
+  // A line the parser reads as prose that Ennyn drops, and one it reads as code that Ennyn keeps.
+  assert.match(judged({ ...cell, md: { ...cell.md, lines: "ctcttt" } }), /x "line:2": differs, recorded agree — Ennyn "code", the parser "prose"/);
+  assert.match(judged({ ...cell, md: { ...cell.md, lines: "cccctt" } }), /x "line:4": extra, recorded agree — Ennyn "prose", the parser "code"/);
+  // A rule line the parser reads as a heading; a heading Ennyn takes for one (a prose line in Ennyn's reading, heading in the parser's).
+  assert.match(judged({ ...cell, md: { ...cell.md, lines: "ccc#tt" } }), /x "rule:4": extra, recorded agree — Ennyn "rule line", the parser "heading"/);
+  const hashtag = { id: "h", from: "control", text: "#tag never use the `hb` helper in any module of this repository\n", md: { lines: "tt", imports: [] } };
+  assert.match(judged(hashtag), /h "rule:1": differs, recorded agree — Ennyn "heading", the parser "prose"/);
+  // A line whose key is just long enough is a rule line on both sides; one character shorter is no rule line at all.
+  const edge = (/** @type {number} */ n) => ({ id: "e", from: "control", text: `${"a".repeat(n)}\n`, md: { lines: "tt", imports: [] } });
+  assert.deepEqual([...md.compare(edge(MIN_RULE), EXT).keys()], ["line:1", "rule:1"]);
+  assert.deepEqual([...md.compare(edge(MIN_RULE - 1), EXT).keys()], ["line:1"]);
+  assert.deepEqual(ruleLines(`${"b".repeat(MIN_RULE)}\n${"c".repeat(MIN_RULE - 1)}`).map((r) => r.key), ["b".repeat(MIN_RULE)]);
+  assert.deepEqual(ruleLines(`\uFEFF${"d".repeat(MIN_RULE)}`), [{ at: 0, line: "d".repeat(MIN_RULE), key: "d".repeat(MIN_RULE) }]);
+  assert.deepEqual(banLiterals("Never use `aa`, `bb`, `cc` or `dd`."), ["aa", "bb", "cc"]);
+  // What the model gets of a line part of which is hidden: a ban literal or rule words only Ennyn takes, a literal only the model gets.
+  const half = { id: "p", from: "control", text: "<!-- Never use `qa` here --> See the docs, and never use the `qb` helper again.\n", md: { lines: "tt", shown: { 1: " See the docs, and never use the `qb` helper again." }, imports: [] } };
+  assert.match(judged(half), /p "ban:1": extra, recorded agree — Ennyn "qa qb", the parser "qb"/);
+  assert.match(judged(half), /p "rule:1": extra, recorded agree — Ennyn "rule line: <!-- never use qa here --> see the docs, and never use the qb helper again\.", the parser "prose: see the docs, and never use the qb helper again\."/);
+  const split = { id: "s", from: "control", text: "Never use <!-- ` --> `zz` x\n", md: { lines: "tt", shown: { 1: "Never use  `zz` x" }, imports: [] } };
+  assert.match(judged(split), /s "ban:1": differs, recorded agree — Ennyn "-->", the parser "zz"/);
+  // An import Claude Code makes that Ennyn misses, one Ennyn reads that Claude Code does not, one outside the repository,
+  // and one of a file Claude Code reads no text of (its extension).
+  assert.match(judged({ ...cell, md: { ...cell.md, imports: ["docs/a.md", "docs/b.md"] } }), /x "import:docs\/b\.md": differs, recorded agree — Ennyn "no import", the parser "imports"/);
+  assert.match(judged({ ...cell, md: { ...cell.md, imports: [] } }), /x "import:docs\/a\.md": extra, recorded agree — Ennyn "imports", the parser "no import"/);
+  assert.equal(judged({ ...cell, md: { ...cell.md, imports: ["docs/a.md", "~/x.md", "/etc/x.md", "../x.md", "./docs/a.md", "k.png", "m.MD."] } }), "");
+  assert.match(judged({ ...cell, md: { ...cell.md, imports: ["docs/a.md", "l.TXT"] } }), /x "import:l\.TXT": differs/);
+  // Blank lines are compared nowhere.
+  assert.equal([...md.compare(cell, EXT).keys()].some((k) => k === "line:6"), false);
+  // A listed place with no why, a gap or an extra naming no open node, a place neither has, a pin missing or moved.
+  const hole = { ...cell, md: { ...cell.md, lines: "ctcttt" }, except: { "line:2": "gap: some-node" }, ennyn: { "line:2": "code" } };
+  assert.equal(judged(hole, new Set(["some-node"])), "");
+  assert.match(judged(hole, new Set(["other"])), /names no open graph node: "some-node"/);
+  assert.match(judged({ ...hole, ennyn: { "line:2": "prose" } }), /"line:2": Ennyn reads "code", recorded "prose"/);
+  assert.match(judged({ ...hole, ennyn: {} }), /Ennyn's reading is not pinned/);
+  assert.match(judged({ ...hole, ennyn: { ...hole.ennyn, "line:1": "code" } }), /"line:1": Ennyn's reading pinned where except lists nothing/);
+  assert.match(judged({ ...hole, except: { "line:2": "gap:" } }), /gives no why/);
+  assert.match(judged({ ...hole, except: { "line:2": "extra: x" } }), /an extra names no graph node/);
+  assert.match(judged({ ...hole, except: { "line:2": "extra: x (some-node)" } }, new Set(["some-node"])), /"line:2": differs, recorded extra/);
+  assert.match(judged({ ...cell, except: { "line:9": "differs: x" }, ennyn: { "line:9": "x" } }), /"line:9": listed, but neither the parser nor Ennyn has this place/);
+  // A place from a cell's text reaches the terminal quoted: no control byte of it.
+  const control = judged({ id: "c", from: "control", text: "see @a\u001b]52;c;eA==\u0007.md\n", md: { lines: "tt", imports: [] } });
+  assert.ok(control.includes("\\u001b") && !control.includes("\u001b"));
+  assert.deepEqual(md.RELATIONS, ["agree", "extra", "differs"]);
+  // Ennyn's lines are placed by their index: the same text inside and outside a block is two lines.
+  assert.deepEqual([...md.readings("x\n```\nx\n```\nx").prose], [0, 4]);
+  // What a cell must hold.
+  for (const bad of [{ text: 1 }, { text: "a\rb" }, { text: "a".repeat(16 * 1024 + 1) }, { md: { lines: "t", imports: [] } }, { md: { lines: "tz", imports: [] } }, { md: { lines: "tt", imports: [1] } }, { md: { lines: "tt", imports: [], shown: { 1: 2 } } }, { except: { "line:1": "agree: x" } }, { ennyn: { "line:1": 1 } }, { files: {} }]) {
+    assert.notDeepEqual(md.cellProblems({ id: "x", from: "control", text: "a\nb", ...bad }), [], JSON.stringify(bad).slice(0, 80));
+  }
+  assert.deepEqual(md.cellProblems({ id: "x", from: "control", text: "a\r\nb", md: { lines: "tt", shown: { 1: "a" }, imports: [] }, except: { "line:1": "differs: x" }, ennyn: { "line:1": "code" } }), []);
+});
+
+test("reference control: the replay reads each reader's reading of the whole text, so a fix that looks ahead is seen and a regression is caught", () => {
+  const rec = md.readRecord();
+  const at = (/** @type {string} */ id) => /** @type {md.Cell} */ (rec.cells.find((c) => c.id === id));
+  const replay = (/** @type {md.Cell} */ c, /** @type {typeof md.READERS} */ readers) => md.moves([{ cell: c, got: md.compare(c, rec.claudeCode.textExtensions, md.readings(c.text, readers)) }]).join("\n");
+  const front = at("rv-front-matter-then-body-rule");
+  const setext = at("rv-setext-rule-under-fix");
+  assert.equal(replay(front, md.READERS) + replay(setext, md.READERS), "");
+  // A fence reader that cuts front matter (its closer comes further on): the front matter's places agree now.
+  const cutting = { ...md.READERS, outsideFenceLines: (/** @type {string} */ t) => outsideFenceLines(t).filter((i) => i >= md.frontCut(t).first) };
+  assert.match(replay(front, cutting), /"line:1": agree, recorded extra/);
+  // A budget that reads a setext heading (its underline is the next line): the heading's place agrees now.
+  const underline = { ...md.READERS, ruleLines: (/** @type {string} */ t) => ruleLines(t).filter((r) => !/^ {0,3}(=+|-+)[ \t]*$/.test(t.split("\n")[r.at + 1] ?? "")) };
+  assert.match(replay(setext, underline), /"rule:1": agree, recorded extra/);
+  // A budget that drops a rule line before a blank line: caught, mid-text too.
+  const dropping = { ...md.READERS, ruleLines: (/** @type {string} */ t) => ruleLines(t).filter((r) => (t.split("\n")[r.at + 1] ?? "").trim() !== "") };
+  assert.match(replay(setext, dropping), /"rule:4": differs, recorded agree/);
+  assert.match(replay(at("rv2-two-rule-paragraphs"), dropping), /"rule:1": differs, recorded agree[^]*"rule:3": differs, recorded agree/);
+  // A heading after a byte order mark is prose to the parser; the budget's own heading test reads it as a heading
+  // after it drops the mark. A budget that tests the line as written closes it; a fence reader that keeps the mark
+  // does not: the place is the budget's.
+  const bom = at("rv-bom-no-front-matter-heading");
+  assert.match(String(bom.except?.["rule:1"]), /^gap: budget-heading-rule$/);
+  const asWritten = {
+    ...md.READERS,
+    ruleLines: (/** @type {string} */ t) =>
+      outsideFenceLines(t).flatMap((i) => {
+        const line = t.split("\n")[i];
+        return /^[ \t]*#/.test(line) || ruleKey(line).length < MIN_RULE ? [] : [{ at: i, line, key: ruleKey(line) }];
+      }),
+  };
+  assert.match(replay(bom, asWritten), /"rule:1": agree, recorded differs/);
+  const allProse = { ...md.READERS, outsideFenceLines: (/** @type {string} */ t) => t.split("\n").map((_, i) => i) };
+  assert.doesNotMatch(replay(bom, allProse), /rule:1/);
+});
+
+test("reference: the ban lines corpus and the Markdown record agree on every text they share, or the ban cell names why", () => {
+  const cells = md.readRecord().cells;
+  /** @type {{ id: string, text: string, verdict: string, why?: string[], known?: string, gap?: string }[]} */
+  const bans = JSON.parse(readFileSync(new URL("./verdicts/bans.json", import.meta.url), "utf8"));
+  assert.deepEqual(md.twinProblems(bans, cells), []);
+  // A ban cell with no twin in the record fails, unless the list of cells with none names it with why; one that
+  // disagrees and names no anchor fails.
+  const lone = { id: "lone", text: "\uFEFF~~~\nNever use `zo` in a rule line of this file.\n~~~\n", verdict: "pass" };
+  assert.match(md.twinProblems([...bans, lone], cells).join("\n"), /lone: no cell of test\/reference\/markdown\.json holds its text/);
+  assert.deepEqual(md.twinProblems([...bans, lone], cells, { lone: "a text the parser cannot be given" }), []);
+  const twin = /** @type {typeof bans[number]} */ (bans.find((b) => b.id === "fence-bom-then"));
+  const { gap: _, ...unanchored } = twin;
+  assert.match(md.twinProblems([unanchored], cells).join("\n"), /fence-bom-then: bans\.json says pass \[\], the model gets said \["zz"\]/);
+  const said = /** @type {typeof bans[number]} */ (bans.find((b) => b.id === "never-ever"));
+  assert.match(md.twinProblems([{ ...said, why: ["other"] }], cells).join("\n"), /never-ever: bans\.json says said \["other"\], the model gets said \["eval"\]/);
+  assert.deepEqual(md.modelBans(cells, "no such text"), null);
+  // What the model never gets is no ban: a comment's, and the hidden part of a line.
+  assert.deepEqual(md.modelBans(cells, "<!-- never use `eval` -->"), { verdict: "pass" });
+  assert.deepEqual(md.modelBans(cells, "<!-- Never use `qa` here --> See the docs.\n"), { verdict: "pass" });
+  // Nor the part of a line a front matter cut ends in: the model gets only what follows the closer.
+  assert.deepEqual(md.modelBans(cells, "---\ndescription: never use `qb` in any file---x\nBody line.\n"), { verdict: "pass" });
+});
+
+test("reference control: the Markdown recorder cuts front matter, takes out comments and places blocks as the record's steps say, and refuses a cell it cannot place", () => {
+  /** @type {string[]} */
+  const seen = [];
+  /** A parser that gives `tokens` (and the definitions it kept as none) for any text, and keeps the texts it was given. @param {any[]} tokens @param {string[]} [defs] */
+  const lexer = (tokens, defs = []) => (/** @type {string} */ content) => (seen.push(content), { tokens, defs });
+  const para = (/** @type {string} */ raw) => ({ type: "paragraph", raw, tokens: [{ type: "text", raw: raw.trim(), text: raw.trim() }] });
+  // Front matter as Claude Code cuts it: the lines up to the closer, and the blank lines after it, are front matter.
+  assert.equal(md.mdReading("---\nk: v\n---\n\nbody\n", lexer([para("body\n")])).lines, "fffftt");
+  assert.equal(seen.at(-1), "body\n");
+  assert.deepEqual(md.frontCut("---\nk: v\n---\nbody"), { content: "body", first: 3, mid: false });
+  // A closer inside a line: the rest of that line is the text, its class the line's, and what the model gets of it.
+  assert.deepEqual(md.mdReading("---\nk: a---b\nc\n", lexer([para("b\nc\n")])), { lines: "fttt", shown: { 2: "b" }, imports: [] });
+  assert.equal(seen.at(-1), "b\nc\n");
+  // No other `---`: nothing is cut, and a byte order mark stays in the text the parser gets.
+  md.mdReading("---\nk: v\n", lexer([{ type: "hr", raw: "---\n" }, para("k: v\n")]));
+  assert.equal(seen.at(-1), "---\nk: v\n");
+  md.mdReading("﻿x\n", lexer([para("﻿x\n")]));
+  assert.equal(seen.at(-1), "﻿x\n");
+  assert.equal(md.mdReading("﻿---\nk\n---\nx\n", lexer([para("x\n")])).lines, "ffftt");
+  assert.equal(seen.at(-1), "x\n");
+  // A top-level comment's lines are hidden; text beside it is what the model gets of that line; a comment in a list item is not taken out.
+  assert.equal(md.mdReading("<!-- a\nb -->\ntext\n", lexer([{ type: "html", raw: "<!-- a\nb -->\n" }, para("text\n")])).lines, "hhtt");
+  assert.deepEqual(md.mdReading("<!-- a --> rest\n", lexer([{ type: "html", raw: "<!-- a --> rest\n" }])), { lines: "tt", shown: { 1: " rest" }, imports: [] });
+  assert.equal(md.mdReading("<div>\n<!-- a -->\n</div>\n", lexer([{ type: "html", raw: "<div>\n<!-- a -->\n</div>\n" }])).lines, "tttt");
+  const item = { type: "list", raw: "- a\n  <!-- b -->\n", items: [{ type: "list_item", raw: "- a\n  <!-- b -->", tokens: [{ type: "text", raw: "a\n", text: "a" }, { type: "html", raw: "<!-- b -->" }] }] };
+  assert.equal(md.mdReading("- a\n  <!-- b -->\n", lexer([item])).lines, "ttt");
+  // Characters outside the BMP before a comment's end: the mask is read by UTF-16 offset.
+  const astral = "<!--\n😀😀😀 --> Never use `qv` here.\n";
+  assert.deepEqual(md.mdReading(astral, lexer([{ type: "html", raw: astral }])), { lines: "htt", shown: { 2: " Never use `qv` here." }, imports: [] });
+  // A link reference definition is no token: it is the lexer's definition there, and hidden where the text holds a comment.
+  assert.equal(md.mdReading("[r]: /u\ntext\n", lexer([para("text\n")], ["[r]: /u\n"])).lines, "ttt");
+  assert.equal(md.mdReading("[r]: /u\n<!-- c -->\n", lexer([{ type: "html", raw: "<!-- c -->\n" }], ["[r]: /u\n"])).lines, "hht");
+  assert.throws(() => md.mdReading("[q]: /u\ntext\n", lexer([para("text\n")], ["[r]: /u\n"])), /do not cover/);
+  assert.throws(() => md.mdReading("[q]: /u\ntext\n", lexer([para("text\n")])), /do not cover/);
+  // A block's lines found by their text, a container's markers and white space aside.
+  const fenced = { type: "list", raw: "- a\n\n  ```\n  code\n  ```\n", items: [{ type: "list_item", raw: "- a\n\n  ```\n  code\n  ```", tokens: [{ type: "text", raw: "a", text: "a" }, { type: "space", raw: "\n\n" }, { type: "code", raw: "```\ncode\n```" }] }] };
+  assert.equal(md.mdReading("- a\n\n  ```\n  code\n  ```\n", lexer([fenced])).lines, "ttccct");
+  const quoted = { type: "blockquote", raw: "> ## h\n> ```\n> q\n", tokens: [{ type: "heading", raw: "## h\n", tokens: [] }, { type: "code", raw: "```\nq\n" }] };
+  assert.equal(md.mdReading("> ## h\n> ```\n> q\n", lexer([quoted])).lines, "#cct");
+  // Two blocks with the same lines, each placed once; a block's lines that also stand outside any block, refused.
+  const two = [{ type: "code", raw: "    same\n" }, { type: "space", raw: "\n" }, { type: "code", raw: "    same\n" }];
+  assert.equal(md.mdReading("    same\n\n    same\n", lexer(two)).lines, "ctct");
+  assert.throws(() => md.mdReading("same\n\n    same\n", lexer([para("same\n\n"), { type: "code", raw: "    same\n" }])), /stand elsewhere in the cell too/);
+  assert.throws(() => md.mdReading("x\n", lexer([{ type: "code", raw: "x\n" }, { type: "code", raw: "    y\n" }])), /do not cover/);
+  assert.throws(() => md.mdReading("x\n", lexer([{ type: "list", raw: "x\n", items: [{ type: "list_item", raw: "x", tokens: [{ type: "code", raw: "zz" }] }] }])), /not found in the text/);
+  // A first line with a byte order mark is no container marker: a block on it is not found there.
+  assert.equal(md.mdReading("﻿```\nx\n```\n", lexer([para("﻿```\nx\n"), { type: "code", raw: "```\n" }])).lines, "ttct");
+  assert.throws(() => md.mdReading("a\rb", lexer([])), /lone carriage return/);
+  // readAll: each cell's text after the cut goes to the parser once; a text the parser threw on is that cell's refusal.
+  /** @type {string[][]} */
+  const asked = [];
+  const { cells, refused } = md.readAll(
+    [{ id: "a", from: "control", text: "---\nk\n---\nx\n" }, { id: "b", from: "control", text: "y\n" }],
+    (contents) => (asked.push(contents), [{ tokens: [para("x\n")], defs: [] }, { error: "Maximum call stack size exceeded" }]),
+  );
+  assert.deepEqual(asked, [["x\n", "y\n"]]);
+  assert.equal(cells[0].md?.lines, "ffftt");
+  assert.deepEqual(refused, ['b: the parser threw: "Maximum call stack size exceeded"']);
+  // What the parser says goes to the terminal quoted: no control byte of it.
+  const errorLine = md.readAll([{ id: "c", from: "control", text: "z\n" }], () => [{ error: "\u001b]52;c;eA==\u0007" }]).refused[0];
+  assert.ok(!errorLine.includes("\u001b") && errorLine.includes("\\u001b"), errorLine);
+});
+
+test("reference control: Claude Code's import walk takes a word as its binary's walk does", () => {
+  const tokens = [
+    { type: "paragraph", tokens: [{ type: "text", text: "see @a.md and @b.md#x" }, { type: "codespan", text: "@c.md" }, { type: "strong", tokens: [{ type: "text", text: "@d.md" }] }] },
+    { type: "code", text: "@e.md" },
+    { type: "html", raw: "<!-- @f.md --> @g.md" },
+    { type: "html", raw: "<!-- @x.md -->" },
+    { type: "html", raw: "<div>@h.md</div>" },
+    { type: "list", items: [{ type: "list_item", tokens: [{ type: "text", text: "@i\\ j.md and @a.md" }] }] },
+    { type: "paragraph", tokens: [{ type: "text", text: "@@k.md @#x @/ @/abs.md @~/home.md @./rel.md @(x) mail@l.md\t@m.md" }] },
+  ];
+  assert.deepEqual(md.walk(tokens), ["a.md", "b.md", "d.md", "g.md", "i j.md", "/abs.md", "~/home.md", "./rel.md", "m.md"]);
+});
+
+/** A stand-in for Claude Code's binary text: the reader's steps in their shapes, minified names given. @param {Record<string, string>} n @param {Record<string, string>} [change] */
+const binary = (n, change = {}) =>
+  [
+    `x;import{dirname as ${n.dir},extname as ${n.ext}}from"path";var ${n.set}=new Set([".txt",".md"]);`,
+    `function ${n.split}(e){let{frontmatter:n,content:r}=${n.front}(e);if(!n.paths)return{content:r};return{content:r}}`,
+    `function ${n.read}(e,n,r,s){let h=${n.ext}(n).toLowerCase();if(h&&!${n.set}.has(h))return t(\`Skipping non-text file in @include: \${n}\`),{info:null,includePaths:[]};let{content:y,paths:b}=${n.split}(e),w=y.includes("<!--"),H=s!==void 0&&y.includes("@"),q=w||H?new ${n.lexer}({gfm:!1}).lex(y):void 0,K=w&&q?${n.comments}(q).content:y,Q=q&&s!==void 0?${n.walk}(q,s):[];return Q}`,
+    `function ${n.defaults}(){return{async:!1,breaks:!1,extensions:null,gfm:!0,hooks:null,pedantic:!1,renderer:null,silent:!1,tokenizer:null,walkTokens:null}}var ${n.rules}={fences:${change.rule ?? "/^ {0,3}(`{3,}|~{3,})([^\\n]*)/"},code:/^((?: {4}| {0,3}\\t)[^\\n]+)/,fencesBegin:(e)=>new RegExp(\`^ {0,\${Math.min(${change.indent ?? "3"},e-1)}}(?:\\\`\\\`\\\`|~~~)\`),tabs:(e)=>" ".repeat(${change.tab ?? "3"}*e.length)};`,
+    `class ${n.lexer}{tokens;options;state;tokenizer;inlineQueue;constructor(e){}}var ${n.m}={};${n.m}.lexer=${n.lexer}.lex;`,
+    `function ${n.comments}(${n.a}){let ${n.b}="",${n.c}=!1;for(let ${n.d} of ${n.a}){if(${n.d}.type==="html"){let ${n.e}=${n.d}.raw.replace(/<!--[\\s\\S]*?-->/g,"");if(${n.c}=!0,${n.e}.trim().length>0)${n.b}+=${change.joined ?? n.e};continue}${n.b}+=${n.d}.raw}return{content:${n.b},stripped:${n.c}}}`,
+    `function ${n.walk}(e,n){let r=new Set;function s(y){r.add(y)}function h(y){for(let b of y){if(b.type==="code"||b.type==="codespan")continue;if(b.type==="html"){let w=b.raw||"",K=w.replace(/<!--[\\s\\S]*?-->/g,"");if(K.trim().length>0)s(${change.scan ?? "K"});continue}if(b.type==="text")s(b.text||"");if(b.tokens)h(b.tokens)}}return h(e),[...r]}`,
+    `var ${n.re}=${change.expr ?? "/^---\\s*\\n([\\s\\S]*?)---\\s*\\n?/"},W3=/x/;function ${n.front}(e,n,r){let s=e;e=${n.bom}(e);let h=e.indexOf("---",3)<0?null:e.match(${n.re});if(!h)return{frontmatter:{},frontmatterAsWritten:{},content:${change.content ?? "s"}};let y=h[1]||"",w=e.slice(h[0].length);return{frontmatter:{},content:w}}`,
+    `function ${n.bom}(e){return e.charCodeAt(0)===65279?e.slice(1):e}`,
+  ].join("\n");
+const NAMES = { dir: "QC", ext: "jqo", set: "tKo", split: "nKo", read: "pYe", lexer: "zA", comments: "BVe", walk: "fKo", front: "xa", re: "qC", bom: "uE", defaults: "pf", rules: "fl", m: "Mk", a: "e", b: "n", c: "r", d: "h", e: "b" };
+
+test("reference control: the steps of Claude Code's reader are found by their shape, whatever the minified names, and a change of what they do is seen", () => {
+  const a = md.stepsOf(binary(NAMES));
+  assert.deepEqual(Object.entries(a).filter(([k, v]) => k !== "textExtensions" && !/^[0-9a-f]{16}$/.test(String(v))), [], JSON.stringify(a));
+  assert.deepEqual(a.textExtensions, [".md", ".txt"]);
+  // Another build with other names, locals too: the same steps; read from a Buffer as from text.
+  const other = { dir: "aB", ext: "cD", set: "eF", split: "gH", read: "iJ", lexer: "Qx", comments: "e$", walk: "Gh", front: "ij", re: "kL", bom: "mN", defaults: "oP", rules: "qR", m: "sT", a: "u", b: "v", c: "w", d: "z", e: "y" };
+  assert.deepEqual(md.stepsOf(binary(other)), a);
+  assert.deepEqual(md.stepsOf(Buffer.from(binary(NAMES), "latin1")), a);
+  // A function of the same name far from the reader (another bundle in the binary) is not the one hashed.
+  assert.deepEqual(md.stepsOf(`function fKo(e){return e}${" ".repeat(20000)}${binary(NAMES)}`), a);
+  // A value handed along otherwise moves the step's hash: the comment step keeps the comment, the walk scans the
+  // whole comment token, the front matter cut drops a byte order mark it keeps today.
+  assert.notEqual(md.stepsOf(binary(NAMES, { joined: "h.raw" })).comments, a.comments);
+  assert.notEqual(md.stepsOf(binary(NAMES, { scan: "w" })).walk, a.walk);
+  assert.equal(md.stepsOf(binary(NAMES, { content: "e" })).frontMatter, "not found");
+  // Another rule of the bundled parser, another front matter expression: seen.
+  assert.notEqual(md.stepsOf(binary(NAMES, { rule: "/^ {0,1}(`{3,}|~{3,})([^\\n]*)/" })).parserRules, a.parserRules);
+  // A rule the parser builds from a template, and its tokenizer's code: the whole section's hash moves.
+  assert.notEqual(md.stepsOf(binary(NAMES, { indent: "2" })).parserCode, a.parserCode);
+  assert.notEqual(md.stepsOf(binary(NAMES, { tab: "4" })).parserCode, a.parserCode);
+  assert.equal(md.stepsOf(binary(NAMES, { tab: "4" })).parserRules, a.parserRules);
+  // The section itself, as a module the child runs, with its Lexer.
+  assert.match(String(md.bundledLexer(binary(NAMES))), /^function pf\(\)[^]*\.lexer=zA\.lex;\nexport \{ zA as Lexer \};$/);
+  assert.equal(md.bundledLexer("nothing here"), null);
+  // The pinned parser against the bundled one, text by text.
+  assert.deepEqual(md.lexersDisagree(["a", "b"], [{ tokens: [1], defs: [] }, { tokens: [2], defs: [] }], [{ tokens: [1], defs: [] }, { tokens: [2], defs: [] }]), []);
+  assert.deepEqual(md.lexersDisagree(["a", "b"], [{ tokens: [1], defs: [] }, { tokens: [2], defs: [] }], [{ tokens: [1], defs: [] }, { tokens: [3], defs: [] }]), ['"b"']);
+  assert.equal(md.stepsOf(binary(NAMES, { expr: "/^---\\n([\\s\\S]*?)\\n---/" })).frontMatter, "not found");
+  // No lexer class of that name, two front matter functions, a front matter cut that calls another function: not found.
+  assert.equal(md.stepsOf(binary(NAMES).replace("class zA{", "class zB{")).read, "not found");
+  const front = /var qC=[^\n]*/.exec(binary(NAMES))?.[0] ?? "";
+  assert.equal(md.stepsOf(`${binary(NAMES)}\n${front.replaceAll("xa", "xb")}`).frontMatter, "not found");
+  assert.equal(md.stepsOf(binary(NAMES).replace("}=xa(e);if(!n.paths)", "}=xz(e);if(!n.paths)")).read, "not found");
+  assert.deepEqual(Object.values(md.stepsOf("nothing here")), ["not found", "not found", "not found", "not found", "not found", "not found", "not found", []]);
+  assert.equal(md.codeHash("function ab(c){return c}"), md.codeHash("function xy(z){return z}"));
+  assert.notEqual(md.codeHash("let a=1"), md.codeHash("var a=1"));
+  // Letters inside a literal are no names: a local renamed where a regular expression says \\s hashes the same.
+  const step = (/** @type {string} */ s) => `function BVe(e){let n="",r=!1,${s}=/<!--[\\s\\S]*?-->/g;for(let h of e){if(h.type==="html"){let y=h.raw.trimStart();if(y.startsWith("<!--")&&y.includes("-->")){let b=h.raw.replace(${s},"");if(r=!0,b.trim().length>0)n+=b;continue}}n+=h.raw}return{content:n,stripped:r}}`;
+  assert.equal(md.codeHash(step("s")), md.codeHash(step("x")));
+  assert.notEqual(md.codeHash(step("s")), md.codeHash(step("s").replace("/g;", "/;")));
+  assert.notEqual(md.codeHash('let a="s"'), md.codeHash('let a="x"'));
+  assert.equal(md.codeHash('let s="a\\"s";f(s)'), md.codeHash('let x="a\\"s";f(x)'));
+  assert.equal(md.codeHash("let g=/a/g;g.test(x)"), md.codeHash("let y=/a/g;y.test(x)"));
+  assert.equal(md.codeHash("let s=/[/]s/;f(s)"), md.codeHash("let x=/[/]s/;f(x)"));
+  // Two readers, no extname import, two parser defaults: not found.
+  const reader = /function pYe[^\n]*/.exec(binary(NAMES))?.[0] ?? "";
+  assert.equal(md.stepsOf(`${binary(NAMES)}\n${reader.replace("function pYe", "function pYf")}`).read, "not found");
+  assert.equal(md.stepsOf(binary(NAMES).replace("extname as jqo", "basename as jqo")).read, "not found");
+  const defaults = /function pf[^;]*;/.exec(binary(NAMES))?.[0] ?? "";
+  assert.equal(md.stepsOf(binary(NAMES).replace(defaults, `${defaults}${defaults.replace("pf", "pg")}`)).parserRules, "not found");
+  assert.notEqual(md.codeHash("function ab(c,d){return c}"), md.codeHash("function ab(c,d){return d}"));
+  // The pinned parser's rules against the bundle's: the same set passes, another is said.
+  const rules = md.ruleLiterals(binary(NAMES).slice(binary(NAMES).indexOf("function pf"), binary(NAMES).indexOf(".lexer=zA.lex;")));
+  assert.equal(rules.length, 2);
+  const steps = /** @type {md.Steps} */ ({ ...a, version: "0" });
+  assert.deepEqual(md.rulesMoved(`const a = {fences:${rules[1]},code:${rules[0]}};`, steps), []);
+  assert.match(md.rulesMoved(`const a = {fences:/^ {0,2}(\`{3,})/,code:${rules[0]}};`, steps).join(""), /Claude Code's bundle holds/);
+  // What a module's comments hold is no rule (marked's text says "/c*$/" in one).
+  assert.deepEqual(md.rulesMoved(`// trims /c*$/, the suffix\nconst a = {fences:${rules[1]},code:${rules[0]}};`, steps), []);
+});
+
+/** A tar entry: a ustar header and the content padded to 512 bytes. @param {string} name @param {string} text @param {string} [prefix] */
+const tarEntry = (name, text, prefix = "") => {
+  const h = Buffer.alloc(512);
+  h.write(name, 0);
+  h.write(`${Buffer.byteLength(text).toString(8).padStart(11, "0")}\0`, 124);
+  h.write("0", 156);
+  h.write("ustar\0", 257);
+  h.write(prefix, 345);
+  const body = Buffer.alloc(Math.ceil(Buffer.byteLength(text) / 512) * 512);
+  body.write(text);
+  return Buffer.concat([h, body]);
+};
+
+test("reference control: the parser comes out of its tarball by name, and the one pinned is what Claude Code's bundle matches", () => {
+  const tar = Buffer.concat([tarEntry("package/README.md", "r".repeat(600)), tarEntry("marked.esm.js", "export const x = 1;", "package/lib"), Buffer.alloc(1024)]);
+  assert.equal(md.fileInTar(tar, "package/lib/marked.esm.js")?.toString(), "export const x = 1;");
+  assert.equal(md.fileInTar(tar, "package/README.md")?.toString(), "r".repeat(600));
+  assert.equal(md.fileInTar(tar, "package/other.js"), null);
+  // The version whose rules Claude Code 2.1.310's bundle holds (15.0.5 holds the same rules; its helpers are 15.0.6's).
+  assert.equal(md.PARSER.version, "15.0.6");
+  assert.equal(md.PARSER.file, "package/lib/marked.esm.js");
+  assert.ok(md.PARSER.bytes >= 105_000 && md.PARSER.bytes <= 2 * 1024 * 1024);
+});
+
+test("reference control: the parser's tarball is taken only as pinned: its integrity, no redirect, no encoding, no more bytes than its cap", async () => {
+  const tgz = gzipSync(Buffer.concat([tarEntry("package/lib/marked.esm.js", "export class Lexer {}"), Buffer.alloc(1024)]));
+  const parser = { version: "0", tarball: "https://registry.example/m.tgz", integrity: `sha512-${createHash("sha512").update(tgz).digest("base64")}`, file: "package/lib/marked.esm.js", bytes: 4096 };
+  /** @type {{ url: unknown, opts: any }[]} */
+  const asked = [];
+  const answer = (/** @type {BodyInit | null} */ body, /** @type {ResponseInit} */ init = {}) => /** @type {typeof fetch} */ (async (url, opts) => (asked.push({ url, opts }), new Response(body, init)));
+  assert.deepEqual(await md.loadParser({ fetch: answer(tgz), parser }), { source: "export class Lexer {}" });
+  assert.equal(asked[0].url, parser.tarball);
+  assert.equal(asked[0].opts.redirect, "error");
+  assert.equal(asked[0].opts.headers["accept-encoding"], "identity");
+  assert.ok(asked[0].opts.signal instanceof AbortSignal);
+  await assert.rejects(md.loadParser({ fetch: answer(Buffer.concat([tgz, Buffer.from("x")])), parser }), /integrity/);
+  await assert.rejects(md.loadParser({ fetch: answer(null, { status: 302, headers: { location: "https://evil.example/m.tgz" } }), parser }), /answered 302/);
+  await assert.rejects(md.loadParser({ fetch: answer(tgz, { headers: { "content-encoding": "gzip" } }), parser }), /content encoding "gzip" refused/);
+  await assert.rejects(md.loadParser({ fetch: answer(tgz, { headers: { "content-length": "5000" } }), parser }), /more than 4096 bytes/);
+  let pulled = 0;
+  let cancelled = false;
+  const endless = new ReadableStream({ pull: (c) => void (pulled++, c.enqueue(new Uint8Array(1000))), cancel: () => void (cancelled = true) });
+  await assert.rejects(md.loadParser({ fetch: answer(endless), parser }), /more than 4096 bytes/);
+  assert.ok(pulled < 10, `${pulled} chunks read`);
+  assert.ok(cancelled, "the answer past the cap is cancelled");
+  await assert.rejects(md.loadParser({ fetch: answer(Buffer.concat([tgz.subarray(0, 10)])), parser: { ...parser, integrity: `sha512-${createHash("sha512").update(tgz.subarray(0, 10)).digest("base64")}` } }));
+  // An answer that stops sending ends at the time limit, whatever the fetch does with its signal.
+  const stalled = new ReadableStream({ pull: () => new Promise(() => {}) });
+  /** @type {NodeJS.Timeout | undefined} */
+  let timer;
+  const slow = new Promise((_, no) => (timer = setTimeout(() => no(new Error("still reading")), 5000)));
+  try {
+    await assert.rejects(Promise.race([md.loadParser({ fetch: answer(stalled), parser, ms: 100 }), slow]), /timed out after 100 ms/);
+    // A fetch that keeps to its signal fails with an abort: said as the time limit too.
+    const keeping = /** @type {typeof fetch} */ ((_, opts) => new Promise((_, no) => opts?.signal?.addEventListener("abort", () => no(new DOMException("aborted", "AbortError")))));
+    await assert.rejects(Promise.race([md.loadParser({ fetch: keeping, parser, ms: 100 }), slow]), /timed out after 100 ms/);
+    // And one whose body fails with the abort, as a fetch's does.
+    const failing = /** @type {typeof fetch} */ (async (_, opts) => new Response(new ReadableStream({ start: (c) => opts?.signal?.addEventListener("abort", () => c.error(new DOMException("aborted", "AbortError"))) })));
+    await assert.rejects(Promise.race([md.loadParser({ fetch: failing, parser, ms: 100 }), slow]), /timed out after 100 ms/);
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
+test("reference control: the parser runs in a child that reads no file, starts no process and reaches no socket, with only the environment it is given", async () => {
+  for (const [v, holds] of /** @type {const} */ ([["20.0.0", false], ["22.12.0", false], ["22.13.0", true], ["23.4.0", false], ["23.5.0", true], ["24.0.0", true]])) assert.equal(md.permissionHolds(v), holds, v);
+  const env = Object.fromEntries(["HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL", "GIT_CEILING_DIRECTORIES", "TZ", "LC_ALL", "GIT_CONFIG_NOSYSTEM"].map((k) => [k, process.env[k] ?? ""]));
+  // On a Node whose model let a process start (Node 20.0.0 ran execFileSync under it), or where nothing shuts the
+  // child's network (no sandbox-exec), the parser does not run at all.
+  if (!md.permissionHolds()) {
+    assert.throws(() => md.lexInChild("export class Lexer {}", ["x"], { env }), /permission model holds \(22\.13, 23\.5 or later\); this is /);
+    return;
+  }
+  if (!existsSync("/usr/bin/sandbox-exec")) {
+    assert.throws(() => md.lexInChild("export class Lexer {}", ["x"], { env }), /nothing here shuts the parser's network/);
+    return;
+  }
+  // What the child is started with: sandbox-exec with the network denied, the permission model, and by default an
+  // empty environment: a variable of the recorder's never reaches the parser.
+  /** @type {{ file: string, args: string[], opts: any }[]} */
+  const ran = [];
+  const run = /** @type {any} */ ((/** @type {string} */ file, /** @type {string[]} */ args, /** @type {any} */ opts) => (ran.push({ file, args, opts }), { status: 0, stdout: "[]", stderr: "" }));
+  process.env.EN_SECRET = "canary";
+  try {
+    md.lexInChild("export class Lexer {}", [], { run });
+  } finally {
+    delete process.env.EN_SECRET;
+  }
+  assert.equal(ran[0].file, "/usr/bin/sandbox-exec");
+  assert.deepEqual(ran[0].args.slice(0, 4), ["-p", "(version 1)(allow default)(deny network*)", process.execPath, "--permission"]);
+  assert.deepEqual(ran[0].opts.env, {});
+  // A socket on the machine (the Docker API is one): the child's module does not reach it.
+  const dir = realpathSync(mkdtempSync(join(existsSync("/tmp") ? "/tmp" : tmpdir(), "en-uds-")));
+  const sock = join(dir, "s");
+  const server = createServer((c) => c.destroy());
+  await new Promise((r) => server.listen(sock, () => r(undefined)));
+  try {
+    const reaching = `import net from "node:net";
+export const reached = await new Promise((ok) => { const s = net.connect({ path: ${JSON.stringify(sock)} }, () => { s.destroy(); ok("connected"); }); s.on("error", (e) => ok("refused: " + e.code)); });
+export class Lexer { constructor() { this.tokenizer = { def: () => undefined }; } lex(c) { return [{ type: "text", raw: c, reached }]; } }`;
+    const [r] = md.lexInChild(reaching, ["x"], { env });
+    assert.ok("tokens" in r, JSON.stringify(r));
+    assert.match(r.tokens[0].reached, /^refused: /);
+  } finally {
+    server.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+  const fake = `import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+const tried = (f) => { try { f(); return "ran"; } catch (e) { return e.code ?? String(e.message); } };
+export class Lexer {
+  constructor() { this.tokenizer = { def: () => undefined }; }
+  lex(src) {
+    if (src === "deep") throw new Error("Maximum call stack size exceeded");
+    return [{ type: "paragraph", raw: src, read: tried(() => readFileSync(${JSON.stringify(join(process.env.HOME ?? "/", ".gitconfig"))})), exec: tried(() => execFileSync("id")), env: Object.keys(process.env).sort().join(",") }];
+  }
+}`;
+  const [r, thrown] = md.lexInChild(fake, ["text\n", "deep"], { env });
+  assert.ok("tokens" in r);
+  const [probe] = r.tokens;
+  assert.equal(probe.read, "ERR_ACCESS_DENIED");
+  assert.equal(probe.exec, "ERR_ACCESS_DENIED");
+  assert.deepEqual(probe.env.split(",").filter((k) => !k.startsWith("__CF")), Object.keys(env).sort());
+  assert.deepEqual(r.defs, []);
+  assert.deepEqual(thrown, { error: "Maximum call stack size exceeded" });
+  assert.throws(() => md.lexInChild("throw new Error('no module')", ["x"], { env }), /the parser's child failed/);
+  // A module that answers for the child itself is caught by the count of readings.
+  assert.throws(() => md.lexInChild('process.stdout.write(\'[{"tokens":[],"defs":[]}]\'); process.exit(0);', ["x", "y"], { env }), /another number of readings/);
+});
+
+test("reference control: a cell's id is plain words in every record, what the recorders print of a cell is quoted, and the claude run is never one a node_modules/.bin holds", () => {
+  const escId = "x\u001b]0;t\u0007";
+  for (const problems of [md.cellProblems({ id: escId, from: "p", text: "a" }), cellProblems({ id: escId, from: "p", lock: {} }), cc.cellProblems({ id: escId, from: "p", files: {} })]) {
+    assert.equal(problems.length, 1);
+    assert.ok(!problems[0].includes("\u001b") && problems[0].includes("\\u001b"), problems[0]);
+  }
+  assert.notDeepEqual(md.cellProblems({ id: "Upper", from: "p", text: "a" }), []);
+  assert.deepEqual(cc.cellProblems({ id: "spelling-dash-C", from: "p", files: {} }), []);
+  // npm run puts every ancestor's node_modules/.bin first on PATH: none of them is taken, nor a relative folder.
+  const top = mkdtempSync(join(tmpdir(), "en-ref-bin-"));
+  const bins = join(top, "node_modules", ".bin");
+  const real = join(top, "usr", "bin");
+  for (const d of [bins, real]) {
+    mkdirSync(d, { recursive: true });
+    writeFileSync(join(d, "claude"), "#!/bin/sh\n", { mode: 0o755 });
+  }
+  assert.equal(cc.claudeBinary("claude", [bins, `${bins}/`, "usr/bin", real].join(delimiter))?.path, join(real, "claude"));
+  assert.equal(cc.claudeBinary("claude", [bins, "usr/bin"].join(delimiter)), null);
+  mkdirSync(join(process.cwd(), "rel"), { recursive: true });
+  writeFileSync(join(process.cwd(), "rel", "claude"), "#!/bin/sh\n", { mode: 0o755 });
+  assert.equal(cc.claudeBinary("claude", ["rel", real].join(delimiter))?.path, join(real, "claude"));
+  assert.equal(cc.claudeBinary(join(bins, "claude"), "")?.path, join(bins, "claude"));
+});
+
+test("reference control: npm run test:reference runs the claude it resolves once, never one a node_modules/.bin holds", () => {
+  const top = realpathSync(mkdtempSync(join(existsSync("/tmp") ? "/tmp" : tmpdir(), "en-ref-run-")));
+  try {
+    const planted = join(top, "node_modules", ".bin");
+    const real = join(top, "bin");
+    const marker = join(top, "ran");
+    mkdirSync(planted, { recursive: true });
+    mkdirSync(real);
+    writeFileSync(join(planted, "claude"), `#!/bin/sh\necho x > '${marker}'\necho 9.9.9\n`, { mode: 0o755 });
+    writeFileSync(join(real, "claude"), "#!/bin/sh\necho 0.0.1\n", { mode: 0o755 });
+    const r = spawnSync(process.execPath, [fileURLToPath(new URL("./reference/claude.mjs", import.meta.url))], { env: { ...process.env, PATH: [planted, real, process.env.PATH ?? ""].join(delimiter) }, encoding: "utf8", timeout: 120_000 });
+    assert.equal(existsSync(marker), false, r.stdout + r.stderr);
+    assert.match(r.stdout, new RegExp(`claude: ${join(real, "claude").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+    // The PATH a recorder hands its children holds no node_modules/.bin and no relative folder either.
+    assert.equal(cc.safePath([planted, "rel", real, `${planted}/`].join(delimiter)), real);
+    // claude-code.mjs's check imports markdown.mjs: neither imports the other to have the binary, which would
+    // leave that import waiting on itself (Node: "unsettled top-level await").
+    for (const file of ["markdown.mjs", "../eval/selftest.mjs", "claude.mjs"]) assert.doesNotMatch(readFileSync(new URL(`./reference/${file}`, import.meta.url), "utf8"), /from "\.\/claude-code\.mjs"|from "\.\.\/reference\/claude-code\.mjs"/, file);
+  } finally {
+    rmSync(top, { recursive: true, force: true });
+  }
+});
+
+test("reference: npm run test:reference runs every recorder's check, the runner that takes --claude last", () => {
+  const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+  // npm hands a script's arguments to its last command alone: test/reference/claude.mjs forwards --claude to both of its checks.
+  assert.equal(pkg.scripts["test:reference"], "node test/reference/npm.mjs check && node test/reference/markdown.mjs check && node test/reference/claude.mjs");
 });

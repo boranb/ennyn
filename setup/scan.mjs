@@ -672,31 +672,38 @@ const NO_LITERAL = /^[\s>*+-]*(\d+[.)]\s*)?(\*\*)?no\s+`/i;
 const CODE_SPAN = /`([^`\n]+)`/g;
 
 /**
- * The lines of a Markdown text outside its fenced code blocks, fence lines left out: a block opens at a line of
- * three or more backticks or tildes after any indentation, so a fence in a list item counts (CommonMark measures
- * its indent from the item's content column), unless a backtick fence's info string holds a backtick
- * ("```npm test``` passes" is a code span); it ends at a line of the same character, at least as many, and nothing
- * after them; one left open runs to the end. A byte order mark is no part of the first line. Known limits: a
- * fence-like line in indented code opens a block, and a fence in a block quote and YAML front matter are read as
- * text. Measured on 264 Markdown files (45,480 lines) against a CommonMark parser, 7 lines of fenced code were read
- * as text; with an indent of at most three spaces, 18; with the list items' columns tracked by hand, more. One
- * reader for the budget's rule lines, the ban lines and the imports, read line by line: a pattern over the whole
- * text costs the square of a run of blank lines.
+ * The lines of a Markdown text outside its fenced code blocks, by their index in the text split at "\n", fence lines
+ * left out: a block opens at a line of three or more backticks or tildes after any indentation, so a fence in a list
+ * item counts (CommonMark measures its indent from the item's content column), unless a backtick fence's info string
+ * holds a backtick ("```npm test``` passes" is a code span); it ends at a line of the same character, at least as
+ * many, and nothing after them; one left open runs to the end. A byte order mark is no part of the first line. Where
+ * this reads otherwise than the parser Claude Code reads instruction files with, test/reference/markdown.json lists
+ * the place and the open node that closes it. One reader for the budget's rule lines, the ban lines and the imports,
+ * read line by line: a pattern over the whole text costs the square of a run of blank lines.
  * @param {string} text
- * @returns {string[]}
+ * @returns {number[]}
  */
-export function outsideFences(text) {
-  /** @type {string[]} */
+export function outsideFenceLines(text) {
+  /** @type {number[]} */
   const out = [];
   let fence = "";
-  for (const raw of text.replace(/^\uFEFF/, "").split("\n")) {
-    const m = /^[ \t]*(`{3,}|~{3,})([^\n]*)/.exec(raw);
-    const mark = m && !(m[1][0] === "`" && m[2].includes("`")) ? m[1] : "";
-    if (mark && !fence) fence = mark;
-    else if (mark && mark[0] === fence[0] && mark.length >= fence.length && m?.[2].trim() === "") fence = "";
-    else if (!fence) out.push(raw);
-  }
+  text
+    .replace(/^\uFEFF/, "")
+    .split("\n")
+    .forEach((raw, i) => {
+      const m = /^[ \t]*(`{3,}|~{3,})([^\n]*)/.exec(raw);
+      const mark = m && !(m[1][0] === "`" && m[2].includes("`")) ? m[1] : "";
+      if (mark && !fence) fence = mark;
+      else if (mark && mark[0] === fence[0] && mark.length >= fence.length && m?.[2].trim() === "") fence = "";
+      else if (!fence) out.push(i);
+    });
   return out;
+}
+
+/** The lines outsideFenceLines keeps, as text. @param {string} text @returns {string[]} */
+export function outsideFences(text) {
+  const lines = text.replace(/^\uFEFF/, "").split("\n");
+  return outsideFenceLines(text).map((i) => lines[i]);
 }
 
 /**
@@ -708,17 +715,36 @@ export function outsideFences(text) {
  * @returns {{ line: string, literals: string[] }[]}
  */
 export function banLines(text) {
-  /** @type {{ line: string, literals: string[] }[]} */
+  return banLinesAt(text).map(({ line, literals }) => ({ line, literals }));
+}
+
+/**
+ * banLines, each with the index of its line in the text split at "\n" (`at`).
+ * @param {string} text
+ * @returns {{ at: number, line: string, literals: string[] }[]}
+ */
+export function banLinesAt(text) {
+  /** @type {{ at: number, line: string, literals: string[] }[]} */
   const out = [];
-  for (const raw of outsideFences(text)) {
-    const l = raw.trim();
-    const prose = l.replace(CODE_SPAN, " ");
-    if (!BAN_EN.test(prose) && !BAN_TR.test(prose) && !BAN_TR_IMPERATIVE.test(prose) && !NO_LITERAL.test(l)) continue;
-    const literals = [...l.matchAll(CODE_SPAN)].map((m) => m[1].trim()).filter((s) => s.length >= 2 && s.length <= LITERAL_MAX);
-    if (!literals.length) continue;
-    out.push({ line: clipped(l, 160), literals: [...new Set(literals)].slice(0, 3) });
+  const lines = text.replace(/^\uFEFF/, "").split("\n");
+  for (const at of outsideFenceLines(text)) {
+    const literals = banLiterals(lines[at]);
+    if (literals.length) out.push({ at, line: clipped(lines[at].trim(), 160), literals });
   }
   return out;
+}
+
+/**
+ * The literals one line forbids, as banLines reads a line it keeps; none for a line that forbids nothing.
+ * @param {string} raw
+ * @returns {string[]}
+ */
+export function banLiterals(raw) {
+  const l = raw.trim();
+  const prose = l.replace(CODE_SPAN, " ");
+  if (!BAN_EN.test(prose) && !BAN_TR.test(prose) && !BAN_TR_IMPERATIVE.test(prose) && !NO_LITERAL.test(l)) return [];
+  const literals = [...l.matchAll(CODE_SPAN)].map((m) => m[1].trim()).filter((s) => s.length >= 2 && s.length <= LITERAL_MAX);
+  return [...new Set(literals)].slice(0, 3);
 }
 
 /**

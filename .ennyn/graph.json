@@ -1473,7 +1473,7 @@
       "value": "low",
       "cost": "S",
       "cluster": "init",
-      "source": "cycle 2026-10-26 (12), budget audit round 2: the rule was chosen by measurement on 264 real files (code read as text: 7, against 18 for the CommonMark indent rule without containers)",
+      "source": "cycle 2026-10-26 (12), budget audit round 2: the rule was chosen by measurement on 264 real files (code read as text: 7, against 18 for the CommonMark indent rule without containers); cycle 2026-10-27 (13): its known limits are cells of test/verdicts/bans.json and test/reference/markdown.json",
       "since": 12
     },
     {
@@ -1595,6 +1595,50 @@
       "cost": "S",
       "cluster": "evidence",
       "source": "cycle 2026-10-27 (13), plugin-eval-selftest round 1: reviews and measurements on claude 2.1.310",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "markdown-block-reader",
+      "title": "outsideFenceLines reads code blocks as the parser Claude Code reads instruction files with (marked 15.0.6, test/reference/markdown.json): an indented code block, at the top or in a list item, is code; a closing fence followed by a tab closes nothing; an unclosed `<!--` makes the rest of the file one HTML block, whose fences are no code; a byte order mark Claude Code keeps (no front matter cut) makes a fence on the first line prose",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "cycle 2026-10-27 (13), reference-markdown: the Markdown record's cells; known limits in test/reference/markdown.json and test/verdicts/bans.json",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "markdown-hidden-text",
+      "title": "The ban lines, the budget's rule lines and the imports leave out the text Claude Code takes out before the model reads it: front matter as Claude Code cuts it (its first `---` anywhere closes it, `...` does not, blank lines after the closer go with it), an HTML comment at the top level (one in a list item or a block quote stays), and in a file that holds a comment, a link reference definition",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-27 (13), reference-markdown: the Markdown record's cells; gap cells in test/reference/markdown.json, known limits in test/verdicts/bans.json",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "budget-heading-rule",
+      "title": "The budget leaves out headings as the parser reads them: `#tag` and seven hashes are prose, a heading in a list item or a block quote and a setext heading (the text line and its underline) are headings, and a `#` line after a byte order mark is prose (Claude Code keeps the mark when it cuts no front matter; ruleLines drops it before its heading test)",
+      "value": "low",
+      "cost": "S",
+      "cluster": "init",
+      "source": "cycle 2026-10-27 (13), reference-markdown: the Markdown record's cells; gap cells in test/reference/markdown.json",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "markdown-load-decision",
+      "title": "Whether an instruction file loads, and the bytes the budget counts for it, are read as Claude Code reads its text (front matter cut by its rule, the comment step), and replayed against the Markdown record: a comment indented four spaces (indented code to Claude Code, which loads the file; Ennyn says it does not), a `...` closer, a comment with a link reference definition (setup/scan.mjs holds, bytes)",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-27 (13), reference-markdown data review round 1: readers outside the Markdown record",
       "since": 13
     }
   ],

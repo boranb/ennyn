@@ -77,11 +77,26 @@ Object.assign(process.env, {
 const KEPT = ["HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL", "GIT_CEILING_DIRECTORIES", "TZ", "LC_ALL"];
 /** Refused calls, kept: the code under test may catch the throw and carry on. */
 const refused = /** @type {string[]} */ ([]);
+/** Fetches off the machine, refused and kept: the code under test may catch the rejection too. */
+const offline = /** @type {string[]} */ ([]);
 process.on("exit", () => {
-  if (!refused.length) return;
-  process.stderr.write(`test/hermetic.mjs: ${refused.length} child process call(s) dropped the test setup:\n${refused.join("\n")}\n`);
+  if (!refused.length && !offline.length) return;
+  if (refused.length) process.stderr.write(`test/hermetic.mjs: ${refused.length} child process call(s) dropped the test setup:\n${refused.join("\n")}\n`);
+  if (offline.length) process.stderr.write(`test/hermetic.mjs: ${offline.length} fetch(es) off the machine refused:\n${offline.join("\n")}\n`);
   process.exitCode = 1;
 });
+
+// A test reaches no network: fetch goes to a loopback host only (the deps tests' registries listen on 127.0.0.1).
+// node:http and node:https are not watched, nor a child's own connections.
+const LOOPBACK = ["127.0.0.1", "localhost", "[::1]", "::1"];
+const realFetch = globalThis.fetch;
+globalThis.fetch = (input, init) => {
+  const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url);
+  if (LOOPBACK.includes(url.hostname)) return realFetch(input, init);
+  const message = `test/hermetic.mjs: a fetch of ${JSON.stringify(url.host)} refused: a test reaches no network`;
+  offline.push(message);
+  return Promise.reject(new TypeError(message));
+};
 
 // Every temporary directory of the file lies under the hostile root (TMPDIR points into it, and the start and home
 // directories above were made there): it goes when the file ends. Left in place, each run of the suite kept some

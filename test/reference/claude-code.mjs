@@ -43,7 +43,8 @@
  *   node test/reference/claude-code.mjs show [id…]                           each place's comparison
  *   node test/reference/claude-code.mjs check [--claude <bin>]               exit 1 when Claude Code reads a cell otherwise
  *   node test/reference/claude-code.mjs record [--claude <bin>]              take every reading again
- * The binary is `--claude`, else `claude` on PATH (`npm run test:reference -- --claude <bin>`).
+ * The binary is `--claude`, else `claude` on PATH (`npm run test:reference -- --claude <bin>`). `check` also holds the
+ * binary to the steps around its Markdown parser that test/reference/markdown.json models.
  */
 
 import { execFileSync, spawn } from "node:child_process";
@@ -57,6 +58,9 @@ import { sensitivePaths } from "../../plan/audit.mjs";
 import { askRules } from "../../setup/permissions.mjs";
 import { agentSetup, projectFiles } from "../../setup/scan.mjs";
 import { loadPathScopedRules, rulesForPath } from "../../adapters/claude-code/rules-index.mjs";
+import { claudeBinary, safePath, versionOf } from "./claude-bin.mjs";
+
+export { claudeBinary, safePath, versionOf };
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const RECORD = join(HERE, "claude-code.json");
@@ -448,7 +452,8 @@ export function cellProblems(c) {
   /** @type {string[]} */
   const out = [];
   if (!isObject(c)) return ["a cell is an object"];
-  if (typeof c.id !== "string" || !c.id) out.push("no id");
+  // A plain id: messages print it, and a control byte in it would reach the terminal.
+  if (typeof c.id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(c.id)) return [`id ${JSON.stringify(c.id)} is no plain id (letters, digits, -)`];
   if (typeof c.from !== "string" || !c.from) out.push(`${c.id}: no from`);
   // The recorder writes each path under a directory of its own, and a marker spells it back: plain names only.
   if (!isObject(c.files) || !Object.entries(c.files).every(([k, v]) => safe(k) && typeof v === "string")) out.push(`${c.id}: files maps relative paths of plain names to text`);
@@ -490,13 +495,6 @@ export function compareAll(cells, caseFolds) {
 
 /** A key the stand-in is given: no key of Anthropic's. Claude Code asks once whether to use a key; the cell's config says yes. */
 const KEY = "sk-ant-stand-in-000000000000000000000000";
-
-/** The binary's version, as `--version` prints it. @param {string} bin */
-export function versionOf(bin) {
-  const m = /^(\d+\.\d+\.\d+)/.exec(execFileSync(bin, ["--version"], { encoding: "utf8", env: { PATH: process.env.PATH ?? "" }, timeout: 30_000 }).trim());
-  if (!m) throw new Error(`${bin} --version printed no version`);
-  return m[1];
-}
 
 /**
  * The stand-in for the model: the first request that offers the call's tool gets that call; every other one, text.
@@ -557,7 +555,7 @@ const marks = (body) => [...new Set([...JSON.stringify(body).matchAll(MARK)].map
  */
 export function gitEnv(root) {
   return {
-    env: { PATH: process.env.PATH ?? "", HOME: join(root, "home"), GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: join(root, "home", ".gitconfig"), GIT_TEMPLATE_DIR: join(root, "hooks"), GIT_AUTHOR_NAME: "x", GIT_AUTHOR_EMAIL: "x@x", GIT_COMMITTER_NAME: "x", GIT_COMMITTER_EMAIL: "x@x" },
+    env: { PATH: safePath(), HOME: join(root, "home"), GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: join(root, "home", ".gitconfig"), GIT_TEMPLATE_DIR: join(root, "hooks"), GIT_AUTHOR_NAME: "x", GIT_AUTHOR_EMAIL: "x@x", GIT_COMMITTER_NAME: "x", GIT_COMMITTER_EMAIL: "x@x" },
     args: ["-c", `core.hooksPath=${join(root, "hooks")}`, "-c", "core.fsmonitor=false"],
   };
 }
@@ -592,7 +590,7 @@ export async function ccReading(c, bin) {
     const call = !c.call ? null : spelling ? { name: "Bash", input: { command: spelling.command, description: "stand-in" } } : { name: "Read", input: { file_path: join(P, /** @type {{ Read: string }} */ (c.call).Read) } };
     const server = await standIn(call);
     const env = {
-      PATH: process.env.PATH ?? "",
+      PATH: safePath(),
       HOME: join(R, "home"),
       TMPDIR: join(R, "tmp"),
       CLAUDE_CODE_TMPDIR: join(R, "tmp"),
@@ -679,8 +677,17 @@ export const otherVersion = (recorded, bin, version) =>
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const argv = process.argv.slice(2);
   const at = argv.indexOf("--claude");
-  const bin = at === -1 ? "claude" : argv[at + 1];
   const [cmd, ...args] = at === -1 ? argv : [...argv.slice(0, at), ...argv.slice(at + 2)];
+  /** The binary, said where it was found. */
+  const claude = () => {
+    const found = claudeBinary(at === -1 ? "claude" : argv[at + 1]);
+    if (!found) {
+      process.stderr.write("no claude binary found (node_modules/.bin folders on PATH are skipped): point at one with --claude <path>\n");
+      process.exit(1);
+    }
+    process.stdout.write(`claude: ${found.path}${found.file === found.path ? "" : ` (${found.file})`}\n`);
+    return found;
+  };
   /** @type {Record} */
   const rec = existsSync(RECORD) ? readRecord() : { claudeCode: "", caseFolds: false, cells: [] };
   if (cmd === "add" && args[0]) {
@@ -691,6 +698,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       process.stderr.write(`${problems.join("\n")}\n`);
       process.exit(1);
     }
+    const bin = claude().path;
     const version = versionOf(bin);
     if (rec.cells.length && version !== rec.claudeCode) {
       process.stderr.write(otherVersion(rec.claudeCode, bin, version));
@@ -714,6 +722,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       process.stderr.write(`${problems.join("\n")}\n`);
       process.exit(1);
     }
+    const found = claude();
+    const bin = found.path;
     const version = versionOf(bin);
     if (cmd === "check" && version !== rec.claudeCode) {
       process.stdout.write(otherVersion(rec.claudeCode, bin, version));
@@ -730,7 +740,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       const unmeasured = cells.filter((c) => c.cc?.call?.startsWith("unmeasured")).length;
       process.stdout.write(moved.length ? "take the record again (node test/reference/claude-code.mjs record), then run test/reference.test.mjs: it shows the comparisons that moved\n" : `Claude Code ${claudeCode} reads all ${cells.length} cell(s) as recorded\n`);
       if (unmeasured) process.stdout.write(`${unmeasured} cell(s) where Claude Code was not measured\n`);
-      process.exitCode = moved.length || unmeasured ? 1 : 0;
+      // The steps around its Markdown parser that test/reference/markdown.json models, found in the same binary.
+      const md = await import("./markdown.mjs");
+      const steps = md.stepsMoved(found.file, version, md.readRecord().claudeCode);
+      process.stdout.write(steps.length ? `${steps.join("\n")}\nClaude Code reads Markdown otherwise than test/reference/markdown.json models: compare its steps with mdReading and walk in test/reference/markdown.mjs, then node test/reference/markdown.mjs steps --record\n` : `Claude Code ${version}'s Markdown steps are the Markdown record's\n`);
+      process.exitCode = moved.length || unmeasured || steps.length ? 1 : 0;
     }
   } else {
     process.stderr.write("usage: node test/reference/claude-code.mjs add <probes.json> | show [id…] | check | record [--claude <bin>]\n");

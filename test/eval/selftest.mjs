@@ -35,7 +35,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { CALLS, CHECKS, NEVER, REFERENCES, SUBAGENTS, fateOf, graderFile, traceCalls } from "./checks.mjs";
-import { versionOf } from "../reference/claude-code.mjs";
+import { claudeBinary, safePath, versionOf } from "../reference/claude-bin.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const RECORD = join(HERE, "selftest.json");
@@ -211,7 +211,7 @@ function standIn(hold = false) {
 export function runPlan({ bin, port, root, plugin, report }) {
   const args = ["-p", NO_NETWORK(port, root), bin, "plugin", "eval", plugin, "--no-publish", "--no-scaffold", "--mocks", "record", "--json", report, "--report", join(dirname(report), "report.html"), "--output-dir", join(dirname(report), "results"), "--runs", "1", "--ablation", "none", "--threshold", "0", "--trust-plugin", "--allow-tools", `Bash(${NEVER}:*)`, "--keep-temp", "-j", "4"];
   const env = {
-    PATH: process.env.PATH ?? "",
+    PATH: safePath(),
     HOME: join(root, "home"),
     TMPDIR: join(root, "tmp"),
     CLAUDE_CODE_TMPDIR: join(root, "tmp"),
@@ -273,7 +273,7 @@ const tryConnect = (o) => new Promise((r) => { const s = net.connect(o); const t
 
 /** The canary run under the profile. @param {number} port @param {string} root @returns {Record<string, string>} */
 function canary(port, root) {
-  const out = execFileSync(SANDBOX, ["-p", NO_NETWORK(port, root), process.execPath, "-e", CANARY, String(port)], { encoding: "utf8", env: { PATH: process.env.PATH ?? "" }, timeout: 30_000 });
+  const out = execFileSync(SANDBOX, ["-p", NO_NETWORK(port, root), process.execPath, "-e", CANARY, String(port)], { encoding: "utf8", env: { PATH: safePath() }, timeout: 30_000 });
   return JSON.parse(out);
 }
 
@@ -540,12 +540,17 @@ function killTree(pid) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const argv = process.argv.slice(2);
   const at = argv.indexOf("--claude");
-  const bin = at === -1 ? "claude" : argv[at + 1];
+  // The first claude outside a node_modules/.bin, as the Claude Code record finds it (claude.mjs hands a path).
+  const bin = claudeBinary(at === -1 ? "claude" : argv[at + 1])?.path ?? "";
   const rest = at === -1 ? argv : [...argv.slice(0, at), ...argv.slice(at + 2)];
   const cmd = rest[0];
   if (cmd !== "check" && cmd !== "record") {
     process.stderr.write("usage: node test/eval/selftest.mjs check | record [--new-version] [--claude <bin>]\n");
     process.exit(2);
+  }
+  if (!bin) {
+    process.stderr.write("no claude binary found (node_modules/.bin folders on PATH are skipped): point at one with --claude <path>\n");
+    process.exit(1);
   }
   try {
     const old = existsSync(RECORD) ? readRecord() : undefined;

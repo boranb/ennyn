@@ -110,6 +110,29 @@ test("hermetic: a test file whose code swallows a refused call still fails", () 
   assert.match(run.stdout + run.stderr, /1 child process call\(s\) dropped the test setup/);
 });
 
+test("hermetic: a test file that fetches off the machine fails, whatever its code does with the refusal; a loopback fetch runs", () => {
+  const dir = mkdtempSync(join(tmpdir(), "en-herm-net-"));
+  const file = join(dir, "fetch.test.mjs");
+  writeFileSync(file, [
+    'import { test } from "node:test";',
+    'import { createServer } from "node:http";',
+    'test("fetches", async () => {',
+    '  const server = createServer((_, res) => res.end("near"));',
+    '  await new Promise((r) => server.listen(0, "127.0.0.1", r));',
+    "  let near;",
+    '  try { near = await (await fetch(`http://127.0.0.1:${server.address().port}/`)).text(); } finally { server.close(); }',
+    '  if (near !== "near") throw new Error(near);',
+    '  try { await fetch("https://registry.example/x.tgz"); } catch {}',
+    "});",
+    "",
+  ].join("\n"));
+  const { NODE_TEST_CONTEXT: _, ...env } = process.env;
+  const run = spawnSync(process.execPath, ["--test", "--import", pathToFileURL(join(ROOT, "test", "hermetic.mjs")).href, file], { env, encoding: "utf8" });
+  assert.equal(run.status, 1, run.stdout + run.stderr);
+  assert.match(run.stdout + run.stderr, /1 fetch\(es\) off the machine refused:[^]*a fetch of "registry\.example" refused/);
+  assert.doesNotMatch(run.stdout + run.stderr, /not ok 1 - fetches/);
+});
+
 test("hermetic: a test file's temporary directories are gone when it ends, an unreadable one too", () => {
   const dir = mkdtempSync(join(tmpdir(), "en-herm-clean-"));
   const file = join(dir, "temp.test.mjs");
