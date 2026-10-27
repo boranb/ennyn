@@ -531,7 +531,7 @@ test("agent setup: AGENTS.md loads in place of a folder's CLAUDE.md files when i
   assert.equal(loads(true)["AGENTS.md"], "always");
 });
 
-test("agent setup: on a disk that ignores case, a tracked claude.md or agents.md is the file Claude Code loads, by its own name", async (t) => {
+test("agent setup: a tracked claude.md or agents.md is the file Claude Code loads, by its own name, where the disk ignores case, and no file it asks for where the disk tells case apart", async () => {
   const { agentSetup } = await import("../setup/scan.mjs");
   const dir = mkdtempSync(join(tmpdir(), "en-agents-case-"));
   put(dir, { "claude.md": "c", "x/agents.md": "a" });
@@ -543,7 +543,7 @@ test("agent setup: on a disk that ignores case, a tracked claude.md or agents.md
     const lower = mkdtempSync(join(tmpdir(), "en-agents-case-"));
     put(lower, { "x/claude.md": "c", "y/agents.md": "a", "CLAUDE.md": "@DOCS/s.md", "docs/s.md": "s" });
     assert.deepEqual(agentSetup(lower, ["x/claude.md", "y/agents.md", "CLAUDE.md", "docs/s.md"]).instructions.map((i) => i.path), ["CLAUDE.md"]);
-    return t.skip("this disk tells case apart: Claude Code reads no claude.md");
+    return;
   }
   // The top's claude.md keeps the nested agents.md out, as CLAUDE.md would.
   assert.deepEqual(agentSetup(dir, ["claude.md", "x/agents.md"]).instructions.map((i) => [i.path, i.loads]), [["claude.md", "always"], ["x/agents.md", "other"]]);
