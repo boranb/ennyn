@@ -2,10 +2,39 @@
   "name": "ennyn",
   "version": "0.0.1",
   "private": true,
-  "description": "A measured development loop for coding agents: impact tables before writing, bounded review, lessons turned into gates, convergence measured every cycle.",
+  "description": "A Claude Code plugin and Node CLI that gives the agent a working routine: impact analysis before code is written, a two-round review, and checks on every commit for recurring classes of bugs.",
+  "keywords": [
+    "claude-code",
+    "claude-code-plugin",
+    "coding-agent",
+    "ai-agents",
+    "agent-skills",
+    "code-review",
+    "mutation-testing",
+    "impact-analysis",
+    "git-hooks",
+    "commit-msg",
+    "conventional-commits",
+    "defect-prevention",
+    "software-quality",
+    "developer-tools",
+    "cli",
+    "zero-dependency"
+  ],
   "type": "module",
+  "bin": {
+    "ennyn": "scripts/ennyn.mjs"
+  },
   "license": "MIT",
   "author": "Berkay Boran",
+  "homepage": "https://github.com/boranb/ennyn#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/boranb/ennyn.git"
+  },
+  "bugs": {
+    "url": "https://github.com/boranb/ennyn/issues"
+  },
   "engines": {
     "node": ">=20"
   },

@@ -10,7 +10,9 @@
     {
       "name": "ennyn",
       "source": "./",
-      "description": "A measured development loop for coding agents."
+      "description": "A Claude Code plugin and Node CLI that gives the agent a working routine: impact analysis before code is written, a two-round review, and checks on every commit for recurring classes of bugs.",
+      "category": "development",
+      "tags": ["workflow", "code-review", "mutation-testing", "impact-analysis", "git-hooks", "software-quality"]
     }
   ]
 }
