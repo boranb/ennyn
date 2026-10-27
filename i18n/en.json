@@ -505,6 +505,7 @@
   "mutate.reason.outside": "outside the repository",
   "mutate.reason.gitDir": "in a git directory",
   "mutate.reason.notText": "not UTF-8 text",
+  "mutate.reason.hardLinked": "has another name (a hard link): a write would reach it too",
   "mutate.reason.occurs": "\"old\" occurs {n} times, not once",
   "mutate.reason.parse": "does not parse",
   "mutate.reason.noCheck": "no parse check reads this file",

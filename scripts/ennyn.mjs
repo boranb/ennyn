@@ -49,7 +49,8 @@ Commands:
   bypass [--from <rev>] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--json]
                                                     commits that used the commit-shape bypass marker, with their reasons
   mutate <list.json> --command <cmd> [--check <cmd>] [--timeout <s>] [--json]
-                                                    run hand-picked mutants one at a time against the tests; one that does not parse is never killed
+                                                    run hand-picked mutants one at a time against the tests; one that does not parse is never killed;
+                                                    give --check's {file} unquoted: Ennyn quotes it
   mutate --restore [--force]                        put back a file that a mutate run killed outright left mutated
   push-check                                        warn when too many commits are unpushed
   gate-record --start <epoch-s> --exit <code> [--kind full|message] [--commit <rev>] [--step <name>] [--runner <name>]

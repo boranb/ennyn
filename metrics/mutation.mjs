@@ -15,16 +15,18 @@
  *
  * Files change in place. While a run lasts, a journal in the state dir holds its pid and, while a mutant
  * is applied, the file's original bytes. Any way the process ends (a signal, an exit, a closed pipe) puts
- * the file back; a run killed outright is undone by the next one, or by `--restore`, but only while the
- * file still holds the mutant: a file changed since is left alone and reported. Each write moves the
+ * the file back; a run killed outright is undone by the next one, or by `--restore`. Either way only while
+ * the file still holds the mutant: a file changed since (an edit made while the mutant was in) is left
+ * alone and reported, and the journal keeps its original bytes. Each write moves the
  * file's mtime to a new whole second: caches keyed by size and mtime (Python's bytecode) would otherwise
  * run a mutant after the source is back.
  */
 
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync, readFileSync, realpathSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { closeSync, constants, fstatSync, ftruncateSync, futimesSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, statSync, writeSync } from "node:fs";
 import { gone, linkBelow, present, readRegular, removeState, writeState } from "../core/files.mjs";
+import { unshownEscaped } from "../core/i18n.mjs";
 import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { commonDir, resolveStateDir, stateRoot, underGitDir } from "../core/git.mjs";
@@ -244,19 +246,20 @@ function nodeParses(source, goal) {
  * JavaScript, JSON.parse for JSON, and for any other file the given command (`{file}` is replaced by the
  * quoted path; exit 0 = parses), given the tests' time limit: a Python check must not judge JSON. It
  * answers true, false, or null when the check itself gave no answer (it ran past its time, was killed or
- * did not start): no answer is never "does not parse".
+ * did not start): no answer is never "does not parse". `command`: the check is the given command, which
+ * could write the file it reads (the built-in two read it only).
  * @param {string} abs @param {string} rel @param {Buffer} original
  * @param {{ cwd: string, check: string | null, limit: number, onChild: (c: import("node:child_process").ChildProcess | null) => void }} opts
- * @returns {(() => Promise<boolean | null>) | null}
+ * @returns {{ run: () => Promise<boolean | null>, command: boolean } | null}
  */
 function parseCheck(abs, rel, original, { cwd, check, limit, onChild }) {
   const ext = extname(abs).toLowerCase();
   if ([".js", ".mjs", ".cjs"].includes(ext)) {
     const goal = moduleGoal(abs, original);
-    return async () => nodeParses(readFileSync(abs), goal);
+    return { run: async () => nodeParses(readFileSync(abs), goal), command: false };
   }
   if (ext === ".json") {
-    return async () => {
+    const run = async () => {
       try {
         // A byte order mark is no part of the JSON, for this check as for Ennyn's own readers.
         JSON.parse(readFileSync(abs, "utf8").replace(/^\uFEFF/, ""));
@@ -265,14 +268,73 @@ function parseCheck(abs, rel, original, { cwd, check, limit, onChild }) {
         return false;
       }
     };
+    return { run, command: false };
   }
   if (check) {
-    return async () => {
-      const run = await runCommand(check.split("{file}").join(quote(rel)), { cwd, timeoutMs: limit, onChild });
-      return run.timedOut || run.error || run.signal ? null : run.exit === 0;
+    const run = async () => {
+      // A name that starts with "-" would reach the check as an option.
+      const done = await runCommand(check.split("{file}").join(quote(rel.startsWith("-") ? `./${rel}` : rel)), { cwd, timeoutMs: limit, onChild });
+      return done.timedOut || done.error || done.signal ? null : done.exit === 0;
     };
+    return { run, command: true };
   }
   return null;
+}
+
+/**
+ * Opens the file a mutant goes into or comes out of, so that it is read, compared and written through this one
+ * descriptor: below `tree` through no link (each directory looked at, the file opened with O_NOFOLLOW), not
+ * waiting (a FIFO never answers), a regular file with no other name (a write would reach a hard link's other
+ * names too), and once open still the file at its path: its device and inode are the path's, looked at again
+ * through no link, so a directory swapped for a link while it was opened is caught. Null when nothing is
+ * there; any other refusal throws, saying why, with `moved` when the path no longer leads to the file.
+ * @param {string} tree the project's real path @param {string} abs
+ * @returns {number | null}
+ */
+function openInPlace(tree, abs) {
+  const rel = relative(tree, abs).split(sep).join("/");
+  const moved = (/** @type {string} */ why) => Object.assign(new Error(why), { moved: true });
+  const noLink = () => {
+    const link = linkBelow(tree, abs, { last: false });
+    if (link) throw moved(`${link} is a symbolic link`);
+  };
+  noLink();
+  let fd;
+  try {
+    fd = openSync(abs, constants.O_RDWR | (constants.O_NONBLOCK ?? 0) | (constants.O_NOFOLLOW ?? 0));
+  } catch (e) {
+    const err = /** @type {NodeJS.ErrnoException} */ (e);
+    // O_NOFOLLOW meets a link as ELOOP (EMLINK on some BSDs).
+    if (err.code === "ELOOP" || err.code === "EMLINK") throw moved(`${rel} is a symbolic link`);
+    if (gone(err)) return null;
+    throw err;
+  }
+  try {
+    const st = fstatSync(fd);
+    if (!st.isFile()) throw new Error("it is no regular file");
+    if (st.nlink > 1) throw new Error("it has another name (a hard link), which a write would reach too");
+    noLink();
+    const at = lstatSync(abs);
+    if (at.dev !== st.dev || at.ino !== st.ino) throw moved(`${rel} led to another file while it was opened`);
+  } catch (e) {
+    closeSync(fd);
+    throw e;
+  }
+  return fd;
+}
+
+/**
+ * Replaces a file's bytes through `fd`: cut to nothing, then written whole from the start; a write that stops
+ * short goes on from where it stopped, so the failure that follows is thrown.
+ * @param {number} fd @param {Buffer} bytes
+ */
+function writeAt(fd, bytes) {
+  ftruncateSync(fd, 0);
+  for (let done = 0; done < bytes.length; ) {
+    const n = writeSync(fd, bytes, done, bytes.length - done, done);
+    if (n === 0) throw new Error("the file took no more bytes");
+    done += n;
+  }
 }
 
 /**
@@ -312,19 +374,34 @@ function undo(cwd, at, path, j) {
       throw new MutationError(`the mutation journal ${path} names ${j.file}, outside this tree: no run here wrote it. Check it, then delete it`);
     }
     if (inGit(rel)) throw new MutationError(`the mutation journal ${path} names ${j.file}, in a git directory: no run here wrote it. Check it, then delete it`);
-    // A run journals the file's real path (prepare), so a link on the way is no run's: it may lead anywhere.
-    const link = linkBelow(root, abs);
-    if (link) throw new MutationError(`the mutation journal ${path} names ${j.file}, reached through the symbolic link ${link}: no run here wrote it. Check it, then delete it`);
     const original = Buffer.from(String(j.original), "base64");
     const mutated = Buffer.from(String(j.mutated), "base64");
-    const now = present(abs) ? readFileSync(abs) : null;
-    if (now && now.equals(mutated)) {
-      const before = Math.floor(statSync(abs).mtimeMs / 1000);
-      writeFileSync(abs, original);
-      newerSecond(abs, before);
-      restored = j.file;
-    } else if (!now || !now.equals(original)) {
-      throw new MutationError(`an interrupted run left a mutant in ${j.file}, and the file changed since; its original bytes are in ${path} (base64), the mutant was ${JSON.stringify(j.id)}`);
+    const left = `its original bytes are in ${path} (base64), the mutant was ${JSON.stringify(j.id)}`;
+    /** @type {number | null} */
+    let fd;
+    try {
+      fd = openInPlace(root, abs);
+    } catch (e) {
+      // A run journals the file's real path (prepare): a link on the way now leads somewhere else, and the
+      // mutant, if a run wrote it, is in the file that was there.
+      const err = /** @type {Error & { moved?: boolean }} */ (e);
+      if (err.moved) throw new MutationError(`the mutation journal ${path} names ${j.file}, and ${err.message}: nothing is written through it. If a run wrote the journal, the mutant is in the file that was at ${j.file}; ${left}: put that file right by hand, then delete the journal`);
+      throw new MutationError(`${j.file} could not be put back (${err.message}); ${left}: put the file right by hand, then delete the journal`);
+    }
+    try {
+      const now = fd === null ? null : readFileSync(fd);
+      if (fd !== null && now?.equals(mutated)) {
+        const before = Math.floor(fstatSync(fd).mtimeMs / 1000);
+        writeAt(fd, original);
+        newerSecond(fd, before);
+        restored = j.file;
+      } else if (!now) {
+        throw new MutationError(`an interrupted run left a mutant in ${j.file}, and the file was deleted since; ${left}: write them back by hand if the file should be there, then delete the journal`);
+      } else if (!now.equals(original)) {
+        throw new MutationError(`an interrupted run left a mutant in ${j.file}, and the file changed since; ${left}: put the file right by hand, then delete the journal`);
+      }
+    } finally {
+      if (fd !== null) closeSync(fd);
     }
   }
   removeState(at, path);
@@ -333,13 +410,13 @@ function undo(cwd, at, path, j) {
 
 /**
  * Give a file just written a whole-second mtime newer than `after` (its last one) and not older than now.
- * @param {string} abs @param {number} after
+ * @param {number} fd the file, open @param {number} after
  * @returns {number} the mtime given
  */
-function newerSecond(abs, after) {
+function newerSecond(fd, after) {
   const t = Math.max(Math.floor(Date.now() / 1000), after + 1);
   try {
-    utimesSync(abs, t, t);
+    futimesSync(fd, t, t);
   } catch {
     // Only the owner may set the times of a file others may write: it keeps the mtime the write gave it.
     return after;
@@ -439,7 +516,10 @@ function prepare(cwd, m) {
   const rel = relative(root, real);
   if (rel === "" || rel.startsWith(`..${sep}`) || rel === ".." || isAbsolute(rel)) return { reason: { key: "mutate.reason.outside" } };
   if (inGit(rel)) return { reason: { key: "mutate.reason.gitDir" } };
-  if (!statSync(real).isFile()) return { reason: { key: "mutate.reason.missing" } };
+  const st = statSync(real);
+  if (!st.isFile()) return { reason: { key: "mutate.reason.missing" } };
+  // A write in place reaches every name of the file, wherever the others are.
+  if (st.nlink > 1) return { reason: { key: "mutate.reason.hardLinked" } };
   const original = readFileSync(real);
   const text = original.toString("utf8");
   // Written back as text, a file that is not UTF-8 would change in bytes the mutant never named.
@@ -465,24 +545,74 @@ function prepare(cwd, m) {
 export async function runMutants({ cwd, mutants, command, check = null, journal, timeoutMs = null, onResult = () => {}, onBaseline = () => {} }) {
   const { restored } = takeJournal(cwd, journal);
   const root = stateRoot(cwd, journal);
+  const tree = realpathSync(cwd);
   /** @type {import("node:child_process").ChildProcess | null} */
   let child = null;
-  /** @type {{ abs: string, original: Buffer } | null} */
+  /**
+   * The mutant in a file, `written` once its write returned: from then on bytes that are neither the mutant
+   * nor the original are someone's edit. Before, they are what a write cut short left: the run's own. `ran`:
+   * the run's commands that read the file while the mutant was in, and so could have written it.
+   * @type {{ abs: string, rel: string, id: string, original: Buffer, mutated: Buffer, written: boolean, ran: string[] } | null}
+   */
   let applied = null;
+  /** The journal holds the original bytes of a file not yet back: it stays. */
+  let keep = false;
   /** The last whole-second mtime given to each file, first its own before the run: every write gets a newer one. */
   const stamps = new Map();
-  /** @param {string} abs */
-  const stamp = (abs) => stamps.set(abs, newerSecond(abs, stamps.get(abs)));
+  /** @param {string} abs @param {number} fd the file, open */
+  const stamp = (abs, fd) => stamps.set(abs, newerSecond(fd, stamps.get(abs)));
+  /** @param {string} how the way out */
+  const kept = (how) => `its original bytes are in ${journal} (base64): ${how}, then delete the journal`;
+  /** Who may have changed a file: an edit, or the run's own commands that read it meanwhile. @param {string[]} ran */
+  const writers = (ran) => `an edit${ran.length ? `, or ${ran.join(" or ")} writing it` : ""}`;
+  // The file goes back while it holds the mutant, as undo puts back a file a killed run left: an edit made
+  // while the mutant was in (an agent working on beside the run) is never written over. It is read and
+  // written through one descriptor (openInPlace): a link swapped in since may lead anywhere, a FIFO would
+  // never answer, a hard link would take the write too.
   const putBack = () => {
     if (!applied) return;
-    const { abs, original } = applied;
-    writeFileSync(abs, original);
+    const { abs, rel, id, original, mutated, written, ran } = applied;
     applied = null;
-    stamp(abs);
+    keep = true;
+    const left = (/** @type {string} */ why) => new MutationError(`mutant ${JSON.stringify(id)} is left in ${rel}: ${why}; ${kept("put the file right by hand")}`);
+    /** @type {number | null} */
+    let fd;
+    try {
+      fd = openInPlace(tree, abs);
+    } catch (e) {
+      const err = /** @type {Error & { moved?: boolean }} */ (e);
+      if (err.moved) throw new MutationError(`mutant ${JSON.stringify(id)} is left in the file that was at ${rel}: ${err.message}, and nothing is written through it; ${kept("put that file right by hand")}`);
+      throw left(`it could not be written back (${err.message})`);
+    }
+    try {
+      const now = fd === null ? null : readFileSync(fd);
+      if (written && !now) throw new MutationError(`${rel} was deleted while mutant ${JSON.stringify(id)} was in it: nothing is written there; ${kept("write them back by hand if the file should be there")}`);
+      if (fd === null || !now) {
+        keep = false;
+        return;
+      }
+      if (written && !now.equals(mutated) && !now.equals(original)) {
+        throw new MutationError(`${rel} changed while mutant ${JSON.stringify(id)} was in it (${writers(ran)}): it is left as it is, the mutant with it; ${kept("take the mutant out by hand")}`);
+      }
+      const back = !now.equals(original);
+      if (back) {
+        try {
+          writeAt(fd, original);
+        } catch (e) {
+          throw left(`it could not be written back (${/** @type {Error} */ (e).message})`);
+        }
+      }
+      // A file the tests put back themselves gets a newer second too: a cache keyed by mtime and size would keep the mutant's.
+      if (back || written) stamp(abs, fd);
+    } finally {
+      if (fd !== null) closeSync(fd);
+    }
+    keep = false;
   };
   const release = () => {
     for (const s of signals) process.off(s, onSignal);
     process.off("exit", onExit);
+    if (keep) return;
     try {
       removeState(root, journal);
     } catch {
@@ -490,10 +620,19 @@ export async function runMutants({ cwd, mutants, command, check = null, journal,
     }
   };
   // However the process ends mid-run (a signal, process.exit on a closed pipe), the tests stop, the file
-  // goes back and the journal goes. A signal then ends the process as it would have.
+  // goes back and the journal goes. A signal then ends the process as it would have. Nothing is thrown
+  // here: the process is ending, and what it could not put back is said on stderr.
   const onExit = () => {
     if (child) killGroup(child.pid, true);
-    putBack();
+    try {
+      putBack();
+    } catch (e) {
+      try {
+        writeSync(2, `${unshownEscaped(/** @type {Error} */ (e).message)}\n`);
+      } catch {
+        // No stderr to write to: the journal and the next run still say it.
+      }
+    }
     release();
   };
   /** @param {NodeJS.Signals} sig */
@@ -523,22 +662,58 @@ export async function runMutants({ cwd, mutants, command, check = null, journal,
       let r;
       if ("reason" in p) r = { id: m.id, file: m.file, outcome: "unapplied", reason: p.reason };
       else {
-        const parses = parseCheck(p.abs, p.rel, p.original, { cwd, check, limit, onChild });
+        const pc = parseCheck(p.abs, p.rel, p.original, { cwd, check, limit, onChild });
+        const parses = pc?.run ?? null;
+        /** The run's commands that read the file from here on, and so could have written it. @type {string[]} */
+        const ran = [];
         // A check that fails on the file as it is cannot tell a broken mutant from a sound one.
-        if (parses && !originalParses.has(p.abs)) originalParses.set(p.abs, await parses());
+        if (parses && !originalParses.has(p.abs)) {
+          if (pc?.command) ran.push("the parse check");
+          originalParses.set(p.abs, await parses());
+        }
         const answer = parses ? originalParses.get(p.abs) : undefined;
         /** @type {Reason | null} */
         let noCheck = !parses ? { key: "mutate.reason.noCheck" } : answer === null ? { key: "mutate.reason.checkNoAnswer" } : answer ? null : { key: "mutate.reason.originalFails" };
-        writeJournal(root, journal, { pid: process.pid, id: m.id, file: p.rel, original: p.original.toString("base64"), mutated: p.mutated.toString("base64") });
-        applied = { abs: p.abs, original: p.original };
-        if (!stamps.has(p.abs)) stamps.set(p.abs, Math.floor(statSync(p.abs).mtimeMs / 1000));
+        /** @param {unknown} e */
+        const notWritten = (e) => new MutationError(`mutant ${JSON.stringify(m.id)} was not written to ${p.rel} (${/** @type {Error} */ (e).message}): the file is as it was; no count from this run`);
+        // The file still as prepare read it, read and written through one descriptor (openInPlace): an edit
+        // made since (while its parse check ran) is not built over, a link swapped in is not written through.
+        /** @type {number | null} */
+        let fd;
         try {
-          writeFileSync(p.abs, p.mutated);
-          stamp(p.abs);
+          fd = openInPlace(tree, p.abs);
+        } catch (e) {
+          throw notWritten(e);
+        }
+        const changed = () => new MutationError(`${p.rel} changed while mutant ${JSON.stringify(m.id)} was being prepared (${writers(ran)}): nothing was written to it; run again`);
+        if (fd === null) throw changed();
+        try {
+          if (!readFileSync(fd).equals(p.original)) throw changed();
+          writeJournal(root, journal, { pid: process.pid, id: m.id, file: p.rel, original: p.original.toString("base64"), mutated: p.mutated.toString("base64") });
+        } catch (e) {
+          closeSync(fd);
+          throw e;
+        }
+        applied = { abs: p.abs, rel: p.rel, id: m.id, original: p.original, mutated: p.mutated, written: false, ran };
+        try {
+          try {
+            if (!stamps.has(p.abs)) stamps.set(p.abs, Math.floor(fstatSync(fd).mtimeMs / 1000));
+            try {
+              writeAt(fd, p.mutated);
+            } catch (e) {
+              throw notWritten(e);
+            }
+            applied.written = true;
+            stamp(p.abs, fd);
+          } finally {
+            closeSync(fd);
+          }
+          if (pc?.command && !noCheck && !ran.includes("the parse check")) ran.push("the parse check");
           const verdict = parses && !noCheck ? await parses() : null;
           if (parses && !noCheck && verdict === null) noCheck = { key: "mutate.reason.checkNoAnswer" };
           if (verdict === false) r = { id: m.id, file: p.rel, outcome: "invalid", checked: true, reason: { key: "mutate.reason.parse" } };
           else {
+            ran.push("the test command");
             let run = await runCommand(command, { cwd, timeoutMs: limit, onChild });
             if (run.timedOut) run = await runCommand(command, { cwd, timeoutMs: 2 * limit, onChild });
             if (run.error) throw new MutationError(`the test command did not start for mutant ${m.id} (${run.error}); no count from this run`);

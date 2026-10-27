@@ -505,6 +505,7 @@
   "mutate.reason.outside": "deponun dışında",
   "mutate.reason.gitDir": "bir git dizininde",
   "mutate.reason.notText": "UTF-8 metin değil",
+  "mutate.reason.hardLinked": "başka bir adı var (sabit bağ): yazma ona da ulaşır",
   "mutate.reason.occurs": "\"old\" {n} kez geçiyor, bir kez değil",
   "mutate.reason.parse": "ayrıştırılamıyor",
   "mutate.reason.noCheck": "bu dosyayı okuyan bir ayrıştırma denetimi yok",
