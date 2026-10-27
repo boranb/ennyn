@@ -8,7 +8,8 @@
       "cost": "M",
       "cluster": "cycle",
       "needs": [],
-      "source": "skills/cycle/SKILL.md slot table names an audit queue that no config key points at"
+      "source": "skills/cycle/SKILL.md slot table names an audit queue that no config key points at",
+      "since": 0
     },
     {
       "id": "side-copy-subagents",
@@ -18,7 +19,8 @@
       "cost": "M",
       "cluster": "side-copy",
       "needs": [],
-      "source": "docs/evidence.md, Open questions; updated cycle 2026-10-23 (7), side-copy-audit: the hooks docs say PostToolUse fires for subagents with agent_id, so lists are per subagent now"
+      "source": "docs/evidence.md, Open questions; updated cycle 2026-10-23 (7), side-copy-audit: the hooks docs say PostToolUse fires for subagents with agent_id, so lists are per subagent now",
+      "since": 0
     },
     {
       "id": "second-project-cycles",
@@ -29,7 +31,8 @@
       "cluster": "evidence",
       "needs": [],
       "gate": "user",
-      "source": "docs/evidence.md, Open questions; set up but not committed in the second project (2026-10-18)"
+      "source": "docs/evidence.md, Open questions; set up but not committed in the second project (2026-10-18)",
+      "since": 0
     },
     {
       "id": "rework-thresholds-check",
@@ -41,7 +44,8 @@
       "needs": [
         "second-project-cycles"
       ],
-      "source": "docs/evidence.md, Open questions"
+      "source": "docs/evidence.md, Open questions",
+      "since": 0
     },
     {
       "id": "plugin-eval",
@@ -50,8 +54,11 @@
       "value": "high",
       "cost": "L",
       "cluster": "evidence",
-      "needs": [],
-      "source": "README.md, roadmap 0.2; cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): deterministic checks carry most of the score there, a judge the rest; reviews of ponytail and i-have-adhd (open-source agent skills, MIT), 2026-10-25: each published a result its own SessionStart hook had leaked into the baseline (ponytail's 2026-06-17 run superseded; i-have-adhd's README warns of its always-on flag); i-have-adhd's agent-owned-edit case could not pass under --tools \"\" and still counted against both arms"
+      "needs": [
+        "plugin-eval-selftest"
+      ],
+      "source": "README.md, roadmap 0.2; cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): deterministic checks carry most of the score there, a judge the rest; reviews of ponytail and i-have-adhd (open-source agent skills, MIT), 2026-10-25: each published a result its own SessionStart hook had leaked into the baseline (ponytail's 2026-06-17 run superseded; i-have-adhd's README warns of its always-on flag); i-have-adhd's agent-owned-edit case could not pass under --tools \"\" and still counted against both arms; cycle 2026-10-26 (12): ennyn core picks it as the oldest node and says to split it first (plugin-eval-selftest)",
+      "since": 0
     },
     {
       "id": "codex-manifest",
@@ -61,7 +68,8 @@
       "cost": "M",
       "cluster": "distribution",
       "needs": [],
-      "source": "README.md, roadmap 0.2; reviews of ponytail and i-have-adhd (MIT), 2026-10-25: both ship .codex-plugin/plugin.json with .agents/plugins/marketplace.json, and Codex asks the user to trust a plugin's hooks in /hooks before they run"
+      "source": "README.md, roadmap 0.2; reviews of ponytail and i-have-adhd (MIT), 2026-10-25: both ship .codex-plugin/plugin.json with .agents/plugins/marketplace.json, and Codex asks the user to trust a plugin's hooks in /hooks before they run",
+      "since": 0
     },
     {
       "id": "release-0-1-0",
@@ -75,7 +83,8 @@
         "external-audit-before-release"
       ],
       "gate": "user",
-      "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release)"
+      "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release)",
+      "since": 0
     },
     {
       "id": "bypass-first-parent",
@@ -85,7 +94,8 @@
       "cost": "S",
       "cluster": "metrics",
       "needs": [],
-      "source": "review, cycle 2026-10-19; data review, cycle 2026-10-20 (4), bypass-audit"
+      "source": "review, cycle 2026-10-19; data review, cycle 2026-10-20 (4), bypass-audit",
+      "since": 2
     },
     {
       "id": "fold-target-depth",
@@ -95,7 +105,8 @@
       "cost": "S",
       "cluster": "gates",
       "needs": [],
-      "source": "review, cycle 2026-10-19; updated cycle 2026-10-21 (5)"
+      "source": "review, cycle 2026-10-19; updated cycle 2026-10-21 (5)",
+      "since": 2
     },
     {
       "id": "hygiene-gaps",
@@ -105,7 +116,8 @@
       "cost": "S",
       "cluster": "gates",
       "needs": [],
-      "source": "review, cycle 2026-10-19 (2)"
+      "source": "review, cycle 2026-10-19 (2)",
+      "since": 2
     },
     {
       "id": "hook-unseen-cases",
@@ -115,7 +127,8 @@
       "cost": "M",
       "cluster": "gates",
       "needs": [],
-      "source": "review, cycle 2026-10-20 (3), git-oracle-matrix"
+      "source": "review, cycle 2026-10-20 (3), git-oracle-matrix",
+      "since": 3
     },
     {
       "id": "impact-import-scope",
@@ -125,7 +138,8 @@
       "cost": "S",
       "cluster": "impact",
       "needs": [],
-      "source": "review, cycle 2026-10-20 (3), impact-audit"
+      "source": "review, cycle 2026-10-20 (3), impact-audit",
+      "since": 3
     },
     {
       "id": "readme-twins-gaps",
@@ -135,7 +149,8 @@
       "cost": "S",
       "cluster": "gates",
       "needs": [],
-      "source": "review, cycle 2026-10-20 (3), gate-readme-twins"
+      "source": "review, cycle 2026-10-20 (3), gate-readme-twins",
+      "since": 3
     },
     {
       "id": "rework-encoding-paths",
@@ -145,7 +160,8 @@
       "cost": "M",
       "cluster": "metrics",
       "needs": [],
-      "source": "data review, cycle 2026-10-20 (3), git-oracle-matrix"
+      "source": "data review, cycle 2026-10-20 (3), git-oracle-matrix",
+      "since": 3
     },
     {
       "id": "blame-algorithm-pin",
@@ -155,7 +171,8 @@
       "cost": "S",
       "cluster": "metrics",
       "needs": [],
-      "source": "mutation pass, cycle 2026-10-20 (3) (F27, F28 not shown)"
+      "source": "mutation pass, cycle 2026-10-20 (3) (F27, F28 not shown)",
+      "since": 3
     },
     {
       "id": "hygiene-user-ignores",
@@ -165,7 +182,8 @@
       "cost": "S",
       "cluster": "gates",
       "needs": [],
-      "source": "review, cycle 2026-10-20 (4), tests-hermetic-git"
+      "source": "review, cycle 2026-10-20 (4), tests-hermetic-git",
+      "since": 4
     },
     {
       "id": "cochange-amend",
@@ -175,17 +193,19 @@
       "cost": "M",
       "cluster": "gates",
       "needs": [],
-      "source": "review, cycle 2026-10-20 (4), doc-cochange"
+      "source": "review, cycle 2026-10-20 (4), doc-cochange",
+      "since": 4
     },
     {
       "id": "config-failopen-scope",
-      "title": "A config problem in a key commit-check never reads (impact.fakeGlobs) switches the commit-msg hook off and silences the style hook; check only what each command reads, or name the key in the hook's warning",
+      "title": "A config problem in a key commit-check never reads (impact.fakeGlobs) switches the commit-msg hook off and silences the style hook; check only what each command reads, or name the key in the hook's warning; a config refused after an upgrade (a metricsLog under .git/, which cycle 11 allowed and cycle 12 refuses) turns the hook off for every commit, saying so each time",
       "status": "planned",
-      "value": "low",
+      "value": "medium",
       "cost": "M",
       "cluster": "gates",
       "needs": [],
-      "source": "review, cycle 2026-10-20 (4), doc-cochange"
+      "source": "review, cycle 2026-10-20 (4), doc-cochange; cycle 2026-10-26 (12), budget audit round 2 (security and correctness reviewers)",
+      "since": 4
     },
     {
       "id": "mutate-start-race",
@@ -195,7 +215,8 @@
       "cost": "S",
       "cluster": "gates",
       "needs": [],
-      "source": "review, cycle 2026-10-20 (4), mutation-runner"
+      "source": "review, cycle 2026-10-20 (4), mutation-runner",
+      "since": 4
     },
     {
       "id": "mutate-stamp-drift",
@@ -205,7 +226,8 @@
       "cost": "S",
       "cluster": "gates",
       "needs": [],
-      "source": "data review, cycle 2026-10-20 (4), mutation-runner"
+      "source": "data review, cycle 2026-10-20 (4), mutation-runner",
+      "since": 4
     },
     {
       "id": "bypass-shallow-edges",
@@ -215,7 +237,8 @@
       "cost": "S",
       "cluster": "metrics",
       "needs": [],
-      "source": "data review, cycle 2026-10-20 (4), bypass-audit"
+      "source": "data review, cycle 2026-10-20 (4), bypass-audit",
+      "since": 4
     },
     {
       "id": "mutate-node-version",
@@ -225,7 +248,8 @@
       "cost": "S",
       "cluster": "gates",
       "needs": [],
-      "source": "review, cycle 2026-10-20 (4), mutation-runner"
+      "source": "review, cycle 2026-10-20 (4), mutation-runner",
+      "since": 4
     },
     {
       "id": "suite-unexplained-failure",
@@ -235,7 +259,8 @@
       "cost": "S",
       "cluster": "gates",
       "needs": [],
-      "source": "cycle 2026-10-20 (4), mutation-runner verification; updated cycle 2026-10-21 (5)"
+      "source": "cycle 2026-10-20 (4), mutation-runner verification; updated cycle 2026-10-21 (5)",
+      "since": 4
     },
     {
       "id": "rework-skew-before-since",
@@ -245,7 +270,8 @@
       "cost": "M",
       "cluster": "metrics",
       "needs": [],
-      "source": "review, cycle 2026-10-21 (5), szz-since-walk"
+      "source": "review, cycle 2026-10-21 (5), szz-since-walk",
+      "since": 5
     },
     {
       "id": "graph-id-types",
@@ -255,7 +281,8 @@
       "cost": "S",
       "cluster": "plan",
       "needs": [],
-      "source": "data review, cycle 2026-10-21 (5), graph-audit (low confidence)"
+      "source": "data review, cycle 2026-10-21 (5), graph-audit (low confidence)",
+      "since": 5
     },
     {
       "id": "fault-judge-reasons",
@@ -265,7 +292,8 @@
       "cost": "M",
       "cluster": "gates",
       "needs": [],
-      "source": "mutation pass and review, cycle 2026-10-21 (5), fault-injection-matrix (T3-9 survived)"
+      "source": "mutation pass and review, cycle 2026-10-21 (5), fault-injection-matrix (T3-9 survived)",
+      "since": 5
     },
     {
       "id": "bare-repo-history",
@@ -275,7 +303,8 @@
       "cost": "S",
       "cluster": "gates",
       "needs": [],
-      "source": "data review, cycle 2026-10-21 (5), fault-injection-matrix (accepted: refusing is the safer default)"
+      "source": "data review, cycle 2026-10-21 (5), fault-injection-matrix (accepted: refusing is the safer default)",
+      "since": 5
     },
     {
       "id": "ci-first-run",
@@ -286,7 +315,8 @@
       "cluster": "gates",
       "needs": [],
       "gate": "user",
-      "source": "cycle 2026-10-23 (6), ci-free-quota and git-floor"
+      "source": "cycle 2026-10-23 (6), ci-free-quota and git-floor",
+      "since": 6
     },
     {
       "id": "fault-matrix-writes",
@@ -296,7 +326,8 @@
       "cost": "M",
       "cluster": "gates",
       "needs": [],
-      "source": "impact table S4, cycle 2026-10-23 (6), fault-matrix-files-hooks"
+      "source": "impact table S4, cycle 2026-10-23 (6), fault-matrix-files-hooks",
+      "since": 6
     },
     {
       "id": "floor-run-record",
@@ -306,7 +337,8 @@
       "cost": "M",
       "cluster": "gates",
       "needs": [],
-      "source": "review, cycle 2026-10-23 (6), ci-free-quota"
+      "source": "review, cycle 2026-10-23 (6), ci-free-quota",
+      "since": 6
     },
     {
       "id": "gate-record-temp-index",
@@ -316,7 +348,8 @@
       "cost": "M",
       "cluster": "metrics",
       "needs": [],
-      "source": "audit, cycle 2026-10-23 (6), gate-log-audit"
+      "source": "audit, cycle 2026-10-23 (6), gate-log-audit",
+      "since": 6
     },
     {
       "id": "gate-stats-duplicate-pass",
@@ -326,7 +359,8 @@
       "cost": "S",
       "cluster": "metrics",
       "needs": [],
-      "source": "audit, cycle 2026-10-23 (6), gate-log-audit"
+      "source": "audit, cycle 2026-10-23 (6), gate-log-audit",
+      "since": 6
     },
     {
       "id": "gate-log-reader-version",
@@ -336,7 +370,8 @@
       "cost": "S",
       "cluster": "metrics",
       "needs": [],
-      "source": "review, cycle 2026-10-23 (6), gate-log-audit"
+      "source": "review, cycle 2026-10-23 (6), gate-log-audit",
+      "since": 6
     },
     {
       "id": "fault-fixture-probes",
@@ -346,7 +381,8 @@
       "cost": "M",
       "cluster": "gates",
       "needs": [],
-      "source": "review round 2, cycle 2026-10-23 (7), guard-vacuous (fault-reads guarded the preload, not the fixture)"
+      "source": "review round 2, cycle 2026-10-23 (7), guard-vacuous (fault-reads guarded the preload, not the fixture)",
+      "since": 7
     },
     {
       "id": "side-copy-link-paths",
@@ -356,7 +392,8 @@
       "cost": "S",
       "cluster": "side-copy",
       "needs": [],
-      "source": "review, cycle 2026-10-23 (7), side-copy-audit (pre-existing; whether Claude Code resolves links for path rules is not documented)"
+      "source": "review, cycle 2026-10-23 (7), side-copy-audit (pre-existing; whether Claude Code resolves links for path rules is not documented)",
+      "since": 7
     },
     {
       "id": "commit-rule-lines-cap",
@@ -366,7 +403,8 @@
       "cost": "S",
       "cluster": "init",
       "needs": [],
-      "source": "review, cycle 2026-10-23 (7), prose-rules-to-gates (the same cut was removed for ban lines)"
+      "source": "review, cycle 2026-10-23 (7), prose-rules-to-gates (the same cut was removed for ban lines)",
+      "since": 7
     },
     {
       "status": "planned",
@@ -378,7 +416,8 @@
       "value": "high",
       "cost": "M",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (8), user: security; 2026 plugin and hook findings (trusted channel, permission rewrites, Plugin4Shell); cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): tools carry risk tiers, the highest never run without a person's approval; review of context-mode (MIT), 2026-10-25: hooks/ensure-deps.mjs runs npm install of a native module on first run and rebuilds it when the Node ABI changes; its README offers an MCP-only install as npx -y context-mode"
+      "source": "cycle 2026-10-24 (8), user: security; 2026 plugin and hook findings (trusted channel, permission rewrites, Plugin4Shell); cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): tools carry risk tiers, the highest never run without a person's approval; review of context-mode (MIT), 2026-10-25: hooks/ensure-deps.mjs runs npm install of a native module on first run and rebuilds it when the Node ABI changes; its README offers an MCP-only install as npx -y context-mode",
+      "since": 8
     },
     {
       "status": "planned",
@@ -389,17 +428,19 @@
       "cost": "S",
       "cluster": "security",
       "gate": "user",
-      "source": "GitHub account and repository hardening before the public release (owner's checklist)"
+      "source": "GitHub account and repository hardening before the public release (owner's checklist)",
+      "since": 8
     },
     {
       "status": "planned",
       "needs": [],
       "id": "suite-wall-clock-limits",
       "title": "Fixed wall-clock limits in tests fail npm test on a loaded machine: mutation.test.mjs's timeoutMs 1500/2000 (refused once the baseline passes 1 s: 4 tests failed in npm test at load 26-28, the file alone passed), the < 45 s, < 25 s and < 3000 ms asserts; scale them from a measured baseline; cycle 9 added < 5000 ms reads in test/ci.test.mjs (generous: the readings take under 300 ms at load 5)",
-      "value": "medium",
+      "value": "high",
       "cost": "M",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (8), review round 1 of guards-under-load; measured in the T4 landing run; cycle 2026-10-25 (10): the secrets linear-time ratio failed two full runs at load 8-40 (fixed with CPU time, 1ccb39b); the other wall-clock reads remain"
+      "source": "cycle 2026-10-24 (8), review round 1 of guards-under-load; measured in the T4 landing run; cycle 2026-10-25 (10): the secrets linear-time ratio failed two full runs at load 8-40 (fixed with CPU time, 1ccb39b); the other wall-clock reads remain; cycle 2026-10-26 (12): at load 50-274 single full runs failed on the fence-reader timing test, a verdicts secrets cell (the hook past 60 s), guards' inner runs, deps' OSV test (stalled 15 minutes) and mutate's runs that wait; each file passed alone, so no run of the cycle's last two landings was clean on the first try",
+      "since": 8
     },
     {
       "status": "planned",
@@ -409,7 +450,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (8), review of guards-per-test"
+      "source": "cycle 2026-10-24 (8), review of guards-per-test",
+      "since": 8
     },
     {
       "status": "planned",
@@ -419,7 +461,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (8), review rounds 1-2 of guards-per-test (low confidence)"
+      "source": "cycle 2026-10-24 (8), review rounds 1-2 of guards-per-test (low confidence)",
+      "since": 8
     },
     {
       "status": "planned",
@@ -429,7 +472,8 @@
       "value": "medium",
       "cost": "M",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (8), data review of input-shape-matrix"
+      "source": "cycle 2026-10-24 (8), data review of input-shape-matrix",
+      "since": 8
     },
     {
       "status": "planned",
@@ -439,7 +483,8 @@
       "value": "low",
       "cost": "M",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (8), security review rounds 2-4 of input-shape-matrix; gap cells in test/verdicts/forbidden.json and test/verdicts/input-shapes.json"
+      "source": "cycle 2026-10-24 (8), security review rounds 2-4 of input-shape-matrix; gap cells in test/verdicts/forbidden.json and test/verdicts/input-shapes.json",
+      "since": 8
     },
     {
       "status": "planned",
@@ -449,7 +494,8 @@
       "value": "low",
       "cost": "M",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (8), input-shape-matrix"
+      "source": "cycle 2026-10-24 (8), input-shape-matrix",
+      "since": 8
     },
     {
       "status": "planned",
@@ -459,7 +505,8 @@
       "value": "low",
       "cost": "M",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (8), security review of input-shape-matrix"
+      "source": "cycle 2026-10-24 (8), security review of input-shape-matrix",
+      "since": 8
     },
     {
       "status": "planned",
@@ -469,7 +516,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (8), data review of input-shape-matrix"
+      "source": "cycle 2026-10-24 (8), data review of input-shape-matrix",
+      "since": 8
     },
     {
       "status": "planned",
@@ -479,7 +527,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (8), security review of input-shape-matrix"
+      "source": "cycle 2026-10-24 (8), security review of input-shape-matrix",
+      "since": 8
     },
     {
       "status": "planned",
@@ -489,7 +538,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (8), security review round 4 of input-shape-matrix"
+      "source": "cycle 2026-10-24 (8), security review round 4 of input-shape-matrix",
+      "since": 8
     },
     {
       "status": "planned",
@@ -499,7 +549,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (8), doctor-audit review round 2"
+      "source": "cycle 2026-10-24 (8), doctor-audit review round 2",
+      "since": 8
     },
     {
       "status": "planned",
@@ -509,7 +560,8 @@
       "value": "low",
       "cost": "M",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (8), doctor-audit data review"
+      "source": "cycle 2026-10-24 (8), doctor-audit data review",
+      "since": 8
     },
     {
       "status": "planned",
@@ -519,7 +571,8 @@
       "value": "medium",
       "cost": "M",
       "cluster": "init",
-      "source": "cycle 2026-10-24 (8), doctor-audit"
+      "source": "cycle 2026-10-24 (8), doctor-audit",
+      "since": 8
     },
     {
       "status": "planned",
@@ -529,7 +582,8 @@
       "value": "medium",
       "cost": "M",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (8), doctor-audit review"
+      "source": "cycle 2026-10-24 (8), doctor-audit review",
+      "since": 8
     },
     {
       "status": "planned",
@@ -539,7 +593,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (8), doctor-audit"
+      "source": "cycle 2026-10-24 (8), doctor-audit",
+      "since": 8
     },
     {
       "status": "planned",
@@ -549,7 +604,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (9), hook-trust-audit P10 and review round one"
+      "source": "cycle 2026-10-24 (9), hook-trust-audit P10 and review round one",
+      "since": 9
     },
     {
       "status": "planned",
@@ -559,7 +615,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (9), hook-trust-audit review round three"
+      "source": "cycle 2026-10-24 (9), hook-trust-audit review round three",
+      "since": 9
     },
     {
       "status": "planned",
@@ -569,7 +626,8 @@
       "value": "medium",
       "cost": "M",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (9), ci-check review rounds three and four"
+      "source": "cycle 2026-10-24 (9), ci-check review rounds three and four",
+      "since": 9
     },
     {
       "status": "planned",
@@ -579,7 +637,8 @@
       "value": "medium",
       "cost": "S",
       "cluster": "security",
-      "source": "cycle 2026-10-25 (10), verdict-baseline: a cycle 9 review probe recorded as a gap cell in test/verdicts/ci.json"
+      "source": "cycle 2026-10-25 (10), verdict-baseline: a cycle 9 review probe recorded as a gap cell in test/verdicts/ci.json",
+      "since": 10
     },
     {
       "status": "planned",
@@ -589,7 +648,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "security",
-      "source": "cycle 2026-10-25 (10), verdict-baseline data review round 2"
+      "source": "cycle 2026-10-25 (10), verdict-baseline data review round 2",
+      "since": 10
     },
     {
       "status": "planned",
@@ -599,7 +659,8 @@
       "value": "medium",
       "cost": "M",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (9), ci-check review rounds one to four: 9 reader findings, all fix-introduced after round one"
+      "source": "cycle 2026-10-24 (9), ci-check review rounds one to four: 9 reader findings, all fix-introduced after round one",
+      "since": 9
     },
     {
       "status": "planned",
@@ -609,7 +670,8 @@
       "value": "medium",
       "cost": "M",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (9), ci-check DESIGN Not-seen"
+      "source": "cycle 2026-10-24 (9), ci-check DESIGN Not-seen",
+      "since": 9
     },
     {
       "status": "planned",
@@ -619,7 +681,8 @@
       "value": "medium",
       "cost": "M",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (9), ci-check DESIGN Not-seen"
+      "source": "cycle 2026-10-24 (9), ci-check DESIGN Not-seen",
+      "since": 9
     },
     {
       "status": "planned",
@@ -629,7 +692,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (9), ci-check review round one C8 (pre-existing for forbidden)"
+      "source": "cycle 2026-10-24 (9), ci-check review round one C8 (pre-existing for forbidden)",
+      "since": 9
     },
     {
       "status": "planned",
@@ -639,7 +703,8 @@
       "value": "high",
       "cost": "M",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (9), deps-check: hasInstallScript comes from the registry manifest"
+      "source": "cycle 2026-10-24 (9), deps-check: hasInstallScript comes from the registry manifest",
+      "since": 9
     },
     {
       "status": "planned",
@@ -649,7 +714,8 @@
       "value": "medium",
       "cost": "M",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (9), deps-check: npm lock files only"
+      "source": "cycle 2026-10-24 (9), deps-check: npm lock files only",
+      "since": 9
     },
     {
       "status": "planned",
@@ -659,7 +725,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (9), deps-check"
+      "source": "cycle 2026-10-24 (9), deps-check",
+      "since": 9
     },
     {
       "status": "planned",
@@ -669,7 +736,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (9), deps-check review round three"
+      "source": "cycle 2026-10-24 (9), deps-check review round three",
+      "since": 9
     },
     {
       "status": "planned",
@@ -679,7 +747,8 @@
       "value": "medium",
       "cost": "M",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (9), secret-scan review F10"
+      "source": "cycle 2026-10-24 (9), secret-scan review F10",
+      "since": 9
     },
     {
       "status": "planned",
@@ -689,7 +758,8 @@
       "value": "medium",
       "cost": "M",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (9), secret-scan review F11/F18"
+      "source": "cycle 2026-10-24 (9), secret-scan review F11/F18",
+      "since": 9
     },
     {
       "status": "planned",
@@ -699,7 +769,8 @@
       "value": "medium",
       "cost": "S",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (9), secret-scan"
+      "source": "cycle 2026-10-24 (9), secret-scan",
+      "since": 9
     },
     {
       "status": "planned",
@@ -709,7 +780,8 @@
       "value": "medium",
       "cost": "M",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (9), secret-scan"
+      "source": "cycle 2026-10-24 (9), secret-scan",
+      "since": 9
     },
     {
       "status": "planned",
@@ -719,7 +791,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (9), secret-scan verification run"
+      "source": "cycle 2026-10-24 (9), secret-scan verification run",
+      "since": 9
     },
     {
       "status": "planned",
@@ -729,7 +802,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (9), secret-scan"
+      "source": "cycle 2026-10-24 (9), secret-scan",
+      "since": 9
     },
     {
       "status": "planned",
@@ -739,7 +813,8 @@
       "value": "medium",
       "cost": "S",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (9), push-time Linux run (b859092); cycle 2026-10-25 (11): a full run on main hung 16 minutes in test/deps.test.mjs: the commit-msg hook waited on git cat-file --batch-check, which never got EOF on stdin (execFileSync with input); killed by hand, not reproduced in four runs of the file alone (see git-call-timeout)"
+      "source": "cycle 2026-10-24 (9), push-time Linux run (b859092); cycle 2026-10-25 (11): a full run on main hung 16 minutes in test/deps.test.mjs: the commit-msg hook waited on git cat-file --batch-check, which never got EOF on stdin (execFileSync with input); killed by hand, not reproduced in four runs of the file alone (see git-call-timeout)",
+      "since": 9
     },
     {
       "status": "planned",
@@ -749,7 +824,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (9), cleanup after the cycle"
+      "source": "cycle 2026-10-24 (9), cleanup after the cycle",
+      "since": 9
     },
     {
       "status": "planned",
@@ -759,7 +835,8 @@
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "source": "cycle 2026-10-25 (10), security-axis security round 5 (V10): coverage is taken when the mark is written"
+      "source": "cycle 2026-10-25 (10), security-axis security round 5 (V10): coverage is taken when the mark is written",
+      "since": 10
     },
     {
       "status": "planned",
@@ -769,7 +846,8 @@
       "value": "medium",
       "cost": "S",
       "cluster": "security",
-      "source": "cycle 2026-10-25 (10), security-axis review rounds 1-2 (N01, D01)"
+      "source": "cycle 2026-10-25 (10), security-axis review rounds 1-2 (N01, D01)",
+      "since": 10
     },
     {
       "status": "planned",
@@ -779,7 +857,8 @@
       "value": "medium",
       "cost": "M",
       "cluster": "security",
-      "source": "cycle 2026-10-25 (10), deps-allowed-hosts (round 2: refusing them broke private packages)"
+      "source": "cycle 2026-10-25 (10), deps-allowed-hosts (round 2: refusing them broke private packages)",
+      "since": 10
     },
     {
       "status": "planned",
@@ -789,7 +868,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "security",
-      "source": "cycle 2026-10-25 (10), deps-allowed-hosts; cycle 2026-10-25 (11), reference-differentials code review round 1 (E7), measured with real npm ci"
+      "source": "cycle 2026-10-25 (10), deps-allowed-hosts; cycle 2026-10-25 (11), reference-differentials code review round 1 (E7), measured with real npm ci",
+      "since": 10
     },
     {
       "status": "planned",
@@ -799,7 +879,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "security",
-      "source": "cycle 2026-10-25 (10), deps-allowed-hosts"
+      "source": "cycle 2026-10-25 (10), deps-allowed-hosts",
+      "since": 10
     },
     {
       "status": "planned",
@@ -809,7 +890,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "security",
-      "source": "cycle 2026-10-25 (10), deps-allowed-hosts"
+      "source": "cycle 2026-10-25 (10), deps-allowed-hosts",
+      "since": 10
     },
     {
       "status": "planned",
@@ -819,7 +901,8 @@
       "value": "low",
       "cost": "M",
       "cluster": "side-copy",
-      "source": "cycle 2026-10-25 (10), init-scan audit rounds 2-3"
+      "source": "cycle 2026-10-25 (10), init-scan audit rounds 2-3",
+      "since": 10
     },
     {
       "status": "planned",
@@ -829,7 +912,8 @@
       "value": "medium",
       "cost": "S",
       "cluster": "gates",
-      "source": "cycle 2026-10-25 (10), init-scan audit round 1 (S2); cycle 2026-10-25 (11): the config, graph, ceiling registry, gate log, journal and handoff moved to readRegular in a587903"
+      "source": "cycle 2026-10-25 (10), init-scan audit round 1 (S2); cycle 2026-10-25 (11): the config, graph, ceiling registry, gate log, journal and handoff moved to readRegular in a587903",
+      "since": 10
     },
     {
       "status": "planned",
@@ -839,17 +923,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "init",
-      "source": "cycle 2026-10-25 (10), init-scan audit"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "fence-reader-shared",
-      "title": "setup/budget.mjs toggles code blocks at any fence line; the scan's code-block reader ends a block only at a fence of its own character and length: one reader",
-      "value": "low",
-      "cost": "S",
-      "cluster": "init",
-      "source": "cycle 2026-10-25 (10), init-scan audit"
+      "source": "cycle 2026-10-25 (10), init-scan audit",
+      "since": 10
     },
     {
       "status": "planned",
@@ -859,7 +934,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "distribution",
-      "source": "cycle 2026-10-25 (10), security-axis"
+      "source": "cycle 2026-10-25 (10), security-axis",
+      "since": 10
     },
     {
       "status": "planned",
@@ -871,7 +947,8 @@
       "value": "high",
       "cost": "M",
       "cluster": "evidence",
-      "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): a candidate skill version is run against the suite and blocked from promotion when a passing case fails; Ennyn's method text changed in every cycle with no such check; review of ponytail (MIT), 2026-10-25: every rule change had to beat the current version in a paired run, one change at a time; eight SKILL.md edits that did not move the number were not shipped"
+      "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): a candidate skill version is run against the suite and blocked from promotion when a passing case fails; Ennyn's method text changed in every cycle with no such check; review of ponytail (MIT), 2026-10-25: every rule change had to beat the current version in a paired run, one change at a time; eight SKILL.md edits that did not move the number were not shipped",
+      "since": 10
     },
     {
       "status": "planned",
@@ -881,7 +958,8 @@
       "value": "medium",
       "cost": "M",
       "cluster": "metrics",
-      "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): failures are clustered by telemetry there; cycle 10 counted its 170 ledger rows with a throwaway script, though principle 6 says convergence is computed by scripts; review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: report-schema.json checked by validate-findings.cjs, and source-derived fingerprints that stay the same across verdicts and runs"
+      "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): failures are clustered by telemetry there; cycle 10 counted its 170 ledger rows with a throwaway script, though principle 6 says convergence is computed by scripts; review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: report-schema.json checked by validate-findings.cjs, and source-derived fingerprints that stay the same across verdicts and runs",
+      "since": 10
     },
     {
       "status": "planned",
@@ -891,7 +969,8 @@
       "value": "medium",
       "cost": "M",
       "cluster": "evidence",
-      "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): its reviewer runs on an independent model; unmeasured here, so a measurement first"
+      "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): its reviewer runs on an independent model; unmeasured here, so a measurement first",
+      "since": 10
     },
     {
       "status": "planned",
@@ -901,7 +980,8 @@
       "value": "high",
       "cost": "S",
       "cluster": "distribution",
-      "source": "cycle 2026-10-25 (10), the user's engines decision"
+      "source": "cycle 2026-10-25 (10), the user's engines decision",
+      "since": 10
     },
     {
       "status": "planned",
@@ -911,7 +991,8 @@
       "cost": "S",
       "cluster": "gates",
       "title": "No git call has a time limit: a git child that waits forever (cycle 11: cat-file --batch-check never got stdin EOF under the commit-msg hook) holds the user's git commit with no end; every git call gets a limit and a hang is said, never waited on",
-      "source": "cycle 2026-10-25 (11), full suite on main at c040cc1"
+      "source": "cycle 2026-10-25 (11), full suite on main at c040cc1",
+      "since": 11
     },
     {
       "status": "planned",
@@ -921,7 +1002,8 @@
       "cost": "M",
       "cluster": "security",
       "title": "Commits made on another machine (a pull request) never pass the commit-msg gates: commit-check --range base..head runs the same checks over a range, and CI runs it on pull_request",
-      "source": "cycle 2026-10-25 (11), security audit (path table rows ci, deps, secrets, commit-shape)"
+      "source": "cycle 2026-10-25 (11), security audit (path table rows ci, deps, secrets, commit-shape)",
+      "since": 11
     },
     {
       "status": "planned",
@@ -931,7 +1013,8 @@
       "cost": "S",
       "cluster": "security",
       "title": "doctor says when the config switches a security check off: security.ci.paths [], security.deps.paths [], secrets.except naming every path, security.everyCycles 0, deps online false, advisories \"\"",
-      "source": "cycle 2026-10-25 (11), security audit (.ennyn/config.json row)"
+      "source": "cycle 2026-10-25 (11), security audit (.ennyn/config.json row)",
+      "since": 11
     },
     {
       "status": "planned",
@@ -941,7 +1024,8 @@
       "cost": "M",
       "cluster": "security",
       "title": "21 refusal lines tell the agent which config key loosens the gate that refused it (security.secrets.except, security.deps.allowScripts, sources, registries, a forbidden rule's except) and nothing flags a commit that widens them or switches a check off: the commit-msg hook refuses such a commit unless the message carries a line saying the user approved it, the cycle skill says an agent never writes that line, and security refusals say loosening is the user's call",
-      "source": "cycle 2026-10-25 (11), a second session's review (context-mode, MIT, docs/adr/0003-routing-deny-reasons.md: refusal wording drives the agent's next step); .ennyn/config.json joined review.impactRequiredGlobs in this cycle's closing commit, which an agent can still satisfy"
+      "source": "cycle 2026-10-25 (11), a second session's review (context-mode, MIT, docs/adr/0003-routing-deny-reasons.md: refusal wording drives the agent's next step); .ennyn/config.json joined review.impactRequiredGlobs in this cycle's closing commit, which an agent can still satisfy",
+      "since": 11
     },
     {
       "status": "planned",
@@ -950,8 +1034,9 @@
       "value": "medium",
       "cost": "M",
       "cluster": "security",
-      "title": "Code a listed file names is not listed: scripts named by hooks.json, .mcp.json, .lsp.json and monitors.json commands and settings.json subagentStatusLine at any plugin root, a mod's modules entry, the modules hook scripts import, files the hooks read and inject (Ennyn's styles/ and i18n/), and the commands, agents, skills, outputStyles and themes paths a marketplace entry merges under strict",
-      "source": "cycle 2026-10-25 (11), security audit and its review round 1 (R5); cells mcp-server-script and hook-read-styles are gaps"
+      "title": "Code a listed file names is not listed: scripts named by hooks.json, .mcp.json, .lsp.json and monitors.json commands and settings.json subagentStatusLine at any plugin root, a mod's modules entry, the modules hook scripts import, files the hooks read and inject (Ennyn's styles/ and i18n/), and the commands, agents, skills, outputStyles and themes paths a marketplace entry merges under strict; a plugin manifest's own component paths (commands, agents, skills, hooks, mcpServers) and a plugin folder with no manifest load too (7 gap cells in the Claude Code record)",
+      "source": "cycle 2026-10-25 (11), security audit and its review round 1 (R5); cells mcp-server-script and hook-read-styles are gaps; cycle 2026-10-26 (12), reference-claude-code record",
+      "since": 11
     },
     {
       "status": "planned",
@@ -961,17 +1046,8 @@
       "cost": "M",
       "cluster": "distribution",
       "title": "Ennyn's plugin root is the repository root, so Claude Code 2.1.207's npm ci --ignore-scripts after the cache copy fetches typescript and @types/node onto every user's machine, and the tests (the 396 KB npm record among them) ship too: move the plugin to a subdirectory (marketplace source ./plugin), or the development dependencies and lock out of the root; measure what Claude Code installs for each before choosing, on the version the user runs (the VS Code extension carries 2.1.306, the claude CLI 2.1.207; the install step was read in 2.1.207, later docs move it), without touching the user's configuration",
-      "source": "cycle 2026-10-25 (11), security audit review round 1 (R4), binary read; the record size decision"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "hook-follows-plugin-update",
-      "value": "high",
-      "cost": "S",
-      "cluster": "security",
-      "title": "install-hook writes the CLI path into the hook, and with the plugin that is the versioned cache directory: after an update the hook runs the old version's checks, and once Claude Code removes the orphaned version (14 days, docs plugins/loading) every commit passes unchecked with one stderr line",
-      "source": "cycle 2026-10-25 (11), a second session's review; setup/hook.mjs hookScript(cliPath)"
+      "source": "cycle 2026-10-25 (11), security audit review round 1 (R4), binary read; the record size decision",
+      "since": 11
     },
     {
       "status": "planned",
@@ -980,20 +1056,9 @@
       "value": "high",
       "cost": "S",
       "cluster": "init",
-      "title": "A PreToolUse hook in the plugin refuses push spellings the ask rule does not match (git -C, git -c, a full path, sh -c, env) with \"push as a plain git push from the project root\"; first measure that a hook's deny holds in bypassPermissions mode on the installed Claude Code",
-      "source": "cycle 2026-10-25 (11), push-approval-gate"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "reference-claude-code",
-      "value": "high",
-      "cost": "M",
-      "cluster": "gates",
-      "mechanization": true,
-      "sourceClass": "a check that re-implements another program's reading drifts from it",
-      "title": "Claude Code's own readings recorded like npm's: the settings it accepts or skips whole, which rules its matcher applies to which commands, the plugin components it loads, the rules files it loads; recorded from the installed version without a model call (claude plugin validate, the CLI's own commands), replayed against setup/permissions.mjs, plan/audit.mjs and the side-copy hook, taken again on a version bump",
-      "source": "cycle 2026-10-25 (11), convergence: the class recurred in push-approval-gate (settings schema, launch directory, sandbox, PowerShell: about 12 findings) and in the security audit (plugin loader, clone folder, kernel link resolution: about 9); reference-differentials closed it for npm only"
+      "title": "A PreToolUse hook in the plugin refuses the push spellings the ask rule does not match, measured on 2.1.310: an option before push (-C, -c, --no-pager, --git-dir, --), a quoted or escaped push (\"push\", $'push', p\"\"ush, \\push), a command fed to a shell or another program (sh -c, bash -c, eval, xargs, | sh, <<<, find -exec), a command word built as it runs ($(…), backticks, ${IFS}, ${X:-push}); env and, from 2.1.309, a full path are matched; first measure that a hook's deny holds in bypassPermissions mode on the installed Claude Code",
+      "source": "cycle 2026-10-25 (11), push-approval-gate; cycle 2026-10-26 (12): spellings measured by the Claude Code record",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1003,7 +1068,8 @@
       "cost": "M",
       "cluster": "gates",
       "title": "The npm record holds npm 10.9.7 only: record npm 9 and 11 too (the test:linux images carry them) and let the Linux run check each container's npm against its own record",
-      "source": "cycle 2026-10-25 (11), reference-differentials"
+      "source": "cycle 2026-10-25 (11), reference-differentials",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1013,7 +1079,8 @@
       "cost": "M",
       "cluster": "gates",
       "title": "checks/ci.mjs reads workflow YAML as GitHub's parser does, unrecorded: a corpus of GitHub's own readings",
-      "source": "cycle 2026-10-25 (11), reference-differentials (module inventory)"
+      "source": "cycle 2026-10-25 (11), reference-differentials (module inventory)",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1023,7 +1090,8 @@
       "cost": "S",
       "cluster": "security",
       "title": "With npm's default replace-registry-host every registry.npmjs.org tarball is fetched from the configured registry, and with always every registry's: the gate reads the lock's URL (recorded differs, rv-replace-host-always and rv-npmjs-resolved-npmrc-registry); also a v1 git version on a non-hosted host is fetched as a tarball URL (message only)",
-      "source": "cycle 2026-10-25 (11), reference-differentials data review round 1"
+      "source": "cycle 2026-10-25 (11), reference-differentials data review round 1",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1033,7 +1101,8 @@
       "cost": "S",
       "cluster": "security",
       "title": "An edge to a package the lock has no entry for is skipped: npm ci refuses the lock, npm install fetches it",
-      "source": "cycle 2026-10-25 (11), reference-differentials"
+      "source": "cycle 2026-10-25 (11), reference-differentials",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1043,17 +1112,8 @@
       "cost": "S",
       "cluster": "security",
       "title": "Lock keys such as node_modules/a/, ./… or a/../b are refused as notName while npm normalises and installs them: stricter, only the message is wrong",
-      "source": "cycle 2026-10-25 (11), reference-differentials"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "git-prefixed-paths",
-      "value": "low",
-      "cost": "S",
-      "cluster": "security",
-      "title": "Only paths.stateDir resolves a .git/ value through the common git dir: metricsLog, graph or handoff under .git/ fail in a linked worktree (ENOTDIR, said)",
-      "source": "cycle 2026-10-25 (11), config-paths-outside security review round 2"
+      "source": "cycle 2026-10-25 (11), reference-differentials",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1063,17 +1123,8 @@
       "cost": "S",
       "cluster": "init",
       "title": "Whether Claude Code actually loaded the settings file that holds the ask rules is not visible to doctor (a file with any rejected setting is skipped whole); the note says it, nothing measures it",
-      "source": "cycle 2026-10-25 (11), push-approval-gate"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "core-slot-aging",
-      "value": "high",
-      "cost": "S",
-      "cluster": "method",
-      "title": "The selector starves L nodes: replaying readyNodes at each cycle start, plugin-eval (high, L, no gate, no needs) ranked 6, 12, 12, 12, 18, 20, 21, 23, 33, 48, 57 over cycles 1-11, and all 31 nodes closed in cycles 1-10 were S or M; one core slot takes the oldest high node, an L node first split into an S or M first step",
-      "source": "cycle 2026-10-25 (11), a second session's replay of the graph's history"
+      "source": "cycle 2026-10-25 (11), push-approval-gate",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1083,7 +1134,8 @@
       "cost": "S",
       "cluster": "method",
       "title": "No rule decides which review findings are fixed now and which become nodes; cycles 2-10 had 245 fix-introduced findings against 266 real escapes",
-      "source": "cycle 2026-10-25 (11), a second session's count of the closing handoffs"
+      "source": "cycle 2026-10-25 (11), a second session's count of the closing handoffs",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1093,7 +1145,8 @@
       "cost": "S",
       "cluster": "security",
       "title": "The deps gate judges a dependency's spec even where the root's overrides replace it (an override that swaps a git dependency for a registry version is still refused deps.git); npm applies the override and never touches git",
-      "source": "cycle 2026-10-25 (11), reference-differentials data review round 3 (r3-override-replaces-git, recorded stricter)"
+      "source": "cycle 2026-10-25 (11), reference-differentials data review round 3 (r3-override-replaces-git, recorded stricter)",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1103,7 +1156,8 @@
       "value": "medium",
       "cost": "M",
       "cluster": "cycle",
-      "source": "review of context-mode (MIT), 2026-10-25: a PreCompact hook builds a snapshot of at most 2 KB (files, tasks, decisions, errors, the last request) and SessionStart restores it after compaction; Ennyn re-injects only the conversation style after compaction, and the cycle's bypass count needs the HEAD noted at its start"
+      "source": "review of context-mode (MIT), 2026-10-25: a PreCompact hook builds a snapshot of at most 2 KB (files, tasks, decisions, errors, the last request) and SessionStart restores it after compaction; Ennyn re-injects only the conversation style after compaction, and the cycle's bypass count needs the HEAD noted at its start",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1113,7 +1167,8 @@
       "value": "high",
       "cost": "S",
       "cluster": "security",
-      "source": "review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: 'require a boundary and result': the lower-trust principal, the accepted input, the intended control, the crossed boundary, the affected resource; same-principal authority and self-impact are not cross-boundary results. Several of Ennyn's open security and gate nodes are shapes only the user's own environment produces (ENNYN_CONFIG naming a pipe, trace2 targets in the user's git config)"
+      "source": "review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: 'require a boundary and result': the lower-trust principal, the accepted input, the intended control, the crossed boundary, the affected resource; same-principal authority and self-impact are not cross-boundary results. Several of Ennyn's open security and gate nodes are shapes only the user's own environment produces (ENNYN_CONFIG naming a pipe, trace2 targets in the user's git config)",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1123,7 +1178,8 @@
       "value": "high",
       "cost": "M",
       "cluster": "method",
-      "source": "review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: 'the agent that checks a finding is never the agent that found it'; three verdicts: confirmed, needs_validation (an exact unresolved fact, no severity) and rejected. Ennyn's evidence: fixes introduced more defects than first drafts missed (99 against 80 in the origin project; in Ennyn's cycles 2-10, 245 fix-introduced against 266 real escapes), and fixing a finding that was not real is pure risk"
+      "source": "review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: 'the agent that checks a finding is never the agent that found it'; three verdicts: confirmed, needs_validation (an exact unresolved fact, no severity) and rejected. Ennyn's evidence: fixes introduced more defects than first drafts missed (99 against 80 in the origin project; in Ennyn's cycles 2-10, 245 fix-introduced against 266 real escapes), and fixing a finding that was not real is pure risk",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1133,7 +1189,8 @@
       "value": "high",
       "cost": "M",
       "cluster": "security",
-      "source": "review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: the coverage ledger and validate-coverage-ledger.cjs are its coverage claim ('an architecture summary, agent count, or generic \"auth reviewed\" sentence is not coverage evidence'); runs are additive and changed source is revalidated; its README: in their test runs one run found about half of the vulnerabilities that repeated runs found in total. Ennyn's metrics log marks which cycles an audit covered, not which paths"
+      "source": "review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: the coverage ledger and validate-coverage-ledger.cjs are its coverage claim ('an architecture summary, agent count, or generic \"auth reviewed\" sentence is not coverage evidence'); runs are additive and changed source is revalidated; its README: in their test runs one run found about half of the vulnerabilities that repeated runs found in total. Ennyn's metrics log marks which cycles an audit covered, not which paths",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1143,7 +1200,8 @@
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "source": "review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: severity anchors with a high/medium test (does the result fully defeat an explicit control, or only weaken it?); defense-in-depth gaps are hardening notes. Ennyn's finding schema names four severities without defining them, while the cycle's rule 'a critical or high finding left after round two is still fixed' depends on them"
+      "source": "review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: severity anchors with a high/medium test (does the result fully defeat an explicit control, or only weaken it?); defense-in-depth gaps are hardening notes. Ennyn's finding schema names four severities without defining them, while the cycle's rule 'a critical or high finding left after round two is still fixed' depends on them",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1153,7 +1211,8 @@
       "value": "medium",
       "cost": "S",
       "cluster": "security",
-      "source": "review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25, AI-AND-LLM.md: model context, memory and tool descriptions are untrusted inputs; persistent memory poisoning (who writes what a later privileged session reads). SECURITY.md names impact.referenceCommand and the graph module as commands a commit can name, but not the handoff's commands, which skills/cycle/SKILL.md runs; the SECURITY.md line for the handoff's commands came in 8f446e0"
+      "source": "review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25, AI-AND-LLM.md: model context, memory and tool descriptions are untrusted inputs; persistent memory poisoning (who writes what a later privileged session reads). SECURITY.md names impact.referenceCommand and the graph module as commands a commit can name, but not the handoff's commands, which skills/cycle/SKILL.md runs; the SECURITY.md line for the handoff's commands came in 8f446e0",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1164,7 +1223,8 @@
       "cost": "M",
       "cluster": "security",
       "gate": "user",
-      "source": "user, 2026-10-25: a request; review of cloudflare/security-audit-skill (MIT, c1c8a8c): a skill with no hooks or install scripts and two zero-dependency validators; its README: one run found about half of what repeated runs found"
+      "source": "user, 2026-10-25: a request; review of cloudflare/security-audit-skill (MIT, c1c8a8c): a skill with no hooks or install scripts and two zero-dependency validators; its README: one run found about half of what repeated runs found",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1174,7 +1234,8 @@
       "value": "high",
       "cost": "S",
       "cluster": "method",
-      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its ladder (does it need to exist? already in this codebase? the platform? an installed dependency? one line? the minimum) cut delivered code 53% against the same agent with no skill, at the same hidden-check pass rate (39 tasks x 5 runs, Opus 5.5); its rung 'already in this codebase' came from duplicated code (its issue 217); bare 'follow YAGNI' prompts dropped safety guards (98.9% and 94.4% safe against 100%), hence the never-cut list; Ennyn's source grew from 5,593 lines (cycle 5) to 12,680 (cycle 11)"
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its ladder (does it need to exist? already in this codebase? the platform? an installed dependency? one line? the minimum) cut delivered code 53% against the same agent with no skill, at the same hidden-check pass rate (39 tasks x 5 runs, Opus 5.5); its rung 'already in this codebase' came from duplicated code (its issue 217); bare 'follow YAGNI' prompts dropped safety guards (98.9% and 94.4% safe against 100%), hence the never-cut list; Ennyn's source grew from 5,593 lines (cycle 5) to 12,680 (cycle 11)",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1184,7 +1245,8 @@
       "value": "medium",
       "cost": "M",
       "cluster": "gates",
-      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its band counts a new definition whose normalized name an existing one has as a duplicate rather than reuse (hooks/band/metrics.ts, duplicateOf); here the same reading becomes a gate, with no text loaded into the session. A throwaway scan of Ennyn at d326b04 (6-line windows): 4 copied blocks in 30 source files, among them isFile in setup/hook.mjs and setup/scan.mjs and the stdin and EPIPE handling of the Claude Code hooks"
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its band counts a new definition whose normalized name an existing one has as a duplicate rather than reuse (hooks/band/metrics.ts, duplicateOf); here the same reading becomes a gate, with no text loaded into the session. A throwaway scan of Ennyn at d326b04 (6-line windows): 4 copied blocks in 30 source files, among them isFile in setup/hook.mjs and setup/scan.mjs and the stdin and EPIPE handling of the Claude Code hooks",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1194,7 +1256,8 @@
       "value": "medium",
       "cost": "M",
       "cluster": "metrics",
-      "source": "user, 2026-10-25: a request; Ennyn's most recurring class is one decision read in two places that drift (reference-differentials, ~21 findings; fence-reader-shared; the settings reader unified in d326b04), while copied text is rare (duplicate-code); ponytail (MIT): merge near-copies that must change together, no abstraction with one implementation; impact-table.md S1: two different questions mean two predicates"
+      "source": "user, 2026-10-25: a request; Ennyn's most recurring class is one decision read in two places that drift (reference-differentials, ~21 findings; fence-reader-shared; the settings reader unified in d326b04), while copied text is rare (duplicate-code); ponytail (MIT): merge near-copies that must change together, no abstraction with one implementation; impact-table.md S1: two different questions mean two predicates",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1204,7 +1267,8 @@
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: /ponytail-audit ranks correct, safe, holds under load, tested, fast, lean, in that order, and gives the lines that could go; Ennyn's evidence: fixing review findings made more defects than first drafts missed (99 against 80), so a cut waits for green tests, not for a round"
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: /ponytail-audit ranks correct, safe, holds under load, tested, fast, lean, in that order, and gives the lines that could go; Ennyn's evidence: fixing review findings made more defects than first drafts missed (99 against 80), so a cut waits for green tests, not for a round",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1214,7 +1278,8 @@
       "value": "medium",
       "cost": "S",
       "cluster": "plan",
-      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its first rung, 'does it need to exist?', applied to the backlog; Ennyn's open nodes grew from 33 to 89 over six cycles while done nodes grew from 30 to 52, and 54 of the 93 open ones are low value"
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its first rung, 'does it need to exist?', applied to the backlog; Ennyn's open nodes grew from 33 to 89 over six cycles while done nodes grew from 30 to 52, and 54 of the 93 open ones are low value",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1224,7 +1289,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "metrics",
-      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: delivered lines of code are its first measure; Ennyn's source was 5,593 lines at cycle 5, 12,118 at cycle 10 and 12,680 now, and nothing reports it; the largest files now: scripts/ennyn.mjs 1,355 lines, core/git.mjs 1,196, checks/deps.mjs 1,186, checks/ci.mjs 1,017"
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: delivered lines of code are its first measure; Ennyn's source was 5,593 lines at cycle 5, 12,118 at cycle 10 and 12,680 now, and nothing reports it; the largest files now: scripts/ennyn.mjs 1,355 lines, core/git.mjs 1,196, checks/deps.mjs 1,186, checks/ci.mjs 1,017",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1234,7 +1300,8 @@
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its review and audit end with `Not checked:` and name the parts not read; a shortcut comment that names its limit is a decision, not a finding, unless the expected load already crosses it"
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its review and audit end with `Not checked:` and name the parts not read; a shortcut comment that names its limit is a decision, not a finding, unless the expected load already crosses it",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1244,7 +1311,8 @@
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "source": "review of i-have-adhd (an open-source agent skill, MIT; Ennyn's focused style follows its rules), 2026-10-25: its blind eval (Opus 4.8, 14 cases x 3 trials, evals/RESULTS.md) found one consistent regression, partial-success -0.63, a cause asserted without evidence, traced to its own 'cause, then fix' rule, which styles/focused.*.md holds too; its 'debug spiral' exception and pre-send check (a hedge that carries real uncertainty stays). ponytail (MIT): a blind judge preferred Ponytail 5's replies 110:67 over the previous version, mainly for the closing line on what was skipped or not checked"
+      "source": "review of i-have-adhd (an open-source agent skill, MIT; Ennyn's focused style follows its rules), 2026-10-25: its blind eval (Opus 4.8, 14 cases x 3 trials, evals/RESULTS.md) found one consistent regression, partial-success -0.63, a cause asserted without evidence, traced to its own 'cause, then fix' rule, which styles/focused.*.md holds too; its 'debug spiral' exception and pre-send check (a hedge that carries real uncertainty stays). ponytail (MIT): a blind judge preferred Ponytail 5's replies 110:67 over the previous version, mainly for the closing line on what was skipped or not checked",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1254,7 +1322,8 @@
       "value": "medium",
       "cost": "M",
       "cluster": "gates",
-      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: `shortcut: <limit>, <when to upgrade>` comments and /ponytail-debt, which tags a marker with no upgrade trigger as the one that rots; Ennyn's evidence: proposals that became graph nodes got done 8 of 11 times, those without a node 0 of 5"
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: `shortcut: <limit>, <when to upgrade>` comments and /ponytail-debt, which tags a marker with no upgrade trigger as the one that rots; Ennyn's evidence: proposals that became graph nodes got done 8 of 11 times, those without a node 0 of 5",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1266,7 +1335,8 @@
       "value": "high",
       "cost": "M",
       "cluster": "evidence",
-      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: trace-transfer, root-cause fix 1 of 6 without its rule and 6 of 6 with (Sonnet 4.6, Opus 4.8); injected bugs caught by the agent's own tests, 46% without and 66% with; i-have-adhd (MIT): evals/scenarios/persistence-topic-switch-stop, a six-turn resumed session; context-mode (MIT) README: aggressive brevity prompts have been reported to degrade coding and reasoning benchmarks (Moonshot AI on kimi-k2.5, opencode issue 20258)"
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: trace-transfer, root-cause fix 1 of 6 without its rule and 6 of 6 with (Sonnet 4.6, Opus 4.8); injected bugs caught by the agent's own tests, 46% without and 66% with; i-have-adhd (MIT): evals/scenarios/persistence-topic-switch-stop, a six-turn resumed session; context-mode (MIT) README: aggressive brevity prompts have been reported to degrade coding and reasoning benchmarks (Moonshot AI on kimi-k2.5, opencode issue 20258)",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1278,7 +1348,8 @@
       "value": "medium",
       "cost": "M",
       "cluster": "evidence",
-      "source": "review of i-have-adhd (an open-source agent skill, MIT), 2026-10-25: scripts/judge.py, evals/rubric.md; its absolute 'no blocking findings' rule could not pass while one broken case stayed in the set (evals/RESULTS.md); ponytail (MIT): its over-engineering and completeness judges must pass a self-test before they score"
+      "source": "review of i-have-adhd (an open-source agent skill, MIT), 2026-10-25: scripts/judge.py, evals/rubric.md; its absolute 'no blocking findings' rule could not pass while one broken case stayed in the set (evals/RESULTS.md); ponytail (MIT): its over-engineering and completeness judges must pass a self-test before they score",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1288,7 +1359,8 @@
       "value": "medium",
       "cost": "M",
       "cluster": "metrics",
-      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its band reads Claude Code session transcripts for cost, agent time and tokens per task, and leaves a cost empty rather than guess it (an unknown model, fast mode); Ennyn counts defects per cycle but not what a cycle or a review round costs"
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its band reads Claude Code session transcripts for cost, agent time and tokens per task, and leaves a cost empty rather than guess it (an unknown model, fast mode); Ennyn counts defects per cycle but not what a cycle or a review round costs",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1298,7 +1370,8 @@
       "value": "medium",
       "cost": "S",
       "cluster": "distribution",
-      "source": "review of ponytail and i-have-adhd (open-source agent skills, MIT), 2026-10-25: ponytail merges a rule change only with a three-arm benchmark, a case it should help and one it could break, 6 or more runs; i-have-adhd: hooks fast, bounded, fail-safe and opt-in, a write outside the repository needs an opt-in and an undo path"
+      "source": "review of ponytail and i-have-adhd (open-source agent skills, MIT), 2026-10-25: ponytail merges a rule change only with a three-arm benchmark, a case it should help and one it could break, 6 or more runs; i-have-adhd: hooks fast, bounded, fail-safe and opt-in, a write outside the repository needs an opt-in and an undo path",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1308,7 +1381,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "init",
-      "source": "review of i-have-adhd and ponytail (open-source agent skills, MIT), 2026-10-25: a write outside the repository needs an easy undo path; ponytail ships scripts/uninstall.js; Ennyn's hook says only 'delete this file to remove it'"
+      "source": "review of i-have-adhd and ponytail (open-source agent skills, MIT), 2026-10-25: a write outside the repository needs an easy undo path; ponytail ships scripts/uninstall.js; Ennyn's hook says only 'delete this file to remove it'",
+      "since": 11
     },
     {
       "status": "planned",
@@ -1318,7 +1392,8 @@
       "value": "low",
       "cost": "S",
       "cluster": "gates",
-      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its issues 443 and 790 (stdin never ended on Windows; the hook hung to the outer timeout), fixed by a one-second fallback and a BOM strip before JSON.parse; its issue 1165 raised its hook timeout to 15 s for a slow Node start"
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its issues 443 and 790 (stdin never ended on Windows; the hook hung to the outer timeout), fixed by a one-second fallback and a BOM strip before JSON.parse; its issue 1165 raised its hook timeout to 15 s for a slow Node start",
+      "since": 11
     },
     {
       "id": "instruction-imports",
@@ -1328,7 +1403,8 @@
       "cost": "M",
       "cluster": "gates",
       "needs": [],
-      "source": "cycle 2026-10-26 (12), reference-claude-code record"
+      "source": "cycle 2026-10-26 (12), reference-claude-code record",
+      "since": 12
     },
     {
       "id": "rule-paths-yaml",
@@ -1338,7 +1414,8 @@
       "cost": "M",
       "cluster": "gates",
       "needs": [],
-      "source": "cycle 2026-10-26 (12), reference-claude-code record"
+      "source": "cycle 2026-10-26 (12), reference-claude-code record",
+      "since": 12
     },
     {
       "id": "rule-paths-glob-dialect",
@@ -1348,7 +1425,8 @@
       "cost": "S",
       "cluster": "gates",
       "needs": [],
-      "source": "cycle 2026-10-26 (12), reference-claude-code record"
+      "source": "cycle 2026-10-26 (12), reference-claude-code record",
+      "since": 12
     },
     {
       "id": "nested-claude-folders",
@@ -1358,7 +1436,122 @@
       "cost": "M",
       "cluster": "gates",
       "needs": [],
-      "source": "cycle 2026-10-26 (12), reference-claude-code record"
+      "source": "cycle 2026-10-26 (12), reference-claude-code record",
+      "since": 12
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "plugin-eval-selftest",
+      "title": "The first step of plugin-eval, with no model call: each deterministic check the eval cases will use (commands that must and must not run, text the answer must and must not hold, an approval asked or a refusal given, a cap on tool calls) ships a passing and a failing reference transcript, and a self-test proves every check against both before any paid run",
+      "value": "high",
+      "cost": "M",
+      "cluster": "evidence",
+      "source": "cycle 2026-10-26 (12): ennyn core picks plugin-eval (high, L) as the oldest node and says to split it first",
+      "since": 12
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "reference-markdown",
+      "title": "The Markdown readers keep a recorded parse: what a code block is (fences in list items, block quotes, front matter, indented code) and the text the instruction readers take from Markdown (ban lines, imports, budget's rule lines) recorded from a pinned parser (the one Claude Code uses where measured, else CommonMark) into a committed corpus and replayed against setup/scan.mjs without the parser installed",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "mechanization": true,
+      "sourceClass": "a check that re-implements another program's reading drifts from it",
+      "source": "cycle 2026-10-26 (12), convergence: the class recurred about 25 times: 11 old drifts the new Claude Code record caught as a gate, 14 more from reviewers (rule path matching, AGENTS.md conditions, front matter, imports), and the fence reader twice (CommonMark, then list containers: 264 real files measured against micromark and mdast-util-from-markdown)",
+      "since": 12
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "reference-markdown"
+      ],
+      "id": "fence-reader-containers",
+      "title": "The fence reader reads no containers: a fence indented four spaces or more outside a list item opens a block, a block in a list item does not end with the item, fences in block quotes and YAML front matter are read as text (7 of 43 bans cells recorded as known limits)",
+      "value": "low",
+      "cost": "S",
+      "cluster": "init",
+      "source": "cycle 2026-10-26 (12), budget audit round 2: the rule was chosen by measurement on 264 real files (code read as text: 7, against 18 for the CommonMark indent rule without containers)",
+      "since": 12
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "audit-mark-trust",
+      "title": "A security-audit mark is one line in a committed log: a contributor's commit can append a mark that covers every cycle (the security audit stays away) or a plain record at a mark's commit (it comes early); bind a mark to what a contributor cannot write alone, or have doctor and the audit name a mark that arrived in another author's commit",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-10-26 (12), budget audit security review rounds 1 and 2 (plan/audit.mjs:128); append-only made it neither easier nor harder",
+      "since": 12
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "budget-listing-reading",
+      "title": "budget counts skill and command listings as Claude Code 2.1.310 builds them: when_to_use joins the tool description, a skill with no description gets one derived from its body, a skill's paths field and disable-model-invocation change whether it is listed",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-26 (12), budget audit: read in the 2.1.310 binary",
+      "since": 12
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "glob-matcher-bounds",
+      "title": "core/glob.mjs (impact, the audit, review.forbidden) is cubic for several ** against a repeating path (6.6 s at 8 KB) and throws on a pattern of about 33K characters; the side-copy matcher's segment walk has no bound on the number of pattern segments (a multi-megabyte pattern nears the hook's 15 s)",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-26 (12), reference-claude-code: growth test and security review round 2",
+      "since": 12
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "input-shapes-cleanup-race",
+      "title": "test/input-shapes.test.mjs failed once with ENOTEMPTY while removing a temporary .git (a git child still writing): cleanup waits for its children or retries",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-26 (12), a full run of reference-claude-code's branch at load 50-110",
+      "since": 12
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "windows-run",
+      "title": "Nothing runs on Windows: the plugin-data record's rename and drive-path spelling, Git Bash's read -r of a C:\\ record, NTFS spellings of .git past the link walk; a Windows run (a job or a measured manual run) before the public release",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "distribution",
+      "source": "cycle 2026-10-26 (12), hook-follows-plugin-update and the budget audit: every Windows claim this cycle is unverified",
+      "since": 12
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "reference-claude-code-hook-env",
+      "title": "The commit-msg hook's plugin record rests on Claude Code facts read from its binary and recorded nowhere: SessionStart env files are pasted inline before every Bash command in their order, are not truncated on resume, and plugin hooks get CLAUDE_PLUGIN_ROOT and CLAUDE_PLUGIN_DATA after the settings env; record them with the Claude Code recorder",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-26 (12), hook-follows-plugin-update security review round 2 (evidence gaps)",
+      "since": 12
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "reference-claude-code-linux",
+      "title": "The Claude Code record is taken on macOS only: case-dependent cells are said on Linux, and whether Claude Code folds case when it matches rule paths on a case-sensitive disk is unmeasured (Ennyn's matcher folds case everywhere); record on Linux too",
+      "value": "low",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "cycle 2026-10-26 (12), reference-claude-code data review round 2",
+      "since": 12
     }
   ],
   "done": [
@@ -1700,6 +1893,42 @@
       "title": "First security audit (audit slot): every sensitive path ennyn audit lists, with a path table; the audit lists plugin components at any depth, every link (never resolved) and submodule, root SKILL.md, themes and npm locks at any depth; SECURITY.md names the npm ci a plugin install runs and the code a config or the handoff names (c040cc1, 8f446e0)",
       "status": "done",
       "finished": "2026-10-26"
+    },
+    {
+      "id": "core-slot-aging",
+      "title": "ennyn core names the oldest ready node of the highest value (a number in graph.fields.since where the graph dates its nodes, else its place in the list), or the nearest ready node it waits on; it never names a mechanization node, says when a pick is to be split (planner.splitAbove, else the cost scale's middle weight) and lists the rest by value/cost; replayed at each cycle start it picks plugin-eval, which value/cost ranked 5th to 92nd (160ce88)",
+      "status": "done",
+      "finished": "2026-10-27"
+    },
+    {
+      "id": "hook-follows-plugin-update",
+      "title": "A commit-msg hook installed from the plugin reads the plugin version from a record in the plugin's data directory that every session writes and names to its commands, so advice followed from the plugin installs it; one predicate decides what is recorded, run and reported; no record lets a commit through, a record the hook cannot run refuses it (ca2106f)",
+      "status": "done",
+      "finished": "2026-10-27"
+    },
+    {
+      "id": "reference-claude-code",
+      "title": "Claude Code's own readings recorded: test/reference/claude-code.mjs runs the installed Claude Code in print mode against a stand-in model on 127.0.0.1 (no model call; a cell names spellings and fixtures from the recorder's own code, never a command), 274 cells from 2.1.310; the hermetic replay holds askRules, agentSetup, the side-copy rules matcher and the audit's machine list to it both ways, known gaps name open nodes and pin Ennyn's reading; the record's drifts in the rules matcher and the instruction-file reader fixed (9e9935b, 45b36ae, b37a1e7)",
+      "status": "done",
+      "finished": "2026-10-27"
+    },
+    {
+      "id": "fence-reader-shared",
+      "title": "budget reads code blocks with the scan's reader (b3d1744)",
+      "status": "done",
+      "finished": "2026-10-27"
+    },
+    {
+      "id": "git-prefixed-paths",
+      "title": "Closed by b3d1744: no config path but paths.stateDir may lie in a git dir",
+      "status": "done",
+      "finished": "2026-10-27"
+    },
+    {
+      "id": "budget-audit-12",
+      "title": "Legacy audit of budget (audit slot): the metrics log is only appended to and a record made again names the line it replaces, a failed append is cut back, a byte order mark, fences and cut text are read alike by every reader, and git's own spellings of .git are refused in config paths (b3d1744)",
+      "status": "done",
+      "finished": "2026-10-27"
     }
   ]
 }
