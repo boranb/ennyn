@@ -1,39 +1,47 @@
 # Ennyn
+<img src=".claude-plugin/icon.svg" align="right" width="128" alt="">
 
 **English** · [Türkçe](README.tr.md)
 
-*Ennyn* (pronounced *EN-nin*) is Sindarin for "gates": the Doors of Durin in Tolkien's *The Lord of the Rings*, which open only to the right word. Ennyn turns each recurring lesson into a gate your code has to pass.
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Node 20+](https://img.shields.io/badge/node-20%2B-brightgreen)](package.json) [![Runtime dependencies: 0](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen)](package.json)
 
-A development loop for coding agents that measures itself. Each cycle takes four tasks from the project's work graph: two core tasks, one task that turns a recurring defect class into a gate, and one audit of a finished feature. It ends by counting where the defects came from.
+Ennyn is a Claude Code plugin and Node CLI. It gives the agent a working routine: impact analysis before code is written, a two-round review, and checks on every commit for recurring classes of bugs.
 
-> Status: pre-release (0.0.x). Extracted from a production codebase where the loop ran for nearly 700 sessions; the numbers below come from that project.
+![Output of ennyn rework, ennyn doctor, and ennyn core on the Ennyn repository](docs/assets/terminal.png)
 
-## Why
+> Early days (0.0.x). Ennyn is built with Claude Code using its own cycle; its work graph, handoff notes, and metrics are in `.ennyn/` (notes in Turkish, commits in English, as its config asks). The config format may still change before 1.0.
 
-We measured 21 cycles (539 review findings, 398 product defects) of the origin project. Three results shaped this package:
+## Why Ennyn
 
-- **Fixing review findings was the main source of new defects.** Fixes introduced more product defects (99) than first drafts missed (80). Of the serious findings in the second and later review rounds, 66% were side effects of the previous round's fix. Third and later rounds found a new defect class only twice.
-- **Most risky questions were already known but not answered before the code was written.** Review prompts asked them, and the author answered them only after review. Two independent raters judged nearly all new serious defects at least partly answerable before writing.
-- **Lessons written as prose did not stop recurrence; lessons turned into gates did.** A class with a gate stayed at zero for 11 cycles. A class with only a written rule came back in 13 of 14 cycles. Proposals that became work-graph nodes got done 8 times out of 11; proposals without a node got done 0 times out of 5.
+In a project where an agent writes the code, these problems show up over time:
 
-Numbers, limits and the published research they were checked against: [docs/evidence.md](docs/evidence.md).
+- A review finds a bug, the agent fixes it, and the fix causes a regression nearby. The next review catches the regression, and the loop continues.
+- The questions that would prevent these bugs can be asked before the code is written (what else reads this value? can this state be reached another way?), but they usually come up only in review.
+- A bug leads to a new prose rule in CLAUDE.md, and a few weeks later a bug of the same class is back.
+- CLAUDE.md keeps growing and takes up context in every session, with no way to measure which rules have any effect.
 
 ## What it does
 
-| Step | What the loop does | Tooling |
-|---|---|---|
-| Setup | Reads the repository first: how fixes are labelled, which files most commits rewrite (generated output), the test layout, risky paths, roadmap files and issues. Then it asks at most six questions and writes the config, a starting work graph and a handoff stub; `ennyn doctor` checks them. | `/ennyn:init`, `ennyn init-scan`, `ennyn doctor` |
-| Picking | One core task is the oldest node of the highest value, so a large one is not passed over cycle after cycle (it is first split into a smaller step it needs); the other is the best by value/cost. The mechanization task is the best ready node flagged `mechanization: true`. | `ennyn core`, `ennyn mechanization` |
-| Before writing | Five-row impact table, each row answered by a command: who else reads this decision · other paths to this state · newly accepted/rejected inputs · behaviour at the ceiling or when measurement fails · where the fakes come from. For heuristic rules, an accept + reject corpus and a failing test come first. | `ennyn impact` |
-| Mutation pass | Hand-picked mutants of the changed lines run against the fast tests one at a time, after the tests pass with none. A mutant that does not parse is invalid, never killed; each file is put back byte for byte, also after an interrupted run, unless it was edited while the mutant was in it: then it is left as it is and the run stops. Every survivor gets a test or a reason. | `ennyn mutate` |
-| Review | At most two rounds; round two looks only at the diff of round-one fixes. A third round needs an independent signal (test, mutation run, real measurement). Every finding carries a quote, class, source, confidence and how it was checked. | `agents/`, `skills/cycle/finding-schema.md` |
-| Commit | Short subject and body; review rounds and impact summary as structured lines. A commit-msg hook checks every message, before the expensive hook runs, and warns when a file changes without the documents `review.cochange` ties to it. A "never use `X`" line in the project's instructions can become a `review.forbidden` rule: the hook then refuses a commit that adds `X`, and the prose line goes. It also refuses a line that holds a credential in a shape only its issuer writes (private keys, cloud, forge and registry tokens); `security.secrets.except` names the files that may hold one. | `ennyn commit-check`, `ennyn install-hook` |
-| Gate attempts | The commit wrapper records every gate attempt (duration, result, files, failing step when known) in machine-local state; a summary gives the wait, the failure rate and the time spent in failed attempts. Recording never changes the commit's exit code. | `ennyn gate-record`, `ennyn gate-stats` |
-| Voice | The conversation can be `focused` (result or next action first, numbered steps) or `terse` (answer first, short sentences); the rules reach each session at start. Commits can be `terse`: subject and structured lines, no prose. Numbers, paths, commands, negations and money or data-loss warnings are never shortened. | `conversation.style`, `commitMsg.style` |
-| Side copies | A worktree or plain copy of the project gets the path-scoped rules the main tree would load. | Claude Code hook |
-| End of cycle | Convergence in four numbers: real escapes, fix-introduced, pre-existing, gate-caught. The most recurring class becomes a work-graph node flagged `mechanization: true`. One lesson file is pruned. Uses of the commit-shape bypass are counted, and the instruction text loaded in every session is measured; it should only shrink. Dependencies and CI files are checked; every `security.everyCycles` cycles the audit is a security audit of the sensitive paths. Push approval is asked, with the unpushed count; as a backstop `/ennyn:init` writes Claude Code ask rules for push, publish and release commands, and `ennyn doctor` says which file holds them and where Claude Code applies it. | `ennyn push-check`, `ennyn rework`, `ennyn bypass`, `ennyn budget`, `ennyn deps`, `ennyn audit` |
+- Before editing code, the agent fills in an impact table: five questions about what the change affects, each answered, where possible, by running git grep, git log, or the tests.
+- Review gets two rounds. The second round only looks at what the first round's fixes changed. A third round needs a failing test or a measurement behind it.
+- When a class of bug recurs, the next cycle (one pass of the loop described below) turns it into a gate: a test or a commit-hook rule. The prose rule for it in CLAUDE.md is then no longer needed.
+- Each cycle closes with four metrics: bugs that got past review, regressions introduced by fixes, pre-existing bugs found along the way, and bugs a gate caught. It also measures whether the instruction text loaded in every session grew.
+- Tasks live in a work graph, a JSON file. Ennyn picks four per cycle and always keeps a slot for the oldest high-value task.
 
-`ennyn rework` measures how many commits had lines changed by a fix within N days (an SZZ variant). On the origin project it matched an independent Python implementation: September 46/306 vs 46/317, October 30/135 vs 33/141. The rate is only as good as the project's fix label: when most commits are labelled fix it counts churn, not defect rework, and the tool says so. Set `metrics.fixSubject` to match real repairs; see [docs/evidence.md](docs/evidence.md#speed-and-rework).
+Ennyn has no runtime dependencies and no install scripts. It makes network requests in only two cases. When a commit adds packages to a lock file, the commit hook looks them up on the npm registry (turn that off with `security.deps.online: false`). The `ennyn deps` command queries the OSV vulnerability database when you run it. More in [SECURITY.md](SECURITY.md).
+
+The reasoning behind Ennyn's design is in [docs/evidence.md](docs/evidence.md).
+
+## Try it without installing
+
+Two commands work in any git repository without a config. Clone Ennyn next to your project, then run these from your project's root:
+
+```sh
+node ../ennyn/scripts/ennyn.mjs rework
+node ../ennyn/scripts/ennyn.mjs budget
+```
+
+`rework` reports the share of commits whose lines a fix commit changed within 7 days. `budget` measures the size of the instruction text (CLAUDE.md, rules, and skill and agent descriptions) your agent loads in every session.
 
 ## Install (Claude Code)
 
@@ -42,15 +50,38 @@ claude plugin marketplace add boranb/ennyn
 claude plugin install ennyn@ennyn
 ```
 
-Then, in the project: `/ennyn:init`.
+Then run `/ennyn:init` in your project. It scans the repository, asks a few questions, and sets up `.ennyn/`.
 
-Before the repository is public, install from a local clone: `claude plugin marketplace add ./ennyn`.
+Until Ennyn's repository is public, add the marketplace from a local clone with `claude plugin marketplace add ./ennyn`, then run the install command above.
 
-Other agents that read [Agent Skills](https://agentskills.io) can use `skills/cycle/` directly. The CLI needs Node 20 or later and git 2.34 or later, and has no dependencies: `node scripts/ennyn.mjs --help`.
+The cycle skill in `skills/cycle/` follows the [Agent Skills](https://agentskills.io) format, but it calls the CLI through `${CLAUDE_PLUGIN_ROOT}`, which only Claude Code sets. To use it with another agent, set `CLAUDE_PLUGIN_ROOT` to the path of an Ennyn clone. The CLI needs Node 20 or later and git 2.34 or later, and has no dependencies. From the Ennyn clone, `node scripts/ennyn.mjs --help` lists its commands. Elsewhere in this README, `ennyn` is short for that script, run from your project.
+
+## How a cycle runs
+
+Before the first edit, the agent runs `ennyn impact`. This is its output for a change to Ennyn:
+
+![Output of ennyn impact for a change to Ennyn](docs/assets/impact.png)
+
+The steps of a cycle, and the settings that apply to them:
+
+| Step | What happens | Commands |
+|---|---|---|
+| Setup | `/ennyn:init` looks at the repository before asking anything: how fixes are labeled, which files most commits rewrite (usually generated output), where the tests are, which paths are risky, and whether the project has a roadmap or issues. Then it asks up to six questions and writes the config, a starting work graph, and a handoff note for the next session. | `/ennyn:init`, `ennyn init-scan`, `ennyn doctor` |
+| Picking work | Each cycle takes four tasks. One is always the oldest high-value task, so large tasks aren't starved (if it's too big, its first step goes in instead). The other three are the task with the best value for its cost, one that turns the most common kind of bug into a gate, and an audit of something already finished. | `ennyn core`, `ennyn mechanization` |
+| Before writing | The impact table. Each of the five questions is answered by a command where possible (git grep, git log, or the tests), and a row no command can answer says so. If the change adds a heuristic, the agent first writes examples the heuristic should accept and reject, plus a failing test. | `ennyn impact` |
+| Mutation testing | The agent picks a few mutants (small, deliberate bugs) for the changed lines, and the project's fast tests run once per mutant. A surviving mutant, one the tests miss, needs a new test or a written reason. Files are restored afterward, even if the run is interrupted. If someone edits a file while a mutant is in it, Ennyn leaves that file as it is and stops the run. | `ennyn mutate` |
+| Review | Two rounds; a third only with a failing test or a measurement. Every finding quotes the code, names its source (new code, an earlier fix, or older code), and says how it was checked. | `agents/`, `skills/cycle/finding-schema.md` |
+| Commit | A commit-msg hook checks every commit. It blocks patterns you've banned (`review.forbidden`) and secrets in known token formats, and warns when code changes but the docs tied to it don't (`review.cochange`). | `ennyn commit-check`, `ennyn install-hook` |
+| Gate timing | How long the commit checks take and how often they fail, recorded on your machine. | `ennyn gate-record`, `ennyn gate-stats` |
+| Tone | You choose how the agent talks to you (`focused` or `terse`) and how long commit messages are. Numbers, paths, and warnings are never cut. | `conversation.style`, `commitMsg.style` |
+| Worktrees | When the agent works in a git worktree or a copy of the project, it still gets the project's path-specific rules. | Claude Code hook |
+| End of cycle | You get the four metrics, and the most common kind of bug becomes the next cycle's gate task. The agent cleans up one lesson file (the project's written notes on past mistakes) and deletes the lessons a gate now covers. It also checks dependencies and CI files. Every few cycles there's a security audit. The agent always asks before pushing. | `ennyn push-check`, `ennyn rework`, `ennyn bypass`, `ennyn budget`, `ennyn deps`, `ennyn audit` |
+
+`ennyn rework` depends on how your project labels fixes. If most commit subjects start with "fix", it ends up measuring churn more than rework, and says so. Set `metrics.fixSubject` to match your real repair commits; that pattern also has to match `commitMsg.fixType` ([details](docs/evidence.md#speed-and-rework)).
 
 ## Configure
 
-One file per project, `.ennyn/config.json`, written by `/ennyn:init`. Override only what differs from the defaults. Unknown keys and type mismatches are reported together, so a typo cannot silently disable a check. Every path a config names stays in the project, machine-local state in its git dir, and Ennyn reads and writes its files through no symbolic link a commit could hold, so a commit cannot point them outside it.
+All settings live in one file, `.ennyn/config.json`, which `/ennyn:init` writes for you. You only set what differs from the defaults. Unknown keys and wrong types are reported all at once, so a typo can't quietly switch a check off. Paths in the config have to stay inside the project.
 
 ```json
 {
@@ -62,15 +93,15 @@ One file per project, `.ennyn/config.json`, written by `/ennyn:init`. Override o
 }
 ```
 
-The full table of keys is in [DESIGN.md](DESIGN.md). Reports and the conversation follow `language` (`en` or `tr`); commit text follows `commitMsg.language`, which can differ (Turkish conversation, English commits). `commitMsg.types` sets the subject types `commit-check` enforces, and `commitMsg.fixType` is the one type for repairs of earlier commits, so the rework rate counts repairs, not churn. Both are chosen at `/ennyn:init` and replace any commit rule in the project's own instructions.
+`language` (`en` or `tr`) sets the language of reports and of the agent's replies. Commit messages follow `commitMsg.language`, so you can talk in Turkish and commit in English. The hook accepts the commit types in `commitMsg.types`, and `commitMsg.fixType` is the type reserved for repairs of earlier commits, the ones `ennyn rework` counts. `/ennyn:init` sets the types and the fix type, and they override any commit rules in your own instructions. The full list of keys is in [DESIGN.md](DESIGN.md).
 
-The work graph is a JSON file (or an ES module) with two arrays, open and done nodes. Field names are configurable, so an existing graph can be used as it is.
+The work graph is a JSON file (or an ES module) with two arrays, one for open tasks and one for done tasks. Field names can be configured, so you can point Ennyn at a graph you already have.
 
 ## Status and roadmap
 
-- **0.1**: core modules, Claude Code plugin and `/ennyn:init`: a survey and a short interview that write the config and a starting graph (from a roadmap file, issues or the user's words), with a `metrics.fixSubject` that fits the project's own history.
-- **0.2**: a Codex manifest, `claude plugin eval` cases that compare the loop with and without the plugin, and the loop measured on a second project.
-- **1.0**: stable config schema.
+- **0.1** (next): the first public release, with the plugin, `/ennyn:init`, and the CLI as they are now.
+- **0.2**: Codex support, `claude plugin eval` cases that compare a project with and without the plugin, and published results from a second project.
+- **1.0**: a stable config format.
 
 ## License
 
@@ -78,4 +109,6 @@ MIT. See [LICENSE](LICENSE).
 
 ## Name
 
-The code is MIT-licensed; the name has its own short policy in [TRADEMARK.md](TRADEMARK.md). *Ennyn* is a word from J.R.R. Tolkien's invented languages. This project is not affiliated with, sponsored or endorsed by the Tolkien Estate, Middle-earth Enterprises or any of their licensees.
+*Ennyn* (pronounced *EN-nin*) means "gates" in Sindarin. It's the first word of the inscription on the Doors of Durin in *The Lord of the Rings*, which open only for the right word. In Ennyn, the checks your code has to pass are called gates.
+
+The name has its own short policy in [TRADEMARK.md](TRADEMARK.md). Ennyn is not affiliated with, sponsored by, or endorsed by the Tolkien Estate, Middle-earth Enterprises, or any of their licensees.

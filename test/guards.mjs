@@ -36,7 +36,7 @@ export const GATES = [
     test: "test/hygiene.test.mjs",
     guards: [
       { id: "hygiene-name", why: "a project name in a tracked file", file: "DESIGN.md", old: "# ennyn — design\n", new: `# ennyn — design\n\nFrom ${NAME}.\n`, pattern: "hygiene: no file, path, symlink" },
-      { id: "hygiene-home", why: "a home path in a tracked file", file: "README.md", old: "> Status: pre-release (0.0.x).", new: `> Status: pre-release (0.0.x), from ${HOME}/ennyn.`, pattern: "hygiene: no file, path, symlink" },
+      { id: "hygiene-home", why: "a home path in a tracked file", file: "README.md", old: "> Early days (0.0.x).", new: `> Early days (0.0.x), from ${HOME}/ennyn.`, pattern: "hygiene: no file, path, symlink" },
       { id: "hygiene-judge", why: "a judge that finds nothing", file: "test/hygiene.test.mjs", old: "  const out = [];\n  for (const raw of text.match(", new: "  const out = [];\n  if (out) return out;\n  for (const raw of text.match(", pattern: "hygiene: a name is found whole" },
       {
         id: "hygiene-log",
@@ -53,8 +53,8 @@ export const GATES = [
   {
     test: "test/readme-twins.test.mjs",
     guards: [
-      { id: "twins-row", why: "a table row in one twin only", file: "README.tr.md", old: "| Kapı denemeleri |", new: "| Kapı denemeleri | `ek` |\n| Kapı denemeleri |", pattern: "docs: README.md and README.tr.md keep" },
-      { id: "twins-number", why: "a number in one twin only", file: "README.md", old: "We measured 21 cycles", new: "We measured 22 cycles", pattern: "docs: README.md and README.tr.md keep" },
+      { id: "twins-row", why: "a table row in one twin only", file: "README.tr.md", old: "| Gate süreleri |", new: "| Gate süreleri | `ek` |\n| Gate süreleri |", pattern: "docs: README.md and README.tr.md keep" },
+      { id: "twins-number", why: "a number in one twin only", file: "README.md", old: "changed within 7 days", new: "changed within 8 days", pattern: "docs: README.md and README.tr.md keep" },
       { id: "twins-judge", why: "a comparison that finds no difference", file: "test/readme-twins.test.mjs", old: "function differences(a, b, langA, langB) {\n  const out = [];", new: "function differences(a, b, langA, langB) {\n  const out = [];\n  if (out) return out;", pattern: "docs: the twin check fails on drift" },
     ],
   },

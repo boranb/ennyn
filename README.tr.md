@@ -1,39 +1,47 @@
 # Ennyn
+<img src=".claude-plugin/icon.svg" align="right" width="128" alt="">
 
 [English](README.md) · **Türkçe**
 
-*Ennyn* (okunuşu *EN-nin*), Tolkien'in *Yüzüklerin Efendisi*'nde yalnız doğru sözle açılan Durin Kapıları'nın Sindarin dilindeki adıdır: "kapılar". Ennyn de tekrar eden her dersi, kodun geçmesi gereken bir kapıya çevirir.
+[![Lisans: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Node 20+](https://img.shields.io/badge/node-20%2B-brightgreen)](package.json) [![Runtime bağımlılığı: 0](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen)](package.json)
 
-Kodlama ajanları için kendini ölçen bir geliştirme döngüsü. Her döngü projenin iş grafiğinden dört görev alır: iki çekirdek görev, tekrar eden bir kusur sınıfını kapıya çeviren bir görev ve bitmiş bir özelliğin denetimi. Döngü, kusurların nereden geldiğini sayarak kapanır.
+Ennyn, Claude Code için bir plugin ve Node CLI aracı. Agent'a bir çalışma düzeni getiriyor: kod yazılmadan önce etki analizi, iki turlu review ve tekrar eden hata sınıfları için her commit'te çalışan kontroller.
 
-> Durum: yayın öncesi (0.0.x). Döngünün yaklaşık 700 oturum boyunca çalıştığı bir üretim projesinden çıkarıldı; aşağıdaki sayılar o projeden.
+![Ennyn reposunda çalıştırılan ennyn rework, ennyn doctor ve ennyn core çıktısı](docs/assets/terminal.png)
 
-## Neden
+> Proje henüz erken aşamada (0.0.x). Ennyn, Claude Code ile ve kendi döngüsü kullanılarak geliştiriliyor; iş grafı, devir notları ve metrikleri `.ennyn/` klasöründe (ayarı gereği notlar Türkçe, commit'ler İngilizce). Config formatı 1.0'a kadar değişebilir.
 
-Kaynak projenin 21 döngüsünü ölçtük (539 inceleme bulgusu, 398 ürün kusuru). Bu paketi üç sonuç şekillendirdi:
+## Neden Ennyn
 
-- **Yeni kusurların asıl kaynağı inceleme bulgularını düzeltmekti.** Düzeltmelerin açtığı ürün kusuru (99), ilk yazımın kaçırdığından (80) fazlaydı. İkinci ve sonraki turlardaki ciddi bulguların %66'sı önceki turun düzeltmesinin yan etkisiydi. Üçüncü ve sonraki turlar yeni bir kusur sınıfını yalnız iki kez buldu.
-- **Riskli soruların çoğu zaten biliniyordu ama kod yazılmadan önce cevaplanmıyordu.** İnceleme istemleri bu soruları soruyordu; yazar ise onları ancak incelemeden sonra cevaplıyordu. İki bağımsız puanlayıcıya göre yeni ciddi kusurların neredeyse hepsi yazmadan önce en az kısmen sorulabilirdi.
-- **Düzyazıyla yazılan dersler tekrarı durdurmadı, kapıya çevrilen dersler durdurdu.** Kapısı olan bir sınıf 11 döngü boyunca sıfırda kaldı. Yalnız yazılı kuralı olan bir sınıf 14 döngünün 13'ünde geri geldi. İş grafiğinde düğüme dönüşen önerilerin 11'de 8'i yapıldı; düğümü olmayanların 5'te 0'ı.
+Kodu bir agent'ın yazdığı bir projede zamanla şu sorunlar ortaya çıkar:
 
-Sayılar, sınırları ve karşılaştırıldıkları yayımlanmış araştırmalar (İngilizce): [docs/evidence.md](docs/evidence.md).
+- Review bir hata bulur, agent düzeltir, düzeltme de çevresinde bir regression'a yol açar. Sonraki review bu regression'ı yakalar ve döngü böyle sürer.
+- Bu hataları önleyecek sorular kod yazılmadan önce de sorulabilir (bu değeri başka hangi kod okuyor? bu state'e başka bir yoldan da ulaşılabilir mi?), ama genelde ancak review'da sorulur.
+- Bir hatadan sonra CLAUDE.md'ye düz metin bir kural eklenir; birkaç hafta sonra aynı sınıftan bir hata yine çıkar.
+- CLAUDE.md sürekli büyür ve her oturumda context'te yer kaplar; hangi kuralın gerçekten bir etkisi olduğunu ölçmenin bir yolu yoktur.
 
 ## Ne yapar
 
-| Adım | Döngü ne yapar | Araç |
-|---|---|---|
-| Kurulum | Önce depoyu okur: düzeltmeler nasıl etiketleniyor, commit'lerin çoğu hangi dosyaları yeniden yazıyor (üretilmiş çıktı), test düzeni, riskli yollar, yol haritası dosyaları ve issue'lar. Sonra en çok altı soru sorar; ayarı, başlangıç iş grafiğini ve bir devir taslağını yazar; `ennyn doctor` bunları denetler. | `/ennyn:init`, `ennyn init-scan`, `ennyn doctor` |
-| Seçim | Çekirdek görevlerden biri en yüksek değerli düğümlerin en eskisidir; böylece büyük bir düğüm döngüler boyunca atlanmaz (önce ona gereken daha küçük bir adıma bölünür). Öteki, değer/maliyete göre en iyisidir. Mekanizasyon görevi, `mechanization: true` işaretli hazır düğümlerin en iyisidir. | `ennyn core`, `ennyn mechanization` |
-| Yazmadan önce | Beş satırlık etki tablosu, her satır bir komutla cevaplanır: bu kararı başka kim okuyor · bu duruma başka hangi yoldan varılıyor · hangi girdiler yeni kabul ya da ret ediliyor · tavanda ya da ölçüm başarısız olunca ne oluyor · sahteler nereden geliyor. Sezgisel kurallarda önce kabul ve ret örnekli bir derlem ile kırmızı bir test gelir. | `ennyn impact` |
-| Kırma geçişi | Değişen satırların elle seçilmiş mutantları, testler mutantsız geçtikten sonra hızlı testlere karşı tek tek koşulur. Ayrıştırılamayan mutant geçersizdir, hiçbir zaman öldü sayılmaz; her dosya bayt bayt geri yazılır, yarıda kalan bir koşudan sonra da; mutant içindeyken düzenlenen dosyaya dokunulmaz ve koşu durur. Hayatta kalan her mutanta bir test ya da gerekçe yazılır. | `ennyn mutate` |
-| İnceleme | En çok iki tur; ikinci tur yalnız birinci turun düzeltmelerinin diff'ine bakar. Üçüncü tur ancak bağımsız bir sinyalle (test, kırma, gerçek ölçüm) açılır. Her bulgu bir alıntı, sınıf, kaynak, güven ve nasıl doğrulandığını taşır. | `agents/`, `skills/cycle/finding-schema.md` |
-| Commit | Kısa konu ve gövde; inceleme turları ve etki özeti yapısal satırlar olarak yazılır. Bir commit-msg kancası her mesajı pahalı kanca koşmadan önce denetler; bir dosya, `review.cochange`'in ona bağladığı belgeler olmadan değişirse uyarır. Projenin talimatlarındaki "asla `X` kullanma" satırı bir `review.forbidden` kuralına dönüşebilir: kanca bundan sonra `X` ekleyen commit'i reddeder, düzyazı satır kalkar. Yalnız yayıncısının yazdığı biçimde bir kimlik bilgisi tutan satırı da reddeder (özel anahtarlar, bulut, kod barındırma ve paket kayıt jetonları); `security.secrets.except` bir sır tutabilecek dosyaları adlandırır. | `ennyn commit-check`, `ennyn install-hook` |
-| Kapı denemeleri | Commit sarmalayıcısı her kapı denemesini (süre, sonuç, dosyalar, biliniyorsa düşen adım) makineye özel duruma kaydeder; özet bekleme süresini, başarısızlık oranını ve başarısız denemelerde geçen süreyi verir. Kayıt commit'in çıkış kodunu hiç değiştirmez. | `ennyn gate-record`, `ennyn gate-stats` |
-| Üslup | Konuşma `focused` (önce sonuç ya da sıradaki adım, numaralı adımlar) ya da `terse` (önce cevap, kısa cümleler) olabilir; kurallar her oturumun başında verilir. Commit'ler `terse` olabilir: konu ve yapısal satırlar, düzyazı yok. Sayılar, yollar, komutlar, olumsuzluklar ve para ya da veri kaybı uyarıları hiç kısaltılmaz. | `conversation.style`, `commitMsg.style` |
-| Yan kopyalar | Projenin worktree'si ya da düz kopyası, ana ağacın yükleyeceği yol kapsamlı kuralları alır. | Claude Code kancası |
-| Döngü sonu | Dört sayılı yakınsama: gerçek kaçak, düzeltmenin açtığı, eski, kapının yakaladığı. En çok tekrar eden sınıf, `mechanization: true` işaretli bir iş grafiği düğümü olur. Bir ders dosyası budanır. Commit biçimi atlatmasının kullanımları sayılır; her oturum yüklenen talimat metni ölçülür, bu sayı yalnız küçülmelidir. Bağımlılıklar ve CI dosyaları denetlenir; her `security.everyCycles` döngüde bir denetim, hassas yolların güvenlik denetimidir. Gönderilmemiş commit sayısıyla birlikte push onayı istenir; yedek olarak `/ennyn:init` push, yayımlama ve sürüm komutları için Claude Code ask kuralları yazar, `ennyn doctor` bunları hangi dosyanın tuttuğunu ve Claude Code'un o dosyayı nerede uyguladığını söyler. | `ennyn push-check`, `ennyn rework`, `ennyn bypass`, `ennyn budget`, `ennyn deps`, `ennyn audit` |
+- Agent kodu değiştirmeden önce bir etki tablosu dolduruyor: değişikliğin nereleri etkilediğini soran beş soru. Her birini mümkün olduğunca git grep, git log ya da testleri çalıştırarak cevaplıyor.
+- Review iki turla sınırlı. İkinci tur yalnızca ilk turdaki fix'lerin değiştirdiği yerlere bakıyor. Üçüncü tur ancak arkasında fail eden bir test ya da bir ölçüm varsa açılıyor.
+- Bir hata sınıfı tekrar ediyorsa sonraki döngü (aşağıda adım adım anlatılıyor) onu bir gate'e, yani bir teste ya da commit hook kuralına çeviriyor. O sınıf için CLAUDE.md'deki düz metin kurala artık gerek kalmaz.
+- Her döngü dört metrikle kapanıyor: review'dan kaçan hatalar, fix'lerin yol açtığı regression'lar, iş sırasında bulunan eski hatalar ve gate'lerin yakaladığı hatalar. Her oturumda yüklenen talimat metninin büyüyüp büyümediği de ölçülüyor.
+- Görevler bir iş grafında, yani bir JSON dosyasında duruyor. Ennyn her döngüde bunlardan dördünü seçiyor ve değeri yüksek en eski göreve her zaman yer ayırıyor.
 
-`ennyn rework`, N gün içinde bir düzeltmenin satırlarını değiştirdiği commit'lerin oranını ölçer (bir SZZ türevi). Kaynak projede bağımsız bir Python uygulamasıyla aynı sonucu verdi: Eylül 46/306'ya 46/317, Ekim 30/135'e 33/141. Oran, projenin fix etiketi kadar iyidir: commit'lerin çoğu fix diye etiketlenmişse oran kusur onarımını değil değişim sıklığını sayar, araç da bunu söyler. `metrics.fixSubject`'i yalnız gerçek onarımlara uyacak biçimde ayarlayın; ayrıntı [docs/evidence.md](docs/evidence.md#speed-and-rework).
+Ennyn'in runtime bağımlılığı da install script'i de yok. İnternete yalnızca iki durumda çıkıyor: bir commit, lock dosyasına paket eklediğinde commit hook'u bu paketleri npm registry'sinde sorguluyor (`security.deps.online: false` ile kapatabilirsiniz). `ennyn deps` komutunu çalıştırdığınızda da OSV güvenlik açığı veritabanını sorguluyor. Ayrıntılar [SECURITY.md](SECURITY.md) dosyasında (İngilizce).
+
+Ennyn'in tasarımının gerekçeleri [docs/evidence.md](docs/evidence.md) dosyasında (İngilizce).
+
+## Kurmadan deneyin
+
+Aşağıdaki iki komut config olmadan da her git reposunda çalışır. Ennyn'i projenizin yanına, aynı üst klasöre klonlayın, sonra projenizin kök klasöründen şunları çalıştırın:
+
+```sh
+node ../ennyn/scripts/ennyn.mjs rework
+node ../ennyn/scripts/ennyn.mjs budget
+```
+
+`rework`, satırları 7 gün içinde bir fix commit'iyle değişen commit'lerin oranını verir. `budget` ise agent'ınızın her oturumda yüklediği talimat metninin (CLAUDE.md, kurallar, skill ve agent açıklamaları) boyutunu ölçer.
 
 ## Kurulum (Claude Code)
 
@@ -42,15 +50,38 @@ claude plugin marketplace add boranb/ennyn
 claude plugin install ennyn@ennyn
 ```
 
-Ardından projede: `/ennyn:init`.
+Sonra projenizde `/ennyn:init` çalıştırın. Komut repoyu tarar, birkaç soru sorar ve `.ennyn/` klasörünü hazırlar.
 
-Depo herkese açılmadan önce yerel bir kopyadan kurun: `claude plugin marketplace add ./ennyn`.
+Ennyn'in reposu public olana kadar marketplace'i yerel bir klondan `claude plugin marketplace add ./ennyn` ile ekleyin, sonra yukarıdaki install komutunu çalıştırın.
 
-[Agent Skills](https://agentskills.io) biçimini okuyan başka ajanlar `skills/cycle/` dizinini doğrudan kullanabilir. CLI, Node 20 ya da üstünü ve git 2.34 ya da üstünü ister, bağımlılığı yoktur: `node scripts/ennyn.mjs --help`.
+`skills/cycle/` klasöründeki, döngüyü yürüten cycle skill'i [Agent Skills](https://agentskills.io) formatındadır ama CLI'yi `${CLAUDE_PLUGIN_ROOT}` üzerinden çağırır; bu değişkeni yalnızca Claude Code tanımlar. Başka bir agent'la kullanmak için `CLAUDE_PLUGIN_ROOT` değişkenini bir Ennyn klonunun path'ine ayarlayın. CLI, Node 20 ya da üstünü ve git 2.34 ya da üstünü ister, bağımlılığı yoktur. Ennyn klonunun içinden `node scripts/ennyn.mjs --help` komutların listesini verir. README'nin geri kalanında geçen `ennyn`, projenizin içinden çalıştırılan bu script'in kısaltmasıdır.
 
-## Ayar
+## Bir döngü nasıl işler
 
-Her projede tek dosya: `.ennyn/config.json`; `/ennyn:init` yazar. Yalnız varsayılandan farklı olanı yazın. Bilinmeyen anahtarlar ve tür uyuşmazlıkları birlikte raporlanır; bir yazım hatası bir denetimi sessizce kapatamaz. Ayardaki her yol projede, makineye ait durum git dizininde kalır ve Ennyn dosyalarını bir commit'in koyabileceği hiçbir sembolik bağdan geçmeden okur ve yazar; böylece bir commit onları dışarı yönlendiremez.
+İlk değişiklikten önce agent `ennyn impact` çalıştırır. Ennyn'de yapılan bir değişiklik için çıktı şöyle:
+
+![Ennyn'de yapılan bir değişiklik için ennyn impact çıktısı](docs/assets/impact.png)
+
+Bir döngünün adımları ve bu adımlarda geçerli ayarlar:
+
+| Adım | Ne olur | Komutlar |
+|---|---|---|
+| Hazırlık | `/ennyn:init` soru sormadan önce repoya bakar: fix'ler nasıl etiketleniyor, commit'lerin çoğu hangi dosyaları yeniden yazıyor (genelde otomatik üretilen dosyalar), testler nerede, hangi path'ler riskli, projede bir yol haritası ya da issue'lar var mı. Sonra en fazla altı soru sorar; config'i, başlangıç iş grafını ve sonraki oturum için bir devir teslim notunu yazar. | `/ennyn:init`, `ennyn init-scan`, `ennyn doctor` |
+| İş seçimi | Her döngü dört görev alır. Biri her zaman değeri yüksek görevlerin en eskisidir, böylece büyük işler sürekli ertelenmez (görev çok büyükse onun yerine ilk adımı seçilir). Diğer üçü maliyetine göre en çok değer getiren görev, en sık görülen hata türünü bir gate'e çeviren görev ve daha önce bitmiş bir işin denetimidir. | `ennyn core`, `ennyn mechanization` |
+| Yazmadan önce | Etki tablosu. Beş sorunun her biri mümkün olduğunca bir komutla cevaplanır (git grep, git log ya da testler); hiçbir komutun cevaplayamadığı satırda bu açıkça belirtilir. Değişiklik bir heuristic ekliyorsa agent önce heuristic'in kabul etmesi ve reddetmesi gereken örnekleri, bir de fail eden bir test yazar. | `ennyn impact` |
+| Mutation testi | Agent değişen satırlar için birkaç mutant (bilinçli olarak yerleştirilen küçük hata) seçer, projenin hızlı testleri her mutant için ayrı çalışır. Hayatta kalan, yani testlerin yakalamadığı bir mutant için yeni bir test ya da yazılı bir gerekçe gerekir. İşlem yarıda kesilse bile dosyalar eski hâline döner. Mutant içindeyken biri dosyayı düzenlerse Ennyn o dosyaya dokunmaz ve işlemi durdurur. | `ennyn mutate` |
+| Review | İki tur; üçüncüsü ancak fail eden bir test ya da bir ölçümle açılır. Her bulgu ilgili kodu alıntılar, kaynağını belirtir (yeni kod, önceki bir fix ya da eski kod) ve nasıl doğrulandığını yazar. | `agents/`, `skills/cycle/finding-schema.md` |
+| Commit | Bir commit-msg hook'u her commit'i kontrol eder. Yasakladığınız kalıpları (`review.forbidden`) ve bilinen token formatlarındaki secret'leri engeller; kod değişip ona bağlı dokümanlar güncellenmezse uyarır (`review.cochange`). | `ennyn commit-check`, `ennyn install-hook` |
+| Gate süreleri | Commit kontrollerinin ne kadar sürdüğü ve ne sıklıkla fail ettiği kendi makinenizde kaydedilir. | `ennyn gate-record`, `ennyn gate-stats` |
+| Ton | Agent'ın sizinle nasıl konuşacağını (`focused` ya da `terse`) ve commit mesajlarının uzunluğunu siz seçersiniz. Sayılar, path'ler ve uyarılar hiçbir zaman atlanmaz. | `conversation.style`, `commitMsg.style` |
+| Worktree'ler | Agent bir git worktree'sinde ya da projenin bir kopyasında çalışırken de path'e özel kuralları alır. | Claude Code hook'u |
+| Döngü sonu | Döngü sonunda dört metrik raporlanır ve en sık görülen hata türü bir sonraki döngünün gate görevi olur. Agent bir ders dosyasını (projenin geçmiş hatalardan çıkardığı yazılı notları) temizler ve artık bir gate'in karşıladığı dersleri siler. Bağımlılıkları ve CI dosyalarını da kontrol eder. Birkaç döngüde bir güvenlik denetimi yapılır. Agent her push'tan önce size sorar. | `ennyn push-check`, `ennyn rework`, `ennyn bypass`, `ennyn budget`, `ennyn deps`, `ennyn audit` |
+
+`ennyn rework`'ün sonucu, projenizin fix'leri nasıl etiketlediğine bağlıdır. Commit başlıklarınızın çoğu "fix" ile başlıyorsa komut rework'ten çok churn ölçer ve bunu size söyler. `metrics.fixSubject`'i gerçek fix commit'lerinizi yakalayacak şekilde ayarlayın; bu kalıbın `commitMsg.fixType` ile de eşleşmesi gerekir ([ayrıntılar](docs/evidence.md#speed-and-rework)).
+
+## Ayarlar
+
+Tüm ayarlar tek bir dosyada durur: `/ennyn:init`'in sizin için yazdığı `.ennyn/config.json`. Dosyaya yalnızca varsayılandan farklı ayarları yazmanız yeterli. Bilinmeyen anahtarlar ve yanlış tipler tek seferde raporlanır; böylece bir yazım hatası bir kontrolü sessizce kapatamaz. Config'deki path'ler proje içinde kalmak zorundadır.
 
 ```json
 {
@@ -62,20 +93,22 @@ Her projede tek dosya: `.ennyn/config.json`; `/ennyn:init` yazar. Yalnız varsay
 }
 ```
 
-Anahtarların tam tablosu [DESIGN.md](DESIGN.md)'de (İngilizce). Raporlar ve konuşma `language` ayarına uyar (`en` ya da `tr`); commit metni `commitMsg.language` ayarına uyar ve farklı olabilir (Türkçe konuşma, İngilizce commit). `commitMsg.types`, `commit-check`'in zorunlu tuttuğu konu türlerini belirler; `commitMsg.fixType` önceki commit'lerin onarımına ayrılmış tek türdür, böylece yeniden iş oranı değişim sıklığını değil onarımı sayar. İkisi de `/ennyn:init`'te seçilir ve projenin kendi talimatlarındaki commit kuralının yerine geçer.
+`language` (`en` ya da `tr`) raporların ve agent'ın cevaplarının dilini belirler. Commit mesajları `commitMsg.language` ayarına uyar; böylece Türkçe konuşup İngilizce commit atabilirsiniz. Hook, `commitMsg.types` içindeki commit tiplerini kabul eder. `commitMsg.fixType` ise önceki commit'leri onaran fix'lere ayrılmış tiptir; `ennyn rework` de bu fix'leri sayar. `/ennyn:init` commit tiplerini ve fix tipini ayarlar; ikisi de kendi talimatlarınızdaki commit kurallarından öncelikli olur. Anahtarların tam listesi [DESIGN.md](DESIGN.md) dosyasında (İngilizce).
 
-İş grafiği, açık ve tamamlanmış düğümlerden oluşan iki dizili bir JSON dosyası (ya da ES modülü). Alan adları ayarlanabilir; mevcut bir grafik olduğu gibi kullanılabilir.
+İş grafı bir JSON dosyasıdır (ya da ES modülü): açık görevler ve bitmiş görevler için iki ayrı dizi içerir. Field adları ayarlanabildiği için Ennyn'i elinizdeki bir grafa yönlendirebilirsiniz.
 
 ## Durum ve yol haritası
 
-- **0.1**: çekirdek modüller, Claude Code eklentisi ve `/ennyn:init`: ayarı ve başlangıç grafiğini (bir yol haritası dosyasından, issue'lardan ya da kullanıcının kendi sözlerinden) yazan bir tarama ve kısa bir görüşme; `metrics.fixSubject` projenin kendi geçmişine göre seçilir.
-- **0.2**: Codex manifesti, döngüyü eklentili ve eklentisiz karşılaştıran `claude plugin eval` vakaları ve döngünün ikinci bir projede ölçülmesi.
-- **1.0**: kararlı ayar şeması.
+- **0.1** (sıradaki): ilk public sürüm; plugin, `/ennyn:init` ve CLI bugünkü hâliyle.
+- **0.2**: Codex desteği, aynı projeyi plugin'li ve plugin'siz karşılaştıran `claude plugin eval` senaryoları ve ikinci bir projeden sonuçların yayımlanması.
+- **1.0**: kararlı bir config formatı.
 
 ## Lisans
 
-MIT. Bkz. [LICENSE](LICENSE).
+MIT. Lisans metni [LICENSE](LICENSE) dosyasında.
 
 ## Ad
 
-Kod MIT lisanslıdır; adın kendi kısa politikası [TRADEMARK.md](TRADEMARK.md)'de (İngilizce). *Ennyn*, J.R.R. Tolkien'in kurgusal dillerinden bir sözcüktür. Bu proje Tolkien Estate, Middle-earth Enterprises ya da lisans sahipleriyle bağlantılı değildir; onlar tarafından desteklenmez ya da onaylanmaz.
+*Ennyn* (okunuşu *EN-nin*) Sindarin dilinde "kapılar" demek. *Yüzüklerin Efendisi*'nde Durin Kapıları'nın üstündeki yazıtın ilk kelimesi; o kapılar yalnızca doğru kelime söylenince açılır. Ennyn'de de kodunuzun geçmesi gereken kontrollere gate, yani kapı denir.
+
+Adın kullanımı için kısa bir politika var: [TRADEMARK.md](TRADEMARK.md) (İngilizce). Ennyn'in Tolkien Estate, Middle-earth Enterprises ya da bunların lisans verdiği şirketlerle hiçbir bağlantısı yoktur; bu kurumlar Ennyn'i ne destekler ne de onaylar.

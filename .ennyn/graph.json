@@ -1629,7 +1629,7 @@
       "status": "planned",
       "needs": [],
       "id": "launch-demo",
-      "title": "A terminal recording under a minute (asciinema cast or GIF) of /ennyn:init on a small sample repository and one cycle's convergence report, linked at the top of both READMEs; test/hygiene cannot read an image, so the sample holds no names or paths of projects that use Ennyn and is checked by hand; the images are made by a script from a fixture repository in a temporary directory, with a test that fails when the output drifts",
+      "title": "A terminal recording under a minute (asciinema cast or GIF) of /ennyn:init on a small sample repository and one cycle's convergence report, linked at the top of both READMEs; test/hygiene cannot read an image, so the sample holds no names or paths of projects that use Ennyn and is checked by hand; the images are made by a script from a fixture repository in a temporary directory, with a test that fails when the output drifts; the first hand-made images, from Ennyn's own repository, are in docs/assets",
       "value": "medium",
       "cost": "S",
       "cluster": "distribution",
