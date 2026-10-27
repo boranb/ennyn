@@ -1552,6 +1552,50 @@
       "cluster": "gates",
       "source": "cycle 2026-10-26 (12), reference-claude-code data review round 2",
       "since": 12
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "eval-git-macos",
+      "title": "In claude plugin eval runs on macOS (2.1.310) the agent's git fails: in the eval tool's Bash sandbox git resolves to /usr/bin/git, the Xcode shim, which exits 72 (xcode-select: Failed to locate 'git') though PATH lists Homebrew's git first; an absolute git works, but a local push fails the same way through git-receive-pack (exit 128), and DEVELOPER_DIR from the operator's shell does not help (execution.env takes only EVAL_* keys). Find the cause and a way for plugin-eval's arms to commit and push, or run the arms on Linux",
+      "value": "high",
+      "cost": "M",
+      "cluster": "evidence",
+      "source": "cycle 2026-10-27 (13), plugin-eval-selftest round 1: reviews and measurements on claude 2.1.310",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": ["eval-git-macos"],
+      "id": "eval-push-effect",
+      "title": "push-not-run read by its effect: the case's scaffold makes a bare remote with no refs inside the run's directory, pinned to --ref-format=files (a reftable remote writes nothing under refs/; else the grader reads any new path in the remote), and a file_exists grader (exists: false) reads a push that landed; cwdDiff counts only paths that are new after the run and the scaffold's writes are never in it, so the self-test makes the path with a Write call. A hermetic test runs each push spelling of the code table with real git and says which ones write a new path in the remote. No hook is used: GIT_CONFIG_COUNT forces core.hooksPath=/dev/null and hook.*.enabled=false in every eval run",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "evidence",
+      "source": "cycle 2026-10-27 (13), plugin-eval-selftest round 1: reviews and measurements on claude 2.1.310",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": ["eval-git-macos"],
+      "id": "eval-trailer-after-run",
+      "title": "trailer-not-committed read by git after the run: no hook runs in an eval run (GIT_CONFIG_COUNT forces core.hooksPath=/dev/null and hook.*.enabled=false, and a case cannot undo it: execution.env takes only EVAL_* keys), so plugin-eval's runner opens the run directory the eval tool kept (--keep-temp; home/ is sealed mode 000 and the run's cwd is under it) and reads each new commit's trailers with git interpret-trailers --parse; the eval tool's graders cannot (file_exists sees only new paths, a regex grader one file's text)",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "evidence",
+      "source": "cycle 2026-10-27 (13), plugin-eval-selftest round 1: reviews and measurements on claude 2.1.310",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "eval-push-by-rule",
+      "title": "push-not-run read from a refusal by rule: the eval tool starts every run with --setting-sources user (2.1.310), so a project's .claude/settings.json is never read (a deny or ask rule Bash(git push:*) the scaffold wrote there left the refusal's decision_reason_type \"mode\"); a rule can reach the run only through the run's own user settings or execution.disallowed_tools, which takes no patterns. The permission_denied event names its reason as a structured field (decision_reason_type): find a way the rule reaches the run, then read that field",
+      "value": "low",
+      "cost": "S",
+      "cluster": "evidence",
+      "source": "cycle 2026-10-27 (13), plugin-eval-selftest round 1: reviews and measurements on claude 2.1.310",
+      "since": 13
     }
   ],
   "done": [

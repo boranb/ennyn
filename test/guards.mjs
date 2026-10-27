@@ -277,6 +277,22 @@ export const GATES = [
     others: {},
   },
   {
+    test: "test/eval-selftest.test.mjs",
+    guards: [
+      { id: "eval-verdict", why: "a recorded verdict other than the one its check must get", file: "test/eval/selftest.json", old: '"quiet": {"doctor-called":false,', new: '"quiet": {"doctor-called":true,', pattern: "eval selftest: every check grades" },
+      { id: "eval-grader-edited", why: "a grader edited without taking the record again", file: "test/eval/checks.mjs", old: 'flags: "", match: "not_contains" },', new: 'flags: "", match: "contains" },', pattern: "eval selftest: every check grades" },
+      { id: "eval-no-failing", why: "a check with no failing reference: it is never seen to fail", file: "test/eval/checks.mjs", old: '    fail: ["three-calls", "three-calls-run", "three-refused", "subagent-call"],', new: "    fail: [],", pattern: "eval selftest: every check has a passing" },
+      { id: "eval-judged-node", why: "a judged entry waiting on a node that is not open", file: "test/eval/checks.mjs", old: 'until: ["eval-trailer-after-run"],', new: 'until: ["eval-trailer-after-runs"],', pattern: "eval selftest: what no check reads is judged" },
+      { id: "eval-allowed", why: "a call Claude Code let through read as refused", file: "test/eval/checks.mjs", old: '"grep-doctor", "glob", "glob-nested", "agent-push"];', new: '"grep-doctor", "glob-nested", "agent-push"];', pattern: "eval selftest: the calls let through" },
+      { id: "eval-publish", why: "the eval's report published to claude.ai", file: "test/eval/selftest.mjs", old: '"--no-publish", "--no-scaffold",', new: '"--no-scaffold",', pattern: "eval selftest: the recorder's run is shut" },
+      { id: "eval-profile", why: "a profile that lets the run reach any local port", file: "test/eval/selftest.mjs", old: '(remote ip "localhost:${port}")', new: '(remote ip "localhost:*")', pattern: "eval selftest: the recorder's run is shut" },
+      { id: "eval-canary-skipped", why: "an eval started without the canary proving the profile shut", file: "test/eval/selftest.mjs", old: "const shut = canaryProblems(runCanary(server.port, R));", new: "const shut = [];", pattern: "eval selftest: the recorder runs the canary first" },
+      { id: "eval-run-dirs-before", why: "a run directory that was there before the run read as the run's", file: "test/eval/selftest.mjs", old: '.filter((name) => RUN_DIR.test(name) && !before.has(name))', new: '.filter((name) => RUN_DIR.test(name))', pattern: "eval selftest: a run directory is one the eval made" },
+      { id: "eval-not-measured", why: "a machine with no sandbox-exec passing check", file: "test/eval/selftest.mjs", old: 'if (e instanceof NotMeasured && cmd === "check") return { code: 1,', new: 'if (e instanceof NotMeasured && cmd === "check") return { code: 0,', pattern: "eval selftest: a machine with no sandbox-exec" },
+      { id: "eval-judge", why: "a judge that takes any recorded verdict for the one its check must get", file: "test/eval/selftest.mjs", old: "else if (got[id] !== expected(id, ref))", new: "else if (false)", pattern: "eval selftest control" },
+    ],
+  },
+  {
     test: "test/linux-run.test.mjs",
     guards: [
       { id: "linux-skip", why: "a skipped test read as a pass", file: "test/linux-run.mjs", old: 'if (count("skipped") !== "0") wrong.push(', new: 'if (count("skipped") === "none") wrong.push(', pattern: "linux run: a container's run passes only" },
