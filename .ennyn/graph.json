@@ -49,14 +49,12 @@
     },
     {
       "id": "plugin-eval",
-      "title": "claude plugin eval cases that run the same tasks with and without the plugin and compare the outcome; each case states what is checked deterministically (commands that must and must not run, such as git push without approval or a commit with an assistant trailer; text the answer must and must not hold; an approval asked or a refusal given; a cap on tool calls), a judge only for what no check reads; each arm runs with only the plugin under test and proves it (a fresh directory outside any repository, CLAUDE.md, auto memory and user settings off, strict MCP, a pinned model, the plugin by --plugin-dir; a finished cell's transcript read for what the arm was given), a spending cap per arm, runs resumable per case, trial and arm, arms interleaved case by case; every deterministic check ships a passing and a failing reference that a self-test proves with no model call before any paid run; a cell that runs commands runs in a sandbox (no network beyond the model's API, an empty environment, writes only in the cell's directory); results name the date, CLI and model versions, cases, trials and cost, and say their limits",
+      "title": "claude plugin eval cases that run the same tasks with and without the plugin and compare the outcome; each case states what is checked deterministically (commands that must and must not run, such as git push without approval or a commit with an assistant trailer; text the answer must and must not hold; an approval asked or a refusal given; a cap on tool calls), a judge only for what no check reads; each arm runs with only the plugin under test and proves it (a fresh directory outside any repository, CLAUDE.md, auto memory and user settings off, strict MCP, a pinned model, the plugin by --plugin-dir; a finished cell's transcript read for what the arm was given), a spending cap per arm, runs resumable per case, trial and arm, arms interleaved case by case; every deterministic check ships a passing and a failing reference that a self-test proves with no model call before any paid run; a cell that runs commands runs in a sandbox (no network beyond the model's API, an empty environment, writes only in the cell's directory); results name the date, CLI and model versions, cases, trials and cost, and say their limits; no git hook fires in an eval run (2.1.310: GIT_CONFIG_COUNT forces core.hooksPath=/dev/null and hook.*.enabled=false, and execution.env takes only EVAL_* keys), so Ennyn's commit gate is not compared there, only what the agent does",
       "status": "planned",
       "value": "high",
       "cost": "L",
       "cluster": "evidence",
-      "needs": [
-        "plugin-eval-selftest"
-      ],
+      "needs": ["plugin-eval-selftest", "eval-git-macos"],
       "source": "README.md, roadmap 0.2; cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): deterministic checks carry most of the score there, a judge the rest; reviews of ponytail and i-have-adhd (open-source agent skills, MIT), 2026-10-25: each published a result its own SessionStart hook had leaked into the baseline (ponytail's 2026-06-17 run superseded; i-have-adhd's README warns of its always-on flag); i-have-adhd's agent-owned-edit case could not pass under --tools \"\" and still counted against both arms; cycle 2026-10-26 (12): ennyn core picks it as the oldest node and says to split it first (plugin-eval-selftest)",
       "since": 0
     },
@@ -67,7 +65,7 @@
       "value": "medium",
       "cost": "M",
       "cluster": "distribution",
-      "needs": [],
+      "needs": ["skills-outside-claude-code"],
       "source": "README.md, roadmap 0.2; reviews of ponytail and i-have-adhd (MIT), 2026-10-25: both ship .codex-plugin/plugin.json with .agents/plugins/marketplace.json, and Codex asks the user to trust a plugin's hooks in /hooks before they run",
       "since": 0
     },
@@ -439,7 +437,7 @@
       "value": "high",
       "cost": "M",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (8), review round 1 of guards-under-load; measured in the T4 landing run; cycle 2026-10-25 (10): the secrets linear-time ratio failed two full runs at load 8-40 (fixed with CPU time, 1ccb39b); the other wall-clock reads remain; cycle 2026-10-26 (12): at load 50-274 single full runs failed on the fence-reader timing test, a verdicts secrets cell (the hook past 60 s), guards' inner runs, deps' OSV test (stalled 15 minutes) and mutate's runs that wait; each file passed alone, so no run of the cycle's last two landings was clean on the first try",
+      "source": "cycle 2026-10-24 (8), review round 1 of guards-under-load; measured in the T4 landing run; cycle 2026-10-25 (10): the secrets linear-time ratio failed two full runs at load 8-40 (fixed with CPU time, 1ccb39b); the other wall-clock reads remain; cycle 2026-10-26 (12): at load 50-274 single full runs failed on the fence-reader timing test, a verdicts secrets cell (the hook past 60 s), guards' inner runs, deps' OSV test (stalled 15 minutes) and mutate's runs that wait; each file passed alone, so no run of the cycle's last two landings was clean on the first try; cycle 2026-10-27 (13): at load 83-115 single full runs failed on mutate's runs that wait and its owner-stamp test (the parse check gave no answer), the fault matrix control (its fake git writes the pid it counts only after starting sleep, so a 1 s limit can stop it first: write a marker first), guards' baselines of fault-injection and verdicts, and two hook tests (exit null); each file passed alone",
       "since": 8
     },
     {
@@ -656,11 +654,13 @@
       "needs": [],
       "id": "ci-yaml-differential",
       "title": "Compare security.ci's YAML reader with how GitHub reads a workflow (NEL, LS and PS as line breaks, alias keys, merge keys, a quoted scalar continued at its key's column) on a recorded corpus; today a form it cannot follow is refused, a form it reads differently passes",
-      "value": "medium",
+      "value": "high",
       "cost": "M",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (9), ci-check review rounds one to four: 9 reader findings, all fix-introduced after round one",
-      "since": 9
+      "source": "cycle 2026-10-24 (9), ci-check review rounds one to four: 9 reader findings, all fix-introduced after round one; cycle 2026-10-27 (13), convergence: the class recurred again (the eval checks' regex reading of shell and prose, the Markdown parser pinned by a hash of its regex literals), and the pin held only once the record ran Claude Code's own bundled lexer; security.ci's YAML reader is the gate left reading another program's input with no record (reference-actions-yaml folded in)",
+      "since": 9,
+      "mechanization": true,
+      "sourceClass": "a check that re-implements another program's reading drifts from it"
     },
     {
       "status": "planned",
@@ -930,8 +930,8 @@
       "status": "planned",
       "needs": [],
       "id": "schema-file-missing",
-      "title": "DESIGN.md's layout names schema/config.schema.json; the repository has none",
-      "value": "low",
+      "title": "DESIGN.md's layout names schema/config.schema.json; the repository has none; the schema is published as $schema for editors, the loader accepts $schema, and a test keeps DEFAULTS, the schema and the config docs equal",
+      "value": "medium",
       "cost": "S",
       "cluster": "distribution",
       "source": "cycle 2026-10-25 (10), security-axis",
@@ -965,7 +965,7 @@
       "status": "planned",
       "needs": [],
       "id": "reviewer-model-diversity",
-      "title": "Measure whether a reviewer on another model than the author finds classes a same-model reviewer misses (same diffs, both reviewers, findings compared by class); review.agents could then name a model per reviewer",
+      "title": "Measure whether a reviewer on another model than the author finds classes a same-model reviewer misses (same diffs, both reviewers, findings compared by class); review.agents could then name a model per reviewer; two more arms on the same diffs: the diff without commit messages and task text (BMAD gives the author's claims to one lens only), and a faster model for mechanical agents (mutant lists, metric collection), each compared by class and wall clock",
       "value": "medium",
       "cost": "M",
       "cluster": "evidence",
@@ -982,17 +982,6 @@
       "cluster": "distribution",
       "source": "cycle 2026-10-25 (10), the user's engines decision",
       "since": 10
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "git-call-timeout",
-      "value": "high",
-      "cost": "S",
-      "cluster": "gates",
-      "title": "No git call has a time limit: a git child that waits forever (cycle 11: cat-file --batch-check never got stdin EOF under the commit-msg hook) holds the user's git commit with no end; every git call gets a limit and a hang is said, never waited on",
-      "source": "cycle 2026-10-25 (11), full suite on main at c040cc1",
-      "since": 11
     },
     {
       "status": "planned",
@@ -1074,17 +1063,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "reference-actions-yaml",
-      "value": "medium",
-      "cost": "M",
-      "cluster": "gates",
-      "title": "checks/ci.mjs reads workflow YAML as GitHub's parser does, unrecorded: a corpus of GitHub's own readings",
-      "source": "cycle 2026-10-25 (11), reference-differentials (module inventory)",
-      "since": 11
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "deps-replace-registry-host",
       "value": "medium",
       "cost": "S",
@@ -1133,7 +1111,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "title": "No rule decides which review findings are fixed now and which become nodes; cycles 2-10 had 245 fix-introduced findings against 266 real escapes",
+      "title": "No rule decides which review findings are fixed now and which become nodes; cycles 2-10 had 245 fix-introduced findings against 266 real escapes; a deferred finding becomes a node, and a gate line names the nodes it blocks until it is done (BMAD's deferred-work.md); a fixer allowed to skip findings it could not fix safely regressed less (Imbue)",
       "source": "cycle 2026-10-25 (11), a second session's count of the closing handoffs",
       "since": 11
     },
@@ -1152,7 +1130,7 @@
       "status": "planned",
       "needs": [],
       "id": "cycle-journal",
-      "title": "The cycle writes its state to the state dir as it goes (the HEAD it started at, the four tasks and their state, worktrees, the findings ledger's path, the review round), and the SessionStart hook gives one short line of it after compaction, so a compacted session resumes the cycle without guessing; first count from the session transcripts how often a cycle session compacts",
+      "title": "The cycle writes its state to the state dir as it goes (the HEAD it started at, the four tasks and their state, worktrees, the findings ledger's path, the review round), and the SessionStart hook gives one short line of it after compaction, so a compacted session resumes the cycle without guessing; first count from the session transcripts how often a cycle session compacts; the handoff records the HEAD it was written at, and the cycle start names the files it mentions that changed since",
       "value": "medium",
       "cost": "M",
       "cluster": "cycle",
@@ -1174,7 +1152,7 @@
       "status": "planned",
       "needs": [],
       "id": "finding-refuter",
-      "title": "A serious finding (🔴/🟠) goes to a fresh agent that did not find it and tries to refute it, re-reading every quoted line and running the check again, before the author fixes it: a confirmed one is fixed; a refuted one is recorded as rejected with why; one whose deciding fact is out of reach is needs-validation, with that exact fact, no severity, and a graph node. Convergence counts the refuted ones, so fixes of findings that were not real are measured",
+      "title": "A serious finding (🔴/🟠) goes to a fresh agent that did not find it and tries to refute it, re-reading every quoted line and running the check again, before the author fixes it: a confirmed one is fixed; a refuted one is recorded as rejected with why; one whose deciding fact is out of reach is needs-validation, with that exact fact, no severity, and a graph node. Convergence counts the refuted ones, so fixes of findings that were not real are measured; the refuter never takes a lack of disproof as confirmation, and names the precondition the defect needs (Compound Engineering's ce-code-review validator; OpenAI's code reviewer chose fewer, checked findings over recall)",
       "value": "high",
       "cost": "M",
       "cluster": "method",
@@ -1327,11 +1305,9 @@
     },
     {
       "status": "planned",
-      "needs": [
-        "plugin-eval"
-      ],
+      "needs": ["plugin-eval"],
       "id": "eval-first-cases",
-      "title": "First eval cases, each with a passing and a failing reference: a bug reported on one caller of a shared function, counted fixed only when the shared function is (does the impact table's S1/S2 do what ponytail's root-cause rule did?); a multi-turn scenario in one resumed session (the style holds across a topic switch and after compaction, a push is asked before it runs, a third 'still broken' turn stops patching); the session's own tests run against mutants of the code it wrote (ennyn mutate), counting what they catch; an arm with the smallest-change row, judged on the lines it delivers and on the hidden safety checks, so a lean rule that drops a guard shows; the terse style is run beside normal on the same cases, so a correctness drop shows before it is offered",
+      "title": "First eval cases, each with a passing and a failing reference: a bug reported on one caller of a shared function, counted fixed only when the shared function is (does the impact table's S1/S2 do what ponytail's root-cause rule did?); a multi-turn scenario in one resumed session (the style holds across a topic switch and after compaction, a push is asked before it runs, a third 'still broken' turn stops patching); the session's own tests run against mutants of the code it wrote (ennyn mutate), counting what they catch; an arm with the smallest-change row, judged on the lines it delivers and on the hidden safety checks, so a lean rule that drops a guard shows; the terse style is run beside normal on the same cases, so a correctness drop shows before it is offered; claude plugin eval's free tool_order grader checks the protocol's order (tests, mutate, commit); the default arm uses only free graders",
       "value": "high",
       "cost": "M",
       "cluster": "evidence",
@@ -1366,7 +1342,7 @@
       "status": "planned",
       "needs": [],
       "id": "contributing-guide",
-      "title": "CONTRIBUTING.md before the public release: a change to skills/, agents/, styles/ or a hook's injected text shows eval numbers in three arms (no plugin, main, the change), with one case it should help and one it could break; hooks stay bounded, fail open and connect nowhere; scripts and tests touch nothing outside the repository and temporary directories; a pull request lists the commands it ran with their results and never claims a check it did not run; one change per pull request",
+      "title": "CONTRIBUTING.md before the public release: a change to skills/, agents/, styles/ or a hook's injected text shows eval numbers in three arms (no plugin, main, the change), with one case it should help and one it could break; hooks stay bounded, fail open and connect nowhere; scripts and tests touch nothing outside the repository and temporary directories; a pull request lists the commands it ran with their results and never claims a check it did not run; one change per pull request; issue templates (a bug names the version, the command and the smallest input, never a secret; the form asks for ennyn doctor's output and the node and git versions) and Discussions switched on at the public release",
       "value": "medium",
       "cost": "S",
       "cluster": "distribution",
@@ -1397,7 +1373,7 @@
     },
     {
       "id": "instruction-imports",
-      "title": "Imports are read as Claude Code reads them: an import inside an HTML comment or indented code, a file that is no text, a #fragment, a path wrapped in emphasis or a link, an escaped space, the order hops are counted in, and the import of a path-scoped rule, which loads in every session",
+      "title": "Imports are read as Claude Code reads them: an import inside an HTML comment or indented code, a file that is no text, a #fragment, a path wrapped in emphasis or a link, an escaped space, the order hops are counted in, and the import of a path-scoped rule, which loads in every session; an import in a code span inside a list item, which Claude Code reads and Ennyn does not (cells rv-import-code-span-in-list-item, rv-code-span-with-spaces-in-item)",
       "status": "planned",
       "value": "medium",
       "cost": "M",
@@ -1441,36 +1417,10 @@
     },
     {
       "status": "planned",
-      "needs": [],
-      "id": "plugin-eval-selftest",
-      "title": "The first step of plugin-eval, with no model call: each deterministic check the eval cases will use (commands that must and must not run, text the answer must and must not hold, an approval asked or a refusal given, a cap on tool calls) ships a passing and a failing reference transcript, and a self-test proves every check against both before any paid run",
-      "value": "high",
-      "cost": "M",
-      "cluster": "evidence",
-      "source": "cycle 2026-10-26 (12): ennyn core picks plugin-eval (high, L) as the oldest node and says to split it first",
-      "since": 12
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "reference-markdown",
-      "title": "The Markdown readers keep a recorded parse: what a code block is (fences in list items, block quotes, front matter, indented code) and the text the instruction readers take from Markdown (ban lines, imports, budget's rule lines) recorded from a pinned parser (the one Claude Code uses where measured, else CommonMark) into a committed corpus and replayed against setup/scan.mjs without the parser installed",
-      "value": "high",
-      "cost": "M",
-      "cluster": "gates",
-      "mechanization": true,
-      "sourceClass": "a check that re-implements another program's reading drifts from it",
-      "source": "cycle 2026-10-26 (12), convergence: the class recurred about 25 times: 11 old drifts the new Claude Code record caught as a gate, 14 more from reviewers (rule path matching, AGENTS.md conditions, front matter, imports), and the fence reader twice (CommonMark, then list containers: 264 real files measured against micromark and mdast-util-from-markdown)",
-      "since": 12
-    },
-    {
-      "status": "planned",
-      "needs": [
-        "reference-markdown"
-      ],
+      "needs": ["reference-markdown"],
       "id": "fence-reader-containers",
-      "title": "The fence reader reads no containers: a fence indented four spaces or more outside a list item opens a block, a block in a list item does not end with the item, fences in block quotes and YAML front matter are read as text (7 of 43 bans cells recorded as known limits)",
-      "value": "low",
+      "title": "The fence reader reads no containers: a fence indented four spaces or more outside a list item opens a block, a block in a list item does not end with the item, fences in block quotes are read as text (test/reference/markdown.json at d572b9b: 27 extra and 16 differing places, the most differing of any node; front matter is markdown-hidden-text)",
+      "value": "medium",
       "cost": "S",
       "cluster": "init",
       "source": "cycle 2026-10-26 (12), budget audit round 2: the rule was chosen by measurement on 264 real files (code read as text: 7, against 18 for the CommonMark indent rule without containers); cycle 2026-10-27 (13): its known limits are cells of test/verdicts/bans.json and test/reference/markdown.json",
@@ -1639,6 +1589,494 @@
       "cost": "S",
       "cluster": "gates",
       "source": "cycle 2026-10-27 (13), reference-markdown data review round 1: readers outside the Markdown record",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": ["secret-held-today"],
+      "id": "history-secret-scan",
+      "title": "Once more right before the repository becomes public: every blob and path in history through test/hygiene's findings() and secretHits() (a public repository serves every commit; test/hygiene reads only the tree and commit messages); 2026-10-27 baseline: 876 blobs, 156 paths, 0 names or home paths, 0 secret shapes, controls caught a known token and a home path",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "discoverability review, 2026-10-27, one-off scan",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "skills-outside-claude-code",
+      "title": "skills/cycle and skills/init run the CLI through ${CLAUDE_PLUGIN_ROOT}, which only Claude Code sets: in another agent or a skills.sh install the helper path is empty (read from the text, not run in another agent). Give the skills a helper path that works outside Claude Code (a pinned npx ennyn@<version>, or a path beside the skill) and run one cycle step in one other agent; the READMEs state the limit until then",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "distribution",
+      "source": "discoverability review, 2026-10-27: skills/cycle/SKILL.md:8, skills/init/SKILL.md:8",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "npx-entry",
+      "title": "Publish the CLI to npm as ennyn at the public release (the name was free on 2026-10-27) with trusted publishing (OIDC) and provenance, from a release workflow of its own (id-token: write there only; the test workflow stays read-only), so npx ennyn@<version> rework is the README's first command with no clone. Measure first whether a marketplace entry with an npm source installs only the package's files (no tests, no development dependencies): if it does, it also settles plugin-root-dev-deps",
+      "value": "high",
+      "cost": "M",
+      "cluster": "distribution",
+      "gate": "user",
+      "source": "discoverability review, 2026-10-27: package.json names bin; npx ../ennyn --help ran from a local copy; Claude Code 2.1.310 accepts npm marketplace sources (binary read)",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "launch-demo",
+      "title": "A terminal recording under a minute (asciinema cast or GIF) of /ennyn:init on a small sample repository and one cycle's convergence report, linked at the top of both READMEs; test/hygiene cannot read an image, so the sample holds no names or paths of projects that use Ennyn and is checked by hand; the images are made by a script from a fixture repository in a temporary directory, with a test that fails when the output drifts",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "distribution",
+      "source": "discoverability review, 2026-10-27: the README shows no run",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": ["release-0-1-0", "hooks-project-gate"],
+      "id": "directory-submission",
+      "title": "Submit the plugin to Anthropic's plugin directory (claude.ai/directory/manage; the repository may be private while it validates, public before the listing goes live): the listing comes from plugin.json and the README; new versions published by hand or by a reviewer, never auto-published; an icon first (validate:plugin warns ICON_MISSING on 2.1.310); the README says what Ennyn sends over the network and how to turn it off",
+      "value": "high",
+      "cost": "S",
+      "cluster": "distribution",
+      "gate": "user",
+      "source": "discoverability review, 2026-10-27: claude.com/docs/plugins/submit; validate:plugin output",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": ["release-0-1-0"],
+      "id": "launch-writeup",
+      "title": "At the release: the 21-cycle study as an article (fixing review findings introduced 99 defects, first drafts missed 80; the origin project stays unnamed), then launch posts, and pull requests to two community lists of Claude Code plugins; GitHub topics and the social preview image set before; awesome-claude-code takes a descriptive description (10–500 characters, not promotional, not addressed to the reader), submitted by a person through the web form, category Agent Orchestration > SDLC",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "distribution",
+      "gate": "user",
+      "source": "discoverability review, 2026-10-27",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "plural-counts",
+      "title": "Messages print counts with one fixed plural (budget: '1 files'; impact: '{n} references in {files} files'; ten messages use '(s)'): one plural helper for the en and tr catalogs and a test that renders each count message with 1 and 2",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "discoverability review, 2026-10-27: ennyn budget output on a repository with one instruction file",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hooks-project-gate",
+      "title": "The PostToolUse side-copy hook and the SessionStart hooks do nothing in a project without .ennyn/config.json (today side-copy-rules.mjs runs on every Read, Edit and Write in every project, loading defaults); a test runs each hook in a project without a config and sees no output, no state write and exit 0; hooks.json's description and plugin.json's description name what the hooks do",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "claude-plugins-official .github/policy/prompt.md Part 2 (has_broad_scope_hooks, description_matches_behavior); outside-eye review 2026-10-27",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "no-verify-gap",
+      "title": "Commits that skip the commit-msg hook (--no-verify, -c core.hooksPath, cherry-pick, rebase, am; DESIGN.md lists them) reach a push unchecked: push-check runs commit-check on every unpushed commit, and /ennyn:init proposes ask rules for git commit --no-verify and -n",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "review of agents block-no-verify and tdd-guard docs/enforcement.md, 2026-10-27; related: ci-range-check, hook-amend-base",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "skill-descriptions-when-only",
+      "title": "Skill descriptions say only when to use the skill: cycle's 424-character description summarizes the workflow (an agent follows the summary instead of reading the skill) and names an odd trigger, 'phase run'; budget shrinks with it",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "superpowers skills/writing-skills/references/discovery.md, 2026-10-27",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "review-without-graph",
+      "title": "/ennyn:review: the two-round review on the current diff with the default config, no graph and no init, as a first use before the whole cycle; the README's adoption ladder (measure, commit hook, review, cycle) names it",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "cycle",
+      "source": "outside-eye review (adoption is all or nothing), superpowers requesting-code-review, a plugin collection's single-skill install, 2026-10-27",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "docs-split",
+      "title": "DESIGN.md (122 KB in 159 lines, lines up to 8,353 characters) split by reader: docs/config.md (one section per key group, short cells, caveats below), docs/commands.md (from --help), docs/cycle.md; DESIGN.md keeps principles, layout and module contracts for contributors; style.test.mjs caps a table cell's length",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "distribution",
+      "source": "outside-eye review; lazygit docs/ and docs/dev/, crush docs/config/, fzf README/ADVANCED, opencode docs AGENTS.md, 2026-10-27",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "changelog-versions",
+      "title": "CHANGELOG.md (55 KB, 71 bullets averaging 771 characters, all Unreleased) cut into versions from 0.1.0: Highlights and Breaking changes first, one-line bullets with detail nested, rationale moved to docs/evidence.md; a test caps a top-level bullet's length",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "distribution",
+      "source": "fzf CHANGELOG.md (bullets average 65 characters), opencode CHANGELOG.md, superpowers RELEASE-NOTES.md, 2026-10-27",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "readme-scope-glossary",
+      "title": "README: 'When Ennyn does not fit' (Claude Code only for now, rework only as good as the fix label, Node 20 and git 2.34, config may change before 1.0), a short glossary (side copy, mechanization, legacy audit, work graph, convergence, gate), and how Ennyn differs from hookify, Mycelium, Compound Engineering and TDD Guard",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "distribution",
+      "source": "outside-eye review (undefined jargon); ripgrep 'Why shouldn't I use ripgrep?', anthropics/claude-code plugins READMEs, awesome-claude-code neighbours, 2026-10-27",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "report-legend-json",
+      "title": "Report output readable at a glance: rework gets a one-line legend and shows the top N with '… N more, --json for all'; the --json fields are documented and a test keeps doc and output in step; doctor, impact and push-check take --json",
+      "value": "low",
+      "cost": "M",
+      "cluster": "metrics",
+      "source": "ccusage docs/guide/json-output.md, lazygit FAQ, 2026-10-27",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "budget-growth",
+      "title": "The every-session instruction text grew from 1681 to 1875 bytes since 2026-10-19 (.ennyn/metrics.jsonl) while README and DESIGN say it should only shrink: cut it back or say why it grew",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "outside-eye review, verified in .ennyn/metrics.jsonl, 2026-10-27",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "evidence-does-it-work",
+      "title": "docs/evidence.md gets 'Does it work yet?': the convergence numbers of Ennyn's own cycles and the second project's, plainly, linked from the README's evidence line (no measurement prose goes in the README itself)",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "evidence",
+      "source": "outside-eye review (headline vs evidence.md:155 'not yet measured in use'), 2026-10-27",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "signed-tags",
+      "title": "Release tags signed; SECURITY.md says how to check one (git verify-tag) and that a genuine copy comes only from this repository",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "gate": "user",
+      "source": "fzf make tag, crush release verification, 2026-10-27; related: account-hardening (a ruleset on v* tags)",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "statusline",
+      "title": "ennyn statusline: the budget and the last cycle's four numbers in Claude Code's status line; local, time-bounded, fail-open, added to settings.json only by the user",
+      "value": "low",
+      "cost": "M",
+      "cluster": "metrics",
+      "source": "ccusage docs/guide/statusline.md, 2026-10-27",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "fix-scope",
+      "title": "A round-one fix stays in the lines its finding names. If a fix changes a line outside the hunks the round's findings quote, the fix report names that line (which finding needs it and why); otherwise the round is not closed. Each finding's fix size (lines added and removed, files) is recorded, so fix-introduced findings can be read against fix size. Imbue 2026-04 (SWE-bench Pro, one review-and-fix pass): given the full review, a Sonnet fixer changed 46 lines on average and 343 at most; with a summary, 19 and 160. On one task the score fell from 16/17 to 8/17. A fixer prompt that allowed skipping a finding it could not fix safely removed the worst regressions. The evidence is thin (one regressed task of 15, mean score not significantly moved): measure on Ennyn's own rounds before the gate refuses anything",
+      "value": "high",
+      "cost": "M",
+      "cluster": "method",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "fix-test-red-first",
+      "title": "A fix for a review finding counts as covered only by a test that fails on the code before the fix. The cycle runs the tests the fix adds or changes against the round's base (a worktree at that commit). A fix whose tests already pass there is reported as not covered. superpowers asks for the covering test, its command and its output only in prose, before re-review",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "mutant-skip-rules",
+      "title": "Survivor reasons that recur become skip rules. When several cycles give the same reason for the same kind of line (logging, clock reads, config flags, message text), a rule named in the config keeps mutate off such lines. The cycle report gives the share of mutants that were killed or led to a new test. Google (Petrović et al. 2021, arXiv 2102.11378): median mutants per change went from 820 to 77 with one mutant per line, then to 7 with skip rules; the share developers rated useful rose from about 15% to 89%",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "metrics",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "risk-row-mutants",
+      "title": "Each impact-table row that names a risk gets at least one hand-written mutant that encodes that risk. Meta's ACH (arXiv 2501.12862) generated mutants from a stated concern; engineers accepted 73% of its 571 tests. A survivor's 'equivalent' reason is checked first: if the tokens are identical once comments and whitespace are stripped, the mutant is invalid, not survived. No model's verdict on equivalence decides anything",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "impact",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hook-crash-policy",
+      "title": "Every hook Ennyn ships (the commit-msg hook and each Claude Code hook) declares in one place what it does when it throws: let the action through, or stop it. A test fails on a hook that declares nothing, or that does something else when made to throw (GSD Core: ON_CRASH, no default). config-failopen-scope is one case of this class",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "rule-warn-then-block",
+      "title": "A new review.forbidden or mechanization rule can start as a warning. It becomes a refusal once test/verdicts and gate-stats over N cycles show no false refusal. A waiver (an entry in an except list) carries the cycle it ends at, and after that cycle doctor names it (Factory's linter rules; hookify's warn|block). Never for secrets or deps, which refuse from the start",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "edit-time-check",
+      "title": "A PostToolUse hook runs a fast check on the file an Edit or Write touched: node --check for JavaScript, else a configured command with {file}. It runs within a time limit and returns only the failing lines and their enclosing block. SWE-agent's ablation (arXiv 2405.15793, SWE-bench Lite): 18.0% with an edit-time lint guard, 15.0% without. Measure on the eval cases, with and without the hook: failed gate attempts (gate-stats) and wall clock",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "method",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "impact-scoped-tests",
+      "title": "During a task the agent runs only the tests the impact table's files reach, using a file-to-test map read from the tests' imports. The full suite runs only at the commit gate. Measure wall clock per task and failed gate attempts against cycles 12-13",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "method",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "step-drop-trial",
+      "title": "On a new model release, one cycle step is switched off for one cycle, starting with the step that caught the fewest defects. The four convergence numbers and rework are compared with the cycles before. A step that costs time and catches nothing goes. The legacy audit also names what Ennyn does that Claude Code now does itself. Anthropic dropped context resets, sprints and per-sprint QA from its own harness as models improved; Agent OS retired the phases that plan mode and todos now cover",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "claude-config-in-diff",
+      "title": "The commit-msg hook names any commit that adds or changes a hook, an allow rule, an MCP server or a plugin source in .claude/settings*.json, .mcp.json or .claude-plugin/. doctor reports a .claude/ folder under node_modules. SafeDep 2026-05-13: typosquatted npm packages leave a SessionStart hook in the project's settings, and it stays after the package is removed. agent-setup-risk judges the setup at init and in doctor; this node is the commit-time half",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "own-hooks-no-permissions",
+      "title": "A test reads every hook Ennyn ships and fails when one writes a settings or permission file, or prints suppressOutput, updatedInput or a permissionDecision other than deny (push-spellings-hook will deny). PromptArmor's injected-plugin demo used exactly these to allow curl without the user seeing it. SECURITY.md says so, so a user can audit it in one place",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "codex-skill-bytes",
+      "title": "Codex reportedly injects only the first 8,000 bytes of a SKILL.md. The source is a test comment in another plugin's repository; not checked. skills/cycle/SKILL.md is 8,049 bytes and skills/init/SKILL.md is 8,167. Read Codex's own code before codex-manifest; then budget gives a ceiling per host",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "distribution",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "evidence-published-numbers",
+      "title": "docs/evidence.md compares its numbers with published ones, and each source is read in full before it is cited. Imbue 2026-04: a review-fix pass made correct code worse, rarely. METR 2025-08: 38% passed the maintainers' tests, but 0 of the 15 reviewed PRs were mergeable. CodeRabbit comments: 36.4% of 31,073 were accepted (arXiv 2607.03316). Context files raised cost by 20% or more with no general gain (arXiv 2602.11988). An agent-PR study found SZZ precision of 0.39 (arXiv 2607.21832), a limit for rework",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "evidence",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "test-output-cut",
+      "title": "A PreToolUse hook refuses a test or typecheck command whose output is piped to head, tail or grep, because a cut output hides the failing line (HumanLayer's block-test-output-filtering). First measure, as for push-spellings-hook, whether a hook's deny holds in bypassPermissions mode",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "mutate-orphan-group",
+      "title": "After a SIGKILL of mutate's runner its test process group keeps running against the mutated file until the next run restores it: the journal holds the group id, and the next run or --restore stops that group once a reused id is ruled out",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-27 (13), legacy audit of mutate",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "mutate-verdicts",
+      "title": "A verdict corpus for mutate, as test/verdicts keeps for the hook: the audit's path probes (27: the list, the journal, the config) recorded with the verdict each got and replayed, so a moved verdict fails",
+      "value": "low",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "cycle 2026-10-27 (13), legacy audit of mutate, review round 1",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hook-node-options",
+      "title": "A project's committed .claude/settings.json env reaches the commit-msg hook once the project is trusted: NODE_OPTIONS=--import=data:… ends the hook with exit 0 (a silent pass) and a relative --import runs a file of the repository; the hook runs node with the variables Node reads at start cleared, or says they are set",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-10-27 (13), git-call-timeout security review round 1 (path table row 8)",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "impact-ref-kill",
+      "title": "impact stops its reference command with SIGTERM only: one that ignores SIGTERM holds impact with no end; it gets SIGKILL after a grace time, as a git call does",
+      "value": "low",
+      "cost": "S",
+      "cluster": "impact",
+      "source": "cycle 2026-10-27 (13), git-call-timeout",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "mutate-baseline-limit",
+      "title": "mutate's run without mutants has no time limit: a test command that hangs there holds mutate with no end; the run gets a limit and a hang is said",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-27 (13), git-call-timeout",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "szz-textconv",
+      "title": "szz's blame and diff (metrics/szz.mjs) pass no --no-textconv, so a textconv driver in the user's git config changes what rework reads",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-10-27 (13), git-call-timeout (existing before it)",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "git-orphan-children",
+      "title": "On POSIX a git stopped at its limit leaves its own children running: git is not started in its own process group, so that Ctrl-C and Claude Code's kill still reach a hung git; find a way to stop the children that keeps those signals working",
+      "value": "low",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "cycle 2026-10-27 (13), git-call-timeout",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "git-stream-held-pipe",
+      "title": "A blobs stream that got all its blobs from a git that exited 0 while a child still holds its pipes rejects after 60 s instead of resolving; a diff stream stopped by onLine meets the same case",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-27 (13), git-call-timeout",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "staged-names-same-text",
+      "title": "Two staged names that are not UTF-8 and decode to the same text share one entry in stagedChanges, so the hook's secret scan does not read the second file",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-10-27 (13), git-call-timeout review round 2 (existing before it)",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "worktree-location",
+      "title": "The cycle's forks work in git worktrees under the system temp folder, and npm run puts node_modules/.bin of every parent folder before PATH (npm 10.9.7, measured): an account that creates /private/tmp/node_modules/.bin/node runs its code in every npm test a fork runs there (absent when checked 2026-10-27). skills/cycle/SKILL.md names a place for worktrees that no other account can write to, and the test runner says when a parent folder's node_modules/.bin holds node or npm",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-10-27 (13), reference-markdown security review round 2",
+      "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "lazy-fetch-unread-git",
+      "title": "The commit-msg hook's path for a git that ignores GIT_NO_LAZY_FETCH (2.44.0, and any release before the May 2024 maintenance releases) has never run: the Linux run's gits (Ubuntu 22.04's 2.34.1, Debian 12's 2.39.5) both honour it, so the test branch that expects a fetch is unmeasured; run it on one such git, or say in doctor that this git fetches in a partial clone",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-10-27 (13), Linux-run repairs (a2327f0): GIT_NO_LAZY_FETCH measured on 2.34.1, 2.39.5 and 2.56, and read from git's source tags",
       "since": 13
     }
   ],
@@ -2017,6 +2455,36 @@
       "title": "Legacy audit of budget (audit slot): the metrics log is only appended to and a record made again names the line it replaces, a failed append is cut back, a byte order mark, fences and cut text are read alike by every reader, and git's own spellings of .git are refused in config paths (b3d1744)",
       "status": "done",
       "finished": "2026-10-27"
+    },
+    {
+      "id": "plugin-eval-selftest",
+      "title": "Closed by 14ff883, narrowed: the eval checks plugin-eval can score with no model call are proven on recorded runs before any paid run (an attempted command, doctor-called, scored for the with-plugin arm only; a cap on tool calls), and what no check reads (an approval asked, a push claimed, a refusal given) is on the judged list; the push and trailer checks wait on eval-git-macos, eval-push-effect, eval-trailer-after-run and eval-push-by-rule",
+      "status": "done",
+      "finished": "2026-10-28"
+    },
+    {
+      "id": "git-call-timeout",
+      "title": "Closed by 9270b1c: every git call has a time limit (60 s, 10 minutes for a walk of the history or the whole tree, a stream 60 s without output) and a stop is said naming the command; the hook's diff readers split a commit by size, the secret scan reads a file whose diff stopped whole by its objects, and the hook fetches nothing in a partial clone from git 2.44 on",
+      "status": "done",
+      "finished": "2026-10-28"
+    },
+    {
+      "id": "reference-markdown",
+      "title": "Closed by d572b9b: Ennyn's Markdown readers are replayed against the parser Claude Code bundles (marked 15.0.6, pinned by the binary's own rules and run in a confined child); each place they read otherwise names the open node that will close it",
+      "status": "done",
+      "finished": "2026-10-28"
+    },
+    {
+      "id": "mutate-audit-13",
+      "title": "Legacy audit of mutate (audit slot): the file is read again before each write and written through one open that follows no link and refuses a hard link, so an edit made while a mutant is in the file is never written over; a skip path moves the cache stamp, a FIFO is never opened, a {file} that starts with - is given as ./-name, and the messages name the writer that ran (ac6856b)",
+      "status": "done",
+      "finished": "2026-10-28"
+    },
+    {
+      "id": "reference-actions-yaml",
+      "title": "checks/ci.mjs reads workflow YAML as GitHub's parser does, against a corpus of GitHub's own readings: folded into ci-yaml-differential (cycle 13 closing)",
+      "status": "done",
+      "finished": "2026-10-28"
     }
   ]
 }
