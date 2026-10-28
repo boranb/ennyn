@@ -148,7 +148,7 @@ Counter-measure: if rounds and time fall while escapes rise, the review cap is l
 | Instruction density | At 500 instructions the best model followed 68% (IFScale 2025). Context files add no significant success and raise cost by more than 20% (Gloaguen et al. 2026). | Experimental |
 | AI and delivery | AI amplifies: without strong tests and small batches, instability rises (DORA 2025). Review time +441% (Faros 2026). | Survey / case study |
 
-Practitioners point the same way: a short instruction file with rules moved into lints and tests (OpenAI harness engineering), few review rounds focused on correctness (Stripe, Every, Claude Code Review), one writer with independent readers (Cognition), retiring learned rules (Every, Cursor Bugbot, beads), fast checks at commit and heavy gates later with small batches (Google presubmit/postsubmit, DORA). No other team or product was found that measures how often defect classes repeat.
+Practitioners point the same way: a short instruction file with rules moved into lints and tests (OpenAI harness engineering), few review rounds focused on correctness (Stripe, Every, Claude Code Review), one writer with independent readers (Cognition), retiring learned rules (Every, Cursor Bugbot, beads), fast checks at commit and heavy gates later with small batches (Google presubmit/postsubmit, DORA). No other team or product was found that measures how often defect classes repeat. The tools themselves, and what Ennyn took from each, are in [related-work.md](related-work.md).
 
 ## Open questions
 
