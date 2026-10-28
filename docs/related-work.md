@@ -1,8 +1,8 @@
 # Related work
 
-This page looks at the open-source tools people use most to make coding agents faster and more careful, as they stood in October 2026: Claude Code plugins and skill packs, spec-driven workflows, agent harnesses, and tools that check AI-written code. For each one it records how it works, what Ennyn took from it, and what Ennyn left out and why.
+This page looks at the open-source tools people use most to make coding agents faster and more careful, as they stood in October 2026: Claude Code plugins and skill packs, spec-driven workflows, agent harnesses, tools that check AI-written code, and tools that fetch web pages or map a codebase for an agent. For each one it records how it works, what Ennyn took from it, and what Ennyn left out and why.
 
-Star counts and dates are from 2026-10-27. These projects change every week, so read the tables as a snapshot. The studies Ennyn's design rests on are in [evidence.md](evidence.md); newer ones found in this pass are listed at the end and move there once each is read in full.
+Star counts and dates are from 2026-10-27, and from 2026-10-28 for the scraping and code-graph tools. These projects change every week, so read the tables as a snapshot. The studies Ennyn's design rests on are in [evidence.md](evidence.md); newer ones found in this pass are listed at the end and move there once each is read in full.
 
 ## Where Ennyn sits
 
@@ -55,6 +55,17 @@ Ennyn starts from the other end. A lesson that keeps coming back becomes a check
 | [Stryker](https://github.com/stryker-mutator/stryker-js) (3.3k), mutmut (1.5k) | Mutation testing. Stryker keeps a mutant disabled by a comment in the report, with its reason; mutmut can drop mutants that fail the type checker. |
 | [ast-grep](https://github.com/ast-grep/ast-grep) (16k) | Structural search and lint rules, with an official skill for agents. |
 
+### Scraping and code-graph tools
+
+Ennyn fetches no web pages, so these were read for other things: how they reach agents, how they are tested and released, and what went wrong in them. Each was read at the commit named in the sources.
+
+| Project | How it works | What it publishes as evidence |
+|---|---|---|
+| [ScrapeGraphAI](https://github.com/ScrapeGraphAI/Scrapegraph-ai) (32k) | A Python library. A page is fetched with Playwright or requests and split into chunks; a model fills a schema from each chunk, and another model call merges the answers. Telemetry is on by default; for a URL run given a schema it posts the prompt, the schema, the page content, the model's answer and the URL, and the README calls it anonymous usage metrics. One node runs model-written code with `exec` and the full builtins. | None found for extraction quality |
+| agent-reach (105k) | A Python CLI, and a skill it links into the skill folders of several agents. Web pages go through `r.jina.ai`, YouTube through yt-dlp, GitHub through `gh`, and X and Reddit through a browser profile that is given that site's cookies from the user's own Chrome. | A release record per action, tied to a digest of the source, with each waiver's reason |
+| Scrapling (90k) | A Python scraping library with an MCP server and a skill. Its HTTP client copies a browser's TLS fingerprint; its stealth browser can click Cloudflare's Turnstile box when asked, and always opens contexts with HTTPS errors ignored. After a site changes, a saved element is found again by scoring every element against a stored fingerprint. | Parser speed benchmarks; the text-extraction one parses 5,000 nested empty divs, a page with no text |
+| [Understand-Anything](https://github.com/Egonex-AI/Understand-Anything) (89k) | A Claude Code plugin that builds a knowledge graph of a codebase. Imports are resolved with tree-sitter; summaries and cross-file call edges are written by model agents, and only the import edges the merge script adds back are marked as such. The merge script says about a quarter of the import edges the agents are asked to copy never arrive, lost in batch construction and by the agents. A hook, switched on by a file committed in the repository, tells the agent to update the graph without asking. | Speed and memory of the deterministic scan; no measured token cost and no outcome eval |
+
 ## What Ennyn took
 
 Each idea became a node in the work graph (`.ennyn/graph.json`), or an addition to one that was already there. None is built yet.
@@ -79,7 +90,20 @@ Each idea became a node in the work graph (`.ennyn/graph.json`), or an addition 
 | A test that Ennyn's own hooks never grant permissions or hide themselves from the transcript | PromptArmor's plugin demo | `own-hooks-no-permissions` |
 | Branch and tag names of 40 or 64 hex characters refused in the repository's rules | Plugin4Shell | `account-hardening` |
 | The handoff records the commit it was written at | Cline's memory bank, whose files go stale | `cycle-journal` |
-| A size ceiling per host for skill files | A report that Codex loads only the first 8,000 bytes of a SKILL.md (not yet checked) | `codex-skill-bytes` |
+| A size ceiling per host for skill files | A report that Codex loads only the first 8,000 bytes of a SKILL.md, since checked in Codex's code: both of Ennyn's skills lose their last lines, which ask before a push or a commit | `codex-skill-bytes` |
+| A quote is checked against a saved raw copy of its source, never against a model's summary of the page | ScrapeGraphAI's check for expected words in fetched text, agent-reach's refusal of challenge pages, Scrapling's relocation by similarity | `source-quote-check` |
+| A test that the code's network use matches what the README and SECURITY.md say | ScrapeGraphAI, whose README calls telemetry that sends page content "anonymous usage metrics" | `network-claim-test` |
+| Untrusted event fields in a workflow's run lines under any trigger; container images and installs in CI and in skills pinned | Scrapling, ScrapeGraphAI, Understand-Anything | `ci-more-sinks`, `ci-container-pins`, `ci-install-pins` |
+| Hook text that tells the agent not to ask, and a committed file that turns such a hook on | Understand-Anything | `agent-setup-risk` |
+| A warning on obfuscated lines in files that tools run when they load them | Understand-Anything, after a pull request that hid a payload in a build config | `load-time-obfuscation` |
+| A node id never leaves the work graph unannounced | Understand-Anything's check for items lost in a model's rewrite | `graph-id-kept` |
+| Every config key is read by code and set by a test | ScrapeGraphAI's documented options that do not work | `config-keys-read-tested` |
+| Reviewers called by their registered agent type, with the file path as fallback | Understand-Anything issue #464 (a fix proposed in open PR #504) | `reviewer-agent-names` |
+| Tests that keep copies of instruction text in step | ScrapeGraphAI's prompt copies, Understand-Anything's contract tests | `instruction-copies-sync` |
+| A report the program renders and the agent shows unchanged | agent-reach | `findings-ledger` |
+| A removed config key names the key that replaces it | Scrapling | `config-tombstones` |
+| Uninstall removes only files a ledger says Ennyn wrote | agent-reach | `uninstall-path` |
+| The impact table's search for nearby tests reads the project's test pattern, which init already sets for other languages | Understand-Anything | `impact-test-conventions` |
 
 ## What Ennyn left out
 
@@ -93,6 +117,12 @@ Each idea became a node in the work graph (`.ennyn/graph.json`), or an addition 
 - Complexity scores from a model (Task Master), best-of-n sampling and trained critics (OpenHands). A model's complexity score is an estimate nothing checks, and the other two multiply the cost of every task.
 - Installing Python packages or an SDK when a session starts (security-guidance), and installers that fetch the latest version unpinned (gstack, GSD Core). Ennyn has no runtime dependencies and pins what it fetches.
 - Coverage as the bar for generated tests (qodo-cover). Meta's ACH work found that 277 of the 571 tests it generated would have been thrown away under a line-coverage criterion.
+- Any of the scraping and code-graph tools as a dependency, an MCP server or a recommended install. Each brings a Python or pnpm stack whose setup installs packages from the network, three of them a browser too. Scrapling's MCP server returns page text with no length limit and can send POST requests to any address; ScrapeGraphAI sends page content to its vendor by default on URL runs given a schema.
+- Getting past bot checks (copied TLS fingerprints, clicked CAPTCHAs, browsers with certificate checks off) and reusing the user's browser cookies (agent-reach). For a page that blocks a plain client, an archive snapshot or the user's own browser is enough for research.
+- A code graph whose edges come from model agents (Understand-Anything). With no source on an edge, an import the parser resolved and one an agent wrote look the same; Ennyn's impact table answers from git grep and the tests.
+- A release run on every push to main (ScrapeGraphAI's semantic-release). The commit type picks the version bump, which would bend how commits are typed and so what `ennyn rework` counts.
+- Many agent hosts at once (Understand-Anything, agent-reach). Each host's folders move under the tool; Ennyn adds Codex next and nothing more.
+- A scan for high-entropy strings. Minified code and lock-file hashes look the same, and a changed spacing gets past it; `load-time-obfuscation` looks only at files that tools run when they load them.
 
 ## Security reports read
 
@@ -100,6 +130,8 @@ Each idea became a node in the work graph (`.ennyn/graph.json`), or an addition 
 - SafeDep (May 2026): five typosquatted npm packages run a binary on install and ship a `.claude/settings.json` whose SessionStart hook runs it again; a copy of that file in the project stays after the package is removed.
 - PromptArmor: a malicious marketplace plugin rewrites `settings.local.json` to allow `curl`, approves its own curl calls from a PreToolUse hook and hides the hook from the transcript, and a plugin command sends code to the attacker.
 - Snyk ToxicSkills (February 2026): of 3,984 skills on two public skill registries, 36.8% had a flaw and 76 were confirmed malicious. Claude Code marketplaces were not in the sample.
+- ScrapeGraphAI's telemetry, from its repository history: on by default since June 2024. In July 2024 its payload took the URL, the prompt, the schema and the model's answer (listed on its docs page), then the page content (never listed), in commits titled as docs and fix changes. The README's telemetry section, added in September 2024, calls it anonymous usage metrics. The environment variable that turns it off did nothing from v1.65.0 until v2.2.4 (September 2026), although a review bot flagged the break on the pull request that caused it.
+- Understand-Anything issue #432: a pull request titled after a real issue (#188) appended a self-decoding payload to a build config (homepage/astro.config.mjs); a comment names two more with the same change, and the maintainer says the payload never reached the repository.
 
 ## Studies found in this pass
 
@@ -138,3 +170,8 @@ Imbue's study was read in full. The others were read through summaries or in par
 - PromptArmor: https://promptarmor.com/resources/hijacking-claude-code-via-injected-marketplace-plugins
 - Snyk ToxicSkills: https://snyk.io/blog/toxicskills-malicious-ai-agent-skills-clawhub/
 - Claude Code plugin evals: https://code.claude.com/docs/en/plugin-evals
+- ScrapeGraphAI at 194055e: https://github.com/ScrapeGraphAI/Scrapegraph-ai/tree/194055e
+- agent-reach at 14c2134: agent-reach
+- Scrapling at 0336400: Scrapling
+- Understand-Anything at 4e6d329: https://github.com/Egonex-AI/Understand-Anything/tree/4e6d329
+- Codex skill loading at e6de6a2423: https://github.com/openai/codex/tree/e6de6a2423/codex-rs/ext/skills/src
