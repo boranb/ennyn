@@ -582,15 +582,16 @@ const NO_NETWORK = "(version 1)(allow default)(deny network*)";
  * started) and macOS's sandbox with the network denied (no connection, a local socket's either), with only `env`:
  * the module's source and the texts go in on stdin, the tokens come back on stdout. Where nothing shuts the network
  * (no sandbox-exec) the parser is not run. Node's own words for its model: a seat belt, not a sandbox; the pinned
- * integrity comes first.
+ * integrity comes first. `sandbox` and `node` are the sandbox's path and this Node's version, given only by a test,
+ * so that on a machine with neither the child's command is still read.
  * @param {string} source @param {string[]} contents
- * @param {{ env?: NodeJS.ProcessEnv, ms?: number, run?: typeof spawnSync }} [opts]
+ * @param {{ env?: NodeJS.ProcessEnv, ms?: number, run?: typeof spawnSync, sandbox?: string, node?: string }} [opts]
  * @returns {(Lexed | { error: string })[]}
  */
-export function lexInChild(source, contents, { env = {}, ms = 120_000, run = spawnSync } = {}) {
-  if (!permissionHolds()) throw new Error(`the parser runs only under a Node whose permission model holds (22.13, 23.5 or later); this is ${process.versions.node}`);
-  if (!existsSync(SANDBOX)) throw new Error(`nothing here shuts the parser's network (no ${SANDBOX}, which macOS has): the parser is not run`);
-  const r = run(SANDBOX, ["-p", NO_NETWORK, process.execPath, "--permission", "--input-type=module", "-e", CHILD], { input: JSON.stringify({ source, contents }), env, encoding: "utf8", maxBuffer: 512 * 1024 * 1024, timeout: ms });
+export function lexInChild(source, contents, { env = {}, ms = 120_000, run = spawnSync, sandbox = SANDBOX, node = process.versions.node } = {}) {
+  if (!permissionHolds(node)) throw new Error(`the parser runs only under a Node whose permission model holds (22.13, 23.5 or later); this is ${node}`);
+  if (!existsSync(sandbox)) throw new Error(`nothing here shuts the parser's network (no ${sandbox}, which macOS has): the parser is not run`);
+  const r = run(sandbox, ["-p", NO_NETWORK, process.execPath, "--permission", "--input-type=module", "-e", CHILD], { input: JSON.stringify({ source, contents }), env, encoding: "utf8", maxBuffer: 512 * 1024 * 1024, timeout: ms });
   if (r.error || r.status !== 0) throw new Error(`the parser's child failed (${r.error?.message ?? `exit ${r.status}`}): ${JSON.stringify((r.stderr ?? "").slice(0, 400))}`);
   const out = JSON.parse(r.stdout);
   if (!Array.isArray(out) || out.length !== contents.length) throw new Error("the parser's child gave another number of readings than texts");

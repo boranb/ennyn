@@ -708,30 +708,43 @@ test("reference control: the parser's tarball is taken only as pinned: its integ
 test("reference control: the parser runs in a child that reads no file, starts no process and reaches no socket, with only the environment it is given", async () => {
   for (const [v, holds] of /** @type {const} */ ([["20.0.0", false], ["22.12.0", false], ["22.13.0", true], ["23.4.0", false], ["23.5.0", true], ["24.0.0", true]])) assert.equal(md.permissionHolds(v), holds, v);
   const env = Object.fromEntries(["HOME", "XDG_CONFIG_HOME", "GIT_CONFIG_GLOBAL", "GIT_CEILING_DIRECTORIES", "TZ", "LC_ALL", "GIT_CONFIG_NOSYSTEM"].map((k) => [k, process.env[k] ?? ""]));
+  // What the child is started with, read on every machine (a stand-in for the sandbox's path, a Node version whose
+  // model holds): sandbox-exec with the network denied, the permission model, and by default an empty environment,
+  // so a variable of the recorder's never reaches the parser.
+  /** @type {{ file: string, args: string[], opts: any }[]} */
+  const ran = [];
+  const run = /** @type {any} */ ((/** @type {string} */ file, /** @type {string[]} */ args, /** @type {any} */ opts) => (ran.push({ file, args, opts }), { status: 0, stdout: "[]", stderr: "" }));
+  const sandbox = join(realpathSync(mkdtempSync(join(tmpdir(), "en-sbx-"))), "sandbox-exec");
+  writeFileSync(sandbox, "");
+  process.env.EN_SECRET = "canary";
+  try {
+    md.lexInChild("export class Lexer {}", [], { run, sandbox, node: "24.0.0" });
+  } finally {
+    delete process.env.EN_SECRET;
+  }
+  assert.equal(ran.length, 1);
+  assert.equal(ran[0].file, sandbox);
+  assert.deepEqual(ran[0].args.slice(0, 6), ["-p", "(version 1)(allow default)(deny network*)", process.execPath, "--permission", "--input-type=module", "-e"]);
+  assert.deepEqual(ran[0].opts.env, {});
   // On a Node whose model let a process start (Node 20.0.0 ran execFileSync under it), or where nothing shuts the
-  // child's network (no sandbox-exec), the parser does not run at all.
+  // child's network (no sandbox-exec, macOS's own unless a test names another), the parser does not run at all.
+  assert.throws(() => md.lexInChild("export class Lexer {}", ["x"], { env, run, sandbox, node: "20.0.0" }), /permission model holds \(22\.13, 23\.5 or later\); this is 20\.0\.0/);
+  assert.throws(() => md.lexInChild("export class Lexer {}", ["x"], { env, run, sandbox: `${sandbox}-absent`, node: "24.0.0" }), /nothing here shuts the parser's network \(no .*sandbox-exec-absent,/);
+  assert.equal(ran.length, 1, "a refused child is never started");
+  // The sandbox when no test names one is macOS's own; elsewhere the parser is refused, naming it.
+  if (existsSync("/usr/bin/sandbox-exec")) {
+    md.lexInChild("export class Lexer {}", [], { run, node: "24.0.0" });
+    assert.equal(ran[1].file, "/usr/bin/sandbox-exec");
+  } else assert.throws(() => md.lexInChild("export class Lexer {}", ["x"], { env, run, node: "24.0.0" }), /nothing here shuts the parser's network \(no \/usr\/bin\/sandbox-exec,/);
+  // The child itself runs only where both hold.
   if (!md.permissionHolds()) {
-    assert.throws(() => md.lexInChild("export class Lexer {}", ["x"], { env }), /permission model holds \(22\.13, 23\.5 or later\); this is /);
+    assert.throws(() => md.lexInChild("export class Lexer {}", ["x"], { env }), new RegExp(`permission model holds \\(22\\.13, 23\\.5 or later\\); this is ${process.versions.node.replaceAll(".", "\\.")}$`));
     return;
   }
   if (!existsSync("/usr/bin/sandbox-exec")) {
     assert.throws(() => md.lexInChild("export class Lexer {}", ["x"], { env }), /nothing here shuts the parser's network/);
     return;
   }
-  // What the child is started with: sandbox-exec with the network denied, the permission model, and by default an
-  // empty environment: a variable of the recorder's never reaches the parser.
-  /** @type {{ file: string, args: string[], opts: any }[]} */
-  const ran = [];
-  const run = /** @type {any} */ ((/** @type {string} */ file, /** @type {string[]} */ args, /** @type {any} */ opts) => (ran.push({ file, args, opts }), { status: 0, stdout: "[]", stderr: "" }));
-  process.env.EN_SECRET = "canary";
-  try {
-    md.lexInChild("export class Lexer {}", [], { run });
-  } finally {
-    delete process.env.EN_SECRET;
-  }
-  assert.equal(ran[0].file, "/usr/bin/sandbox-exec");
-  assert.deepEqual(ran[0].args.slice(0, 4), ["-p", "(version 1)(allow default)(deny network*)", process.execPath, "--permission"]);
-  assert.deepEqual(ran[0].opts.env, {});
   // A socket on the machine (the Docker API is one): the child's module does not reach it.
   const dir = realpathSync(mkdtempSync(join(existsSync("/tmp") ? "/tmp" : tmpdir(), "en-uds-")));
   const sock = join(dir, "s");
