@@ -477,6 +477,7 @@
   "audit.feature": "Audit slot: a finished feature. The security audit is due in {left} cycles ({since} cycles no security audit covered; security.everyCycles: {every}).",
   "audit.off": "Audit slot: a finished feature. security.everyCycles is 0: no security audit is scheduled.",
   "audit.noPaths": "No sensitive path is tracked.",
+  "audit.skipped": "{n} lines in {path} do not parse; each is counted as a cycle.",
   "audit.paths": "  {source}: {n} files · {list}",
   "audit.machineDir": "    {dir} {list}",
   "audit.machine": "  {source}: {n} files, each with the rule that names it",

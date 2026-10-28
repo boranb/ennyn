@@ -714,6 +714,8 @@ const COMMANDS = {
     const vars = { every: due.every, cycles: due.cycles, since: due.since ?? 0, left: due.every - (due.since ?? 0) - 1, path: [cfg.paths.metricsLog], error: due.error ?? "" };
     if (due.due === false) out(t(due.reason === "off" ? "audit.off" : "audit.feature", vars, lang));
     else out(t("audit.security", { why: tShown(due.error ? "audit.why.error" : `audit.why.${due.reason}`, vars, lang) }, lang));
+    // Lines that do not parse count as cycles, so the answer leans to due; budget and doctor say them too.
+    if (due.skipped && due.reason !== "off") out(tShown("audit.skipped", { n: due.skipped, path: [cfg.paths.metricsLog] }, lang));
     if (due.due !== false) {
       if (!paths.length) out(t("audit.noPaths", {}, lang));
       // The cycle reads this list as the audit's scope: every name, or past AUDIT_NAMES every file's directory.

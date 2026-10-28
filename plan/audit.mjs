@@ -89,9 +89,11 @@ const MANIFEST = `${MANIFEST_DIR}/plugin.json`;
  *   cycles: number,
  *   since: number | null,
  *   marks: number,
+ *   skipped?: number,
  *   error?: string,
  * }} SecurityDue
- *   `cycles`: distinct keys; `since`: those no mark covers (null on an error); `marks`: the marks in the log.
+ *   `cycles`: distinct keys; `since`: those no mark covers (null on an error); `marks`: the marks in the log;
+ *   `skipped`: its lines that do not parse, each a cycle.
  */
 
 /**
@@ -137,7 +139,7 @@ export function uncovered(records) {
 export function securityDue(records, every) {
   const since = uncovered(records).size;
   const marks = records.filter((r) => r.mark).length;
-  const base = { every, cycles: new Set(records.map((r) => r.key)).size, since, marks };
+  const base = { every, cycles: new Set(records.map((r) => r.key)).size, since, marks, skipped: records.filter((r) => !r.budget).length };
   if (every === 0) return { due: false, reason: "off", ...base };
   // No audit recorded yet: the first one is due now.
   if (!marks) return { due: true, reason: "never", ...base };

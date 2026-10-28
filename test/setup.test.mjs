@@ -747,8 +747,9 @@ test("doctor audit: a metrics log it cannot read (a directory in its place, no p
   put(r.dir, { ".ennyn/metrics.jsonl": `${JSON.stringify({ kind: "budget", date: "2026-10-01", commit: "a".repeat(40), always: 1 })}\n` });
   /** @param {string[]} k */
   const after = (k) => k.slice(k.indexOf("unmeasured doctor.budgetLogUnmeasured") + 1);
-  // paths.metricsLog naming a directory (an empty value resolves to the project directory itself).
-  for (const metricsLog of ["", ".ennyn"]) {
+  // paths.metricsLog naming a directory (a config can name no other file than a .jsonl in .ennyn/: a directory there).
+  mkdirSync(join(r.dir, ".ennyn", "dir.jsonl"), { recursive: true });
+  for (const metricsLog of [".ennyn/dir.jsonl"]) {
     put(r.dir, { ".ennyn/config.json": JSON.stringify({ paths: { metricsLog } }) });
     const k = keys(await checkSetup({ cwd: r.dir, env: {} }));
     assert.ok(k.includes("unmeasured doctor.budgetLogUnmeasured"), `${JSON.stringify(metricsLog)}:\n${k.join("\n")}`);

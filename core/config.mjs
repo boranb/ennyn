@@ -222,6 +222,40 @@ function inGitDir(p) {
     .some((name) => name === ".git" || /^gi(t|[0-9a-f]{4})~\d+$/.test(name));
 }
 
+/** A .jsonl file, once `.` and `..` are applied (a path that leads outside is refused before). */
+const OWN_LOG = /^(?:[^/]+\/)*[^/]+\.jsonl$/;
+
+/** A path as POSIX and as Windows read it: a backslash is part of a name on one and a separator on the other. @param {string} p */
+const readings = (p) => [posix.normalize(p), posix.normalize(p.replace(/\\/g, "/"))];
+
+/**
+ * Whether a path names a .jsonl file, under both readings: the metrics log is appended to, and a record appended to
+ * any other file (a package.json, .claude/settings.json, the config itself) could break it; another tool's .jsonl
+ * stays JSON lines.
+ * @param {string} p
+ */
+const ownLog = (p) => readings(p).every((r) => OWN_LOG.test(r));
+
+/**
+ * The first other path key that names the same file as the metrics log, as [key, value]; null when none does. Read
+ * in the safe direction: either reading of one equal to either reading of the other, in any case and Unicode form,
+ * the code points HFS+ ignores left out (a disk that folds them serves one file).
+ * @param {any} cfg
+ * @returns {[string, string] | null}
+ */
+function sharesLog(cfg) {
+  const fold = (/** @type {string} */ p) => readings(p).map((r) => r.normalize("NFC").replace(HFS_IGNORED, "").toLowerCase());
+  const log = cfg.paths.metricsLog;
+  if (typeof log !== "string") return null;
+  const mine = fold(log);
+  for (const key of PATH_KEYS) {
+    if (key === "paths.metricsLog" || key === "paths.stateDir") continue;
+    const value = key.split(".").reduce((o, n) => o[n], cfg);
+    if (typeof value === "string" && fold(value).some((r) => mine.includes(r))) return [key, value];
+  }
+  return null;
+}
+
 /**
  * @param {Record<string, unknown>} base
  * @param {Record<string, unknown>} over
@@ -304,12 +338,16 @@ export function loadConfig({ cwd, env = process.env, override }) {
   // impact.twins: pairs of directories, each looked up below the project like a path key.
   const twins = /** @type {unknown[]} */ (/** @type {any} */ (cfg).impact.twins);
   const twinPaths = twins.flatMap((pair, i) => (Array.isArray(pair) ? pair.map((v, j) => [`impact.twins[${i}][${j}]`, v]) : []));
+  // The metrics log is appended to: no other path key may name its file (the handoff, the graph, the ceiling registry).
+  const shared = sharesLog(cfg);
   for (const [key, value] of [...PATH_KEYS.map((k) => [k, k.split(".").reduce((o, n) => o[n], /** @type {any} */ (cfg))]), ...twinPaths]) {
     if (typeof value !== "string") continue;
     if (value.includes("\0")) problems.push(`"${key}": ${JSON.stringify(value)} holds a NUL, which names no file`);
     else if (leaves(value)) problems.push(`"${key}": ${JSON.stringify(value)} leads outside the project directory; every path a config names stays inside it`);
     else if (key === "paths.stateDir" && underGitDir(value) === null) problems.push(`"${key}": ${JSON.stringify(value)} must lie under .git/: a commit can write the work tree, and Ennyn trusts its state`);
     else if (key !== "paths.stateDir" && inGitDir(value)) problems.push(`"${key}": ${JSON.stringify(value)} lies in a git dir, where git reads and runs what it finds (its config, its hooks); only paths.stateDir may`);
+    else if (key === "paths.metricsLog" && !ownLog(value)) problems.push(`"${key}": ${JSON.stringify(value)} must name a .jsonl file in the project: a record appended to any other file could break it`);
+    else if (key === "paths.metricsLog" && shared) problems.push(`"${key}": ${JSON.stringify(value)} names the same file as "${shared[0]}" (${JSON.stringify(shared[1])}): a record appended to it would break that file`);
   }
   if (!["en", "tr"].includes(/** @type {string} */ (cfg.language))) problems.push(`"language" must be "en" or "tr"`);
   const cm = /** @type {any} */ (cfg).commitMsg;

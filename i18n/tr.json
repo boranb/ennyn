@@ -477,6 +477,7 @@
   "audit.feature": "Denetim yuvası: bitmiş bir özellik. Güvenlik denetiminin sırası {left} döngü sonra (hiçbir güvenlik denetiminin kapsamadığı {since} döngü; security.everyCycles: {every}).",
   "audit.off": "Denetim yuvası: bitmiş bir özellik. security.everyCycles 0: güvenlik denetimi planlanmıyor.",
   "audit.noPaths": "İzlenen hassas yol yok.",
+  "audit.skipped": "{path} içindeki {n} satır ayrıştırılamadı; her biri bir döngü sayıldı.",
   "audit.paths": "  {source}: {n} dosya · {list}",
   "audit.machineDir": "    {dir} {list}",
   "audit.machine": "  {source}: {n} dosya, her biri onu adlandıran kuralla",

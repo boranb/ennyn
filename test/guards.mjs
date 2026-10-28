@@ -388,7 +388,7 @@ export const GATES = [
  */
 const CLI_ONLY = { reason: "runs the CLI on temporary repositories", allow: '"scripts", "ennyn\\.mjs"' };
 export const NOT_GATES = {
-  "test/budget.test.mjs": CLI_ONLY,
+  "test/budget.test.mjs": { reason: "runs the CLI on temporary repositories, and on the metrics-log corpus", allow: '"scripts", "ennyn\\.mjs"|"__fixtures__", "metrics-log"' },
   "test/ci.test.mjs": CLI_ONLY,
   "test/bypass.test.mjs": CLI_ONLY,
   "test/cli.test.mjs": CLI_ONLY,

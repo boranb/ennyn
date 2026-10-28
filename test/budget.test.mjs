@@ -12,6 +12,8 @@ import { lineKey } from "../plan/audit.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+/** The metrics-log corpus of the cycle 14 security audit's data review. */
+const CELLS = join(dirname(fileURLToPath(import.meta.url)), "__fixtures__", "metrics-log", "cells.json");
 
 /** @param {string} dir @param {Record<string, string>} files */
 function put(dir, files) {
@@ -558,6 +560,81 @@ test("cli: a metrics log that is no regular file (a link to /dev/stdin or /dev/z
   assert.match(a.stdout, /could not be read: it is no regular file; taken as due\.$/m);
   const b = await runOpenStdin(dir, ["budget", "--record"]);
   assert.deepEqual([b.signal, b.status, /(could not be read|was not written): it is no regular file/.test(b.stderr)], [null, 1, true]);
+});
+
+test("cli: the metrics log is a .jsonl file in the project: every log of the corpus is recorded, every other target refused at load and left as it was", () => {
+  // test/__fixtures__/metrics-log/cells.json: the data review's corpus (cycle 14, security audit). A config (a
+  // contributor's commit) could name any project file as the log; appended to, a package.json, .claude/settings.json
+  // or the config itself no longer parsed, and a config that does not load turns the commit-msg hook off. Judging the
+  // content let a foreign file through (one line holding {"kind": …}) and turned a damaged log away: the path decides.
+  const corpus = JSON.parse(readFileSync(CELLS, "utf8"));
+  const bytes = (/** @type {string | { hex: string }} */ text) => (typeof text === "string" ? Buffer.from(text) : Buffer.from(text.hex, "hex"));
+  const { dir, run, log } = auditRepo();
+  mkdirSync(dirname(log));
+  /** A record appended to what was there, which stays. @param {string} path @param {Buffer} before @param {string} id */
+  const appended = (path, before, id) => {
+    const after = readFileSync(path);
+    assert.ok(after.subarray(0, before.length).equals(before), `${id}: what was there stays`);
+    assert.match(after.subarray(before.length).toString("utf8"), /^\n?\{"kind":"budget"[^\n]*\n$/, id);
+  };
+  for (const cell of corpus.logs) {
+    const before = bytes(cell.text);
+    writeFileSync(log, before);
+    const r = run("budget", "--record");
+    assert.equal(r.status, 0, `${cell.id}: ${r.stderr}`);
+    appended(log, before, cell.id);
+  }
+  // A Git LFS pointer whose object was never fetched: a record appended to it would be committed in place of the log.
+  // As git-lfs reads a pointer (lfs/pointer.go): white space trimmed first, and its two older spec URLs too.
+  const variants = corpus.lfs.flatMap((/** @type {{ id: string, text: string }} */ c) => [c, { id: `${c.id} after white space`, text: `\n ${c.text}` }, ...["https://hawser.github.com/spec/v1", "http://git-media.io/v/2"].map((url) => ({ id: `${c.id} ${url}`, text: c.text.replace("https://git-lfs.github.com/spec/v1", url) }))]);
+  for (const cell of variants) {
+    const before = bytes(cell.text);
+    writeFileSync(log, before);
+    const r = run("budget", "--record");
+    assert.equal(r.status, 1, cell.id);
+    assert.match(r.stderr, /metrics\.jsonl was not written: it is a Git LFS pointer whose object has not been fetched \(git lfs pull\)/, cell.id);
+    assert.ok(readFileSync(log).equals(before), `${cell.id}: left as it was`);
+  }
+  // Every command reads the log through the config: each one refuses a config that names a foreign file. Another
+  // tool's .jsonl is a .jsonl file in the project: the record leaves it JSON lines (the rule's accepted residue).
+  const every = [["budget", "--record"], ["budget", "--record", "--security-audit"], ["budget"], ["audit"], ["doctor"]];
+  for (const cell of corpus.foreign) {
+    rmSync(join(dir, ".ennyn", "config.json"), { force: true });
+    if (cell.target !== ".ennyn/config.json") put(dir, { ".ennyn/config.json": JSON.stringify({ paths: { metricsLog: cell.target } }) });
+    mkdirSync(dirname(join(dir, cell.target)), { recursive: true });
+    const before = bytes(cell.text);
+    writeFileSync(join(dir, cell.target), before);
+    if (cell.target.endsWith(".jsonl")) {
+      const r = run("budget", "--record");
+      assert.equal(r.status, 0, `${cell.id}: ${r.stderr}`);
+      appended(join(dir, cell.target), before, cell.id);
+      continue;
+    }
+    for (const args of cell.id === "package.json" ? every : [["budget", "--record"]]) {
+      const r = run(...args);
+      assert.equal(r.status, 1, `${cell.id} ${args.join(" ")}`);
+      assert.match(r.stderr + r.stdout, new RegExp(`"paths\\.metricsLog": ${JSON.stringify(cell.target).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} must name a \\.jsonl file in the project`), `${cell.id} ${args.join(" ")}`);
+    }
+    assert.ok(readFileSync(join(dir, cell.target)).equals(before), `${cell.id}: left as it was`);
+  }
+  assert.deepEqual([corpus.logs.length, corpus.lfs.length, corpus.foreign.length, corpus.foreign.filter((/** @type {{ target: string }} */ c) => c.target.endsWith(".jsonl")).length], [33, 1, 23, 3]);
+});
+
+test("cli: audit says how many lines of the log do not parse, each counted as a cycle; budget and doctor say it too", () => {
+  // A log something rewrote (jq's pretty print, from the data review's corpus): no line parses, every one is a cycle.
+  const corpus = JSON.parse(readFileSync(CELLS, "utf8"));
+  const pretty = corpus.logs.find((/** @type {{ id: string }} */ c) => c.id === "jq-pretty");
+  const { run, json, log } = auditRepo({ ".ennyn/metrics.jsonl": pretty.text });
+  const n = pretty.text.split("\n").filter((/** @type {string} */ l) => l.trim()).length;
+  const a = run("audit");
+  assert.equal(a.status, 0);
+  assert.match(a.stdout, new RegExp(`^${n} lines in \\.ennyn/metrics\\.jsonl do not parse; each is counted as a cycle\\.$`, "m"));
+  assert.equal(json().skipped, n);
+  assert.match(run("budget").stdout, new RegExp(`^${n} lines in .*metrics\\.jsonl do not parse and were left out\\.$`, "m"));
+  // A log that parses: nothing said.
+  writeFileSync(log, `${JSON.stringify({ kind: "budget", date: "2026-10-01", commit: "a".repeat(40), always: 1, onDemand: 0, repeatedLines: 0 })}\n`);
+  assert.doesNotMatch(run("audit").stdout, /do not parse/);
+  assert.equal(json().skipped, 0);
 });
 
 test("cli: a metrics log outside the repository: no config can place it there, nothing is written; one it cannot read is due", (t) => {

@@ -156,6 +156,9 @@ export function instructionBudget(cwd, files) {
 /** A key as a mark lists it, and as a record names the one it replaces: the first 16 hex digits of the line's SHA-256. */
 export const KEY = /^[0-9a-f]{16}$/;
 
+/** A Git LFS pointer's first line: `version` and one of the spec URLs git-lfs accepts (lfs/pointer.go v1Aliases). */
+const LFS_POINTER = /^\s*version (?:https:\/\/git-lfs\.github\.com\/spec\/v1|https:\/\/hawser\.github\.com\/spec\/v1|http:\/\/git-media\.io\/v\/2)\n/;
+
 /**
  * A record's key: the first 16 hex digits of the SHA-256 of its line, a trailing CR and a leading byte order mark
  * dropped (a checkout with CRLF, an editor's mark: the same record).
@@ -274,7 +277,12 @@ export function replacedAt(current, commit) {
  */
 export function recordBudget(cwd, metricsLog, budget, at) {
   const path = resolve(cwd, metricsLog);
-  const budgets = logLines(readRegular(cwd, path)).filter((l) => l.value?.kind === "budget");
+  const bytes = readRegular(cwd, path);
+  // A log kept in Git LFS whose object was never fetched is the pointer: a record appended to it would be committed in
+  // place of the log. The pointer's first line as git-lfs reads it (lfs/pointer.go: white space trimmed first, then
+  // `version` and one of its three spec URLs).
+  if (bytes && LFS_POINTER.test(bytes.subarray(0, 1024).toString("utf8"))) throw new Error(`${path} was not written: it is a Git LFS pointer whose object has not been fetched (git lfs pull); a record appended to it would be committed in place of the log`);
+  const budgets = logLines(bytes).filter((l) => l.value?.kind === "budget");
   const current = currentRecords(budgets, (l) => l.key, (l) => replacesOf(l.value)).map((l) => ({ ...l, commit: l.value.commit }));
   const was = replacedAt(current, at.commit);
   const last = was?.value ?? null;

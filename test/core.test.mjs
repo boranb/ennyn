@@ -170,8 +170,10 @@ test("config: every path a config names stays in the project, whoever names the 
   };
   const refused = (/** @type {string} */ key, /** @type {string} */ value) => (/** @type {unknown} */ e) =>
     e instanceof ConfigError && e.problems.length === 1 && e.problems[0] === `"${key}": ${JSON.stringify(value)} leads outside the project directory; every path a config names stays inside it`;
-  for (const key of ["handoff", "changelog", "graph", "metricsLog"]) {
-    for (const p of inside) assert.equal(/** @type {any} */ (own({ paths: { [key]: p } })()).paths[key], p, `${key} ${JSON.stringify(p)}`);
+  // The metrics log has a rule of its own (below): a .jsonl file in .ennyn/.
+  for (const key of ["handoff", "changelog", "graph"]) {
+    // The metrics log elsewhere: a key naming its file is refused (below).
+    for (const p of inside) assert.equal(/** @type {any} */ (own({ paths: { [key]: p, metricsLog: ".ennyn/other.jsonl" } })()).paths[key], p, `${key} ${JSON.stringify(p)}`);
   }
   for (const key of ["handoff", "changelog", "graph", "metricsLog", "stateDir"]) {
     for (const p of outside) assert.throws(own({ paths: { [key]: p } }), refused(`paths.${key}`, p), `${key} ${JSON.stringify(p)}`);
@@ -236,9 +238,39 @@ test("config: every path a config names stays in the project, whoever names the 
     ".g\u200cit/config", "\ufeff.git/config", ".g\u202eit/config", ".git\u206f/config", ".git::$INDEX_ALLOCATION/config", ".git:x", "GIT~2/config", "GI7EBA~1/config"];
   for (const key of ["handoff", "changelog", "graph", "metricsLog"]) {
     for (const p of gitDir) assert.throws(own({ paths: { [key]: p } }), inGit(`paths.${key}`, p), `${key} ${JSON.stringify(p)}`);
+    if (key === "metricsLog") continue;
     for (const p of [".github/x.json", ".gitx/x.json", "a/.git/../b.json", ".gitignore.d/x", "git/x.json", "gitdata/x.json", ".git\t/x.json", "gi~1/x.json"]) assert.equal(/** @type {any} */ (own({ paths: { [key]: p } })()).paths[key], p, `${key} ${JSON.stringify(p)}`);
   }
   assert.throws(own({ impact: { ceilingRegistry: ".git/info/exclude" } }), inGit("impact.ceilingRegistry", ".git/info/exclude"));
+  // The metrics log is a .jsonl file in the project, as POSIX and Windows read the path, once . and .. are applied: a
+  // record appended to any other file could break it (a package.json, .claude/settings.json, the config itself: a
+  // config that no longer loads turns the commit-msg hook off). Appended to another tool's .jsonl, a record leaves it
+  // JSON lines. Cycle 14, security audit review rounds 1 and 2.
+  const notOwn = (/** @type {string} */ value) => (/** @type {unknown} */ e) =>
+    e instanceof ConfigError && e.problems.length === 1 && e.problems[0] === `"paths.metricsLog": ${JSON.stringify(value)} must name a .jsonl file in the project: a record appended to any other file could break it`;
+  for (const p of [".ennyn/metrics.jsonl", "./.ennyn/metrics.jsonl", ".ennyn/logs/m.jsonl", ".ennyn//m.jsonl", ".ennyn/./m.jsonl", "src/../.ennyn/m.jsonl", ".ennyn/m.x.jsonl", ".ennyn/a\\b.jsonl", "docs/metrics/cycles.jsonl", "metrics.jsonl", ".ennyn.jsonl", ".Ennyn/m.jsonl", "x/.ennyn/m.jsonl", ".ennyn\\m.jsonl", ".ennyn/..\\m.jsonl", "a/b.jsonl"]) {
+    assert.equal(/** @type {any} */ (own({ paths: { metricsLog: p } })()).paths.metricsLog, p, JSON.stringify(p));
+  }
+  for (const p of ["", ".", ".ennyn", ".ennyn/", ".ennyn/config.json", ".ennyn/metrics.json", "metrics.ndjson", "docs/metrics", ".ennyn/.jsonl", ".jsonl", ".ennyn/m.JSONL", ".ennyn/m.jsonl/", "package.json", ".claude/settings.json", ".ennyn/m.jsonl ", ".ennyn/m.jsonl‌", ".ennyn/․jsonl", "a\\.jsonl", "m.jsonl/x\\.."]) {
+    assert.throws(own({ paths: { metricsLog: p } }), notOwn(p), JSON.stringify(p));
+  }
+  // Nor a file another path key names: the record would go into the handoff, the graph or the ceiling registry
+  // (the data review's four cells), however either is spelled (case, a backslash, . and ..).
+  const shared = (/** @type {string} */ value, /** @type {string} */ key, /** @type {string} */ other) => (/** @type {unknown} */ e) =>
+    e instanceof ConfigError && e.problems.length === 1 && e.problems[0] === `"paths.metricsLog": ${JSON.stringify(value)} names the same file as "${key}" (${JSON.stringify(other)}): a record appended to it would break that file`;
+  for (const [cfg, key, other] of /** @type {[any, string, string][]} */ ([
+    [{ impact: { ceilingRegistry: ".ennyn/registry.jsonl" }, paths: { metricsLog: ".ennyn/registry.jsonl" } }, "impact.ceilingRegistry", ".ennyn/registry.jsonl"],
+    [{ paths: { handoff: ".ennyn/handoff.jsonl", metricsLog: ".ennyn/handoff.jsonl" } }, "paths.handoff", ".ennyn/handoff.jsonl"],
+    [{ paths: { changelog: ".ennyn/changes.jsonl", metricsLog: ".ennyn/changes.jsonl" } }, "paths.changelog", ".ennyn/changes.jsonl"],
+    [{ paths: { graph: ".ennyn/graph.jsonl", metricsLog: ".ennyn/graph.jsonl" } }, "paths.graph", ".ennyn/graph.jsonl"],
+    [{ paths: { graph: "./docs/G.jsonl", metricsLog: "docs/x/../g.jsonl" } }, "paths.graph", "./docs/G.jsonl"],
+    [{ paths: { handoff: "docs\\h.jsonl", metricsLog: "docs/h.jsonl" } }, "paths.handoff", "docs\\h.jsonl"],
+    [{ paths: { graph: "docs/e\u0301.jsonl", metricsLog: "docs/\u00e9.jsonl" } }, "paths.graph", "docs/e\u0301.jsonl"],
+    [{ paths: { graph: "docs/g\u200c.jsonl", metricsLog: "docs/g.jsonl" } }, "paths.graph", "docs/g\u200c.jsonl"],
+  ])) assert.throws(own(cfg), shared(cfg.paths.metricsLog, key, other), JSON.stringify(cfg));
+  // A log that leads outside is said once, as leading outside: not also as shared.
+  assert.throws(own({ paths: { handoff: "../h.jsonl", metricsLog: "../h.jsonl" } }), (e) => e instanceof ConfigError && e.problems.length === 2 && e.problems.every((p) => /leads outside/.test(p)));
+  assert.equal(/** @type {any} */ (own({ paths: { handoff: ".ennyn/handoff.jsonl", graph: ".ennyn/graph.jsonl", changelog: "docs/metrics.jsonl" } })()).paths.metricsLog, ".ennyn/metrics.jsonl");
   writeFileSync(join(box, "local.json"), JSON.stringify({ paths: { metricsLog: ".git/ennyn/metrics.jsonl", stateDir: ".git/ennyn" } }));
   assert.throws(() => loadConfig({ cwd: dir, env: { ENNYN_CONFIG: join(box, "local.json") } }), inGit("paths.metricsLog", ".git/ennyn/metrics.jsonl"));
 });
