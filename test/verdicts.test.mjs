@@ -256,10 +256,10 @@ test("verdicts control: a hook that crashes, hangs or is given a cell that stage
   assert.throws(() => hookOutcome("x", 0, "a.txt: something\nennyn commit-check: boom\n"), /x: the hook died/);
   assert.throws(() => hookOutcome("x", null, "", true), /x: the hook ran past/);
   // run() stops a process past its limit.
-  const t0 = Date.now();
+  const t0 = performance.now();
   const r = await run(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { cwd: tmpdir(), limit: 300 });
   assert.equal(r.timedOut, true);
-  assert.ok(Date.now() - t0 < 20000, "the process was not stopped");
+  assert.ok(performance.now() - t0 < 20000, "the process was not stopped");
   // A cell whose files equal HEAD's, or give none, stages nothing: no verdict.
   const wf = "on: push\npermissions: {}\njobs:\n  a:\n    steps:\n      - uses: a/b@v1\n";
   await assert.rejects(GATES.ci([{ id: "same", files: { "w.yml": wf }, head: { "w.yml": wf }, from: "control", verdict: "pass" }]), /same: stages nothing/);

@@ -742,11 +742,11 @@ test("deps verdicts: an answer that unpacks past the limit is unread within the 
   const bomb = gzipSync(Buffer.alloc(ANSWER_LIMIT + 1, 0x20));
   const reg = await server((req, res) => res.writeHead(200, { "content-type": "application/json", "content-encoding": "gzip" }).end(bomb));
   try {
-    const started = Date.now();
+    const started = performance.now();
     const v = await registryVerdicts(lockEntries(lock(entry(reg.origin, "big", "1.0.0"))).entries ?? [], rule({ registries: { [reg.origin]: reg.origin }, timeout: 60 }));
     // Stopped by the limit, not by the budget.
     assert.deepEqual(v.unread.map(why), [`an answer past ${ANSWER_LIMIT / 1024 / 1024} MB`]);
-    assert.ok(Date.now() - started < 60000, `${Date.now() - started} ms`);
+    assert.ok(performance.now() - started < 60000, `${performance.now() - started} ms`);
   } finally {
     await reg.close();
   }
@@ -775,9 +775,9 @@ test("deps budget: one time budget for every lock file of a commit", async () =>
       ["b/package-lock.json", { staged: Buffer.from(lock(entry(reg.origin, "slower", "1.0.0"))), head: null }],
       ["a/package-lock.json", { staged: Buffer.from(lock(entry(reg.origin, "slow", "1.0.0"))), head: null }],
     ]);
-    const started = Date.now();
+    const started = performance.now();
     const r = await depsMessages(versions, rule({ registries: { [reg.origin]: reg.origin }, timeout: 1 }), "en");
-    const took = Date.now() - started;
+    const took = performance.now() - started;
     assert.equal(r.warnings.filter((w) => /no answer within the 1 s budget/.test(w)).length, 2);
     assert.match(r.warnings[0], /^a\/package-lock\.json/);
     assert.ok(took < 1800, `${took} ms: a budget per lock file would take 2 s`);
@@ -1511,10 +1511,10 @@ test("deps process: the command ends once its work is done, even with a handle l
     // A preload that holds the process for a minute, as a lookup the budget gave up on can.
     const hold = join(r.dir, ".git", "hold.cjs");
     writeFileSync(hold, "setTimeout(() => {}, 60000);\n");
-    const started = Date.now();
+    const started = performance.now();
     const done = await cli(["deps"], r.dir, { ...process.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --require ${JSON.stringify(hold)}`.trim() });
     assert.equal(done.status, 0, done.stderr);
-    assert.ok(Date.now() - started < 20000, `${Date.now() - started} ms`);
+    assert.ok(performance.now() - started < 20000, `${performance.now() - started} ms`);
   } finally {
     await osv.close();
   }

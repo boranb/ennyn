@@ -794,10 +794,10 @@ test("cli: mutate prints each mutant and the count; --json is the result; --rest
 describe("mutate: runs that wait", { concurrency: 4 }, () => {
   test("mutate: a mutant that hangs is killed at the second timeout, the test process with it", async () => {
     const p = project();
-    const started = Date.now();
+    const started = performance.now();
     // Two commands: the shell forks the test process instead of becoming it, so killing the shell alone would leave it.
     const res = await runMutants({ cwd: p.dir, mutants: [m("t1", "data.json", '"limit": 3', '"limit": 3, "sleep": 1')], command: `${NODE} check.mjs && true`, journal: p.journal, timeoutMs: 1500 });
-    assert.ok(Date.now() - started < 45_000, "the run ends at the timeouts, not when the test process would (60 s)");
+    assert.ok(performance.now() - started < 45_000, "the run ends at the timeouts, not when the test process would (60 s)");
     assert.deepEqual(res.results.map(said), ["timeout"]);
     assert.deepEqual(summarizeMutants(res.results), { killed: 1, total: 1, timeout: 1, survived: 0, invalid: 0, unapplied: 0, unchecked: 0, uncheckedSurvived: 0 });
     assert.ok(await gone(Number(readFileSync(join(p.dir, "sleeping"), "utf8"))), "the sleeping test process is gone");
@@ -854,10 +854,10 @@ test("mutate: a file only its owner may stamp (others may write it) is mutated a
 
 test("mutate: what a test run leaves running is stopped before the next mutant", async () => {
     const p = project();
-    const started = Date.now();
+    const started = performance.now();
     const res = await runMutants({ cwd: p.dir, mutants: [m("s1", "src/add.mjs", "x * 2", "x * 3")], command: `sleep 30 & echo $! > leftover.pid; ${NODE} check.mjs`, journal: p.journal });
     assert.equal(res.results[0].outcome, "survived");
-    assert.ok(Date.now() - started < 25_000, "the left-behind process holds the pipes; the run does not wait for it (30 s)");
+    assert.ok(performance.now() - started < 25_000, "the left-behind process holds the pipes; the run does not wait for it (30 s)");
     assert.ok(await gone(Number(readFileSync(join(p.dir, "leftover.pid"), "utf8"))));
   });
 

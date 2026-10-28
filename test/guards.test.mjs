@@ -309,11 +309,11 @@ test("guards: every guard makes its gate test fail", async (t) => {
   const worker = async () => {
     while (next < jobs.length) {
       const { gate, groups } = jobs[next++];
-      const started = Date.now();
+      const started = performance.now();
       const dir = cloneOfTree(TOP);
       for (const [pattern, guards] of groups) for (const p of await runGuards(dir, gate.test, pattern, guards)) problems.push(`${gate.test} (${pattern}): ${p}`);
       rmSync(dirname(dir), { recursive: true, force: true });
-      spent.push({ test: gate.test, ms: Date.now() - started });
+      spent.push({ test: gate.test, ms: performance.now() - started });
     }
   };
   await Promise.all(Array.from({ length: Math.max(1, Math.min(3, availableParallelism() - 1)) }, worker));

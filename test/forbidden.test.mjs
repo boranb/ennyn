@@ -228,9 +228,9 @@ test("addedLines: content that looks like a header is content; a path not asked 
   assert.deepEqual(addedLines(quoted, new Set(["x y\\z.js"]), { complete: true }), new Map([["x y\\z.js", [{ line: 1, text: "console.log" }]]]));
   // A file with many added lines reads in linear time.
   const big = `diff --git a/b.js b/b.js\n+++ b/b.js\n@@ -0,0 +1,100000 @@\n${"+x\n".repeat(100000)}`;
-  const t0 = Date.now();
+  const t0 = performance.now();
   assert.equal(addedLines(big, new Set(["b.js"])).get("b.js")?.length, 100000);
-  assert.ok(Date.now() - t0 < 3000, `${Date.now() - t0} ms`);
+  assert.ok(performance.now() - t0 < 3000, `${performance.now() - t0} ms`);
 });
 
 test("stagedAddedLines: real git; odd names, hunks, deletions, binary files, the first commit and a hostile diff config", () => {

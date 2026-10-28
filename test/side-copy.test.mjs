@@ -846,11 +846,11 @@ test("side-copy audit (review round two): a rule named like another's key, long 
   assert.equal(runHook(long).stdout, "");
   assert.ok(Buffer.byteLength(basename(sideCopyStatePath(project, ".git/ennyn", "S".repeat(500), "A".repeat(500)))) <= 255);
   // Thousands of rules and unreadable files: cut to the cap without rebuilding the text for every one dropped.
-  const t0 = Date.now();
+  const t0 = performance.now();
   const many = Array.from({ length: 6000 }, (_, i) => ({ file: `/p/.claude/rules/${"r".repeat(60)}${i}.md`, body: "x" }));
   const out = render("src/a.ts", many, 9000, "en", many.map((r) => `${r.file}.locked`));
   assert.ok(out.text.length <= CONTEXT_CAP);
-  assert.ok(Date.now() - t0 < 3000, `${Date.now() - t0} ms`);
+  assert.ok(performance.now() - t0 < 3000, `${performance.now() - t0} ms`);
 });
 
 // The hooks' text reaches the model as the harness speaking. A side copy is no trusted tree (a worktree may hold

@@ -802,14 +802,14 @@ test("fault matrix control: a git call that never ends is stopped at its limit a
       for (const k of ["ENNYN_HANG_EXIT", "ENNYN_HANG_SAY", "ENNYN_HANG_TRAP", "ENNYN_HANG_DRIP"]) delete process.env[k];
       Object.assign(process.env, vars);
       settled = false;
-      const start = Date.now();
+      const start = performance.now();
       try {
         const r = await f();
         out[name] = r && r.error
-          ? { ms: Date.now() - start, said: r.error.message, message: r.error.message }
-          : { ms: Date.now() - start, said: "answered: " + JSON.stringify(r, (k, v) => (v instanceof Set ? [...v] : v)) };
+          ? { ms: performance.now() - start, said: r.error.message, message: r.error.message }
+          : { ms: performance.now() - start, said: "answered: " + JSON.stringify(r, (k, v) => (v instanceof Set ? [...v] : v)) };
       } catch (e) {
-        out[name] = { ms: Date.now() - start, said: String(e.stderr || e.message).split("\\n")[0], message: e.message, status: e.status ?? null };
+        out[name] = { ms: performance.now() - start, said: String(e.stderr || e.message).split("\\n")[0], message: e.message, status: e.status ?? null };
       }
       settled = true;
       await new Promise((r) => setTimeout(r, 50));

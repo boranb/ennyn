@@ -351,13 +351,13 @@ test("ci round one: the reader follows the YAML GitHub runs, and refuses what it
   assert.deepEqual(usesOf("jobs:\n  secrets:\n    uses: o/r/.github/workflows/x.yml@main\n"), [[3, "o/r/.github/workflows/x.yml@main", false]]);
   assert.deepEqual(usesOf("jobs:\n  a:\n    strategy:\n      matrix:\n        uses: [a, b]\n"), []);
   // What the reading cannot follow, and input built to make it slow, ends in a refusal, at once.
-  const started = Date.now();
+  const started = performance.now();
   assert.ok(ciFindings(`${"- ".repeat(50000)}x\n`, "workflow").unread.length);
   let laughs = "a: &a [x,x,x,x,x,x,x,x,x,x]\n";
   for (let k = 0; k < 9; k++) laughs += `b${k}: &b${k} [${Array(10).fill(k ? `*b${k - 1}` : "*a").join(",")}]\n`;
   assert.ok(ciFindings(laughs, "workflow").unread.length);
   for (const line of ["a" + " ".repeat(40000) + "b", 'x "'.repeat(80000), "a:".repeat(100000), "run: ${{ ".repeat(100000)]) ciFindings(`${line}\n`, "workflow");
-  assert.ok(Date.now() - started < 5000, `${Date.now() - started} ms`);
+  assert.ok(performance.now() - started < 5000, `${performance.now() - started} ms`);
 });
 
 test("ci round one: a pull request's code fetched in more ways, through a callee, and a local action from an unpinned checkout, are found", () => {
@@ -547,10 +547,10 @@ test("ci round two: a root action, a call six deep and a change under an explici
 
 test("ci round two: files that are large, many or not UTF-8 by name, and untouched, neither switch the check off nor fail it", async () => {
   // Reading stays under a few seconds on many steps that check out another repository, and many jobs.
-  const started = Date.now();
+  const started = performance.now();
   ciFindings(`jobs:\n  a:\n    steps:\n${"      - with: { repository: o/r }\n".repeat(20000)}`, "workflow");
   ciFindings(`on: push\njobs:\n${Array.from({ length: 20000 }, (_, k) => `  j${k}:\n    runs-on: x\n`).join("")}`, "workflow");
-  assert.ok(Date.now() - started < 5000, `${Date.now() - started} ms`);
+  assert.ok(performance.now() - started < 5000, `${performance.now() - started} ms`);
   const r = repo();
   // Untouched workflows that add up past one read of git's buffer: the staged one is still checked.
   const big = `on: push\npermissions: {}\njobs:\n  a:\n    steps:\n      - uses: ./x\n${"#".repeat(13 * 1024 * 1024)}\n`;
@@ -708,10 +708,10 @@ test("ci round four: an anchor named again means the newest node, and many local
   // (The anchored mapping sits under env, where a uses is no step's; read again as a step, it is one.)
   assert.deepEqual(usesOf("env:\n  X: &s scalar\n  Y: &s\n    uses: actions/checkout@v4\nsteps:\n  - *s\n"), [[6, "actions/checkout@v4", false]]);
   assert.deepEqual(usesOf("x: &s\n  uses: actions/checkout@v4\ny: &s scalar\nsteps:\n  - uses: *s\n"), [[2, "actions/checkout@v4", false], [5, "scalar", false]]);
-  const started = Date.now();
+  const started = performance.now();
   const steps = Array.from({ length: 20000 }, () => "      - uses: ./a\n").join("");
   ciSet(new Map([[".github/workflows/w.yml", `on: push\npermissions: {}\njobs:\n  j:\n    steps:\n${steps}`], ["a/action.yml", `runs:\n  using: composite\n  steps:\n    - uses: actions/checkout@${SHA}\n      with:\n        repository: o/r\n`]]));
-  assert.ok(Date.now() - started < 5000, `${Date.now() - started} ms`);
+  assert.ok(performance.now() - started < 5000, `${performance.now() - started} ms`);
 });
 
 test("ci round four: a patch of the pull request by URL, a ref passed through for, read or a function, and a stale key anchor are found", () => {
@@ -739,9 +739,9 @@ test("ci round four: a callee nobody can read is said on every commit, and place
   // Two placements of one directory in a job: the earlier one already covers a step between them.
   const twice = `jobs:\n  a:\n    steps:\n      - run: git clone https://github.com/o/r ext\n      - uses: ./ext/x\n      - run: git clone https://github.com/o/q ext\n`;
   assert.deepEqual(ciFindings(twice, "workflow").uses.map((u) => u.pinned), [false]);
-  const started = Date.now();
+  const started = performance.now();
   const pairs = Array.from({ length: 10000 }, (_, k) => `      - uses: actions/checkout@${SHA}\n        with: { repository: a/b, path: d${k} }\n      - uses: ./d${k}/x\n`).join("");
   const many = ciSet(new Map([[".github/workflows/w.yml", `on: push\npermissions: {}\njobs:\n  j:\n    steps:\n${pairs}`]]));
   assert.equal(many.findings.get(".github/workflows/w.yml")?.uses.filter((u) => !u.pinned).length, 10000);
-  assert.ok(Date.now() - started < 5000, `${Date.now() - started} ms`);
+  assert.ok(performance.now() - started < 5000, `${performance.now() - started} ms`);
 });
