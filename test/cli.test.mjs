@@ -426,7 +426,29 @@ test("cli: commit-check prints a cochange warning on stderr and still passes", (
   assert.equal(run(p.dir, "commit-check", msg).stderr, "");
 });
 
-test("cli: in a partial clone the commit-msg hook fetches nothing from git 2.44 on: a change whose object is not here is said unread, the files that are here are still read", () => {
+/**
+ * Whether this git reads GIT_NO_LAZY_FETCH, asked of a partial clone of its own: with the variable set, a blob the
+ * clone lacks is fetched or not. Its version does not say: git reads it from 2.45 and in the maintenance releases of
+ * May 2024 (2.39.4, 2.40.2, 2.41.1, 2.42.2, 2.43.4, 2.44.1), not in 2.44.0, and distributions took that fix into
+ * older ones (Ubuntu 22.04's 2.34.1 and Debian 12's 2.39.5, the Linux run's, read it).
+ * @param {string} box
+ */
+function readsNoLazyFetch(box) {
+  const src = join(box, "probe-src");
+  mkdirSync(src);
+  git(["init", "-q", "-b", "main"], { cwd: src });
+  writeFileSync(join(src, "f.txt"), "probe\n");
+  git(["add", "f.txt"], { cwd: src });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "probe"], { cwd: src });
+  git(["config", "uploadpack.allowFilter", "true"], { cwd: src });
+  const clone = join(box, "probe-clone");
+  git(["clone", "-q", "--filter=blob:none", "--no-checkout", `file://${src}`, clone], { cwd: box });
+  assert.match(git(["rev-list", "--objects", "--missing=print", "HEAD"], { cwd: clone }), /^\?/m, "the probe's clone lacks its blob");
+  const r = spawnSync("git", ["cat-file", "-e", "HEAD:f.txt"], { cwd: clone, env: { ...process.env, GIT_NO_LAZY_FETCH: "1" } });
+  return r.status !== 0;
+}
+
+test("cli: in a partial clone the commit-msg hook fetches nothing where git reads GIT_NO_LAZY_FETCH: a change whose object is not here is said unread, the files that are here are still read", () => {
   const box = realpathSync(mkdtempSync(join(tmpdir(), "pl-cli-partial-")));
   const src = join(box, "src");
   mkdirSync(src);
@@ -472,8 +494,9 @@ test("cli: in a partial clone the commit-msg hook fetches nothing from git 2.44 
   const bans = line(r.stderr, 'adds "BANNED"');
   for (const at of ["c.txt:1 (npm-token", "x.txt:2 (github-token"]) assert.ok(secrets.includes(at), `${at}\n${r.stderr}`);
   for (const at of ["c.txt:2", "x.txt:3"]) assert.ok(bans.includes(at), `${at}\n${r.stderr}`);
+  const fetches = !readsNoLazyFetch(box);
   const { version } = gitVersion({ cwd: box });
-  const fetches = !(version && versionAtLeast(version, [2, 44, 0]));
+  if (version && versionAtLeast(version, [2, 45, 0])) assert.ok(!fetches, `git ${version} reads GIT_NO_LAZY_FETCH`);
   if (!fetches) {
     assert.equal(readFileSync(log, "utf8"), "", "no connection to the promisor remote");
     assert.ok(r.stderr.includes(`security.secrets was not checked in 2 staged path(s) ("d.txt", "w.txt"): ${MISSING_OBJECT}`), r.stderr);
@@ -507,13 +530,13 @@ test("cli: in a partial clone the commit-msg hook fetches nothing from git 2.44 
     assert.ok(line(changed.stderr, "adds what reads as a secret").includes("x.txt:2 (github-token"), changed.stderr);
     assert.equal(readFileSync(log, "utf8"), "", "no connection on the run with changed files only");
   } else {
-    // Older git ignores GIT_NO_LAZY_FETCH (SECURITY.md says so): the blobs are fetched and read.
-    assert.notEqual(readFileSync(log, "utf8"), "", "older git fetches the missing blob");
+    // A git that does not read GIT_NO_LAZY_FETCH (SECURITY.md names them) fetches the blobs, and they are read.
+    assert.notEqual(readFileSync(log, "utf8"), "", "a git that does not read GIT_NO_LAZY_FETCH fetches the missing blob");
     assert.ok(secrets.includes("a.txt:2 (github-token"), r.stderr);
   }
 });
 
-test("cli: in a clone without trees the commit-msg hook's amend! lookup fetches nothing from git 2.44 on", () => {
+test("cli: in a clone without trees the commit-msg hook's amend! lookup fetches nothing where git reads GIT_NO_LAZY_FETCH", () => {
   const box = realpathSync(mkdtempSync(join(tmpdir(), "pl-cli-treeless-")));
   const src = join(box, "src");
   mkdirSync(src);
@@ -540,8 +563,10 @@ test("cli: in a clone without trees the commit-msg hook's amend! lookup fetches 
   writeFileSync(join(clone, "MSG"), "amend! feat: add a.txt\n\nfeat: add a.txt, and more\n");
   writeFileSync(log, "");
   const r = run(clone, "commit-check", "--hook", "MSG");
+  const reads = readsNoLazyFetch(box);
   const { version } = gitVersion({ cwd: box });
-  if (version && versionAtLeast(version, [2, 44, 0])) assert.equal(readFileSync(log, "utf8"), "", `no connection to the promisor remote\n${r.stderr}`);
-  // Older git ignores GIT_NO_LAZY_FETCH (SECURITY.md says so) and fetches the tree.
-  else assert.notEqual(readFileSync(log, "utf8"), "", "older git fetches the tree");
+  if (version && versionAtLeast(version, [2, 45, 0])) assert.ok(reads, `git ${version} reads GIT_NO_LAZY_FETCH`);
+  if (reads) assert.equal(readFileSync(log, "utf8"), "", `no connection to the promisor remote\n${r.stderr}`);
+  // A git that does not read GIT_NO_LAZY_FETCH (SECURITY.md names them) fetches the tree.
+  else assert.notEqual(readFileSync(log, "utf8"), "", "a git that does not read GIT_NO_LAZY_FETCH fetches the tree");
 });

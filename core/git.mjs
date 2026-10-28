@@ -357,7 +357,9 @@ export function hookIndexFile(cwd, env) {
  * How the commit-msg hook reads objects: as they are, and from this machine only. A replace ref (`git replace HEAD
  * <commit>`) would have HEAD's tree read as another commit's, and a line already there not count as added. In a
  * partial clone a missing object would be fetched from the promisor remote, a connection the hook does not make:
- * it is read as missing and said unread instead. git before 2.44 ignores GIT_NO_LAZY_FETCH and fetches it.
+ * it is read as missing and said unread instead. git reads GIT_NO_LAZY_FETCH from 2.45 and in the maintenance
+ * releases of May 2024 (2.39.4, 2.40.2, 2.41.1, 2.42.2, 2.43.4, 2.44.1), as do distribution builds that took that
+ * fix (Ubuntu 22.04's 2.34.1, Debian 12's 2.39.5); a git without it, 2.44.0 among them, fetches the object.
  */
 export const HOOK_READ_ENV = { GIT_NO_REPLACE_OBJECTS: "1", GIT_NO_LAZY_FETCH: "1" };
 
@@ -570,6 +572,36 @@ export function stagedAddedLines(cwd, paths, { env, wideUnread = new Map(), unre
   return out;
 }
 
+/**
+ * `cat-file --batch-check` of `oids`, a line each: "<oid> <type> <size>", or "<oid> missing" for one this machine
+ * does not hold. Under GIT_NO_LAZY_FETCH git 2.45 and later say "missing" of an object a partial clone lacks; the
+ * maintenance releases of May 2024 and the builds that took them (Debian 12's 2.39.5, measured in cycle 13) die at
+ * it instead ("could not fetch <oid> from promisor remote"): the lines before it stand, that one is missing, and
+ * what is left after it is asked again, so a call for each such object at most. Any other failure throws.
+ * @param {string} cwd @param {string[]} oids @param {{ env?: NodeJS.ProcessEnv }} [opts]
+ * @returns {string[]}
+ */
+export function batchCheck(cwd, oids, { env } = {}) {
+  /** @type {string[]} */
+  const lines = [];
+  let left = oids;
+  while (left.length) {
+    try {
+      lines.push(...gitBytes(["cat-file", "--batch-check"], { cwd, env, input: left.join("\n") + "\n" }).toString("utf8").split("\n").filter(Boolean));
+      return lines;
+    } catch (err) {
+      const e = /** @type {Error & { stdout?: Buffer | string, stderr?: string, status?: number | null }} */ (err);
+      const lost = /could not fetch ([0-9a-f]{40,64}) from promisor remote/.exec(String(e.stderr ?? ""))?.[1];
+      const said = String(e.stdout ?? "").split("\n").filter(Boolean);
+      // Each line answers the next object asked; the one git died at is the one after them.
+      if (e.status !== 128 || !lost || left[said.length] !== lost) throw err;
+      lines.push(...said, `${lost} missing`);
+      left = left.slice(said.length + 1);
+    }
+  }
+  return lines;
+}
+
 /** What the secret scan reads of one commit's added lines, in bytes: a bound on the hook's time, whatever the commit holds. */
 export const READ_BUDGET = 64 * 1024 * 1024;
 
@@ -605,7 +637,7 @@ export function stagedChanges(cwd, { env } = {}) {
   /** @type {Set<string>} */
   const missing = new Set();
   if (oids.length) {
-    for (const l of gitBytes(["cat-file", "--batch-check"], { cwd, env: readEnv, input: oids.join("\n") + "\n" }).toString("utf8").split("\n")) {
+    for (const l of batchCheck(cwd, oids, { env: readEnv })) {
       const m = /^([0-9a-f]+) (?:\w+ (\d+)|(missing))$/.exec(l);
       if (m?.[3]) missing.add(m[1]);
       else if (m) sizes.set(m[1], Number(m[2]));
@@ -816,7 +848,7 @@ export function stagedBlobs(cwd, paths, { env, limit = WIDE_LIMIT, total = READ_
   if (!want.length) return { blobs, unread };
   /** @type {Map<string, number>} */
   const sizes = new Map();
-  for (const l of gitBytes(["cat-file", "--batch-check"], { cwd, env: readEnv, input: want.map(([, oid]) => oid).join("\n") + "\n" }).toString("utf8").split("\n")) {
+  for (const l of batchCheck(cwd, want.map(([, oid]) => oid), { env: readEnv })) {
     const m = /^([0-9a-f]+) blob (\d+)$/.exec(l);
     if (m) sizes.set(m[1], Number(m[2]));
   }
@@ -908,7 +940,7 @@ function readWide(cwd, env, candidates, out, wideUnread) {
   /** @type {Map<string, number>} */
   const sizes = new Map();
   try {
-    const listed = gitBytes(["cat-file", "--batch-check"], { cwd, env, input: candidates.map((c) => c.oid).join("\n") + "\n" }).toString("utf8").split("\n");
+    const listed = batchCheck(cwd, candidates.map((c) => c.oid), { env });
     for (const l of listed) {
       const m = /^([0-9a-f]+) blob (\d+)$/.exec(l);
       if (m) sizes.set(m[1], Number(m[2]));
@@ -1161,9 +1193,7 @@ export function stagedVersions(cwd, paths, { env } = {}) {
   // An unmerged path has no one staged version.
   const read = wanted.filter((w) => !(w.side === "staged" && out.get(w.path)?.unread === "unmerged"));
   const sizes = new Map(
-    gitBytes(["cat-file", "--batch-check"], { cwd, env: readEnv, input: read.map((w) => w.oid).join("\n") + "\n" })
-      .toString("utf8")
-      .split("\n")
+    batchCheck(cwd, read.map((w) => w.oid), { env: readEnv })
       .map((l) => /^([0-9a-f]+) blob (\d+)$/.exec(l))
       .filter((m) => m !== null)
       .map((m) => [/** @type {RegExpExecArray} */ (m)[1], Number(/** @type {RegExpExecArray} */ (m)[2])]),

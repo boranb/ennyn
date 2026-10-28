@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { basename, join, posix, win32 } from "node:path";
 import { globToRegExp, literalGlob, matchAny } from "../core/glob.mjs";
 import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
-import { DIFF_GROUP, diffGroups, git, headCommit, parseTrailers, repoPath, stagedPaths, unpushedCount } from "../core/git.mjs";
+import { DIFF_GROUP, MISSING_OBJECT, batchCheck, diffGroups, git, headCommit, parseTrailers, repoPath, stagedAddedLines, stagedBlobs, stagedPaths, stagedVersions, unpushedCount } from "../core/git.mjs";
 import { t } from "../core/i18n.mjs";
 import * as filesModule from "../core/files.mjs";
 import { readIfThere } from "../core/files.mjs";
@@ -505,4 +505,106 @@ test("core: diffGroups splits a staged diff by size, in order: a file past DIFF_
   assert.deepEqual(diffGroups(["a", "big", "c"], changes), [["a"], ["big"], ["c"]]);
   assert.deepEqual(diffGroups(Array.from({ length: 1001 }, (_, i) => `f${i}`), new Map()).map((g) => g.length), [500, 500, 1]);
   assert.deepEqual(diffGroups([], changes), []);
+});
+
+/**
+ * A git that answers `cat-file --batch-check` as Debian 12's 2.39.5 does under GIT_NO_LAZY_FETCH: line by line, until
+ * an object EN_LOST names, where it says it could not fetch it and exits 128 (EN_SAY and EN_EXIT change those; EN_END
+ * dies after the last answer). Every other command is the real git. `vars(more)` puts it first on PATH; `calls()`
+ * counts its batch-check runs since then.
+ * @param {string} box
+ */
+function dyingGit(box) {
+  const bin = join(box, "bin");
+  mkdirSync(bin);
+  const real = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+  const log = join(box, "calls");
+  writeFileSync(
+    join(bin, "git"),
+    `#!/bin/sh
+case " $* " in *" --batch-check "*)
+  echo call >> '${log}'
+  while IFS= read -r o; do
+    case " $EN_LOST " in *" $o "*)
+      echo "warning: lazy fetching disabled; some objects may not be available" >&2
+      echo "fatal: \${EN_SAY:-could not fetch $o from promisor remote}" >&2
+      exit "\${EN_EXIT:-128}" ;;
+    esac
+    printf '%s\\n' "$o" | '${real}' "$@" || exit $?
+  done
+  if [ -n "$EN_END" ]; then echo "fatal: $EN_END" >&2; exit 128; fi
+  exit 0 ;;
+esac
+exec '${real}' "$@"
+`,
+  );
+  chmodSync(join(bin, "git"), 0o755);
+  return {
+    vars: (/** @type {Record<string, string>} */ more) => (writeFileSync(log, ""), { PATH: `${bin}:${process.env.PATH}`, ...more }),
+    calls: () => readFileSync(log, "utf8").split("\n").filter(Boolean).length,
+  };
+}
+
+test("core: batchCheck reads an object a partial clone lacks as missing where git dies at it (the May 2024 maintenance releases), asking for the rest again; any other failure throws", () => {
+  const box = mkdtempSync(join(tmpdir(), "en-batch-"));
+  const repo = join(box, "r");
+  mkdirSync(repo);
+  git(["init", "-q"], { cwd: repo });
+  const oid = (/** @type {string} */ text) => execFileSync("git", ["hash-object", "-w", "--stdin"], { cwd: repo, input: text, encoding: "utf8" }).trim();
+  const [a, b, c, d] = ["a\n", "bb\n", "ccc\n", "dddd\n"].map(oid);
+  const dying = dyingGit(box);
+  const ask = (/** @type {string[]} */ oids, /** @type {Record<string, string>} */ more) => {
+    const lines = batchCheck(repo, oids, { env: { ...process.env, ...dying.vars(more) } });
+    return { lines, calls: dying.calls() };
+  };
+  assert.deepEqual(ask([a, b, c], { EN_LOST: "" }), { lines: [`${a} blob 2`, `${b} blob 3`, `${c} blob 4`], calls: 1 });
+  assert.deepEqual(ask([a, b, c, d], { EN_LOST: `${b} ${d}` }), { lines: [`${a} blob 2`, `${b} missing`, `${c} blob 4`, `${d} missing`], calls: 2 });
+  assert.deepEqual(ask([b, a], { EN_LOST: b }), { lines: [`${b} missing`, `${a} blob 2`], calls: 2 });
+  // Another death is no missing object, nor one naming an object not next in line, nor another exit.
+  assert.throws(() => ask([a, b], { EN_LOST: b, EN_EXIT: "1" }), new RegExp(`could not fetch ${b}`));
+  assert.throws(() => ask([a, b], { EN_LOST: "", EN_END: "died after the last answer" }), /died after the last answer/);
+  assert.throws(() => ask([a, b], { EN_LOST: b, EN_SAY: "unable to read the object" }), /unable to read the object/);
+  assert.throws(() => ask([a, b], { EN_LOST: b, EN_SAY: `could not fetch ${c} from promisor remote` }), new RegExp(`could not fetch ${c}`));
+  // git that says missing itself (2.45 and later) is asked once.
+  assert.deepEqual(batchCheck(repo, [a, "0".repeat(39) + "1"]), [`${a} blob 2`, `${"0".repeat(39)}1 missing`]);
+  rmSync(box, { recursive: true, force: true });
+});
+
+test("core: where git dies at an object a partial clone lacks, the hook's readers read the rest: HEAD's version of a lock file, files read whole, added lines", () => {
+  const box = mkdtempSync(join(tmpdir(), "en-batch-readers-"));
+  const repo = join(box, "r");
+  mkdirSync(repo);
+  git(["init", "-q"], { cwd: repo });
+  writeFileSync(join(repo, "package-lock.json"), "{}\n");
+  git(["add", "package-lock.json"], { cwd: repo });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "init"], { cwd: repo });
+  const headLock = git(["rev-parse", "HEAD:package-lock.json"], { cwd: repo });
+  writeFileSync(join(repo, "package-lock.json"), '{"x":1}\n');
+  const utf16 = (/** @type {string} */ text) => Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, "utf16le")]);
+  writeFileSync(join(repo, "u.txt"), utf16("never use qq here\n"));
+  writeFileSync(join(repo, "v.txt"), utf16("never use vv here\n"));
+  git(["add", "package-lock.json", "u.txt", "v.txt"], { cwd: repo });
+  const u = git(["rev-parse", ":u.txt"], { cwd: repo });
+  const dying = dyingGit(box);
+  const saved = { PATH: process.env.PATH, EN_LOST: process.env.EN_LOST };
+  const lose = (/** @type {string} */ oid) => Object.assign(process.env, dying.vars({ EN_LOST: oid }));
+  try {
+    lose(headLock);
+    const lock = stagedVersions(repo, ["package-lock.json"]).get("package-lock.json");
+    assert.deepEqual({ staged: lock?.staged?.toString(), head: lock?.head, headUnread: lock?.headUnread }, { staged: '{"x":1}\n', head: null, headUnread: "notBlob" });
+    lose(u);
+    const whole = stagedBlobs(repo, ["u.txt", "v.txt"]);
+    assert.deepEqual([...whole.unread], [["u.txt", `${u} is not a blob git can read`]]);
+    assert.deepEqual([...whole.blobs.keys()], ["v.txt"]);
+    // The added lines: the lost file named missing, the other read and its UTF-16 decoded.
+    lose(u);
+    const unread = new Map();
+    const lines = stagedAddedLines(repo, ["u.txt", "v.txt"], { unread });
+    assert.deepEqual([...unread], [["u.txt", MISSING_OBJECT]]);
+    assert.ok(JSON.stringify(lines.get("v.txt") ?? []).includes("never use vv here"), JSON.stringify([...lines]));
+  } finally {
+    Object.assign(process.env, saved);
+    if (saved.EN_LOST === undefined) delete process.env.EN_LOST;
+    rmSync(box, { recursive: true, force: true });
+  }
 });
