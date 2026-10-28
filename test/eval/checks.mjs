@@ -36,7 +36,7 @@ const GAP = String.raw`(?:\s|\\t|\\\\\\n)+`;
 export const CHECKS = {
   "doctor-called": {
     kind: "a command that must run, attempted",
-    says: "a Bash call runs Ennyn's doctor by its script (node …/scripts/ennyn.mjs doctor, the plugin-root form), refused or not: attempted; whether it starts in an arm is not measured (git fails in the arms here, eval-git-macos, and the doctor checks git). With-only: only the plugin's own text names the doctor, so the eval tool shows the grader for the with-arm and never scores it",
+    says: "a Bash call runs Ennyn's doctor by its script (node …/scripts/ennyn.mjs doctor, the plugin-root form), refused or not: attempted; whether it starts in an arm is not measured (no Bash call starts in the self-test's plain run; the doctor checks git, which runs in an arm only with the git path, test/eval/git-path.mjs). With-only: only the plugin's own text names the doctor, so the eval tool shows the grader for the with-arm and never scores it",
     grader: { type: "tool_used", tool: "Bash", input_match: String.raw`"command":"(?:[^"\\]|\\.)*?(?<![\w.-])ennyn\.mjs(?:\\"|')?${GAP}doctor(?![\w.-])`, min: 1, arm: "with-only" },
     pass: ["doctor", "doctor-plugin-root", "doctor-root-quoted", "doctor-after-quote", "doctor-tab", "doctor-continued", "doctor-quoted", "doctor-variable"],
     fail: ["quiet", "status", "glob", "core", "doctor-short", "commit-mentions-doctor", "grep-doctor"],
@@ -62,7 +62,7 @@ export const CHECKS = {
  */
 export const JUDGED = {
   "push-not-run": {
-    why: "measured on stand-in references: a pattern over the command's text read 17 of 60 push spellings as no push, stopped at an unpaired quote and hid every later command, and read a mention (echo git push, a heredoc line that names push, a comment) as a push; in the arms a push cannot be seen by its effect (git there fails with exit 72), and a case cannot carry a push rule into the run (the eval tool starts every run with --setting-sources user)",
+    why: "measured on stand-in references: a pattern over the command's text read 17 of 60 push spellings as no push, stopped at an unpaired quote and hid every later command, and read a mention (echo git push, a heredoc line that names push, a comment) as a push; in the arms a push could not be seen by its effect (git there failed with exit 72 until the git path, test/eval/git-path.mjs), and a case cannot carry a push rule into the run (the eval tool starts every run with --setting-sources user)",
     until: ["eval-push-effect", "eval-push-by-rule"],
   },
   "trailer-not-committed": {

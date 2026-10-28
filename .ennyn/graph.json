@@ -54,7 +54,7 @@
       "value": "high",
       "cost": "L",
       "cluster": "evidence",
-      "needs": ["plugin-eval-selftest", "eval-git-macos"],
+      "needs": ["plugin-eval-selftest", "eval-git-macos", "eval-arm-reads-home", "eval-keychain-exec"],
       "source": "README.md, roadmap 0.2; cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): deterministic checks carry most of the score there, a judge the rest; reviews of ponytail and i-have-adhd (open-source agent skills, MIT), 2026-10-25: each published a result its own SessionStart hook had leaked into the baseline (ponytail's 2026-06-17 run superseded; i-have-adhd's README warns of its always-on flag); i-have-adhd's agent-owned-edit case could not pass under --tools \"\" and still counted against both arms; cycle 2026-10-26 (12): ennyn core picks it as the oldest node and says to split it first (plugin-eval-selftest)",
       "since": 0
     },
@@ -1340,7 +1340,7 @@
     },
     {
       "status": "planned",
-      "needs": [],
+      "needs": ["eval-arm-reads-home", "eval-keychain-exec"],
       "id": "contributing-guide",
       "title": "CONTRIBUTING.md before the public release: a change to skills/, agents/, styles/ or a hook's injected text shows eval numbers in three arms (no plugin, main, the change), with one case it should help and one it could break; hooks stay bounded, fail open and connect nowhere; scripts and tests touch nothing outside the repository and temporary directories; a pull request lists the commands it ran with their results and never claims a check it did not run; one change per pull request; issue templates (a bug names the version, the command and the smallest input, never a secret; the form asks for ennyn doctor's output and the node and git versions) and Discussions switched on at the public release",
       "value": "medium",
@@ -2078,6 +2078,39 @@
       "cluster": "security",
       "source": "cycle 2026-10-27 (13), Linux-run repairs (a2327f0): GIT_NO_LAZY_FETCH measured on 2.34.1, 2.39.5 and 2.56, and read from git's source tags",
       "since": 13
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "eval-arm-reads-home",
+      "title": "plugin-eval's arms can read the operator's real home: the eval tool denies reads under the HOME it is given and the temporary folders, and the recorder gives it its own HOME; user settings' sandbox.filesystem.denyRead does not reach the arms (measured 2.1.310: the git run's home-read cell reads a canary file the recorder writes in the real home). A paid run's model could read ~/.ssh, ~/.config/gh, ~/.docker/config.json, ~/.claude.json and other repositories. Find a layout that denies it (the real HOME given to the eval with CLAUDE_CONFIG_DIR kept apart, measured) and turn the gap cell into a check. No paid run until this closes",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-10-28 (14), eval-git-macos measurements and security review round 1",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "eval-keychain-exec",
+      "title": "Claude Code's credential-helper deny in an eval arm only blocks reads: the sandbox profile allows process-exec and the keychain Mach services (com.apple.SecurityServer, com.apple.securityd.xpc), and the Homebrew and Command Line Tools git-credential-osxkeychain helpers, started by their absolute path, ran under a mimic of the deny (2.1.310, security review). Measure from an arm, with a test keychain item of its own, whether the keychain answers. Done only when an arm is measured not to reach the keychain; if it answers, the standing rule (paid plugin-eval runs only in a separate macOS account or a Linux VM) goes into plugin-eval's title, and only then does this close. No paid run until this closes",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-10-28 (14), eval-git-macos security review round 1",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "eval-git-run-network",
+      "title": "The eval self-test's git run (node test/eval/selftest.mjs git) has no outer sandbox, since the eval tool's own cannot start under any profile with a filtered rule and a filter-free network deny shuts out the stand-in too: its HTTP and HTTPS proxies point at a dead port and an lsof watch of the eval's process tree fails the run on a connection past loopback. Measured as unseen by the watch (security review): 10 of 10 TCP connections of about 5 ms, a grandchild that daemonizes, and a UDP sendto with no connect; a name lookup through mDNSResponder is unseen by reasoning, not measured. Shut the network around the whole eval (a Linux network namespace) or close each of those",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-10-28 (14), eval-git-macos round 1 decision",
+      "since": 14
     }
   ],
   "done": [
