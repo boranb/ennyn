@@ -1,5 +1,5 @@
 {
-  "description": "ennyn: inject path-scoped project rules when a file tool touches a side copy (git worktree or plain copy) of the project; forget them after compaction so they come back; give each session the project's conversation style; record the plugin version each session runs, which a commit-msg hook installed from the plugin follows",
+  "description": "ennyn. In every session: record the plugin version the session runs in the plugin's own data folder and name it to the session's commands (ENNYN_PLUGIN_DATA, ENNYN_PLUGIN_ROOT), which a commit-msg hook installed from the plugin follows; this reads nothing of the project. Everything else only in a project with an Ennyn config (.ennyn/config.json at the repository's top, or the file ENNYN_CONFIG names; anywhere else those hooks end at once, printing and writing nothing): inject the project's path-scoped rules when a file tool touches a side copy (git worktree or plain copy) of it; forget them after compaction or /clear so they come back, a list left from an earlier config too; give the session the conversation style the config sets. No hook makes a network call.",
   "hooks": {
     "PostToolUse": [
       {

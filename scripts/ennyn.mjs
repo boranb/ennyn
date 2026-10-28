@@ -10,7 +10,7 @@ import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { loadConfig, ConfigError } from "../core/config.mjs";
-import { HOOK_READ_ENV, MISSING_OBJECT, READ_BUDGET, blobBytes, diffGroups, git, headBlob, headCommit, hookIndexFile, indexEntries, indexKinds, indexNames, mergeHeads, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, stateRoot, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
+import { HOOK_READ_ENV, MISSING_OBJECT, READ_BUDGET, blobBytes, diffGroups, git, headBlob, headCommit, hookIndexFile, indexEntries, indexKinds, indexNames, mergeHeads, projectRoot, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, stateRoot, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
 import { ends, jsonShown, shown, t, tShown, unshownEscaped } from "../core/i18n.mjs";
 import { globToRegExp, matchAny } from "../core/glob.mjs";
 import { checkCommitShape, nameShown, secretErrors, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
@@ -114,7 +114,7 @@ function parseArgs(args, { options = [], flags = [], positional = 0 }) {
 
 /** Repository root when inside one, else the working directory; a git that fails stops the command. */
 function projectDir() {
-  return repoPath("--show-toplevel", { cwd: process.cwd() }) ?? process.cwd();
+  return projectRoot(process.cwd());
 }
 
 /** @param {string} cwd */

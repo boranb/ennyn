@@ -68,7 +68,16 @@ export const GATES = [
       { id: "i18n-key", why: "a message the Turkish catalog lacks", file: "i18n/tr.json", old: '  "doctor.summary": "sorun: {fail} · uyarı: {warn}",\n', new: "", pattern: "i18n: every English key exists" },
       { id: "plugin-ask", why: "a push no rule asks about", file: ".claude/settings.json", old: '"Bash(git push *)"', new: '"Bash(git status *)"', pattern: "plugin: the repository asks before every command" },
       { id: "hooks-matcher", why: "a hook wired for fewer tools than it handles", file: "hooks/hooks.json", old: '"matcher": "Read|Edit|Write|MultiEdit|NotebookEdit"', new: '"matcher": "Read|Edit|Write"', pattern: "hooks.json: the PostToolUse matcher sends exactly" },
+      { id: "hooks-gate", why: "every hook acting in a project without a config", file: "adapters/claude-code/project.mjs", old: "return config.configPath === null ? null : config;", new: "return config;", pattern: "hooks: in a project without an Ennyn config" },
+      { id: "hooks-gate-side-copy", why: "the side-copy hook past the gate", file: "adapters/claude-code/hooks/side-copy-rules.mjs", old: "  if (!config) return 0;\n", new: "", pattern: "hooks: in a project without an Ennyn config" },
+      { id: "hooks-every-session", why: "the version record written only where a config is", file: "adapters/claude-code/hooks/plugin-root.mjs", old: "  if (!root || !data) return;", new: "  if (!root || !data || !process.env.ENNYN_CONFIG) return;", pattern: "hooks: in a project without an Ennyn config" },
+      { id: "hooks-git-filter", why: "the side-copy and style hooks asking git in every project", file: "adapters/claude-code/project.mjs", old: "  if (!mayHold(projectDir, rel)) return null;\n", new: "", pattern: "hooks: in a project without an Ennyn config" },
+      { id: "hooks-record-reads-config", why: "the version record reading the config", file: "adapters/claude-code/hooks/plugin-root.mjs", old: "  const root = process.env.CLAUDE_PLUGIN_ROOT;", new: "  if (process.env.ENNYN_CONFIG) (await import(\"node:fs\")).readFileSync(process.env.ENNYN_CONFIG);\n  const root = process.env.CLAUDE_PLUGIN_ROOT;", pattern: "hooks: the version record reads nothing of the project" },
+      { id: "hooks-gate-judge", why: "runs that never reach a side copy, so silence proves nothing", file: "test/plugin.test.mjs", old: 'file: join(box, "side", "src", "a.js")', new: 'file: join(box, "proj", "src", "a.js")', pattern: "hooks: in a project without an Ennyn config" },
     ],
+    others: {
+      "hooks: one predicate says whether a project has a config, found where the CLI finds it: nothing there is none, something there that does not load throws": "a unit of adapters/claude-code/project.mjs on temporary projects; it reads no file of the repository",
+    },
   },
   {
     test: "test/engines.test.mjs",

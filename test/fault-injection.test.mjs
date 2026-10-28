@@ -446,8 +446,14 @@ function run(c, fault) {
       } catch {
         // No git call.
       }
-      // A copy's own path and the mutate timings differ from run to run.
-      const norm = (/** @type {string} */ s) => s.split(repo).join("<repo>").replace(/^Tests pass without mutants in .*$/gm, "<baseline>");
+      // A copy's own path, the mutate timings and the side-copy hook's rule markers (a token drawn for each text)
+      // differ from run to run.
+      const norm = (/** @type {string} */ s) =>
+        s
+          .split(repo)
+          .join("<repo>")
+          .replace(/^Tests pass without mutants in .*$/gm, "<baseline>")
+          .replace(/(<\/?rule-)[0-9a-f]{12}\b/g, "$1<token>");
       let reads = "";
       try {
         reads = readFileSync(join(box, "fs-calls"), "utf8");

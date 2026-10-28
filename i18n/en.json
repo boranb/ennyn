@@ -27,7 +27,7 @@
   "cli.secretsExceptUnstaged": "Warning: security.secrets.except in the work tree's {path} is not what this commit holds; the commit's own list was used.",
   "cli.secretsExceptWidened": "Warning: this commit changes security.secrets.except, and the new list lets {n} staged path(s) through unscanned ({paths}). Review that change: a secret there is not refused.",
   "shape.allowNoReason": "\"{marker}\" needs a reason of at least 8 characters before the closing bracket.",
-  "sidecopy.header": "Rules that apply to the file {relPath} in the project (you are working in a side copy, where path-scoped rules do not load):",
+  "sidecopy.header": "Rules that apply to the file {relPath} in the project, given here because you are working in a side copy of it:",
   "sidecopy.tooLarge": "Rules that apply to the file {relPath} in the project (too large to inline; read them with the Read tool):",
   "sidecopy.unreadableMore": "…and {n} more",
   "sidecopy.changed": "this text replaces the one given before",

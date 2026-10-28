@@ -27,7 +27,7 @@
   "cli.secretsExceptUnstaged": "Uyarı: çalışma ağacındaki {path} içinde security.secrets.except bu commit'in tuttuğu liste değil; commit'in kendi listesi kullanıldı.",
   "cli.secretsExceptWidened": "Uyarı: bu commit security.secrets.except'i değiştiriyor ve yeni liste hazırlanmış {n} yolu taranmadan geçiriyor ({paths}). O değişikliği gözden geçir: orada bir sır reddedilmez.",
   "shape.allowNoReason": "\"{marker}\" kapanış köşeli parantezinden önce en az 8 karakterlik bir gerekçe ister.",
-  "sidecopy.header": "Projede {relPath} dosyası için geçerli kurallar (yan kopyada çalışıyorsun; yol kapsamlı kurallar burada yüklenmez):",
+  "sidecopy.header": "Projede {relPath} dosyası için geçerli kurallar; projenin bir yan kopyasında çalıştığın için burada veriliyor:",
   "sidecopy.tooLarge": "Projede {relPath} dosyası için geçerli kurallar (satır içine sığmayacak kadar büyük; Read aracıyla oku):",
   "sidecopy.unreadableMore": "…ve {n} tane daha",
   "sidecopy.changed": "bu metin daha önce verilenin yerine geçer",

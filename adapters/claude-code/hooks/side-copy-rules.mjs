@@ -2,13 +2,15 @@
 /**
  * Claude Code PostToolUse hook: bridges path-scoped rules into side copies.
  *
- * Claude Code loads a `.claude/rules/*.md` file with a `paths:` list only when
- * a tool touches a matching path inside the project. Work done in a side copy
- * (a git worktree, or a plain copy under `sideCopy.roots`) therefore runs with
- * no path-scoped rules at all. For Read/Edit/Write/MultiEdit/NotebookEdit on a
- * side-copy path, this hook maps the path back to the project, finds the rules
- * that apply, and hands them to the model as `additionalContext`, once per
- * rule per session.
+ * Claude Code loads a `.claude/rules/*.md` file with a `paths:` list when a
+ * tool touches a matching path of the project. Work done in a side copy (a git
+ * worktree, or a plain copy under `sideCopy.roots`) is at other paths, where
+ * the project's rules may not load; Claude Code 2.1.310 was seen to load a
+ * copy's own rules in a worktree under `.claude/worktrees/` (cycle 14 review),
+ * which are the copy's text, not the project's. For
+ * Read/Edit/Write/MultiEdit/NotebookEdit on a side-copy path, this hook maps
+ * the path back to the project, finds the project's rules that apply, and
+ * hands them to the model as `additionalContext`, once per rule per session.
  *
  * Exit codes: 0 on every handled path (including "nothing to do" and malformed
  * input); 1 only when the hook cannot run (bad config). Never 2: in Claude Code
@@ -18,14 +20,14 @@
  */
 
 import { resolveStateDir, stateRoot } from "../../../core/git.mjs";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { readRegular, writeState } from "../../../core/files.mjs";
 import { fileURLToPath } from "node:url";
 import { isAbsolute, join, resolve } from "node:path";
-import { loadConfig } from "../../../core/config.mjs";
 import { shown, t } from "../../../core/i18n.mjs";
 import { mapSideCopyPath } from "../../../side-copy/map-path.mjs";
+import { hookProjectDir, projectConfig } from "../project.mjs";
 import { LEAVES, isLimit, loadPathScopedRules, readRuleBody, reasonText, rulesForPath } from "../rules-index.mjs";
 
 /** The file tools the hook reads a path from; hooks/hooks.json's matcher sends exactly these (test/plugin.test.mjs). */
@@ -189,6 +191,19 @@ export function named(name) {
 /** An error as one line the user can read: no line breaks, and no control character a terminal would act on. @param {string} s */
 export const said = (s) => shown(s.trim().replace(/\s*\n\s*(?:- )?/g, "; ")).text;
 
+/**
+ * The token a text's rule markers hold (`<rule-<token> file=…>` … `</rule-<token>>`): 12 hex characters drawn for
+ * each text, again while a body holds them. A body is given byte for byte, so nothing in it (a `</rule>`, code
+ * such as `Promise<Rule[]>`, a look-alike character) can end its element, and the cost is one search per body.
+ * @param {string[]} bodies @param {() => string} [draw]
+ */
+export function boundary(bodies, draw = () => randomBytes(6).toString("hex")) {
+  for (;;) {
+    const token = draw();
+    if (!bodies.some((b) => b.includes(token))) return token;
+  }
+}
+
 /** The note on rule files that cannot be read takes at most this much of the cap; past it, a count. */
 const NOTE_MAX = 2000;
 
@@ -208,10 +223,11 @@ const NOTE_MAX = 2000;
  * @param {Map<string, string>} [limits] a walk's limit reached at a path (depth, entries), shown beside it
  * @param {{ file: string, pattern: string }[]} [bad] paths patterns no expression can hold: skipped, which the text
  *   says, with the rule's file and the pattern's start
- * @returns {{ text: string, given: Set<string>, said: Set<string>, badSaid: Set<{ file: string, pattern: string }> }} `said`:
- *   the links out the text names; `badSaid`: the patterns it names
+ * @param {() => string} [draw] the marker token's source (boundary); random unless a test gives one
+ * @returns {{ text: string, given: Set<string>, said: Set<string>, badSaid: Set<{ file: string, pattern: string }>, token: string }} `said`:
+ *   the links out the text names; `badSaid`: the patterns it names; `token`: the one the rule markers hold (boundary)
  */
-export function render(relPath, rules, maxBytes, lang, unreadable = [], outside = [], limits = new Map(), bad = []) {
+export function render(relPath, rules, maxBytes, lang, unreadable = [], outside = [], limits = new Map(), bad = [], draw = undefined) {
   // The side copy's name: no trusted text (a worktree may hold a pull request under review), always a value.
   const path = value(relPath);
   const item = (/** @type {string} */ file) => named(file).text;
@@ -237,6 +253,7 @@ export function render(relPath, rules, maxBytes, lang, unreadable = [], outside 
   const badSaid = new Set(bad.slice(0, badKept).filter((b) => !named(b.file).cut));
   const after = (note ? bytes(note) + 2 : 0) + (outsideNote ? bytes(outsideNote) + 2 : 0) + (badNote ? bytes(badNote) + 2 : 0);
   const budget = Math.min(maxBytes, CONTEXT_CAP) - after - bytes([top, ...rules.map((r) => `- ${item(r.file)}`)].join("\n")) - 2;
+  const token = boundary(rules.map((r) => r.body), draw);
   /** @type {string[]} */
   const blocks = [];
   /** @type {string[]} */
@@ -247,7 +264,7 @@ export function render(relPath, rules, maxBytes, lang, unreadable = [], outside 
   for (const r of rules) {
     const changed = r.changed ? ` changed="${t("sidecopy.changed", {}, lang)}"` : "";
     const file = named(r.file);
-    const block = `<rule file=${file.quoted ? file.text : `"${file.text}"`}${changed}>\n${r.body}\n</rule>`;
+    const block = `<rule-${token} file=${file.quoted ? file.text : `"${file.text}"`}${changed}>\n${r.body}\n</rule-${token}>`;
     const add = bytes(block) + 2;
     if (size + add <= budget) {
       blocks.push(block);
@@ -267,7 +284,7 @@ export function render(relPath, rules, maxBytes, lang, unreadable = [], outside 
   if (note) parts.push(note);
   if (outsideNote) parts.push(outsideNote);
   if (badNote) parts.push(badNote);
-  return { text: parts.join("\n\n"), given, said, badSaid };
+  return { text: parts.join("\n\n"), given, said, badSaid, token };
 }
 
 /** @returns {Promise<number>} exit code */
@@ -285,18 +302,25 @@ async function main() {
   const rawPath = [ti.file_path, ti.path, ti.notebook_path].find((p) => typeof p === "string" && p);
   if (!rawPath) return 0;
 
-  const projectDir = process.env.CLAUDE_PROJECT_DIR || (typeof input.cwd === "string" && input.cwd) || process.cwd();
+  const projectDir = hookProjectDir(input);
   const absPath = isAbsolute(rawPath) ? rawPath : resolve(typeof input.cwd === "string" ? input.cwd : projectDir, rawPath);
 
   let config;
   try {
-    config = loadConfig({ cwd: projectDir });
+    config = projectConfig(projectDir);
   } catch (err) {
     process.stderr.write(`${t("sidecopy.cannotRun", { reason: said(/** @type {Error} */ (err).message) }, "en")}\n`);
     return 1;
   }
+  // Not a project Ennyn works in (../project.mjs): nothing of it is read.
+  if (!config) return 0;
 
-  const mapped = mapSideCopyPath(absPath, { projectDir, roots: config.sideCopy.roots });
+  // The roots are the config's, relative to where it was found (the repository's top), not to a session started
+  // below it; as real paths, as the mapping resolves them.
+  const base = realpathSync.native(config.projectDir);
+  // An entry that is no name stays as it is: the mapping skips it, as before.
+  const roots = /** @type {string[]} */ (config.sideCopy.roots.map((/** @type {unknown} */ r) => (typeof r === "string" && r ? resolve(base, r) : r)));
+  const mapped = mapSideCopyPath(absPath, { projectDir, roots });
   if (!mapped) return 0;
 
   /** @type {string[]} */

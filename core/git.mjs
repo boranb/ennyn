@@ -263,6 +263,17 @@ export function repoPath(flag, { cwd, env = process.env }) {
 }
 
 /**
+ * The project a command or a hook started at `cwd` works for, and where its config is read: the repository's top
+ * when `cwd` is in one, else `cwd`. One answer for the CLI and the Claude Code hooks (adapters/claude-code/project.mjs):
+ * a session started in a subdirectory or a package of a configured repository reads the config the CLI reads.
+ * A git that fails throws (repoPath).
+ * @param {string} cwd
+ */
+export function projectRoot(cwd) {
+  return repoPath("--show-toplevel", { cwd }) ?? cwd;
+}
+
+/**
  * HEAD's commit; null when the repository has no commit yet, or `cwd` is in no repository. A branch ref git
  * cannot read (garbage, no permission) makes `rev-parse --verify -q HEAD` exit 1 like a branch with no
  * commit; git log tells the two apart, in the C locale, and a broken one throws.
