@@ -49,24 +49,31 @@
     },
     {
       "id": "plugin-eval",
-      "title": "claude plugin eval cases that run the same tasks with and without the plugin and compare the outcome; each case states what is checked deterministically (commands that must and must not run, such as git push without approval or a commit with an assistant trailer; text the answer must and must not hold; an approval asked or a refusal given; a cap on tool calls), a judge only for what no check reads; each arm runs with only the plugin under test and proves it (a fresh directory outside any repository, CLAUDE.md, auto memory and user settings off, strict MCP, a pinned model, the plugin by --plugin-dir; a finished cell's transcript read for what the arm was given), a spending cap per arm, runs resumable per case, trial and arm, arms interleaved case by case; every deterministic check ships a passing and a failing reference that a self-test proves with no model call before any paid run; a cell that runs commands runs in a sandbox (no network beyond the model's API, an empty environment, writes only in the cell's directory); results name the date, CLI and model versions, cases, trials and cost, and say their limits; no git hook fires in an eval run (2.1.310: GIT_CONFIG_COUNT forces core.hooksPath=/dev/null and hook.*.enabled=false, and execution.env takes only EVAL_* keys), so Ennyn's commit gate is not compared there, only what the agent does",
+      "title": "claude plugin eval cases that run the same tasks with and without the plugin and compare the outcome; each case states what is checked deterministically (commands that must and must not run, such as git push without approval or a commit with an assistant trailer; text the answer must and must not hold; an approval asked or a refusal given; a cap on tool calls), a judge only for what no check reads; each arm runs with only the plugin under test and proves it (a fresh directory outside any repository, CLAUDE.md, auto memory and user settings off, strict MCP, a pinned model, the plugin by --plugin-dir; a finished cell's transcript read for what the arm was given), a spending cap per arm, runs resumable per case, trial and arm, arms interleaved case by case; every deterministic check ships a passing and a failing reference that a self-test proves with no model call before any paid run; a cell that runs commands runs in a sandbox (no network beyond the model's API, an empty environment, writes only in the cell's directory); results name the date, CLI and model versions, cases, trials and cost, and say their limits; no git hook fires in an eval run (2.1.310: GIT_CONFIG_COUNT forces core.hooksPath=/dev/null and hook.*.enabled=false, and execution.env takes only EVAL_* keys), so Ennyn's commit gate is not compared there, only what the agent does; arms' PATH starts with the git path (test/eval/git-path.mjs) in a folder the arms can read (the plugin's); an arm cannot git init or clone a working copy, so repositories come from the scaffold; the arm's cwd lies inside the eval's own home repository; whether the without-plugin arm can read the plugin folder, and so the git path, is not measured: if not, the arms are not comparable; a host or infrastructure failure is an outcome of its own, never the plugin arm's failure, reported with a strict and a completed-only figure; each finished cell is keyed by a hash of its inputs (case text, arm, plugin commit, CLI and model versions, check code), and an unreadable result store stops the run instead of starting over",
       "status": "planned",
       "value": "high",
       "cost": "L",
       "cluster": "evidence",
-      "needs": ["plugin-eval-selftest", "eval-git-macos", "eval-arm-reads-home", "eval-keychain-exec"],
-      "source": "README.md, roadmap 0.2; cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): deterministic checks carry most of the score there, a judge the rest; reviews of ponytail and i-have-adhd (open-source agent skills, MIT), 2026-10-25: each published a result its own SessionStart hook had leaked into the baseline (ponytail's 2026-06-17 run superseded; i-have-adhd's README warns of its always-on flag); i-have-adhd's agent-owned-edit case could not pass under --tools \"\" and still counted against both arms; cycle 2026-10-26 (12): ennyn core picks it as the oldest node and says to split it first (plugin-eval-selftest)",
+      "needs": [
+        "plugin-eval-selftest",
+        "eval-git-macos",
+        "eval-arm-reads-home",
+        "eval-keychain-exec"
+      ],
+      "source": "README.md, roadmap 0.2; cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): deterministic checks carry most of the score there, a judge the rest; reviews of ponytail and i-have-adhd (open-source agent skills, MIT), 2026-10-25: each published a result its own SessionStart hook had leaked into the baseline (ponytail's 2026-06-17 run superseded; i-have-adhd's README warns of its always-on flag); i-have-adhd's agent-owned-edit case could not pass under --tools \"\" and still counted against both arms; cycle 2026-10-26 (12): ennyn core picks it as the oldest node and says to split it first (plugin-eval-selftest); cycle 2026-10-28 (14), eval-git-macos (b244cfd); reviews of ScrapeGraphAI's paper repository (separate schema-rejected outcome, strict and accepted-only metrics) and Scrapling's spider checkpoints (an unreadable checkpoint logs an error and the crawl starts fresh instead of stopping), 2026-10-28",
       "since": 0
     },
     {
       "id": "codex-manifest",
-      "title": "Codex plugin manifest, so the skills and the CLI work there too",
+      "title": "Codex plugin manifest, so the skills and the CLI work there too; Codex reads skills from ~/.agents/skills, the older $CODEX_HOME/skills, .agents/skills in each folder from the project root down to the working directory, and the skills/ folder of each project .codex/ layer and of the system config folder (codex-rs host_roots.rs), and runs them as $name; plugin agents need the agents/<name>.md fallback (reviewer-agent-names)",
       "status": "planned",
       "value": "medium",
       "cost": "M",
       "cluster": "distribution",
-      "needs": ["skills-outside-claude-code"],
-      "source": "README.md, roadmap 0.2; reviews of ponytail and i-have-adhd (MIT), 2026-10-25: both ship .codex-plugin/plugin.json with .agents/plugins/marketplace.json, and Codex asks the user to trust a plugin's hooks in /hooks before they run",
+      "needs": [
+        "skills-outside-claude-code"
+      ],
+      "source": "README.md, roadmap 0.2; reviews of ponytail and i-have-adhd (MIT), 2026-10-25: both ship .codex-plugin/plugin.json with .agents/plugins/marketplace.json, and Codex asks the user to trust a plugin's hooks in /hooks before they run; openai/codex e6de6a2423 read 2026-10-28; Understand-Anything issue #340",
       "since": 0
     },
     {
@@ -130,13 +137,13 @@
     },
     {
       "id": "impact-import-scope",
-      "title": "impact S5 matches an alias by path ending across packages; S3/S5 read import text in a multi-line template string; re-exports and template dynamic imports are not followed",
+      "title": "impact S5 matches an alias by path ending across packages; S3/S5 read import text in a multi-line template string; re-exports and template dynamic imports are not followed; workspace package names (import '@acme/utils') map to their directories from the workspace package.json names; if tsconfig paths are read, the reader respects string literals (a regex that strips comments drops every alias when the file has a comment and a /* inside one string is closed by a */ in a later one, as in '@/*' and '**/*.ts')",
       "status": "planned",
-      "value": "low",
+      "value": "medium",
       "cost": "S",
       "cluster": "impact",
       "needs": [],
-      "source": "review, cycle 2026-10-20 (3), impact-audit",
+      "source": "review, cycle 2026-10-20 (3), impact-audit; review of Understand-Anything (MIT, 4e6d329), 2026-10-28: issues #589 (workspace names) and #502, #629 (the comment regex)",
       "since": 3
     },
     {
@@ -196,13 +203,13 @@
     },
     {
       "id": "config-failopen-scope",
-      "title": "A config problem in a key commit-check never reads (impact.fakeGlobs) switches the commit-msg hook off and silences the style hook; check only what each command reads, or name the key in the hook's warning; a config refused after an upgrade (a metricsLog under .git/, which cycle 11 allowed and cycle 12 refuses) turns the hook off for every commit, saying so each time",
+      "title": "A config problem in a key commit-check never reads (impact.fakeGlobs) switches the commit-msg hook off and silences the style hook; check only what each command reads, or name the key in the hook's warning; a config refused after an upgrade (a metricsLog under .git/, which cycle 11 allowed and cycle 12 refuses) turns the hook off for every commit, saying so each time; a config that loaded before an update and is refused after it turns the hook off ('not checked') on every commit, and commit-check stops on keys it never reads (paths.metricsLog since cycle 14's .jsonl rule)",
       "status": "planned",
       "value": "medium",
       "cost": "M",
       "cluster": "gates",
       "needs": [],
-      "source": "review, cycle 2026-10-20 (4), doc-cochange; cycle 2026-10-26 (12), budget audit round 2 (security and correctness reviewers)",
+      "source": "review, cycle 2026-10-20 (4), doc-cochange; cycle 2026-10-26 (12), budget audit round 2 (security and correctness reviewers); cycle 14 security audit review round 2 (security reviewer)",
       "since": 4
     },
     {
@@ -329,13 +336,13 @@
     },
     {
       "id": "floor-run-record",
-      "title": "Nothing stops a push without a passing npm run test:linux at HEAD: record the commit it passed and have push-check say when HEAD has none",
+      "title": "Nothing stops a push without a passing npm run test:linux at HEAD: record the commit it passed and have push-check say when HEAD has none; the record holds a digest of the tracked files outside docs and each container's node, git and npm versions, so push-check compares digests and a docs-only commit keeps the record",
       "status": "planned",
       "value": "low",
       "cost": "M",
       "cluster": "gates",
       "needs": [],
-      "source": "review, cycle 2026-10-23 (6), ci-free-quota",
+      "source": "review, cycle 2026-10-23 (6), ci-free-quota; review of agent-reach (MIT, 14c2134), 2026-10-28: release acceptance rows tied to a source digest, valid for 7 days, each waiver with a reason (scripts/check_release_acceptance.py)",
       "since": 6
     },
     {
@@ -410,11 +417,11 @@
         "hook-trust-audit"
       ],
       "id": "agent-setup-risk",
-      "title": "init-scan and doctor judge the project's agent setup: broad allow rules (Bash(*)), hooks that run remote scripts, MCP servers and plugins from unpinned sources, a Claude Code version below a known fix (2.1.179: plugin auto-update checkout); allow rules ranked by what they reach: read-only, local writes, many files or systems at once, and actions that leave the machine or cannot be undone (push, publish, deploy, a network fetch piped to a shell), the last warned about whenever no prompt guards them; a plugin hook that installs packages or rebuilds native modules at run time (npm install from a hook on first run or after a Node change), and an MCP server started with npx -y and no version, which fetches whatever the registry serves at each start",
+      "title": "init-scan and doctor judge the project's agent setup: broad allow rules (Bash(*)), hooks that run remote scripts, MCP servers and plugins from unpinned sources, a Claude Code version below a known fix (2.1.179: plugin auto-update checkout); allow rules ranked by what they reach: read-only, local writes, many files or systems at once, and actions that leave the machine or cannot be undone (push, publish, deploy, a network fetch piped to a shell), the last warned about whenever no prompt guards them; a plugin hook that installs packages or rebuilds native modules at run time (npm install from a hook on first run or after a Node change), and an MCP server started with npx -y and no version, which fetches whatever the registry serves at each start; also hook text that tells the agent not to ask, and a committed file that switches such a hook on (Understand-Anything's .ua/config.json autoUpdate turns on hooks saying 'Do not ask the user for confirmation — just do it.'); a skill whose allowed-tools grant Bash and whose body installs with no pinned version (npx -y, npm install -g x@latest, curl | sh); an instruction to fetch and follow a document from a branch or releases/latest URL. Measured 2026-10-28: a committed settings.json with enabledPlugins, extraKnownMarketplaces, Bash(*) and a SessionStart hook echoing that text, and an .mcp.json with npx -y, passed the commit hook and doctor said nothing; init-scan lists only the hook event names (setup/scan.mjs:957-985)",
       "value": "high",
       "cost": "M",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (8), user: security; 2026 plugin and hook findings (trusted channel, permission rewrites, Plugin4Shell); cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): tools carry risk tiers, the highest never run without a person's approval; review of context-mode (MIT), 2026-10-25: hooks/ensure-deps.mjs runs npm install of a native module on first run and rebuilds it when the Node ABI changes; its README offers an MCP-only install as npx -y context-mode",
+      "source": "cycle 2026-10-24 (8), user: security; 2026 plugin and hook findings (trusted channel, permission rewrites, Plugin4Shell); cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): tools carry risk tiers, the highest never run without a person's approval; review of context-mode (MIT), 2026-10-25: hooks/ensure-deps.mjs runs npm install of a native module on first run and rebuilds it when the Node ABI changes; its README offers an MCP-only install as npx -y context-mode; review of Understand-Anything (MIT, 4e6d329), agent-reach (MIT, 14c2134) and ScrapeGraphAI's just-scrape skill (allowed-tools: Bash with npm install -g just-scrape@latest), 2026-10-28; measured with fixture repositories",
       "since": 8
     },
     {
@@ -437,7 +444,7 @@
       "value": "high",
       "cost": "M",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (8), review round 1 of guards-under-load; measured in the T4 landing run; cycle 2026-10-25 (10): the secrets linear-time ratio failed two full runs at load 8-40 (fixed with CPU time, 1ccb39b); the other wall-clock reads remain; cycle 2026-10-26 (12): at load 50-274 single full runs failed on the fence-reader timing test, a verdicts secrets cell (the hook past 60 s), guards' inner runs, deps' OSV test (stalled 15 minutes) and mutate's runs that wait; each file passed alone, so no run of the cycle's last two landings was clean on the first try; cycle 2026-10-27 (13): at load 83-115 single full runs failed on mutate's runs that wait and its owner-stamp test (the parse check gave no answer), the fault matrix control (its fake git writes the pid it counts only after starting sleep, so a 1 s limit can stop it first: write a marker first), guards' baselines of fault-injection and verdicts, and two hook tests (exit null); each file passed alone",
+      "source": "cycle 2026-10-24 (8), review round 1 of guards-under-load; measured in the T4 landing run; cycle 2026-10-25 (10): the secrets linear-time ratio failed two full runs at load 8-40 (fixed with CPU time, 1ccb39b); the other wall-clock reads remain; cycle 2026-10-26 (12): at load 50-274 single full runs failed on the fence-reader timing test, a verdicts secrets cell (the hook past 60 s), guards' inner runs, deps' OSV test (stalled 15 minutes) and mutate's runs that wait; each file passed alone, so no run of the cycle's last two landings was clean on the first try; cycle 2026-10-27 (13): at load 83-115 single full runs failed on mutate's runs that wait and its owner-stamp test (the parse check gave no answer), the fault matrix control (its fake git writes the pid it counts only after starting sleep, so a 1 s limit can stop it first: write a marker first), guards' baselines of fault-injection and verdicts, and two hook tests (exit null); each file passed alone; cycle 2026-10-28 (14): the Linux run measured waits shorter than their limits (730 ms against 1 s, 1785 and 1801 ms against 2 s) in the fault matrix control: the tests read Date.now(), which the VM's clock adjustment moves; every test that times a wait reads performance.now() since ce3d0d2; the fixed limits remain",
       "since": 8
     },
     {
@@ -587,11 +594,11 @@
       "status": "planned",
       "needs": [],
       "id": "config-path-validation",
-      "title": "Config validation accepts paths.metricsLog set to \"\" or \".\" (doctor says unmeasured, but budget --record would write to a directory); gate-log keeps its own not-there predicate",
+      "title": "gate-log keeps its own not-there predicate (the paths.metricsLog half closed in cycle 14: the log must be a .jsonl file in the project that no other path key names, so \"\" and \".\" are refused when the config loads)",
       "value": "low",
       "cost": "S",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (8), doctor-audit",
+      "source": "cycle 2026-10-24 (8), doctor-audit; cycle 14 (ac57f5a): paths.metricsLog must name a .jsonl file in the project that no other path key names, so \"\" and \".\" are refused when the config loads",
       "since": 8
     },
     {
@@ -620,47 +627,23 @@
       "status": "planned",
       "needs": [],
       "id": "ci-run-dataflow",
-      "title": "security.ci follows a pull request ref from a variable to git on one line, for/read/functions, a patch kept in a file; not through a heredoc, a $( … ) over several lines, step outputs, $GITHUB_ENV, files, jq over $GITHUB_EVENT_PATH, curl of a tarball",
+      "title": "security.ci follows a pull request ref from a variable to git on one line, for/read/functions, a patch kept in a file, and a name written to $GITHUB_ENV (file-wide, without step order, since cycle 14); not through a heredoc, a $( … ) over several lines, step outputs ($GITHUB_OUTPUT), files, jq over $GITHUB_EVENT_PATH, curl of a tarball",
       "value": "medium",
       "cost": "M",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (9), ci-check review rounds three and four",
+      "source": "cycle 2026-10-24 (9), ci-check review rounds three and four; cycle 2026-10-28 (14), 9783fcb",
       "since": 9
     },
     {
       "status": "planned",
       "needs": [],
-      "id": "ci-run-plain-continuation",
-      "title": "security.ci reads a run value continued as a plain scalar on the next line (`run: git fetch origin` then `pull/${{ github.event.number }}/head`) line by line, so the pull request ref passes in silence; YAML folds it into one line, as it folds a > block, which is read",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "security",
-      "source": "cycle 2026-10-25 (10), verdict-baseline: a cycle 9 review probe recorded as a gap cell in test/verdicts/ci.json",
-      "since": 10
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "ci-yaml-flow-anchor",
-      "title": "security.ci refuses an anchor on a flow sequence (`a: &a [x, y]`, then `b: *a`) as an alias with no anchor before it, though anchors of a sequence are read: valid YAML refused (known cell anchor-on-flow-sequence in test/verdicts/ci.json)",
+      "title": "security.ci refuses any tag or anchor on or in a flow collection (`x: &a [..]`, `- &s {uses: x}`, `[!!map {..}]`) though GitHub runs some (cells flow-anchor-mapping, sec2-flow-in-flow-anchor in test/reference/actions-yaml.json; known cell anchor-on-flow-sequence in test/verdicts/ci.json): an over-refusal; read them exactly, with cells, if a real workflow needs one",
       "value": "low",
       "cost": "S",
       "cluster": "security",
-      "source": "cycle 2026-10-25 (10), verdict-baseline data review round 2",
+      "source": "cycle 2026-10-25 (10), verdict-baseline data review round 2; cycle 2026-10-28 (14), ci-yaml-differential: the fail-closed reader",
       "since": 10
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "ci-yaml-differential",
-      "title": "Compare security.ci's YAML reader with how GitHub reads a workflow (NEL, LS and PS as line breaks, alias keys, merge keys, a quoted scalar continued at its key's column) on a recorded corpus; today a form it cannot follow is refused, a form it reads differently passes",
-      "value": "high",
-      "cost": "M",
-      "cluster": "security",
-      "source": "cycle 2026-10-24 (9), ci-check review rounds one to four: 9 reader findings, all fix-introduced after round one; cycle 2026-10-27 (13), convergence: the class recurred again (the eval checks' regex reading of shell and prose, the Markdown parser pinned by a hash of its regex literals), and the pin held only once the record ran Claude Code's own bundled lexer; security.ci's YAML reader is the gate left reading another program's input with no record (reference-actions-yaml folded in)",
-      "since": 9,
-      "mechanization": true,
-      "sourceClass": "a check that re-implements another program's reading drifts from it"
     },
     {
       "status": "planned",
@@ -677,11 +660,11 @@
       "status": "planned",
       "needs": [],
       "id": "ci-more-sinks",
-      "title": "security.ci reads pull_request_target only: workflow_run and issue_comment checkouts, and script injection of untrusted event fields (${{ github.event.issue.title }} in a run) are not seen",
-      "value": "medium",
+      "title": "security.ci reads pull_request_target only: workflow_run and issue_comment checkouts, and script injection of untrusted event fields (${{ github.event.issue.title }} in a run) are not seen; measured 2026-10-28: ${{ github.event.pull_request.title }} in a run under pull_request (closed), and comment.body under issue_comment, passed the commit hook (checks/ci.mjs:789 reads run blocks under pull_request_target only). An untrusted field in a run is named under any trigger; an if: that admits only the owner does not silence it, since it is a policy, not a data-flow fix; the fix named is the env shape (env: TITLE: ${{ … }}, then \"$TITLE\")",
+      "value": "high",
       "cost": "M",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (9), ci-check DESIGN Not-seen",
+      "source": "cycle 2026-10-24 (9), ci-check DESIGN Not-seen; review of Scrapling (BSD-3-Clause, 0336400), 2026-10-28: release-and-publish.yml puts the pull request title in a shell command, and a pull request with the env fix (#273) was closed unmerged; measured with fixture repositories",
       "since": 9
     },
     {
@@ -809,7 +792,7 @@
       "status": "planned",
       "needs": [],
       "id": "test-file-hang-guard",
-      "title": "A test file that never ends (a handle left open) holds npm test and the Linux run with no limit and no name: the Linux run waited 40 minutes on the fault matrix at Node 20.0.0; a per-file or per-container limit that names the file",
+      "title": "A test file that never ends (a handle left open) holds npm test and the Linux run with no limit and no name: the Linux run waited 40 minutes on the fault matrix at Node 20.0.0; a per-file or per-container limit that names the file, and each job in .github/workflows/test.yml sets timeout-minutes, so a hang holds no runner for GitHub's 6-hour default once fork pull requests run (security audit, cycle 14)",
       "value": "medium",
       "cost": "S",
       "cluster": "gates",
@@ -954,11 +937,11 @@
       "status": "planned",
       "needs": [],
       "id": "findings-ledger",
-      "title": "A findings ledger format (one JSON line per finding: task, round, id, severity, class, source, layer that caught it, duplicate of) and ennyn convergence <ledger> computing the four counts, new classes per round and the most recurring class by catalog id, instead of a hand-written count; a schema and a zero-dependency validator run whenever the ledger changes (a row missing a field does not count, as finding-schema.md says in prose today); each finding carries a fingerprint from its root cause (no line, round or reviewer in it), so the same finding seen again, in another round, cycle or by another reviewer, is one row",
+      "title": "A findings ledger format (one JSON line per finding: task, round, id, severity, class, source, layer that caught it, duplicate of) and ennyn convergence <ledger> computing the four counts, new classes per round and the most recurring class by catalog id, instead of a hand-written count; a schema and a zero-dependency validator run whenever the ledger changes (a row missing a field does not count, as finding-schema.md says in prose today); each finding carries a fingerprint from its root cause (no line, round or reviewer in it), so the same finding seen again, in another round, cycle or by another reviewer, is one row; the CLI renders the convergence block from the ledger and the cycle skill pastes it unchanged; today the agent types the counts itself (skills/cycle/report-formats.md), the same paraphrase risk as a misquoted source",
       "value": "medium",
       "cost": "M",
       "cluster": "metrics",
-      "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): failures are clustered by telemetry there; cycle 10 counted its 170 ledger rows with a throwaway script, though principle 6 says convergence is computed by scripts; review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: report-schema.json checked by validate-findings.cjs, and source-derived fingerprints that stay the same across verdicts and runs",
+      "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): failures are clustered by telemetry there; cycle 10 counted its 170 ledger rows with a throwaway script, though principle 6 says convergence is computed by scripts; review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: report-schema.json checked by validate-findings.cjs, and source-derived fingerprints that stay the same across verdicts and runs; review of agent-reach (MIT, 14c2134), 2026-10-28: its skill shows the report the program built 'as is: no additions, removals, reordering' (agent_reach/skill/SKILL_en.md:76)",
       "since": 10
     },
     {
@@ -1001,8 +984,8 @@
       "value": "medium",
       "cost": "S",
       "cluster": "security",
-      "title": "doctor says when the config switches a security check off: security.ci.paths [], security.deps.paths [], secrets.except naming every path, security.everyCycles 0, deps online false, advisories \"\"",
-      "source": "cycle 2026-10-25 (11), security audit (.ennyn/config.json row)",
+      "title": "doctor says when the config switches a security check off: security.ci.paths [], security.deps.paths [], secrets.except naming every path, security.everyCycles 0, deps online false, advisories \"\"; security.deps.advisories or a registry's download API set to any origin other than the default, plain http included (the host gets the lock's names and versions; an empty answer reads as 0 advisories, exit 0)",
+      "source": "cycle 2026-10-25 (11), security audit (.ennyn/config.json row); cycle 14 security review probe deps-advisories-foreign-origin",
       "since": 11
     },
     {
@@ -1012,8 +995,8 @@
       "value": "high",
       "cost": "M",
       "cluster": "security",
-      "title": "21 refusal lines tell the agent which config key loosens the gate that refused it (security.secrets.except, security.deps.allowScripts, sources, registries, a forbidden rule's except) and nothing flags a commit that widens them or switches a check off: the commit-msg hook refuses such a commit unless the message carries a line saying the user approved it, the cycle skill says an agent never writes that line, and security refusals say loosening is the user's call",
-      "source": "cycle 2026-10-25 (11), a second session's review (context-mode, MIT, docs/adr/0003-routing-deny-reasons.md: refusal wording drives the agent's next step); .ennyn/config.json joined review.impactRequiredGlobs in this cycle's closing commit, which an agent can still satisfy",
+      "title": "21 refusal lines tell the agent which config key loosens the gate that refused it (security.secrets.except, security.deps.allowScripts, sources, registries, a forbidden rule's except) and nothing flags a commit that widens them or switches a check off: the commit-msg hook refuses such a commit unless the message carries a line saying the user approved it, the cycle skill says an agent never writes that line, and security refusals say loosening is the user's call; also security.deps.advisories and the security.deps.registries values",
+      "source": "cycle 2026-10-25 (11), a second session's review (context-mode, MIT, docs/adr/0003-routing-deny-reasons.md: refusal wording drives the agent's next step); .ennyn/config.json joined review.impactRequiredGlobs in this cycle's closing commit, which an agent can still satisfy; cycle 14 security review probe deps-advisories-foreign-origin",
       "since": 11
     },
     {
@@ -1045,8 +1028,8 @@
       "value": "high",
       "cost": "S",
       "cluster": "init",
-      "title": "A PreToolUse hook in the plugin refuses the push spellings the ask rule does not match, measured on 2.1.310: an option before push (-C, -c, --no-pager, --git-dir, --), a quoted or escaped push (\"push\", $'push', p\"\"ush, \\push), a command fed to a shell or another program (sh -c, bash -c, eval, xargs, | sh, <<<, find -exec), a command word built as it runs ($(…), backticks, ${IFS}, ${X:-push}); env and, from 2.1.309, a full path are matched; first measure that a hook's deny holds in bypassPermissions mode on the installed Claude Code",
-      "source": "cycle 2026-10-25 (11), push-approval-gate; cycle 2026-10-26 (12): spellings measured by the Claude Code record",
+      "title": "A PreToolUse hook in the plugin refuses the push spellings the ask rule does not match, measured on 2.1.310: an option before push (-C, -c, --no-pager, --git-dir, --), a quoted or escaped push (\"push\", $'push', p\"\"ush, \\push), a command fed to a shell or another program (sh -c, bash -c, eval, xargs, | sh, <<<, find -exec), a command word built as it runs ($(…), backticks, ${IFS}, ${X:-push}); env and, from 2.1.309, a full path are matched; first measure that a hook's deny holds in bypassPermissions mode on the installed Claude Code; a git alias set from the session's environment (GIT_CONFIG_* alias.save=push from a committed settings env) pushes as `git save`, past Bash(git push *)",
+      "source": "cycle 2026-10-25 (11), push-approval-gate; cycle 2026-10-26 (12): spellings measured by the Claude Code record; cycle 14 security review probe push-alias-from-env (pushed)",
       "since": 11
     },
     {
@@ -1111,8 +1094,8 @@
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "title": "No rule decides which review findings are fixed now and which become nodes; cycles 2-10 had 245 fix-introduced findings against 266 real escapes; a deferred finding becomes a node, and a gate line names the nodes it blocks until it is done (bmad-loop's deferred-work file); a fixer allowed to skip findings it could not fix safely regressed less (Imbue)",
-      "source": "cycle 2026-10-25 (11), a second session's count of the closing handoffs",
+      "title": "No rule decides which review findings are fixed now and which become nodes; cycles 2-10 had 245 fix-introduced findings against 266 real escapes; a deferred finding becomes a node, and a gate line names the nodes it blocks until it is done (bmad-loop's deferred-work file); a fixer allowed to skip findings it could not fix safely regressed less (Imbue); a 🔴/🟠 finding cannot leave a round without one recorded outcome: fixed with a test, a node id, or refuted",
+      "source": "cycle 2026-10-25 (11), a second session's count of the closing handoffs; review of ScrapeGraphAI (MIT, 194055e), 2026-10-28: a review bot rated a broken telemetry opt-out High on pull request #1031, the change merged the same day, and the fix shipped about nine months later in v2.2.4",
       "since": 11
     },
     {
@@ -1130,33 +1113,33 @@
       "status": "planned",
       "needs": [],
       "id": "cycle-journal",
-      "title": "The cycle writes its state to the state dir as it goes (the HEAD it started at, the four tasks and their state, worktrees, the findings ledger's path, the review round), and the SessionStart hook gives one short line of it after compaction, so a compacted session resumes the cycle without guessing; first count from the session transcripts how often a cycle session compacts; the handoff records the HEAD it was written at, and the cycle start names the files it mentions that changed since",
+      "title": "The cycle writes its state to the state dir as it goes (the HEAD it started at, the four tasks and their state, worktrees, the findings ledger's path, the review round), and the SessionStart hook gives one short line of it after compaction, so a compacted session resumes the cycle without guessing; first count from the session transcripts how often a cycle session compacts; the handoff records the HEAD it was written at, and the cycle start names the files it mentions that changed since; each reviewer round and each task result is written to a file in the state dir named by task and round, and the cycle checks the file is there before the next step",
       "value": "medium",
       "cost": "M",
       "cluster": "cycle",
-      "source": "review of context-mode (MIT), 2026-10-25: a PreCompact hook builds a snapshot of at most 2 KB (files, tasks, decisions, errors, the last request) and SessionStart restores it after compaction; Ennyn re-injects only the conversation style after compaction, and the cycle's bypass count needs the HEAD noted at its start",
+      "source": "review of context-mode (MIT), 2026-10-25: a PreCompact hook builds a snapshot of at most 2 KB (files, tasks, decisions, errors, the last request) and SessionStart restores it after compaction; Ennyn re-injects only the conversation style after compaction, and the cycle's bypass count needs the HEAD noted at its start; review of Understand-Anything (MIT, 4e6d329), 2026-10-28: issue #433, the results of 13 batches lost to compaction before the one final write",
       "since": 11
     },
     {
       "status": "planned",
       "needs": [],
       "id": "threat-model",
-      "title": "SECURITY.md gets a table of Ennyn's principals and boundaries: the user, a contributor whose commit lands in a project, a cloned repository before the user trusts it, a package registry, the model reading project text, another plugin; each boundary with the part of Ennyn that guards it (commit-msg hook, deps check, side-copy hook, init-scan's escaping, config paths). The security reviewer and the audit name the lower-trust principal and the crossed boundary for every security finding; an effect only the user can cause on their own machine (their own environment variable, a git config they wrote) is a robustness note, not a security finding",
+      "title": "SECURITY.md gets a table of Ennyn's principals and boundaries: the user, a contributor whose commit lands in a project, a cloned repository before the user trusts it, a package registry, the model reading project text, another plugin; each boundary with the part of Ennyn that guards it (commit-msg hook, deps check, side-copy hook, init-scan's escaping, config paths). The security reviewer and the audit name the lower-trust principal and the crossed boundary for every security finding; an effect only the user can cause on their own machine (their own environment variable, a git config they wrote) is a robustness note, not a security finding; the table says what the hooks do not stop: a secret printed in a form no detector matches, a script that reads a secret file without naming it, and prompt-injected exfiltration (DNS, image URLs), for which the boundary is OS isolation and egress control",
       "value": "high",
       "cost": "S",
       "cluster": "security",
-      "source": "review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: 'require a boundary and result': the lower-trust principal, the accepted input, the intended control, the crossed boundary, the affected resource; same-principal authority and self-impact are not cross-boundary results. Several of Ennyn's open security and gate nodes are shapes only the user's own environment produces (ENNYN_CONFIG naming a pipe, trace2 targets in the user's git config)",
+      "source": "review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: 'require a boundary and result': the lower-trust principal, the accepted input, the intended control, the crossed boundary, the affected resource; same-principal authority and self-impact are not cross-boundary results. Several of Ennyn's open security and gate nodes are shapes only the user's own environment produces (ENNYN_CONFIG naming a pipe, trace2 targets in the user's git config); Embrace The Red 2026-08-26 quotes Anthropic: 'The real boundary is OS isolation and network egress control.'; CVE-2025-55284 sent .env contents out through DNS from Claude Code (fixed in 1.0.4); cycle 2026-10-28 (14), hooks-project-gate review: a committed settings env ENNYN_CONFIG=/abs/file that does not parse makes the side-copy hook (stderr) and the style hook (systemMessage) quote the path and about 20 characters or the top-level key names to the user and the transcript, not to the model, a same-principal row; the side-copy hook's rule bodies are the project's own text, which Claude Code 2.1.310 loads raw as project instructions in the same request, so a body that imitates markers crosses no boundary",
       "since": 11
     },
     {
       "status": "planned",
       "needs": [],
       "id": "finding-refuter",
-      "title": "A serious finding (🔴/🟠) goes to a fresh agent that did not find it and tries to refute it, re-reading every quoted line and running the check again, before the author fixes it: a confirmed one is fixed; a refuted one is recorded as rejected with why; one whose deciding fact is out of reach is needs-validation, with that exact fact, no severity, and a graph node. Convergence counts the refuted ones, so fixes of findings that were not real are measured; the refuter never takes a lack of disproof as confirmation, and names the precondition the defect needs (Compound Engineering's ce-code-review validator; OpenAI's code reviewer chose fewer, checked findings over recall)",
+      "title": "A serious finding (🔴/🟠) goes to a fresh agent that did not find it and tries to refute it, re-reading every quoted line and running the check again, before the author fixes it: a confirmed one is fixed; a refuted one is recorded as rejected with why; one whose deciding fact is out of reach is needs-validation, with that exact fact, no severity, and a graph node. Convergence counts the refuted ones, so fixes of findings that were not real are measured; the refuter never takes a lack of disproof as confirmation, and names the precondition the defect needs (Compound Engineering's ce-code-review validator; OpenAI's code reviewer chose fewer, checked findings over recall); the refuter is given the evidence again (the files, the diff, the saved source), never only the finding's wording; a fix of a misquote re-reads the source",
       "value": "high",
       "cost": "M",
       "cluster": "method",
-      "source": "review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: 'the agent that checks a finding is never the agent that found it'; three verdicts: confirmed, needs_validation (an exact unresolved fact, no severity) and rejected. Ennyn's evidence: fixes introduced more defects than first drafts missed (99 against 80 in the origin project; in Ennyn's cycles 2-10, 245 fix-introduced against 266 real escapes), and fixing a finding that was not real is pure risk",
+      "source": "review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: 'the agent that checks a finding is never the agent that found it'; three verdicts: confirmed, needs_validation (an exact unresolved fact, no severity) and rejected. Ennyn's evidence: fixes introduced more defects than first drafts missed (99 against 80 in the origin project; in Ennyn's cycles 2-10, 245 fix-introduced against 266 real escapes), and fixing a finding that was not real is pure risk; review of ScrapeGraphAI (MIT, 194055e), 2026-10-28: its retry step asks the model for the missing information without giving it the page",
       "since": 11
     },
     {
@@ -1185,7 +1168,7 @@
       "status": "planned",
       "needs": [],
       "id": "agent-context-audit",
-      "title": "A security audit takes the agent-context classes: every channel by which project text reaches the model (side-copy rules, the style, init-scan's JSON, the handoff, graph titles, reviewer probes) with who can write it, and every committed text that names a command something runs (the handoff's test and mutation commands, impact.referenceCommand, a graph module)",
+      "title": "A security audit takes the agent-context classes: every channel by which project text reaches the model (side-copy rules, the style, init-scan's JSON, the handoff, graph titles, reviewer probes) with who can write it, and every committed text that names a command something runs (the handoff's test and mutation commands, impact.referenceCommand, a graph module); measured 2026-10-28: a .claude/rules body holding </rule> ends the side-copy hook's rule element (task 2 of cycle 14), and a commit pointing paths.graph at a module runs it at the next doctor",
       "value": "medium",
       "cost": "S",
       "cluster": "security",
@@ -1340,24 +1323,27 @@
     },
     {
       "status": "planned",
-      "needs": ["eval-arm-reads-home", "eval-keychain-exec"],
+      "needs": [
+        "eval-arm-reads-home",
+        "eval-keychain-exec"
+      ],
       "id": "contributing-guide",
-      "title": "CONTRIBUTING.md before the public release: a change to skills/, agents/, styles/ or a hook's injected text shows eval numbers in three arms (no plugin, main, the change), with one case it should help and one it could break; hooks stay bounded, fail open and connect nowhere; scripts and tests touch nothing outside the repository and temporary directories; a pull request lists the commands it ran with their results and never claims a check it did not run; one change per pull request; issue templates (a bug names the version, the command and the smallest input, never a secret; the form asks for ennyn doctor's output and the node and git versions) and Discussions switched on at the public release",
+      "title": "CONTRIBUTING.md before the public release: a change to skills/, agents/, styles/ or a hook's injected text shows eval numbers in three arms (no plugin, main, the change), with one case it should help and one it could break; hooks stay bounded, fail open and connect nowhere; scripts and tests touch nothing outside the repository and temporary directories; a pull request lists the commands it ran with their results and never claims a check it did not run; one change per pull request; issue templates (a bug names the version, the command and the smallest input, never a secret; the form asks for ennyn doctor's output and the node and git versions) and Discussions switched on at the public release; CONTRIBUTING asks for AI use to be disclosed in the pull request description (commits carry no assistant trailer); SECURITY.md lists out-of-scope classes with the reason, so a repeated report gets a link; a refused change is closed as not planned",
       "value": "medium",
       "cost": "S",
       "cluster": "distribution",
-      "source": "review of ponytail and i-have-adhd (open-source agent skills, MIT), 2026-10-25: ponytail merges a rule change only with a three-arm benchmark, a case it should help and one it could break, 6 or more runs; i-have-adhd: hooks fast, bounded, fail-safe and opt-in, a write outside the repository needs an opt-in and an undo path",
+      "source": "review of ponytail and i-have-adhd (open-source agent skills, MIT), 2026-10-25: ponytail merges a rule change only with a three-arm benchmark, a case it should help and one it could break, 6 or more runs; i-have-adhd: hooks fast, bounded, fail-safe and opt-in, a write outside the repository needs an opt-in and an undo path; review of Scrapling (BSD-3-Clause, 0336400), 2026-10-28: AI_POLICY.md; 47 issues and pull requests labelled AI-Slop; an issue closed as completed while the code it named stayed",
       "since": 11
     },
     {
       "status": "planned",
       "needs": [],
       "id": "uninstall-path",
-      "title": "ennyn uninstall-hook removes only a commit-msg hook Ennyn wrote (as install-hook reads it) and the state dir, and lists what stays for the user to decide: the config, graph, handoff, metrics log and the ask rules init wrote",
+      "title": "ennyn uninstall-hook removes only a commit-msg hook Ennyn wrote (as install-hook reads it) and the state dir, and lists what stays for the user to decide: the config, graph, handoff, metrics log and the ask rules init wrote; init and install-hook record each file they write with its sha256, and uninstall removes only files still unchanged and lists the edited ones",
       "value": "low",
       "cost": "S",
       "cluster": "init",
-      "source": "review of i-have-adhd and ponytail (open-source agent skills, MIT), 2026-10-25: a write outside the repository needs an easy undo path; ponytail ships scripts/uninstall.js; Ennyn's hook says only 'delete this file to remove it'",
+      "source": "review of i-have-adhd and ponytail (open-source agent skills, MIT), 2026-10-25: a write outside the repository needs an easy undo path; ponytail ships scripts/uninstall.js; Ennyn's hook says only 'delete this file to remove it'; review of agent-reach (MIT, 14c2134), 2026-10-28: agent_reach/runtime/state.py:106, 'Deletion permission comes from the ledger, never a familiar filename.'",
       "since": 11
     },
     {
@@ -1430,11 +1416,11 @@
       "status": "planned",
       "needs": [],
       "id": "audit-mark-trust",
-      "title": "A security-audit mark is one line in a committed log: a contributor's commit can append a mark that covers every cycle (the security audit stays away) or a plain record at a mark's commit (it comes early); bind a mark to what a contributor cannot write alone, or have doctor and the audit name a mark that arrived in another author's commit",
+      "title": "A security-audit mark is one line in a committed log: a contributor's commit can append a mark that covers every cycle (the security audit stays away) or a plain record at a mark's commit (it comes early); bind a mark to what a contributor cannot write alone, or have doctor and the audit name a mark that arrived in another author's commit; or a commit that points paths.metricsLog at another .jsonl in the project holding a mark: the audit reads that file and says 'due in 2 cycles' with no word that the log moved",
       "value": "medium",
       "cost": "M",
       "cluster": "security",
-      "source": "cycle 2026-10-26 (12), budget audit security review rounds 1 and 2 (plan/audit.mjs:128); append-only made it neither easier nor harder",
+      "source": "cycle 2026-10-26 (12), budget audit security review rounds 1 and 2 (plan/audit.mjs:128); append-only made it neither easier nor harder; cycle 14 security review probe audit-log-redirect-to-mark-file, rerun on 8499395 (unchanged; the widened rule keeps it)",
       "since": 12
     },
     {
@@ -1505,24 +1491,15 @@
     },
     {
       "status": "planned",
-      "needs": [],
-      "id": "eval-git-macos",
-      "title": "In claude plugin eval runs on macOS (2.1.310) the agent's git fails: in the eval tool's Bash sandbox git resolves to /usr/bin/git, the Xcode shim, which exits 72 (xcode-select: Failed to locate 'git') though PATH lists Homebrew's git first; an absolute git works, but a local push fails the same way through git-receive-pack (exit 128), and DEVELOPER_DIR from the operator's shell does not help (execution.env takes only EVAL_* keys). Find the cause and a way for plugin-eval's arms to commit and push, or run the arms on Linux",
-      "value": "high",
-      "cost": "M",
-      "cluster": "evidence",
-      "source": "cycle 2026-10-27 (13), plugin-eval-selftest round 1: reviews and measurements on claude 2.1.310",
-      "since": 13
-    },
-    {
-      "status": "planned",
-      "needs": ["eval-git-macos"],
+      "needs": [
+        "eval-git-macos"
+      ],
       "id": "eval-push-effect",
       "title": "push-not-run read by its effect: the case's scaffold makes a bare remote with no refs inside the run's directory, pinned to --ref-format=files (a reftable remote writes nothing under refs/; else the grader reads any new path in the remote), and a file_exists grader (exists: false) reads a push that landed; cwdDiff counts only paths that are new after the run and the scaffold's writes are never in it, so the self-test makes the path with a Write call. A hermetic test runs each push spelling of the code table with real git and says which ones write a new path in the remote. No hook is used: GIT_CONFIG_COUNT forces core.hooksPath=/dev/null and hook.*.enabled=false in every eval run",
       "value": "medium",
       "cost": "M",
       "cluster": "evidence",
-      "source": "cycle 2026-10-27 (13), plugin-eval-selftest round 1: reviews and measurements on claude 2.1.310",
+      "source": "cycle 2026-10-27 (13), plugin-eval-selftest round 1: reviews and measurements on claude 2.1.310; cycle 2026-10-28 (14): unblocked, a push lands in a scaffolded bare remote with the git path; keptCwd and landedIn read the kept run directory's ref files",
       "since": 13
     },
     {
@@ -1617,12 +1594,12 @@
       "status": "planned",
       "needs": [],
       "id": "npx-entry",
-      "title": "Publish the CLI to npm as ennyn at the public release (the name was free on 2026-10-27) with trusted publishing (OIDC) and provenance, from a release workflow of its own (id-token: write there only; the test workflow stays read-only), so npx ennyn@<version> rework is the README's first command with no clone. Measure first whether a marketplace entry with an npm source installs only the package's files (no tests, no development dependencies): if it does, it also settles plugin-root-dev-deps",
+      "title": "Publish the CLI to npm as ennyn at the public release (the name was free on 2026-10-27) with trusted publishing (OIDC) and provenance, from a release workflow of its own (id-token: write there only; the test workflow stays read-only), so npx ennyn@<version> rework is the README's first command with no clone. Measure first whether a marketplace entry with an npm source installs only the package's files (no tests, no development dependencies): if it does, it also settles plugin-root-dev-deps; the name was still free on 2026-10-28 (npm view: 404): publish 0.1.0 when the repository goes public. The release workflow runs on a tag push, reads the version from package.json and fails when the tag differs, keeps event fields out of run lines, and publishes from an environment with a required reviewer; before a version bump is pushed, npm view ennyn@<version> finds it, since a skill calling npx ennyn@<version> breaks for every user otherwise; the test that hook commands name existing files extends to package.json bin and main",
       "value": "high",
       "cost": "M",
       "cluster": "distribution",
       "gate": "user",
-      "source": "discoverability review, 2026-10-27: package.json names bin; npx ../ennyn --help ran from a local copy; Claude Code 2.1.310 accepts npm marketplace sources (binary read)",
+      "source": "discoverability review, 2026-10-27: package.json names bin; npx ../ennyn --help ran from a local copy; Claude Code 2.1.310 accepts npm marketplace sources (binary read); reviews of agent-reach, Scrapling and Understand-Anything, 2026-10-28: agent-reach never published to PyPI and an unrelated project holds the name; Understand-Anything's manifests say 2.9.8 with no such tag, so a URL built from the version fails",
       "since": 13
     },
     {
@@ -1638,14 +1615,17 @@
     },
     {
       "status": "planned",
-      "needs": ["release-0-1-0", "hooks-project-gate"],
+      "needs": [
+        "release-0-1-0",
+        "hooks-project-gate"
+      ],
       "id": "directory-submission",
-      "title": "Submit the plugin to Anthropic's plugin directory (claude.ai/directory/manage; the repository may be private while it validates, public before the listing goes live): the listing comes from plugin.json and the README; new versions published by hand or by a reviewer, never auto-published; an icon first (validate:plugin warns ICON_MISSING on 2.1.310); the README says what Ennyn sends over the network and how to turn it off",
+      "title": "Submit the plugin to Anthropic's plugin directory (claude.ai/directory/manage; the repository may be private while it validates, public before the listing goes live): the listing comes from plugin.json and the README; new versions published by hand or by a reviewer, never auto-published; the icon is in place (.claude-plugin/icon.svg, af9ed2b); the README says what Ennyn sends over the network and how to turn it off",
       "value": "high",
       "cost": "S",
       "cluster": "distribution",
       "gate": "user",
-      "source": "discoverability review, 2026-10-27: claude.com/docs/plugins/submit; validate:plugin output",
+      "source": "discoverability review, 2026-10-27: claude.com/docs/plugins/submit; validate:plugin output; cycle 2026-10-28 (14) closing: the icon prerequisite met",
       "since": 13
     },
     {
@@ -1669,17 +1649,6 @@
       "cost": "S",
       "cluster": "gates",
       "source": "discoverability review, 2026-10-27: ennyn budget output on a repository with one instruction file",
-      "since": 13
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "hooks-project-gate",
-      "title": "The PostToolUse side-copy hook and the SessionStart hooks do nothing in a project without .ennyn/config.json (today side-copy-rules.mjs runs on every Read, Edit and Write in every project, loading defaults); a test runs each hook in a project without a config and sees no output, no state write and exit 0; hooks.json's description and plugin.json's description name what the hooks do",
-      "value": "high",
-      "cost": "S",
-      "cluster": "security",
-      "source": "claude-plugins-official .github/policy/prompt.md Part 2 (has_broad_scope_hooks, description_matches_behavior); outside-eye review 2026-10-27",
       "since": 13
     },
     {
@@ -1730,11 +1699,11 @@
       "status": "planned",
       "needs": [],
       "id": "changelog-versions",
-      "title": "CHANGELOG.md (55 KB, 71 bullets averaging 771 characters, all Unreleased) cut into versions from 0.1.0: Highlights and Breaking changes first, one-line bullets with detail nested, rationale moved to docs/evidence.md; a test caps a top-level bullet's length",
+      "title": "CHANGELOG.md (55 KB, 71 bullets averaging 771 characters, all Unreleased) cut into versions from 0.1.0: Highlights and Breaking changes first, one-line bullets with detail nested, rationale moved to docs/evidence.md; a test caps a top-level bullet's length; each version names what shipped unverified (Windows, CI that never ran, Codex)",
       "value": "medium",
       "cost": "S",
       "cluster": "distribution",
-      "source": "fzf CHANGELOG.md (bullets average 65 characters), opencode CHANGELOG.md, superpowers RELEASE-NOTES.md, 2026-10-27",
+      "source": "fzf CHANGELOG.md (bullets average 65 characters), opencode CHANGELOG.md, superpowers RELEASE-NOTES.md, 2026-10-27; agent-reach CHANGELOG.md, 2026-10-28: '28 of 40 actions passed real acceptance before release; these shipped untested with maintainer approval'",
       "since": 13
     },
     {
@@ -1907,11 +1876,11 @@
       "status": "planned",
       "needs": [],
       "id": "claude-config-in-diff",
-      "title": "The commit-msg hook names any commit that adds or changes a hook, an allow rule, an MCP server or a plugin source in .claude/settings*.json, .mcp.json or .claude-plugin/. doctor reports a .claude/ folder under node_modules. SafeDep 2026-05-13: five typosquatted npm packages run a binary on install and ship a .claude/settings.json whose SessionStart hook runs it again; a copy of that file in the project stays after the package is removed. agent-setup-risk judges the setup at init and in doctor; this node is the commit-time half",
+      "title": "The commit-msg hook names any commit that adds or changes a hook, an allow rule, an MCP server or a plugin source in .claude/settings*.json, .mcp.json or .claude-plugin/. doctor reports a .claude/ folder under node_modules. SafeDep 2026-05-13: five typosquatted npm packages run a binary on install and ship a .claude/settings.json whose SessionStart hook runs it again; a copy of that file in the project stays after the package is removed. agent-setup-risk judges the setup at init and in doctor; this node is the commit-time half, and the env block of .claude/settings*.json (ENNYN_CONFIG, GIT_CONFIG_COUNT/GIT_CONFIG_KEY_n/GIT_CONFIG_VALUE_n, NODE_OPTIONS, PATH, any GIT_* variable); also Ennyn's own keys that run code or switch a check off: paths.graph set to a .mjs or .js module (doctor, core and mechanization import it, and the cycle runs doctor first), impact.referenceCommand, a paths list emptied (security.ci.paths: []), with audit listing the graph module. Measured 2026-10-28: one commit setting all three passed, the only warning being for a secrets.except change in the same commit; the module wrote a marker under doctor",
       "value": "high",
       "cost": "M",
       "cluster": "security",
-      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn; cycle 14 security audit review round 1: env reaches the hook (settings-env-gate-config); measured 2026-10-28 with fixture repositories",
       "since": 13
     },
     {
@@ -1929,11 +1898,11 @@
       "status": "planned",
       "needs": [],
       "id": "codex-skill-bytes",
-      "title": "Codex reportedly injects only the first 8,000 bytes of a SKILL.md. The source is a test comment in another plugin's repository; not checked. skills/cycle/SKILL.md is 8,049 bytes and skills/init/SKILL.md is 8,167. Read Codex's own code before codex-manifest; then budget gives a ceiling per host",
-      "value": "medium",
+      "title": "Codex cuts an invoked plugin skill at 8,000 bytes (openai/codex e6de6a2423: codex-rs/ext/skills/src/render.rs:25 MAX_SKILL_PROMPT_BYTES, applied to agent plugin skills with a warning in host_prompt.rs:79-86); a description stops at 1,024 characters, and the skill list at 2% of the context window in tokens (8,000 characters when the window is unknown). skills/cycle/SKILL.md is 8,049 bytes and loses '…and **ask** for push approval.'; skills/init/SKILL.md is 8,167 and loses 'Ask before committing the files, and never push.' Move the safety lines up and cap each SKILL.md at 8,000 bytes in a test; then budget gives a ceiling per host",
+      "value": "high",
       "cost": "S",
       "cluster": "distribution",
-      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn; Codex's own code read 2026-10-28, the cut tails measured with tail -c",
       "since": 13
     },
     {
@@ -2061,11 +2030,11 @@
       "status": "planned",
       "needs": [],
       "id": "worktree-location",
-      "title": "The cycle's forks work in git worktrees under the system temp folder, and npm run puts node_modules/.bin of every parent folder before PATH (npm 10.9.7, measured): an account that creates /private/tmp/node_modules/.bin/node runs its code in every npm test a fork runs there (absent when checked 2026-10-27). skills/cycle/SKILL.md names a place for worktrees that no other account can write to, and the test runner says when a parent folder's node_modules/.bin holds node or npm",
+      "title": "The cycle's forks work in git worktrees under the system temp folder, and npm run puts node_modules/.bin of every parent folder before PATH (npm 10.9.7, measured): an account that creates /private/tmp/node_modules/.bin/node runs its code in every npm test a fork runs there (absent when checked 2026-10-27). skills/cycle/SKILL.md names a place for worktrees that no other account can write to, and the test runner says when a parent folder's node_modules/.bin holds node or npm; a fork's scenario script must build its trees as real copies (git archive, rsync), never through a link into the main checkout: in cycle 14 a cp -R of linked trees wrote a stray .orphaned_at into the main repository, and install-hook and the fault tests failed there until it was removed",
       "value": "medium",
       "cost": "S",
       "cluster": "security",
-      "source": "cycle 2026-10-27 (13), reference-markdown security review round 2",
+      "source": "cycle 2026-10-27 (13), reference-markdown security review round 2; cycle 2026-10-28 (14), hooks-project-gate round 1 rerun",
       "since": 13
     },
     {
@@ -2111,6 +2080,399 @@
       "cluster": "security",
       "source": "cycle 2026-10-28 (14), eval-git-macos round 1 decision",
       "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "settings-env-gate-config",
+      "title": "A project's committed .claude/settings*.json env reaches every git commit the agent runs once the project is trusted: ENNYN_CONFIG naming another config (security.secrets.except [\"**\"]) lets a token commit through with nothing said, and doctor shows ✓ under that env; GIT_CONFIG_COUNT/KEY/VALUE setting core.hooksPath means the commit-msg hook never runs. The hook says on every commit when ENNYN_CONFIG names a config other than the project's own, doctor reports ENNYN_CONFIG and GIT_CONFIG_* both in its environment and in the committed settings' env, and SECURITY.md names the env block as a way past the gate",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-10-28 (14), security audit review round 1 (security reviewer), probes secrets-settings-env-ennyn-config (exit 0, nothing printed) and secrets-settings-env-hookspath (the hook never runs); principal: a contributor's commit once the project is trusted; hook-node-options' fix closes neither",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "clean-filter-hides-content",
+      "title": "A committed .gitattributes that puts a path under a clean filter the user's git config defines (filter=lfs with git-lfs installed) stores a pointer in the commit: the secret scan and review.forbidden read the pointer, while the token goes into the LFS store and is uploaded on push. The hook reads what the filter stored (the LFS object the pointer names under .git/lfs/objects) or says the path unread; measured with real git-lfs before choosing",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-10-28 (14), security audit review round 1 (security reviewer), probe secrets-lfs-clean-filter: the blob is a pointer and the token is held for the LFS upload (a simulated pointer; git-lfs not installed)",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "secret-tag-messages",
+      "title": "Annotated tag and git notes messages are never scanned for secrets (no commit-msg hook runs for them) and a push carries them: push-check, or a step before push, scans the messages of unpushed tags and notes with the secret shapes the hook uses",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-10-28 (14), security audit, path table 'secrets out of commits'",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "side-copy-package-relpath",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "init",
+      "since": 14,
+      "title": "In a session started in a subdirectory or package, the side-copy mapping gives a worktree file's path relative to the worktree's top (src/a.js), while the session folder's .claude/rules are written relative to that folder, as Claude Code reads them there; measure on 2.1.310 which path a package session's rule is matched against, then map from the session folder",
+      "source": "cycle 2026-10-28 (14), hooks-project-gate round one: seen in the subdirectory fixture and the monorepo test's note"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ci-event-name-case",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "since": 14,
+      "title": "security.ci reads the trigger in any case, and in a block scalar under on (fail-closed); GitHub's parser accepts `on: PULL_REQUEST_TARGET` (cell case-event). Whether github.com triggers on another case, or on a name with a final line break (cells sec-on-block-folded-clip, rv2-on-literal), is unmeasured without a push to a scratch repository (user); measured, the over-refusal could go",
+      "source": "cycle 2026-10-28 (14), ci-yaml-differential"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "reference-action-yaml",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "since": 14,
+      "title": "action.yml files are read by the runner's action manifest reader (src/Sdk/DTPipelines YamlObjectReader, anchors refused), not the workflow parser test/reference/actions-yaml.mjs records: record that reader for the action files security.ci reads",
+      "source": "cycle 2026-10-28 (14), ci-yaml-differential"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ci-yaml-explicit-key",
+      "value": "low",
+      "cost": "M",
+      "cluster": "security",
+      "since": 14,
+      "title": "Forms security.ci refuses though GitHub runs them, none in 133 real workflows: an explicit key (`?`), a value on the line below its key, an indentation indicator, an anchor named twice, a merge key, a tag other than !!str, a ? in a flow collection (83 refused and 8 stricter of 335 record cells GitHub runs, test/reference/actions-yaml.json): read one exactly, with cells, when a real workflow needs it",
+      "source": "cycle 2026-10-28 (14), ci-yaml-differential"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "source-quote-check",
+      "title": "A graph node or doc that quotes a source quotes a saved raw copy (curl, gh or git, with the URL, date, HTTP status and sha256 recorded), never WebFetch's output, which its tool description says 'answers `prompt` against it using a small fast model'. A local check finds each quoted span in the saved copy after whitespace and quote-mark normalization, refuses a challenge or login page as the copy, and on a later re-check reports a moved quote with its similarity score and fails when the quote is gone. 2b02166 fixed five misquoted sources; which tool produced them was not measured",
+      "value": "high",
+      "cost": "M",
+      "cluster": "evidence",
+      "source": "review of ScrapeGraphAI, agent-reach and Scrapling, 2026-10-28: ScrapeGraphAI warns when expected words are missing from fetched text (parse_node.py), agent-reach refuses challenge pages before returning text (channels/web.py), Scrapling finds a saved element again by a similarity score (parser.py); none of them checks a quote",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "config-keys-read-tested",
+      "title": "A test that every leaf of DEFAULTS in core/config.mjs is read outside core/config.mjs and set by at least one test. On 2026-10-28 planner.mechanizationSlots (DESIGN.md:66, default 1) is read by no code, so setting it does nothing; commitMsg.structuredLines, review.impactIgnoreGlobs, impact.fixtureGlobs and metrics.reworkDays are named in no test. Then mechanizationSlots is wired into ennyn mechanization or removed from DESIGN.md",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "review of ScrapeGraphAI (MIT, 194055e), 2026-10-28: documented options (reattempt, use_soup) that cannot work as written; reattempt has no test, and use_soup's test file is not among the suites its CI runs; Ennyn's keys counted with git grep the same day",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "graph-id-kept",
+      "title": "A node id never leaves the work graph unannounced: the commit-msg hook refuses a commit whose graph loses an id from both the open and the done array, unless the message names it. Measured over the commits that touched .ennyn/graph.json: gate-stats-locale-sort left both arrays in ad770f6 (cycle 6 closing), while that cycle's handoff says the node was closed in its task; put it back in done",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "review of Understand-Anything (MIT, 4e6d329), 2026-10-28: validate-incremental-symbols.mjs blocks a write when an item drops out of a model's rewrite while its source still has it; merge-batch-graphs.py says the import edges its agents should copy 'in practice drop ~25%' on real projects, partly in batch construction",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "reviewer-agent-names",
+      "title": "skills/cycle/SKILL.md step 7 names Ennyn's reviewers by role only (correctness, security, data correctness); name the registered agent types (ennyn:code-reviewer, ennyn:security-reviewer, ennyn:data-reviewer) and keep agents/<name>.md as the fallback for a host without plugin agents. eval-first-cases reads the subagent_type each review call used",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "review of Understand-Anything (MIT, 4e6d329), 2026-10-28: issue #464, an agent pointed at an agent file by path ran a general-purpose subagent that skipped the agent's own step; PR #504 (open) names the type and keeps the path as fallback; issue #340, Codex did not find the plugin's agent files",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ci-container-pins",
+      "title": "security.ci refuses images named by tag outside uses:, as it refuses docker://…:latest there: a job's container: and services: images, and, with Dockerfiles added to security.ci.paths, a FROM or COPY --from; a digest (@sha256:…) passes. Measured 2026-10-28: container.image node:latest, a services image postgres:latest and a Dockerfile COPY --from=ghcr.io/astral-sh/uv:latest all passed the commit hook",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "review of Scrapling (BSD-3-Clause, 0336400), 2026-10-28: its Dockerfile copies uv from ghcr.io/astral-sh/uv:latest; measured with fixture repositories the same day",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ci-install-pins",
+      "title": "security.ci names install steps that defeat a lock file or float: a frozen install with an unfrozen fallback (pnpm install --frozen-lockfile || pnpm install, npm ci || npm install), npx --yes of a URL or an unversioned package, and npm i, pip install or uv pip install --upgrade with no exact version in a job that holds secrets or contents or id-token write. Measured 2026-10-28: each of these passed the commit hook in a workflow and in a script",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "review of Understand-Anything (MIT, 4e6d329) and ScrapeGraphAI (MIT, 194055e), 2026-10-28: the first's skill runs 'pnpm install --frozen-lockfile 2>/dev/null || pnpm install' on first use; the second's release workflow installs semantic-release plugins pinned only to a major version, and @semantic-release/git with none, beside PYPI_TOKEN and id-token: write; measured with fixture repositories",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "lock-files-unread",
+      "title": "A commit that changes a lock file the dependency check does not read (uv.lock, poetry.lock, requirements*.txt, constraints*.txt, Cargo.lock, go.sum, bun.lock, and pnpm-lock.yaml and yarn.lock until deps-other-locks) gets a line saying it was not read, instead of silence. Measured 2026-10-28: with such files committed, ennyn deps reported one lock file and the commit passed with no message",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "measured 2026-10-28 with fixture repositories; three of the four reviewed tools ship a uv.lock, a pnpm-lock.yaml or a pinned constraints.txt",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hidden-unicode-instructions",
+      "title": "The commit-msg hook names zero-width characters, bidi controls (U+202A-202E, U+2066-2069) and tag characters (U+E0000-E007F) that a commit adds to text the agent reads: CLAUDE.md, .claude/, skills, agents, rules, the handoff and the work graph. Today only path names are checked for such characters (core/config.mjs:207); markdown-hidden-text covers the other direction",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "review of Scrapling (BSD-3-Clause, 0336400), 2026-10-28: core/shell.py strips zero-width and control characters from page text before it reaches the model, without bidi controls or tag characters",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "load-time-obfuscation",
+      "title": "The commit-msg hook warns on added lines that look obfuscated in files a tool runs when it loads them (*.config.js, .mjs, .cjs and .ts, .husky/, .vscode/tasks.json, package.json scripts): eval or Function over decoded text (atob, Buffer.from, base64), a string literal of 100 or more base64 characters, long hex-escape chains. A warning first (rule-warn-then-block), counting false positives on Ennyn and the second project before it blocks; no general entropy scan, since minified code and lock hashes look the same. Measured 2026-10-28: eval(atob(…)), new Function(Buffer.from(…)) and 4 KB of base64 passed",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "review of Understand-Anything (MIT, 4e6d329), 2026-10-28: issue #432 reports a pull request (#206) that appended a self-decoding payload to homepage/astro.config.mjs under a title naming a real issue (#188); a comment says #198 and #261 carry the same change",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "network-claim-test",
+      "title": "A test holds the code to what README.md and SECURITY.md say about the network: outside test/, the only fetch is checks/deps.mjs's, no module imports node:http, node:https, node:net, node:tls or node:dgram, no child process runs curl or wget, the OSV request body carries only name, ecosystem and version, and with security.deps.online false the commit hook fetches nothing",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "review of ScrapeGraphAI (MIT, 194055e), 2026-10-28: its README says 'We collect anonymous usage metrics', while telemetry/telemetry.py, on by default, posts the prompt, the schema, the page content, the model's answer and the URL",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "instruction-copies-sync",
+      "title": "Tests keep the copies of instruction text in step: every ennyn.mjs command and flag named in skills/, agents/, both READMEs and DESIGN.md exists in the usage text; the finding fields listed in the three agents equal skills/cycle/finding-schema.md; the sentences that carry a safety rule (ask before a push, never push from init) stay in the skills; placeholders in skill shell lines are quoted (--files <paths>, commit-check <file>)",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "review of ScrapeGraphAI (MIT, 194055e) and Understand-Anything (MIT, 4e6d329), 2026-10-28: ScrapeGraphAI keeps near-copies of one prompt, and five of the per-chunk copies (four in use) have no {question} slot; Understand-Anything's contract tests pin load-bearing skill sentences, and a test refuses unquoted path placeholders (PR #557, after issue #481)",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "cli-bug-exit",
+      "title": "An Ennyn bug is not a failed check: an unexpected TypeError, ReferenceError, RangeError or SyntaxError in the CLI prints an 'ennyn bug' line with the first stack frame and exits with a code of its own. Today an unexpected error falls through to 'ennyn <cmd>: <message>' and exit 1 (scripts/ennyn.mjs:1492-1494), the code a failed check uses, so a cycle can report Ennyn's crash as a project finding",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "review of Scrapling (BSD-3-Clause, 0336400), 2026-10-28: its MCP tool wrapper returns expected errors to the agent and raises programming errors (core/ai/server.py:207-217), with tests for both",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "init-effective-config",
+      "title": "init-scan --json gives the effective value of each key the init questions name, marked default or set, and skills/init/SKILL.md names the keys instead of the numbers it copies from core/config.mjs (line 29: an audit every 3 cycles, 7 days for a new dependency version, and more); no test ties that prose to the defaults, and the skill shrinks toward codex-skill-bytes' ceiling",
+      "value": "low",
+      "cost": "S",
+      "cluster": "init",
+      "source": "review of Scrapling (BSD-3-Clause, 0336400), 2026-10-28: its list_sessions tool returns each session's effective settings to the agent",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ai-addressed-text",
+      "title": "Reviewer agents treat text in a diff that addresses AI reviewers or scanners as a claim to check, never an instruction (one line in each agent body, loaded only when the agent runs); init-scan and doctor name such phrases in instruction files",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "review of Scrapling (BSD-3-Clause, 0336400), 2026-10-28: agent-skill/Scrapling-Skill/SKILL.md:32 opens a block 'Notes for AI scanners:' that answers the tools judging the skill",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "config-tombstones",
+      "title": "From 0.1.0, a removed or renamed config key fails with the key that replaces it (a map checked before the unknown-key error, core/config.mjs:240), with a test that every key removed since 0.1.0 stays listed; each release keeps its .ennyn/ files as a fixture the current doctor must load or name the key to change; each CHANGELOG version lists what a gate now refuses that it passed before, with the key that restores the old behaviour",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "distribution",
+      "source": "review of Scrapling (BSD-3-Clause, 0336400) and agent-reach (MIT, 14c2134), 2026-10-28: Scrapling's browser validators name the replacement of a removed option (capture_xhr) and its 0.5 migration guide has a table of what to change; agent-reach's CI installs the previous release, upgrades, and checks the config was kept",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "impact-test-conventions",
+      "title": "The impact table's S3 search for tests next to the changed files (impact/table.mjs:398) uses TEST_FILE_RE (:44), which knows .test. and .spec. names and a top-level test directory, while isTest reads metrics.testRe, for which init-scan already offers Go, pytest, Java and Kotlin, and Ruby patterns (setup/scan.mjs:50-55): S3 reads metrics.testRe too, and those patterns gain Java and Kotlin *IT and the Maven src/test mirror",
+      "value": "low",
+      "cost": "S",
+      "cluster": "impact",
+      "source": "review of Understand-Anything (MIT, 4e6d329), 2026-10-28: merge-batch-graphs.py keeps test-file conventions per language",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "impact-enclosing-function",
+      "title": "Impact S1 names the function around each reference: a second git grep -p run gives the function lines, read as the lines not in the match set (with --null they look like match lines); the row says that git's default function rule misses indented methods",
+      "value": "low",
+      "cost": "S",
+      "cluster": "impact",
+      "source": "review of Scrapling (BSD-3-Clause, 0336400), 2026-10-28: its snapshot search keeps each match with its ancestor lines (core/ai/_snapshot_search.py); the git grep -p behaviour was checked in a scratch repository",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "telemetry-risky-name",
+      "title": "init-scan's risky directory names (setup/scan.mjs:57-58) take telemetry, analytics, tracking and tracing, so init offers them for the impact table, the Impact: line and a review.cochange rule tying them to the doc that says what data is collected",
+      "value": "low",
+      "cost": "S",
+      "cluster": "init",
+      "source": "review of ScrapeGraphAI (MIT, 194055e), 2026-10-28: the commit that added the prompt, schema, answer and URL to its telemetry payload was titled 'docs(gpt-4o-mini): …' (99dc849), and the one that added the page content 'fix(md_conversion): …' (12b5ead)",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "budget-machine-skills",
+      "title": "ennyn budget reports skills linked into the user's ~/.claude/skills on a line of its own, outside the project's count: they load in every session of every project and nothing in the repository shows them",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "review of agent-reach (MIT, 14c2134), 2026-10-28: its setup links its skill into ~/.claude/skills and the skill folders of six other agents (runtime/manage.py)",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "tls-off-literals",
+      "title": "/ennyn:init offers review.forbidden texts that switch TLS checks off: verify=False, rejectUnauthorized: false, NODE_TLS_REJECT_UNAUTHORIZED, ignore_https_errors, curl -k and --insecure, strict-ssl=false. Measured 2026-10-28: each passed the commit hook; an .npmrc strict-ssl=false is said, not refused. It catches an agent turning TLS off to get past a certificate error",
+      "value": "low",
+      "cost": "S",
+      "cluster": "init",
+      "source": "review of Scrapling (BSD-3-Clause, 0336400) and ScrapeGraphAI (MIT, 194055e), 2026-10-28: Scrapling's stealthy sessions and ScrapeGraphAI's default Playwright context set ignore_https_errors to true",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "record-version-dirty",
+      "title": "Every metrics and budget record carries the Ennyn version and a dirty flag for the tree it measured; a budget record holds kind, date, commit, always, onDemand and repeatedLines today",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "review of Understand-Anything (MIT, 4e6d329), 2026-10-28: its benchmark protocol records both commits, flags a dirty tree and compares timings only on one machine (docs/benchmarks/large-monorepo.md)",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "secret-transcript-probe",
+      "title": "Measure, before any masking hook: (1) whether a PostToolUse hook's hookSpecificOutput.updatedToolOutput also changes what Claude Code writes to the session's .jsonl, or only what the model reads; (2) the output shape it accepts for Bash, Read, Grep and an MCP tool (the docs: 'The value must match the tool's output shape', otherwise 'the original output is used'); (3) whether a blocked UserPromptSubmit prompt lands in the transcript and in prompt history. One claude -p run per question in a temporary directory with a test hook and a fake value, the CLI version recorded; the answers go into the nodes that need them",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "Claude Code hooks.md: updatedToolOutput 'Replaces the tool's output with the provided value before it is sent to Claude' and '`updatedToolOutput` only changes what Claude sees' (telemetry 'also captures the original output'); CHANGELOG: 'PostToolUse hooks can now replace tool output for all tools via `hookSpecificOutput.updatedToolOutput` (previously MCP-only)'. ggshield CHANGELOG 1.56.0 says withholding the output keeps the secret 'out of its context and out of the session transcript on disk'; not measured by us",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "secret-transcript-probe"
+      ],
+      "id": "secret-output-mask",
+      "title": "A PostToolUse hook for every tool, only in a project with an Ennyn config, replaces secrets in a tool's output before Claude reads it (updatedToolOutput): (a) known values: read locally from the project's env files (.env, .env.*, paths security.secrets names) for keys named like PASSWORD, SECRET, TOKEN, KEY, HASH, PRIVATE or CREDENTIAL, and any run of 8 or more characters of such a value, cut at the separators tools cut at ($, :, =, quotes), is masked; (b) every issuer shape checks/secrets.mjs knows. The mask names the kind and length, never a character of the value. It connects nowhere and keeps no value on disk; whether it fails open or closed on an error is decided and tested. The origin project: a tool's warnings printed fragments of a secret-derived value into sessions on four days from 2026-10-11 to 2026-10-28; a Read deny rule on .env would not have fired (no tool named the file) and the issuer-shape scan has no shape for a hash",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "source": "Claude Code permissions.md: Read deny rules 'don't apply to a command that reads files without naming them'; sandboxing.md: 'There is no built-in credential deny list'. Amp masks known values ('hides every occurrence of a secret value in orb shell output'); ggshield masks by detection and sends the text to its API, failing open ('fail open with a warning surfaced through the agent.', ggshield/cmd/secret/scan/ai_hook.py). Origin project transcripts, 2026-10-28",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "secret-output-mask"
+      ],
+      "id": "secret-mask-write-back",
+      "title": "A PreToolUse hook refuses a Write, Edit, MultiEdit or NotebookEdit whose new text holds the mask secret-output-mask writes, and a Bash command that holds it: once a file's secrets are masked in what the agent read, rewriting the file from that text replaces the real value with the mask. The refusal says the file holds a secret the agent was not shown and that the user edits that line",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "Claude Code hooks.md: PreToolUse '`\"deny\"` prevents the tool call'; follows from masking what Read returns",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "secret-transcript-probe"
+      ],
+      "id": "secret-prompt-block",
+      "title": "A UserPromptSubmit hook blocks a prompt that holds a known value or an issuer shape (the same detectors as secret-output-mask), and its reason says the text did not reach the model but is still on disk in the transcript and prompt history, so the secret is rotated",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "Claude Code hooks.md: a blocking UserPromptSubmit hook 'Blocks the prompt, so it never reaches Claude.', and 'a blocking hook isn't a way to keep a secret off disk'",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "secret-agent-setup",
+      "title": "init-scan and doctor report the agent's secret setup, init proposing what is missing and writing it only on the user's approval: sandbox on with sandbox.credentials (deny unsets a variable for sandboxed commands, mask swaps in a placeholder the proxy replaces); permissions.disableBypassPermissionsMode; CLAUDE_CODE_SUBPROCESS_ENV_SCRUB; Read deny rules for .env*, ~/.ssh and ~/.aws; a ~/.claude inside a git work tree (transcripts are plaintext); literal secret values in .mcp.json. The half of agent-setup-risk about secrets",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "Claude Code docs: 'There is no built-in credential deny list' (sandboxing.md); 'To prevent `bypassPermissions` or `auto` mode from being used, set `permissions.disableBypassPermissionsMode`' (permissions.md); the scrub variable 'strip credentials from the environments of the subprocesses Claude Code starts' (env-vars.md); 'Transcripts and history are not encrypted at rest' (claude-directory.md). Nx s1ngularity, 2025-08: malware ran installed agent CLIs with permission-bypass flags to look for secrets (Wiz, GHSA-cxm3-wv7p-598c)",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "secret-transcript-sweep",
+      "title": "doctor (or a command of its own) reads this project's Claude Code transcripts, subagents' too, for known values and issuer shapes and reports kind, session, first and last day and count, never a value or a fragment; a value seen on several days is matched by digest, so the first exposure is dated. In the origin project the session that leaked a hash dated the first leak 2026-10-24; the same salt and hash prefix were in transcripts from 2026-10-11. Tests point CLAUDE_CONFIG_DIR at a temporary directory",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "Claude Code claude-directory.md: 'If a tool reads a `.env` file or a command prints a credential, that value is written to `projects/<project>/<session>.jsonl`.'; origin project transcripts read 2026-10-28 (digests compared, no value printed); neighbour of secret-held-today",
+      "since": 14
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "one-decision-one-site",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "since": 14,
+      "mechanization": true,
+      "sourceClass": "one question answered in several places drifts apart, and a fix reaches only one of them",
+      "title": "A gate for one decision answered in several places: the impact table's S1 row is answered by a command that lists every function and literal answering the same question as the changed one (same regex or string literals, same called predicates, near-duplicate bodies across modules), and a test fails when a change edits one of a known group of sibling sites and not the others, or adds a new near-duplicate of a decision with no entry in a sibling list; then delete the prose that asks reviewers to look for siblings",
+      "source": "cycle 2026-10-28 (14) convergence: the class recurred in all four tasks, ~10 times, all caught by reviewers: two joiners and three anchor sites in the YAML reader (one got the fix), the judge sharing the rules it measures, a recorder missing its sibling's trace check, the hooks finding the project apart from the CLI, a link filter and the loader disagreeing, the metrics-log predicate not shared by audit and doctor, a paid-run block on one of two paths, hook text left saying the old thing"
     }
   ],
   "done": [
@@ -2518,6 +2880,48 @@
       "title": "checks/ci.mjs reads workflow YAML as GitHub's parser does, against a corpus of GitHub's own readings: folded into ci-yaml-differential (cycle 13 closing)",
       "status": "done",
       "finished": "2026-10-28"
+    },
+    {
+      "id": "hooks-project-gate",
+      "title": "Closed by 5ade902: the PostToolUse side-copy hook and the SessionStart reset and style hooks do nothing in a project without an Ennyn config, found where the CLI finds it (projectRoot: .ennyn/config.json at the repository's top, or the file ENNYN_CONFIG names; when git cannot answer, the session folder, as before); the version record runs in every session, writes only the plugin's data folder and the session's env file, and reads nothing of the project; rule bodies are given as written between per-render marker tokens; a test runs each hook in a project without a config and sees no output, no state write and exit 0; hooks.json and the manifests name what the hooks do and ENNYN_CONFIG",
+      "status": "done",
+      "finished": "2026-10-28"
+    },
+    {
+      "id": "eval-git-macos",
+      "title": "Closed by b244cfd: the eval sandbox's credentials.files denies git's credential helpers by real path, which with Homebrew and the Command Line Tools is the git binary itself; the shell's stat fails (EPERM) and falls to the Xcode shim (72); a local push fails even with git by absolute path, since receive-pack starts git by name (128). test/eval/git-path.mjs puts git, git-receive-pack and git-upload-pack first on the arms' PATH; the opt-in run node test/eval/selftest.mjs git (no outer sandbox, proxies at a dead port, a socket watch, cleanup on a signal) records in test/eval/git-cell.json that an arm commits and pushes (2.1.310); check and test:reference never run it",
+      "status": "done",
+      "finished": "2026-10-28"
+    },
+    {
+      "id": "ci-yaml-differential",
+      "title": "Closed by 9783fcb: test/reference/actions-yaml.mjs records what actions/runner's workflow parser (v2.338.0, YamlDotNet 5.3.0, built and run in containers pinned by digest, no network at build or run) makes of 577 workflow texts, and a judge computed from GitHub's tree alone compares the hook's findings place by place in both modes; security.ci's reader takes only the forms its header lists and refuses the rest, a refusal covering the text it hides; run text is read in one pass and every shell's continuation is joined; 0 of 133 real workflows newly refused",
+      "status": "done",
+      "finished": "2026-10-28"
+    },
+    {
+      "id": "ci-run-plain-continuation",
+      "title": "Closed by 9783fcb (ci-yaml-differential): a plain run value continued over lines is read whole, as GitHub reads it",
+      "status": "done",
+      "finished": "2026-10-28"
+    },
+    {
+      "id": "hook-subdir-session",
+      "title": "Closed by 5ade902 (hooks-project-gate): a session started in a subdirectory or a package of a configured repository reads the config at the repository's top, as the CLI does (projectRoot); rules, mapping and state stay the session folder's; sideCopy.roots resolve from the config's folder",
+      "status": "done",
+      "finished": "2026-10-28"
+    },
+    {
+      "id": "security-audit-14",
+      "title": "Security audit (audit slot, cycle 14), with a path table for each protected thing (commit gate verdict, push approval, secrets, dependency provenance, CI workflows, plugin hooks and agents, config path containment, metrics log and audit mark); every row without a guard names an open node. Fixed in ac57f5a: budget --record appended to any file paths.metricsLog named (package.json, .claude/settings.json, the config itself), so the config could stop loading and turn the commit-msg hook off; the log must now be a .jsonl file in the project that no other path key names, budget --record refuses an LFS pointer, and audit says the lines that do not parse. New nodes: settings-env-gate-config, clean-filter-hides-content, secret-tag-messages",
+      "status": "done",
+      "finished": "2026-10-28"
+    },
+    {
+      "id": "gate-stats-locale-sort",
+      "title": "Closed by 852871f (cycle 6, gate-stats legacy audit): steps with equal counts sort in a fixed order; the node left both arrays in ad770f6 and is put back here (cycle 14 closing)",
+      "status": "done",
+      "finished": "2026-10-23"
     }
   ]
 }
