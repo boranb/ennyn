@@ -9,12 +9,28 @@
  * What is refused is what the commit adds: the staged CI files are compared with HEAD's, so what is already
  * there stays until it is touched, and `doctor` counts it. A file read as anything but UTF-8 text is said.
  *
- * The YAML is read without a parser, in one pass with no backtracking: block mappings and sequences by
- * indentation (a sequence at its key's column too), block scalars as text, comments, quoted and escaped keys and
- * values, a quoted value over several lines, tags, anchors and aliases (of a mapping too, and `<<` merges),
- * flow collections over one line or several, and every line break YAML has (LF, CR, CRLF, NEL, LS, PS). What it
- * cannot follow (an explicit `?` key, an alias with no anchor before it, a quote or a flow collection that does
- * not close) is refused, never passed: GitHub runs what it can parse.
+ * The YAML is read without a parser, in one pass with no backtracking, and fails closed: GitHub's parser cannot run
+ * at commit time, so this reading takes only the forms below, exactly, and refuses (`unread`) everything else.
+ *   - one document: a `---` alone on its line before any node, a `...` alone after it with nothing after that;
+ *     no directive (`%`); a block mapping at its root
+ *   - block mappings and sequences by indentation, every key of one mapping and every item of one sequence at the
+ *     column the first one took; spaces as indentation, never a tab; keys plain, quoted or escaped; no explicit key
+ *     (`?`), no merge key (`<<`, which GitHub reads as a key named so)
+ *   - scalars on their key's line or their dash's: plain (its lines below, indented past the key, folded in), quoted
+ *     over lines (one joiner folds them; an escaped line break joins with no space), block scalars (`|`, `>`,
+ *     chomped and folded as YAML does; none with an indentation indicator); no value on the line below its key
+ *   - flow collections, nested, of scalars, pairs and aliases, with no tag or anchor in or on them and no `?`
+ *   - anchors on a scalar, a key, or a mapping or sequence below its key or dash; each name defined once. An alias of
+ *     a scalar or of a mapping or sequence that holds no alias; never of a block scalar or a node that holds one,
+ *     which GitHub reads again where it is replayed
+ *   - tags: `!!str` and `!<tag:yaml.org,2002:str>` on a scalar
+ *   - comments, blank lines, every line break YAML has; a byte order mark at the start; at most 100 levels; at most
+ *     GitHub's 1 MiB
+ * White space is a space or a tab, as for YamlDotNet. A refusal is known by the text it covers (the block it opens,
+ * the anchored node an alias names, the rest of the file after a second document, the whole file past the limit),
+ * so an edit inside it is a new one. Each form is a cell of test/reference/actions-yaml.json with GitHub's own reading
+ * (actions/runner's workflow parser, on YamlDotNet); test/reference.test.mjs fails where GitHub's document gives a
+ * finding this reading misses.
  */
 
 import { isUtf8 } from "node:buffer";
@@ -27,18 +43,39 @@ import { shown, t } from "../core/i18n.mjs";
  *   `block`: the lines of a block scalar; `unread`: a value that is no scalar this reading can give
  */
 
-/** YAML's line breaks: YAML 1.2 has CR, LF and CRLF; libyaml also breaks at NEL, LS and PS. */
+/** YAML's line breaks: YAML 1.2 has CR, LF and CRLF; YamlDotNet, GitHub's parser, also breaks at NEL, LS and PS. */
 const BREAK = /\r\n|[\r\n\u0085\u2028\u2029]/;
 
-/** Past these the reading stops and says so: items nested on one line, and entries aliases can multiply into. */
+/**
+ * Past these the reading stops and says so: the text GitHub reads at most (actions/runner
+ * src/Sdk/WorkflowParser/ParseOptions.cs: MaxFileSize, 1024 * 1024 characters; a longer workflow is not run),
+ * items nested on one line, levels nested (GitHub's MaxDepth is 50), and entries aliases can multiply into.
+ */
+export const MAX_TEXT = 1024 * 1024;
 const MAX_DASHES = 64;
+const MAX_DEPTH = 100;
 const MAX_ENTRIES = 200000;
 
-/** @param {string} s */
-const indentOf = (s) => s.length - s.trimStart().length;
-
-/** @param {string} c */
+/** YAML's white space is a space or a tab (YamlDotNet's IsWhite); any other space is text. @param {string | undefined} c */
 const blank = (c) => c === " " || c === "\t";
+
+/** @param {string} s */
+const indentOf = (s) => {
+  let i = 0;
+  while (i < s.length && blank(s[i])) i++;
+  return i;
+};
+
+/** The text without the white space YAML drops around it: spaces and tabs, never another space. @param {string} s */
+const trimStartW = (s) => s.slice(indentOf(s));
+/** @param {string} s */
+const trimEndW = (s) => {
+  let e = s.length;
+  while (e > 0 && blank(s[e - 1])) e--;
+  return s.slice(0, e);
+};
+/** @param {string} s */
+const trimW = (s) => trimEndW(trimStartW(s));
 
 /**
  * Where the quote opened before `from` closes in `s`, or -1. `"` takes backslash escapes, `'` doubles itself.
@@ -59,11 +96,18 @@ const unescape = (s) =>
     /^[xuU]/.test(e) ? String.fromCodePoint(parseInt(e.slice(1), 16)) : ({ n: "\n", t: "\t", r: "\r", 0: "\0", " ": " ", "/": "/", N: "\u0085", L: "\u2028", P: "\u2029" })[/** @type {string} */ (e)] ?? e,
   );
 
+/** Whether a line ends in an odd run of backslashes: in a double-quoted scalar, an escaped line break. @param {string} s */
+const escapedBreak = (s) => {
+  let k = 0;
+  while (k < s.length && s[s.length - 1 - k] === "\\") k++;
+  return k % 2 === 1;
+};
+
 /**
  * A line's text before its comment, the quote still open at its end (a quoted scalar that goes on) and the flow
- * collections still open. A `#` starts a comment at the start or after a space, outside quotes; a quote opens a
- * scalar only where one can start: the line start, after `: ` or `- `, and inside a flow collection after `[`,
- * `{` or `,` (in a block value a comma is a character: `IFS=',' read` holds no quote).
+ * collections still open. A `#` starts a comment at the start or after a space or a tab, outside quotes; a quote
+ * opens a scalar only where one can start: the line start, after `: ` or `- `, and inside a flow collection after
+ * `[`, `{` or `,` (in a block value a comma is a character: `IFS=',' read` holds no quote).
  * @param {string} line @param {string | null} [open] a quote left open by the line before
  * @param {number} [depth] flow collections left open by the line before
  * @returns {{ body: string, quote: string | null, flow: number }}
@@ -112,134 +156,246 @@ function scan(line, open = null, depth = 0) {
 /** The line without its comment. @param {string} line */
 export const stripComment = (line) => scan(line).body;
 
-/**
- * Whether the flow collection at the start of `s` closes in it: brackets outside quotes, a quote opening only where
- * a scalar starts (after `[`, `{`, `,` or `: `), as scan reads it, so `[main, bob's-fix]` holds no quote.
- * @param {string} s
- */
-function closes(s) {
-  let depth = 0;
-  let canOpen = true;
-  for (let i = 0; i < s.length; i++) {
-    const c = s[i];
-    if ((c === '"' || c === "'") && canOpen) {
-      const end = closeAt(s, i + 1, c);
-      if (end === -1) return false;
-      i = end;
-      canOpen = false;
-    } else if (c === "[" || c === "{") {
-      depth++;
-      canOpen = true;
-    } else if (c === "]" || c === "}") {
-      depth--;
-      if (depth === 0) return true;
-      canOpen = false;
-    } else if (c === ",") canOpen = true;
-    else if (blank(c)) {
-      if (s[i - 1] === ":") canOpen = true;
-    } else canOpen = false;
-  }
-  return false;
-}
+/** The tags this reading takes: a string's, short and verbatim. Any other tag is refused. */
+const STR_TAGS = new Set(["!!str", "!<tag:yaml.org,2002:str>"]);
 
-/** Properties in front of a node: tags and an anchor. @param {string} s */
+/** Properties in front of a node: its tags and its anchor. @param {string} s */
 function props(s) {
   let v = s;
   /** @type {string | undefined} */
   let anchor;
+  /** @type {string[]} */
+  const tags = [];
   for (;;) {
-    const p = /^([!&])(\S*)(?:[ \t]+|$)/.exec(v);
-    if (!p) return { rest: v, anchor };
+    const p = /^([!&])([^ \t]*)(?:[ \t]+|$)/.exec(v);
+    if (!p) return { rest: v, anchor, tags };
     if (p[1] === "&") anchor = p[2];
+    else tags.push(`!${p[2]}`);
     v = v.slice(p[0].length);
   }
 }
 
+/** A block scalar's header: `|` or `>`, then its indentation and chomping indicators. */
+const BLOCK = /^[|>][0-9+-]*$/;
+
 /**
  * The key at the start of a block line: a tag or an anchor in front dropped, a quoted key decoded, a plain key
- * read to the first colon followed by a space or the end. null when the line holds no key.
+ * read to the first colon followed by white space or the end. null when the line holds no key.
  * @param {string} rest
- * @returns {{ key: string, value: string, anchor?: string, alias?: string } | { explicit: true } | null}
+ * @returns {{ key: string, value: string, anchor?: string, tags: string[], alias?: string } | { explicit: true } | null}
  */
 function keyLine(rest) {
-  const { rest: s, anchor } = props(rest);
+  const { rest: s, anchor, tags } = props(rest);
   if (s === "?" || /^\?[ \t]/.test(s)) return { explicit: true };
-  // An alias as a key: `*k : value` (a space before the colon, or the alias would end at it).
-  const alias = /^\*(\S+)[ \t]+:(?:[ \t]+(.*))?$/.exec(s);
-  if (alias) return { key: `*${alias[1]}`, value: (alias[2] ?? "").trim(), alias: alias[1] };
+  // An alias as a key: `*k : value`, or `*k: value`, where the name ends at the colon: GitHub's parser (YamlDotNet,
+  // as libyaml) reads an anchor's name as letters, digits, `-` and `_` only, and refuses any other after it.
+  const alias = /^\*([0-9A-Za-z_-]+)[ \t]*:(?:[ \t]+(.*))?$/.exec(s) ?? /^\*([^ \t]+)[ \t]+:(?:[ \t]+(.*))?$/.exec(s);
+  if (alias) return { key: `*${alias[1]}`, value: trimW(alias[2] ?? ""), alias: alias[1], tags };
   if (s[0] === '"' || s[0] === "'") {
     const end = closeAt(s, 1, s[0]);
     if (end === -1) return null;
-    const after = s.slice(end + 1).replace(/^[ \t]+/, "");
+    const after = trimStartW(s.slice(end + 1));
     if (!(after === ":" || /^:[ \t]/.test(after))) return null;
-    return { key: s[0] === '"' ? unescape(s.slice(1, end)) : s.slice(1, end).replace(/''/g, "'"), value: after.slice(1).trim(), anchor };
+    return { key: s[0] === '"' ? unescape(s.slice(1, end)) : s.slice(1, end).replace(/''/g, "'"), value: trimW(after.slice(1)), anchor, tags };
   }
   if (!s || /^[{}[\],&*!|>%@`#]/.test(s) || /^-([ \t]|$)/.test(s)) return null;
-  for (let i = 0; i < s.length; i++) if (s[i] === ":" && (i + 1 === s.length || blank(s[i + 1]))) return { key: s.slice(0, i).trimEnd(), value: s.slice(i + 1).trim(), anchor };
+  for (let i = 0; i < s.length; i++) if (s[i] === ":" && (i + 1 === s.length || blank(s[i + 1]))) return { key: trimEndW(s.slice(0, i)), value: trimW(s.slice(i + 1)), anchor, tags };
   return null;
 }
 
 /**
- * A scalar as YAML reads it: properties in front dropped (the anchor is given back), an alias looked up (one of a
- * mapping or a sequence is given back as `node`), quotes taken off.
- * @param {string} raw @param {Map<string, string>} scalars
- * @returns {{ value: string, unread?: boolean, anchor?: string, node?: string }}
+ * A scalar as YAML reads it: properties in front dropped (the anchor and the tags are given back), quotes taken off,
+ * an alias named (`alias`: the caller follows it). `unread`: a quote with text after it.
+ * @param {string} raw
+ * @returns {{ value: string, unread?: boolean, anchor?: string, tags: string[], alias?: string, quoted?: boolean }}
  */
-function scalar(raw, scalars) {
-  const { rest, anchor } = props(raw.trim());
-  const v = rest.trim();
-  const alias = /^\*(\S+)$/.exec(v);
-  if (alias) return scalars.has(alias[1]) ? { value: /** @type {string} */ (scalars.get(alias[1])) } : { value: v, node: alias[1] };
+function scalar(raw) {
+  const { rest, anchor, tags } = props(trimW(raw));
+  const v = trimW(rest);
+  const alias = /^\*([^ \t]+)$/.exec(v);
+  if (alias) return { value: v, alias: alias[1], anchor, tags };
   if (v[0] === '"' || v[0] === "'") {
     const end = closeAt(v, 1, v[0]);
-    if (end !== v.length - 1) return { value: v, unread: true, anchor };
-    return { value: v[0] === '"' ? unescape(v.slice(1, end)) : v.slice(1, end).replace(/''/g, "'"), anchor };
+    if (end !== v.length - 1) return { value: v, unread: true, anchor, tags };
+    return { value: v[0] === '"' ? unescape(v.slice(1, end)) : v.slice(1, end).replace(/''/g, "'"), anchor, tags, quoted: true };
   }
-  return { value: v, anchor };
+  return { value: v, anchor, tags };
 }
 
 /**
+ * A block scalar's value as YAML gives it: its lines (those below the header that are blank or indented past the
+ * key) without the indentation of its first line, a literal (`|`) kept line by line, a folded one (`>`) joined by
+ * spaces where lines of the same indentation follow each other, a final line break clipped, stripped (`-`) or
+ * kept (`+`). The caller refuses a header with an indentation indicator.
+ * @param {string} header @param {string[]} lines @param {boolean} last the block runs to the end of the text
+ */
+function blockValue(header, lines, last) {
+  const chomp = header.includes("-") ? "strip" : header.includes("+") ? "keep" : "clip";
+  // The text's last "line" after a final line break is no line.
+  const body = last && lines.length && lines.at(-1) === "" ? lines.slice(0, -1) : lines;
+  const ending = last && lines.at(-1) !== "" ? 0 : 1;
+  let end = body.length;
+  while (end > 0 && !trimW(body[end - 1])) end--;
+  const content = body.slice(0, end);
+  const trailing = body.length - end;
+  const first = content.find((l) => trimW(l));
+  const ind = first === undefined ? 0 : indentOf(first);
+  const own = content.map((l) => (indentOf(l) >= ind ? l.slice(ind) : trimStartW(l)));
+  let out = "";
+  if (header[0] === "|") out = own.join("\n");
+  else {
+    /** @type {string[]} */
+    const parts = [];
+    let breaks = 0;
+    let started = false;
+    let more = false;
+    for (const l of own) {
+      if (!trimW(l) && !/^[ \t]/.test(l)) {
+        breaks++;
+        continue;
+      }
+      const deeper = /^[ \t]/.test(l);
+      if (!started) parts.push("\n".repeat(breaks), l);
+      else if (!breaks && !deeper && !more) parts.push(" ", l);
+      else parts.push(deeper || more ? "\n" : "", "\n".repeat(breaks), l);
+      started = true;
+      more = deeper;
+      breaks = 0;
+    }
+    out = parts.join("");
+  }
+  if (!content.length) return chomp === "keep" ? "\n".repeat(trailing + (ending && body.length ? 1 : 0)) : "";
+  if (chomp === "strip") return out;
+  if (chomp === "keep") return out + "\n".repeat(trailing + ending);
+  return out + (ending || trailing ? "\n" : "");
+}
+
+/** Past this many forms a reading cannot follow, it stops: the file is refused whole. */
+const MAX_UNREAD = 100;
+
+/**
  * Every mapping entry and scalar item of a YAML text, with its line, the keys above it and its sequence item;
- * `unread` lists what this reading cannot follow.
+ * `unread` lists what this reading cannot follow, each with the text it covers (`text`: the node it hides, the
+ * anchored node an alias names, the rest of the text after a second document), so an edit inside a refused form is
+ * a new one. It reads only the forms of this module's header, exactly, and refuses the rest.
  * @param {string} text
  * @returns {{ entries: Entry[], unread: { n: number, what: string, text?: string }[] }}
  */
 export function yamlRead(text) {
-  const lines = text.replace(/^﻿/, "").split(BREAK);
+  if (text.length > MAX_TEXT) return { entries: [], unread: [{ n: 1, what: `a file past ${MAX_TEXT} characters, more than GitHub reads`, text }] };
+  const lines = text.replace(/^\uFEFF/, "").split(BREAK);
   /** @type {Entry[]} */
   const entries = [];
-  /** @type {{ n: number, what: string }[]} */
+  /** @type {{ n: number, what: string, from: number, to: number, covers: number[], rest: boolean }[]} */
   const unread = [];
   /** @type {Map<string, string>} */
   const scalars = new Map();
   /** An anchored mapping or sequence: its entries, the path they hang from, and the first item id made in it. */
   /** @type {Map<string, { entries: Entry[], base: string[], firstItem: number }>} */
   const nodes = new Map();
-  /** @type {{ indent: number, key: string | null, item: number, anchor?: string, start: number, base: string[], firstItem: number }[]} */
+  /**
+   * Anchors whose node this reading does not follow: a block scalar's, and a node that holds an alias, which
+   * GitHub's parser reads again when the outer alias is replayed, so a later anchor of that name changes it.
+   * @type {Set<string>}
+   */
+  const unfollowed = new Set();
+  /** Where each anchor is defined: its line, whose block holds the node. @type {Map<string, number>} */
+  const defined = new Map();
+  // Aliases followed so far: a node whose span followed one holds an alias.
+  let followed = 0;
+  /** @type {{ indent: number, key: string | null, item: number, anchor?: string, start: number, base: string[], firstItem: number, followed: number, inner?: number }[]} */
   let stack = [];
+  // The column of the document's own keys, set by its first.
+  /** @type {number | undefined} */
+  let rootInner;
   let items = 0;
+  let i = 0;
+  let ended = false;
+  /** The last line of the block a line opens: the lines below it that are blank or indented past it. @param {number} s */
+  const extent = (s) => {
+    const col = indentOf(lines[s]);
+    let e = s;
+    while (e + 1 < lines.length && (!trimW(lines[e + 1]) || indentOf(lines[e + 1]) > col)) e++;
+    return e;
+  };
+  /**
+   * A form this reading does not follow, on line `n`: it covers that line's block (and the lines joined to it), the
+   * blocks of the lines in `covers` (an anchored node it names), or with `rest` the text to the end.
+   * @param {number} n @param {string} what @param {{ covers?: (number | undefined)[], rest?: boolean }} [opts]
+   */
+  const refuse = (n, what, { covers = [], rest = false } = {}) => {
+    if (unread.length >= MAX_UNREAD) return;
+    unread.push({ n, what, from: n - 1, to: Math.max(i, extent(n - 1)), covers: /** @type {number[]} */ (covers.filter((c) => c !== undefined)), rest: rest || unread.length + 1 === MAX_UNREAD });
+  };
   const keys = () => /** @type {string[]} */ (stack.filter((f) => f.key !== null).map((f) => f.key));
   const itemNow = () => [...stack].reverse().find((f) => f.key === null)?.item ?? 0;
-  const close = (/** @type {(typeof stack)[number]} */ f) => {
-    if (f.anchor !== undefined) nodes.set(f.anchor, { entries: entries.slice(f.start), base: f.base, firstItem: f.firstItem });
+  /** An anchor's definition on line `n`: a name defined twice is refused, both nodes covered. @param {string} name @param {number} n */
+  const define = (name, n) => {
+    if (defined.has(name)) refuse(n, `&${name}, an anchor named twice`, { covers: [defined.get(name)] });
+    defined.set(name, n - 1);
   };
   // An anchor named again means the newest node: one of the other kind of that name is forgotten.
-  const scalarAnchor = (/** @type {string} */ name, /** @type {string} */ value) => {
-    // (Scalars are looked up first, so a node of this name needs no forgetting.)
+  const anchorScalar = (/** @type {string} */ name, /** @type {string} */ value) => {
+    nodes.delete(name);
+    unfollowed.delete(name);
     scalars.set(name, value);
   };
-  const nodeAnchor = (/** @type {string} */ name) => {
-    scalars.delete(name);
+  const anchorUnfollowed = (/** @type {string} */ name) => {
     nodes.delete(name);
+    scalars.delete(name);
+    unfollowed.add(name);
+  };
+  const close = (/** @type {(typeof stack)[number]} */ f) => {
+    if (f.anchor === undefined) return;
+    if (followed > f.followed) return anchorUnfollowed(f.anchor);
+    scalars.delete(f.anchor);
+    unfollowed.delete(f.anchor);
+    nodes.set(f.anchor, { entries: entries.slice(f.start), base: f.base, firstItem: f.firstItem });
+  };
+  const push = (/** @type {(typeof stack)[number]} */ f, /** @type {number} */ n) => {
+    if (stack.length >= MAX_DEPTH) return void refuse(n, `levels nested past ${MAX_DEPTH}`);
+    stack.push(f);
   };
   const pop = (/** @type {(f: (typeof stack)[number]) => boolean} */ until) => {
     while (stack.length && until(/** @type {(typeof stack)[number]} */ (stack.at(-1)))) close(/** @type {(typeof stack)[number]} */ (stack.pop()));
   };
+  /**
+   * A node's place among its siblings: every key of a mapping, and every item of a sequence, at the column the first
+   * one took. false (and refused) for one at another column.
+   * @param {number} col @param {number} n
+   */
+  const sibling = (col, n) => {
+    const f = stack.at(-1);
+    const inner = f ? f.inner : rootInner;
+    if (inner === undefined) {
+      if (f) f.inner = col;
+      else rootInner = col;
+      return true;
+    }
+    if (inner === col) return true;
+    refuse(n, "a line at a column its mapping or sequence does not use");
+    return false;
+  };
+  /** Tags other than a string's are refused. @param {string[]} tags @param {number} n */
+  const tagsOk = (tags, n) => {
+    if (tags.every((x) => STR_TAGS.has(x))) return true;
+    refuse(n, `a tag this reading does not take (${tags.find((x) => !STR_TAGS.has(x))})`);
+    return false;
+  };
+  /** A scalar alias's text, or undefined when it names no scalar this reading follows. @param {string} name @param {number} n */
+  const scalarOf = (name, n) => {
+    if (unfollowed.has(name)) return void refuse(n, `*${name}, an alias of a node this reading does not follow (a block scalar, or one that holds an alias)`, { covers: [defined.get(name)] });
+    const v = scalars.get(name);
+    if (v !== undefined) followed++;
+    return v;
+  };
   /** An alias of a mapping or a sequence, read again where it stands: at `path`, in item `item`, on line `n`. */
   const expand = (/** @type {string} */ name, /** @type {string[]} */ path, /** @type {number} */ item, /** @type {number} */ n) => {
+    if (unfollowed.has(name)) return refuse(n, `*${name}, an alias of a node this reading does not follow (a block scalar, or one that holds an alias)`, { covers: [defined.get(name)] });
     const node = nodes.get(name);
-    if (!node) return unread.push({ n, what: `*${name}, an alias with no anchor before it` });
-    if (entries.length + node.entries.length > MAX_ENTRIES) return unread.push({ n, what: `*${name}, aliases that grow past ${MAX_ENTRIES} entries` });
+    if (!node) return refuse(n, `*${name}, an alias with no anchor before it`);
+    if (entries.length + node.entries.length > MAX_ENTRIES) return refuse(n, `*${name}, aliases that grow past ${MAX_ENTRIES} entries`, { covers: [defined.get(name)] });
+    followed++;
     /** @type {Map<number, number>} */
     const fresh = new Map();
     for (const e of node.entries) {
@@ -247,21 +403,69 @@ export function yamlRead(text) {
       entries.push({ ...e, n, path: [...path, ...e.path.slice(node.base.length)], item: /** @type {number} */ (own) });
     }
   };
+  /**
+   * A scalar value at `path` (`key` null: an item): an alias followed, a quote with text after it refused.
+   * @param {string} raw @param {string[]} path @param {string | null} key @param {number} item @param {number} n
+   * @param {(s: ReturnType<typeof scalar>) => string} [more] the plain value's lines below
+   */
+  const value = (raw, path, key, item, n, more) => {
+    const s = scalar(raw);
+    if (!tagsOk(s.tags, n)) return;
+    if (s.unread) refuse(n, "a quote with text after it");
+    if (s.alias !== undefined) {
+      const v = scalarOf(s.alias, n);
+      if (v !== undefined) return void entries.push({ n, path, key, value: v, item });
+      // A mapping or a sequence is read again here; any other alias keeps its name, unread.
+      if (key !== null) entries.push({ n, path, key, value: nodes.has(s.alias) ? null : s.value, item, ...(nodes.has(s.alias) ? {} : { unread: true }) });
+      if (!unfollowed.has(s.alias)) expand(s.alias, path, item, n);
+      return;
+    }
+    const v = more && !s.quoted && !s.unread ? more(s) : s.value;
+    if (s.anchor !== undefined) {
+      define(s.anchor, n);
+      anchorScalar(s.anchor, v);
+    }
+    entries.push({ n, path, key, value: v, item, ...(s.unread ? { unread: true } : {}) });
+  };
   /** A flow collection (`[…]`, `{…}`, nested) read into entries at `path`, in item `item`, on line `n`. */
   const flow = (/** @type {string} */ src, /** @type {string[]} */ path, /** @type {number} */ item, /** @type {number} */ n) => {
     let i = 0;
     const ws = () => {
-      while (i < src.length && /\s/.test(src[i])) i++;
+      while (i < src.length && blank(src[i])) i++;
     };
     const token = (/** @type {string} */ stops) => {
       ws();
       const from = i;
+      // In a flow collection this reading takes no properties: a tag or an anchor on a node there is refused.
+      if (src[i] === "&" || src[i] === "!") throw new Error("a tag or an anchor in a flow collection");
       if (src[i] === '"' || src[i] === "'") {
         const end = closeAt(src, i + 1, src[i]);
         if (end === -1) throw new Error("a quote that does not close");
         i = end + 1;
-      } else while (i < src.length && !stops.includes(src[i]) && !(src[i] === ":" && stops.includes(":") && (i + 1 === src.length || /[\s,\]}]/.test(src[i + 1])))) i++;
-      return src.slice(from, i).trim();
+        return src.slice(from, i);
+      }
+      while (i < src.length && !stops.includes(src[i]) && !(src[i] === ":" && stops.includes(":") && (i + 1 === src.length || /[ \t,\]}]/.test(src[i + 1])))) i++;
+      const t = trimW(src.slice(from, i));
+      // GitHub's parser reads `?` in a flow collection as the explicit key, whatever follows it.
+      if (t.includes("?")) throw new Error("a ? in a flow collection");
+      return t;
+    };
+    const keyOf = (/** @type {string} */ raw) => {
+      const s = scalar(raw);
+      if (s.alias === undefined) {
+        if (s.value === "<<" && !s.quoted) throw new Error("a merge key (<<)");
+        return s.value;
+      }
+      const v = scalarOf(s.alias, n);
+      if (v === undefined) throw new Error(`*${s.alias} as a key`);
+      return v;
+    };
+    // A key's value after its colon, up to `stops`: a collection, an alias, a scalar.
+    const after = (/** @type {string[]} */ at, /** @type {number} */ it, /** @type {string} */ k, /** @type {string} */ stops) => {
+      i++;
+      ws();
+      if (src[i] === "[" || src[i] === "{") return node([...at, k], it, k);
+      value(token(stops), [...at, k], k, it, n);
     };
     const node = (/** @type {string[]} */ at, /** @type {number} */ it, /** @type {string | null} */ key) => {
       ws();
@@ -277,25 +481,17 @@ export function yamlRead(text) {
             ws();
             if (src[i] === "[" || src[i] === "{") node(at, id, null);
             else {
-              const s = scalar(token(",]"), scalars);
-              if (s.node) expand(s.node, at, id, n);
-              else entries.push({ n, path: at, key: null, value: s.value, item: id, ...(s.unread ? { unread: true } : {}) });
+              const raw = token(":,]");
+              ws();
+              // `[uses: x]`: a single pair is a mapping of one key, the item.
+              if (src[i] === ":") after(at, id, keyOf(raw), ",]");
+              else value(raw, at, null, id, n);
             }
           } else {
-            const k = scalar(token(":,}"), scalars).value;
+            const k = keyOf(token(":,}"));
             ws();
-            if (src[i] === ":") {
-              i++;
-              ws();
-              if (src[i] === "[" || src[i] === "{") node([...at, k], it, k);
-              else {
-                const s = scalar(token(",}"), scalars);
-                if (s.node) {
-                  entries.push({ n, path: [...at, k], key: k, value: null, item: it });
-                  expand(s.node, [...at, k], it, n);
-                } else entries.push({ n, path: [...at, k], key: k, value: s.value, item: it, ...(s.unread ? { unread: true } : {}) });
-              }
-            } else entries.push({ n, path: [...at, k], key: k, value: "", item: it });
+            if (src[i] === ":") after(at, it, k, ",}");
+            else entries.push({ n, path: [...at, k], key: k, value: "", item: it });
           }
           ws();
           if (src[i] === ",") i++;
@@ -309,163 +505,266 @@ export function yamlRead(text) {
       ws();
       if (i < src.length) throw new Error(`"${src.slice(i, i + 20)}" after it`);
     } catch (e) {
-      unread.push({ n, what: `a flow collection this reading cannot follow (${/** @type {Error} */ (e).message})` });
+      refuse(n, `a flow collection this reading cannot follow (${/** @type {Error} */ (e).message})`);
     }
   };
   // A line that reads as a key or an item at or left of `col` ends a scalar or a flow collection for this
   // reading: YAML might read it either way, so what was being joined is refused, not swallowed.
   const structure = (/** @type {string} */ raw, /** @type {number} */ col) => {
-    const t = scan(raw).body.trimEnd();
-    if (!t.trim() || indentOf(t) > col) return false;
-    const rest = t.trimStart().replace(/^(?:-[ \t]+)+/, "");
-    return /^-([ \t]|$)/.test(t.trimStart()) || keyLine(rest) !== null;
+    const t = trimEndW(scan(raw).body);
+    if (!trimW(t) || indentOf(t) > col) return false;
+    const rest = trimStartW(t).replace(/^(?:-[ \t]+)+/, "");
+    return /^-([ \t]|$)/.test(trimStartW(t)) || keyLine(rest) !== null;
   };
-  for (let i = 0; i < lines.length; i++) {
-    const n = i + 1;
-    // A logical line: a quoted scalar that goes on is joined, folded to spaces as YAML folds it.
-    let { body, quote } = scan(lines[i]);
-    const start = indentOf(lines[i]);
-    while (quote && i + 1 < lines.length && !structure(lines[i + 1], start)) {
-      const next = scan(lines[++i], quote);
-      body = `${body} ${next.body.trim()}`;
+  /**
+   * The one joiner of lines: from line `from`, a quote or a flow collection left open goes on into the lines
+   * below until it closes, each added line read once (a double-quoted line ending in an escaped line break goes on
+   * with no space and no indent; any other is folded to a space). It stops at a line that reads as a key or an item
+   * at or left of the first line's column, leaving the quote or the collection open.
+   * @param {number} from
+   */
+  const joined = (from) => {
+    let { body, quote, flow: depth } = scan(lines[from]);
+    const parts = [body];
+    let last = body;
+    let to = from;
+    const start = indentOf(lines[from]);
+    while ((quote || depth > 0) && to + 1 < lines.length && !structure(lines[to + 1], start)) {
+      const next = scan(lines[++to], quote, depth);
+      if (quote === '"' && escapedBreak(last)) parts[parts.length - 1] = /** @type {string} */ (parts.at(-1)).slice(0, -1);
+      else parts.push(" ");
+      parts.push(trimStartW(next.body));
+      last = next.body;
       quote = next.quote;
+      depth = next.flow;
     }
-    if (quote) {
-      unread.push({ n, what: "a quote that does not close before the next key" });
+    body = parts.join("");
+    return { body: trimEndW(body), open: Boolean(quote) || depth > 0, quote, to };
+  };
+  /**
+   * A plain scalar's lines below line `from`, indented past `at` (a dash, a quote or a `?` at their start too), as
+   * YAML folds them: a space between lines, a line break for each blank line. A comment ends it; a line that reads
+   * as a key ends it, in a file YAML refuses. Gives the value and the last line taken.
+   * @param {string} v @param {number} from @param {number} at
+   */
+  const plainOn = (v, from, at) => {
+    if (scan(lines[from]).body.length < lines[from].length) return { v, to: from };
+    const parts = [v];
+    let to = from;
+    for (let j = from + 1, blanks = 0; j < lines.length; j++) {
+      const raw = lines[j];
+      if (!trimW(raw)) {
+        blanks++;
+        continue;
+      }
+      const t = trimStartW(raw);
+      const key = keyLine(t);
+      if (indentOf(raw) <= at || t[0] === "#" || (key !== null && !("explicit" in key))) break;
+      let hash = -1;
+      for (let k = 1; k < t.length && hash === -1; k++) if (t[k] === "#" && blank(t[k - 1])) hash = k;
+      parts.push(blanks ? "\n".repeat(blanks) : " ", trimEndW(hash === -1 ? t : t.slice(0, hash)));
+      blanks = 0;
+      to = j;
+      if (hash !== -1) break;
+    }
+    return { v: parts.join(""), to };
+  };
+  /** A block scalar's lines below line `from`: blank, or indented past `col`. @param {number} from @param {number} col */
+  const blockLines = (from, col) => {
+    let to = from;
+    while (to + 1 < lines.length && (!trimW(lines[to + 1]) || indentOf(lines[to + 1]) > col)) to++;
+    return { block: lines.slice(from + 1, to + 1), to };
+  };
+  /**
+   * A block scalar whose header is `header`, below line `i` and indented past `col`: refused with an indentation
+   * indicator; its anchor is never followed.
+   * @param {string} header @param {string | undefined} anchor @param {string[]} path @param {string | null} key @param {number} item @param {number} n @param {number} col
+   */
+  const block = (header, anchor, path, key, item, n, col) => {
+    const b = blockLines(i, col);
+    i = b.to;
+    if (anchor !== undefined) {
+      define(anchor, n);
+      anchorUnfollowed(anchor);
+    }
+    if (/[0-9]/.test(header)) return refuse(n, "a block scalar with an indentation indicator");
+    entries.push({ n, path, key, value: blockValue(header, b.block, b.to === lines.length - 1), item, block: b.block, ...(header[0] === ">" ? { folded: true } : {}) });
+  };
+  for (i = 0; i < lines.length && unread.length < MAX_UNREAD; i++) {
+    const n = i + 1;
+    // A logical line: a quote or a flow collection that goes on is joined.
+    const line = joined(i);
+    i = line.to;
+    if (line.open) {
+      refuse(n, line.quote ? "a quote that does not close before the next key" : "a flow collection that does not close before the next key");
       continue;
     }
-    body = body.trimEnd();
-    if (!body.trim()) continue;
+    const body = line.body;
+    if (!trimW(body)) continue;
+    if (ended) {
+      refuse(n, "text after the document's end (...)", { rest: true });
+      break;
+    }
+    // Document markers stand alone on their line, the first before any node; a directive is refused.
     if (/^(---|\.\.\.)([ \t]|$)/.test(body)) {
-      pop(() => true);
+      if (trimW(body.slice(3)) || (body.startsWith("---") && (entries.length || stack.length || rootInner !== undefined))) {
+        refuse(n, "a document marker with a node after it, or a second document", { rest: true });
+        break;
+      }
+      if (body.startsWith("...")) ended = true;
+      continue;
+    }
+    if (body[0] === "%") {
+      refuse(n, "a directive (%)", { rest: true });
+      break;
+    }
+    // Indentation is spaces: a tab in it is refused.
+    if (/^ *\t/.test(body)) {
+      refuse(n, "a tab in the indentation");
       continue;
     }
     let col = indentOf(body);
-    let rest = body.trimStart();
+    let rest = trimStartW(body);
     // The column a collection's lines must stay right of: the key's, or for an item the dash's.
     let dashCol = col;
     // Sequence items: each dash moves the content right; the item belongs to the nearest key at its column or left of it.
     let dashes = 0;
+    let placed = true;
     while ((rest === "-" || /^-[ \t]/.test(rest)) && ++dashes <= MAX_DASHES) {
       dashCol = col;
       pop((f) => f.indent > col || (f.key === null && f.indent === col));
-      stack.push({ indent: col, key: null, item: ++items, start: entries.length, base: keys(), firstItem: items });
+      placed = sibling(col, n);
+      if (!placed) break;
+      push({ indent: col, key: null, item: ++items, start: entries.length, base: keys(), firstItem: items, followed }, n);
       const after = rest.slice(1);
       col += 1 + indentOf(after);
-      rest = after.trimStart();
+      rest = trimStartW(after);
     }
+    if (!placed) continue;
     if (dashes > MAX_DASHES) {
-      unread.push({ n, what: `items nested more than ${MAX_DASHES} deep on one line` });
+      refuse(n, `items nested more than ${MAX_DASHES} deep on one line`);
       continue;
     }
     if (!rest) continue;
-    // A flow collection over several lines is read as one.
-    const gather = (/** @type {string} */ v, at = col) => {
-      let s = v;
-      let depth = 1;
-      while (!closes(s) && i + 1 < lines.length && !structure(lines[i + 1], at)) {
-        const next = scan(lines[++i], null, depth);
-        s = `${s} ${next.body.trim()}`;
-        depth = Math.max(1, next.flow);
-      }
-      return s;
-    };
     const k = keyLine(rest);
     if (k && "explicit" in k) {
-      unread.push({ n, what: "an explicit key (?)" });
+      refuse(n, "an explicit key (?)");
       continue;
     }
     // The value of an explicit key: as unreadable as its key, and its own text, so a change to it is new.
     if (rest === ":" || /^:[ \t]/.test(rest)) {
-      unread.push({ n, what: "the value of an explicit key (:)" });
+      refuse(n, "the value of an explicit key (:)");
       continue;
     }
     if (!k) {
-      // A scalar item (or a line that goes on from above): read as a value with no key.
+      // An item's own node: a scalar, a block scalar, a flow collection, an alias, an anchor for the node below.
+      if (!dashes) {
+        refuse(n, stack.length || rootInner !== undefined ? "a line that is no key and no item" : "a document that is no block mapping");
+        continue;
+      }
       const p = props(rest);
+      if (!tagsOk(p.tags, n)) continue;
+      if (!p.rest && p.tags.length) {
+        refuse(n, "properties with no node on their line");
+        continue;
+      }
       if (p.anchor !== undefined && !p.rest) {
         const f = stack.at(-1);
-        if (f && f.key === null) (f.anchor = p.anchor), nodeAnchor(p.anchor);
+        if (f && f.key === null) {
+          define(p.anchor, n);
+          f.anchor = p.anchor;
+          f.followed = followed;
+          anchorUnfollowed(p.anchor);
+        } else refuse(n, "an anchor with no node on its line");
         continue;
       }
       if (/^[[{]/.test(p.rest)) {
-        flow(gather(p.rest, dashes ? dashCol : col), keys(), itemNow(), n);
+        if (p.anchor !== undefined || p.tags.length) refuse(n, "a tag or an anchor on a flow collection");
+        else flow(p.rest, keys(), itemNow(), n);
         continue;
       }
-      const s = scalar(rest, scalars);
-      if (s.anchor !== undefined) scalarAnchor(s.anchor, s.value);
-      if (s.node) expand(s.node, keys(), itemNow(), n);
-      else entries.push({ n, path: keys(), key: null, value: s.value, item: itemNow(), ...(s.unread ? { unread: true } : {}) });
+      if (BLOCK.test(p.rest)) {
+        block(p.rest, p.anchor, keys(), null, itemNow(), n, dashCol);
+        continue;
+      }
+      value(rest, keys(), null, itemNow(), n, (s) => {
+        const on = plainOn(s.value, i, dashCol);
+        i = on.to;
+        return on.v;
+      });
       continue;
     }
     pop((f) => f.indent >= col);
+    if (!sibling(col, n) || !tagsOk(k.tags, n)) continue;
     // An anchor on a key names the key's text; an alias as a key is that text, or unreadable.
-    if (k.anchor !== undefined) scalarAnchor(k.anchor, k.key);
+    if (k.anchor !== undefined) {
+      define(k.anchor, n);
+      anchorScalar(k.anchor, k.key);
+    }
     if (k.alias !== undefined) {
-      const named = scalars.get(k.alias);
+      const named = scalarOf(k.alias, n);
       if (named === undefined) {
-        unread.push({ n, what: `${k.key}, an alias as a key with no anchor before it` });
+        if (!unfollowed.has(k.alias)) refuse(n, `${k.key}, an alias as a key with no anchor before it`);
         continue;
       }
       k.key = named;
     }
+    if (k.key === "<<" && !/^["']/.test(trimStartW(props(rest).rest))) {
+      refuse(n, "a merge key (<<), which GitHub reads as a key named so");
+      continue;
+    }
     const item = itemNow();
     const path = [...keys(), k.key];
     const p = props(k.value);
-    // `<<: *a` merges the anchored mapping into this one.
-    if (k.key === "<<") {
-      const s = scalar(k.value, scalars);
-      if (/^[{]/.test(p.rest)) flow(gather(p.rest), keys(), item, n);
-      else if (s.node) expand(s.node, keys(), item, n);
-      else unread.push({ n, what: "a merge key (<<) of something that is no alias of a mapping" });
-      continue;
-    }
+    if (!tagsOk(p.tags, n)) continue;
     if (/^[[{]/.test(p.rest)) {
-      entries.push({ n, path, key: k.key, value: null, item });
-      flow(gather(p.rest), path, item, n);
-      continue;
-    }
-    const s = scalar(k.value, scalars);
-    if (s.anchor !== undefined && s.value !== "") scalarAnchor(s.anchor, s.value);
-    else if (s.anchor !== undefined) nodeAnchor(s.anchor);
-    if (s.node) {
-      // An alias of a mapping or a sequence is read again here; one with no anchor keeps its name, unread.
-      entries.push({ n, path, key: k.key, value: nodes.has(s.node) ? null : s.value, item, ...(nodes.has(s.node) ? {} : { unread: true }) });
-      expand(s.node, path, item, n);
-      continue;
-    }
-    if (/^[|>][0-9+-]*$/.test(s.value) && !/^["']/.test(p.rest)) {
-      // A block scalar: the lines below that are blank or indented past the key.
-      /** @type {string[]} */
-      const block = [];
-      while (i + 1 < lines.length && (!lines[i + 1].trim() || indentOf(lines[i + 1]) > col)) block.push(lines[++i]);
-      entries.push({ n, path, key: k.key, value: block.map((l) => l.trim()).join("\n"), item, block, ...(s.value.startsWith(">") ? { folded: true } : {}) });
-      continue;
-    }
-    if (s.value === "" && !s.unread) {
-      // A plain scalar may start on the next line, indented past the key, when that line is no key and no item.
-      let j = i + 1;
-      while (j < lines.length && !scan(lines[j]).body.trim()) j++;
-      const next = j < lines.length ? scan(lines[j]).body.trimEnd() : "";
-      if (next && indentOf(next) > col && !keyLine(next.trimStart()) && !/^-([ \t]|$)/.test(next.trimStart())) {
-        i = j;
-        if (/^[[{]/.test(props(next.trim()).rest)) flow(gather(props(next.trim()).rest), path, item, j + 1);
-        else {
-          const v = scalar(next, scalars);
-          if (v.node) expand(v.node, path, item, j + 1);
-          else entries.push({ n: j + 1, path, key: k.key, value: v.value, item, ...(v.unread ? { unread: true } : {}) });
-        }
+      if (p.anchor !== undefined || p.tags.length) {
+        refuse(n, "a tag or an anchor on a flow collection");
         continue;
       }
       entries.push({ n, path, key: k.key, value: null, item });
-      stack.push({ indent: col, key: k.key, item, anchor: s.anchor, start: entries.length, base: path, firstItem: items + 1 });
+      flow(p.rest, path, item, n);
       continue;
     }
-    entries.push({ n, path, key: k.key, value: s.value, item, ...(s.unread ? { unread: true } : {}) });
+    if (BLOCK.test(p.rest)) {
+      // A block scalar: the lines below that are blank or indented past the key. Its anchor is not followed.
+      block(p.rest, p.anchor, path, k.key, item, n, col);
+      continue;
+    }
+    if (p.rest === "") {
+      // No value on the key's line: a mapping or a sequence below. A value on the line below its key is refused.
+      let j = i + 1;
+      while (j < lines.length && !trimW(scan(lines[j]).body)) j++;
+      const next = j < lines.length ? trimEndW(scan(lines[j]).body) : "";
+      if (next && indentOf(next) > col && !keyLine(trimStartW(next)) && !/^-([ \t]|$)/.test(trimStartW(next))) {
+        refuse(n, "a value on the line below its key");
+        i = blockLines(i, col).to;
+        continue;
+      }
+      if (p.tags.length) {
+        refuse(n, "a tag on a mapping or a sequence");
+        continue;
+      }
+      if (p.anchor !== undefined) define(p.anchor, n);
+      entries.push({ n, path, key: k.key, value: null, item });
+      push({ indent: col, key: k.key, item, anchor: p.anchor, start: entries.length, base: path, firstItem: items + 1, followed }, n);
+      if (p.anchor !== undefined) anchorUnfollowed(p.anchor);
+      continue;
+    }
+    value(k.value, path, k.key, item, n, (s) => {
+      const on = plainOn(s.value, i, col);
+      i = on.to;
+      return on.v;
+    });
   }
   pop(() => true);
-  // The line's own text goes with each: a change on a line the reading cannot follow is a new one.
-  return { entries, unread: unread.map((u) => ({ ...u, text: (lines[u.n - 1] ?? "").trim() })) };
+  if (unread.length >= MAX_UNREAD) unread[unread.length - 1].rest = true;
+  // Each refusal is known by the text it covers: an edit inside it, or in the anchored node it names, is a new one.
+  const region = (/** @type {number} */ from, /** @type {number} */ to) => lines.slice(from, to + 1).join("\n");
+  return {
+    entries,
+    unread: unread.map((u) => ({ n: u.n, what: u.what, text: [u.rest ? lines.slice(u.from).join("\n") : region(u.from, u.to), ...u.covers.map((c) => region(c, extent(c)))].join("\n\0") })),
+  };
 }
 
 /**
@@ -497,8 +796,9 @@ const PR_REF = /refs\/pull\/|(?:^|[^\w])pull\/(?:\$\{\{[^}\n]{0,400}\}\}|[^/\s]+
  * @param {string} text
  */
 export function prExpression(text) {
-  for (let at = text.indexOf("${{"); at !== -1; at = text.indexOf("${{", at + 3)) {
-    const end = text.indexOf("}}", at + 3);
+  // Each expression read once: the next one is looked for past this one's end, so a text costs its length.
+  for (let at = text.indexOf("${{"), end = 0; at !== -1; at = text.indexOf("${{", end + 2)) {
+    end = text.indexOf("}}", at + 3);
     if (end === -1) return false;
     const e = text.slice(at + 3, end).toLowerCase().replace(/\[\s*(['"])([^'"\]]*)\1\s*\]/g, ".$2").replace(/\s+/g, "");
     // The number alone names no code (a branch called backport-<n> is not the pull request's): only inside
@@ -518,26 +818,38 @@ export function prExpression(text) {
 export const ciKind = (path) => (/^\.github\/workflows\/[^/]+$/.test(path) ? "workflow" : /(^|\/)action\.ya?ml$/.test(path) ? "action" : "workflow");
 
 /**
- * @typedef {{ uses: { n: number, job: string, value: string, pinned: boolean, from?: string }[], pwn: { n: number, what: string }[], unpermitted: { job: string, n: number }[], writeAll: { where: string, n: number }[], unread: { n: number, what: string, text?: string }[], targeted: boolean, callees: { n: number, path: string }[], loose: { job: string, n: number, dir: string, from: string }[] }} Findings
+ * @typedef {{ uses: { n: number, at: number, job: string, value: string, pinned: boolean, from?: string }[], pwn: { n: number, at: number, what: string }[], unpermitted: { job: string, n: number }[], writeAll: { where: string, n: number }[], unread: { n: number, what: string, text?: string }[], targeted: boolean, callees: { n: number, path: string }[], loose: { job: string, n: number, at: number, dir: string, from: string }[] }} Findings
+ *   `at`: the entry's place in the reading, the order steps run in (a line holds several in a flow collection)
  */
 
 /** git commands that bring code into the work tree or the index. */
 const GIT_FETCHES = new Set(["fetch", "checkout", "switch", "pull", "worktree", "clone", "am", "apply", "merge", "rebase", "reset", "restore", "cherry-pick"]);
 
 /** Variables the runner itself sets to the pull request's code. */
-const RUNNER_HEAD = ["GITHUB_HEAD_REF"];
+export const RUNNER_HEAD = ["GITHUB_HEAD_REF"];
 
 /**
  * Whether a text names the pull request's code: a ref literal, an expression, or a variable in `names` (`$X`,
  * `${X}`, `${{ env.X }}`).
  * @param {string} text @param {Set<string>} names
  */
-function holdsRef(text, names) {
+export function holdsRef(text, names) {
   return PR_REF.test(text) || prExpression(text) || [...text.matchAll(/\$\{?([A-Za-z_][A-Za-z0-9_]*)|\$\{\{\s*env\s*(?:\.\s*([A-Za-z_][A-Za-z0-9_]*)|\[\s*['"]([A-Za-z_][A-Za-z0-9_]*)['"]\s*\])/gi)].some((m) => names.has(m[1] ?? m[2] ?? m[3]));
 }
 
 /**
- * A run block's logical lines: a line ending in `\\` goes on in the next. `k` is the block line it starts on.
+ * Where a line goes on in the next: a `\` (sh, bash), a backtick (PowerShell) or a `^` (cmd) at its end, before any
+ * white space. Joined whatever the step's shell: joining more lines only finds more. The index of that character, or -1.
+ * @param {string} line
+ */
+function continuation(line) {
+  let e = line.length;
+  while (e > 0 && /\s/.test(line[e - 1])) e--;
+  return e > 0 && "\\`^".includes(line[e - 1]) ? e - 1 : -1;
+}
+
+/**
+ * A run block's logical lines: a line ending in a continuation goes on in the next. `k` is the block line it starts on.
  * @param {string[]} lines
  */
 function logicalLines(lines) {
@@ -545,9 +857,14 @@ function logicalLines(lines) {
   const out = [];
   for (let k = 0; k < lines.length; k++) {
     const from = k;
-    let text = lines[k];
-    while (/\\\s*$/.test(text) && k + 1 < lines.length) text = `${text.replace(/\\\s*$/, " ")}${lines[++k]}`;
-    out.push({ k: from, text });
+    const parts = [];
+    let line = lines[k];
+    for (let at = continuation(line); at !== -1 && k + 1 < lines.length; at = continuation(line)) {
+      parts.push(line.slice(0, at), " ");
+      line = lines[++k];
+    }
+    parts.push(line);
+    out.push({ k: from, text: parts.join("") });
   }
   return out;
 }
@@ -570,44 +887,169 @@ export function localPath(v) {
 }
 
 /**
- * Placements of another repository, for looking up a step's local path: per job, per directory, the earliest. A
- * path is under one when the directory is the whole workspace ("") or one of the path's own prefixes, so a lookup
- * costs the path's depth, not the number of placements.
- * @param {{ job: string, n: number, dir: string, from: string }[]} loose
+ * Where a checkout or a clone puts code, as a directory of the workspace (a backslash, Windows', read as `/`):
+ * `${{ github.workspace }}/x`, `./x` and `x/.` are `x`; outside the workspace (an absolute path, the runner's temp) is null, no local action's; a place
+ * this reading cannot resolve (another expression or variable, `..`) is the whole workspace.
+ * @param {string} p
+ */
+export function workspaceDir(p) {
+  const d = p.replace(/\\/g, "/").replace(/^(?:\$\{\{\s*github\.workspace\s*\}\}|\$\{?GITHUB_WORKSPACE\}?)\/?/i, "");
+  // A runner's work directory spelled out is the workspace, somewhere this reading cannot place.
+  if (/^\/home\/runner\/work\//.test(d)) return "";
+  // Outside the workspace (an absolute path, the runner's temp or tool dirs): no `./` reaches it.
+  if (/^\/|^(?:\$\{\{\s*runner\.(?:temp|tool_cache)\s*\}\}|\$\{?RUNNER_(?:TEMP|TOOL_CACHE)\}?|~)(?:\/|$)/i.test(d)) return null;
+  if (/\$\{\{|\$/.test(d)) return "";
+  const parts = d.split("/").filter((x) => x && x !== ".");
+  return parts.includes("..") ? "" : parts.join("/");
+}
+
+/**
+ * Placements of another repository, for looking up a step's local path: per job, per directory, the earliest by its
+ * place in the reading. A path is under one when the directory is the whole workspace ("") or one of the path's own
+ * prefixes, so a lookup costs the path's depth, not the number of placements.
+ * @param {{ job: string, at: number, dir: string, from: string }[]} loose
  */
 function placements(loose) {
-  /** @type {Map<string, Map<string, { n: number, from: string }>>} */
+  /** @type {Map<string, Map<string, { at: number, from: string }>>} */
   const byJob = new Map();
   for (const l of loose) {
     const dirs = byJob.get(l.job) ?? byJob.set(l.job, new Map()).get(l.job);
-    const had = /** @type {Map<string, { n: number, from: string }>} */ (dirs).get(l.dir);
-    if (!had || l.n < had.n) /** @type {Map<string, { n: number, from: string }>} */ (dirs).set(l.dir, { n: l.n, from: l.from });
+    const had = /** @type {Map<string, { at: number, from: string }>} */ (dirs).get(l.dir);
+    if (!had || l.at < had.at) /** @type {Map<string, { at: number, from: string }>} */ (dirs).set(l.dir, { at: l.at, from: l.from });
   }
-  /** The placement a local path at line `n` of `job` lies under, if any. @param {string} job @param {number} n @param {string} path */
-  return (job, n, path) => {
+  /** The placement a local path at place `at` of `job` lies under, if any. @param {string} job @param {number} at @param {string} path */
+  return (job, at, path) => {
     const dirs = byJob.get(job);
     if (!dirs) return undefined;
     const parts = path.split("/");
     for (let k = 0; k <= parts.length; k++) {
       const hit = dirs.get(parts.slice(0, k).join("/"));
-      if (hit && hit.n < n) return hit;
+      if (hit && hit.at < at) return hit;
     }
     return undefined;
   };
 }
 
 /**
- * A folded block scalar's lines as YAML gives them to the shell: lines of one paragraph joined by a space, so
- * `git fetch origin` and the ref on the line below are one command. The first line of a paragraph keeps its place;
- * the lines joined into it are left empty, so every line still has its number.
- * @param {string[]} block
+ * The names a line sets with `NAME=` anywhere in it (inside quotes too, as `echo "NAME=…" >> $GITHUB_ENV` writes them).
+ * @param {string} text
  */
-function folded(block) {
-  const out = block.map(() => "");
-  for (let k = 0, at = -1; k < block.length; k++) {
-    if (!block[k].trim()) at = -1;
-    else if (at === -1) (at = k), (out[k] = block[k].trim());
-    else out[at] = `${out[at]} ${block[k].trim()}`;
+function envNames(text) {
+  /** @type {string[]} */
+  const out = [];
+  for (let eq = text.indexOf("="); eq !== -1; eq = text.indexOf("=", eq + 1)) {
+    let s = eq;
+    while (s > 0 && /[A-Za-z0-9_]/.test(text[s - 1])) s--;
+    if (s < eq && /[A-Za-z_]/.test(text[s])) out.push(text.slice(s, eq));
+  }
+  return out;
+}
+
+/**
+ * The `read X Y <<< word` of a line, in one pass: each `<<<` found by indexOf, the command before it back to the
+ * last separator or here-string read as words, and the text after it up to the next here-string. The first `read`
+ * followed only by options and names to the `<<<` is the one (the most names).
+ * @param {string} text
+ */
+function hereStrings(text) {
+  /** @type {{ names: string[], ref: string }[]} */
+  const out = [];
+  const ident = (/** @type {string} */ w) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(w);
+  for (let at = text.indexOf("<<<"), from = 0; at !== -1; ) {
+    const next = text.indexOf("<<<", at + 3);
+    let s = at;
+    while (s > from && !";&|(\n".includes(text[s - 1])) s--;
+    const w = text.slice(s, at).split(/[ \t]+/).filter(Boolean);
+    // From the end: where a tail of names begins, and where options then names begin, word by word.
+    const tail = Array(w.length + 1).fill(false);
+    for (let j = w.length - 1; j >= 0; j--) tail[j] = ident(w[j]) && (j === w.length - 1 || tail[j + 1]);
+    const ok = Array(w.length + 1).fill(false);
+    for (let j = w.length - 1; j >= 0; j--) ok[j] = w[j].startsWith("-") ? ok[j + 1] : tail[j];
+    const r = w.findIndex((x, j) => x === "read" && ok[j + 1]);
+    if (r !== -1) out.push({ names: w.slice(r + 1).filter((x) => !x.startsWith("-")), ref: text.slice(at + 3, next === -1 ? text.length : next) });
+    from = at + 3;
+    at = next;
+  }
+  return out;
+}
+
+/**
+ * The next index of `needle` at or after `from`, for scans that only move forward: a search past the last answer runs
+ * again, one before it reuses it, so a scan of a text costs its length.
+ * @param {string} text @param {string} needle
+ */
+function seeker(text, needle) {
+  let last = -2;
+  let asked = -1;
+  return (/** @type {number} */ from) => {
+    if (last === -1 && from >= asked) return -1;
+    if (last >= from && from >= asked) return last;
+    asked = from;
+    last = text.indexOf(needle, from);
+    return last;
+  };
+}
+
+/**
+ * The shell assignments of a line, in one pass: `NAME=value` where NAME starts the line or follows white space or
+ * `;`, `&`, `|`, `(`; the value a quoted string, else its characters up to white space, an expression (`${{ … }}`)
+ * taken whole.
+ * @param {string} text
+ */
+function assignments(text) {
+  /** @type {{ name: string, value: string }[]} */
+  const out = [];
+  const dq = seeker(text, '"');
+  const sq = seeker(text, "'");
+  const ex = seeker(text, "}}");
+  for (let eq = text.indexOf("="), done = 0; eq !== -1; eq = text.indexOf("=", Math.max(eq + 1, done))) {
+    let s = eq;
+    while (s > done && /[A-Za-z0-9_]/.test(text[s - 1])) s--;
+    if (s === eq || !/[A-Za-z_]/.test(text[s]) || (s > 0 && !/[\s;&|(]/.test(text[s - 1]))) continue;
+    let e = eq + 1;
+    const q = text[e];
+    const close = q === '"' ? dq(e + 1) : q === "'" ? sq(e + 1) : -1;
+    if (close !== -1) e = close + 1;
+    else
+      while (e < text.length && !/\s/.test(text[e])) {
+        const end = text.startsWith("${{", e) ? ex(e + 3) : -1;
+        e = end === -1 ? e + 1 : end + 2;
+      }
+    out.push({ name: text.slice(s, eq), value: text.slice(eq + 1, e) });
+    done = e;
+  }
+  return out;
+}
+
+/**
+ * Shell functions a text defines that fetch or check out what they are given (`$1`, `$@`), in one pass: a line
+ * `[function] name() {`, its body to the next `}`. Definitions that share that `}` (one inside another's body) are
+ * judged once, by the outermost: the inner body is part of it.
+ * @param {string} all
+ */
+function fetchFunctions(all) {
+  /** @type {Set<string>} */
+  const out = new Set();
+  const closeOf = seeker(all, "}");
+  let judgedClose = -2;
+  let judged = false;
+  for (let at = 0; at < all.length; ) {
+    const eol = all.indexOf("\n", at);
+    const line = all.slice(at, eol === -1 ? all.length : eol);
+    const m = /^\s*(?:function\s+)?([A-Za-z_][\w-]*)\s*\(\s*\)\s*\{/.exec(line);
+    if (m) {
+      const open = at + m[0].length;
+      const close = closeOf(open);
+      if (close === -1) break;
+      if (close !== judgedClose) {
+        const body = all.slice(open, close);
+        judged = /(?:^|[^\w-])git(?![\w-])/.test(body) && [...GIT_FETCHES].some((w) => new RegExp(`(?:^|[^\\w-])${w}(?![\\w-])`).test(body)) && /\$(?:\{?[1-9@*]\}?)/.test(body);
+        judgedClose = close;
+      }
+      if (judged) out.add(m[1]);
+    }
+    if (eol === -1) break;
+    at = eol + 1;
   }
   return out;
 }
@@ -645,17 +1087,31 @@ function words(c) {
  * [dir]`): a clone is of a branch, so local actions there run code nobody pinned.
  * @param {string[]} lines
  */
-function clones(lines) {
+export function clones(lines) {
   /** @type {{ k: number, dir: string, from: string }[]} */
   const out = [];
   const valued = /^(?:-[bocujC]|--(?:branch|origin|config|depth|reference|reference-if-able|filter|template|upload-pack|jobs|separate-git-dir|shallow-since|shallow-exclude|server-option|bundle-uri))$/;
   for (const { k, text } of logicalLines(lines)) {
     for (const command of text.split(/;|&&|\|\||\|/)) {
       const w = words(command.trim());
-      // Wherever the command stands: `GIT_TERMINAL_PROMPT=0 git clone …`, `timeout 60 gh repo clone …`.
-      const g = w.findIndex((x, j) => (x === "git" || x.endsWith("/git")) && w[j + 1] === "clone");
+      // Wherever the command stands: `GIT_TERMINAL_PROMPT=0 git clone …`, `timeout 60 gh repo clone …`; git's own
+      // options before `clone` skipped (`git -c http.extraheader=… clone`), its `-C <dir>` the directory cloned from.
+      let cwd = "";
+      let g = -1;
+      for (let j = 0; j < w.length && g === -1; j++) {
+        if (w[j] !== "git" && !w[j].endsWith("/git")) continue;
+        let o = j + 1;
+        let dir = "";
+        while (o < w.length && w[o].startsWith("-") && w[o] !== "--") {
+          if (/^(?:-[Cc]|--git-dir|--work-tree|--namespace|--config-env|--super-prefix|--exec-path)$/.test(w[o])) {
+            if (w[o] === "-C") dir = dir ? `${dir}/${w[o + 1] ?? ""}` : (w[o + 1] ?? "");
+            o += 2;
+          } else o++;
+        }
+        if (w[o] === "clone") (g = o), (cwd = dir);
+      }
       const h = w.findIndex((x, j) => x === "gh" && w[j + 1] === "repo" && w[j + 2] === "clone");
-      const at = g !== -1 ? g + 2 : h !== -1 ? h + 3 : -1;
+      const at = g !== -1 ? g + 1 : h !== -1 ? h + 3 : -1;
       if (at === -1) continue;
       /** @type {string[]} */
       const pos = [];
@@ -668,7 +1124,8 @@ function clones(lines) {
         pos.push(w[j]);
       }
       if (!pos.length) continue;
-      const dir = pos[1] ?? (pos[0].split(/[/:]/).pop() ?? "").replace(/\.git$/, "");
+      const own = pos[1] ?? (pos[0].split(/[/:\\]/).pop() ?? "").replace(/\.git$/, "");
+      const dir = cwd && cwd !== "." && !/^[/\\]/.test(own) ? `${cwd}/${own}` : own;
       out.push({ k, dir, from: `${pos[0]} (cloned)` });
     }
   }
@@ -685,7 +1142,7 @@ function clones(lines) {
  * file or a step's outputs is not followed.
  * @param {string[]} lines @param {Set<string>} names variables that hold the pull request's ref (added to as read)
  */
-function runFetches(lines, names) {
+export function runFetches(lines, names) {
   /** @type {{ k: number, what: string }[]} */
   const out = [];
   // A patch of the pull request kept in a file and applied on another line: the block holds both.
@@ -695,13 +1152,10 @@ function runFetches(lines, names) {
     /\bgh\s+pr\s+diff\b/.test(all) ||
     /(?:patch|diff)_url\b|html_url\}\}\.(?:patch|diff)\b|\/pulls?\/[^"'|]{0,400}?\.(?:patch|diff)\b|application\/vnd\.github[\w.+-]{0,40}\.(?:diff|patch)\b/i.test(flat);
   // Shell functions that fetch or check out what they are given ($1, $@): a call with the pull request's ref is a fetch.
-  /** @type {Set<string>} */
-  const fetchers = new Set();
-  for (const m of all.matchAll(/(?:^|\n)\s*(?:function\s+)?([A-Za-z_][\w-]*)\s*\(\s*\)\s*\{([^}]*)\}/g)) {
-    if (/(?:^|[^\w-])git(?![\w-])/.test(m[2]) && [...GIT_FETCHES].some((w) => new RegExp(`(?:^|[^\\w-])${w}(?![\\w-])`).test(m[2])) && /\$(?:\{?[1-9@*]\}?)/.test(m[2])) fetchers.add(m[1]);
-  }
+  const fetchers = fetchFunctions(all);
   for (const { k, text } of logicalLines(lines)) {
-    const calls = [...fetchers].some((f) => new RegExp(`(?:^|[\\s;&|(])${f}(?![\\w-])\\s+\\S`).test(text) && !new RegExp(`${f}\\s*\\(\\s*\\)`).test(text));
+    // A call: a defined fetcher's name where a command starts, an argument after it, and not its definition.
+    const calls = fetchers.size > 0 && [...text.matchAll(/(?:^|[\s;&|(])([A-Za-z_][\w-]*)(?=[ \t]+\S)/g)].some((m) => fetchers.has(m[1]) && !new RegExp(`${m[1]}\\s*\\(\\s*\\)`).test(text));
     if (calls && holdsRef(text, names)) out.push({ k, what: text.trim() });
     const has = (/** @type {string} */ w) => new RegExp(`(?:^|[^\\w-])${w}(?![\\w-])`).test(text);
     const git = has("git");
@@ -709,9 +1163,9 @@ function runFetches(lines, names) {
     if (hit || (patched && /(?:^|[^\w-])git(?![\w-])/.test(text) && /(?:^|[^\w-])(?:apply|am)(?![\w-])/.test(text))) out.push({ k, what: text.trim() });
     // `for X in <ref>` and `read X <<< <ref>` taint X as an assignment does.
     for (const m of text.matchAll(/\bfor\s+([A-Za-z_][A-Za-z0-9_]*)\s+in\s+([^;]*)/g)) if (holdsRef(m[2], names)) names.add(m[1]);
-    for (const m of text.matchAll(/\bread\s+(?:-\S+\s+)*([A-Za-z_][A-Za-z0-9_]*(?:\s+[A-Za-z_][A-Za-z0-9_]*)*)\s*<<<\s*(.*)$/g)) if (holdsRef(m[2], names)) for (const n of m[1].split(/\s+/)) names.add(n);
+    for (const r of hereStrings(text)) if (holdsRef(r.ref, names)) for (const n of r.names) names.add(n);
     // An assignment taints its name for the lines after it.
-    for (const m of text.matchAll(/(?:^|[\s;&|(])(?:export\s+|local\s+|declare\s+(?:-\S+\s+)*)?([A-Za-z_][A-Za-z0-9_]*)=("[^"]*"|'[^']*'|(?:\$\{\{[^}]*\}\}|\S)+)/g)) if (holdsRef(m[2], names)) names.add(m[1]);
+    for (const a of assignments(text)) if (holdsRef(a.value, names)) names.add(a.name);
   }
   return out;
 }
@@ -729,8 +1183,17 @@ function runFetches(lines, names) {
  * @param {{ targeted?: boolean }} [opts]
  * @returns {Findings}
  */
-export function ciFindings(text, kind, { targeted: forced = false } = {}) {
-  const { entries, unread } = yamlRead(text);
+export const ciFindings = (text, kind, opts) => ciFindingsOf(yamlRead(text), kind, opts);
+
+/**
+ * The rules of ciFindings on a reading already made: yamlRead's, or another program's put in its shape (the
+ * reference record of test/reference/actions-yaml.mjs gives GitHub's).
+ * @param {{ entries: Entry[], unread: { n: number, what: string, text?: string }[] }} read
+ * @param {"workflow" | "action"} kind
+ * @param {{ targeted?: boolean }} [opts]
+ * @returns {Findings}
+ */
+export function ciFindingsOf({ entries, unread }, kind, { targeted: forced = false } = {}) {
   /** @type {Map<number, Entry[]>} */
   const byItem = new Map();
   for (const e of entries) {
@@ -740,24 +1203,12 @@ export function ciFindings(text, kind, { targeted: forced = false } = {}) {
     else byItem.set(e.item, [e]);
   }
   const inItem = (/** @type {number} */ item, /** @type {string[]} */ tail) => byItem.get(item)?.find((e) => tail.every((k, j) => e.path.at(j - tail.length) === k));
-  // Where a checkout or a clone puts code, as a directory of the workspace: `${{ github.workspace }}/x`, `./x` and
-  // `x/.` are `x`; outside the workspace (an absolute path, the runner's temp) is null, no local action's; a place
-  // this reading cannot resolve (another expression or variable, `..`) is the whole workspace.
-  const place = (/** @type {string} */ p) => {
-    const d = p.replace(/^(?:\$\{\{\s*github\.workspace\s*\}\}|\$\{?GITHUB_WORKSPACE\}?)\/?/i, "");
-    // A runner's work directory spelled out is the workspace, somewhere this reading cannot place.
-    if (/^\/home\/runner\/work\//.test(d)) return "";
-    // Outside the workspace (an absolute path, the runner's temp or tool dirs): no `./` reaches it.
-    if (/^\/|^(?:\$\{\{\s*runner\.(?:temp|tool_cache)\s*\}\}|\$\{?RUNNER_(?:TEMP|TOOL_CACHE)\}?|~)(?:\/|$)/i.test(d)) return null;
-    if (/\$\{\{|\$/.test(d)) return "";
-    const parts = d.split("/").filter((x) => x && x !== ".");
-    return parts.includes("..") ? "" : parts.join("/");
-  };
+  const place = workspaceDir;
   // The job a step runs in: a workflow's `jobs.<id>`; an action's steps share one.
   const jobOf = (/** @type {Entry} */ e) => (kind === "workflow" && e.path[0] === "jobs" ? String(e.path[1]) : "");
-  /** @type {{ job: string, n: number, dir: string, from: string }[]} */
+  /** @type {{ job: string, n: number, at: number, dir: string, from: string }[]} */
   const loose = [];
-  for (const e of entries) {
+  for (const [at, e] of entries.entries()) {
     if (e.key !== "repository" || e.path.at(-2) !== "with" || !e.value) continue;
     // This repository, or the pull request's own (what the default checkout of pull_request runs anyway), is not
     // another one; any other name, literal or an expression (`${{ vars.X }}`), is.
@@ -765,35 +1216,49 @@ export function ciFindings(text, kind, { targeted: forced = false } = {}) {
     const ref = inItem(e.item, ["with", "ref"])?.value ?? "";
     if (/^[0-9a-f]{40}$/.test(ref)) continue;
     const dir = place(inItem(e.item, ["with", "path"])?.value ?? "");
-    if (dir !== null) loose.push({ job: jobOf(e), n: e.n, dir, from: `${e.value}@${ref || "its default branch"}` });
+    if (dir !== null) loose.push({ job: jobOf(e), n: e.n, at, dir, from: `${e.value}@${ref || "its default branch"}` });
   }
-  for (const e of entries) {
+  for (const [at, e] of entries.entries()) {
     if (e.key !== "run" || e.value === null) continue;
-    for (const c of clones(e.block ?? [e.value])) {
+    for (const c of clones(e.value.split("\n"))) {
       const dir = place(c.dir);
-      if (dir !== null) loose.push({ job: jobOf(e), n: e.block ? e.n + 1 + c.k : e.n, dir, from: c.from });
+      if (dir !== null) loose.push({ job: jobOf(e), n: e.block ? e.n + 1 + c.k : e.n, at, dir, from: c.from });
     }
   }
   const placedUnder = placements(loose);
-  const uses = entries
-    .filter((e) => e.key === "uses" && !e.path.slice(kind === "workflow" && e.path[0] === "jobs" ? 2 : 0, -1).some((k) => NOT_STEPS.has(k)))
-    .map((e) => {
+  const uses = [...entries.entries()]
+    .filter(([, e]) => e.key === "uses" && !e.path.slice(kind === "workflow" && e.path[0] === "jobs" ? 2 : 0, -1).some((k) => NOT_STEPS.has(k)))
+    .map(([at, e]) => {
       const value = e.value ?? "";
       // A job's own `uses: ./…` workflow has no steps, so no checkout of its job comes before it.
-      const under = value.startsWith("./") ? placedUnder(jobOf(e), e.n, localPath(value)) : undefined;
-      return { n: e.n, job: jobOf(e), value, pinned: !e.unread && e.value !== null && pinnedUses(value) && !under, ...(under ? { from: under.from } : {}) };
+      const under = value.startsWith("./") ? placedUnder(jobOf(e), at, localPath(value)) : undefined;
+      return { n: e.n, at, job: jobOf(e), value, pinned: !e.unread && e.value !== null && pinnedUses(value) && !under, ...(under ? { from: under.from } : {}) };
     });
   const callees = uses.filter((u) => u.value.startsWith("./")).map((u) => ({ n: u.n, path: localPath(u.value) }));
-  /** @type {{ n: number, what: string }[]} */
+  /** @type {{ n: number, at: number, what: string }[]} */
   const pwn = [];
-  const targeted = forced || (kind === "workflow" && entries.some((e) => !e.block && [e.key, e.value].some((s) => s && /\bpull_request_target\b/.test(s))));
+  // The trigger's name in any case (GitHub's parser takes `on:` as any text), in a block scalar too under `on`.
+  const targeted = forced || (kind === "workflow" && entries.some((e) => (!e.block || e.path[0] === "on") && [e.key, e.value].some((s) => s && /\bpull_request_target\b/i.test(s))));
   if (targeted) {
     // Variables an `env` of the file sets to the pull request's code.
     const tainted = new Set([...RUNNER_HEAD, ...entries.filter((e) => e.path.includes("env") && e.key !== null && e.value !== null && (prExpression(e.value) || PR_REF.test(e.value))).map((e) => String(e.key))]);
-    for (const e of entries) {
-      if ((e.key === "ref" || e.key === "repository") && e.value && holdsRef(e.value, tainted)) pwn.push({ n: e.n, what: `${e.key}: ${e.value}` });
-      if (e.key === "allow-unsafe-pr-checkout" && /^(true|yes|on|y)$/i.test(e.value ?? "")) pwn.push({ n: e.n, what: `allow-unsafe-pr-checkout: ${e.value}` });
-      if (e.key === "run" && e.value !== null) for (const f of runFetches(e.block ? (e.folded ? folded(e.block) : e.block) : [e.value], new Set(tainted))) pwn.push({ n: e.block ? e.n + 1 + f.k : e.n, what: f.what });
+    // A line that writes the pull request's ref to $GITHUB_ENV taints the names it sets for every later step: read
+    // without order, over the whole file, until no new name comes.
+    for (let pass = 0, grew = true; grew && pass < 5; pass++) {
+      grew = false;
+      for (const e of entries) {
+        if (e.key !== "run" || !e.value?.includes("GITHUB_ENV")) continue;
+        for (const { text } of logicalLines(e.value.split("\n"))) {
+          if (!text.includes("GITHUB_ENV") || !holdsRef(text, tainted)) continue;
+          for (const name of envNames(text)) if (!tainted.has(name)) tainted.add(name), (grew = true);
+        }
+      }
+    }
+    for (const [at, e] of entries.entries()) {
+      if ((e.key === "ref" || e.key === "repository") && e.value && holdsRef(e.value, tainted)) pwn.push({ n: e.n, at, what: `${e.key}: ${e.value}` });
+      if (e.key === "allow-unsafe-pr-checkout" && /^(true|yes|on|y)$/i.test(e.value ?? "")) pwn.push({ n: e.n, at, what: `allow-unsafe-pr-checkout: ${e.value}` });
+      // A run's lines as YAML gives them to the shell (a folded block joined, a literal one kept).
+      if (e.key === "run" && e.value !== null) for (const f of runFetches(e.value.split("\n"), new Set(tainted))) pwn.push({ n: e.block ? e.n + 1 + f.k : e.n, at, what: f.what });
     }
   }
   /** @type {{ job: string, n: number }[]} */
@@ -836,7 +1301,7 @@ export function ciSet(files) {
   // A local action that places another repository (a checkout by branch, a clone) does so in its caller's
   // workspace: the caller's later local actions in that job are that code too, however deep the calls go.
   /** @type {Map<Findings, Set<string>>} */
-  const known = new Map([...findings.values()].map((f) => [f, new Set(f.loose.map((l) => `${l.job}\0${l.n}\0${l.dir}`))]));
+  const known = new Map([...findings.values()].map((f) => [f, new Set(f.loose.map((l) => `${l.job}\0${l.at}\0${l.dir}`))]));
   for (let changed = true, rounds = 0; changed && rounds <= files.size; rounds++) {
     changed = false;
     for (const f of findings.values()) {
@@ -845,10 +1310,10 @@ export function ciSet(files) {
         if (!u.value.startsWith("./")) continue;
         const callee = resolve(localPath(u.value));
         for (const l of callee ? /** @type {Findings} */ (findings.get(callee)).loose : []) {
-          const key = `${u.job}\0${u.n}\0${l.dir}`;
+          const key = `${u.job}\0${u.at}\0${l.dir}`;
           if (seen.has(key)) continue;
           seen.add(key);
-          f.loose.push({ job: u.job, n: u.n, dir: l.dir, from: l.from.includes(" (in ") ? l.from : `${l.from} (in ${callee})` });
+          f.loose.push({ job: u.job, n: u.n, at: u.at, dir: l.dir, from: l.from.includes(" (in ") ? l.from : `${l.from} (in ${callee})` });
           changed = true;
         }
       }
@@ -856,7 +1321,7 @@ export function ciSet(files) {
       const placedUnder = placements(f.loose);
       for (const u of f.uses) {
         if (!u.pinned || !u.value.startsWith("./")) continue;
-        const under = placedUnder(u.job, u.n, localPath(u.value));
+        const under = placedUnder(u.job, u.at, localPath(u.value));
         if (under) Object.assign(u, { pinned: false, from: under.from });
       }
     }
@@ -883,7 +1348,7 @@ export function ciSet(files) {
         const had = new Set(own.pwn.map((x) => x.what));
         for (const p of reached.pwn) {
           const what = `${p.what} (reached from ${caller})`;
-          if (!had.has(what)) own.pwn.push({ n: p.n, what }), had.add(what);
+          if (!had.has(what)) own.pwn.push({ n: p.n, at: p.at, what }), had.add(what);
         }
         next.push(...reached.callees.map((x) => ({ from: path, ...x })));
       }

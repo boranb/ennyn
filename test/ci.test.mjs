@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ciFindings, ciIntroduced, ciKind, ciMessages, ciSet, ciText, localPath, pinnedUses, stripComment } from "../checks/ci.mjs";
+import { MAX_TEXT, ciFindings, ciIntroduced, ciKind, ciMessages, ciSet, ciText, localPath, pinnedUses, stripComment, yamlRead } from "../checks/ci.mjs";
 import { git, stagedVersions } from "../core/git.mjs";
 import { loadConfig, ConfigError } from "../core/config.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
@@ -28,7 +28,6 @@ test("ci uses: every way YAML writes a step's or a job's uses is read, and only 
     ["a flow mapping item", "steps:\n  - { uses: actions/checkout@v4, with: { fetch-depth: 0 } }\n", [[2, "actions/checkout@v4", false]]],
     ["a flow mapping under a key", "steps:\n  - step: { uses: actions/checkout@v4 }\n", [[2, "actions/checkout@v4", false]]],
     ["a sequence at its key's column", "steps:\n- uses: a/b@v1\n- run: x\n", [[2, "a/b@v1", false]]],
-    ["the value on the next line", "steps:\n  - uses:\n      a/b@v1\n", [[3, "a/b@v1", false]]],
     ["an alias of a scalar", "env:\n  X: &co a/b@v1\nsteps:\n  - uses: *co\n", [[4, "a/b@v1", false]]],
     ["an alias with no anchor", "steps:\n  - uses: *nowhere\n", [[2, "*nowhere", false]]],
     ["an alias of a pinned scalar is pinned", `env:\n  X: &co a/b@${SHA}\nsteps:\n  - uses: *co\n`, [[4, `a/b@${SHA}`, true]]],
@@ -42,12 +41,15 @@ test("ci uses: every way YAML writes a step's or a job's uses is read, and only 
     ["CRLF", "steps:\r\n  - uses: a/b@v1\r\n", [[2, "a/b@v1", false]]],
     ["no ref at all", "steps:\n  - uses: a/b\n", [[2, "a/b", false]]],
     ["a byte order mark", "\uFEFFsteps:\n  - uses: a/b@v1\n", [[2, "a/b@v1", false]]],
-    ["two documents", "steps:\n  - uses: a/b@v1\n---\nsteps:\n  - uses: c/d@v2\n", [[2, "a/b@v1", false], [5, "c/d@v2", false]]],
     ["a SHA with a tag after it", `steps:\n  - uses: a/b@${SHA}-v4\n`, [[2, `a/b@${SHA}-v4`, false]]],
     ["a path with no ./ in front", "steps:\n  - uses: .github/actions/x\n", [[2, ".github/actions/x", false]]],
     ["after a run block in the same step", "steps:\n  - run: |\n      make\n    uses: a/b@v1\n", [[4, "a/b@v1", false]]],
   ];
   for (const [name, text, want] of reject) assert.deepEqual(usesOf(text), want, name);
+  // Forms outside the part of YAML this reading takes are refused, never read otherwise: a value on the line below
+  // its key, a second document.
+  assert.deepEqual(ciFindings("steps:\n  - uses:\n      a/b@v1\n", "workflow").unread.map((u) => [u.n, u.what]), [[2, "a value on the line below its key"]]);
+  assert.deepEqual(ciFindings("steps:\n  - uses: a/b@v1\n---\nsteps:\n  - uses: c/d@v2\n", "workflow").unread.map((u) => [u.n, u.what]), [[3, "a document marker with a node after it, or a second document"]]);
   // A quote that does not close is no value to judge: the file is refused.
   assert.deepEqual(ciFindings('steps:\n  - uses: "a/b@v1\n', "workflow").unread.map((u) => u.n), [2]);
   // An action's steps are read the same way.
@@ -342,11 +344,10 @@ test("ci round one: the reader follows the YAML GitHub runs, and refuses what it
   // Aliases of a mapping and of a scalar on an item are read again where they stand.
   assert.deepEqual(usesOf("x:\n  - &co\n    uses: a/b@v1\nsteps:\n  - *co\n"), [[3, "a/b@v1", false], [5, "a/b@v1", false]]);
   assert.deepEqual(ciFindings("on:\n  push:\n    branches: [main]\nx:\n  - &p write-all\npermissions: *p\njobs:\n  a: {}\n", "workflow").writeAll, [{ where: "", n: 6 }]);
-  assert.deepEqual(usesOf("base: &b\n  uses: a/b@v1\nsteps:\n  - <<: *b\n"), [[2, "a/b@v1", false], [4, "a/b@v1", false]]);
-  // A merge puts its keys in the mapping it stands in: a job's merged permissions are the job's.
-  assert.deepEqual(ciFindings("on: push\nd: &d\n  permissions: {}\njobs:\n  a:\n    <<: *d\n    runs-on: x\n", "workflow").unpermitted, []);
-  // The flow mapping on the line after its key.
-  assert.deepEqual(pwnOf(`${T}jobs:\n  a:\n    steps:\n      - with:\n          { ref: "${head}" }\n`), [6]);
+  // A merge key is refused: GitHub reads `<<` as a key named so, never merges. So is a value on the line after its key.
+  assert.deepEqual(ciFindings("base: &b\n  uses: a/b@v1\nsteps:\n  - <<: *b\n", "workflow").unread.map((u) => u.n), [4]);
+  assert.deepEqual(ciFindings("on: push\nd: &d\n  permissions: {}\njobs:\n  a:\n    <<: *d\n    runs-on: x\n", "workflow").unread.map((u) => u.n), [6]);
+  assert.deepEqual(ciFindings(`${T}jobs:\n  a:\n    steps:\n      - with:\n          { ref: "${head}" }\n`, "workflow").unread.map((u) => u.n), [5]);
   // A job named like an input map is a job; a matrix value named uses is no step.
   assert.deepEqual(usesOf("jobs:\n  secrets:\n    uses: o/r/.github/workflows/x.yml@main\n"), [[3, "o/r/.github/workflows/x.yml@main", false]]);
   assert.deepEqual(usesOf("jobs:\n  a:\n    strategy:\n      matrix:\n        uses: [a, b]\n"), []);
@@ -542,7 +543,8 @@ test("ci round two: a root action, a call six deep and a change under an explici
   assert.equal(ciSet(chain).findings.get("a6/action.yml")?.pwn.length, 1);
   const before = ciFindings("jobs:\n  a:\n    steps:\n      - ? uses\n        : ./local\n", "workflow");
   const after = ciFindings("jobs:\n  a:\n    steps:\n      - ? uses\n        : evil/a@main\n", "workflow");
-  assert.deepEqual(ciIntroduced(after, before).unread.map((u) => u.n), [5]);
+  // The key's refusal covers its value's line too: both are new.
+  assert.deepEqual(ciIntroduced(after, before).unread.map((u) => u.n), [4, 5]);
 });
 
 test("ci round two: files that are large, many or not UTF-8 by name, and untouched, neither switch the check off nor fail it", async () => {
@@ -740,8 +742,134 @@ test("ci round four: a callee nobody can read is said on every commit, and place
   const twice = `jobs:\n  a:\n    steps:\n      - run: git clone https://github.com/o/r ext\n      - uses: ./ext/x\n      - run: git clone https://github.com/o/q ext\n`;
   assert.deepEqual(ciFindings(twice, "workflow").uses.map((u) => u.pinned), [false]);
   const started = performance.now();
-  const pairs = Array.from({ length: 10000 }, (_, k) => `      - uses: actions/checkout@${SHA}\n        with: { repository: a/b, path: d${k} }\n      - uses: ./d${k}/x\n`).join("");
+  // Under GitHub's 1 MiB limit, past which the file is refused whole.
+  const pairs = Array.from({ length: 7000 }, (_, k) => `      - uses: actions/checkout@${SHA}\n        with: { repository: a/b, path: d${k} }\n      - uses: ./d${k}/x\n`).join("");
   const many = ciSet(new Map([[".github/workflows/w.yml", `on: push\npermissions: {}\njobs:\n  j:\n    steps:\n${pairs}`]]));
-  assert.equal(many.findings.get(".github/workflows/w.yml")?.uses.filter((u) => !u.pinned).length, 10000);
+  assert.equal(many.findings.get(".github/workflows/w.yml")?.uses.filter((u) => !u.pinned).length, 7000);
   assert.ok(performance.now() - started < 5000, `${performance.now() - started} ms`);
+});
+
+test("ci reader: a workflow past GitHub's limit is refused whole, one at the limit is read", () => {
+  // actions/runner src/Sdk/WorkflowParser/ParseOptions.cs: MaxFileSize, 1024 * 1024 characters of the text.
+  assert.equal(MAX_TEXT, 1024 * 1024);
+  const head = "on: push\npermissions: {}\njobs:\n  a:\n    runs-on: x\n    steps:\n      - uses: a/b@v1\n#";
+  const at = `${head}${"x".repeat(MAX_TEXT - head.length)}`;
+  assert.equal(at.length, MAX_TEXT);
+  assert.deepEqual(yamlRead(at).unread, []);
+  assert.equal(ciFindings(at, "workflow").uses.length, 1);
+  const past = yamlRead(`${at}x`);
+  assert.deepEqual([past.entries.length, past.unread.map((u) => u.what)], [0, [`a file past ${MAX_TEXT} characters, more than GitHub reads`]]);
+});
+
+test("ci reader: every joiner and every run rule takes time linear in the text, on texts built to make one rescan", () => {
+  // Growth, not a wall-clock bound, in CPU time, the best of three: sixteen times the text costs about sixteen times
+  // the time if linear, 256 if quadratic. Round one of cycle 14 measured a 1 MB double-quoted run at 96.6 s (the
+  // escaped-break test ran over the whole joined value on each line), a flow collection of 40k lines at 17 s, and a
+  // line of `read … <<<` at 22-106 s.
+  const head = "on: pull_request_target\npermissions: {}\njobs:\n  a:\n    runs-on: x\n    steps:\n";
+  const make = {
+    "a double quote over lines": (/** @type {number} */ n) => `${head}      - run: "a\n${"          x\n".repeat(n / 12)}          "\n`,
+    "escaped line breaks": (/** @type {number} */ n) => `${head}      - run: "a\\\n${"          x\\\n".repeat(n / 12)}          "\n`,
+    "a flow collection over lines": (/** @type {number} */ n) => `${head}      - with: {\n${"          a: b,\n".repeat(n / 16)}          z: y}\n        uses: a/b@v1\n`,
+    "read <<< on one folded line": (/** @type {number} */ n) => `${head}      - run: x\n${"          read a <<< b\n".repeat(n / 24)}`,
+    "for … in on one folded line": (/** @type {number} */ n) => `${head}      - run: x\n${"          for a in b c\n".repeat(n / 24)}`,
+    "open quotes on one folded line": (/** @type {number} */ n) => `${head}      - run: x\n${"          a=\"b c\n".repeat(n / 16)}`,
+    "spaces in one line": (/** @type {number} */ n) => `${head}      - run: x${" ".repeat(n)}y\n`,
+    // Round two of cycle 14: a read before <<< (220 KB took 71 s), open expressions in assignments (a 1.02 MB line, 99 s),
+    // function headers with no closing brace (549 KB, 95 s), continuation lines (40k lines, 4.7 s).
+    "read words before <<<": (/** @type {number} */ n) => `${head}      - run: x${" read a b c".repeat(n / 11)} x= <<< y\n`,
+    "open expressions in assignments": (/** @type {number} */ n) => `${head}      - run: x${" a=\${{".repeat(n / 6)}\n`,
+    "function headers": (/** @type {number} */ n) => `${head}      - run: |\n${"          f() {\n".repeat(n / 16)}`,
+    "continuation lines": (/** @type {number} */ n) => `${head}      - run: |\n${"          git fetch \\\n".repeat(n / 22)}          x\n`,
+    "function headers, one brace at the end": (/** @type {number} */ n) => `${head}      - run: |\n${"          f() {\n".repeat(n / 16)}          git fetch $1 }\n`,
+    "open expressions, one closed at the end": (/** @type {number} */ n) => `${head}      - run: x${" a=${{".repeat(n / 6)} }}\n`,
+    "backtick continuations": (/** @type {number} */ n) => `${head}      - run: |\n${"          a `\n".repeat(n / 14)}          x\n`,
+  };
+  const best = (/** @type {string} */ text) => Math.min(...[0, 1, 2].map(() => {
+    const t0 = process.cpuUsage();
+    ciFindings(text, "workflow", { targeted: true });
+    const { user, system } = process.cpuUsage(t0);
+    return (user + system) / 1000;
+  }));
+  for (const [name, text] of Object.entries(make)) {
+    const g = (best(text(512 * 1024)) + 5) / (best(text(32 * 1024)) + 5);
+    assert.ok(g < 48, `${name}: sixteen times the text took ${g.toFixed(1)} times as long`);
+  }
+});
+
+test("ci reader: nesting past 100 levels, a flow collection that does not close and a `read` inside a command are said", () => {
+  // GitHub's MaxDepth is 50 (ParseOptions.cs): past 100 levels the reading stops there and refuses.
+  let deep = "on: push\n";
+  for (let k = 0; k < 120; k++) deep += `${" ".repeat(k)}a:\n`;
+  assert.ok(yamlRead(deep).unread.some((u) => u.what === "levels nested past 100"));
+  let forty = "on: push\n";
+  for (let k = 0; k < 40; k++) forty += `${"  ".repeat(k)}a:\n`;
+  assert.deepEqual(yamlRead(forty).unread, []);
+  assert.deepEqual(yamlRead("a: [x,\nb: y\n").unread.map((u) => u.what), ["a flow collection that does not close before the next key"]);
+  // `while read`, `if read`: the here-string taints its names wherever the read stands in its command.
+  const run = (/** @type {string} */ line) => `on: pull_request_target\npermissions: {}\njobs:\n  a:\n    steps:\n      - run: |\n          ${line}\n          git fetch origin "$R"\n`;
+  for (const line of ['read R <<< "${{ github.head_ref }}"', 'if read -r R <<< "${{ github.head_ref }}"; then :; fi', 'while read R <<< "${{ github.head_ref }}"; do break; done']) assert.equal(ciFindings(run(line), "workflow").pwn.length, 1, line);
+  assert.equal(ciFindings(run('read R <<< "main"'), "workflow").pwn.length, 0);
+});
+
+test("ci round two of cycle 14: what the reading refuses is known by the text it covers, so an edit inside it is new", () => {
+  const T = "on: pull_request_target\npermissions: {}\njobs:\n  a:\n    runs-on: x\n    steps:\n";
+  const intro = (/** @type {string} */ now, /** @type {string} */ before) => ciIntroduced(ciFindings(now, "workflow"), ciFindings(before, "workflow")).unread.map((u) => u.what);
+  // A block header on the line below its key: the block under it is covered.
+  assert.deepEqual(intro(`${T}      - run:\n          |\n          git fetch origin pull/1/head\n`, `${T}      - run:\n          |\n          echo hi\n`), ["a value on the line below its key"]);
+  // An alias of a block scalar: the anchored block is covered.
+  const alias = (/** @type {string} */ body) => `${T.replace("jobs:", `x: &s |\n  ${body}\njobs:`)}      - run: *s\n`;
+  assert.equal(intro(alias("git fetch origin pull/1/head"), alias("echo hi")).length, 1);
+  // A file past GitHub's limit: the whole file is covered.
+  const big = (/** @type {string} */ x) => `${T}      - run: ${x}\n#${"x".repeat(MAX_TEXT)}`;
+  assert.equal(intro(big("git fetch origin pull/1/head"), big("echo hi")).length, 1);
+  // A second document: the rest of the file is covered.
+  const two = (/** @type {string} */ x) => `${T}      - run: echo\n---\non: push\nx: y\nz: ${x}\n`;
+  assert.equal(intro(two("b"), two("a")).length, 1);
+  // The same refusal, untouched, is no new one.
+  assert.deepEqual(intro(alias("echo hi"), alias("echo hi")), []);
+});
+
+test("ci round two of cycle 14: the reading takes block mappings and sequences, scalars and flow collections only as listed", () => {
+  const T = "on: push\npermissions: {}\njobs:\n  a:\n    runs-on: x\n    steps:\n";
+  const whats = (/** @type {string} */ text) => yamlRead(text).unread.map((u) => u.what);
+  assert.deepEqual(whats(`--- {on: push}\n`), ["a document marker with a node after it, or a second document"]);
+  assert.deepEqual(whats(`{on: push, jobs: {a: {steps: [{uses: a/b@v1}]}}}\n`), ["a document that is no block mapping"]);
+  assert.deepEqual(whats(`%YAML 1.1\n---\non: push\n`), ["a directive (%)"]);
+  assert.deepEqual(whats(`on: push\n...\non: pull_request_target\n`), ["text after the document's end (...)"]);
+  assert.deepEqual(whats(`${T}      - run: >2\n          git fetch origin\n          pull/1/head\n`), ["a block scalar with an indentation indicator"]);
+  assert.deepEqual(whats(`${T}      - &s {uses: a/b@v1}\n`), ["a tag or an anchor on a flow collection"]);
+  assert.deepEqual(whats(`${T.replace("    steps:\n", "")}    steps: [!!map {uses: a/b@v1}]\n`), ["a flow collection this reading cannot follow (a tag or an anchor in a flow collection)"]);
+  assert.deepEqual(whats(`x: &s a/b@v1\ny: &s c/d@v2\n`), ["&s, an anchor named twice"]);
+  assert.deepEqual(whats(`${T}      - uses: !!map a/b@v1\n`), ["a tag this reading does not take (!!map)"]);
+  assert.deepEqual(whats(`${T}\t- uses: a/b@v1\n`), ["a tab in the indentation"]);
+  assert.deepEqual(whats(`jobs:\n  a:\n      runs-on: x\n    permissions: {}\n`), ["a line at a column its mapping or sequence does not use"]);
+  assert.deepEqual(whats(`${T}      - <<: {uses: a/b@v1}\n`), ["a merge key (<<), which GitHub reads as a key named so"]);
+  assert.deepEqual(whats(`${T}      - !!str\n        uses: a/b@v1\n`), ["properties with no node on their line"]);
+  assert.deepEqual(whats(`${T.replace("    steps:\n", "")}    steps: &s [{uses: a/b@v1}]\n`), ["a tag or an anchor on a flow collection"]);
+  assert.deepEqual(whats(`${T}      - with: !!str\n          ref: x\n`), ["a tag on a mapping or a sequence", "a line at a column its mapping or sequence does not use"]);
+  assert.deepEqual(whats(`on: push\njobs: {a: {steps: [{run: echo}]}}\n`), []);
+  assert.deepEqual(whats(`${T}      - uses: !!str a/b@v1\n      - uses: !<tag:yaml.org,2002:str> a/b@v1\n`), []);
+});
+
+test("ci round two of cycle 14: the leaf tests join every shell's continuation, skip git's own options and read Windows paths", () => {
+  const T = "on: pull_request_target\npermissions: {}\njobs:\n  a:\n    runs-on: windows-latest\n    steps:\n";
+  const pwnOf = (/** @type {string} */ run) => ciFindings(`${T}      - run: |\n${run.split("\n").map((l) => `          ${l}`).join("\n")}\n`, "workflow").pwn.length;
+  assert.equal(pwnOf("git fetch origin `\n  pull/1/head"), 1);
+  assert.equal(pwnOf("git fetch origin ^\n  pull/1/head"), 1);
+  assert.equal(pwnOf("git fetch origin \\\n  pull/1/head"), 1);
+  assert.equal(pwnOf("git fetch origin\npull/1/head"), 0);
+  // A name written to $GITHUB_ENV holds the pull request's ref in every later step.
+  assert.equal(ciFindings(`${T}      - run: echo "R=\${{ github.head_ref }}" >> "$GITHUB_ENV"\n      - run: git fetch origin "$R"\n`, "workflow").pwn.length, 1);
+  assert.equal(ciFindings(`${T}      - run: echo "R=main" >> "$GITHUB_ENV"\n      - run: git fetch origin "$R"\n`, "workflow").pwn.length, 0);
+  // A quoted assignment is its whole quote, white space and all.
+  assert.equal(pwnOf("R=\"x ${{ github.head_ref }}\"\ngit fetch origin \"$R\""), 1);
+  const cloned = (/** @type {string} */ run, /** @type {string} */ path) => ciFindings(`on: push\npermissions: {}\njobs:\n  a:\n    steps:\n      - run: ${run}\n      - uses: ./${path}\n`, "workflow").uses.at(-1)?.pinned;
+  assert.equal(cloned('git -c http.extraheader="AUTHORIZATION: basic x" clone https://github.com/o/r.git lib', "lib/act"), false);
+  assert.equal(cloned("git -C . clone https://github.com/o/r.git lib", "lib/act"), false);
+  assert.equal(cloned("git -C sub clone https://github.com/o/r.git lib", "sub/lib/act"), false);
+  assert.equal(cloned("git -C sub clone https://github.com/o/r.git lib", "lib/act"), true);
+  const checkout = (/** @type {string} */ path, /** @type {string} */ local) => ciFindings(`on: push\npermissions: {}\njobs:\n  a:\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          repository: o/r\n          path: ${path}\n      - uses: ./${local}\n`, "workflow").uses.at(-1)?.pinned;
+  assert.equal(checkout("${{ github.workspace }}\\lib", "lib/act"), false);
+  assert.equal(checkout("lib\\sub", "lib/sub/act"), false);
 });

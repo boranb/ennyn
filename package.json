@@ -41,7 +41,7 @@
   "scripts": {
     "test": "node --test --import ./test/hermetic.mjs test/*.test.mjs",
     "test:linux": "node test/linux-run.mjs",
-    "test:reference": "node test/reference/npm.mjs check && node test/reference/markdown.mjs check && node test/reference/claude.mjs",
+    "test:reference": "node test/reference/npm.mjs check && node test/reference/markdown.mjs check && node test/reference/actions-yaml.mjs check && node test/reference/claude.mjs",
     "typecheck": "tsc -p jsconfig.json",
     "validate:plugin": "claude plugin validate --strict . && claude plugin validate --strict .claude-plugin/plugin.json"
   },

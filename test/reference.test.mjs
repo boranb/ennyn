@@ -27,6 +27,7 @@ import { loadGraph } from "../plan/mechanization.mjs";
 import { RECORD, RELATIONS, cellProblems, compare, moves, readRecord, unmeasuredOf } from "./reference/npm.mjs";
 import * as cc from "./reference/claude-code.mjs";
 import * as md from "./reference/markdown.mjs";
+import * as ay from "./reference/actions-yaml.mjs";
 import { MIN_RULE, ruleKey, ruleLines } from "../setup/budget.mjs";
 import { banLiterals, outsideFenceLines } from "../setup/scan.mjs";
 
@@ -831,8 +832,102 @@ test("reference control: npm run test:reference runs the claude it resolves once
   }
 });
 
+test("reference: every Actions YAML cell compares as recorded", async () => {
+  const rec = ay.readRecord();
+  assert.ok(rec.cells.length > 0, "test/reference/actions-yaml.json holds no cell");
+  const lines = ay.moves(rec.cells, await openNodes());
+  assert.equal(
+    lines.join("\n"),
+    "",
+    `test/reference/actions-yaml.json: ${lines.length} comparison(s) moved. security.ci's YAML reader that gives a finding GitHub's reading does not hold, or misses one it holds, is fixed (a form it cannot follow is refused), or the cell says why ("refused: …", "stricter: …", "gap: <open node>", "invalid: …"), in the commit that moves it.`,
+  );
+});
+
+test("reference: the Actions YAML record names GitHub's parser, pinned, and holds well-formed cells, each with GitHub's reading", () => {
+  const rec = ay.readRecord();
+  assert.equal(rec.parser, ay.parserName());
+  assert.match(ay.PARSER.commit, /^[0-9a-f]{40}$/);
+  assert.equal(ay.PARSER.repo, "https://github.com/actions/runner.git");
+  for (const [p, id] of Object.entries(ay.PARSER.trees)) assert.match(id, /^[0-9a-f]{40}$/, p);
+  assert.deepEqual(Object.keys(ay.PARSER.trees).sort(), ["src/Directory.Build.props", "src/NuGet.Config", "src/Sdk", "src/global.json"]);
+  assert.match(ay.PARSER.image, /^mcr\.microsoft\.com\/dotnet\/sdk:8\.0\.425-[a-z0-9.-]+@sha256:[0-9a-f]{64}$/);
+  // The build restores in locked mode: every package the SDK takes, YamlDotNet among them, is held to its hash.
+  const lock = JSON.parse(readFileSync(new URL("./reference/actions-yaml/packages.lock.json", import.meta.url), "utf8"));
+  const yaml = lock.dependencies["net8.0"]["YamlDotNet.Signed"];
+  assert.equal(`YamlDotNet.Signed ${yaml.resolved}`, ay.PARSER.yamlDotNet);
+  for (const [name, d] of Object.entries(lock.dependencies["net8.0"])) if (/** @type {any} */ (d).type !== "Project") assert.match(/** @type {any} */ (d).contentHash, /^[A-Za-z0-9+/]{86}==$/, name);
+  assert.match(readFileSync(new URL("./reference/actions-yaml/Test.csproj", import.meta.url), "utf8"), /<RestorePackagesWithLockFile>true<\/RestorePackagesWithLockFile>/);
+  const ids = rec.cells.map((c) => c.id);
+  assert.deepEqual(ids.filter((id, i) => ids.indexOf(id) !== i), [], "an id twice");
+  const texts = rec.cells.map((c) => c.text);
+  assert.deepEqual(rec.cells.filter((c, i) => texts.indexOf(c.text) !== i).map((c) => c.id), [], "a text twice");
+  assert.deepEqual(rec.cells.flatMap(ay.cellProblems), []);
+  for (const c of rec.cells) assert.ok(c.github, `${c.id}: no reading`);
+  // The record holds each relation, and readings GitHub runs as well as ones it refuses.
+  const seen = new Set(rec.cells.map((c) => ay.judge(c).relation));
+  for (const want of ay.RELATIONS) assert.ok(seen.has(want), want);
+  assert.ok(rec.cells.some((c) => c.github?.yaml && !c.github.workflow.length) && rec.cells.some((c) => c.github?.yaml && c.github.workflow.length));
+});
+
+test("reference: every workflow text of the security.ci verdicts corpus has GitHub's reading in the Actions YAML record", () => {
+  const verdicts = JSON.parse(readFileSync(new URL("./verdicts/ci.json", import.meta.url), "utf8"));
+  const texts = new Set(ay.readRecord().cells.map((c) => c.text));
+  /** @type {string[]} */
+  const missing = [];
+  for (const v of verdicts) {
+    const files = [v.workflow, v.head, ...Object.entries({ ...v.files, ...(typeof v.head === "object" ? v.head : {}) }).filter(([p]) => /^\.github\/workflows\/[^/]+$/.test(p)).map(([, t]) => t)];
+    for (const t of files) if (typeof t === "string" && !texts.has(t)) missing.push(v.id);
+  }
+  assert.deepEqual(missing, [], "a workflow the verdicts corpus holds that the record does not: node test/reference/actions-yaml.mjs add <probes.json>");
+});
+
+test("reference control: the Actions YAML judge finds a reading that moved, place by place, in both of the hook's modes", () => {
+  const SHA = "3d3c42e5aac5ba805825da76410c181273ba90b1";
+  const s = (/** @type {number} */ l, /** @type {string} */ v) => ({ l, t: "s", v });
+  /** GitHub's document of `on: <on> / permissions: {} / jobs: a: runs-on: x / steps: [<steps>]`, each step a mapping. @param {any[][]} steps */
+  const doc = (steps, on = "push") => ({ l: 1, m: [[s(1, "on"), s(1, on)], [s(2, "permissions"), { l: 2, m: [] }], [s(3, "jobs"), { l: 4, m: [[s(4, "a"), { l: 5, m: [[s(5, "runs-on"), s(5, "x")], [s(6, "steps"), { l: 7, q: steps.map((pairs) => ({ l: 7, m: pairs })) }]] }]] }]] });
+  const uses = (/** @type {string} */ v) => [[s(7, "uses"), s(7, v)]];
+  const text = (/** @type {string} */ steps, on = "push") => `on: ${on}\npermissions: {}\njobs:\n  a:\n    runs-on: x\n    steps:\n${steps}`;
+  const cell = (/** @type {string} */ t, /** @type {any} */ d, extra = {}) => ({ id: "x", from: "control", text: t, github: { yaml: d, workflow: [] }, ...extra });
+  const one = (/** @type {any} */ c, /** @type {Set<string> | undefined} */ open = undefined) => ay.moves([c], open).join("\n");
+  assert.equal(ay.judge(cell(text(`      - uses: a/b@${SHA}\n`), doc([uses(`a/b@${SHA}`)]))).relation, "agree");
+  // GitHub reads an unpinned action where Ennyn reads a pinned one: the hook passes what it should refuse.
+  assert.match(one(cell(text(`      - uses: a/b@${SHA}\n`), doc([uses("a/b@v1")]))), /^x: differs, recorded agree — Ennyn "workflow: nothing; callee: nothing", GitHub "workflow: unpinned a#0; callee: unpinned a#0"$/);
+  // Place by place: one unpinned action each, in another step, is no agreement.
+  assert.equal(ay.judge(cell(text(`      - uses: a/b@v1\n      - uses: a/b@${SHA}\n`), doc([uses(`a/b@${SHA}`), uses("a/b@v1")]))).relation, "differs");
+  // Ennyn refuses what GitHub reads as pinned; a form Ennyn cannot follow; a text GitHub reads no document of.
+  const stricter = cell(text("      - uses: a/b@v1\n"), doc([uses(`a/b@${SHA}`)]));
+  assert.match(one(stricter), /^x: stricter, recorded agree/);
+  assert.equal(one({ ...stricter, except: "stricter: a control" }), "");
+  assert.equal(ay.judge(cell(text("      - uses: *nope\n"), doc([uses("a/b@v1")]))).relation, "refused");
+  assert.equal(ay.judge({ id: "x", from: "control", text: "a", github: { yamlError: "x", workflow: ["x"] } }).relation, "unparsed");
+  // The callee mode compares a pull request's checkout though the file's own trigger is no pull_request_target.
+  const fetch = [[s(7, "run"), s(7, "git fetch origin pull/1/head")]];
+  assert.equal(ay.judge(cell(text("      - run: git fetch origin pull/1/head\n"), doc([fetch]))).relation, "agree");
+  assert.match(one(cell(text("      - run: git fetch origin\n"), doc([fetch]))), /differs, recorded agree — Ennyn "workflow: nothing; callee: nothing", GitHub "workflow: nothing; callee: pwn a#0 run"/);
+  // The trigger in any case, and steps in their order, from GitHub's document alone.
+  assert.ok(ay.githubPlaces(doc([fetch], "PULL_REQUEST_TARGET")).has("pull_request_target"));
+  const placed = [[s(7, "uses"), s(7, `actions/checkout@${SHA}`)], [s(7, "with"), { l: 7, m: [[s(7, "repository"), s(7, "o/r")], [s(7, "path"), s(7, "d")]] }]];
+  assert.ok(ay.githubPlaces(doc([placed, uses("./d/x")])).has("unpinned a#1"));
+  assert.ok(!ay.githubPlaces(doc([uses("./d/x"), placed])).has("unpinned a#0"));
+  // Each kind of finding is a place: a job with no permissions, a write-all, a callee.
+  const bare = { l: 1, m: [[s(1, "on"), s(1, "push")], [s(3, "jobs"), { l: 4, m: [[s(4, "a"), { l: 5, m: [[s(5, "permissions"), s(5, "write-all")], [s(6, "uses"), s(6, "./w.yml")]] }], [s(7, "b"), { l: 8, m: [] }]] }]] };
+  assert.deepEqual([...ay.githubPlaces(bare)].sort(), ["callee w.yml", "unpermitted b", "write-all a"]);
+  // A difference is held only by an open node or by GitHub refusing the workflow, and every listed relation says why.
+  const hole = cell(text(`      - uses: a/b@${SHA}\n`), doc([uses("a/b@v1")]));
+  assert.equal(one({ ...hole, except: "gap: some-node" }, new Set(["some-node"])), "");
+  assert.match(one({ ...hole, except: "gap: closed-node" }, new Set(["some-node"])), /x: names no open graph node: "?closed-node"?/);
+  assert.match(one({ ...hole, except: "invalid: GitHub refuses it" }), /x: invalid, but GitHub runs the workflow/);
+  assert.equal(one({ ...hole, except: "invalid: GitHub refuses it", github: { ...hole.github, workflow: ["Unexpected value"] } }), "");
+  assert.match(one({ ...hole, except: "gap:" }), /x: .*gives no why/);
+  // A cell holds GitHub's document or why it read none, never both or neither; what the judge prints is escaped.
+  assert.deepEqual(ay.cellProblems({ id: "x", from: "control", text: "a", github: { workflow: [] } }), ["x: github is { yaml | yamlError, workflow: [errors] }"]);
+  assert.deepEqual(ay.cellProblems({ id: "x", from: "control", text: "a", github: { yaml: doc([]), yamlError: "y", workflow: [] } }), ["x: github is { yaml | yamlError, workflow: [errors] }"]);
+  assert.doesNotMatch(one({ ...hole, except: "gap: \u001b[31m" }, new Set()), /\u001b/);
+});
+
 test("reference: npm run test:reference runs every recorder's check, the runner that takes --claude last", () => {
   const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
   // npm hands a script's arguments to its last command alone: test/reference/claude.mjs forwards --claude to both of its checks.
-  assert.equal(pkg.scripts["test:reference"], "node test/reference/npm.mjs check && node test/reference/markdown.mjs check && node test/reference/claude.mjs");
+  assert.equal(pkg.scripts["test:reference"], "node test/reference/npm.mjs check && node test/reference/markdown.mjs check && node test/reference/actions-yaml.mjs check && node test/reference/claude.mjs");
 });
