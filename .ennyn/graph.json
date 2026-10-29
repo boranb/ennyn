@@ -2665,6 +2665,17 @@
       "cluster": "security",
       "source": "research 2026-10-29: Claude Code 2.1.310 read in its binary and docs (code.claude.com/docs/en/hooks.md, context-window.md), published studies and agent-workflow repositories fetched raw; numbers are the sources' own unless said. arxiv.org/abs/2610.29869 (preprint): in harnesses that flatten message roles, a forged approval survived compaction into the agent's memory 87-100% of the time. Here: approvals were relayed between sessions on 2026-10-29 and the receiving session rightly refused them",
       "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ui-seen-running",
+      "title": "A task with a design brief ends with one line on how the changed surface was seen running: the command that started it (dev server, simulator, the project's own preview) and which of the brief's Behavior states were looked at (empty, loading, error, narrow screen), or 'not seen: <why>'; the UI reviewer gets the line beside the brief. Today the brief is held only against the code (task protocol step 2, the UI reviewer's brief-to-result table) and step 5 runs only the fast test. Ennyn builds no runner: Claude Code's bundled run skill ('Launch and drive this project's app to see a change working') does the launching, and the cycle skill names it",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "cycle",
+      "source": "an approach reported in practice, 2026-10-29: Claude Code built a browser simulator that compiles the real firmware against stubbed hardware (the same code runs instead of menus rewritten in JS), and menu changes are seen without flashing a device; one reported case, its fidelity claims unmeasured. The run skill's description is in the Claude Code 2.1.310 binary",
+      "since": 15
     }
   ],
   "done": [
