@@ -31,7 +31,7 @@
       "cluster": "evidence",
       "needs": [],
       "gate": "user",
-      "source": "docs/evidence.md, Open questions; set up but not committed in the second project (2026-10-18); init committed and cycle 1 run 2026-10-29: real 14 · fix-introduced 10 · pre-existing 10 · gate-caught 3, new classes by round 13/8/0; findings are the nodes with that source",
+      "source": "docs/evidence.md, Open questions; set up but not committed in the second project (2026-10-18); init committed and cycle 1 run 2026-10-29: real 14 · fix-introduced 10 · pre-existing 10 · gate-caught 3, new classes by round 13/8/0; findings are the nodes with that source; cycle 2: real 16 · fix-introduced 10 · pre-existing 12 · gate-caught 2, new classes by round 14/4/0; a task was left for cycle 3 at the context limit the cycle set itself (850K)",
       "since": 0
     },
     {
@@ -2520,7 +2520,7 @@
       "value": "high",
       "cost": "S",
       "cluster": "gates",
-      "source": "second-project trial, cycle 1, 2026-10-29: seen twice that day, in this repository's main checkout (metrics/mutation.mjs, restored from the journal, equal to HEAD) and in the second project on a file the session had edited (2 links). Claude Code 2.1.310's file history is not the cause: it backs up with copyFile and links only to move a backup between session folders. What made the second name is unmeasured",
+      "source": "second-project trial, cycle 1, 2026-10-29: seen twice that day, in this repository's main checkout (metrics/mutation.mjs, restored from the journal, equal to HEAD) and in the second project on a file the session had edited (2 links). Claude Code 2.1.310's file history is not the cause: it backs up with copyFile and links only to move a backup between session folders. What made the second name is unmeasured; second-project trial, cycle 2, 2026-10-29: two more refusals, in agents' fresh linked worktrees. Not reproduced with mutate alone in a scratch repository (the link count, sampled every 0.2 s, stayed 1), and Claude Code's Edit replaces the file with a new inode (its backup is a separate copy), measured here",
       "since": 15
     },
     {
@@ -2531,7 +2531,7 @@
       "value": "high",
       "cost": "M",
       "cluster": "gates",
-      "source": "second-project trial, cycle 1, 2026-10-29: the project's tracked commit-msg hook exited early on Merge/Revert/fixup!/squash! subjects and on a no-prevention marker, so a block added at its end skipped the content scan on those commits while doctor read the hook as wired; the trial wired it by hand from hookScript's record logic and checked 12 cases in a scratch repository (a secret in a revert, a merge and a marked commit are now refused, the same commits without it pass). Related: hook-wired-limits",
+      "source": "second-project trial, cycle 1, 2026-10-29: the project's tracked commit-msg hook exited early on Merge/Revert/fixup!/squash! subjects and on a no-prevention marker, so a block added at its end skipped the content scan on those commits while doctor read the hook as wired; the trial wired it by hand from hookScript's record logic and checked 12 cases in a scratch repository (a secret in a revert, a merge and a marked commit are now refused, the same commits without it pass). Related: hook-wired-limits; second-project trial, cycle 2, 2026-10-29: Claude Code 2.1.310's agent-worktree setup runs git config core.hooksPath <absolute path> in the new worktree when the main repository's value is relative, and without extensions.worktreeConfig that writes the shared config: the wiring must not depend on the value staying relative",
       "since": 15
     },
     {
@@ -2575,7 +2575,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "init",
-      "source": "second-project trial, cycle 1, 2026-10-29; the module was written at the project's first setup, 2026-10-18",
+      "source": "second-project trial, cycle 1, 2026-10-29; the module was written at the project's first setup, 2026-10-18; second-project trial, cycle 2, 2026-10-29: the mechanization slot was empty again although two roadmap lines say mechanization",
       "since": 15
     },
     {
@@ -2586,7 +2586,7 @@
       "value": "medium",
       "cost": "M",
       "cluster": "impact",
-      "source": "second-project trial, cycle 1, 2026-10-29",
+      "source": "second-project trial, cycle 1, 2026-10-29; second-project trial, cycle 2, 2026-10-29: the same row missed the readers again on two tasks, and an agent set the table aside because of it",
       "since": 15
     },
     {
@@ -2675,6 +2675,39 @@
       "cost": "S",
       "cluster": "cycle",
       "source": "an approach reported in practice, 2026-10-29: Claude Code built a browser simulator that compiles the real firmware against stubbed hardware (the same code runs instead of menus rewritten in JS), and menu changes are seen without flashing a device; one reported case, its fidelity claims unmeasured. The run skill's description is in the Claude Code 2.1.310 binary",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "mutate-journal-worktree",
+      "title": "mutate's journal records the worktree it was written in (its real top), and --restore refuses a journal from another worktree, even with --force: the journals sit in the git dir every linked worktree shares and name the file by its relative path, so a restore from the main tree could write a worktree's original bytes over another tree's file",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "second-project trial, cycle 2, 2026-10-29: two agents ran mutate in their own linked worktrees while the main tree held its own changes; the journals were found in the shared state dir with relative paths only",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hook-test-git-env",
+      "title": "doctor and init say when a project hook runs the test suite with git's hook environment (GIT_DIR, GIT_INDEX_FILE and the rest), and doctor says when core.bare is true in a repository that has a working tree: a test's git command then acts on the real repository",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "second-project trial, cycle 2, 2026-10-29: the project's pre-commit ran its test suite with git's hook environment; the inherited GIT_INDEX_FILE disturbed a worktree's index, and core.bare=true appeared in the shared config. Reproduced here: GIT_DIR=<repo>/.git git init --bare with no directory re-initialises that repository as bare (with a directory, or without --bare, nothing changes). The project fixed it by clearing GIT_* in its test setup. This repository's own tests are covered by test/hermetic.mjs",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "mutate-tests-ran",
+      "title": "mutate says, for each mutant, how many tests the command ran (from the runner's summary when it prints one), and warns when a filter ran none that touch the mutated file: a hand-picked list run with a test filter reported survivors that the excluded tests would have killed",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "second-project trial, cycle 2, 2026-10-29: survivors under a -k filter were killed once the whole test files ran; mutate's report did not say which tests had run",
       "since": 15
     }
   ],
