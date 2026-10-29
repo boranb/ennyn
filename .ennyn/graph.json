@@ -1314,11 +1314,11 @@
       "status": "planned",
       "needs": [],
       "id": "cycle-cost",
-      "title": "budget --record also records what the cycle cost: tokens (input, cache write, cache read, output), agent time and, where Claude Code wrote it, dollars, summed from this project's session transcripts since the previous record, numbers only, never text; unmeasured when no transcript is there; the cycle report gives the cost per task, per review round and per real escape",
+      "title": "budget --record also records what the cycle cost: tokens (input, cache write, cache read, output), agent time and, where Claude Code wrote it, dollars, summed from this project's session transcripts since the previous record, numbers only, never text; unmeasured when no transcript is there; the cycle report gives the cost per task, per review round and per real escape; usage is summed once per message id: Claude Code writes one transcript line per content block and repeats the message's usage on each (this repository's last 8 sessions, version field 2.1.306: summing per line gave 1.78 to 2.61 times the per-id sum, every repeated id with the same usage); a call that timed out or returned no JSON is unmeasured, never 0 USD; an estimate is never added to a measured cost",
       "value": "medium",
       "cost": "M",
       "cluster": "metrics",
-      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its band reads Claude Code session transcripts for cost, agent time and tokens per task, and leaves a cost empty rather than guess it (an unknown model, fast mode); Ennyn counts defects per cycle but not what a cycle or a review round costs",
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its band reads Claude Code session transcripts for cost, agent time and tokens per task, and leaves a cost empty rather than guess it (an unknown model, fast mode); Ennyn counts defects per cycle but not what a cycle or a review round costs; third-party cost scripts read 2026-10-29: a failed call recorded as a zero cost; one adds Hermes's estimated_cost_usd and Claude Code's total_cost_usd into one total, a missing estimate as 0",
       "since": 11
     },
     {
@@ -1427,7 +1427,7 @@
       "status": "planned",
       "needs": [],
       "id": "budget-listing-reading",
-      "title": "budget counts skill and command listings as Claude Code 2.1.310 builds them: when_to_use joins the tool description, a skill with no description gets one derived from its body, a skill's paths field and disable-model-invocation change whether it is listed",
+      "title": "budget counts skill and command listings as Claude Code 2.1.310 builds them: when_to_use joins the tool description, a skill with no description gets one derived from its body, a skill's paths field and disable-model-invocation change whether it is listed; the reading is checked against Claude Code's own count: claude -p \"/context\" in an empty folder with and without --plugin-dir, the difference set beside budget's always-loaded figure for the plugin",
       "value": "medium",
       "cost": "S",
       "cluster": "gates",
@@ -2052,11 +2052,11 @@
       "status": "planned",
       "needs": [],
       "id": "eval-arm-reads-home",
-      "title": "plugin-eval's arms can read the operator's real home: the eval tool denies reads under the HOME it is given and the temporary folders, and the recorder gives it its own HOME; user settings' sandbox.filesystem.denyRead does not reach the arms (measured 2.1.310: the git run's home-read cell reads a canary file the recorder writes in the real home). A paid run's model could read ~/.ssh, ~/.config/gh, ~/.docker/config.json, ~/.claude.json and other repositories. Find a layout that denies it (the real HOME given to the eval with CLAUDE_CONFIG_DIR kept apart, measured) and turn the gap cell into a check. No paid run until this closes",
+      "title": "plugin-eval's arms can read the operator's real home: the eval tool denies reads under the HOME it is given and the temporary folders, and the recorder gives it its own HOME; user settings' sandbox.filesystem.denyRead does not reach the arms (measured 2.1.310: the git run's home-read cell reads a canary file the recorder writes in the real home). A paid run's model could read ~/.ssh, ~/.config/gh, ~/.docker/config.json, ~/.claude.json and other repositories. Find a layout that denies it (the real HOME given to the eval with CLAUDE_CONFIG_DIR kept apart, measured) and turn the gap cell into a check. No paid run until this closes; the same layout check covers the instructions an arm loads: whether the operator's ~/.claude/CLAUDE.md, rules and auto memory reach it (the eval tool starts every run with --setting-sources user)",
       "value": "high",
       "cost": "M",
       "cluster": "security",
-      "source": "cycle 2026-10-28 (14), eval-git-macos measurements and security review round 1",
+      "source": "cycle 2026-10-28 (14), eval-git-macos measurements and security review round 1; a third-party eval script read 2026-10-29 (all rights reserved; read, nothing copied): its baseline arm ran with --setting-sources project and the user's personal CLAUDE.md stayed loaded; it keeps its own calls apart with claudeMdExcludes and CLAUDE_CODE_DISABLE_AUTO_MEMORY=1, both strings present in the Claude Code 2.1.310 binary",
       "since": 14
     },
     {
@@ -2162,11 +2162,11 @@
       "status": "planned",
       "needs": [],
       "id": "source-quote-check",
-      "title": "A graph node or doc that quotes a source quotes a saved raw copy (curl, gh or git, with the URL, date, HTTP status and sha256 recorded), never WebFetch's output, which its tool description says 'answers `prompt` against it using a small fast model'. A local check finds each quoted span in the saved copy after whitespace and quote-mark normalization, refuses a challenge or login page as the copy, and on a later re-check reports a moved quote with its similarity score and fails when the quote is gone. 2b02166 fixed five misquoted sources; which tool produced them was not measured",
+      "title": "A graph node or doc that quotes a source quotes a saved raw copy (curl, gh or git, with the URL, date, HTTP status and sha256 recorded), never WebFetch's output, which its tool description says 'answers `prompt` against it using a small fast model'. A local check finds each quoted span in the saved copy after whitespace and quote-mark normalization, refuses a challenge or login page as the copy, and on a later re-check reports a moved quote with its similarity score and fails when the quote is gone. 2b02166 fixed five misquoted sources; which tool produced them was not measured; the first check passes only an exact match after that normalization, never a score: a 0.97 similarity threshold rates a 285-character quote with 'sınırlı olarak' changed to 'sınırlı olmaksızın' (limited to unlimited) at 0.984 against its source and calls it found; a quote missing from its own source is also searched in the other saved copies, so a wrong attribution is named as one",
       "value": "high",
       "cost": "M",
       "cluster": "evidence",
-      "source": "review of ScrapeGraphAI, agent-reach and Scrapling, 2026-10-28: ScrapeGraphAI warns when expected words are missing from fetched text (parse_node.py), agent-reach refuses challenge pages before returning text (channels/web.py), Scrapling finds a saved element again by a similarity score (parser.py); none of them checks a quote",
+      "source": "review of ScrapeGraphAI, agent-reach and Scrapling, 2026-10-28: ScrapeGraphAI warns when expected words are missing from fetched text (parse_node.py), agent-reach refuses challenge pages before returning text (channels/web.py), Scrapling finds a saved element again by a similarity score (parser.py); none of them checks a quote; a third-party quote-check script read 2026-10-29 (all rights reserved; read, nothing copied) uses a 0.97 similarity threshold; the 0.984 was re-measured with its word-window method",
       "since": 14
     },
     {
@@ -2393,11 +2393,11 @@
       "status": "planned",
       "needs": [],
       "id": "secret-transcript-probe",
-      "title": "Measure, before any masking hook: (1) whether a PostToolUse hook's hookSpecificOutput.updatedToolOutput also changes what Claude Code writes to the session's .jsonl, or only what the model reads; (2) the output shape it accepts for Bash, Read, Grep and an MCP tool (the docs: 'The value must match the tool's output shape', otherwise 'the original output is used'); (3) whether a blocked UserPromptSubmit prompt lands in the transcript and in prompt history. One claude -p run per question in a temporary directory with a test hook and a fake value, the CLI version recorded; the answers go into the nodes that need them",
+      "title": "Measure, before any masking hook: (1) whether a PostToolUse hook's hookSpecificOutput.updatedToolOutput also changes what Claude Code writes to the session's .jsonl, or only what the model reads; (2) the output shape it accepts for Bash, Read, Grep and an MCP tool (the docs: 'The value must match the tool's output shape', otherwise 'the original output is used'); (3) whether a blocked UserPromptSubmit prompt lands in the transcript and in prompt history. One claude -p run per question in a temporary directory with a test hook and a fake value, the CLI version recorded; the answers go into the nodes that need them; one report to check under (2): a third-party README says updatedToolOutput given plain text was ignored and worked when the tool's tool_response JSON was kept and only its text fields changed, tried on Claude Code 2.1.287",
       "value": "high",
       "cost": "S",
       "cluster": "security",
-      "source": "Claude Code hooks.md: updatedToolOutput 'Replaces the tool's output with the provided value before it is sent to Claude' and '`updatedToolOutput` only changes what Claude sees' (telemetry 'also captures the original output'); CHANGELOG: 'PostToolUse hooks can now replace tool output for all tools via `hookSpecificOutput.updatedToolOutput` (previously MCP-only)'. ggshield CHANGELOG 1.56.0 says withholding the output keeps the secret 'out of its context and out of the session transcript on disk'; not measured by us",
+      "source": "Claude Code hooks.md: updatedToolOutput 'Replaces the tool's output with the provided value before it is sent to Claude' and '`updatedToolOutput` only changes what Claude sees' (telemetry 'also captures the original output'); CHANGELOG: 'PostToolUse hooks can now replace tool output for all tools via `hookSpecificOutput.updatedToolOutput` (previously MCP-only)'. ggshield CHANGELOG 1.56.0 says withholding the output keeps the secret 'out of its context and out of the session transcript on disk'; not measured by us; a third-party report, read 2026-10-29: it worked when the tool_response JSON was kept and only its text fields changed (tried on Claude Code 2.1.287); not measured by us",
       "since": 14
     },
     {
@@ -2473,6 +2473,39 @@
       "sourceClass": "one question answered in several places drifts apart, and a fix reaches only one of them",
       "title": "A gate for one decision answered in several places: the impact table's S1 row is answered by a command that lists every function and literal answering the same question as the changed one (same regex or string literals, same called predicates, near-duplicate bodies across modules), and a test fails when a change edits one of a known group of sibling sites and not the others, or adds a new near-duplicate of a decision with no entry in a sibling list; then delete the prose that asks reviewers to look for siblings",
       "source": "cycle 2026-10-28 (14) convergence: the class recurred in all four tasks, ~10 times, all caught by reviewers: two joiners and three anchor sites in the YAML reader (one got the fix), the judge sharing the rules it measures, a recorder missing its sibling's trace check, the hooks finding the project apart from the CLI, a link filter and the loader disagreeing, the metrics-log predicate not shared by audit and doctor, a paid-run block on one of two paths, hook text left saying the old thing"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "finding-quote-check",
+      "title": "A script checks every finding's Quote before the author sees it: the file exists at the reviewed commit, the line is in range, and the quoted text is that line (or those lines) after whitespace and quote-mark normalization, an exact match, never a similarity score. A finding that fails goes back to its reviewer once with the mismatch; one that fails again is kept as unverified, with the reason, in the round's report and in the convergence counts, not dropped. finding-schema.md says 'a claim that cannot quote a line is not a finding', and nothing checks it",
+      "value": "high",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "quote-check scripts read 2026-10-29: one (MIT) lists a cited path missing on disk as 'a citation the agent invented'; another (all rights reserved; read, nothing copied) checks each quote against its source with no model, and hands a document the model gave no answer for to a person instead of dropping it",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "reviewer-seeded-recall",
+      "title": "Measure the reviewers' recall on planted defects: copies of past Ennyn diffs, each with one defect of a known class planted (classes taken from real escapes: the convergence records and szz), plus clean diffs, reviewed by code-reviewer, data-reviewer and security-reviewer as in a cycle; a script with no model scores each finding by file:line and class and counts the false findings on clean diffs. It gives reviewer-model-diversity and effort-escalation a fixed corpus; the deterministic gates have one (test/guards.mjs, test/verdicts/), the reviewer agents do not",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "evidence",
+      "source": "a third-party quote-check script read 2026-10-29 (all rights reserved; read, nothing copied) plants four errors of four classes (a made-up quote, a distorted quote, a made-up decision number, a decision not in the folder) into a real model summary and scores its checker by script; one run, so a method, not evidence",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": ["cycle-cost", "reviewer-seeded-recall"],
+      "id": "effort-escalation",
+      "title": "Measure whether a task's author and reviewers can run at low or medium effort and re-run at high only when a mechanical check fails (tests, ennyn mutate, finding-quote-check), with the failures passed back: the same tasks run both ways, compared by tasks passing their gates, escaped defects and cost; only then does the cycle skill name an effort per step. Anthropic's figures for Opus 5.5 on 478 SWE-bench Pro problems: everything at high 95.3% solved at $0.29 per task, low with failures re-run at high about 97% at about $0.17; its condition is 'You can check outputs (tests, a verifier)', and its re-run points 'are worked out task by task from the fixed-setting runs, not run separately'",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "evidence",
+      "source": "platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence, fetched 2026-10-29 (HTTP 200): 'These results are Anthropic-internal' and 'directional, not guarantees'. A third-party pipeline (all rights reserved; read, nothing copied) runs Opus at low effort and again at high only when its quote checker finds a problem",
+      "since": 15
     }
   ],
   "done": [
