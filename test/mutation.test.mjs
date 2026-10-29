@@ -53,7 +53,7 @@ test("mutate tests: gone() is false for a live process and for a pid that is no 
 /**
  * A project whose test command is `node check.mjs`: add() and data.json's limit are tested, twice() is not,
  * notes.txt must hold "alpha". check.mjs writes its pid; it sleeps (and writes its pid to "sleeping") when
- * notes.txt says "sleep" or data.json has "sleep", and naps 2.5 s when notes.txt says "nap". src/esm.js, src/cjs.js and pkg/a.js are JavaScript
+ * notes.txt says "sleep" or data.json has "sleep", and naps 4.5 s when notes.txt says "nap". src/esm.js, src/cjs.js and pkg/a.js are JavaScript
  * no test loads: a module without a package type, CommonJS, and a module by its package.json.
  */
 function project() {
@@ -78,7 +78,7 @@ function project() {
       'writeFileSync("pid", String(process.pid));',
       'const notes = readFileSync("notes.txt", "utf8");',
       'const data = JSON.parse(readFileSync("data.json", "utf8"));',
-      'if (notes.includes("nap")) await new Promise((r) => setTimeout(r, 2500));',
+      'if (notes.includes("nap")) await new Promise((r) => setTimeout(r, 4500));',
       'if (notes.includes("sleep") || data.sleep) {',
       '  writeFileSync("sleeping", String(process.pid));',
       '  await new Promise((r) => setTimeout(r, 60_000));',
@@ -813,7 +813,9 @@ describe("mutate: runs that wait", { concurrency: 4 }, () => {
 
   test("mutate: a run slower than the timeout but not stuck gets a second, doubled timeout and is not a kill", async () => {
     const p = project();
-    const res = await runMutants({ cwd: p.dir, mutants: [m("n1", "notes.txt", "alpha", "alpha nap")], command: `${NODE} check.mjs`, journal: p.journal, timeoutMs: 2000 });
+    // The 4.5 s nap passes the 4 s timeout and leaves node 3.5 s to start under the doubled one; a 2.5 s nap against
+    // 2 s and 4 s ran out the second timeout on a loaded 2-CPU Linux VM and on macOS.
+    const res = await runMutants({ cwd: p.dir, mutants: [m("n1", "notes.txt", "alpha", "alpha nap")], command: `${NODE} check.mjs`, journal: p.journal, timeoutMs: 4000 });
     assert.equal(res.results[0].outcome, "survived");
     assert.deepEqual(p.snapshot(), p.before);
   });
