@@ -31,7 +31,7 @@
       "cluster": "evidence",
       "needs": [],
       "gate": "user",
-      "source": "docs/evidence.md, Open questions; set up but not committed in the second project (2026-10-18); init committed and cycle 1 run 2026-10-29: real 14 · fix-introduced 10 · pre-existing 10 · gate-caught 3, new classes by round 13/8/0; findings are the nodes with that source; cycle 2: real 16 · fix-introduced 10 · pre-existing 12 · gate-caught 2, new classes by round 14/4/0; a task was left for cycle 3 at the context limit the cycle set itself (850K)",
+      "source": "docs/evidence.md, Open questions; set up but not committed in the second project (2026-10-18); init committed and cycle 1 run 2026-10-29: real 14 · fix-introduced 10 · pre-existing 10 · gate-caught 3, new classes by round 13/8/0; findings are the nodes with that source; cycle 2: real 16 · fix-introduced 10 · pre-existing 12 · gate-caught 2, new classes by round 14/4/0; a task was left for cycle 3 at the context limit the cycle set itself (850K); cycle 3 (a new session): real 20 · fix-introduced 16 · pre-existing 17 · gate-caught 8, new classes by round 11/4/0; the first mechanization task ran (picked by hand), and its gate turned red on 6, 42 and 14 cases when past defects were put back",
       "since": 0
     },
     {
@@ -90,7 +90,9 @@
         "precompact-boundary-defer",
         "reread-after-compact",
         "mutate-writeback-grown-link",
-        "plugin-tracked-hookspath"
+        "plugin-tracked-hookspath",
+        "task-gate-after-round-two",
+        "agent-worktrees-ignored"
       ],
       "gate": "user",
       "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release)",
@@ -2575,7 +2577,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "init",
-      "source": "second-project trial, cycle 1, 2026-10-29; the module was written at the project's first setup, 2026-10-18; second-project trial, cycle 2, 2026-10-29: the mechanization slot was empty again although two roadmap lines say mechanization",
+      "source": "second-project trial, cycle 1, 2026-10-29; the module was written at the project's first setup, 2026-10-18; second-project trial, cycle 2, 2026-10-29: the mechanization slot was empty again although two roadmap lines say mechanization; second-project trial, cycle 3, 2026-10-29: a third cycle with the slot empty; the orchestrator picked the mechanization task by hand from the roadmap's marker",
       "since": 15
     },
     {
@@ -2608,7 +2610,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "security",
-      "source": "second-project trial, cycle 1, 2026-10-29",
+      "source": "second-project trial, cycle 1, 2026-10-29; second-project trial, cycle 3, 2026-10-29: a hash-pinned pip requirements.txt was not counted as a lock file (\"lock files: none\")",
       "since": 15
     },
     {
@@ -2708,6 +2710,50 @@
       "cost": "S",
       "cluster": "gates",
       "source": "second-project trial, cycle 2, 2026-10-29: survivors under a -k filter were killed once the whole test files ran; mutate's report did not say which tests had run",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "impact-language-aware",
+      "title": "impact fills its rows only with searches that hold for the files' language, and says unmeasured otherwise: in a Python project it looked for JavaScript's catch and test patterns and answered \"0 catch\" and \"no tests\", which three agents found wrong on their own and replaced with grep",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "impact",
+      "source": "second-project trial, cycle 3, 2026-10-29",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "task-gate-after-round-two",
+      "title": "After round-two fixes, the task's own gate runs before the commit (a browser check for a UI change, the project's harness for a money path, the gate a mechanization task built): a round-two fix that no review reads must still pass a check that exercises it",
+      "value": "high",
+      "cost": "S",
+      "cluster": "cycle",
+      "source": "second-project trial, cycle 3, 2026-10-29: a round-two fix opened a regression (a chart left empty in paper mode) that the two-round cap let through unreviewed; the project's own browser gate caught it before the commit. First field evidence on the review cap (docs/evidence.md, Open questions)",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "parallel-task-merge",
+      "title": "The cycle says how tasks done in parallel worktrees land: the orchestrator applies each task's patch in the main tree and commits it through the hooks (a cherry-pick runs none), and it hands out the ids the tasks share (lesson-catalog numbers, review base files) instead of letting each agent pick",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "cycle",
+      "source": "second-project trial, cycle 3, 2026-10-29: two agents took the same catalog number, and one overwrote another's review base file; the orchestrator landed patches with git apply --3way --index and a hooked commit. Related: no-verify-gap",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "agent-worktrees-ignored",
+      "title": "init proposes ignoring .claude/worktrees/ (Claude Code puts agent worktrees inside the repository) in git and in the project's own whole-tree tools, and doctor says when it is not ignored: a formatter run over . read agents' half-written code and stopped a main-tree commit",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "init",
+      "source": "second-project trial, cycle 3, 2026-10-29: the project's `ruff format --check .` scanned agent worktrees; fixed there by ignoring the folder",
       "since": 15
     }
   ],
