@@ -31,7 +31,7 @@
       "cluster": "evidence",
       "needs": [],
       "gate": "user",
-      "source": "docs/evidence.md, Open questions; set up but not committed in the second project (2026-10-18)",
+      "source": "docs/evidence.md, Open questions; set up but not committed in the second project (2026-10-18); init committed and cycle 1 run 2026-10-29: real 14 · fix-introduced 10 · pre-existing 10 · gate-caught 3, new classes by round 13/8/0; findings are the nodes with that source",
       "since": 0
     },
     {
@@ -1659,7 +1659,7 @@
       "value": "high",
       "cost": "M",
       "cluster": "gates",
-      "source": "review of agents block-no-verify and tdd-guard docs/enforcement.md, 2026-10-27; related: ci-range-check, hook-amend-base",
+      "source": "review of agents block-no-verify and tdd-guard docs/enforcement.md, 2026-10-27; related: ci-range-check, hook-amend-base; second-project trial, cycle 1, 2026-10-29, git 2.56.0: revert --no-edit, revert -e, cherry-pick and rebase run neither pre-commit nor commit-msg; merge --no-edit runs commit-msg",
       "since": 13
     },
     {
@@ -2505,6 +2505,116 @@
       "cost": "M",
       "cluster": "evidence",
       "source": "platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence, fetched 2026-10-29 (HTTP 200): 'These results are Anthropic-internal' and 'directional, not guarantees'. A third-party pipeline (all rights reserved; read, nothing copied) runs Opus at low effort and again at high only when its quote checker finds a problem",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "mutate-writeback-grown-link",
+      "title": "mutate puts the original back into the file it mutated when that file gained a second name during the run (the device and inode the journal records), and names the new link; today write-back refuses with \"it has another name (a hard link)\" and leaves the mutant under both names, to be restored by hand from the journal",
+      "value": "high",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "second-project trial, cycle 1, 2026-10-29: seen twice that day, in this repository's main checkout (metrics/mutation.mjs, restored from the journal, equal to HEAD) and in the second project on a file the session had edited (2 links). Claude Code 2.1.310's file history is not the cause: it backs up with copyFile and links only to move a backup between session folders. What made the second name is unmeasured",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "plugin-tracked-hookspath",
+      "title": "A plugin install where core.hooksPath is a tracked directory (or husky) gets a supported way to run commit-check: install-hook prints a block for the project's own hook that reads the plugin's version record, warns and passes when node or the record is missing, refuses a broken record, and runs on every path of the hook (exempt subjects and early exits skip only the project's own checks); today it says to call commit-check through the project's own copy of Ennyn, which a plugin install does not have",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "second-project trial, cycle 1, 2026-10-29: the project's tracked commit-msg hook exited early on Merge/Revert/fixup!/squash! subjects and on a no-prevention marker, so a block added at its end skipped the content scan on those commits while doctor read the hook as wired; the trial wired it by hand from hookScript's record logic and checked 12 cases in a scratch repository (a secret in a revert, a merge and a marked commit are now refused, the same commits without it pass). Related: hook-wired-limits",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "config-ignored-said",
+      "title": "doctor and init say when a file Ennyn reads or writes in the project (the config, the graph, the metrics log, the handoff) is ignored by the project's ignore rules, so it would never be committed",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "init",
+      "source": "second-project trial, cycle 1, 2026-10-29: doctor said ✓ for the config, and the first git add .ennyn/ failed on the project's unanchored config.json ignore rule; fixed there with a negation for .ennyn/config.json",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "mutate-check-per-extension",
+      "title": "mutate --check takes a command per file extension, so a list that mixes languages is checked: with one command, a list of Python and shell mutants left 8 unchecked on its first run and needed a wrapper that picked by extension",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "second-project trial, cycle 1, 2026-10-29",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "core-full-ranking",
+      "title": "core --json gives the whole ranking by score, not the top five and \"+N more\": the cycle's \"prefer nodes sharing a cluster\" rule had to be counted by hand",
+      "value": "low",
+      "cost": "S",
+      "cluster": "plan",
+      "source": "second-project trial, cycle 1, 2026-10-29",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "graph-module-guide",
+      "title": "init's guide for a graph module that reads a roadmap: take the value from the value field, never from the whole line (a line saying it was not the high marker scored high), and give a way to mark a node mechanization (the project's module had none, so the mechanization slot was empty and became a third core task)",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "init",
+      "source": "second-project trial, cycle 1, 2026-10-29; the module was written at the project's first setup, 2026-10-18",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "impact-transitive-readers",
+      "title": "impact's reference row follows callers through one wrapper, or says that it stopped at the first level: \"no references outside tests\" for a session predicate hid its real readers (four routers through a dependency wrapper) and gave false confidence",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "impact",
+      "source": "second-project trial, cycle 1, 2026-10-29",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "init-bans-backticks",
+      "title": "init-scan proposes banned literals only from lines that forbid writing something, not from every backticked name in rule text (NULL, asset, max-width and others were proposed; the one real ban was already held by a project validator)",
+      "value": "low",
+      "cost": "S",
+      "cluster": "init",
+      "source": "second-project trial, cycle 1, 2026-10-29",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "deps-other-ecosystems-said",
+      "title": "ennyn deps, the cycle's closing checks and README say that only npm lock files are read: in a Python project deps answered \"no lock file\" without saying the dependencies were not measured",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "second-project trial, cycle 1, 2026-10-29",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hook-no-node-visible",
+      "title": "The commit-msg hook's \"node not found, not checked\" reaches only stderr: a GUI git client without node on PATH turns the scan off with nothing the user sees; say it where such clients show it, or let the config make it a refusal",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "second-project trial, cycle 1, 2026-10-29, review of the hand-wired hook",
       "since": 15
     }
   ],
