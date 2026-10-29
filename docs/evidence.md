@@ -123,6 +123,24 @@ What the next cycles are compared with on the origin project:
 
 Counter-measure: if rounds and time fall while escapes rise, the review cap is loosened again.
 
+## Second project
+
+Three cycles ran on a second project on 2026-10-29: Python, about a hundred commits, a service tested in a simulator, by the same author, with its own agent loop kept beside Ennyn's. The plugin was installed for that project only, at one commit, and the cycles ran from the project's own sessions: the first two in one session, the third in a new one. The orchestrating session counted the findings.
+
+| Cycle | Real escapes | Fix-introduced | Pre-existing | Gate-caught | New classes by review round (1 / 2 / 3) |
+|---|---|---|---|---|---|
+| 1 | 14 | 10 | 10 | 3 | 13 / 8 / 0 |
+| 2 | 16 | 10 | 12 | 2 | 14 / 4 / 0 |
+| 3 | 20 | 16 | 17 | 8 | 11 / 4 / 0 |
+
+- No task needed a third round: round 3 found no new class in any cycle, and round 2 found fewer new classes after the first cycle (8, then 4 and 4).
+- Fixes kept creating defects at about the same rate (10 to 16 per cycle, against 14 to 20 escapes). One round-two fix that no review read opened a regression; the project's own browser gate caught it before the commit (graph node task-gate-after-round-two).
+- The commit gate was never bypassed (0 in three cycles); in the third cycle it stopped four messages, each corrected and committed.
+- The mechanization slot was empty in the first two cycles because the project's graph module could not mark a node as one; in the third a task was picked by hand, and the gate it built turned red on 6, 42 and 14 cases when past defects were put back.
+- The trial found 17 problems in Ennyn itself; each is a graph node whose source starts with "second-project trial".
+
+**Limits.** The table counts findings of every severity, so it does not compare with the baseline's serious-defect rows, and one day says nothing about rework, active time or production escapes. Both projects have the same author and a common loop lineage. A Python project without CI never exercised the dependency check (npm lock files only) or the CI checks; a short trial on a project with npm and CI is the next test.
+
 ## What the package does not do
 
 - Add review agents or rounds: no evidence of gain without an outside signal.
@@ -152,11 +170,11 @@ Practitioners point the same way: a short instruction file with rules moved into
 
 ## Open questions
 
-- The review cap, finding schema and impact table have not yet been measured in use; the first measurement is the next cycles' four convergence numbers against the baseline above.
+- The review cap, finding schema and impact table were first used on a second project (above): three cycles with no third round needed and one round-two regression caught by a project gate. Whether escapes stay down is not yet measured: that needs weeks, not a day.
 - The rework thresholds (≥ 3 owned lines and ≥ 10% of the fix, sweeps over 15 production files and move commits skipped) were tuned on the origin project only.
 - Rules that do not fit the side-copy budget are only listed; whether subagents receive the hook in side copies was not measured.
 - The `[commit-shape-allow: …]` marker checks only that a reason is given; how often it is used is not counted.
-- "Works in any project" has one piece of evidence so far: the origin project. A second project is the next test.
+- "Works in any project" has two pieces of evidence so far, both from one author: the origin project and a second project in another language. Independent evidence comes only from other people's projects.
 
 ## Sources
 
