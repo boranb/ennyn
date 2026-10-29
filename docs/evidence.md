@@ -139,7 +139,9 @@ Three cycles ran on a second project on 2026-10-29: Python, about a hundred comm
 - The mechanization slot was empty in the first two cycles because the project's graph module could not mark a node as one; in the third a task was picked by hand, and the gate it built turned red on 6, 42 and 14 cases when past defects were put back.
 - The trial found 17 problems in Ennyn itself; each is a graph node whose source starts with "second-project trial".
 
-**Limits.** The table counts findings of every severity, so it does not compare with the baseline's serious-defect rows, and one day says nothing about rework, active time or production escapes. Both projects have the same author and a common loop lineage. A Python project without CI never exercised the dependency check (npm lock files only) or the CI checks; a short trial on a project with npm and CI is the next test.
+**Limits.** The table counts findings of every severity, so it does not compare with the baseline's serious-defect rows, and one day says nothing about rework, active time or production escapes. Both projects have the same author and a common loop lineage. A Python project without CI never exercised the dependency check (npm lock files only) or the CI checks.
+
+A third project, by the same author, covered those the same day with init and one cycle: TypeScript, an npm lock file and two CI workflows. The dependency check read 540 lock entries and listed 53 known advisories, all but one in the build chain and that one not reachable in the project; it refused none and left none unmeasured. The CI checks stopped no commit; a commit that only added a permissions block passed, as it should, and the doctor's warning on the default token went away. mutate's parse check, given esbuild, read .ts and .tsx mutants with none invalid. Numbers for the cycle: real escapes 5, fix-introduced 3, pre-existing 9, gate-caught 2; new classes by round 4 and 0.
 
 ## What the package does not do
 

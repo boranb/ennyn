@@ -31,7 +31,7 @@
       "cluster": "evidence",
       "needs": [],
       "gate": "user",
-      "source": "docs/evidence.md, Open questions; set up but not committed in the second project (2026-10-18); init committed and cycle 1 run 2026-10-29: real 14 · fix-introduced 10 · pre-existing 10 · gate-caught 3, new classes by round 13/8/0; findings are the nodes with that source; cycle 2: real 16 · fix-introduced 10 · pre-existing 12 · gate-caught 2, new classes by round 14/4/0; a task was left for cycle 3 at the context limit the cycle set itself (850K); cycle 3 (a new session): real 20 · fix-introduced 16 · pre-existing 17 · gate-caught 8, new classes by round 11/4/0; the first mechanization task ran (picked by hand), and its gate turned red on 6, 42 and 14 cases when past defects were put back",
+      "source": "docs/evidence.md, Open questions; set up but not committed in the second project (2026-10-18); init committed and cycle 1 run 2026-10-29: real 14 · fix-introduced 10 · pre-existing 10 · gate-caught 3, new classes by round 13/8/0; findings are the nodes with that source; cycle 2: real 16 · fix-introduced 10 · pre-existing 12 · gate-caught 2, new classes by round 14/4/0; a task was left for cycle 3 at the context limit the cycle set itself (850K); cycle 3 (a new session): real 20 · fix-introduced 16 · pre-existing 17 · gate-caught 8, new classes by round 11/4/0; the first mechanization task ran (picked by hand), and its gate turned red on 6, 42 and 14 cases when past defects were put back; a third project (TypeScript, npm, CI) ran init and one cycle the same day: real 5 · fix-introduced 3 · pre-existing 9 · gate-caught 2, new classes by round 4/0; deps read 540 lock entries (53 known advisories, none refused, none unmeasured), the CI checks stopped no commit (a commit that only added permissions passed), mutate's --check with esbuild parsed .ts/.tsx (0 invalid)",
       "since": 0
     },
     {
@@ -2522,7 +2522,7 @@
       "value": "high",
       "cost": "S",
       "cluster": "gates",
-      "source": "second-project trial, cycle 1, 2026-10-29: seen twice that day, in this repository's main checkout (metrics/mutation.mjs, restored from the journal, equal to HEAD) and in the second project on a file the session had edited (2 links). Claude Code 2.1.310's file history is not the cause: it backs up with copyFile and links only to move a backup between session folders. What made the second name is unmeasured; second-project trial, cycle 2, 2026-10-29: two more refusals, in agents' fresh linked worktrees. Not reproduced with mutate alone in a scratch repository (the link count, sampled every 0.2 s, stayed 1), and Claude Code's Edit replaces the file with a new inode (its backup is a separate copy), measured here",
+      "source": "second-project trial, cycle 1, 2026-10-29: seen twice that day, in this repository's main checkout (metrics/mutation.mjs, restored from the journal, equal to HEAD) and in the second project on a file the session had edited (2 links). Claude Code 2.1.310's file history is not the cause: it backs up with copyFile and links only to move a backup between session folders. What made the second name is unmeasured; second-project trial, cycle 2, 2026-10-29: two more refusals, in agents' fresh linked worktrees. Not reproduced with mutate alone in a scratch repository (the link count, sampled every 0.2 s, stayed 1), and Claude Code's Edit replaces the file with a new inode (its backup is a separate copy), measured here; third-project trial, cycle 1, 2026-10-29 (TypeScript, npm, two CI workflows): no refusal in four runs, all in a worktree outside the repository (scratchpad), each file at one link and byte-equal after every run: the cause may lie with worktrees inside the repository",
       "since": 15
     },
     {
@@ -2577,7 +2577,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "init",
-      "source": "second-project trial, cycle 1, 2026-10-29; the module was written at the project's first setup, 2026-10-18; second-project trial, cycle 2, 2026-10-29: the mechanization slot was empty again although two roadmap lines say mechanization; second-project trial, cycle 3, 2026-10-29: a third cycle with the slot empty; the orchestrator picked the mechanization task by hand from the roadmap's marker",
+      "source": "second-project trial, cycle 1, 2026-10-29; the module was written at the project's first setup, 2026-10-18; second-project trial, cycle 2, 2026-10-29: the mechanization slot was empty again although two roadmap lines say mechanization; second-project trial, cycle 3, 2026-10-29: a third cycle with the slot empty; the orchestrator picked the mechanization task by hand from the roadmap's marker; third-project trial, cycle 1, 2026-10-29 (TypeScript, npm, two CI workflows): init built the graph from the handoff with no node marked mechanization, so the slot was empty here too: init should propose one from the project's recurring classes",
       "since": 15
     },
     {
@@ -2753,7 +2753,18 @@
       "value": "medium",
       "cost": "S",
       "cluster": "init",
-      "source": "second-project trial, cycle 3, 2026-10-29: the project's `ruff format --check .` scanned agent worktrees; fixed there by ignoring the folder",
+      "source": "second-project trial, cycle 3, 2026-10-29: the project's `ruff format --check .` scanned agent worktrees; fixed there by ignoring the folder; third-project trial, cycle 1, 2026-10-29 (TypeScript, npm, two CI workflows): the project's `eslint .` also reads .claude/worktrees/ (its global ignores name only dist)",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hookspath-default-dir",
+      "title": "install-hook treats a core.hooksPath that names the repository's own default hooks directory (.git/hooks, written as an absolute path) as no hooksPath and installs there; today it refuses as for a tracked directory, and the hook had to be written by hand from hookScript",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "third-project trial, cycle 1, 2026-10-29 (TypeScript, npm, two CI workflows): the project's setup script sets core.hooksPath to the absolute path of .git/hooks; install-hook exited 1 with \"hooksPath\"",
       "since": 15
     }
   ],
