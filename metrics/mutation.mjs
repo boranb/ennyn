@@ -20,20 +20,36 @@
  * alone and reported, and the journal keeps its original bytes. Each write moves the
  * file's mtime to a new whole second: caches keyed by size and mtime (Python's bytecode) would otherwise
  * run a mutant after the source is back.
+ *
+ * A file with a second name is never mutated: a write in place reaches every name. One that got a second name while
+ * the mutant was in it (seen four times in 2026-10, each by the run that wrote the mutant; what made the name is
+ * unknown) goes back in that run alone, which knows the file by device and inode and the mutant's bytes in memory. A
+ * journal proves neither, for anyone who can write the state dir can plant one: after a kill such a file is put
+ * right by hand. Other names are searched for only after the write, when the journal holds no bytes: a search decides
+ * nothing, and a kill there loses a notice, never a byte. The run holds the file read-only from the mutant write until
+ * then, so what it says of a file its path no longer leads to rests on that file's own link count.
  */
 
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, constants, fstatSync, ftruncateSync, futimesSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, statSync, writeSync } from "node:fs";
+import { closeSync, constants, fstatSync, ftruncateSync, futimesSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, statSync, writeSync } from "node:fs";
 import { gone, linkBelow, present, readRegular, removeState, writeState } from "../core/files.mjs";
-import { unshownEscaped } from "../core/i18n.mjs";
+import { shown, unshownEscaped } from "../core/i18n.mjs";
 import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { commonDir, resolveStateDir, stateRoot, underGitDir } from "../core/git.mjs";
+import { commonDir, gitRun, resolveStateDir, stateRoot, underGitDir } from "../core/git.mjs";
 
 /** @typedef {{ id: string, file: string, old: string, new: string }} Mutant */
 /** @typedef {"killed" | "timeout" | "survived" | "invalid" | "unchecked" | "unapplied"} Outcome */
 /** @typedef {{ key: string, vars?: Record<string, string | number> }} Reason */
+/** @typedef {{ dev: bigint, ino: bigint }} Inode a file, known by a run that wrote it and kept nowhere else */
+/**
+ * @typedef {{ how: "through" | "already" | "elsewhere", file: string, id: string, names: string[], unfound: number, looked: number, trees: number, capped: boolean, unread: number }} LinkNotice
+ *   what a write-back says about other names of `file`. `through`: the original went back through them; `already`: the file
+ *   held the original, nothing was written; `elsewhere`: `file` is no longer the file mutant `id` went into, which still has
+ *   names. `names` relative to the tree inside it, else absolute; `unfound`: how many the link count left unfound; the rest
+ *   as otherNames says, all empty when no search ran
+ */
 /**
  * @typedef {{ id: string, file: string, outcome: Outcome, checked?: boolean, reason?: Reason, ms?: number, exit?: number | null, tail?: string }} MutantResult
  *   `checked`: a parse check read the mutant (killed, timeout and survived count only then)
@@ -281,17 +297,192 @@ function parseCheck(abs, rel, original, { cwd, check, limit, onChild }) {
   return null;
 }
 
+/** Why a file with another name is not written: what openInPlace says, and what a write-back says that may not go through one. */
+const HARD_LINKED = "it has another name (a hard link), which a write would reach too";
+
+/**
+ * The most directory entries a search for a file's other names looks at, over every work tree: some 2.5 s at the
+ * 40 entries a millisecond measured on a Mac's SSD (2026-10-29).
+ */
+const NAME_SEARCH_LIMIT = 100_000;
+
+/**
+ * The repository's work trees git lists, the main one first (it holds agents' worktrees, .claude/worktrees/ in
+ * Claude Code); none when git cannot list them. A bare repository's directory is no work tree.
+ * @param {string} tree
+ */
+function workTrees(tree) {
+  const r = gitRun(["worktree", "list", "--porcelain"], { cwd: tree });
+  if (r.error || r.status !== 0) return [];
+  return r.stdout
+    .split("\n\n")
+    .map((block) => block.split("\n"))
+    .filter((lines) => !lines.includes("bare"))
+    .flatMap((lines) => lines.filter((l) => l.startsWith("worktree ")).map((l) => l.slice("worktree ".length)));
+}
+
+/**
+ * Where else the file `dev`/`ino` (a bigint stat's) has a name: a search of this tree and of every work tree git lists
+ * for its repository, through no link, git directories left out (git keeps no work-tree file there), directories on
+ * another device left out (a hard link stays on its file's), at most `limit` entries in all. A name outside them
+ * is not found: the caller counts those from the link count.
+ * @param {string} tree the project's real path @param {{ dev: bigint, ino: bigint, self: string }} file `self`: the name the mutant went in by
+ * @param {{ limit?: number }} [opts]
+ * @returns {{ names: string[], looked: number, trees: number, capped: boolean, unread: number }} `names` relative to the tree
+ *   inside it, else absolute; `trees` the work trees searched; `capped` the search stopped at `limit`; `unread` folders it could not read
+ */
+export function otherNames(tree, { dev, ino, self }, { limit = NAME_SEARCH_LIMIT } = {}) {
+  // The spelling readdir gives (a case-insensitive disk keeps a name's own case), so the file's own name is known as such.
+  const real = (/** @type {string} */ p) => {
+    try {
+      return realpathSync.native(p);
+    } catch {
+      return p;
+    }
+  };
+  const home = real(tree);
+  const me = real(self);
+  const roots = [...new Set([home, ...workTrees(tree).map(real)])];
+  /** @type {string[]} */
+  const names = [];
+  /** The directories searched, by inode: all on the file's device. */
+  const seen = new Set();
+  /** The tops of the work trees searched, by inode: one inside another is searched there, and counted once. */
+  const tops = new Set();
+  let looked = 0;
+  let capped = false;
+  let unread = 0;
+  for (const root of roots) {
+    const stack = [root];
+    while (stack.length && !capped) {
+      const dir = /** @type {string} */ (stack.pop());
+      let entries;
+      try {
+        const st = lstatSync(dir, { bigint: true });
+        if (!st.isDirectory() || st.dev !== dev) continue;
+        if (dir === root) tops.add(st.ino);
+        // A directory met twice (a work tree inside another, .claude/worktrees/) is searched once.
+        if (seen.has(st.ino)) continue;
+        seen.add(st.ino);
+        entries = readdirSync(dir, { withFileTypes: true });
+      } catch (e) {
+        if (!gone(e)) unread++;
+        continue;
+      }
+      /** A name listed here could not be looked at (a folder that may be read, not searched): the folder is unread. */
+      let blind = false;
+      for (const d of entries) {
+        if (looked === limit) {
+          capped = true;
+          break;
+        }
+        looked++;
+        const path = join(dir, d.name);
+        if (d.isDirectory()) {
+          if (d.name.toLowerCase() !== ".git") stack.push(path);
+        } else if (d.isFile() && path !== me) {
+          try {
+            const st = lstatSync(path, { bigint: true });
+            if (st.dev === dev && st.ino === ino) names.push(path);
+          } catch (e) {
+            // Gone since it was listed is no name of the file now; anything else is a name not looked at.
+            if (!gone(e)) blind = true;
+          }
+        }
+      }
+      if (blind) unread++;
+    }
+  }
+  const shown = (/** @type {string} */ p) => {
+    const rel = relative(home, p);
+    return rel.startsWith(`..${sep}`) || isAbsolute(rel) ? p : rel.split(sep).join("/");
+  };
+  return { names: names.map(shown), looked, trees: tops.size, capped, unread };
+}
+
+/** A notice with no search behind it. */
+const NOT_SEARCHED = { names: [], unfound: 0, looked: 0, trees: 0, capped: false, unread: 0 };
+
+/**
+ * What a put-back says about a file with other names, searched after the fact: it decides nothing.
+ * @param {"through" | "already"} how @param {string} tree @param {string} self the file's path @param {Inode} inode
+ * @param {number} links its link count at the put-back @param {string} file @param {string} id
+ * @returns {LinkNotice}
+ */
+function namesNotice(how, tree, self, inode, links, file, id) {
+  const found = otherNames(tree, { ...inode, self });
+  return { how, file, id, ...found, unfound: Math.max(0, links - 1 - found.names.length) };
+}
+
+/**
+ * A read-only descriptor on the file a mutant just went into, held until what is left of it can be said: its link count
+ * tells how many names it has, wherever they are, and while it is open its number goes to no new file. Read-only: a
+ * file open for writing cannot be run on Linux (ETXTBSY), and the tests may run it. Null when the path no longer leads
+ * to the file: only a notice is lost.
+ * @param {string} abs @param {Inode} inode
+ * @returns {number | null}
+ */
+function holdOn(abs, inode) {
+  try {
+    const held = openSync(abs, constants.O_RDONLY | (constants.O_NONBLOCK ?? 0) | (constants.O_NOFOLLOW ?? 0));
+    const st = fstatSync(held, { bigint: true });
+    if (st.dev === inode.dev && st.ino === inode.ino) return held;
+    closeSync(held);
+  } catch {
+    // Only a notice is lost.
+  }
+  return null;
+}
+
+/**
+ * What is left of the file a mutant went into when its path no longer leads to it (moved, or replaced with a name kept),
+ * and closes the descriptor. Null when it has no name left, or the path is still that file. Report only.
+ * @param {string} tree @param {string} self the file's path @param {number | null} held see holdOn @param {string} file @param {string} id
+ * @returns {LinkNotice | null}
+ */
+function leftBehind(tree, self, held, file, id) {
+  if (held === null) return null;
+  try {
+    const st = fstatSync(held, { bigint: true });
+    if (st.nlink === 0n) return null;
+    try {
+      const at = lstatSync(self, { bigint: true });
+      if (at.dev === st.dev && at.ino === st.ino) return null;
+    } catch {
+      // Nothing there, or nothing that can be looked at: not that file, as far as this can tell.
+    }
+    const found = otherNames(tree, { dev: st.dev, ino: st.ino, self });
+    return { how: "elsewhere", file, id, ...found, unfound: Math.max(0, Number(st.nlink) - found.names.length) };
+  } finally {
+    closeSync(held);
+  }
+}
+
+/**
+ * What a refusal adds for the hand that puts a file with other names right: those names, and the one repair that reaches them.
+ * @param {string} tree @param {string} self the file's path @param {number} fd the file, open
+ */
+function byHand(tree, self, fd) {
+  const st = fstatSync(fd, { bigint: true });
+  const found = otherNames(tree, { dev: st.dev, ino: st.ino, self });
+  const names = found.names.map((name) => shown(name, { name: true }).text);
+  const unfound = Math.max(0, Number(st.nlink) - 1 - names.length);
+  const where = names.length ? `Its other names: ${names.join(", ")}${unfound ? `, and ${unfound} the search did not find` : ""}` : `Its ${unfound} other names lie outside what the search looked at`;
+  return `${where}. Write the journal's bytes through the file in place (with > in a shell, say): a tool that replaces the file (git restore, an editor's save) leaves the other names as they are`;
+}
+
 /**
  * Opens the file a mutant goes into or comes out of, so that it is read, compared and written through this one
  * descriptor: below `tree` through no link (each directory looked at, the file opened with O_NOFOLLOW), not
  * waiting (a FIFO never answers), a regular file with no other name (a write would reach a hard link's other
- * names too), and once open still the file at its path: its device and inode are the path's, looked at again
- * through no link, so a directory swapped for a link while it was opened is caught. Null when nothing is
+ * names too) unless `named`, and once open still the file at its path: its device and inode are the path's, looked at
+ * again through no link, so a directory swapped for a link while it was opened is caught. Null when nothing is
  * there; any other refusal throws, saying why, with `moved` when the path no longer leads to the file.
  * @param {string} tree the project's real path @param {string} abs
+ * @param {{ named?: boolean }} [opts] `named`: let other names through, for a write-back, which reads the bytes and decides
  * @returns {number | null}
  */
-function openInPlace(tree, abs) {
+function openInPlace(tree, abs, { named = false } = {}) {
   const rel = relative(tree, abs).split(sep).join("/");
   const moved = (/** @type {string} */ why) => Object.assign(new Error(why), { moved: true });
   const noLink = () => {
@@ -312,7 +503,7 @@ function openInPlace(tree, abs) {
   try {
     const st = fstatSync(fd);
     if (!st.isFile()) throw new Error("it is no regular file");
-    if (st.nlink > 1) throw new Error("it has another name (a hard link), which a write would reach too");
+    if (st.nlink > 1 && !named) throw new Error(HARD_LINKED);
     noLink();
     const at = lstatSync(abs);
     if (at.dev !== st.dev || at.ino !== st.ino) throw moved(`${rel} led to another file while it was opened`);
@@ -358,13 +549,16 @@ function alive(pid) {
 
 /**
  * Undo what a journal holds: the file goes back while it still holds the mutant, a file changed since is
- * refused (the journal keeps its original bytes), then the journal goes.
+ * refused (the journal keeps its original bytes), then the journal goes. A file with another name is never written:
+ * a journal proves nothing about it. It needs no write when it already holds the original.
  * @param {string} cwd @param {string} at the journal's state root @param {string} path @param {any} j the journal's content
- * @returns {string | null} the file restored
+ * @returns {{ restored: string | null, linked: LinkNotice | null }} the file restored; what there is to say about one that needed nothing
  */
 function undo(cwd, at, path, j) {
   /** @type {string | null} */
   let restored = null;
+  /** @type {LinkNotice | null} */
+  let linked = null;
   if (typeof j?.file === "string") {
     const root = realpathSync(cwd);
     const abs = resolve(root, j.file);
@@ -380,7 +574,7 @@ function undo(cwd, at, path, j) {
     /** @type {number | null} */
     let fd;
     try {
-      fd = openInPlace(root, abs);
+      fd = openInPlace(root, abs, { named: true });
     } catch (e) {
       // A run journals the file's real path (prepare): a link on the way now leads somewhere else, and the
       // mutant, if a run wrote it, is in the file that was there.
@@ -390,7 +584,10 @@ function undo(cwd, at, path, j) {
     }
     try {
       const now = fd === null ? null : readFileSync(fd);
-      if (fd !== null && now?.equals(mutated)) {
+      if (fd !== null && fstatSync(fd).nlink > 1) {
+        if (!now?.equals(original)) throw new MutationError(`${j.file} could not be put back (${HARD_LINKED}); ${left}: put the file right by hand, then delete the journal. ${byHand(root, abs, fd)}`);
+        linked = { how: "already", file: j.file, id: String(j.id), ...NOT_SEARCHED };
+      } else if (fd !== null && now?.equals(mutated)) {
         const before = Math.floor(fstatSync(fd).mtimeMs / 1000);
         writeAt(fd, original);
         newerSecond(fd, before);
@@ -405,7 +602,7 @@ function undo(cwd, at, path, j) {
     }
   }
   removeState(at, path);
-  return restored;
+  return { restored, linked };
 }
 
 /**
@@ -449,7 +646,7 @@ function readJournal(root, path) {
  * mutant's tests, and writing the file back would turn a kill into a survivor: refused, unless `force` (a
  * pid reused by another process after a reboot).
  * @param {string} cwd @param {string} path @param {{ force?: boolean }} [opts]
- * @returns {{ restored: string | null, found: boolean }}
+ * @returns {{ restored: string | null, found: boolean, linked?: LinkNotice }} `linked`: a file with other names that needed nothing
  */
 export function restoreJournal(cwd, path, { force = false } = {}) {
   if (dirname(path) === userDir() && present(dirname(path))) journalDir(path);
@@ -459,15 +656,16 @@ export function restoreJournal(cwd, path, { force = false } = {}) {
   if (!force && typeof j?.pid === "number" && j.pid !== process.pid && alive(j.pid)) {
     throw new MutationError(`pid ${j.pid} of the journal is alive: an ennyn mutate may be running in this tree. If that pid is no such run (reused after a reboot), add --force`);
   }
-  return { restored: undo(cwd, root, path, j), found: true };
+  const { restored, linked } = undo(cwd, root, path, j);
+  return { restored, found: true, ...(linked ? { linked } : {}) };
 }
 
 /**
  * Take the journal for this tree. A journal left by a run that is gone is undone first.
- * @param {string} cwd @param {string} path
+ * @param {string} cwd @param {string} path @param {(l: LinkNotice) => void} onLinked
  * @returns {{ restored: string | null }}
  */
-function takeJournal(cwd, path) {
+function takeJournal(cwd, path, onLinked) {
   /** @type {string | null} */
   let restored = null;
   journalDir(path);
@@ -478,7 +676,9 @@ function takeJournal(cwd, path) {
       const held = typeof j.file === "string" ? `; it holds the original bytes of ${j.file}` : "";
       throw new MutationError(`another ennyn mutate (pid ${j.pid}) is running in this tree${held}. If it is not, run ennyn mutate --restore --force (never delete the journal)`);
     }
-    restored = undo(cwd, root, path, j);
+    const undone = undo(cwd, root, path, j);
+    restored = undone.restored;
+    if (undone.linked) onLinked(undone.linked);
   }
   // wx: of two runs that start together, one gets the journal. A state dir in the repository keeps the
   // repository's own modes, also when the repository sits under the temporary directory (/tmp on Linux).
@@ -534,16 +734,18 @@ function prepare(cwd, m) {
 /**
  * @param {{
  *   cwd: string, mutants: Mutant[], command: string, check?: string | null, journal: string,
- *   timeoutMs?: number | null, onResult?: (r: MutantResult) => void, onBaseline?: (b: CommandRun, timeoutMs: number) => void
+ *   timeoutMs?: number | null, onResult?: (r: MutantResult) => void, onBaseline?: (b: CommandRun, timeoutMs: number) => void,
+ *   onLinked?: (l: LinkNotice) => void
  * }} opts
  *   `timeoutMs`: per mutant; default three times the baseline, at least the baseline plus 30 s; one shorter
  *   than one and a half times the baseline is refused. A run that reaches it runs once more with twice the
  *   time before it counts as a timeout. A test run that cannot start ends the pass: no number from it.
+ *   `onLinked`: what there is to say about other names of a file a mutant was in, as soon as it can be said.
  * @returns {Promise<{ restored: string | null, baseline: CommandRun, timeoutMs: number | null, results: MutantResult[] }>}
  *   no results when the baseline fails
  */
-export async function runMutants({ cwd, mutants, command, check = null, journal, timeoutMs = null, onResult = () => {}, onBaseline = () => {} }) {
-  const { restored } = takeJournal(cwd, journal);
+export async function runMutants({ cwd, mutants, command, check = null, journal, timeoutMs = null, onResult = () => {}, onBaseline = () => {}, onLinked = () => {} }) {
+  const { restored } = takeJournal(cwd, journal, onLinked);
   const root = stateRoot(cwd, journal);
   const tree = realpathSync(cwd);
   /** @type {import("node:child_process").ChildProcess | null} */
@@ -551,12 +753,21 @@ export async function runMutants({ cwd, mutants, command, check = null, journal,
   /**
    * The mutant in a file, `written` once its write returned: from then on bytes that are neither the mutant
    * nor the original are someone's edit. Before, they are what a write cut short left: the run's own. `ran`:
-   * the run's commands that read the file while the mutant was in, and so could have written it.
-   * @type {{ abs: string, rel: string, id: string, original: Buffer, mutated: Buffer, written: boolean, ran: string[] } | null}
+   * the run's commands that read the file while the mutant was in, and so could have written it. `inode`: the file
+   * the mutant went into, the proof a write through a name it got meanwhile needs. `held`: see holdOn.
+   * @type {{ abs: string, rel: string, id: string, original: Buffer, mutated: Buffer, written: boolean, ran: string[], inode: Inode, held: number | null } | null}
    */
   let applied = null;
   /** The journal holds the original bytes of a file not yet back: it stays. */
   let keep = false;
+  /** What put-backs left to say: searches, run once the journal holds no bytes. @type {(() => LinkNotice | null)[]} */
+  const unsaid = [];
+  const sayNames = () => {
+    for (const search of unsaid.splice(0)) {
+      const notice = search();
+      if (notice) onLinked(notice);
+    }
+  };
   /** The last whole-second mtime given to each file, first its own before the run: every write gets a newer one. */
   const stamps = new Map();
   /** @param {string} abs @param {number} fd the file, open */
@@ -568,17 +779,19 @@ export async function runMutants({ cwd, mutants, command, check = null, journal,
   // The file goes back while it holds the mutant, as undo puts back a file a killed run left: an edit made
   // while the mutant was in (an agent working on beside the run) is never written over. It is read and
   // written through one descriptor (openInPlace): a link swapped in since may lead anywhere, a FIFO would
-  // never answer, a hard link would take the write too.
+  // never answer. A hard link would take the write too: it goes through one only into the very file the mutant
+  // went into, over exactly its bytes, and nothing slow stands between the read and the write.
   const putBack = () => {
     if (!applied) return;
-    const { abs, rel, id, original, mutated, written, ran } = applied;
+    const { abs, rel, id, original, mutated, written, ran, inode, held } = applied;
     applied = null;
     keep = true;
+    unsaid.push(() => leftBehind(tree, abs, held, rel, id));
     const left = (/** @type {string} */ why) => new MutationError(`mutant ${JSON.stringify(id)} is left in ${rel}: ${why}; ${kept("put the file right by hand")}`);
     /** @type {number | null} */
     let fd;
     try {
-      fd = openInPlace(tree, abs);
+      fd = openInPlace(tree, abs, { named: true });
     } catch (e) {
       const err = /** @type {Error & { moved?: boolean }} */ (e);
       if (err.moved) throw new MutationError(`mutant ${JSON.stringify(id)} is left in the file that was at ${rel}: ${err.message}, and nothing is written through it; ${kept("put that file right by hand")}`);
@@ -591,10 +804,14 @@ export async function runMutants({ cwd, mutants, command, check = null, journal,
         keep = false;
         return;
       }
+      const st = fstatSync(fd, { bigint: true });
+      const named = st.nlink > 1n;
+      const back = !now.equals(original);
+      const same = st.dev === inode.dev && st.ino === inode.ino;
+      if (named && back && !(same && now.equals(mutated))) throw left(`it could not be written back (${HARD_LINKED})`);
       if (written && !now.equals(mutated) && !now.equals(original)) {
         throw new MutationError(`${rel} changed while mutant ${JSON.stringify(id)} was in it (${writers(ran)}): it is left as it is, the mutant with it; ${kept("take the mutant out by hand")}`);
       }
-      const back = !now.equals(original);
       if (back) {
         try {
           writeAt(fd, original);
@@ -603,7 +820,9 @@ export async function runMutants({ cwd, mutants, command, check = null, journal,
         }
       }
       // A file the tests put back themselves gets a newer second too: a cache keyed by mtime and size would keep the mutant's.
-      if (back || written) stamp(abs, fd);
+      // Not one with other names that the mutant never went into: the stamp would reach a file this run never wrote.
+      if ((back || written) && (same || !named)) stamp(abs, fd);
+      if (named) unsaid.push(() => namesNotice(back ? "through" : "already", tree, abs, { dev: st.dev, ino: st.ino }, Number(st.nlink), rel, id));
     } finally {
       if (fd !== null) closeSync(fd);
     }
@@ -634,6 +853,11 @@ export async function runMutants({ cwd, mutants, command, check = null, journal,
       }
     }
     release();
+    try {
+      sayNames();
+    } catch {
+      // The process is ending: a notice lost, never a byte.
+    }
   };
   /** @param {NodeJS.Signals} sig */
   const onSignal = (sig) => {
@@ -687,14 +911,18 @@ export async function runMutants({ cwd, mutants, command, check = null, journal,
         }
         const changed = () => new MutationError(`${p.rel} changed while mutant ${JSON.stringify(m.id)} was being prepared (${writers(ran)}): nothing was written to it; run again`);
         if (fd === null) throw changed();
+        /** @type {Inode} */
+        let inode;
         try {
           if (!readFileSync(fd).equals(p.original)) throw changed();
+          const st = fstatSync(fd, { bigint: true });
+          inode = { dev: st.dev, ino: st.ino };
           writeJournal(root, journal, { pid: process.pid, id: m.id, file: p.rel, original: p.original.toString("base64"), mutated: p.mutated.toString("base64") });
         } catch (e) {
           closeSync(fd);
           throw e;
         }
-        applied = { abs: p.abs, rel: p.rel, id: m.id, original: p.original, mutated: p.mutated, written: false, ran };
+        applied = { abs: p.abs, rel: p.rel, id: m.id, original: p.original, mutated: p.mutated, written: false, ran, inode, held: null };
         try {
           try {
             if (!stamps.has(p.abs)) stamps.set(p.abs, Math.floor(fstatSync(fd).mtimeMs / 1000));
@@ -705,6 +933,7 @@ export async function runMutants({ cwd, mutants, command, check = null, journal,
             }
             applied.written = true;
             stamp(p.abs, fd);
+            applied.held = holdOn(p.abs, inode);
           } finally {
             closeSync(fd);
           }
@@ -725,6 +954,7 @@ export async function runMutants({ cwd, mutants, command, check = null, journal,
         } finally {
           putBack();
           writeJournal(root, journal, { pid: process.pid });
+          sayNames();
         }
       }
       results.push(r);
@@ -734,5 +964,6 @@ export async function runMutants({ cwd, mutants, command, check = null, journal,
   } finally {
     putBack();
     release();
+    sayNames();
   }
 }

@@ -5,9 +5,9 @@ import { chmodSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, rea
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { git } from "../core/git.mjs";
-import { journalPath, MutationError, parseMutants, restoreJournal, runMutants, summarizeMutants } from "../metrics/mutation.mjs";
+import { journalPath, MutationError, otherNames, parseMutants, restoreJournal, runMutants, summarizeMutants } from "../metrics/mutation.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
 const NODE = JSON.stringify(process.execPath);
@@ -551,21 +551,637 @@ test("mutate: the message names the writers that were running: an edit only, the
   assert.match(readFileSync(join(q.dir, "src", "add.mjs"), "utf8"), /a \+ b; \/\/ by hand/);
 });
 
-test("mutate: a hard link made to the file is never written through: by a put-back, or by --restore (round 2)", async () => {
+/** A shell word for a path inside the double quotes of a `node -e "…"` command. @param {string} path */
+const inQuotes = (path) => JSON.stringify(JSON.stringify(path)).slice(1, -1);
+/** A test command that gives notes.txt a second name while a mutant ("beta") is in it, once. @param {string} to */
+const linkWhileIn = (to) => `${NODE} -e "const f = require('fs'); if (f.readFileSync('notes.txt', 'utf8').includes('beta') && !f.existsSync(${inQuotes(to)})) f.linkSync('notes.txt', ${inQuotes(to)})"`;
+/** A test command that runs `act`, with `f` for node:fs, while a mutant ("beta") is in notes.txt, once. @param {string} act */
+const whileIn = (act) => `${NODE} -e "const f = require('fs'); if (f.readFileSync('notes.txt', 'utf8').includes('beta') && !f.existsSync('acted')) { f.writeFileSync('acted', ''); ${act}; }"`;
+/** A notice as the tests compare it: how many entries the search looked at is the tree's, not the rule's. @param {import("../metrics/mutation.mjs").LinkNotice} l */
+const noticed = ({ looked, ...l }) => (assert.ok(looked > 0, "the search looked"), l);
+/** What a notice holds that came with no search: only `how`, `file` and `id` say anything. */
+const NOT_SEARCHED = { names: [], unfound: 0, looked: 0, trees: 0, capped: false, unread: 0 };
+/** A journal as a run killed with the mutant ("beta") in notes.txt leaves it. @param {string} path */
+const killedJournal = (path) => {
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, JSON.stringify({ pid: 999999, id: "e1", file: "notes.txt", original: Buffer.from("alpha\n").toString("base64"), mutated: Buffer.from("beta\n").toString("base64") }));
+};
+const REFUSED_UNDO = /^MutationError: notes\.txt could not be put back \(it has another name \(a hard link\), which a write would reach too\); its original bytes are in .*, the mutant was "e1": put the file right by hand, then delete the journal\. /;
+/** What a refusal adds for the hand that puts a file with other names right. */
+const BY_HAND = "Write the journal's bytes through the file in place (with > in a shell, say): a tool that replaces the file (git restore, an editor's save) leaves the other names as they are";
+const REFUSED_PUT_BACK = /^MutationError: mutant "e1" is left in notes\.txt: it could not be written back \(it has another name \(a hard link\), which a write would reach too\); its original bytes are in /;
+
+test("mutate: a file that got another name while the mutant was in it gets its original back through it, and the other names are said (mutate-writeback-grown-link)", async () => {
+  // Inside the tree, in an ignored folder as agents' worktrees are (.claude/worktrees/): found by the search.
   const p = project();
-  const out = realpathSync(mkdtempSync(join(tmpdir(), "en-mut-out-")));
-  const twin = join(out, "twin.txt");
-  // The tests give the mutated file a second name outside the project.
-  const link = `${NODE} -e "const f = require('fs'); if (f.readFileSync('notes.txt', 'utf8').includes('beta')) f.linkSync('notes.txt', ${JSON.stringify(JSON.stringify(twin)).slice(1, -1)})"`;
+  mkdirSync(join(p.dir, ".claude", "worktrees", "a"), { recursive: true });
+  const inside = join(p.dir, ".claude", "worktrees", "a", "notes.txt");
+  /** @type {import("../metrics/mutation.mjs").LinkNotice[]} */
+  const linked = [];
+  const res = await runMutants({
+    cwd: p.dir,
+    mutants: [m("e1", "notes.txt", "alpha", "beta"), m("e2", "notes.txt", "alpha", "gamma"), m("s1", "src/add.mjs", "x * 2", "x * 3")],
+    command: `${linkWhileIn(".claude/worktrees/a/notes.txt")} && ${NODE} check.mjs`,
+    journal: p.journal,
+    onLinked: (l) => linked.push(l),
+  });
+  // The run goes on; the file, now with two names, is never mutated again.
+  assert.deepEqual(res.results.map(said), ["unchecked mutate.reason.noCheck", "unapplied mutate.reason.hardLinked", "survived"]);
+  assert.deepEqual(linked.map(noticed), [{ how: "through", file: "notes.txt", id: "e1", names: [".claude/worktrees/a/notes.txt"], unfound: 0, trees: 1, capped: false, unread: 0 }]);
+  assert.deepEqual([readFileSync(join(p.dir, "notes.txt"), "utf8"), readFileSync(inside, "utf8"), statSync(inside).nlink], ["alpha\n", "alpha\n", 2], "both names hold the original; the other name is not mutate's to remove");
+  assert.deepEqual(p.snapshot(), p.before);
+  assert.equal(existsSync(p.journal), false);
+
+  // Outside every work tree of the repository: written back all the same, the name counted as not found.
+  const q = project();
+  const twin = join(realpathSync(mkdtempSync(join(tmpdir(), "en-mut-out-"))), "twin.txt");
+  linked.length = 0;
+  const outside = await runMutants({ cwd: q.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: `${linkWhileIn(twin)} && ${NODE} check.mjs`, journal: q.journal, onLinked: (l) => linked.push(l) });
+  assert.deepEqual(outside.results.map(said), ["unchecked mutate.reason.noCheck"]);
+  assert.deepEqual(linked.map(noticed), [{ how: "through", file: "notes.txt", id: "e1", names: [], unfound: 1, trees: 1, capped: false, unread: 0 }]);
+  assert.equal(readFileSync(twin, "utf8"), "alpha\n", "the other name holds the original too");
+  assert.equal(existsSync(q.journal), false);
+
+  // In another work tree of the same repository (git worktree add): found there, by its absolute path.
+  const w = project();
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "a"], { cwd: w.dir });
+  const wt = join(realpathSync(mkdtempSync(join(tmpdir(), "en-mut-wt-"))), "wt");
+  git(["worktree", "add", "-q", "--detach", wt], { cwd: w.dir });
+  linked.length = 0;
+  await runMutants({ cwd: w.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: `${linkWhileIn(join(wt, "kept.txt"))} && ${NODE} check.mjs`, journal: w.journal, onLinked: (l) => linked.push(l) });
+  assert.deepEqual(linked.map(noticed), [{ how: "through", file: "notes.txt", id: "e1", names: [join(wt, "kept.txt")], unfound: 0, trees: 2, capped: false, unread: 0 }]);
+  assert.equal(readFileSync(join(wt, "kept.txt"), "utf8"), "alpha\n");
+
+  // The CLI says it on stderr, the names with it.
+  const c = project();
+  mkdirSync(join(c.dir, "copy"));
+  writeFileSync(c.list, JSON.stringify([m("e1", "notes.txt", "alpha", "beta")]));
+  const cli = spawnSync(process.execPath, [CLI, "mutate", c.list, "--command", `${linkWhileIn("copy/notes, old.txt")} && ${NODE} check.mjs`], { cwd: c.dir, encoding: "utf8" });
+  assert.equal(cli.status, 0, cli.stderr);
+  assert.equal(cli.stderr, 'notes.txt got another name while mutant e1 was in it; the original was written back into the file, and that write reached every name the file had.\nIts other names: "copy/notes, old.txt".\n');
+  // One the search did not find says how far it looked.
+  const d = project();
+  writeFileSync(d.list, JSON.stringify([m("e1", "notes.txt", "alpha", "beta")]));
+  const far = spawnSync(process.execPath, [CLI, "mutate", d.list, "--command", `${linkWhileIn(join(realpathSync(mkdtempSync(join(tmpdir(), "en-mut-out-"))), "twin.txt"))} && ${NODE} check.mjs`], { cwd: d.dir, encoding: "utf8" });
+  assert.equal(far.status, 0, far.stderr);
+  assert.match(far.stderr, /^notes\.txt got another name while mutant e1 was in it; [^\n]*\n1 other names were not found: the search looked at \d+ entries in 1 work trees of the repository \(git directories left out\); they lie outside what it looked at\.\n$/);
+});
+
+test("mutate: a file with another name that holds neither the mutant nor the original, or another file holding the mutant's bytes, is refused as before, nothing written through the other name (mutate-writeback-grown-link)", async () => {
+  // T: the new name, outside the project. An edit made through it; a new file with two names, holding the
+  // mutant's bytes, renamed over the path: the bytes alone prove nothing, it is not the file the mutant went into.
+  const cases = {
+    edited: [`f.linkSync('notes.txt', T); f.appendFileSync(T, 'by hand\\n')`, "beta\nby hand\n"],
+    replaced: [`f.writeFileSync(T, 'beta\\n'); f.linkSync(T, 'notes.new'); f.renameSync('notes.new', 'notes.txt')`, "beta\n"],
+  };
+  for (const [name, [act, left]] of Object.entries(cases)) {
+    const p = project();
+    const twin = join(realpathSync(mkdtempSync(join(tmpdir(), "en-mut-out-"))), "twin.txt");
+    const command = whileIn(`const T = ${inQuotes(twin)}; ${act}`);
+    /** @type {unknown[]} */
+    const linked = [];
+    await assert.rejects(runMutants({ cwd: p.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command, journal: p.journal, onLinked: (l) => linked.push(l) }), REFUSED_PUT_BACK, name);
+    assert.deepEqual([readFileSync(twin, "utf8"), linked], [left, []], name);
+    // --restore on the same journal: the same refusal, the other name untouched.
+    assert.throws(() => restoreJournal(p.dir, p.journal, { force: true }), REFUSED_UNDO, name);
+    assert.deepEqual([readFileSync(twin, "utf8"), existsSync(p.journal)], [left, true], name);
+  }
+});
+
+test("mutate: a second name made after the file was looked at and before the mutant goes in stops the run, nothing written (mutate-writeback-grown-link)", async () => {
+  const p = project();
+  writeFileSync(join(p.dir, "link.cjs"), "const f = require('fs'); if (!f.existsSync('twin.txt')) f.linkSync('notes.txt', 'twin.txt');\n");
   await assert.rejects(
-    runMutants({ cwd: p.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: `${link} && ${NODE} check.mjs`, journal: p.journal }),
-    /^MutationError: mutant "e1" is left in notes\.txt: it could not be written back \(it has another name \(a hard link\), which a write would reach too\); its original bytes are in /,
+    runMutants({ cwd: p.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: `${NODE} -e 0`, check: `${NODE} link.cjs {file}`, journal: p.journal }),
+    /^MutationError: mutant "e1" was not written to notes\.txt \(it has another name \(a hard link\), which a write would reach too\): the file is as it was; no count from this run$/,
   );
-  assert.equal(readFileSync(twin, "utf8"), "beta\n", "nothing written to the other name");
-  // --restore on the same journal: the same refusal, the other name untouched.
-  assert.throws(() => restoreJournal(p.dir, p.journal, { force: true }), /^MutationError: notes\.txt could not be put back \(it has another name \(a hard link\), which a write would reach too\); its original bytes are in .*, the mutant was "e1": put the file right by hand, then delete the journal$/);
-  assert.equal(readFileSync(twin, "utf8"), "beta\n");
-  assert.ok(existsSync(p.journal));
+  assert.deepEqual([readFileSync(join(p.dir, "notes.txt"), "utf8"), readFileSync(join(p.dir, "twin.txt"), "utf8"), existsSync(p.journal)], ["alpha\n", "alpha\n", false]);
+});
+
+test("mutate: a mutant write cut short with a second name made meanwhile is refused as before, the file and the journal left (mutate-writeback-grown-link)", async () => {
+  const p = project();
+  const notes = join(p.dir, "notes.txt");
+  const twin = join(p.dir, "twin.txt");
+  const fs = /** @type {Record<string, any>} */ (await import("node:fs")).default;
+  const real = fs.writeSync;
+  fs.writeSync = (/** @type {any} */ fd, /** @type {any} */ data, /** @type {any[]} */ ...rest) => {
+    if (Buffer.isBuffer(data) && data.toString().startsWith("beta")) {
+      real(fd, data, 0, 2, 0);
+      linkSync(notes, twin);
+      throw Object.assign(new Error("ENOSPC: no space left on device, write"), { code: "ENOSPC" });
+    }
+    return real(fd, data, ...rest);
+  };
+  syncBuiltinESMExports();
+  /** @type {unknown[]} */
+  const linked = [];
+  try {
+    await assert.rejects(runMutants({ cwd: p.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: `${NODE} -e 0`, journal: p.journal, onLinked: (l) => linked.push(l) }), REFUSED_PUT_BACK);
+  } finally {
+    fs.writeSync = real;
+    syncBuiltinESMExports();
+  }
+  assert.deepEqual([readFileSync(notes, "utf8"), readFileSync(twin, "utf8"), existsSync(p.journal), linked], ["be", "be", true, []]);
+});
+
+test("mutate: a file that got another name and already holds the original has nothing to write: the journal goes and it is said, by a put-back, by --restore and by the next run (mutate-writeback-grown-link)", async () => {
+  // The tests put the original back themselves, in place; or a new file with two names, holding the original, takes the path.
+  const cases = {
+    inPlace: [`f.linkSync('notes.txt', 'copy/notes.txt'); f.writeFileSync('notes.txt', 'alpha\\n')`, ["copy/notes.txt"]],
+    replaced: [`f.writeFileSync('copy/new.txt', 'alpha\\n'); f.linkSync('copy/new.txt', 'n.tmp'); f.renameSync('n.tmp', 'notes.txt')`, ["copy/new.txt"]],
+  };
+  for (const [name, [act, names]] of Object.entries(cases)) {
+    const p = project();
+    mkdirSync(join(p.dir, "copy"));
+    /** @type {import("../metrics/mutation.mjs").LinkNotice[]} */
+    const linked = [];
+    const res = await runMutants({ cwd: p.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: whileIn(act), journal: p.journal, onLinked: (l) => linked.push(l) });
+    assert.deepEqual(res.results.map(said), ["survived mutate.reason.noCheck"], name);
+    assert.deepEqual(linked.map(noticed), [{ how: "already", file: "notes.txt", id: "e1", names, unfound: 0, trees: 1, capped: false, unread: 0 }], name);
+    assert.deepEqual([readFileSync(join(p.dir, "notes.txt"), "utf8"), existsSync(p.journal)], ["alpha\n", false], name);
+  }
+  // The path replaced by a name of a file that is not this run's, holding the original: nothing is written there, nor stamped.
+  const r = project();
+  const store = join(realpathSync(mkdtempSync(join(tmpdir(), "en-mut-out-"))), "store.txt");
+  writeFileSync(store, "alpha\n");
+  utimesSync(store, 1_000_000_000, 1_000_000_000);
+  /** @type {import("../metrics/mutation.mjs").LinkNotice[]} */
+  const stored = [];
+  await runMutants({ cwd: r.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: whileIn(`f.linkSync(${inQuotes(store)}, 'n.new'); f.renameSync('n.new', 'notes.txt')`), journal: r.journal, onLinked: (l) => stored.push(l) });
+  assert.deepEqual(stored.map(noticed), [{ how: "already", file: "notes.txt", id: "e1", names: [], unfound: 1, trees: 1, capped: false, unread: 0 }]);
+  assert.deepEqual([statSync(store).mtimeMs, readFileSync(store, "utf8"), existsSync(r.journal)], [1_000_000_000_000, "alpha\n", false]);
+  // A journal a killed run left, the file already right: nothing is written, whatever the journal's bytes say, and no search runs.
+  const q = project();
+  const notes = join(q.dir, "notes.txt");
+  linkSync(notes, join(q.dir, "twin.txt"));
+  killedJournal(q.journal);
+  assert.deepEqual(restoreJournal(q.dir, q.journal), { restored: null, found: true, linked: { how: "already", file: "notes.txt", id: "e1", ...NOT_SEARCHED } });
+  assert.deepEqual([readFileSync(notes, "utf8"), existsSync(q.journal)], ["alpha\n", false]);
+  killedJournal(q.journal);
+  /** @type {import("../metrics/mutation.mjs").LinkNotice[]} */
+  const next = [];
+  const res = await runMutants({ cwd: q.dir, mutants: [m("s1", "src/add.mjs", "x * 2", "x * 3")], command: `${NODE} check.mjs`, journal: q.journal, onLinked: (l) => next.push(l) });
+  assert.deepEqual([res.restored, next, res.results.map(said)], [null, [{ how: "already", file: "notes.txt", id: "e1", ...NOT_SEARCHED }], ["survived"]]);
+  assert.equal(existsSync(q.journal), false);
+  // The CLI says it, on stdout for --restore, in place of "held no mutant".
+  killedJournal(q.journal);
+  const cli = spawnSync(process.execPath, [CLI, "mutate", "--restore"], { cwd: q.dir, encoding: "utf8" });
+  assert.deepEqual([cli.status, cli.stdout], [0, "notes.txt had another name and already held the original, so mutant e1 left nothing to put back.\n"], cli.stderr);
+});
+
+test("mutate: --restore and the next run never write through a second name: a journal is no proof, the refusal is the old one word for word (mutate-writeback-grown-link)", async () => {
+  const p = project();
+  const notes = join(p.dir, "notes.txt");
+  const twin = join(p.dir, "copy", "notes.txt");
+  mkdirSync(dirname(twin));
+  writeFileSync(notes, "beta\n");
+  linkSync(notes, twin);
+  killedJournal(p.journal);
+  assert.throws(() => restoreJournal(p.dir, p.journal), REFUSED_UNDO);
+  assert.throws(() => restoreJournal(p.dir, p.journal, { force: true }), REFUSED_UNDO);
+  await assert.rejects(runMutants({ cwd: p.dir, mutants: [m("s1", "src/add.mjs", "x * 2", "x * 3")], command: `${NODE} check.mjs`, journal: p.journal }), REFUSED_UNDO);
+  assert.deepEqual([readFileSync(notes, "utf8"), readFileSync(twin, "utf8"), existsSync(p.journal)], ["beta\n", "beta\n", true]);
+  // The refusal names the other name and the one repair that reaches it; the search decides nothing.
+  assert.throws(() => restoreJournal(p.dir, p.journal), (/** @type {Error} */ e) => e.message.endsWith(`then delete the journal. Its other names: copy/notes.txt. ${BY_HAND}`));
+  // That repair: through the file, every name right, and --restore finds nothing left to do.
+  writeFileSync(notes, Buffer.from(JSON.parse(readFileSync(p.journal, "utf8")).original, "base64"));
+  assert.deepEqual(restoreJournal(p.dir, p.journal).linked?.how, "already");
+  assert.deepEqual([readFileSync(twin, "utf8"), existsSync(p.journal)], ["alpha\n", false]);
+  // A name no search reaches is counted; one found and one not, both said.
+  const q = project();
+  const away = realpathSync(mkdtempSync(join(tmpdir(), "en-mut-out-")));
+  writeFileSync(join(q.dir, "notes.txt"), "beta\n");
+  linkSync(join(q.dir, "notes.txt"), join(away, "twin.txt"));
+  killedJournal(q.journal);
+  assert.throws(() => restoreJournal(q.dir, q.journal), (/** @type {Error} */ e) => e.message.endsWith(`then delete the journal. Its 1 other names lie outside what the search looked at. ${BY_HAND}`));
+  linkSync(join(q.dir, "notes.txt"), join(q.dir, "near, by.txt"));
+  assert.throws(() => restoreJournal(q.dir, q.journal), (/** @type {Error} */ e) => e.message.endsWith(`then delete the journal. Its other names: "near, by.txt", and 1 the search did not find. ${BY_HAND}`));
+  // A journal naming the file's inode changes nothing: it would vouch for itself.
+  writeFileSync(notes, "beta\n");
+  killedJournal(p.journal);
+  const st = statSync(notes, { bigint: true });
+  const j = JSON.parse(readFileSync(p.journal, "utf8"));
+  writeFileSync(p.journal, JSON.stringify({ ...j, dev: String(st.dev), ino: String(st.ino) }));
+  assert.throws(() => restoreJournal(p.dir, p.journal), REFUSED_UNDO);
+  assert.deepEqual([readFileSync(notes, "utf8"), existsSync(p.journal)], ["beta\n", true]);
+});
+
+test("mutate: a planted journal reaches nothing through a hard link, not a file outside the tree and not the git config, by --restore or the next run (mutate-writeback-grown-link)", async () => {
+  for (const target of ["outside", "git config"]) {
+    for (const how of ["restore", "next run"]) {
+      const p = project();
+      const victim = target === "git config" ? join(p.dir, ".git", "config") : join(realpathSync(mkdtempSync(join(tmpdir(), "en-mut-out-"))), "profile");
+      if (target === "outside") writeFileSync(victim, "export A=1\n");
+      const before = readFileSync(victim);
+      linkSync(victim, join(p.dir, "innocent.txt"));
+      const st = statSync(victim, { bigint: true });
+      mkdirSync(dirname(p.journal), { recursive: true });
+      const payload = Buffer.concat([before, Buffer.from("[core]\n\tfsmonitor = touch PWNED\n")]);
+      writeFileSync(p.journal, JSON.stringify({ pid: 999999, id: "x", file: "innocent.txt", original: payload.toString("base64"), mutated: before.toString("base64"), dev: String(st.dev), ino: String(st.ino) }));
+      const refused = /^MutationError: innocent\.txt could not be put back \(it has another name \(a hard link\), which a write would reach too\); /;
+      if (how === "restore") assert.throws(() => restoreJournal(p.dir, p.journal), refused, `${target}, ${how}`);
+      else await assert.rejects(runMutants({ cwd: p.dir, mutants: [m("s1", "src/add.mjs", "x * 2", "x * 3")], command: `${NODE} check.mjs`, journal: p.journal }), refused, `${target}, ${how}`);
+      assert.ok(readFileSync(victim).equals(before), `${target}, ${how}: untouched`);
+      assert.equal(existsSync(p.journal), true);
+    }
+  }
+});
+
+test("mutate: a name that keeps the mutant while the path became another file is said, and nothing is written there (mutate-writeback-grown-link)", async () => {
+  const cases = {
+    "linked, the original renamed over": `f.linkSync('notes.txt', 'keep.txt'); f.writeFileSync('n.tmp', 'alpha\\n'); f.renameSync('n.tmp', 'notes.txt')`,
+    "linked, the mutant's bytes renamed over": `f.linkSync('notes.txt', 'keep.txt'); f.writeFileSync('n.tmp', f.readFileSync('notes.txt')); f.renameSync('n.tmp', 'notes.txt')`,
+    "linked, git checkout": `f.linkSync('notes.txt', 'keep.txt'); require('child_process').execSync('git checkout -- notes.txt')`,
+    "moved away, the original written": `f.renameSync('notes.txt', 'keep.txt'); f.writeFileSync('notes.txt', 'alpha\\n')`,
+  };
+  for (const [name, act] of Object.entries(cases)) {
+    const p = project();
+    git(["add", "notes.txt"], { cwd: p.dir });
+    git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "a"], { cwd: p.dir });
+    /** @type {import("../metrics/mutation.mjs").LinkNotice[]} */
+    const linked = [];
+    const res = await runMutants({ cwd: p.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: whileIn(act), journal: p.journal, onLinked: (l) => linked.push(l) });
+    assert.deepEqual(res.results.map(said), ["survived mutate.reason.noCheck"], name);
+    assert.deepEqual(linked.map(noticed), [{ how: "elsewhere", file: "notes.txt", id: "e1", names: ["keep.txt"], unfound: 0, trees: 1, capped: false, unread: 0 }], name);
+    assert.deepEqual([readFileSync(join(p.dir, "notes.txt"), "utf8"), readFileSync(join(p.dir, "keep.txt"), "utf8"), existsSync(p.journal)], ["alpha\n", "beta\n", false], name);
+  }
+  // The file the mutant went into, held open: whatever it holds now and wherever its names are, they are said or counted.
+  const away = () => realpathSync(mkdtempSync(join(tmpdir(), "en-mut-out-")));
+  const replace = `f.writeFileSync('n.tmp', 'alpha\\n'); f.renameSync('n.tmp', 'notes.txt')`;
+  const seen = {
+    "with an edit in it": [`f.linkSync('notes.txt', 'keep.txt'); f.appendFileSync('keep.txt', 'by hand\\n'); ${replace}`, ["keep.txt"], 0],
+    "with no read allowed": [`f.linkSync('notes.txt', 'keep.txt'); f.chmodSync('keep.txt', 0); ${replace}`, ["keep.txt"], 0],
+    "outside every work tree": (() => { const o = join(away(), "keep.txt"); return [`f.linkSync('notes.txt', ${inQuotes(o)}); ${replace}`, [], 1]; })(),
+    "moved outside every work tree": (() => { const o = join(away(), "moved.txt"); return [`f.renameSync('notes.txt', ${inQuotes(o)}); f.writeFileSync('notes.txt', 'alpha\\n')`, [], 1]; })(),
+    "in a git directory": [`f.linkSync('notes.txt', '.git/keep.txt'); ${replace}`, [], 1],
+    "behind a symbolic link": [`f.symlinkSync(${inQuotes(away())}, 'lnk'); f.linkSync('notes.txt', 'lnk/keep.txt'); ${replace}`, [], 1],
+  };
+  for (const [name, [act, names, unfound]] of Object.entries(seen)) {
+    const s = project();
+    /** @type {import("../metrics/mutation.mjs").LinkNotice[]} */
+    const notices = [];
+    const res = await runMutants({ cwd: s.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: whileIn(/** @type {string} */ (act)), journal: s.journal, onLinked: (l) => notices.push(l) });
+    assert.deepEqual(res.results.map(said), ["survived mutate.reason.noCheck"], name);
+    assert.deepEqual(notices.map(noticed), [{ how: "elsewhere", file: "notes.txt", id: "e1", names, unfound, trees: 1, capped: false, unread: 0 }], name);
+    assert.deepEqual([readFileSync(join(s.dir, "notes.txt"), "utf8"), existsSync(s.journal)], ["alpha\n", false], name);
+    if (name === "with no read allowed") chmodSync(join(s.dir, "keep.txt"), 0o644);
+  }
+  // The CLI's words.
+  const c = project();
+  writeFileSync(c.list, JSON.stringify([m("e1", "notes.txt", "alpha", "beta")]));
+  const cli = spawnSync(process.execPath, [CLI, "mutate", c.list, "--command", whileIn(`f.linkSync('notes.txt', 'keep, old.txt'); f.writeFileSync('n.tmp', 'alpha\\n'); f.renameSync('n.tmp', 'notes.txt')`)], { cwd: c.dir, encoding: "utf8" });
+  assert.deepEqual([cli.status, cli.stderr], [0, 'notes.txt is no longer the file mutant e1 went into. That file still has other names, and nothing was written to it.\nIts other names: "keep, old.txt".\n']);
+});
+
+test("mutate: a name in a folder that cannot be read is counted, and a rename-over that left no name says nothing, whatever a search could not read (mutate-writeback-grown-link)", async (t) => {
+  if (process.getuid?.() === 0) return t.skip("root reads any folder");
+  const p = project();
+  mkdirSync(join(p.dir, "locked"));
+  writeFileSync(p.list, JSON.stringify([m("e1", "notes.txt", "alpha", "beta")]));
+  try {
+    const cli = spawnSync(process.execPath, [CLI, "mutate", p.list, "--command", whileIn(`f.linkSync('notes.txt', 'locked/keep.txt'); f.chmodSync('locked', 0); f.writeFileSync('n.tmp', 'alpha\\n'); f.renameSync('n.tmp', 'notes.txt')`)], { cwd: p.dir, encoding: "utf8" });
+    assert.equal(cli.status, 0, cli.stderr);
+    assert.match(cli.stderr, /^notes\.txt is no longer the file mutant e1 went into\. That file still has other names, and nothing was written to it\.\n1 other names were not found: the search looked at \d+ entries in 1 work trees of the repository and could not read 1 folders \(git directories left out\); they lie outside what it looked at\.\n$/);
+  } finally {
+    chmodSync(join(p.dir, "locked"), 0o755);
+  }
+  // The file the mutant went into went with its last name: nothing is left to say, and no search runs. A path still that file: the same.
+  const q = project();
+  mkdirSync(join(q.dir, "locked"), { mode: 0o000 });
+  writeFileSync(q.list, JSON.stringify([m("e1", "notes.txt", "alpha", "beta")]));
+  try {
+    const gone = spawnSync(process.execPath, [CLI, "mutate", q.list, "--command", whileIn(`f.writeFileSync('n.tmp', 'alpha\\n'); f.renameSync('n.tmp', 'notes.txt')`)], { cwd: q.dir, encoding: "utf8" });
+    assert.deepEqual([gone.status, gone.stderr], [0, ""]);
+    const plain = spawnSync(process.execPath, [CLI, "mutate", q.list, "--command", `${NODE} -e 0`], { cwd: q.dir, encoding: "utf8" });
+    assert.deepEqual([plain.status, plain.stderr], [0, ""]);
+  } finally {
+    chmodSync(join(q.dir, "locked"), 0o755);
+  }
+});
+
+test("mutate: the same inode number on another device is another file: nothing is written through its second name (mutate-writeback-grown-link)", async () => {
+  // The run records the file with a device it does not have, as a file on another disk would be: the first bigint look.
+  const fs = /** @type {Record<string, any>} */ (await import("node:fs")).default;
+  const real = fs.fstatSync;
+  let armed = true;
+  fs.fstatSync = (/** @type {any} */ fd, /** @type {any} */ opts) => {
+    const st = real(fd, opts);
+    if (!armed || !opts?.bigint) return st;
+    armed = false;
+    return Object.assign(Object.create(Object.getPrototypeOf(st)), st, { dev: st.dev + 1n });
+  };
+  syncBuiltinESMExports();
+  const p = project();
+  try {
+    await assert.rejects(runMutants({ cwd: p.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: linkWhileIn("twin.txt"), journal: p.journal }), REFUSED_PUT_BACK);
+  } finally {
+    fs.fstatSync = real;
+    syncBuiltinESMExports();
+  }
+  assert.deepEqual([readFileSync(join(p.dir, "twin.txt"), "utf8"), existsSync(p.journal)], ["beta\n", true]);
+});
+
+test("mutate: a search that stops at its limit counts the names it did not reach, and a rename-over that left no name needs no search (mutate-writeback-grown-link)", async () => {
+  // A listing past the limit: 100 001 entries that are neither folders nor files, so none is looked at.
+  const fs = /** @type {Record<string, any>} */ (await import("node:fs")).default;
+  const real = fs.readdirSync;
+  const huge = Array.from({ length: 100_001 }, (_, i) => ({ name: `e${i}`, isDirectory: () => false, isFile: () => false }));
+  /** @type {string[]} */
+  const dirs = [];
+  fs.readdirSync = (/** @type {any[]} */ ...args) => (dirs.includes(args[0]) && args[1]?.withFileTypes ? huge : real(...args));
+  syncBuiltinESMExports();
+  const replace = `f.writeFileSync('n.tmp', 'alpha\\n'); f.renameSync('n.tmp', 'notes.txt')`;
+  try {
+    for (const [act, expected] of /** @type {[string, unknown[]][]} */ ([
+      [`f.linkSync('notes.txt', 'keep.txt'); ${replace}`, [{ how: "elsewhere", file: "notes.txt", id: "e1", names: [], unfound: 1, looked: 100_000, trees: 1, capped: true, unread: 0 }]],
+      [replace, []],
+    ])) {
+      const p = project();
+      dirs[0] = p.dir;
+      /** @type {import("../metrics/mutation.mjs").LinkNotice[]} */
+      const linked = [];
+      await runMutants({ cwd: p.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: whileIn(act), journal: p.journal, onLinked: (l) => linked.push(l) });
+      assert.deepEqual(linked, expected);
+    }
+  } finally {
+    fs.readdirSync = real;
+    syncBuiltinESMExports();
+  }
+});
+
+test("mutate: a path swapped between the mutant's write and the hold holds nothing: no notice about a file the mutant never went into, and the descriptor closed (mutate-writeback-grown-link)", async () => {
+  const fs = /** @type {Record<string, any>} */ (await import("node:fs")).default;
+  const [realOpen, realClose] = [fs.openSync, fs.closeSync];
+  /** @type {(() => void) | null} */
+  let swap = null;
+  const open = new Set();
+  fs.openSync = (/** @type {any} */ path, /** @type {any} */ flags, /** @type {any[]} */ ...rest) => {
+    const hold = String(path).endsWith("notes.txt") && typeof flags === "number" && !(flags & (fs.constants.O_WRONLY | fs.constants.O_RDWR));
+    if (hold && swap) {
+      const act = swap;
+      swap = null;
+      act();
+    }
+    const fd = realOpen(path, flags, ...rest);
+    if (hold) open.add(fd);
+    return fd;
+  };
+  fs.closeSync = (/** @type {number} */ fd) => (open.delete(fd), realClose(fd));
+  syncBuiltinESMExports();
+  const p = project();
+  /** @type {unknown[]} */
+  const linked = [];
+  try {
+    swap = () => {
+      writeFileSync(join(p.dir, "n.tmp"), "beta\n");
+      fs.renameSync(join(p.dir, "n.tmp"), join(p.dir, "notes.txt"));
+    };
+    await runMutants({ cwd: p.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: whileIn(`f.linkSync('notes.txt', 'other.txt'); f.writeFileSync('n.tmp', 'alpha\\n'); f.renameSync('n.tmp', 'notes.txt')`), journal: p.journal, onLinked: (l) => linked.push(l) });
+  } finally {
+    fs.openSync = realOpen;
+    fs.closeSync = realClose;
+    syncBuiltinESMExports();
+  }
+  assert.deepEqual([swap, linked, open.size, readFileSync(join(p.dir, "notes.txt"), "utf8")], [null, [], 0, "alpha\n"]);
+});
+
+test("mutate: the file the mutant went into is stamped through its other names, and so is a path with one name (mutate-writeback-grown-link)", async () => {
+  const notes = (/** @type {string} */ dir) => statSync(join(dir, "notes.txt")).mtimeMs;
+  for (const [name, act] of [
+    ["through", `f.linkSync('notes.txt', 'twin.txt')`],
+    ["already", `f.linkSync('notes.txt', 'twin.txt'); f.writeFileSync('notes.txt', 'alpha\\n')`],
+    ["one name, replaced", `f.writeFileSync('n.tmp', 'alpha\\n'); f.utimesSync('n.tmp', 1000000000, 1000000000); f.renameSync('n.tmp', 'notes.txt')`],
+  ]) {
+    const p = project();
+    await runMutants({ cwd: p.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: whileIn(act), journal: p.journal });
+    assert.ok(Number.isInteger(notes(p.dir) / 1000) && notes(p.dir) > 1_000_000_000_000, `${name}: a whole second, new: ${notes(p.dir)}`);
+  }
+});
+
+test("mutate: the descriptor held on a mutated file is read-only, so a script the tests run stays runnable, and it is closed on every way out (mutate-writeback-grown-link)", async () => {
+  const fs = /** @type {Record<string, any>} */ (await import("node:fs")).default;
+  const cp = /** @type {Record<string, any>} */ (childProcess);
+  const [realOpen, realClose, realSpawn] = [fs.openSync, fs.closeSync, cp.spawn];
+  /** Descriptors open on the file the mutant goes into, with their flags. */
+  const open = new Map();
+  /** @type {number[][]} */
+  const during = [];
+  fs.openSync = (/** @type {any} */ path, /** @type {any} */ flags, /** @type {any[]} */ ...rest) => {
+    const fd = realOpen(path, flags, ...rest);
+    if (String(path).endsWith("notes.txt")) open.set(fd, flags);
+    return fd;
+  };
+  fs.closeSync = (/** @type {number} */ fd) => (open.delete(fd), realClose(fd));
+  cp.spawn = (/** @type {any[]} */ ...args) => (during.push([...open.values()]), realSpawn(...args));
+  syncBuiltinESMExports();
+  try {
+    for (const [name, act, fails] of /** @type {[string, string, boolean][]} */ ([
+      ["no second name", `0`, false],
+      ["through", `f.linkSync('notes.txt', 'twin.txt')`, false],
+      ["elsewhere", `f.linkSync('notes.txt', 'twin.txt'); f.writeFileSync('n.tmp', 'alpha\\n'); f.renameSync('n.tmp', 'notes.txt')`, false],
+      ["a rename-over", `f.writeFileSync('n.tmp', 'alpha\\n'); f.renameSync('n.tmp', 'notes.txt')`, false],
+      ["a refusal", `f.linkSync('notes.txt', 'twin.txt'); f.appendFileSync('twin.txt', 'by hand\\n')`, true],
+      ["a deletion", `f.rmSync('notes.txt')`, true],
+    ])) {
+      const p = project();
+      during.length = 0;
+      const run = runMutants({ cwd: p.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: whileIn(act), journal: p.journal });
+      await (fails ? assert.rejects(run) : run);
+      assert.equal(open.size, 0, `${name}: closed`);
+      assert.deepEqual(during.map((flags) => flags.map((f) => f & (fs.constants.O_WRONLY | fs.constants.O_RDWR))), [[], [0]], `${name}: one read-only descriptor while the tests run`);
+    }
+  } finally {
+    fs.openSync = realOpen;
+    fs.closeSync = realClose;
+    cp.spawn = realSpawn;
+    syncBuiltinESMExports();
+  }
+  // Linux refuses to run a file held open for writing (ETXTBSY): the tests' own script must still run with its mutant in.
+  // (Darwin runs it either way: this line proves its point in the Linux suite.)
+  const q = project();
+  writeFileSync(join(q.dir, "run.sh"), "#!/bin/sh\necho alpha\n");
+  chmodSync(join(q.dir, "run.sh"), 0o755);
+  const res = await runMutants({ cwd: q.dir, mutants: [m("x1", "run.sh", "echo alpha", "echo beta")], command: "./run.sh", journal: q.journal });
+  assert.deepEqual(res.results.map(said), ["survived mutate.reason.noCheck"]);
+});
+
+test("mutate: a rename or a deletion between the mutant and the put-back: the path is judged as it stands, and a name still holding the mutant is said (mutate-writeback-grown-link)", async () => {
+  const link = `f.linkSync('notes.txt', 'copy/notes.txt')`;
+  const edit = `f.writeFileSync('n.tmp', 'beta\\nby hand\\n'); f.renameSync('n.tmp', 'notes.txt')`;
+  const same = `f.writeFileSync('n.tmp', 'beta\\n'); f.renameSync('n.tmp', 'notes.txt')`;
+  const run = async (/** @type {string} */ act) => {
+    const p = project();
+    mkdirSync(join(p.dir, "copy"));
+    /** @type {import("../metrics/mutation.mjs").LinkNotice[]} */
+    const linked = [];
+    /** @type {string | null} */
+    let thrown = null;
+    await runMutants({ cwd: p.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: whileIn(act), journal: p.journal, onLinked: (l) => linked.push(l) }).catch((e) => (thrown = e.message));
+    const at = (/** @type {string} */ f) => (existsSync(join(p.dir, f)) ? readFileSync(join(p.dir, f), "utf8") : null);
+    return { thrown, notes: at("notes.txt"), twin: at("copy/notes.txt"), journal: existsSync(p.journal), linked: linked.map(noticed) };
+  };
+  const left = { how: "elsewhere", file: "notes.txt", id: "e1", names: ["copy/notes.txt"], unfound: 0, trees: 1, capped: false, unread: 0 };
+  // An edit by a rename stops the run, the edit and the journal kept, whatever the other name holds.
+  const edited = await run(`${link}; ${edit}`);
+  assert.match(String(edited.thrown), /^notes\.txt changed while mutant "e1" was in it \(an edit, or the test command writing it\): it is left as it is, the mutant with it; /);
+  assert.deepEqual({ ...edited, thrown: null }, { thrown: null, notes: "beta\nby hand\n", twin: "beta\n", journal: true, linked: [left] });
+  // The mutant's bytes by a rename: the path is judged by its bytes, its original goes back; the old file keeps the mutant, and that is said.
+  assert.deepEqual(await run(`${link}; ${same}`), { thrown: null, notes: "alpha\n", twin: "beta\n", journal: false, linked: [left] });
+  // Every other name gone first: nothing left behind, nothing to say.
+  assert.deepEqual(await run(`${link}; f.rmSync('copy/notes.txt'); ${same}`), { thrown: null, notes: "alpha\n", twin: null, journal: false, linked: [] });
+  // The path deleted: nothing is made again, the journal stays.
+  const deleted = await run(`${link}; f.rmSync('notes.txt')`);
+  assert.match(String(deleted.thrown), /^notes\.txt was deleted while mutant "e1" was in it: nothing is written there; /);
+  assert.deepEqual({ ...deleted, thrown: null }, { thrown: null, notes: null, twin: "beta\n", journal: true, linked: [left] });
+});
+
+test("mutate: the other names are searched after the file is back and the journal holds no bytes, and what happens during the search changes nothing (mutate-writeback-grown-link)", async () => {
+  // The search's first folder is the seam: an atomic save, a deletion and a new name land there, as a second process would.
+  const fs = /** @type {Record<string, any>} */ (await import("node:fs")).default;
+  const real = fs.readdirSync;
+  /** @type {(() => void) | null} */
+  let look = null;
+  fs.readdirSync = (/** @type {any[]} */ ...args) => {
+    if (look && args[1]?.withFileTypes) {
+      const act = look;
+      look = null;
+      act();
+    }
+    return real(...args);
+  };
+  syncBuiltinESMExports();
+  try {
+    for (const [name, act, after] of /** @type {[string, (d: string) => void, string | null][]} */ ([
+      ["an atomic save", (d) => (writeFileSync(join(d, "n.tmp"), "beta\nby hand\n"), fs.renameSync(join(d, "n.tmp"), join(d, "notes.txt"))), "beta\nby hand\n"],
+      ["a deletion", (d) => rmSync(join(d, "notes.txt")), null],
+      ["a new name", (d) => linkSync(join(d, "notes.txt"), join(d, "copy", "late.txt")), "alpha\n"],
+    ])) {
+      const p = project();
+      mkdirSync(join(p.dir, "copy"));
+      const notes = join(p.dir, "notes.txt");
+      /** @type {unknown[]} */
+      const seen = [];
+      look = () => {
+        seen.push(readFileSync(notes, "utf8"), Object.keys(JSON.parse(readFileSync(p.journal, "utf8"))));
+        act(p.dir);
+      };
+      /** @type {import("../metrics/mutation.mjs").LinkNotice[]} */
+      const linked = [];
+      await runMutants({ cwd: p.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: `${linkWhileIn("copy/notes.txt")} && ${NODE} -e 0`, journal: p.journal, onLinked: (l) => linked.push(l) });
+      assert.deepEqual(seen, ["alpha\n", ["pid"]], name);
+      assert.deepEqual([existsSync(notes) ? readFileSync(notes, "utf8") : null, readFileSync(join(p.dir, "copy", "notes.txt"), "utf8"), existsSync(p.journal)], [after, "alpha\n", false], name);
+      // A name found past the link count of the write: the count of those not found goes no lower than nothing.
+      assert.deepEqual(linked.map(({ names, unfound }) => ({ names: [...names].sort(), unfound })), [{ names: name === "a new name" ? ["copy/late.txt", "copy/notes.txt"] : ["copy/notes.txt"], unfound: 0 }], name);
+    }
+    // The same for a file the path no longer leads to, and for a refusal: more names than the link count read before the search.
+    const e = project();
+    mkdirSync(join(e.dir, "copy"));
+    look = () => linkSync(join(e.dir, "keep.txt"), join(e.dir, "copy", "late.txt"));
+    /** @type {import("../metrics/mutation.mjs").LinkNotice[]} */
+    const left = [];
+    await runMutants({ cwd: e.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: whileIn(`f.linkSync('notes.txt', 'keep.txt'); f.writeFileSync('n.tmp', 'alpha\\n'); f.renameSync('n.tmp', 'notes.txt')`), journal: e.journal, onLinked: (l) => left.push(l) });
+    assert.deepEqual(left.map(({ how, names, unfound }) => ({ how, names: [...names].sort(), unfound })), [{ how: "elsewhere", names: ["copy/late.txt", "keep.txt"], unfound: 0 }]);
+    const h = project();
+    const held = join(h.dir, "notes.txt");
+    writeFileSync(held, "beta\n");
+    linkSync(held, join(h.dir, "twin.txt"));
+    killedJournal(h.journal);
+    look = () => linkSync(held, join(h.dir, "late.txt"));
+    assert.throws(() => restoreJournal(h.dir, h.journal), (/** @type {Error} */ err) => /Its other names: [a-z.]+, [a-z.]+\. Write the journal's bytes/.test(err.message));
+  } finally {
+    look = null;
+    fs.readdirSync = real;
+    syncBuiltinESMExports();
+  }
+});
+
+test("mutate: what is gone is no folder left unread: a work tree git still lists, a name gone between the listing and the look (mutate-writeback-grown-link)", async () => {
+  const p = project();
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "a"], { cwd: p.dir });
+  const wt = join(realpathSync(mkdtempSync(join(tmpdir(), "en-mut-wt-"))), "wt");
+  git(["worktree", "add", "-q", "--detach", wt], { cwd: p.dir });
+  rmSync(wt, { recursive: true });
+  const notes = join(p.dir, "notes.txt");
+  const st = statSync(notes, { bigint: true });
+  const file = { dev: st.dev, ino: st.ino, self: notes };
+  const before = otherNames(p.dir, file);
+  assert.deepEqual([before.names, before.trees, before.capped, before.unread], [[], 1, false, 0]);
+  const fs = /** @type {Record<string, any>} */ (await import("node:fs")).default;
+  const real = fs.readdirSync;
+  fs.readdirSync = (/** @type {any[]} */ ...args) => {
+    const listed = real(...args);
+    if (args[0] === p.dir) rmSync(join(p.dir, "overlap.txt"), { force: true });
+    return listed;
+  };
+  syncBuiltinESMExports();
+  try {
+    const during = otherNames(p.dir, file);
+    assert.deepEqual([during.names, during.unread], [[], 0]);
+  } finally {
+    fs.readdirSync = real;
+    syncBuiltinESMExports();
+  }
+});
+
+test("mutate: the search for a file's other names leaves out git directories, follows no link, stops at its limit and counts the folders it cannot read (mutate-writeback-grown-link)", (t) => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "en-mut-names-")));
+  git(["init", "-q"], { cwd: dir });
+  const a = join(dir, "a.txt");
+  writeFileSync(a, "a\n");
+  mkdirSync(join(dir, "deep", "er"), { recursive: true });
+  linkSync(a, join(dir, "deep", "er", "b.txt"));
+  linkSync(a, join(dir, ".git", "c.txt"));
+  const away = realpathSync(mkdtempSync(join(tmpdir(), "en-mut-away-")));
+  linkSync(a, join(away, "d.txt"));
+  symlinkSync(away, join(dir, "lnk"));
+  const st = statSync(a, { bigint: true });
+  const file = { dev: st.dev, ino: st.ino, self: a };
+  // The root's .git, a.txt, deep, lnk; deep's er; er's b.txt.
+  assert.deepEqual(otherNames(dir, file), { names: ["deep/er/b.txt"], looked: 6, trees: 1, capped: false, unread: 0 });
+  assert.deepEqual(otherNames(dir, file, { limit: 2 }), { names: [], looked: 2, trees: 1, capped: true, unread: 0 });
+  // A hard link stays on its file's device: a work tree on another one holds no name of it, and is not searched.
+  assert.deepEqual(otherNames(dir, { ...file, dev: file.dev + 1n }), { names: [], looked: 0, trees: 0, capped: false, unread: 0 });
+  if (process.getuid?.() === 0) return t.skip("root reads any folder");
+  // A folder that cannot be read, and one that can be read but not searched (its names listed, none looked at).
+  mkdirSync(join(dir, "locked"), { mode: 0o000 });
+  mkdirSync(join(dir, "blind"));
+  writeFileSync(join(dir, "blind", "x.txt"), "x\n");
+  chmodSync(join(dir, "blind"), 0o444);
+  try {
+    assert.deepEqual(otherNames(dir, file), { names: ["deep/er/b.txt"], looked: 9, trees: 1, capped: false, unread: 2 });
+  } finally {
+    chmodSync(join(dir, "locked"), 0o755);
+    chmodSync(join(dir, "blind"), 0o755);
+  }
+});
+
+test("mutate: the search covers each work tree git lists once, one inside another too, leaves a bare repository's directory out, and knows the file's own name however the list spells it (mutate-writeback-grown-link)", () => {
+  // A worktree inside the tree, where Claude Code puts agents' worktrees: searched once, from either side.
+  const p = project();
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "a"], { cwd: p.dir });
+  const inner = join(p.dir, ".claude", "worktrees", "w");
+  git(["worktree", "add", "-q", "--detach", inner], { cwd: p.dir });
+  const notes = join(p.dir, "notes.txt");
+  linkSync(notes, join(inner, "notes.txt"));
+  const st = statSync(notes, { bigint: true });
+  const found = (/** @type {string} */ tree, /** @type {string} */ self) => {
+    const { looked, ...res } = otherNames(tree, { dev: st.dev, ino: st.ino, self });
+    assert.ok(looked > 0);
+    return res;
+  };
+  assert.deepEqual(found(p.dir, notes), { names: [".claude/worktrees/w/notes.txt"], trees: 2, capped: false, unread: 0 });
+  assert.deepEqual(found(inner, join(inner, "notes.txt")), { names: [notes], trees: 2, capped: false, unread: 0 });
+  // A disk that folds case (macOS's default): the file's own name, spelled otherwise in a mutant list, is no other name.
+  if (existsSync(join(p.dir, "NOTES.TXT"))) assert.deepEqual(found(p.dir, join(p.dir, "NOTES.txt")).names, [".claude/worktrees/w/notes.txt"]);
+  // A worktree of a bare repository: git lists the bare directory first, and it holds no work-tree file.
+  const bare = join(realpathSync(mkdtempSync(join(tmpdir(), "en-mut-bare-"))), "b.git");
+  git(["clone", "-q", "--bare", p.dir, bare], { cwd: p.dir });
+  const side = join(dirname(bare), "side");
+  git(["worktree", "add", "-q", "--detach", side], { cwd: bare });
+  writeFileSync(join(side, "x.txt"), "x\n");
+  const x = statSync(join(side, "x.txt"), { bigint: true });
+  // The side tree's .git file and x.txt.
+  assert.deepEqual(otherNames(side, { dev: x.dev, ino: x.ino, self: join(side, "x.txt") }), { names: [], looked: 2, trees: 1, capped: false, unread: 0 });
 });
 
 test("mutate: a directory swapped for a link while the file is opened is caught, whether it stays or is swapped back (round 2)", async () => {
@@ -968,5 +1584,155 @@ test("mutate: what a test run leaves running is stopped before the next mutant",
     assert.ok(Math.floor(statSync(join(p.dir, "notes.txt")).mtimeMs / 1000) > mutantStamp, "written back with a newer mtime than the mutant's");
     assert.deepEqual(p.snapshot(), p.before);
     assert.equal(existsSync(p.journal), false);
+  });
+
+  test("cli: a run killed outright keeps no inode in its journal, and a second name made after it is left to the hand: --restore refuses as it always did (mutate-writeback-grown-link)", async () => {
+    const p = project();
+    writeFileSync(p.list, JSON.stringify([m("t1", "notes.txt", "alpha", "alpha sleep")]));
+    const child = spawn(process.execPath, [CLI, "mutate", p.list, "--command", `${NODE} check.mjs`], { cwd: p.dir, stdio: "ignore" });
+    const closed = new Promise((done) => child.on("close", (code, signal) => done({ code, signal })));
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline && !existsSync(join(p.dir, "sleeping"))) await sleep(50);
+    child.kill("SIGKILL");
+    assert.deepEqual(await closed, { code: null, signal: "SIGKILL" });
+    process.kill(Number(readFileSync(join(p.dir, "sleeping"), "utf8")), "SIGKILL");
+    assert.deepEqual(Object.keys(JSON.parse(readFileSync(p.journal, "utf8"))).sort(), ["file", "id", "mutated", "original", "pid"]);
+    linkSync(join(p.dir, "notes.txt"), join(p.dir, "twin.txt"));
+    const restore = spawnSync(process.execPath, [CLI, "mutate", "--restore"], { cwd: p.dir, encoding: "utf8" });
+    assert.equal(restore.status, 1, restore.stdout);
+    assert.match(restore.stderr, /^notes\.txt could not be put back \(it has another name \(a hard link\), which a write would reach too\); its original bytes are in .*, the mutant was "t1": put the file right by hand, then delete the journal\. Its other names: twin\.txt\. Write the journal's bytes through the file in place /);
+    assert.deepEqual([readFileSync(join(p.dir, "twin.txt"), "utf8"), existsSync(p.journal)], ["alpha sleep\n", true]);
+  });
+
+  for (const sig of /** @type {NodeJS.Signals[]} */ (["SIGTERM", "SIGINT", "SIGHUP"])) {
+    for (const [how, act, said] of [
+      ["through", `f.linkSync('notes.txt', 'twin.txt')`, "notes.txt got another name while mutant e1 was in it; the original was written back into the file, and that write reached every name the file had.\nIts other names: twin.txt.\n"],
+      ["already", `f.linkSync('notes.txt', 'twin.txt'); f.writeFileSync('notes.txt', 'alpha\\n')`, "notes.txt had another name and already held the original, so mutant e1 left nothing to put back.\nIts other names: twin.txt.\n"],
+      ["elsewhere", `f.linkSync('notes.txt', 'twin.txt'); f.writeFileSync('n.tmp', 'alpha\\n'); f.renameSync('n.tmp', 'notes.txt')`, "notes.txt is no longer the file mutant e1 went into. That file still has other names, and nothing was written to it.\nIts other names: twin.txt.\n"],
+    ]) {
+      test(`cli: ${sig} with a name grown while the mutant is in (${how}): the file is right, the journal goes, and it is said (mutate-writeback-grown-link)`, async () => {
+        const p = project();
+        writeFileSync(p.list, JSON.stringify([m("e1", "notes.txt", "alpha", "beta")]));
+        const command = whileIn(`${act}; f.writeFileSync('sleeping', String(process.pid)); setTimeout(() => {}, 60000)`);
+        const child = spawn(process.execPath, [CLI, "mutate", p.list, "--command", command], { cwd: p.dir, stdio: ["ignore", "ignore", "pipe"] });
+        let stderr = "";
+        child.stderr.on("data", (d) => (stderr += d));
+        const closed = new Promise((done) => child.on("close", (code, signal) => done({ code, signal })));
+        const testPid = await pidIn(join(p.dir, "sleeping"));
+        child.kill(sig);
+        assert.deepEqual(await closed, { code: null, signal: sig });
+        assert.deepEqual([readFileSync(join(p.dir, "notes.txt"), "utf8"), existsSync(p.journal)], ["alpha\n", false]);
+        assert.equal(readFileSync(join(p.dir, "twin.txt"), "utf8"), how === "elsewhere" ? "beta\n" : "alpha\n");
+        assert.equal(stderr, said);
+        assert.ok(await gone(testPid));
+      });
+    }
+  }
+
+  for (const [point, left] of [["truncate", ""], ["half", "al"]]) {
+    test(`mutate: a SIGKILL inside the put-back's write through a name (${point}): the journal keeps the original, --restore refuses and says how, and that repair ends it (mutate-writeback-grown-link)`, async () => {
+      const p = project();
+      const host = join(p.dir, "..", `${p.dir.split(/[\\/]/).pop()}-host.mjs`);
+      writeFileSync(host, [
+        'import fs from "node:fs";',
+        'import { syncBuiltinESMExports } from "node:module";',
+        "const [command, point] = process.argv.slice(2);",
+        "const die = () => process.kill(process.pid, 'SIGKILL');",
+        "const [write, cut] = [fs.writeSync, fs.ftruncateSync];",
+        "let mutantIn = false;",
+        "fs.ftruncateSync = (fd, n) => { cut(fd, n); if (mutantIn && point === 'truncate') die(); };",
+        "fs.writeSync = (fd, data, ...rest) => {",
+        "  if (Buffer.isBuffer(data) && data.toString().startsWith('beta')) mutantIn = true;",
+        "  if (Buffer.isBuffer(data) && mutantIn && data.toString().startsWith('alpha')) { write(fd, data, 0, 2, 0); die(); }",
+        "  return write(fd, data, ...rest);",
+        "};",
+        "syncBuiltinESMExports();",
+        `const { journalPath, runMutants } = await import(${JSON.stringify(pathToFileURL(join(dirname(CLI), "..", "metrics", "mutation.mjs")).href)});`,
+        "const cwd = process.cwd();",
+        'await runMutants({ cwd, mutants: [{ id: "e1", file: "notes.txt", old: "alpha", new: "beta" }], command, journal: journalPath(cwd, ".git/ennyn") });',
+        "",
+      ].join("\n"));
+      const run = spawnSync(process.execPath, [host, linkWhileIn("twin.txt"), point], { cwd: p.dir, encoding: "utf8" });
+      assert.equal(run.signal, "SIGKILL", run.stderr);
+      const notes = join(p.dir, "notes.txt");
+      const twin = join(p.dir, "twin.txt");
+      assert.deepEqual([readFileSync(notes, "utf8"), readFileSync(twin, "utf8")], [left, left]);
+      const original = Buffer.from(JSON.parse(readFileSync(p.journal, "utf8")).original, "base64");
+      assert.equal(original.toString(), "alpha\n");
+      assert.throws(() => restoreJournal(p.dir, p.journal), (/** @type {Error} */ e) => e.message.endsWith(`Its other names: twin.txt. ${BY_HAND}`));
+      assert.ok(existsSync(p.journal), "the journal keeps the only whole copy");
+      writeFileSync(notes, original);
+      assert.equal(restoreJournal(p.dir, p.journal).linked?.how, "already");
+      assert.deepEqual([readFileSync(twin, "utf8"), existsSync(p.journal)], ["alpha\n", false]);
+    });
+  }
+
+  test("cli: a closed stderr ends nothing: the notice is lost, the mutants that follow run, and --json is whole (mutate-writeback-grown-link)", async () => {
+    const p = project();
+    writeFileSync(p.list, JSON.stringify([m("e1", "notes.txt", "alpha", "beta"), m("s1", "src/add.mjs", "x * 2", "x * 3"), m("s2", "src/add.mjs", "a + b", "b + a")]));
+    const command = `${whileIn(`f.linkSync('notes.txt', 'twin.txt'); f.writeFileSync('ready', ''); const t = setInterval(() => { if (f.existsSync('go')) clearInterval(t); }, 20)`)} && ${NODE} -e 0`;
+    const child = spawn(process.execPath, [CLI, "mutate", p.list, "--command", command, "--json"], { cwd: p.dir, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    child.stdout.on("data", (d) => (stdout += d));
+    child.stderr.on("error", () => {});
+    const closed = new Promise((done) => child.on("close", (code, signal) => done({ code, signal })));
+    const deadline = Date.now() + 20_000;
+    while (Date.now() < deadline && !existsSync(join(p.dir, "ready"))) await sleep(25);
+    child.stderr.destroy();
+    await sleep(100);
+    writeFileSync(join(p.dir, "go"), "");
+    assert.deepEqual(await closed, { code: 0, signal: null });
+    assert.deepEqual(JSON.parse(stdout).results.map((/** @type {{ id: string }} */ r) => r.id), ["e1", "s1", "s2"]);
+    assert.deepEqual([readFileSync(join(p.dir, "notes.txt"), "utf8"), existsSync(p.journal)], ["alpha\n", false]);
+    assert.deepEqual(p.snapshot(), p.before);
+  });
+
+  test("mutate: the exit handler with a name grown while the mutant is in: the file goes back through it, and the notice comes after the journal is gone (mutate-writeback-grown-link)", async () => {
+    const p = project();
+    const host = join(p.dir, "..", `${p.dir.split(/[\\/]/).pop()}-host.mjs`);
+    const command = whileIn(`f.linkSync('notes.txt', 'twin.txt'); f.writeFileSync('sleeping', String(process.pid)); setTimeout(() => {}, 60000)`);
+    writeFileSync(host, [
+      'import { existsSync, writeSync } from "node:fs";',
+      `import { journalPath, runMutants } from ${JSON.stringify(pathToFileURL(join(dirname(CLI), "..", "metrics", "mutation.mjs")).href)};`,
+      "const cwd = process.cwd();",
+      'const journal = journalPath(cwd, ".git/ennyn");',
+      'setInterval(() => { if (existsSync("sleeping")) process.exit(7); }, 20);',
+      'await runMutants({ cwd, mutants: [{ id: "e1", file: "notes.txt", old: "alpha", new: "beta" }], command: process.argv[2], journal, onLinked: (l) => writeSync(1, JSON.stringify({ how: l.how, names: l.names, journal: existsSync(journal) })) });',
+      "",
+    ].join("\n"));
+    const run = spawn(process.execPath, [host, command], { cwd: p.dir, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    run.stdout.on("data", (d) => (stdout += d));
+    const closed = new Promise((done) => run.on("close", (code, signal) => done({ code, signal })));
+    const testPid = await pidIn(join(p.dir, "sleeping"));
+    assert.deepEqual(await closed, { code: 7, signal: null });
+    assert.deepEqual([readFileSync(join(p.dir, "notes.txt"), "utf8"), readFileSync(join(p.dir, "twin.txt"), "utf8"), existsSync(p.journal)], ["alpha\n", "alpha\n", false]);
+    assert.deepEqual(JSON.parse(stdout), { how: "through", names: ["twin.txt"], journal: false });
+    assert.ok(await gone(testPid));
+  });
+
+  test("cli: --restore --force over a live run: a mutant under two names stays for the run to put back; a file already right ends the journal and the run says the same, never that a mutant is left (mutate-writeback-grown-link)", async () => {
+    for (const [name, act, forced] of /** @type {[string, string, number][]} */ ([
+      ["the mutant in", `f.linkSync('notes.txt', 'twin.txt')`, 1],
+      ["the original in", `f.linkSync('notes.txt', 'twin.txt'); f.writeFileSync('notes.txt', 'alpha\\n')`, 0],
+    ])) {
+      const p = project();
+      writeFileSync(p.list, JSON.stringify([m("e1", "notes.txt", "alpha", "beta")]));
+      const command = whileIn(`${act}; f.writeFileSync('ready', ''); const t = setInterval(() => { if (f.existsSync('go')) clearInterval(t); }, 20)`);
+      const child = spawn(process.execPath, [CLI, "mutate", p.list, "--command", command], { cwd: p.dir, stdio: ["ignore", "ignore", "pipe"] });
+      let stderr = "";
+      child.stderr.on("data", (d) => (stderr += d));
+      const closed = new Promise((done) => child.on("close", (code, signal) => done({ code, signal })));
+      const deadline = Date.now() + 20_000;
+      while (Date.now() < deadline && !existsSync(join(p.dir, "ready"))) await sleep(25);
+      const restore = spawnSync(process.execPath, [CLI, "mutate", "--restore", "--force"], { cwd: p.dir, encoding: "utf8" });
+      assert.equal(restore.status, forced, `${name}: ${restore.stderr}`);
+      assert.equal(existsSync(p.journal), forced === 1, name);
+      writeFileSync(join(p.dir, "go"), "");
+      assert.deepEqual(await closed, { code: 0, signal: null }, name);
+      assert.deepEqual([readFileSync(join(p.dir, "notes.txt"), "utf8"), readFileSync(join(p.dir, "twin.txt"), "utf8"), existsSync(p.journal)], ["alpha\n", "alpha\n", false], name);
+      assert.doesNotMatch(stderr, /is left in/, name);
+      assert.match(stderr, forced ? /^notes\.txt got another name while mutant e1 was in it; / : /^notes\.txt had another name and already held the original, so mutant e1 left nothing to put back\.\n/, name);
+    }
   });
 });

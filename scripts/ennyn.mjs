@@ -484,6 +484,21 @@ const signedKb = (b) => `${b > 0 ? "+" : b < 0 ? "−" : "±"}${(Math.abs(b) / 1
 const percent = (share, lang) => (share === null ? "—" : lang === "tr" ? `%${Math.round(share * 100)}` : `${Math.round(share * 100)}%`);
 
 /**
+ * What mutate says about a file's other names: a write-back through them, a file that needed none, or a mutant's file its
+ * path no longer leads to; the names found, and how far the search looked when it did not find them all.
+ * @param {import("../metrics/mutation.mjs").LinkNotice} l @param {string} lang
+ */
+function linkNotice(l, lang) {
+  const lines = [t({ through: "mutate.linked", already: "mutate.linkedAlready", elsewhere: "mutate.linkedElsewhere" }[l.how], { file: l.file, id: l.id }, lang)];
+  if (l.names.length) lines.push(tShown("mutate.linkedNames", { names: l.names }, lang));
+  if (l.unfound) {
+    const more = (l.capped ? t("mutate.linkedCapped", {}, lang) : "") + (l.unread ? t("mutate.linkedUnread", { n: l.unread }, lang) : "");
+    lines.push(t("mutate.linkedUnfound", { n: l.unfound, looked: l.looked, trees: l.trees, more: { shown: more } }, lang));
+  }
+  return lines.join("\n");
+}
+
+/**
  * The `.npmrc` npm reads in a directory, as the index holds it (`.npmrc` itself before another case of it), for
  * the registry of an entry with no resolved URL; undefined when the index holds none. A read that fails is a
  * file that could not be read, never no file.
@@ -1355,7 +1370,8 @@ const COMMANDS = {
       const cwd = projectDir();
       const cfg = config(cwd);
       const res = restoreJournal(cwd, journalPath(cwd, cfg.paths.stateDir), { force: Boolean(opts.force) });
-      out(res.restored ? t("mutate.restored", { file: res.restored }, cfg.language) : t(res.found ? "mutate.restoreClean" : "mutate.restoreNone", {}, cfg.language));
+      if (res.linked) out(linkNotice(res.linked, cfg.language));
+      else out(res.restored ? t("mutate.restored", { file: res.restored }, cfg.language) : t(res.found ? "mutate.restoreClean" : "mutate.restoreNone", {}, cfg.language));
       return 0;
     }
     if (opts.force) throw new UsageError("--force goes with --restore");
@@ -1386,6 +1402,8 @@ const COMMANDS = {
       journal: journalPath(cwd, cfg.paths.stateDir),
       timeoutMs: timeout === null ? null : timeout * 1000,
       onBaseline: (b, limit) => say("mutate.baseline", { s: (b.ms / 1000).toFixed(1), timeout: Math.ceil(limit / 1000), twice: Math.ceil((2 * limit) / 1000) }),
+      // On stderr as it happens, --json too: a run that fails later still said it.
+      onLinked: (l) => err(linkNotice(l, lang)),
       onResult: (r) =>
         say("mutate.item", {
           id: r.id,
@@ -1522,6 +1540,10 @@ const invokedDirectly = (() => {
 if (invokedDirectly) {
   // A closed pipe (`ennyn rework | head`) ends the process without a stack trace, and with 141 as a process
   // ended by SIGPIPE has (git log | head): output that did not arrive, or a run cut short, is no pass.
+  // A closed stderr ends nothing: a notice nobody can read is lost, and the run's own output still counts.
+  process.stderr.on("error", (e) => {
+    if (/** @type {NodeJS.ErrnoException} */ (e).code !== "EPIPE") throw e;
+  });
   process.stdout.on("error", (e) => {
     if (/** @type {NodeJS.ErrnoException} */ (e).code === "EPIPE") process.exit(141);
     throw e;
