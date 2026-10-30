@@ -1319,6 +1319,10 @@ test("hook in a tracked hooks directory: a block behind a command that may exit 
 const GIT = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
 const NODE_DIR = dirname(process.execPath);
 /** The shells a row runs under, each once: /bin/sh is dash on the Linux run. */
+/** This volume reads a path in another case. */
+const FOLDS_CASE = existsSync(tmpdir().toUpperCase());
+/** A data directory spelled another way: what the block does with it, when that spelling is a directory here (`there`) and when it is none. @param {boolean} there */
+const spelled = (there) => (there ? { expect: "refused", says: /inside this work tree/ } : { expect: "said", says: /no plugin version is recorded/ });
 const SHELLS = [...new Map(["/bin/sh", "/bin/dash"].filter((s) => existsSync(s)).map((s) => [realpathSync(s), s])).values()];
 const SYSTEM = "/usr/bin:/bin";
 const PLANTED = "#!/bin/sh\nexit 0\n";
@@ -1395,13 +1399,13 @@ const BLOCK_ROWS = [
   // A PATH entry or a data directory spelled through a link and "..": read as the kernel reads them, not as text.
   { id: "rt2-path-link-dotdot", every: true, env: (b) => ({ PATH: `${b.repo}/link/../..:${NODE_DIR}:${SYSTEM}` }), files: () => ({ "a/node": PLANTED }), make: (b) => { mkdirSync(join(b.repo, "a", "b", "c"), { recursive: true }); symlinkSync(join("a", "b", "c"), join(b.repo, "link")); }, secret: true, expect: "refused", says: /adds what reads as a secret/ },
   { id: "data-link-dotdot", every: true, env: (b) => ({ ENNYN_PLUGIN_DATA: `${b.repo}/link/../..` }), files: () => ({ "a/root": `${SELF}\n` }), make: (b) => { mkdirSync(join(b.repo, "a", "b", "c"), { recursive: true }); symlinkSync(join("a", "b", "c"), join(b.repo, "link")); }, secret: true, expect: "refused", says: /inside this work tree/ },
-  // Another spelling of the work tree on a volume that folds case, or through a firmlink: on any other volume no such directory, and the row holds as plain.
+  // Another spelling of the work tree on a volume that folds case, or through a firmlink: on any other volume no such directory, and a PATH row holds as plain. A data row finds no record there, and the block passes the commit and says so.
   { id: "rt2-path-case-fold", every: true, env: (b) => ({ PATH: `${join(dirname(b.repo), "REPO", "tools")}:${NODE_DIR}:${SYSTEM}` }), files: () => ({ "tools/node": PLANTED }), secret: true, expect: "refused", says: /adds what reads as a secret/ },
   { id: "rt2-path-firmlink", every: true, env: (b) => ({ PATH: `/System/Volumes/Data${b.repo}/tools:${NODE_DIR}:${SYSTEM}` }), files: () => ({ "tools/node": PLANTED }), secret: true, expect: "refused", says: /adds what reads as a secret/ },
   { id: "rt2-pwd-firmlink", every: true, env: (b) => ({ PWD: `/System/Volumes/Data${b.repo}`, PATH: `${join(b.repo, "tools")}:${NODE_DIR}:${SYSTEM}` }), files: () => ({ "tools/node": PLANTED }), secret: true, expect: "refused", says: /adds what reads as a secret/ },
   { id: "rt2-pwd-case-fold", every: true, env: (b) => ({ PWD: join(dirname(b.repo), "REPO"), PATH: `${join(b.repo, "tools")}:${NODE_DIR}:${SYSTEM}` }), files: () => ({ "tools/node": PLANTED }), secret: true, expect: "refused", says: /adds what reads as a secret/ },
-  { id: "rt2-data-case-fold", every: true, env: (b) => ({ ENNYN_PLUGIN_DATA: join(dirname(b.repo), "REPO", ".x") }), files: (b) => ({ ".x/root": `${b.stand}\n` }), make: (b) => { mkdirSync(join(b.stand, "scripts")); writeFileSync(join(b.stand, "scripts", "ennyn.mjs"), PLANTED_CLI); }, secret: true, expect: "refused", says: /inside this work tree/ },
-  { id: "rt2-data-firmlink", every: true, env: (b) => ({ ENNYN_PLUGIN_DATA: `/System/Volumes/Data${b.repo}/.x` }), files: (b) => ({ ".x/root": `${b.stand}\n` }), make: (b) => { mkdirSync(join(b.stand, "scripts")); writeFileSync(join(b.stand, "scripts", "ennyn.mjs"), PLANTED_CLI); }, secret: true, expect: "refused", says: /inside this work tree/ },
+  { id: "rt2-data-case-fold", every: true, env: (b) => ({ ENNYN_PLUGIN_DATA: join(dirname(b.repo), "REPO", ".x") }), files: (b) => ({ ".x/root": `${b.stand}\n` }), make: (b) => { mkdirSync(join(b.stand, "scripts")); writeFileSync(join(b.stand, "scripts", "ennyn.mjs"), PLANTED_CLI); }, secret: true, ...spelled(FOLDS_CASE) },
+  { id: "rt2-data-firmlink", every: true, env: (b) => ({ ENNYN_PLUGIN_DATA: `/System/Volumes/Data${b.repo}/.x` }), files: (b) => ({ ".x/root": `${b.stand}\n` }), make: (b) => { mkdirSync(join(b.stand, "scripts")); writeFileSync(join(b.stand, "scripts", "ennyn.mjs"), PLANTED_CLI); }, secret: true, ...spelled(existsSync("/System/Volumes/Data")) },
   // The CLI in the record's version: a link at its place, wherever it points, or its directory linked into the tree.
   { id: "cli-link-into-tree", record: (b) => b.stand, files: () => ({ "evil.mjs": PLANTED_CLI }), make: (b) => { mkdirSync(join(b.stand, "scripts")); symlinkSync(join(b.repo, "evil.mjs"), join(b.stand, "scripts", "ennyn.mjs")); }, secret: true, expect: "refused", says: /its CLI is a link/ },
   { id: "cli-link-outside", record: (b) => b.stand, make: (b) => { writeFileSync(join(b.stand, "real.mjs"), PLANTED_CLI); mkdirSync(join(b.stand, "scripts")); symlinkSync(join(b.stand, "real.mjs"), join(b.stand, "scripts", "ennyn.mjs")); }, secret: true, expect: "refused", says: /its CLI is a link/ },
