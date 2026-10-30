@@ -13,7 +13,7 @@
 import { readdirSync, realpathSync, statSync } from "node:fs";
 import { gone, present, readIfThere } from "../core/files.mjs";
 import { join, relative, resolve, posix, sep } from "node:path";
-import { git, gitError, gitMaybe, gitRun, headCommit, headFile, repoPath } from "../core/git.mjs";
+import { git, gitError, gitMaybe, gitRun, headCommit, headFile, rawChange, repoPath } from "../core/git.mjs";
 import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
 import { literalGlob } from "../core/glob.mjs";
 import { clipped, ends } from "../core/i18n.mjs";
@@ -132,8 +132,9 @@ export function commitStyle(subjects) {
  * Recent non-merge commits with their subject and touched paths. `-z` keeps
  * paths raw: without it git C-quotes names holding quotes, backslashes or tabs.
  * Every field ends at a NUL, which no message or name holds: a commit is its
- * hash and subject, then a status and a path per file, so a subject holding
+ * hash and subject, then a raw change and a path per file, so a subject holding
  * any other character (a \x01) or a name spelled like a hash shifts nothing.
+ * A submodule's commit is no file: as in the rework rate, it is no path here.
  * @param {string} cwd
  * @param {number} [limit]
  * @returns {RecentCommit[]} newest first; [] outside a repository or without commits
@@ -141,7 +142,9 @@ export function commitStyle(subjects) {
 export function recentCommits(cwd, limit = RECENT_COMMITS) {
   // Outside a repository, or no commit yet: none. A broken HEAD throws.
   if (!headCommit(cwd)) return [];
-  const fields = git(["log", "-z", "--no-merges", "--no-renames", `-n${limit}`, "--name-status", "--format=%H%x00%s"], { cwd }).split("\0");
+  // --ignore-submodules=none, as the rework rate reads the log: git otherwise reads .gitmodules for a commit that
+  // moves a submodule, and one it cannot parse stops the call.
+  const fields = git(["log", "-z", "--no-merges", "--no-renames", "--ignore-submodules=none", `-n${limit}`, "--raw", "--format=%H%x00%s"], { cwd }).split("\0");
   /** @type {RecentCommit[]} */
   const out = [];
   for (let i = 0; i + 1 < fields.length; ) {
@@ -149,10 +152,9 @@ export function recentCommits(cwd, limit = RECENT_COMMITS) {
     /** @type {RecentCommit} */
     const commit = { subject: fields[i + 1], paths: [] };
     i += 2;
-    // The list of names starts on a line of its own: its first status carries the "\n".
-    while (i + 1 < fields.length && /^[A-Z]$/.test(fields[i].replace(/^\n/, ""))) {
-      commit.paths.push(fields[i + 1]);
-      i += 2;
+    // The list of names starts on a line of its own: its first change carries the "\n".
+    for (let change; i + 1 < fields.length && (change = rawChange(fields[i])); i += 2) {
+      if (!change.submodule) commit.paths.push(fields[i + 1]);
     }
     out.push(commit);
   }

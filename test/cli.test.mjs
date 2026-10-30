@@ -124,6 +124,92 @@ test("cli: rework reports JSON and text; a bad date is a usage error", () => {
   assert.equal(run(p.dir, "rework", "--days", "seven").code, 2);
 });
 
+test("cli audit: a range that ends before it starts is a usage error, never an empty answer; a window past any number too", () => {
+  const p = project({ metrics: { minLines: 1 } });
+  p.commit({ "src/a.js": SRC }, "feat: add", 0);
+  p.commit({ "src/a.js": SRC.replace("a + b", "Number(a) + Number(b)") }, "fix: numbers", 2);
+  for (const command of ["rework", "bypass", "gate-stats"]) {
+    const bad = run(p.dir, command, "--since", "2026-02-01", "--until", "2026-01-01");
+    assert.equal(bad.code, 2, `${command}: ${bad.stdout}`);
+    assert.match(bad.stderr, /^--until 2026-01-01 is before --since 2026-02-01$/m, command);
+    assert.equal(run(p.dir, command, "--since", "2026-01-01", "--until", "2026-01-01").code, 0, `${command}: one day is a range`);
+  }
+  assert.match(run(p.dir, "rework", "--since", "2026-01-01", "--until", "2026-01-01").stdout, /^Rework: 1 of 1 commits/);
+  // 2^53 + 1 reads as 2^53; 400 digits read as Infinity.
+  for (const days of ["9007199254740993", "9".repeat(400)]) {
+    const huge = run(p.dir, "rework", "--days", days);
+    assert.equal(huge.code, 2, huge.stderr);
+    assert.match(huge.stderr, /^--days must be a whole number up to 9007199254740991$/m);
+  }
+  assert.equal(run(p.dir, "rework", "--days", "9007199254740991").code, 0, "the largest exact whole number is a window");
+});
+
+test("cli audit: rework says a fix that moved only a submodule, in the report and in --json; the note on fixes counts commits with lines", () => {
+  const p = project({ metrics: { minLines: 1 } });
+  const link = (/** @type {string} */ digit) => {
+    mkdirSync(join(p.dir, "lib", "sub"), { recursive: true });
+    git(["update-index", "--add", "--cacheinfo", `160000,${digit.repeat(40)},lib/sub`], { cwd: p.dir });
+  };
+  link("1");
+  p.commit({ "src/a.js": SRC }, "feat: add", 0);
+  link("2");
+  p.commit({}, "fix: bump lib", 2);
+  const text = run(p.dir, "rework");
+  assert.equal(text.code, 0, text.stderr);
+  assert.match(text.stdout, /^Rework: 0 of 1 commits/);
+  assert.match(text.stdout, /^Fix commits that moved only a submodule: 1\. A submodule's commit holds no line to read, so what they repaired is not measured\.$/m);
+  assert.equal(JSON.parse(run(p.dir, "rework", "--json").stdout).submoduleFixes, 1);
+  const none = project({ metrics: { minLines: 1 } });
+  none.commit({ "src/a.js": SRC }, "feat: add", 0);
+  assert.doesNotMatch(run(none.dir, "rework").stdout, /submodule/);
+  assert.equal(JSON.parse(run(none.dir, "rework", "--json").stdout).submoduleFixes, 0);
+  // Ten bumps beside four commits: the note still counts three fixes of four.
+  const q = project({ metrics: { minLines: 1 } });
+  q.commit({ "src/a.js": SRC }, "feat: add", 0);
+  for (const day of [1, 2, 3]) q.commit({ [`src/f${day}.js`]: `export const f = ${day};\n` }, `fix: file ${day}`, day);
+  mkdirSync(join(q.dir, "lib", "sub"), { recursive: true });
+  for (const digit of "123456789a") {
+    git(["update-index", "--add", "--cacheinfo", `160000,${digit.repeat(40)},lib/sub`], { cwd: q.dir });
+    q.commit({}, `chore: bump ${digit}`, 4);
+  }
+  assert.match(run(q.dir, "rework").stdout, /^Note: 3 of 4 candidate commits are fixes\./m);
+});
+
+test("cli audit: a metrics.reworkDays out of range stops rework, by its key, and never the commit gate", () => {
+  const p = project();
+  p.commit({ "src/a.js": SRC }, "feat: add", 0);
+  mkdirSync(join(p.dir, ".ennyn"), { recursive: true });
+  const write = (/** @type {string} */ value) => writeFileSync(join(p.dir, ".ennyn", "config.json"), `{ "commitMsg": { "types": ["feat", "fix"] }, "metrics": { "reworkDays": ${value} } }\n`);
+  writeFileSync(join(p.dir, ".git", "NO-TYPE"), "this subject has no type\n");
+  writeFileSync(join(p.dir, ".git", "TYPED"), "feat: this subject has a type\n");
+  for (const value of ["1e400", "-1", "9007199254740993"]) {
+    write(value);
+    const res = run(p.dir, "rework");
+    assert.equal(res.code, 1, `${value}: ${res.stderr}`);
+    assert.match(res.stderr, /^- "metrics\.reworkDays" must be a number from 0 to 9007199254740991$/m, value);
+    assert.doesNotMatch(res.stderr, /days must be a non-negative number/, value);
+    // --days replaces the value, so nothing reads it.
+    assert.equal(run(p.dir, "rework", "--days", "7").code, 0, value);
+    // The config loads: the hook checks the message both ways, and says nothing went unchecked.
+    const refused = run(p.dir, "commit-check", "--hook", ".git/NO-TYPE");
+    assert.equal(refused.code, 1, `${value}: the hook still refuses: ${refused.stderr}`);
+    const passed = run(p.dir, "commit-check", "--hook", ".git/TYPED");
+    assert.equal(passed.code, 0, `${value}: ${passed.stderr}`);
+    for (const r of [refused, passed]) assert.doesNotMatch(r.stderr, /does not load|was not checked/, value);
+  }
+  for (const value of ["0", "3.5", "9007199254740991"]) {
+    write(value);
+    assert.equal(run(p.dir, "rework").code, 0, value);
+  }
+});
+
+test("cli audit: rework's help says the range is in local days and --days is the window, not the range", () => {
+  const help = run(mkdtempSync(join(tmpdir(), "pl-cli-help-")), "rework", "--help");
+  assert.equal(help.code, 0);
+  assert.match(help.stdout, /--since to --until \(local days\)/);
+  assert.match(help.stdout, /--days N \(the window after each commit, not the range;/);
+});
+
 test("cli: rework shows a file name from history as one line can show it (a terminal escape in it is escaped)", () => {
   const p = project({ metrics: { minLines: 1 } });
   const name = "src/a\x1b[2J.js";

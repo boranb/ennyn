@@ -379,9 +379,12 @@ export async function checkSetup({ cwd, env = process.env, self = OWN_ROOT }) {
 
   // Same denominator as the rework rate: recent commits touching a production path.
   const fixRe = compiled["metrics.fixSubject"];
-  // With declared types, a repair is written "<fixType>: …"; a label that misses it hides every new repair.
-  if (fixRe && cm.types.length && !(fixRe.test(`${cm.fixType}: x`) && fixRe.test(`${cm.fixType}(x): x`))) {
-    add("warn", "doctor.fixTypeUnseen", { pattern: config.metrics.fixSubject, type: cm.fixType });
+  // With declared types, a repair is written as the commit gate admits it; a label that misses a form hides those repairs.
+  if (fixRe && cm.types.length) {
+    const missed = (/** @type {string[]} */ forms) => forms.filter((f) => !fixRe.test(`${cm.fixType}${f}: x`)).map((f) => `${cm.fixType}${f}: …`);
+    const [plain, breaking] = [missed(["", "(x)"]), missed(["!", "(x)!"])];
+    if (plain.length) add("warn", "doctor.fixTypeUnseen", { pattern: config.metrics.fixSubject, forms: plain });
+    else if (breaking.length) add("warn", "doctor.fixBangUnseen", { pattern: config.metrics.fixSubject, forms: breaking });
   }
   const exclude = compiled["metrics.excludeRe"];
   const test = compiled["metrics.testRe"];

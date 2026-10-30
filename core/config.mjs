@@ -129,7 +129,8 @@ export const DEFAULTS = Object.freeze({
   },
   metrics: {
     reworkDays: 7,
-    fixSubject: "^fix(\\(|:)",
+    // fix, fix(scope) and fix! (a breaking fix): every subject the commit gate admits as the fix type.
+    fixSubject: "^fix(\\(|!?:)",
     // Generated output and lockfiles are rewritten by ordinary commits; counting them measures churn.
     excludeRe: "(^docs/|\\.md$|^\\.|(^|/)(generated|dist|build|vendor)/|(^|/)(package-lock\\.json|pnpm-lock\\.yaml|yarn\\.lock)$)",
     testRe: "(\\.test\\.|\\.spec\\.|/test/|/__tests__/|/__fixtures__/)",

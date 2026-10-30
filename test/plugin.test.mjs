@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { join, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { git } from "../core/git.mjs";
-import { ConfigError } from "../core/config.mjs";
+import { ConfigError, loadConfig } from "../core/config.mjs";
+import { checkCommitShape } from "../checks/commit-shape.mjs";
 import { t } from "../core/i18n.mjs";
 import { hookProjectDir, projectConfig } from "../adapters/claude-code/project.mjs";
 import { FILE_TOOLS } from "../adapters/claude-code/hooks/side-copy-rules.mjs";
@@ -64,6 +65,20 @@ test("plugin: every agent and skill has front matter a YAML parser reads, named 
 
 test("plugin: every SKILL.md stays under 8 KB (DESIGN.md: skills are read whole, every time)", () => {
   for (const { path } of skills) assert.ok(statSync(join(ROOT, path)).size < 8 * 1024, `${path}: ${statSync(join(ROOT, path)).size} bytes`);
+});
+
+test("plugin: the fix label /ennyn:init writes reads every form the commit gate admits as the fix type", () => {
+  const line = String(read("skills/init/SKILL.md").split("\n").find((l) => l.startsWith("- `metrics.fixSubject`:")));
+  const templates = [...line.matchAll(/`([^`]*<fixType>[^`]*)`/g)].map((m) => m[1]);
+  assert.equal(templates.length, 2, line);
+  const config = loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-init-label-")), env: {}, override: { commitMsg: { types: ["özellik", "düzeltme"], fixType: "düzeltme" } } });
+  for (const template of templates) {
+    const label = new RegExp(template.replace("<fixSubject.proposal>", "^onarım").replace("<fixType>", "düzeltme"));
+    for (const subject of ["düzeltme: a", "düzeltme(x): a", "düzeltme!: a", "düzeltme(x)!: a"]) {
+      assert.ok(checkCommitShape(subject, { config }).ok, `the gate admits ${subject}`);
+      assert.ok(label.test(subject), `${template} reads ${subject}`);
+    }
+  }
 });
 
 test("plugin: the repository asks before every command that leaves the machine, as /ennyn:init proposes", () => {

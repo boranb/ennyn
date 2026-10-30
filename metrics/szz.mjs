@@ -2,10 +2,11 @@
  * SZZ-style rework measurement: how many commits had their lines changed again
  * by a fix commit within N days.
  *
- * A candidate is a non-merge commit in [since, until] that touches at least one
- * production path and whose N-day observation window has closed (a commit from
- * yesterday cannot have been reworked within a week yet; counting it would bias
- * the rate down). For every fix commit (subject matches `metrics.fixSubject`)
+ * A candidate is a non-merge commit in [since, until] that changes at least one
+ * production file (a submodule's commit is none: it holds no line, so no link can
+ * name it) and whose N-day observation window has closed (a commit from yesterday
+ * cannot have been reworked within a week yet; counting it would bias the rate
+ * down). For every fix commit (subject matches `metrics.fixSubject`)
  * the old side of each modified production file is diffed (`-U0 -w`), and the
  * meaningful deleted lines (not blank, comment, bracket-only or import) are
  * blamed at the fix's parent with move and copy detection.
@@ -18,11 +19,14 @@
  * would name them for lines they did not write.
  *
  * Pure additions are never attributed (classic SZZ): a fix that only adds lines
- * names no origin.
+ * names no origin. Nor does a file the fix adds, deletes or renames (read as a
+ * deletion and an addition), a file git reads as binary, or a merge: only the files
+ * a non-merge fix modifies are read. A fix that moved only a submodule read nothing,
+ * and is counted apart.
  */
 
 import { resolve } from "node:path";
-import { git, headCommit } from "../core/git.mjs";
+import { git, headCommit, rawChange } from "../core/git.mjs";
 import { readIfThere } from "../core/files.mjs";
 
 const DAY = 86400;
@@ -36,10 +40,12 @@ const DAY = 86400;
  * the same way: a strong link names them, but its fix is dated before them (blame found the origin behind
  * the fix, so a clock was wrong) or has no committer time, and no other fix measured them. Only fixes in
  * the range are read: with `since`, a fix dated before it is never seen (node rework-skew-before-since).
+ * `submoduleFixes` counts the fixes read (dated in the range, or up to a window after `until`) whose only production
+ * change moved a submodule: they hold no line, so what they repaired is unmeasured.
  * `shallow`: HEAD's history has a shallow boundary; commits before it are not counted.
  * @typedef {{ origin: string, fix: string, files: string[], lines: number, share: number, days: number }} ReworkPair
- * @typedef {{ commits: number, reworked: number, rate: number | null, fixCommits: number, censored: number, skewed: number, shallow: boolean, pairs: ReworkPair[] }} ReworkResult
- * @typedef {{ hash: string, time: number, subject: string, changes: { status: string, path: string }[] }} LogCommit
+ * @typedef {{ commits: number, reworked: number, rate: number | null, fixCommits: number, censored: number, skewed: number, submoduleFixes: number, shallow: boolean, pairs: ReworkPair[] }} ReworkResult
+ * @typedef {{ hash: string, time: number, subject: string, changes: { status: string, path: string }[], submodules: string[] }} LogCommit
  */
 
 /**
@@ -69,8 +75,8 @@ export function parseBound(value, edge) {
 }
 
 /**
- * Non-merge commits whose committer time `within` accepts, newest first, with their subject and
- * name-status list. No date goes to git: its --since walk stops at a commit dated early (a clock off by
+ * Non-merge commits whose committer time `within` accepts, newest first, with their subject, the files
+ * they change and, apart, the submodules they move. No date goes to git: its --since walk stops at a commit dated early (a clock off by
  * days) and never reaches the commits behind it. Every commit's time and hash is listed, about 52 bytes
  * each (git()'s 64 MB buffer holds some 1.2 million commits; past that it throws, never a short list),
  * and filtered here; subjects and paths are read for the kept commits only, in chunks so the command
@@ -92,7 +98,7 @@ export function readLog(cwd, within, chunk = 200) {
     const m = /^(\d*) ([0-9a-f]{40,64})$/.exec(line);
     if (!m) continue;
     const time = m[1] === "" ? NaN : Number(m[1]);
-    if (within(time)) byHash.set(m[2], { hash: m[2], time, subject: "", changes: [] });
+    if (within(time)) byHash.set(m[2], { hash: m[2], time, subject: "", changes: [], submodules: [] });
   }
   const hashes = [...byHash.keys()];
   for (let i = 0; i < hashes.length; i += chunk) {
@@ -104,15 +110,21 @@ export function readLog(cwd, within, chunk = 200) {
       const c = byHash.get(subjects[j].replace(/^\n/, ""));
       if (c) c.subject = subjects[j + 1];
     }
-    // Paths, raw (-z): each status and path is its own NUL-terminated field, so a quote or a tab in a
-    // file name survives (unquoted output C-quotes such names and the diff below would find no file).
-    const fields = git(["-c", "core.quotePath=false", "log", "--no-walk=unsorted", "-z", "--no-renames", "--root", "--name-status", "--format=%H", ...revs], { cwd }).split("\0");
+    // Paths, raw (-z): each change and path is its own NUL-terminated field, so a quote or a tab in a file name
+    // survives (unquoted output C-quotes such names and the diff below would find no file). --raw for the modes: a
+    // submodule's commit reads like a modified file by name. On the command line: diff.ignoreSubmodules and
+    // submodule.<name>.ignore would hide it, a machine's config deciding what is said.
+    const fields = git(["-c", "core.quotePath=false", "log", "--no-walk=unsorted", "-z", "--no-renames", "--ignore-submodules=none", "--root", "--raw", "--format=%H", ...revs], { cwd }).split("\0");
     /** @type {LogCommit | null} */
     let cur = null;
     for (let j = 0; j < fields.length; j++) {
       const f = fields[j].replace(/^\n/, "");
-      if (cur && /^[A-Z]$/.test(f) && j + 1 < fields.length) cur.changes.push({ status: f, path: fields[++j] });
-      else if (/^[0-9a-f]{40,64}$/.test(f)) cur = byHash.get(f) ?? null;
+      const change = cur && j + 1 < fields.length ? rawChange(f) : null;
+      if (cur && change) {
+        const path = fields[++j];
+        if (change.submodule) cur.submodules.push(path);
+        else cur.changes.push({ status: change.status, path });
+      } else if (/^[0-9a-f]{40,64}$/.test(f)) cur = byHash.get(f) ?? null;
     }
   }
   return [...byHash.values()];
@@ -194,8 +206,9 @@ function toRanges(lines) {
 /**
  * One blame call per file: git accepts several -L ranges at once. `-M -C` follows
  * lines moved within and across files to the commit that wrote them.
- * `--ignore-revs-file ""` drops the lists in blame.ignoreRevsFile, so the origins
- * are the same on every machine (a list naming a missing file still stops git).
+ * `--ignore-revs-file ""` drops the lists in blame.ignoreRevsFile, so no machine's
+ * list moves the origins (a list naming a missing file still stops git);
+ * `--no-textconv`: the lines as the commit holds them, as the diff in reworkRate reads them.
  * @param {string} cwd
  * @param {string} fix
  * @param {string} file
@@ -204,7 +217,7 @@ function toRanges(lines) {
  */
 function blameOrigins(cwd, fix, file, ranges) {
   const lineArgs = ranges.flatMap(([a, b]) => ["-L", `${a},${b}`]);
-  const out = git(["blame", "-w", "-M", "-C", "--ignore-revs-file", "", "--porcelain", ...lineArgs, `${fix}^`, "--", file], { cwd, walk: true });
+  const out = git(["blame", "-w", "-M", "-C", "--ignore-revs-file", "", "--no-textconv", "--porcelain", ...lineArgs, `${fix}^`, "--", file], { cwd, walk: true });
   /** @type {Map<string, number>} */
   const counts = new Map();
   for (const line of out.split("\n")) {
@@ -271,6 +284,7 @@ export function reworkRate({ cwd, since, until, days, config, now }) {
   /** @type {Map<string, LogCommit>} */
   const candidates = new Map();
   let censored = 0;
+  let submoduleFixes = 0;
   const edge = shallowEdge(cwd);
   for (const c of log) {
     if (!inRange(c.time, 0) || !c.changes.some((ch) => isProduction(ch.path))) continue;
@@ -289,14 +303,17 @@ export function reworkRate({ cwd, since, until, days, config, now }) {
   const fixMessages = commitMessages(cwd, fixes.map((c) => c.hash));
   for (const fix of fixes) {
     const production = fix.changes.filter((ch) => isProduction(ch.path));
+    // No line to read is no clean answer: said, as an open window is.
+    if (!production.length && fix.submodules.some(isProduction)) submoduleFixes += 1;
     if (production.length > m.maxFixFiles) continue;
     /** @type {Map<string, { lines: number, files: Set<string> }>} */
     const owned = new Map();
     let total = 0;
     for (const { status, path: file } of production) {
       if (status !== "M") continue;
-      // On the command line: a diff driver's own algorithm (diff.<driver>.algorithm) outranks the config pin.
-      const diff = git(["diff", "--no-color", "--no-ext-diff", "--diff-algorithm=myers", "--indent-heuristic", "-U0", "-w", `${fix.hash}^`, fix.hash, "--", file], { cwd });
+      // On the command line: a diff driver's own algorithm (diff.<driver>.algorithm) outranks the config pin. A
+      // textconv driver (a machine's config) would show other lines than the commit holds.
+      const diff = git(["diff", "--no-color", "--no-ext-diff", "--no-textconv", "--diff-algorithm=myers", "--indent-heuristic", "-U0", "-w", `${fix.hash}^`, fix.hash, "--", file], { cwd });
       const deleted = deletedCodeLines(diff);
       if (!deleted.length) continue;
       total += deleted.length;
@@ -341,5 +358,5 @@ export function reworkRate({ cwd, since, until, days, config, now }) {
   const fixCommits = [...candidates.values()].filter((c) => fixRe.test(c.subject)).length;
   // Only a boundary in HEAD's history holds commits back: a branch fetched shallow elsewhere does not.
   const shallow = [...edge].some((h) => reaches(cwd, h));
-  return { commits, reworked: reworked.size, rate: commits === 0 ? null : reworked.size / commits, fixCommits, censored, skewed: unmeasured.length, shallow, pairs };
+  return { commits, reworked: reworked.size, rate: commits === 0 ? null : reworked.size / commits, fixCommits, censored, skewed: unmeasured.length, submoduleFixes, shallow, pairs };
 }

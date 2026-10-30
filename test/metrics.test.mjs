@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, chmodSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, chmodSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -34,6 +34,15 @@ function repo() {
       return git(["rev-parse", "HEAD"], { cwd: dir });
     },
   };
+}
+
+/**
+ * A submodule that is not checked out, at the commit made of one digit: an empty folder, which git add -A leaves as it is.
+ * @param {{ dir: string }} r @param {string} path @param {string} digit
+ */
+function gitlink(r, path, digit) {
+  mkdirSync(join(r.dir, path), { recursive: true });
+  git(["update-index", "--add", "--cacheinfo", `160000,${digit.repeat(40)},${path}`], { cwd: r.dir });
 }
 
 const ORIGIN = ["// adds two numbers", "export function add(a, b) {", "  return a + b;", "}", ""].join("\n");
@@ -99,7 +108,7 @@ test("szz: zero candidate commits gives a null rate, not zero", () => {
   const r = repo();
   r.commit(0, "docs: readme", { "README.md": "# x\n" });
   const res = reworkRate({ cwd: r.dir, days: 7, config: cfg() });
-  assert.deepEqual(res, { commits: 0, reworked: 0, rate: null, fixCommits: 0, censored: 0, skewed: 0, shallow: false, pairs: [] });
+  assert.deepEqual(res, { commits: 0, reworked: 0, rate: null, fixCommits: 0, censored: 0, skewed: 0, submoduleFixes: 0, shallow: false, pairs: [] });
   const empty = mkdtempSync(join(tmpdir(), "pl-szz-empty-"));
   git(["init", "-q"], { cwd: empty });
   assert.equal(reworkRate({ cwd: empty, config: cfg() }).rate, null);
@@ -467,4 +476,149 @@ test("rework audit: a shallow file that is there but cannot be read is no full c
   } finally {
     chmodSync(shallow, 0o644);
   }
+});
+
+test("rework audit: a fix that also moves a submodule's commit is measured; the gitlink is no line blame can read", () => {
+  const r = repo();
+  gitlink(r, "lib/sub", "1");
+  const origin = r.commit(0, "feat: add", { "src/a.js": ORIGIN });
+  gitlink(r, "lib/sub", "2");
+  const fix = r.commit(3, "fix: add handles strings, and the submodule's fix", { "src/a.js": ORIGIN.replace("return a + b;", "return Number(a) + Number(b);") });
+  assert.equal(git(["ls-tree", fix, "lib/sub"], { cwd: r.dir }).split(/\s/)[0], "160000", "the fix moves a gitlink");
+  const res = reworkRate({ cwd: r.dir, days: 7, config: loose() });
+  assert.deepEqual(res.pairs.map((p) => [p.origin, p.fix, p.files]), [[origin, fix, ["src/a.js"]]]);
+  assert.equal(res.submoduleFixes, 0, "the fix's file was read");
+});
+
+test("rework audit: a fix that moved only a submodule is said, not read as a fix that found no origin", () => {
+  const r = repo();
+  gitlink(r, "lib/sub", "1");
+  r.commit(0, "feat: use lib", { "src/a.js": ORIGIN });
+  gitlink(r, "lib/sub", "2");
+  r.commit(3, "fix: bump lib to the repaired release", {});
+  const moved = reworkRate({ cwd: r.dir, days: 7, config: loose() });
+  assert.deepEqual([moved.commits, moved.reworked, moved.fixCommits, moved.submoduleFixes], [1, 0, 0, 1]);
+  // Dropping the submodule is the same shape: no side of the change holds a file.
+  git(["update-index", "--force-remove", "lib/sub"], { cwd: r.dir });
+  r.commit(4, "fix: drop lib", {});
+  assert.equal(reworkRate({ cwd: r.dir, days: 7, config: loose() }).submoduleFixes, 2);
+  // A path the rate does not read is no unread fix, and an ordinary bump is no fix.
+  const other = repo();
+  gitlink(other, "vendor/sub", "1");
+  other.commit(0, "feat: use lib", { "src/a.js": ORIGIN });
+  gitlink(other, "vendor/sub", "2");
+  other.commit(3, "fix: bump the vendored lib", {});
+  gitlink(other, "lib/sub", "3");
+  other.commit(4, "chore: bump lib", {});
+  assert.equal(reworkRate({ cwd: other.dir, days: 7, config: loose() }).submoduleFixes, 0);
+});
+
+test("rework audit: a commit that only moves a submodule is no candidate and no window to wait for", () => {
+  const r = repo();
+  r.commit(0, "feat: add", { "src/a.js": ORIGIN });
+  r.commit(1, "feat: b", { "src/b.js": "export const b = 1;\n" });
+  r.commit(2, "feat: c", { "src/c.js": "export const c = 1;\n" });
+  r.commit(3, "fix: add handles strings", { "src/a.js": ORIGIN.replace("return a + b;", "return Number(a) + Number(b);") });
+  for (const digit of "123456789") {
+    gitlink(r, "lib/sub", digit);
+    r.commit(4, `chore: bump lib ${digit}`, {});
+  }
+  const res = reworkRate({ cwd: r.dir, days: 7, config: loose() });
+  assert.deepEqual([res.commits, res.reworked, res.rate], [4, 1, 0.25]);
+  assert.equal(reworkRate({ cwd: r.dir, days: 7, config: loose(), now: Math.floor(Date.UTC(2026, 0, 6) / 1000) }).censored, 4, "the bumps wait for nothing");
+});
+
+test("rework audit: a gitlink is no file of a sweep; a file a gitlink replaced is still a change", () => {
+  const files = (/** @type {number} */ n, /** @type {string} */ text) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`src/m${i}.js`, text]));
+  for (const [n, reworked] of [[15, 1], [16, 0]]) {
+    const r = repo();
+    gitlink(r, "lib/sub", "1");
+    r.commit(0, "feat: modules", files(Number(n), TOTAL));
+    gitlink(r, "lib/sub", "2");
+    r.commit(2, "fix: tax rounding everywhere", files(Number(n), TOTAL_FIXED));
+    assert.equal(reworkRate({ cwd: r.dir, days: 7, config: cfg() }).reworked, reworked, `${n} files and a gitlink, maxFixFiles 15`);
+  }
+  // The commit took the file's lines away, so it stays a commit with a change (status T, a fix reads no such file).
+  const r = repo();
+  r.commit(0, "feat: add", { "lib/sub": ORIGIN });
+  git(["rm", "-q", "--cached", "lib/sub"], { cwd: r.dir });
+  rmSync(join(r.dir, "lib", "sub"));
+  gitlink(r, "lib/sub", "1");
+  r.commit(3, "fix: use the module", {});
+  const res = reworkRate({ cwd: r.dir, days: 7, config: loose() });
+  assert.deepEqual([res.commits, res.reworked, res.submoduleFixes], [2, 0, 0]);
+});
+
+test("rework audit: a file that replaced a gitlink is a candidate like any other, and a later fix names it", () => {
+  const r = repo();
+  gitlink(r, "lib/sub", "1");
+  r.commit(0, "feat: use lib", { "src/a.js": ORIGIN });
+  git(["rm", "-q", "--cached", "lib/sub"], { cwd: r.dir });
+  rmSync(join(r.dir, "lib", "sub"), { recursive: true });
+  const origin = r.commit(1, "feat: keep lib as a file", { "lib/sub": ORIGIN });
+  const fix = r.commit(3, "fix: add handles strings", { "lib/sub": ORIGIN.replace("return a + b;", "return Number(a) + Number(b);") });
+  assert.deepEqual(readLog(r.dir, () => true).find((c) => c.hash === origin)?.changes, [{ status: "T", path: "lib/sub" }]);
+  const res = reworkRate({ cwd: r.dir, days: 7, config: loose() });
+  assert.deepEqual([res.commits, res.reworked, res.submoduleFixes], [3, 1, 0]);
+  assert.deepEqual(res.pairs.map((p) => [p.origin, p.fix, p.files]), [[origin, fix, ["lib/sub"]]]);
+});
+
+test("rework audit: the log tells a submodule's commit from a file by its mode; a name spelled like a raw line stays a name", () => {
+  const r = repo();
+  gitlink(r, "lib/sub", "1");
+  const name = ":160000 160000 1 2 M";
+  const first = r.commit(0, "feat: add", { [name]: "x\n", "src/a.js": ORIGIN });
+  const log = readLog(r.dir, () => true);
+  assert.deepEqual(log.map((c) => [c.hash, c.changes.map((ch) => ch.path).sort(), c.submodules]), [[first, [name, "src/a.js"].sort(), ["lib/sub"]]]);
+});
+
+test("rework audit: diff.ignoreSubmodules and submodule.<name>.ignore do not hide a fix that moved only a submodule", () => {
+  const r = repo();
+  r.commit(0, "chore: modules", { ".gitmodules": '[submodule "sub"]\n\tpath = lib/sub\n\turl = ../sub\n' });
+  gitlink(r, "lib/sub", "1");
+  r.commit(1, "feat: use lib", { "src/a.js": ORIGIN });
+  gitlink(r, "lib/sub", "2");
+  r.commit(3, "fix: bump lib", {});
+  const read = () => reworkRate({ cwd: r.dir, days: 7, config: loose() }).submoduleFixes;
+  assert.equal(read(), 1);
+  for (const key of ["diff.ignoreSubmodules", "submodule.sub.ignore"]) {
+    git(["config", key, "all"], { cwd: r.dir });
+    assert.equal(read(), 1, key);
+    git(["config", "--unset", key], { cwd: r.dir });
+  }
+});
+
+test("rework audit: a textconv driver in the config does not change the lines read", () => {
+  const r = repo();
+  // A driver that drops the first line and shows the rest as comments: read through it, the fix deletes no
+  // code line, and the line the commit changes (the last) is past the end of what blame would read.
+  git(["config", "diff.hide.textconv", "sed -e 1d -e s,^,//,"], { cwd: r.dir });
+  r.commit(0, "chore: attributes", { ".gitattributes": "*.js diff=hide\n" });
+  const origin = r.commit(1, "feat: rate", { "src/a.js": "// rates\nexport const rate = 0.2;\n" });
+  const fix = r.commit(3, "fix: rate", { "src/a.js": "// rates\nexport const rate = 0.18;\n" });
+  assert.match(spawnSync("git", ["diff", `${fix}^`, fix], { cwd: r.dir, encoding: "utf8" }).stdout, /^-\/\/export const rate = 0\.2;$/m, "git diff applies the driver");
+  const res = reworkRate({ cwd: r.dir, days: 7, config: loose() });
+  assert.deepEqual(res.pairs.map((p) => [p.origin, p.fix, p.lines]), [[origin, fix, 1]]);
+});
+
+test("rework audit: the default fix label reads every subject the commit gate admits as the fix type, and no other type, autosquash marker or longer word", async () => {
+  const { checkCommitShape } = await import("../checks/commit-shape.mjs");
+  const { DEFAULTS } = await import("../core/config.mjs");
+  const label = new RegExp(DEFAULTS.metrics.fixSubject);
+  const gate = cfg({ commitMsg: { types: ["feat", "fix"], fixType: "fix" } });
+  const fixes = ["fix: a", "fix(ui): a", "fix!: a", "fix(ui)!: a"];
+  for (const s of fixes) {
+    assert.ok(checkCommitShape(s, { config: gate }).ok, `the gate admits ${s}`);
+    assert.ok(label.test(s), `the label reads ${s}`);
+  }
+  // Other types, autosquash markers and words that only start like the type.
+  for (const s of ["feat: a", "feat!: a", "fixup! fix: a", "squash! fix: a", "amend! fix: a", "fix a", "fixes: a", "fix!a", "fix!!: a", "Fix: a", "prefix: a", "hotfix: a"]) {
+    assert.ok(!label.test(s), `the label does not read ${s}`);
+  }
+  // The rate counts it: a breaking fix repairs an earlier commit like any other.
+  const r = repo();
+  const origin = r.commit(0, "feat: add", { "src/a.js": ORIGIN });
+  const fix = r.commit(3, "fix!: add handles strings", { "src/a.js": ORIGIN.replace("return a + b;", "return Number(a) + Number(b);") });
+  const res = reworkRate({ cwd: r.dir, days: 7, config: loose() });
+  assert.deepEqual([res.fixCommits, res.pairs.map((p) => [p.origin, p.fix])], [1, [[origin, fix]]]);
 });

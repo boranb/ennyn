@@ -32,7 +32,7 @@ const LEAKY_ENV = ["GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_PREFIX", "
 const SHAPING_ENV = ["GIT_DIFF_OPTS", "GIT_EXTERNAL_DIFF", "GIT_ICASE_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_LITERAL_PATHSPECS"];
 /**
  * Config that would change parsed output, set back for every call; the defaults of diff.algorithm and
- * diff.indentHeuristic keep the rework rate the same on every machine. Paths in a pathspec are literal.
+ * diff.indentHeuristic keep those two settings out of the rework rate. Paths in a pathspec are literal.
  */
 const FIXED_CONFIG = [
   "--literal-pathspecs",
@@ -1331,6 +1331,20 @@ export function addedLines(diff, asked, { complete = false, blobs } = {}) {
     if (missing.length) throw new Error(`git diff did not show ${missing.length} staged path(s), so their lines were not read: ${missing.slice(0, 3).map((p) => JSON.stringify(p)).join(", ")}`);
   }
   return out;
+}
+
+/**
+ * One change of `git log --raw -z`, a field `:<old mode> <new mode> <old id> <new id> <status>` before its path:
+ * the status, and whether it moves a submodule: neither side holds a file, each a gitlink or nothing. A file a
+ * gitlink replaced (status T) is a change of a file. Null for a field of any other shape.
+ * @param {string} field the first change of a commit starts with a line feed
+ * @returns {{ status: string, submodule: boolean } | null}
+ */
+export function rawChange(field) {
+  const m = /^\n?:(\d{6}) (\d{6}) \S+ \S+ ([A-Z])$/.exec(field);
+  if (!m) return null;
+  const noFile = (/** @type {string} */ mode) => mode === "160000" || mode === "000000";
+  return { status: m[3], submodule: noFile(m[1]) && noFile(m[2]) };
 }
 
 /**

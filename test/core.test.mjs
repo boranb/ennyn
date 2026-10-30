@@ -138,6 +138,12 @@ test("config: commit language, types and fix type are checked together", () => {
   assert.throws(() => loadConfig({ cwd: dir2, env: {}, override: { review: { agents: [""] } } }), /"review\.agents" entries must be agent names/);
 });
 
+test("config: metrics.reworkDays is type-checked when it loads; its range is the rework command's, so a typo stops no commit gate", () => {
+  const load = (/** @type {unknown} */ reworkDays) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-cfg-days-")), env: {}, override: { metrics: { reworkDays } } }).metrics.reworkDays;
+  for (const value of [-1, Infinity, 3.5, 2 ** 53]) assert.equal(load(value), value);
+  for (const value of ["7", null]) assert.throws(() => load(value), (e) => e instanceof ConfigError && /"metrics\.reworkDays" must be number/.test(e.message), String(value));
+});
+
 test("config: ENNYN_CONFIG points elsewhere; broken JSON is a ConfigError", () => {
   const dir = mkdtempSync(join(tmpdir(), "pl-cfg-"));
   writeFileSync(join(dir, "alt.json"), JSON.stringify({ language: "tr" }));

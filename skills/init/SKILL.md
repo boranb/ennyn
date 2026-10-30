@@ -41,7 +41,7 @@ Write only the keys that differ from the defaults (DESIGN.md has the table). JSO
 
 - `commitMsg.language`: only when it differs from `language`. `conversation.style` and `commitMsg.style`: only when not `normal`.
 - `commitMsg.types` and `commitMsg.fixType`: the agreed convention. The fix type must be one of the types.
-- `metrics.fixSubject`: covers the history and the new fix type, `(?:<fixSubject.proposal>)|(?:^<fixType>(\(|:))`, or `^<fixType>(\(|:)` when there is no proposal. `doctor` warns when it misses the fix type.
+- `metrics.fixSubject`: covers the history and the new fix type, `(?:<fixSubject.proposal>)|(?:^<fixType>(\(|!?:))`, or `^<fixType>(\(|!?:)` when there is no proposal. `doctor` warns when it misses the fix type.
 - `metrics.excludeRe`: the scan's `metrics.excludeRe`, then `|` and the `excludePattern` of each confirmed churn path. Always start from the scan's value: a bare path pattern replaces the default and puts docs, lockfiles and `dist/` back into the rework rate.
 - `metrics.testRe`: `tests.proposal`, when the user confirmed it.
 - `review.impactRequiredGlobs`: the agreed globs. `review.agents`: the reviewers chosen in question 6.

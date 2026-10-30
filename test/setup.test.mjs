@@ -148,6 +148,32 @@ test("churn: often rewritten production paths are listed; lockfiles, tests and r
   assert.deepEqual(churnPaths(recentCommits(short.dir), short.dir, pat()).paths, []);
 });
 
+test("fix label: a commit that only moves a submodule is outside the denominator, as in the rework rate", () => {
+  const r = repo();
+  r.commit("feat: start", { "src/a.js": "export const a = 1;\n" });
+  mkdirSync(join(r.dir, "lib", "sub"), { recursive: true });
+  git(["update-index", "--add", "--cacheinfo", `160000,${"1".repeat(40)},lib/sub`], { cwd: r.dir });
+  r.commit("chore: bump lib", {});
+  const commits = recentCommits(r.dir);
+  assert.deepEqual(commits.map((c) => [c.subject, c.paths]), [["chore: bump lib", []], ["feat: start", ["src/a.js"]]], "the commit stays, for the commit style");
+  assert.deepEqual(productionSubjects(commits, pat()), ["feat: start"]);
+});
+
+test("fix label: a .gitmodules git cannot read does not stop the history a submodule's commit is in", async () => {
+  const r = repo();
+  put(r.dir, { ".ennyn/graph.json": JSON.stringify({ nodes: [{ id: "a" }] }) });
+  mkdirSync(join(r.dir, "lib", "sub"), { recursive: true });
+  git(["update-index", "--add", "--cacheinfo", `160000,${"1".repeat(40)},lib/sub`], { cwd: r.dir });
+  r.commit("feat: start", { "src/a.js": "export const a = 1;\n", ".gitmodules": "[[[ not a config\n" });
+  git(["update-index", "--add", "--cacheinfo", `160000,${"2".repeat(40)},lib/sub`], { cwd: r.dir });
+  r.commit("chore: bump lib", {});
+  assert.deepEqual(recentCommits(r.dir).map((c) => c.subject), ["chore: bump lib", "feat: start"]);
+  const scan = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: r.dir, encoding: "utf8" });
+  assert.equal(scan.status, 0, scan.stderr);
+  const doctor = await checkSetup({ cwd: r.dir, env: {} });
+  assert.ok(!keys(doctor).some((k) => k.includes("doctor.fixUnmeasured")), keys(doctor).join(" "));
+});
+
 test("fix label: measured over commits touching production code, as the rework rate counts them", async () => {
   const r = repo();
   put(r.dir, { ".ennyn/graph.json": JSON.stringify({ nodes: [{ id: "a" }] }) });
@@ -455,6 +481,33 @@ test("commit style: language guessed from subjects, also Turkish typed without d
   const en = commitStyle(["feat: add the parser", "fix: crash when the list is empty", "docs: note on config", "Add a page for users", "Fix the build"]);
   assert.deepEqual([en.language.guess, en.typedShare], ["en", 0.6]);
   assert.equal(commitStyle(["feat: x", "fix: y"]).language.guess, null, "too few readable subjects to guess");
+});
+
+test("doctor: a fix label that misses a form the commit gate admits warns, naming that form (doctor-label-misses-bang, doctor-custom-label-misses-bang)", async () => {
+  const graph = { nodes: [{ id: "a" }] };
+  const checked = async (/** @type {any} */ commitMsg, /** @type {string} */ fixSubject) => {
+    const res = await checkSetup({ cwd: setup({ commitMsg, metrics: { fixSubject } }, graph).dir, env: {} });
+    return res.items.filter((i) => /fix(Type|Bang)Unseen/.test(i.key)).map((i) => [i.level, i.key, i.vars.forms]);
+  };
+  const bang = (/** @type {string[]} */ ...forms) => [["warn", "doctor.fixBangUnseen", forms]];
+  const plain = (/** @type {string[]} */ ...forms) => [["warn", "doctor.fixTypeUnseen", forms]];
+  const fix = { types: ["feat", "fix"], fixType: "fix" };
+  const custom = { types: ["özellik", "düzeltme"], fixType: "düzeltme" };
+  assert.deepEqual(await checked(fix, "^fix(\\(|:)"), bang("fix!: …"), "doctor-label-misses-bang");
+  assert.deepEqual(await checked(custom, "^düzeltme(\\(|:)"), bang("düzeltme!: …"), "doctor-custom-label-misses-bang");
+  // Each form is its own: these read fix!: and miss only fix(x)!:, and this one misses both.
+  assert.deepEqual(await checked(fix, "^fix(!?:|\\([^)]*\\):)"), bang("fix(x)!: …"));
+  assert.deepEqual(await checked(fix, "^fix!?:|^fix\\([^)]*\\):"), bang("fix(x)!: …"));
+  assert.deepEqual(await checked(fix, "^fix(\\([^)]*\\))?:"), bang("fix!: …", "fix(x)!: …"));
+  assert.deepEqual(await checked(fix, "^fix(\\(|!?:)"), [], "the default reads all four");
+  assert.deepEqual(await checked(custom, "^düzeltme(\\(|!?:)"), [], "what /ennyn:init writes reads all four");
+  // A label that misses a plain form is told that, once, and only what it misses.
+  assert.deepEqual(await checked(fix, "^bug:"), plain("fix: …", "fix(x): …"));
+  assert.deepEqual(await checked(fix, "^fix:"), plain("fix(x): …"));
+  assert.deepEqual(await checked(fix, "^fix\\("), plain("fix: …"));
+  const vars = { pattern: "^fix(!?:|\\([^)]*\\):)", forms: ["fix(x)!: …"] };
+  assert.match(tShown("doctor.fixBangUnseen", vars, "en"), /does not match fix\(x\)!: …, which the commit gate admits/);
+  assert.doesNotMatch(tShown("doctor.fixBangUnseen", vars, "en"), /fix!: …/, "no form the label reads");
 });
 
 test("doctor: declared commit types are reported; a fix label that misses the fix type warns", async () => {
@@ -1005,7 +1058,7 @@ test("scan audit: a git log field that is no commit fails the scan, never a list
   r.commit("feat: a", { "a.js": "1" });
   const realGit = join(git(["--exec-path"], { cwd: r.dir }), "git");
   const bin = mkdtempSync(join(tmpdir(), "en-gitlog-"));
-  writeFileSync(join(bin, "git"), `#!/bin/sh\nfor a in "$@"; do [ "$a" = --name-status ] && { printf 'not-a-hash\\000subject\\000'; exit 0; }; done\nexec '${realGit}' "$@"\n`);
+  writeFileSync(join(bin, "git"), `#!/bin/sh\nfor a in "$@"; do [ "$a" = --raw ] && { printf 'not-a-hash\\000subject\\000'; exit 0; }; done\nexec '${realGit}' "$@"\n`);
   chmodSync(join(bin, "git"), 0o755);
   const out = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: r.dir, encoding: "utf8", env: { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}` } });
   assert.notEqual(out.status, 0, out.stdout);

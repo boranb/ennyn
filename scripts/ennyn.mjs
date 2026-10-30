@@ -42,7 +42,8 @@ Commands:
   deps [--json]                                     known advisories (OSV), install scripts and unlisted sources of the lock files; exit 1 unless all measured clean
   impact --symbol <s> [--files a,b]                 five-row impact table (markdown)
   rework [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--days N] [--json]
-                                                    SZZ-style rework rate
+                                                    SZZ-style rework rate: commits from --since to --until (local days) whose lines a fix changed
+                                                    within --days N (the window after each commit, not the range; default metrics.reworkDays)
   core [--json]                                     the core slots' picks: the oldest node of the highest value (or the ready need it waits on), and the best ready by value/cost
   mechanization [--json]                            best ready mechanization node
   audit [--json]                                    whether this cycle's audit slot is the security audit (security.everyCycles), and the sensitive paths it reads
@@ -443,6 +444,19 @@ function dateOpt(v, name) {
   const date = new Date(y, m - 1, d);
   if (date.getFullYear() !== y || date.getMonth() !== m - 1 || date.getDate() !== d) throw new UsageError(`--${name} is not a calendar date: ${v}`);
   return v;
+}
+
+/**
+ * --since and --until, each a calendar day (both inclusive). A range that ends before it starts holds no day:
+ * a mistake in the command, never an answer of "nothing in the range".
+ * @param {Record<string, string | true>} opts
+ */
+function dateRange(opts) {
+  const since = dateOpt(opts.since, "since");
+  const until = dateOpt(opts.until, "until");
+  // Four-digit years: the strings sort as the days do.
+  if (since !== undefined && until !== undefined && until < since) throw new UsageError(`--until ${until} is before --since ${since}`);
+  return { since, until };
 }
 
 /** @param {string | true | undefined} v @param {string} name */
@@ -1227,16 +1241,17 @@ const COMMANDS = {
   rework(args) {
     const { opts, help } = parseArgs(args, { options: ["since", "until", "days"], flags: ["json"] });
     if (help) return (out(USAGE), 0);
-    const since = dateOpt(opts.since, "since");
-    const until = dateOpt(opts.until, "until");
-    let days;
-    if (opts.days !== undefined) {
-      if (typeof opts.days !== "string" || !/^\d+$/.test(opts.days)) throw new UsageError("--days must be a whole number");
-      days = Number(opts.days);
-    }
+    const { since, until } = dateRange(opts);
+    const days = opts.days === undefined ? undefined : intOpt(opts.days, "days");
+    // Past 2^53 the number read is not the one written, and 400 digits read as Infinity. (gate-record's --start
+    // keeps such a number on purpose: a start in nanoseconds is recorded, undated.)
+    if (days !== undefined && !Number.isSafeInteger(days)) throw new UsageError(`--days must be a whole number up to ${Number.MAX_SAFE_INTEGER}`);
     const cwd = projectDir();
     const cfg = config(cwd);
     const windowDays = days ?? cfg.metrics.reworkDays;
+    // Here and not in the loader: a window the rate cannot use stops this command, never the commit gate. JSON reads
+    // 1e400 as Infinity, and past 2^53 a number is not the one written.
+    if (!(windowDays >= 0 && windowDays <= Number.MAX_SAFE_INTEGER)) throw new ConfigError([`"metrics.reworkDays" must be a number from 0 to ${Number.MAX_SAFE_INTEGER}`]);
     const res = reworkRate({ cwd, since, until, days: windowDays, config: cfg });
     if (opts.json) return (out(jsonShown({ ...res, days: windowDays })), 0);
     const lang = cfg.language;
@@ -1248,6 +1263,7 @@ const COMMANDS = {
     }
     if (res.censored) out(t("rework.censored", { n: res.censored, days: windowDays }, lang));
     if (res.skewed) out(t("rework.skewed", { n: res.skewed }, lang));
+    if (res.submoduleFixes) out(t("rework.submoduleFixes", { n: res.submoduleFixes }, lang));
     if (res.shallow) out(t("rework.shallow", {}, lang));
     for (const p of res.pairs) {
       // File names from history: shown as one line can show them.
@@ -1259,8 +1275,7 @@ const COMMANDS = {
   bypass(args) {
     const { opts, help } = parseArgs(args, { options: ["from", "since", "until"], flags: ["json"] });
     if (help) return (out(USAGE), 0);
-    const since = dateOpt(opts.since, "since");
-    const until = dateOpt(opts.until, "until");
+    const { since, until } = dateRange(opts);
     // An empty --from (a lost cycle start) must not widen the count to the whole history.
     if (opts.from !== undefined && strOpt(opts.from) === null) throw new UsageError("--from needs a revision");
     const from = strOpt(opts.from) ?? undefined;
@@ -1437,8 +1452,7 @@ const COMMANDS = {
   "gate-stats"(args) {
     const { opts, help } = parseArgs(args, { options: ["since", "until"], flags: ["json"] });
     if (help) return (out(USAGE), 0);
-    const since = dateOpt(opts.since, "since");
-    const until = dateOpt(opts.until, "until");
+    const { since, until } = dateRange(opts);
     const cwd = projectDir();
     const cfg = config(cwd);
     const lang = cfg.language;
