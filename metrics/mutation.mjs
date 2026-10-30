@@ -448,8 +448,9 @@ function leftBehind(tree, self, held, file, id) {
     try {
       const at = lstatSync(self, { bigint: true });
       if (at.dev === st.dev && at.ino === st.ino) return null;
-    } catch {
-      // Nothing there, or nothing that can be looked at: not that file, as far as this can tell.
+    } catch (e) {
+      // Nothing there: moved. A path that could not be looked at may still be that file, and this says nothing it cannot tell.
+      if (!gone(e)) return null;
     }
     const found = otherNames(tree, { dev: st.dev, ino: st.ino, self });
     return { how: "elsewhere", file, id, ...found, unfound: Math.max(0, Number(st.nlink) - found.names.length) };
