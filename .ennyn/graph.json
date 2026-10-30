@@ -89,10 +89,7 @@
         "fresh-agent-per-task",
         "precompact-boundary-defer",
         "reread-after-compact",
-        "mutate-writeback-grown-link",
-        "plugin-tracked-hookspath",
-        "task-gate-after-round-two",
-        "agent-worktrees-ignored"
+        "task-gate-after-round-two"
       ],
       "gate": "user",
       "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release)",
@@ -172,7 +169,7 @@
       "cost": "M",
       "cluster": "metrics",
       "needs": [],
-      "source": "data review, cycle 2026-10-20 (3), git-oracle-matrix",
+      "source": "data review, cycle 2026-10-20 (3), git-oracle-matrix; cycle 2026-10-31 (15), rework audit: a history file named in NFD form gives 2 reworked with core.precomposeUnicode=false and 1 with true; metrics/szz.mjs's diff has no -c core.precomposeUnicode=false, as core/git.mjs's calls that hand paths back do",
       "since": 3
     },
     {
@@ -451,7 +448,7 @@
       "value": "high",
       "cost": "M",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (8), review round 1 of guards-under-load; measured in the T4 landing run; cycle 2026-10-25 (10): the secrets linear-time ratio failed two full runs at load 8-40 (fixed with CPU time, 1ccb39b); the other wall-clock reads remain; cycle 2026-10-26 (12): at load 50-274 single full runs failed on the fence-reader timing test, a verdicts secrets cell (the hook past 60 s), guards' inner runs, deps' OSV test (stalled 15 minutes) and mutate's runs that wait; each file passed alone, so no run of the cycle's last two landings was clean on the first try; cycle 2026-10-27 (13): at load 83-115 single full runs failed on mutate's runs that wait and its owner-stamp test (the parse check gave no answer), the fault matrix control (its fake git writes the pid it counts only after starting sleep, so a 1 s limit can stop it first: write a marker first), guards' baselines of fault-injection and verdicts, and two hook tests (exit null); each file passed alone; cycle 2026-10-28 (14): the Linux run measured waits shorter than their limits (730 ms against 1 s, 1785 and 1801 ms against 2 s) in the fault matrix control: the tests read Date.now(), which the VM's clock adjustment moves; every test that times a wait reads performance.now() since ce3d0d2; the fixed limits remain",
+      "source": "cycle 2026-10-24 (8), review round 1 of guards-under-load; measured in the T4 landing run; cycle 2026-10-25 (10): the secrets linear-time ratio failed two full runs at load 8-40 (fixed with CPU time, 1ccb39b); the other wall-clock reads remain; cycle 2026-10-26 (12): at load 50-274 single full runs failed on the fence-reader timing test, a verdicts secrets cell (the hook past 60 s), guards' inner runs, deps' OSV test (stalled 15 minutes) and mutate's runs that wait; each file passed alone, so no run of the cycle's last two landings was clean on the first try; cycle 2026-10-27 (13): at load 83-115 single full runs failed on mutate's runs that wait and its owner-stamp test (the parse check gave no answer), the fault matrix control (its fake git writes the pid it counts only after starting sleep, so a 1 s limit can stop it first: write a marker first), guards' baselines of fault-injection and verdicts, and two hook tests (exit null); each file passed alone; cycle 2026-10-28 (14): the Linux run measured waits shorter than their limits (730 ms against 1 s, 1785 and 1801 ms against 2 s) in the fault matrix control: the tests read Date.now(), which the VM's clock adjustment moves; every test that times a wait reads performance.now() since ce3d0d2; the fixed limits remain; cycle 2026-10-31 (15): setup.test.mjs:1038 failed once at load 40-67 (alone 78/78), and mutation.test.mjs:795 and :838 once at load 95; guards' input-shapes cell once at load 17-27 in the guards clone (alone 10/10); four parallel full suites took the machine to load 124",
       "since": 8
     },
     {
@@ -557,11 +554,11 @@
       "status": "planned",
       "needs": [],
       "id": "hook-wired-limits",
-      "title": "callsCommitCheck cannot see blocks that never run (if false), functions never called, or Node block comments; nor that the hook's exit status is not commit-check's (a later command, a pipe, a background job, || echo, ; true, an if with no else, true ||, !) or that a line only names it in a value (MSG=\"commit-check is off\"): each reads as wired (test/verdicts/hook.json gap cells); a custom husky directory before husky installs reads as repo",
+      "title": "doctor does not read what follows the printed block or line: a project line after it can rewrite the message, unchecked, while doctor shows ✓ (test/verdicts/hook.json gap cells block-first-then-rewrites-message, line-then-rewrites-message); a custom husky directory before husky installs reads as repo",
       "value": "low",
       "cost": "S",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (8), doctor-audit review round 2",
+      "source": "cycle 2026-10-24 (8), doctor-audit review round 2; cycle 2026-10-31 (15), plugin-tracked-hookspath: doctor stopped reading hand-written shell after a word reading, a first-command rule and a program list each read a real commit landing a secret as ✓ (the last: 12 false ✓ in a narrow security review, 30,384 texts read, 26,526 run). A hook counts only with the printed block or line, exact and first; 9 of the 10 gap cells closed. The cost, accepted: a hand-written hook that does run the check warns (3,237 of 6,608 differential runs), and a warning stops no commit",
       "since": 8
     },
     {
@@ -1964,7 +1961,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "security",
-      "source": "cycle 2026-10-27 (13), git-call-timeout security review round 1 (path table row 8)",
+      "source": "cycle 2026-10-27 (13), git-call-timeout security review round 1 (path table row 8); cycle 2026-10-31 (15), plugin-tracked-hookspath security round 2: a tracked .npmrc node-options plus npm run reached a hook's node and a secret landed; the printed block unsets NODE_OPTIONS and NODE_PATH, hookScript does not yet (it stayed byte-identical)",
       "since": 13
     },
     {
@@ -1987,17 +1984,6 @@
       "cost": "S",
       "cluster": "gates",
       "source": "cycle 2026-10-27 (13), git-call-timeout",
-      "since": 13
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "szz-textconv",
-      "title": "szz's blame and diff (metrics/szz.mjs) pass no --no-textconv, so a textconv driver in the user's git config changes what rework reads",
-      "value": "low",
-      "cost": "S",
-      "cluster": "metrics",
-      "source": "cycle 2026-10-27 (13), git-call-timeout (existing before it)",
       "since": 13
     },
     {
@@ -2041,7 +2027,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "security",
-      "source": "cycle 2026-10-27 (13), reference-markdown security review round 2; cycle 2026-10-28 (14), hooks-project-gate round 1 rerun",
+      "source": "cycle 2026-10-27 (13), reference-markdown security review round 2; cycle 2026-10-28 (14), hooks-project-gate round 1 rerun; cycle 2026-10-31 (15): the machine slept with four agents running and a restart wiped /private/tmp: four worktrees of uncommitted work, the ledger and the briefs, rebuilt only because subagent transcripts hold every Edit, Write and Bash call (replayed in order, deduplicated by tool id, 0 divergences). The cycle needs: worktrees in a folder a restart keeps, the machine kept awake, trees snapshotted into refs while a task is uncommitted. Also: a reviewer's failed `cd` chained with `;` let a `cp` overwrite two test files in the main checkout (restored, equal to HEAD): reviewers get a folder of their own and chain with &&",
       "since": 13
     },
     {
@@ -2479,7 +2465,7 @@
       "mechanization": true,
       "sourceClass": "one question answered in several places drifts apart, and a fix reaches only one of them",
       "title": "A gate for one decision answered in several places: the impact table's S1 row is answered by a command that lists every function and literal answering the same question as the changed one (same regex or string literals, same called predicates, near-duplicate bodies across modules), and a test fails when a change edits one of a known group of sibling sites and not the others, or adds a new near-duplicate of a decision with no entry in a sibling list; then delete the prose that asks reviewers to look for siblings",
-      "source": "cycle 2026-10-28 (14) convergence: the class recurred in all four tasks, ~10 times, all caught by reviewers: two joiners and three anchor sites in the YAML reader (one got the fix), the judge sharing the rules it measures, a recorder missing its sibling's trace check, the hooks finding the project apart from the CLI, a link filter and the loader disagreeing, the metrics-log predicate not shared by audit and doctor, a paid-run block on one of two paths, hook text left saying the old thing"
+      "source": "cycle 2026-10-28 (14) convergence: the class recurred in all four tasks, ~10 times, all caught by reviewers: two joiners and three anchor sites in the YAML reader (one got the fix), the judge sharing the rules it measures, a recorder missing its sibling's trace check, the hooks finding the project apart from the CLI, a link filter and the loader disagreeing, the metrics-log predicate not shared by audit and doctor, a paid-run block on one of two paths, hook text left saying the old thing; cycle 2026-10-31 (15): again in all four tasks: the fix label's twins in init and doctor, recentCommits beside readLog, the machine-path advice in five message keys, doctor's reading of the record and of the PATH filter beside the block's"
     },
     {
       "status": "planned",
@@ -2512,28 +2498,6 @@
       "cost": "M",
       "cluster": "evidence",
       "source": "platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence, fetched 2026-10-29 (HTTP 200): 'These results are Anthropic-internal' and 'directional, not guarantees'. A third-party pipeline (all rights reserved; read, nothing copied) runs Opus at low effort and again at high only when its quote checker finds a problem",
-      "since": 15
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "mutate-writeback-grown-link",
-      "title": "mutate puts the original back into the file it mutated when that file gained a second name during the run (the device and inode the journal records), and names the new link; today write-back refuses with \"it has another name (a hard link)\" and leaves the mutant under both names, to be restored by hand from the journal",
-      "value": "high",
-      "cost": "S",
-      "cluster": "gates",
-      "source": "second-project trial, cycle 1, 2026-10-29: seen twice that day, in this repository's main checkout (metrics/mutation.mjs, restored from the journal, equal to HEAD) and in the second project on a file the session had edited (2 links). Claude Code 2.1.310's file history is not the cause: it backs up with copyFile and links only to move a backup between session folders. What made the second name is unmeasured; second-project trial, cycle 2, 2026-10-29: two more refusals, in agents' fresh linked worktrees. Not reproduced with mutate alone in a scratch repository (the link count, sampled every 0.2 s, stayed 1), and Claude Code's Edit replaces the file with a new inode (its backup is a separate copy), measured here; third-project trial, cycle 1, 2026-10-29 (TypeScript, npm, two CI workflows): no refusal in four runs, all in a worktree outside the repository (scratchpad), each file at one link and byte-equal after every run: the cause may lie with worktrees inside the repository",
-      "since": 15
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "plugin-tracked-hookspath",
-      "title": "A plugin install where core.hooksPath is a tracked directory (or husky) gets a supported way to run commit-check: install-hook prints a block for the project's own hook that reads the plugin's version record, warns and passes when node or the record is missing, refuses a broken record, and runs on every path of the hook (exempt subjects and early exits skip only the project's own checks); today it says to call commit-check through the project's own copy of Ennyn, which a plugin install does not have",
-      "value": "high",
-      "cost": "M",
-      "cluster": "gates",
-      "source": "second-project trial, cycle 1, 2026-10-29: the project's tracked commit-msg hook exited early on Merge/Revert/fixup!/squash! subjects and on a no-prevention marker, so a block added at its end skipped the content scan on those commits while doctor read the hook as wired; the trial wired it by hand from hookScript's record logic and checked 12 cases in a scratch repository (a secret in a revert, a merge and a marked commit are now refused, the same commits without it pass). Related: hook-wired-limits; second-project trial, cycle 2, 2026-10-29: Claude Code 2.1.310's agent-worktree setup runs git config core.hooksPath <absolute path> in the new worktree when the main repository's value is relative, and without extensions.worktreeConfig that writes the shared config: the wiring must not depend on the value staying relative",
       "since": 15
     },
     {
@@ -2643,7 +2607,7 @@
       "value": "high",
       "cost": "S",
       "cluster": "cycle",
-      "source": "research 2026-10-29: Claude Code 2.1.310 read in its binary and docs (code.claude.com/docs/en/hooks.md, context-window.md), published studies and agent-workflow repositories fetched raw; numbers are the sources' own unless said. arxiv.org/abs/2505.06120: an average drop of 39% across six generation tasks (Code among them) in multi-turn conversations, and a new conversation that repeats the information does better; arxiv.org/abs/2510.05381: 13.9-85% degradation as input length grows even with perfect retrieval (HumanEval among the tasks); superpowers, GSD and Task Master give each task a fresh context. Here: cycles ran tasks in forks of the orchestrator, and the second project's orchestrator stood at about 652K tokens in the middle of its cycle 2",
+      "source": "research 2026-10-29: Claude Code 2.1.310 read in its binary and docs (code.claude.com/docs/en/hooks.md, context-window.md), published studies and agent-workflow repositories fetched raw; numbers are the sources' own unless said. arxiv.org/abs/2505.06120: an average drop of 39% across six generation tasks (Code among them) in multi-turn conversations, and a new conversation that repeats the information does better; arxiv.org/abs/2510.05381: 13.9-85% degradation as input length grows even with perfect retrieval (HumanEval among the tasks); superpowers, GSD and Task Master give each task a fresh context. Here: cycles ran tasks in forks of the orchestrator, and the second project's orchestrator stood at about 652K tokens in the middle of its cycle 2; cycle 2026-10-31 (15): tasks ran in fresh agents with a written brief; two tasks that reached a third correction moved to a new agent with one consolidated brief (old contexts 566K and 533K tokens), the first passed both reviewers' oracles at once, and the hook task took a third fresh agent for the exact-print rule (445K tokens, 80 minutes; 0 false ✓ in the review's own harnesses, rerun independently); the brief must name the slow gate suites (test/fault-injection, test/guards) for the task to run: a brief that said only `do not run the full suite` let a real defect reach main, caught by the fault matrix",
       "since": 15
     },
     {
@@ -2743,17 +2707,6 @@
       "cost": "S",
       "cluster": "cycle",
       "source": "second-project trial, cycle 3, 2026-10-29: two agents took the same catalog number, and one overwrote another's review base file; the orchestrator landed patches with git apply --3way --index and a hooked commit. Related: no-verify-gap",
-      "since": 15
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "agent-worktrees-ignored",
-      "title": "init proposes ignoring .claude/worktrees/ (Claude Code puts agent worktrees inside the repository) in git and in the project's own whole-tree tools, and doctor says when it is not ignored: a formatter run over . read agents' half-written code and stopped a main-tree commit",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "init",
-      "source": "second-project trial, cycle 3, 2026-10-29: the project's `ruff format --check .` scanned agent worktrees; fixed there by ignoring the folder; third-project trial, cycle 1, 2026-10-29 (TypeScript, npm, two CI workflows): the project's `eslint .` also reads .claude/worktrees/ (its global ignores name only dist)",
       "since": 15
     },
     {
@@ -3085,6 +3038,175 @@
       "cost": "S",
       "cluster": "init",
       "source": "Django: 'Regardless of whether the tests pass or fail, the test databases are destroyed when all the tests have been executed.' and 'You can prevent the test databases from being destroyed by using the test --keepdb option.'; Testcontainers with its reaper off: 'We recommend using it only for Continuous Integration services that have their own mechanism to clean up resources.'; test/hermetic.mjs: 'cycle 2026-10-24 (9) found 160 GB of them, and a full disk.'",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "reader-against-real-program",
+      "title": "Every Ennyn reader that answers for another program has a differential test beside its verdict corpus: generated inputs go through the real program and the reader's verdict is compared (doctor's hook rule against real commits with a real secret, the ignore reading against real worktrees and clones), and a test fails when such a reader has no harness; then delete the prose that asks reviewers to try real runs",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "mechanization": true,
+      "sourceClass": "a reading of text stands in for running the program it answers for",
+      "source": "cycle 2026-10-31 (15) convergence: the class recurred in tasks 2 and 3, about 30 times, all caught by reviewers or by the author's differential run: a word search for exit, a marker comment taken for the block's position, a made-up path, the folders on disk today, a regex over shell lines (wholeTree: 69 of 88 labelled lines wrongly named). Each ended by asking the real program (scratch repository) or by a rule that needs no reading (exact text). Patching the reader failed three rounds; a harness of real commits found 132 false ✓ a review had not, and 82 per git at the third reader, against 0 after the exact-print rule. Harnesses kept outside the repository, to be rewritten as a test",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "shell-in-js-templates",
+      "title": "Shell text held in JavaScript templates is checked: a test passes every printed hook text through sh -n and the shells the block supports, and fails on a template escape left in the output; then delete the prose that asks to read the printed text",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "mechanization": true,
+      "sourceClass": "shell text inside a JavaScript template",
+      "source": "cycle 2026-10-31 (15), plugin-tracked-hookspath: mixed quotes in the first recordSteps draft, an apostrophe in a single-quoted message that would have been a syntax error on every commit, a \\$ left in a stale message; all caught by reading the printed block",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hook-tracked-advice",
+      "title": "The advice for a tracked hooks directory holding Ennyn's script prints the block: hook.cliPinned, cliUnrecorded, cliGone, cliRefused and cliReplaced print a line naming this machine's plugin data folder, to be put in a tracked file, and doctor.hookUnread's plain message shows a tracked hook the line for a local one",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-31 (15), plugin-tracked-hookspath, security review round 1: run for hook.cliUnrecorded, the others read from the catalog",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hook-node-in-repo",
+      "title": "Ennyn's own hook script finds node as the printed block does: PATH without empty, relative and in-tree entries; today `exec node` in a plain hook runs a repository's node when PATH holds `.` or a repository directory, and hookScript must change with an update path for installed hooks. The advised line has the same exposure in a tracked hook: with a relative in-tree PATH entry it reads ✓ and a secret lands (row line-path-node-in-tree-relative, both gits): the environment, not the text",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-10-31 (15), plugin-tracked-hookspath, security review round 1: the block filters PATH, hookScript stayed byte-identical; husky's PATH line is the supported path that made this reachable",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "doctor-fsmonitor-reads",
+      "title": "doctor's index reads run a project's core.fsmonitor: a plain ls-files does (measured); the worktree reading passes -c core.fsmonitor= on its three real calls, the other reads do not, and doctor as a whole is unmeasured",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-31 (15), agent-worktrees-ignored",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "git-command-name-flag",
+      "title": "A git call that hangs names `git --no-literal-pathspecs` as the command: commandName in core/git.mjs skips only -c",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-31 (15), agent-worktrees-ignored",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "gitmodules-unparsable-readers",
+      "title": "A malformed .gitmodules with a commit that moves a gitlink fails three readers: impact/table.mjs:320 (S1's co-change reads unmeasured, and says so), metrics/gate-log.mjs:50 (gate-record --commit HEAD exits 1 and records nothing), scripts/ennyn.mjs:163 (the amend! and squash! target read; commit-check not run under it). --ignore-submodules=none makes all three git calls exit 0",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-31 (15), rework audit, sweep of round 2",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "rework-blame-bound",
+      "title": "Bound each fix's blame to the commits that can still count, chosen by topology and not by date (time-based stopping is the clock trap readLog avoids): keep skewed, drop boundary lines, cover merges, and skip fixes no candidate can reach; a default run with no --since needs a per-fix bound, a bound at the range start does nothing",
+      "value": "high",
+      "cost": "M",
+      "cluster": "metrics",
+      "source": "cycle 2026-10-31 (15), rework audit: blame takes 87% of the time on a deep history (436 blames 118.96 s, 436 diffs 6.75 s); 122.7 s against 6.8 s for the same commits in range; a time-based prototype cut 115.3 s to 6.1 s (19×) with the same origins on a linear history, unproven for merges or skewed clocks; the origin project's 366 s is not reproduced",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "rework-fix-renames-deletes",
+      "title": "rework reads a file a fix renames or deletes, with an accept and a reject corpus, and rechecks the 60-67% precision the thresholds were tuned on: metrics/szz.mjs skips every status but M",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "metrics",
+      "source": "cycle 2026-10-31 (15), rework audit, probe: a rename with a real change and a file deletion name no origin",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "rework-says-unread",
+      "title": "rework counts in the report and in --json what it did not read: sweeps, renamed, deleted and binary files, status T, and `refactor:` commits a fix's strong link names (they stay clean in the denominator: commits 4, reworked 0). Overlaps report-legend-json",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-10-31 (15), rework audit and data review round 1; gitlinks are done (submoduleFixes)",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "rework-partial-clone",
+      "title": "rework in a partial clone uses the network and fails without it: fetch once, or say unmeasured; how many fetches a run makes is unmeasured. Separate from partial-clone-reads, which is about the hook",
+      "value": "low",
+      "cost": "M",
+      "cluster": "metrics",
+      "source": "cycle 2026-10-31 (15), rework audit, probe: remote moved away, exit 1, says nothing wrong; blob:none and tree:0 give the full clone's rate with the remote there",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "rework-code-line-corpus",
+      "title": "isCodeLine by language shape, with a corpus: `*p = x;`, `--i;` and `#define MAX 10` read as comments, so a fix touching only those names no origin",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-10-31 (15), rework audit, ran isCodeLine",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "rework-machine-config",
+      "title": "A machine's git settings still move the rate: -diff in core.attributesFile or .git/info/attributes, a diff driver with binary=true and core.bigFileThreshold take 1 of 3 (0.333) to 0 of 3: 4 of 15 machine rows, none said. --text might pin them but would also read real binaries",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-10-31 (15), rework audit, data review round 1 (7 of 15 rows drifted; --ignore-submodules=none took that to 4)",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "metrics-number-ranges",
+      "title": "maxFixFiles: -1, minShare: 2 and minLines: 1e400 load and print `Rework: 0 of 2 commits (0.0%)`, exit 0, where the defaults give 1 of 2. A range check belongs to the command that reads the key, not to the loader, so a bad number never stops the commit gate (reworkDays does this)",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-10-31 (15), rework audit, sweep: a loader check on reworkDays turned the hook off until it moved to the command",
+      "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hermetic-no-identity",
+      "title": "test/hermetic.mjs leaves git no identity on macOS too (user.useConfigOnly, or an equal measure): a fixture that leans on the identity git derives from the machine fails on the author's run, not only in a Linux container; and a test row that assumes this volume's case folding or firmlink says so where it is written",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-10-31 (15), test:linux caught both on all three images after the suite had passed 969/969 on macOS: `git merge` with no identity exits 128 in a container and reaches the conflict on macOS (test/setup.test.mjs), and two block rows took a spelling for a directory on every volume (test/hook.test.mjs). A Linux run costs about an hour, so the cheap layer should catch the first",
       "since": 15
     }
   ],
@@ -3535,6 +3657,36 @@
       "title": "Closed by 852871f (cycle 6, gate-stats legacy audit): steps with equal counts sort in a fixed order; the node left both arrays in ad770f6 and is put back here (cycle 14 closing)",
       "status": "done",
       "finished": "2026-10-23"
+    },
+    {
+      "id": "mutate-writeback-grown-link",
+      "title": "mutate puts the original back into the file it mutated when that file gained a second name during the run, on the device and inode the run recorded in memory (a journal is not trusted for this; a killed run with a grown link is a hand restore), and names the other names after the write, report only, from a descriptor held until the notice (a159924, 3da04d2)",
+      "status": "done",
+      "finished": "2026-10-31"
+    },
+    {
+      "id": "plugin-tracked-hookspath",
+      "title": "install-hook prints a block for a tracked hooks directory or husky: it finds the plugin's record at run time, filters PATH, refuses a data directory or CLI in the tree, and runs first; doctor counts only the printed block or line, exact and first, as wired, and warns on any other text naming commit-check (c4b672e, 65928a8)",
+      "status": "done",
+      "finished": "2026-10-31"
+    },
+    {
+      "id": "agent-worktrees-ignored",
+      "title": "doctor says whether HEAD's ignore lists cover agent worktrees under any name, asked in a scratch repository with nothing of this machine's; /ennyn:init proposes the line and the model reads the project's own whole-tree tools (8d62f02)",
+      "status": "done",
+      "finished": "2026-10-31"
+    },
+    {
+      "id": "szz-textconv",
+      "title": "rework's blame and diff read without textconv (071eed1)",
+      "status": "done",
+      "finished": "2026-10-31"
+    },
+    {
+      "id": "rework-audit-15",
+      "title": "Legacy audit of rework (audit slot): a commit that moves only a submodule is no candidate and no sweep member, a fix that moved only a submodule is counted as unread, fix! counts as a fix in the label, init and doctor, an inverted range and a window no number holds are refused, reworkDays is refused by rework and never by the loader; blame's cost on a deep history measured, six nodes opened (071eed1)",
+      "status": "done",
+      "finished": "2026-10-31"
     }
   ]
 }
