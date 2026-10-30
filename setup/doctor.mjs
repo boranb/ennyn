@@ -452,7 +452,9 @@ export async function checkSetup({ cwd, env = process.env, self = OWN_ROOT }) {
       // A hook git skips (husky's stub not generated yet, not executable) or one whose CLI moved checks nothing.
       if (idle === "absent") add("warn", "doctor.hookAbsent", { path: [hook.path] });
       else if (idle === "mode") add("warn", "doctor.hookNotRun", { path: [hook.path] });
-      // A project's own hook that may skip the check: the call is not its first command, or the block not exact and first.
+      // A project's own hook that names the check: only what install-hook printed counts, exact and first.
+      else if (idle === "unread") add("warn", "doctor.hookUnread", { path: [String(hook.unread)] });
+      // Printed, behind a stub the index holds.
       else if (idle === "late") add("warn", "doctor.hookLate", { path: [String(hook.late)] });
       // The block, exact and first: what it finds decides what each commit gets, in its own order.
       else if (hook.block !== null && idle === "noNode") add("warn", "doctor.hookBlockNoNode", { path: [hook.block] });

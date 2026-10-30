@@ -19,14 +19,14 @@ The report names each line turned into a gate, and each one kept with why.
 
 `install-hook` writes this clone's own hook. Under a tracked `core.hooksPath` or husky it writes nothing: from the plugin it prints a block for the project's own hook and the file it goes in.
 
-1. **Show** the block and the file. It goes at the top, before any other command, so the hook's early exits (exempt subjects, a marker) skip only the project's checks; it names no path of this machine. A project line after it that rewrites the message file changes what is committed, unchecked.
+1. **Show** the block and the file. It goes at the top, before any other command and above husky's own line, so the hook's early exits (exempt subjects, a marker) skip only the project's checks; it names no path of this machine. A project line after it that rewrites the message file changes what is committed, unchecked.
 2. **Paste** it on the user's yes: the file is tracked, so every clone runs it, and a clone without the plugin passes each commit with a warning. A new file starts with `#!/bin/sh` and must be executable.
-3. **Check** with `ennyn doctor`: `✓ commit-msg hook`, or `!` when the check is not the hook's first command, or the block is not as printed: paste it again, exact, at the top. Before it may stand only a shebang (`-e`, `-u`, `-x`), comments, blank lines, `set` lines with those flags, and husky's own start. A hook that runs other checks first warns and stops no commit: move them below the block. An older block reads the same after an update. `!` also says when the filter leaves no node, or the block finds no record or one it cannot run.
+3. **Check** with `ennyn doctor`: `✓ commit-msg hook`, or `!` when the hook is not what install-hook printed, first: paste the block again, exact, at the top. Doctor reads no hand-written shell. Before the block may stand only a shebang (`sh`, `bash`, `dash`, `ksh`, `zsh` or `ash` in a system directory or Homebrew's, or through `/usr/bin/env`; flags `-e`, `-u`, `-x`), comments, blank lines and `set` lines with those flags. husky's own `. "$(dirname …)/_/husky.sh"` goes below it: husky 6 to 8 then run the check twice, harmlessly. A hook that runs other checks first warns and stops no commit: move them below the block. An older block reads the same after an update. `!` also names a file in husky's `_` directory that the index holds: take it out. `!` also says when the filter leaves no node, or the block finds no record or one it cannot run.
 
 What the block does not close, stated so nobody counts on it:
 
 - Whoever sets the shell's startup from the environment (`SHELLOPTS=noexec`, `BASH_ENV`, `ZDOTDIR`, `BASH_FUNC_*`) or `UNAME_s` has the power of `--no-verify`, with no flag to see. So has whoever points `ENNYN_PLUGIN_DATA` or `CLAUDE_CONFIG_DIR` at a directory outside the work tree, whose record names what runs.
-- husky's generated stub is not read. `~/.config/husky/init.sh` exiting, `HUSKY=0` and `--no-verify` skip the hook.
+- husky's generated stub is not read, only whether the index holds it. `~/.config/husky/init.sh` exiting, `HUSKY=0` and `--no-verify` skip the hook.
 - A version manager's shim kept on PATH can pick its node from a repository file (from memory, not measured).
 - A work tree that holds the data directory (the dotfiles pattern) refuses clean commits; `install-hook` answers `dataInRepository` there.
 - A project whose only node lies in the work tree commits unchecked; `doctor` says so.

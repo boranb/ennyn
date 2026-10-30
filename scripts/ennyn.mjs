@@ -657,7 +657,7 @@ const COMMANDS = {
       err(t("hook.notRecorded", { error: e.message }, cfg.language));
       return 1;
     }
-    const key = res.result === "hooksPath" ? `hook.hooksPath.${res.hooksKind}${res.block ? "Block" : ""}` : res.result === "blockLate" && !res.block ? "hook.blockLatePlain" : `hook.${res.result}`;
+    const key = res.result === "hooksPath" ? `hook.hooksPath.${res.hooksKind}${res.block ? "Block" : ""}` : res.result === "blockUnread" && !res.block ? "hook.blockUnreadPlain" : `hook.${res.result}`;
     out(t(key, { path: res.path, dir: res.hooksPath ?? "", line: res.line, cli: res.cli ?? "", chmod: res.chmod, own: res.own, root: res.root, data: res.data ?? "", recorded: res.recorded }, cfg.language));
     // The block for the project's own hook, as it is pasted: after the message that says where.
     if (res.block) out(res.block);

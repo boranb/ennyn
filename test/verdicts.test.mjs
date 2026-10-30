@@ -113,7 +113,7 @@ test("verdicts control: the recorder adds a probe that gets what it expects or p
   const dir = mkdtempSync(join(tmpdir(), "en-verdicts-rec-"));
   const before = '[\n  { "id": "old", "text": "#!/bin/sh\\nexit 0\\n", "from": "by hand",   "verdict": "said" }\n]\n';
   writeFileSync(join(dir, "hook.json"), before);
-  const wired = '#!/bin/sh\nnode /x/ennyn.mjs commit-check "$1"\n';
+  const wired = '#!/bin/sh\nnode \'/x/scripts/ennyn.mjs\' commit-check --hook "$1" || exit $?\n';
   const idle = "#!/bin/sh\necho hi\n";
   const r = await record(
     "hook",

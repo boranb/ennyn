@@ -7,7 +7,7 @@ import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { git } from "../core/git.mjs";
 import * as hookModule from "../setup/hook.mjs";
-import { BLOCK_MARKER, HOOK_MARKER, hookBlock, hookScript, hookStatus, idleReason, installHook, lateCheck } from "../setup/hook.mjs";
+import { BLOCK_MARKER, HOOK_MARKER, hookBlock, hookLine as printedLine, hookScript, hookStatus, idleReason, installHook, namesCheck, printedCheck } from "../setup/hook.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
 
@@ -54,7 +54,7 @@ test("hook: installs once, runs on every commit, rejects an untyped subject and 
   assert.equal(git(["log", "--format=%s"], { cwd: dir }), "feat: a page");
 });
 
-test("hook: never over a hook it did not write; a project's own hook that runs commit-check counts as wired", () => {
+test("hook: never over a hook it did not write; a project's own hook counts as wired only with what install-hook printed", () => {
   const dir = repo();
   const path = hookStatus(dir).path;
   mkdirSync(dirname(path), { recursive: true });
@@ -64,6 +64,8 @@ test("hook: never over a hook it did not write; a project's own hook that runs c
   // Executable, as git runs only such a hook (a mode given to writeFileSync holds only for a new file).
   chmodSync(path, 0o755);
   assert.equal(hookStatus(dir).state, "wired");
+  assert.equal(installHook({ cwd: dir, cliPath: CLI }).result, "blockUnread");
+  writeFileSync(path, `#!/bin/sh\n${printedLine(CLI)}\n`);
   assert.equal(installHook({ cwd: dir, cliPath: CLI }).result, "wired");
 });
 
@@ -124,15 +126,16 @@ test("doctor: declared commit types without a hook warn; with the hook installed
   assert.ok((await keys()).includes("ok doctor.hookOk"));
   git(["config", "core.hooksPath", ".githooks"], { cwd: dir });
   assert.ok((await keys()).includes("warn doctor.hookPath"));
-  // The project's own tracked hook that runs commit-check is as good as ours.
+  // The project's own tracked hook that holds the printed line is as good as ours.
   mkdirSync(join(dir, ".githooks"));
   // Executable, as git runs only such a hook.
-  writeFileSync(join(dir, ".githooks", "commit-msg"), "#!/bin/sh\nnode tools/ennyn/scripts/ennyn.mjs commit-check \"$1\"\n", { mode: 0o755 });
+  writeFileSync(join(dir, ".githooks", "commit-msg"), `#!/bin/sh\n${printedLine(CLI)}\n`, { mode: 0o755 });
   assert.ok((await keys()).includes("ok doctor.hookOk"));
 });
 
-test("hook: husky's stubs are not ours to edit; .husky/commit-msg running commit-check counts as wired, for install and doctor", async () => {
+test("hook: husky's stubs are not ours to edit; .husky/commit-msg holding the printed block counts as wired, for install and doctor", async () => {
   const { checkSetup } = await import("../setup/doctor.mjs");
+  const { home, data } = plugged();
   const dir = repo();
   writeFileSync(join(dir, ".ennyn", "graph.json"), JSON.stringify({ nodes: [{ id: "a" }] }));
   mkdirSync(join(dir, ".husky", "_"), { recursive: true });
@@ -142,8 +145,12 @@ test("hook: husky's stubs are not ours to edit; .husky/commit-msg running commit
   assert.deepEqual([bare.result, bare.hooksKind], ["hooksPath", "husky"]);
   assert.equal(readFileSync(join(dir, ".husky", "_", "commit-msg"), "utf8"), HUSKY_STUB, "stub untouched");
   writeFileSync(join(dir, ".husky", "commit-msg"), 'npx ennyn commit-check "$1"\n');
-  assert.equal(installHook({ cwd: dir, cliPath: CLI }).result, "wired");
-  const items = (await checkSetup({ cwd: dir, env: {} })).items.map((i) => `${i.level} ${i.key}`);
+  assert.equal(installHook({ cwd: dir, cliPath: CLI }).result, "blockUnread");
+  // The line is no answer under husky, whose runner can put a dependency's node first on PATH.
+  writeFileSync(join(dir, ".husky", "commit-msg"), `${printedLine(CLI)}\n`);
+  assert.deepEqual([hookStatus(dir).unread, installHook({ cwd: dir, cliPath: CLI }).result], [join(dir, ".husky", "commit-msg"), "blockUnread"]);
+  writeFileSync(join(dir, ".husky", "commit-msg"), hookBlock(data));
+  const items = (await checkSetup({ cwd: dir, env: { HOME: home, PATH: process.env.PATH } })).items.map((i) => `${i.level} ${i.key}`);
   assert.ok(items.includes("ok doctor.hookOk"), items.join("\n"));
 });
 
@@ -356,7 +363,13 @@ test("install-hook audit (review): for every hook state doctor and install-hook 
     make(dir);
     return dir;
   };
-  const wiredLine = '#!/bin/sh\nnode tools/ennyn/scripts/ennyn.mjs commit-check "$1"\n';
+  const wiredLine = `#!/bin/sh\n${printedLine(CLI)}\n`;
+  /** Ennyn's script where only this machine puts it: a hooks directory outside the repository. @param {string} d @param {string} text */
+  const machineHooks = (d, text) => {
+    const hooks = mkdtempSync(join(tmpdir(), "en-machine-hooks-"));
+    writeFileSync(join(hooks, "commit-msg"), text, { mode: 0o755 });
+    git(["config", "core.hooksPath", hooks], { cwd: d });
+  };
   const cases = [
     { name: "a wired hook at 0644", want: "doctor.hookNotRun", says: /not executable.*chmod \+x/, make: (/** @type {string} */ d) => writeFileSync(join(d, ".git", "hooks", "commit-msg"), wiredLine, { mode: 0o644 }) },
     {
@@ -384,9 +397,7 @@ test("install-hook audit (review): for every hook state doctor and install-hook 
       want: "doctor.hookCliGone",
       says: /which is not there/,
       make: (/** @type {string} */ d) => {
-        mkdirSync(join(d, ".githooks"));
-        writeFileSync(join(d, ".githooks", "commit-msg"), hookScript(join(d, "gone", "ennyn.mjs")), { mode: 0o755 });
-        git(["config", "core.hooksPath", ".githooks"], { cwd: d });
+        machineHooks(d, hookScript(join(d, "gone", "ennyn.mjs")));
       },
     },
     {
@@ -396,9 +407,7 @@ test("install-hook audit (review): for every hook state doctor and install-hook 
       make: (/** @type {string} */ d) => {
         const data = mkdtempSync(join(tmpdir(), "en-data-"));
         writeFileSync(join(data, "root"), `${join(data, "gone")}\n`);
-        mkdirSync(join(d, ".githooks"));
-        writeFileSync(join(d, ".githooks", "commit-msg"), hookScript("", data), { mode: 0o755 });
-        git(["config", "core.hooksPath", ".githooks"], { cwd: d });
+        machineHooks(d, hookScript("", data));
       },
     },
     {
@@ -407,9 +416,7 @@ test("install-hook audit (review): for every hook state doctor and install-hook 
       says: /where none is recorded, so every commit goes through unchecked/,
       make: (/** @type {string} */ d) => {
         const data = join(mkdtempSync(join(tmpdir(), "en-data-")), "gone");
-        mkdirSync(join(d, ".githooks"));
-        writeFileSync(join(d, ".githooks", "commit-msg"), hookScript("", data), { mode: 0o755 });
-        git(["config", "core.hooksPath", ".githooks"], { cwd: d });
+        machineHooks(d, hookScript("", data));
       },
     },
     {
@@ -419,15 +426,21 @@ test("install-hook audit (review): for every hook state doctor and install-hook 
       make: (/** @type {string} */ d) => {
         const old = pluginVersion(mkdtempSync(join(tmpdir(), "en-plugin-")), "0.9.0");
         writeFileSync(join(old, ".orphaned_at"), "1\n");
-        mkdirSync(join(d, ".githooks"));
-        writeFileSync(join(d, ".githooks", "commit-msg"), hookScript(join(old, "scripts", "ennyn.mjs")), { mode: 0o755 });
-        git(["config", "core.hooksPath", ".githooks"], { cwd: d });
+        machineHooks(d, hookScript(join(old, "scripts", "ennyn.mjs")));
       },
     },
     {
       name: "an Ennyn script under core.hooksPath that runs",
       want: "doctor.hookOk",
       says: /already runs commit-check/,
+      make: (/** @type {string} */ d) => {
+        machineHooks(d, hookScript(CLI));
+      },
+    },
+    {
+      name: "Ennyn's script copied into a tracked directory, which reads as any other text",
+      want: "doctor.hookUnread",
+      says: /names commit-check, but it is not the block or the line/,
       make: (/** @type {string} */ d) => {
         mkdirSync(join(d, ".githooks"));
         writeFileSync(join(d, ".githooks", "commit-msg"), hookScript(CLI), { mode: 0o755 });
@@ -436,7 +449,7 @@ test("install-hook audit (review): for every hook state doctor and install-hook 
     },
     { name: "a wired hook that runs", want: "doctor.hookOk", says: /already runs commit-check/, make: (/** @type {string} */ d) => writeFileSync(join(d, ".git", "hooks", "commit-msg"), wiredLine, { mode: 0o755 }) },
     ...[
-      ["Ennyn's block behind another command in a tracked hook", '#!/bin/sh\n[ -n "$SKIP" ] && exit 0\n', "doctor.hookLate", /may skip commit-check.*Nothing was written\. Run install-hook from the Claude Code plugin/],
+      ["Ennyn's block behind another command in a tracked hook", '#!/bin/sh\n[ -n "$SKIP" ] && exit 0\n', "doctor.hookUnread", /names commit-check.*Nothing was written\. Run install-hook from the Claude Code plugin/],
       ["Ennyn's block first in a tracked hook", "#!/bin/sh\n", "doctor.hookOk", /already runs commit-check/],
     ].map(([name, before, want, says]) => ({
       name: /** @type {string} */ (name),
@@ -487,8 +500,7 @@ test("doctor audit (review): every rule only the commit-msg hook checks warns wi
   }
 });
 
-test("hook audit (review): a hook is wired when a line runs commit-check as a check; real git is the judge, refusing an untyped subject only then (accept and reject corpus)", () => {
-  const { callsCommitCheck } = /** @type {{ callsCommitCheck: (t: string) => boolean }} */ (hookModule);
+test("hook audit (review): text cannot tell a hook that checks from one that does not: each below names commit-check and reads unread, and real git shows both kinds (accept and reject corpus)", () => {
   const cli = `'${CLI.replace(/'/g, "'\\''")}'`;
   const node = (/** @type {string} */ body) => `#!/usr/bin/env node\n${body}`;
   // Each runs commit-check as a check: git refuses the untyped subject.
@@ -533,22 +545,20 @@ test("hook audit (review): a hook is wired when a line runs commit-check as a ch
     chmodSync(hook, 0o755);
     return commit(dir, "untyped subject").status !== 0;
   };
-  for (const body of calls) {
-    assert.equal(refused(body), true, `the oracle: ${JSON.stringify(body)}`);
-    assert.equal(callsCommitCheck(body), true, JSON.stringify(body));
+  for (const [list, checks] of /** @type {[string[], boolean][]} */ ([[calls, true], [idle, false]])) {
+    for (const body of list) {
+      assert.equal(refused(body), checks, `the oracle: ${JSON.stringify(body)}`);
+      assert.equal(namesCheck(body), true, JSON.stringify(body));
+      assert.equal(hookStatus(dir).unread, hook, JSON.stringify(body));
+    }
   }
-  for (const body of idle) {
-    assert.equal(refused(body), false, `the oracle: ${JSON.stringify(body)}`);
-    assert.equal(callsCommitCheck(body), false, JSON.stringify(body));
-  }
-  // Shapes git cannot run here (no npx package, a CRLF shell script), read the same way.
-  for (const body of ['npx ennyn commit-check "$1"', 'npx --no -- ennyn commit-check "$1"', `node ${cli} commit-check "$1"\r\n`]) assert.equal(callsCommitCheck(body), true, JSON.stringify(body));
-  for (const body of ['node x commit-checker "$1"', 'node x my-commit-check "$1"']) assert.equal(callsCommitCheck(body), false, JSON.stringify(body));
-  // Known limit of a line-level reading: a block that never runs. Read as wired; git takes the subject.
-  const never = `if false; then\n  node ${cli} commit-check "$1"\nfi`;
-  assert.deepEqual([callsCommitCheck(never), refused(never)], [true, false]);
+  // Another word holds the name: the file reads as another hook.
+  for (const body of ['node x commit-checker "$1"', 'node x my-commit-check "$1"', "echo commit_check"]) assert.equal(namesCheck(body), false, JSON.stringify(body));
+  for (const body of ['node x >commit-check', 'SUB=commit-check', "# commit-check", '"commit-check"', "[cli, 'commit-check']"]) assert.equal(namesCheck(body), true, JSON.stringify(body));
+  writeFileSync(hook, "#!/bin/sh\nnode x commit-checker\n");
+  assert.deepEqual([hookStatus(dir).state, hookStatus(dir).unread], ["other", null]);
   writeFileSync(hook, "#!/bin/sh\n# node x commit-check \"$1\" (disabled)\nexit 0\n");
-  assert.equal(hookStatus(dir).state, "other");
+  assert.deepEqual([hookStatus(dir).state, hookStatus(dir).unread], ["wired", hook]);
 });
 
 test("install-hook audit (review round two): the chmod it advises works on a path with a space, run as printed", (t) => {
@@ -1017,9 +1027,9 @@ test("hook follows the plugin (review round two): under core.hooksPath a pinned 
   /** @param {string} script */
   const underHooksPath = (script) => {
     const d = doctorRepo();
-    mkdirSync(join(d, ".githooks"));
-    writeFileSync(join(d, ".githooks", "commit-msg"), script, { mode: 0o755 });
-    git(["config", "core.hooksPath", ".githooks"], { cwd: d });
+    const hooks = mkdtempSync(join(tmpdir(), "en-machine-hooks-"));
+    writeFileSync(join(hooks, "commit-msg"), script, { mode: 0o755 });
+    git(["config", "core.hooksPath", hooks], { cwd: d });
     return d;
   };
   const pinned = underHooksPath(hookScript(CLI));
@@ -1267,13 +1277,13 @@ test("hook in a tracked hooks directory: a block behind a command that may exit 
   const dir = trackedHooks("");
   const hook = join(dir, ".githooks", "commit-msg");
   writeFileSync(hook, `${projectHook("")}${block}`);
-  assert.equal(hookStatus(dir).late, hook);
-  assert.equal(idleReason(hookStatus(dir)), "late");
-  assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookLate"]);
+  assert.equal(hookStatus(dir).unread, hook);
+  assert.equal(idleReason(hookStatus(dir)), "unread");
+  assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookUnread"]);
   const before = hookStatus(dir);
   const r = installCli(dir, {});
   assert.equal(r.status, 1);
-  assert.match(r.stdout, /\.githooks\/commit-msg may skip commit-check.*it prints the block that goes at the top of \S*\.githooks\/commit-msg/);
+  assert.match(r.stdout, /\.githooks\/commit-msg names commit-check.*it prints the block that goes at the top of \S*\.githooks\/commit-msg/);
   assert.ok(!r.stdout.includes(BLOCK_MARKER), "no data directory known, no block to print");
   assert.deepEqual(hookStatus(dir), before, "install-hook writes into no hook it did not write");
   // Real git: the revert with a secret passes the late block; moved first, it is refused.
@@ -1290,10 +1300,10 @@ test("hook in a tracked hooks directory: a block behind a command that may exit 
   writeFileSync(join(husky, ".husky", "_", "commit-msg"), HUSKY_STUB, { mode: 0o755 });
   writeFileSync(join(husky, ".husky", "commit-msg"), `npx lint-staged\n${block}`);
   git(["config", "core.hooksPath", ".husky/_"], { cwd: husky });
-  assert.equal(hookStatus(husky).late, join(husky, ".husky", "commit-msg"));
-  assert.deepEqual(await hookKeys(husky, { HOME: home }), ["doctor.hookLate"]);
+  assert.equal(hookStatus(husky).unread, join(husky, ".husky", "commit-msg"));
+  assert.deepEqual(await hookKeys(husky, { HOME: home }), ["doctor.hookUnread"]);
   const { checkSetup } = await import("../setup/doctor.mjs");
-  assert.deepEqual((await checkSetup({ cwd: husky, env: { PATH: process.env.PATH } })).items.find((i) => i.key === "doctor.hookLate")?.vars.path, [join(husky, ".husky", "commit-msg")]);
+  assert.deepEqual((await checkSetup({ cwd: husky, env: { PATH: process.env.PATH } })).items.find((i) => i.key === "doctor.hookUnread")?.vars.path, [join(husky, ".husky", "commit-msg")]);
   writeFileSync(join(husky, ".husky", "commit-msg"), `${block}npx lint-staged\n`);
   assert.deepEqual(await hookKeys(husky, { HOME: home }), ["doctor.hookOk"]);
   // With no .husky/commit-msg yet, install-hook from the plugin names that file and prints the block for it.
@@ -1505,7 +1515,7 @@ test("block with nothing left on PATH: an empty PATH means the current directory
   }
 });
 
-test("a call behind an early exit, marked or not, is no ✓: doctor warns, install-hook offers the block, and real git shows why", async () => {
+test("a call behind an early exit, marked or not, is no ✓: doctor warns, install-hook offers the block, and real git shows why; the printed line first holds", async () => {
   const home = mkdtempSync(join(tmpdir(), "en-home-"));
   const data = join(home, ".claude", "plugins", "data", "ennyn-test");
   hookModule.recordPluginRoot(data, SELF);
@@ -1518,79 +1528,117 @@ test("a call behind an early exit, marked or not, is no ✓: doctor warns, insta
   git(["config", "core.hooksPath", ".githooks"], { cwd: dir });
   git(["add", "-A"], { cwd: dir });
   git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "feat: base"], { cwd: dir });
-  assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookLate"]);
+  assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookUnread"]);
   const before = readFileSync(hook, "utf8");
   const r = installCli(dir, sessionEnv(data, SELF));
   assert.equal(r.status, 1, r.stdout);
-  assert.match(r.stdout, /may skip commit-check/);
+  assert.match(r.stdout, /names commit-check/);
   assert.ok(r.stdout.endsWith(hookBlock(data)), r.stdout);
   assert.equal(readFileSync(hook, "utf8"), before, "the project's hook is not written");
   const env = outside({ HOME: home });
   const token = { "token.js": `export const token = "${SECRET}";\n` };
   assert.equal(commitIn(dir, 'Revert "x"', token, env).status, 0, "the oracle: the early exit skipped the line");
   git(["reset", "-q", "--hard", "HEAD~1"], { cwd: dir });
+  // By hand from the record, first: not what install-hook printed, though it checks.
   writeFileSync(hook, `#!/bin/sh\n${line}IFS= read -r s < "$1"\ncase $s in\n  Merge*|Revert*) exit 0 ;;\nesac\n`);
-  assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookOk"], "the same line first");
+  assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookUnread"]);
+  assert.equal(commitIn(dir, 'Revert "x"', token, env).status, 1, "a false warning, which stops no commit");
+  writeFileSync(hook, `#!/bin/sh\n${printedLine(CLI, data)}\nIFS= read -r s < "$1"\ncase $s in\n  Merge*|Revert*) exit 0 ;;\nesac\n`);
+  assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookOk"], "the printed line first");
   assert.equal(commitIn(dir, 'Revert "x"', token, env).status, 1);
   // An Ennyn hook holds exits of its own before its call: it is no late hook.
   const own = doctorRepo();
   installHook({ cwd: own, cliPath: CLI, pluginData: data });
-  assert.equal(hookStatus(own).late, null);
+  assert.deepEqual([hookStatus(own).unread, hookStatus(own).late], [null, null]);
   assert.deepEqual(await hookKeys(own), ["doctor.hookOk"]);
 });
 
-test("the block counts only as install-hook prints it, first, under a shell of the sh family: anything else that names it warns, read from the text and never from a comment alone", () => {
+test("a hook counts only with what install-hook printed, byte for byte and first, under a shell the list names: anything else that names it reads unread", () => {
   const block = hookBlock("/x/plugins/data/ennyn-ennyn");
+  const line = `${printedLine("/opt/ennyn/scripts/ennyn.mjs")}\n`;
+  const record = `${printedLine("", "/x/plugins/data/ennyn-ennyn")}\n`;
   const sh = "#!/bin/sh\n";
-  const husky = '#!/usr/bin/env sh\n. "$(dirname -- "$0")/_/husky.sh"\n';
-  for (const text of [`${sh}${block}`, block, `${sh}# ours\n\n${block}exit 0\n`, `#!/usr/bin/env sh\n${block}`, `#!/bin/bash\n${block}`, `#!/usr/bin/env bash\n${block}`, `#!/bin/dash\n${block}`, `#!/bin/ksh\n${block}`, `#!/bin/zsh\n${block}`, `${sh}${block.trimEnd()}`, `#!/bin/sh -e\n${block}`, `#!/bin/bash -eux\n${block}`, `${sh}set -e\n${block}`, `${sh}set -eu # strict\n${block}`, `${sh}set -o errexit\n${block}`, `#!/bin/bash\nset -euo pipefail\n${block}`, `${sh}set -e -u\n${block}`]) assert.equal(lateCheck(text), false, text);
-  // husky's own start counts only where the hook's directory is husky's: `husky` says so.
-  for (const text of [`${husky}${block}`, `#!/usr/bin/env sh\n. "$(dirname "$0")/_/husky.sh"\n\n${block}`]) {
-    assert.equal(lateCheck(text, true), false, text);
-    assert.equal(lateCheck(text), true, text);
+  const wired = (/** @type {string} */ text) => assert.notEqual(printedCheck(text), null, text);
+  const unread = (/** @type {string} */ text) => assert.equal(printedCheck(text), null, text);
+  assert.deepEqual(printedCheck(`${sh}${block}`), { id: "ennyn-ennyn", path: null });
+  assert.deepEqual(printedCheck(`${sh}${line}`), { id: null, path: "/opt/ennyn/scripts/ennyn.mjs" });
+  assert.deepEqual(printedCheck(`${sh}${record}`), { id: null, path: "/x/plugins/data/ennyn-ennyn/root" });
+  // The path comes back unquoted, whatever it holds.
+  for (const root of ["/opt/with space", "/opt/qu'ote", '/opt/d"q', "/opt/$HOME", "/opt/ha #sh", "/opt/ünï"]) {
+    const cli = `${root}/scripts/ennyn.mjs`;
+    assert.deepEqual(printedCheck(`${printedLine(cli)}\n`), { id: null, path: cli }, root);
+    assert.deepEqual(printedCheck(`${printedLine("", root)}\n`), { id: null, path: `${root}/root` }, root);
   }
+  // Before it: a shebang the list names, blank lines, comments, set lines of e, u and x. After it, anything.
+  const shebangs = [];
+  for (const dir of ["/bin/", "/usr/bin/", "/usr/local/bin/", "/opt/homebrew/bin/", "/usr/bin/env ", "#!  /bin/"]) for (const name of ["sh", "bash", "dash", "ksh", "zsh", "ash"]) shebangs.push(dir.startsWith("#!") ? `${dir}${name}` : `#!${dir}${name}`);
+  shebangs.push("#!/bin/sh -e", "#!/bin/bash -eux", "#!/usr/bin/env sh -u", "#!/bin/sh ");
+  for (const printed of [block, line, record]) {
+    for (const shebang of shebangs) wired(`${shebang}\n${printed}`);
+    for (const before of ["", "\n", "\n\n", "# ours\n\n", "  # indented\n", "\t\n", "# ends in a backslash \\\n", "set -e\n", "set -eu\n", "set -e -u -x\n", "  set -x  \n", "# no shebang here\n#!/usr/bin/python3\n"]) wired(`${before}${printed}`);
+    for (const after of ["exit 0\n", "true ||\n", "'unclosed\n", ". ./lib.sh\n", "\r\n"]) wired(`${sh}${printed}${after}`);
+    wired(`${sh}${printed.trimEnd()}`);
+    // No shebang on the list: it is no shell the text is known to run under.
+    for (const shebang of ["#!/usr/bin/env node", "#!/usr/bin/python3", "#!/bin/fish", "#!/bin/csh", "#!/bin/mksh", "#!/usr/bin/fish", "#!/bin/sh\r", "#!/bin/sh -n", "#!/bin/sh -s", "#!/bin/sh -c true", "#!/bin/sh -en", "#!/bin/sh --", "#!/bin/bash -n", "#!/usr/bin/env -S sh", "#!/usr/bin/env -S bash -e", "#!/usr/bin/env -S sh -n", "#!/usr/bin/env -S sh -c true", "#!/usr/bin/env -i sh", "#!/usr/bin/env A=1 sh", "#!sh", "#!bin/sh", "#!/proc/self/cwd/tools/sh", "#!/tmp/bin/sh", "#!/bin/../tmp/sh", "#!/opt/bin/sh", "#!/usr/local/sbin/sh", "#!/bin/env sh", "#!/usr/bin/env ./sh", "#!/usr/bin/env tools/sh"]) unread(`${shebang}\n${printed}`);
+    // Before it: anything else, husky's own line among them.
+    for (const before of [". ./lib.sh\n", '. "$(dirname -- "$0")/_/husky.sh"\n', '. "$(dirname "$0")/_/husky.sh"\n', "set -n\n", "set -o noexec\n", "set -en\n", "set -- x\n", "set\n", "set -o errexit\n", "set -euo pipefail\n", "set -e # strict\n", "set -e; exit 0\n", "set -e \\\n  && exit 0\n", "set -e# x\n", "exit 0\n", "true\n", ":\n", "\r\n", "\f\n", "\u00a0\n", "\ufeff\n", "\ufeff#!/bin/sh\n", "# ours\r\n", "# a\rexit 0\n", "x=1\n", "cat <<E\n", "x='\n", "if false; then\n"]) {
+      unread(`${sh}${before}${printed}`);
+    }
+    for (const before of ["! ", "exec ", "A=1 ", "true ", "  ", "\t", "(", "{ ", ">/dev/null ", "if "]) unread(`${sh}${before}${printed}`);
+  }
+  // The block, edited in any way.
   const edits = [
     block.replace(") || exit $?", ") || true"),
     block.replace(") || exit $?", ")"),
     block.replace(/^.*Printed by.*\n/m, ""),
     block.replace("id='ennyn-ennyn'", "id=ennyn-ennyn"),
     block.replace("id='ennyn-ennyn'", "id='../x'"),
+    block.replace("id='ennyn-ennyn'", "id=''"),
     block.replace(/^ {2}top=.*\n/m, ""),
     block.replace(/\n/g, "\r\n"),
     block.replace(/\n/g, "\r"),
     block.trimEnd() + " # ours\n",
+    block.trimEnd() + "\r\n",
     block.replace(/cd -P/g, "cd"),
+    block.split("\n").filter((l) => !l.startsWith("# ")).join("\n"),
+    `${BLOCK_MARKER}\n${line}`,
   ];
   for (const text of edits) assert.notEqual(text, block);
-  for (const text of edits) assert.equal(lateCheck(`${sh}${text}`), true, text);
-  // No marker at all: a block's own first command is no call.
-  assert.equal(lateCheck(`${sh}${block.split("\n").filter((l) => !l.startsWith("# ")).join("\n")}`), true);
-  const shebangs = ["#!/usr/bin/env node", "#!/usr/bin/python3", "#!/bin/fish", "#!/bin/csh", "#!/bin/sh\r", "#!/bin/sh -n", "#!/bin/sh -s", "#!/bin/sh -c true", "#!/bin/sh -en", "#!/bin/sh --", "#!/bin/bash -n", "#!/usr/bin/env -S sh", "#!/usr/bin/env -S bash -e", "#!/usr/bin/env -S sh -n", "#!/usr/bin/env -S sh -c true", "#!/usr/bin/env -i sh", "#!/usr/bin/env A=1 sh", "#!sh", "#!bin/sh"];
-  for (const line of shebangs) assert.equal(lateCheck(`${line}\n${block}`), true, line);
-  for (const text of [`${block}#!/bin/bash\n`, `. ./lib.sh\n${block}`, `${husky.replace("husky.sh", "skip.sh")}${block}`, `${husky.trimEnd()} || exit 0\n${block}`, `\r\n${block}`, `${sh}[ -n "$SKIP" ] && exit 0 ${block}`, `${sh}set -n\n${block}`, `${sh}set -o noexec\n${block}`, `${sh}set -en\n${block}`, `${sh}set -- x\n${block}`, `${sh}set\n${block}`, `${sh}set -e; exit 0\n${block}`, `${sh}set -e \\\n  && exit 0\n${block}`, `${sh}set -e# x\n${block}`]) assert.equal(lateCheck(text, true), true, text);
-  // The rule for a call that is no block: it is the hook's first command, or the hook warns.
-  const call = 'node x/ennyn.mjs commit-check "$1"\n';
-  for (const text of [call, `exec ${call}`, `${sh}${call}`, `#!/bin/sh -e\n${call}`, `${sh}# the convention\n\n${call}`, `${sh}set -eu\n${call}`, `${sh}NODE_OPTIONS= ${call}`, `${sh}A=1 B="x y" ${call}`, `${sh}${call}exit 0\n`, `${sh}${call}if [ -n "$A" ]; then exit 1; fi\n`, `${sh}${call}case $A in x) exit 0 ;; esac\n`, `${sh}node x commit-check "$1" || exit 1\n`, `${sh}if ! ${call.trimEnd()}; then exit 1; fi\n`, `${sh}! ${call}`, `${sh}npx ennyn commit-check "$1"\n`, `${sh}node "$(cat "$HOME/.claude/plugins/data/e/root")/scripts/ennyn.mjs" commit-check --hook "$1"\n`, `${husky}${call}`.replace(husky, "#!/usr/bin/env sh\n")]) assert.equal(lateCheck(text), false, text);
-  // A shebang that runs nothing, or no shell, stops a call as it stops the block; a Node hook has its own reading.
-  for (const line of shebangs.filter((s) => s !== "#!/usr/bin/env node")) assert.equal(lateCheck(`${line}\n${call}`), true, line);
-  // What runs a program: a name of the list, a path or a value, quoted or not.
-  for (const word of ["node", "npm", "npx", "pnpm", "pnpx", "yarn", "bun", "bunx", "deno", "ennyn", "sh", "bash", "dash", "ksh", "zsh", "./node_modules/.bin/ennyn", "node_modules/.bin/ennyn", "/opt/ennyn/bin/ennyn", '"/opt/my tools/ennyn"', "'/opt/my tools/ennyn'", "$CLI", '"$CLI"', '"$(git rev-parse --show-toplevel)/ennyn"', "${CLI:-ennyn}"]) assert.equal(lateCheck(`${sh}${word} commit-check "$1"\n`), false, word);
-  assert.equal(lateCheck(`${husky}${call}`, true), false);
-  assert.equal(lateCheck(`${husky}${call}`), true);
-  for (const before of [`exit 0 # never\n`, `if [ -n "$A" ]; then\n  exit 0\nfi\n`, `[ -n "$A" ] && exit 0\n`, `case $A in x) exit 0 ;; esac\n`, `f() { exit 0; }\n`, `while read -r l; do\n  case $l in *x*)\n    exit 0 ;;\n  esac\ndone < "$1"\n`, `{ exit; }\n`, `(exit 1) || exit\n`, `echo exit 0\n`, `MSG="will exit now"\n`, `cat <<EOF\nexit 0\nEOF\n`, `exitcode=0\n`, `my-exit\n`, `npx lint-staged\n`, `cd "$(git rev-parse --show-toplevel)"\n`, `. ./lib.sh\n`, `exec true\n`, `set -n\n`]) assert.equal(lateCheck(`${sh}${before}${call}`), true, before);
-  // A first line that names it and does not run it there: it branches, stores it, tests for it, or runs nothing.
-  for (const line of [`case $A in [!R]*) ${call.trimEnd()} ;; esac`, `check() { ${call.trimEnd()}; }`, `check () { ${call.trimEnd()}; }`, `function check { ${call.trimEnd()}; }`, `SUB=commit-check`, `ENNYN="node x commit-check --hook"`, `A=1 B=commit-check`, `export SUB=commit-check`, `readonly SUB=commit-check`, `trap 'node x commit-check "$1"' EXIT`, `alias c='node x commit-check'`, `true ${call.trimEnd()}`, `false ${call.trimEnd()}`, `command -v commit-check >/dev/null || exit 0`, `type commit-check`, `which commit-check`, `[ -n commit-check ]`, `[[ -n commit-check ]]`, `test -n commit-check`, `for c in commit-check; do :; done`, `[ -n "$A" ] || ${call.trimEnd()}`, `grep -q Revert "$1" || ${call.trimEnd()}`, `true || ${call.trimEnd()}`, `false && ${call.trimEnd()}`, `if false; then ${call.trimEnd()}; fi`, `exit 0; ${call.trimEnd()}`, "command -v commit-check", "command -V commit-check", "if test -n commit-check; then :; fi", "! test -n commit-check", `exec true ${call.trimEnd()}`, `check ( ) { ${call.trimEnd()}; }`, "exec echo commit-check", "A=1 echo commit-check", "A=1 printf commit-check", "exec : commit-check", `sleep 0 ${call.trimEnd()}`, `cat ${call.trimEnd()}`, `grep -q commit-check "$1" && ${call.trimEnd()}`, "grep -q commit-check /dev/null", "ls commit-check", "cat commit-check", '"echo" commit-check', `node () { ${call.trimEnd()}; }`, `node ( ) { ${call.trimEnd()}; }`, `/opt/f() { ${call.trimEnd()}; }`]) assert.equal(lateCheck(`${sh}${line}\n`), true, line);
-  // A word off the list warns though it runs the call: a false warning, which stops no commit.
-  for (const line of [`time ${call.trimEnd()}`, `env ${call.trimEnd()}`, `nice ${call.trimEnd()}`, `command ${call.trimEnd()}`, `eval '${call.trimEnd()}'`, `{ ${call.trimEnd()}; }`, `(${call.trimEnd()})`]) assert.equal(lateCheck(`${sh}${line}\n`), true, line);
-  // Text, or a call whose failure its line throws away, is no first command, with the real call under it.
-  for (const line of ["echo commit-check", "printf commit-check", ": commit-check", `${call.trimEnd()} || true`, `${call.trimEnd()} || exit 0`]) assert.equal(lateCheck(`${sh}${line}\n${call}`), true, line);
-  // The marker over a plain call: an edit of the block, not the block.
-  assert.equal(lateCheck(`${sh}${BLOCK_MARKER}\n${call}`), true);
-  // A Node hook: its first statement, read by line; any other interpreter warns.
-  const js = 'require("child_process").execFileSync("node", [cli, "commit-check", process.argv[2]]);\n';
-  for (const text of [`#!/usr/bin/env node\n${js}`, `#!/usr/local/bin/node\n// the convention\n\n${js}`]) assert.equal(lateCheck(text), false, text);
-  for (const text of [`#!/usr/bin/env node\nif (skip) process.exit(0);\n${js}`, `#!/usr/bin/env node\nconst x = 1;\n${js}`, `#!/usr/bin/node --check\n${js}`, `#!/usr/bin/env -S node --check\n${js}`, `#!/usr/bin/python3\n${js}`, "#!/usr/bin/env node\n"]) assert.equal(lateCheck(text), true, text);
-  for (const text of ["", "\n", sh, `${sh}\n# only a comment\n`]) assert.equal(lateCheck(text), true, JSON.stringify(text));
+  for (const text of edits) unread(`${sh}${text}`);
+  // The line, edited in any way: a shape install-hook does not print for a path it does not name.
+  const [head, tail] = printedLine("/opt/ennyn/scripts/ennyn.mjs").split("'/opt/ennyn/scripts/ennyn.mjs'");
+  for (const text of [
+    "node /opt/ennyn/scripts/ennyn.mjs commit-check --hook \"$1\" || exit $?",
+    'node "/opt/ennyn/scripts/ennyn.mjs" commit-check --hook "$1" || exit $?',
+    "node '/opt/ennyn/scripts/ennyn.mjs' commit-check --hook \"$1\"",
+    "node '/opt/ennyn/scripts/ennyn.mjs' commit-check --hook \"$1\" || exit 1",
+    "node '/opt/ennyn/scripts/ennyn.mjs' commit-check --hook \"$1\" || exit $? # ours",
+    "node '/opt/ennyn/scripts/ennyn.mjs' commit-check --hook \"$1\" || exit $?\rexit 0",
+    "node '/opt/ennyn/scripts/ennyn.mjs' commit-check \"$1\" || exit $?",
+    "node  '/opt/ennyn/scripts/ennyn.mjs' commit-check --hook \"$1\" || exit $?",
+    "nodejs '/opt/ennyn/scripts/ennyn.mjs' commit-check --hook \"$1\" || exit $?",
+    "npx ennyn commit-check --hook \"$1\" || exit $?",
+    `${head}'scripts/ennyn.mjs'${tail}`,
+    `${head}'./scripts/ennyn.mjs'${tail}`,
+    `${head}'tools/x/scripts/ennyn.mjs'${tail}`,
+    `${head}'/opt/ennyn/lax.mjs'${tail}`,
+    `${head}'/opt/ennyn/ennyn.mjs'${tail}`,
+    `${head}'/opt/ennyn/scripts/../lax/scripts/ennyn.mjs'${tail}`,
+    `${head}'/opt//ennyn/scripts/ennyn.mjs'${tail}`,
+    `${head}'/opt/a\rb/scripts/ennyn.mjs'${tail}`,
+    `${head}'/opt/a\tb/scripts/ennyn.mjs'${tail}`,
+    `${head}'/opt/a'b'/scripts/ennyn.mjs'${tail}`,
+    `${head}'/opt/a'"'"'b/scripts/ennyn.mjs'${tail}`,
+    `${head}'/opt/ennyn/scripts/ennyn.mjs' 'x'${tail}`,
+    "node \"$(cat /x/root)/scripts/ennyn.mjs\" commit-check --hook \"$1\" || exit $?",
+    "node \"$(cat '/x/other')/scripts/ennyn.mjs\" commit-check --hook \"$1\" || exit $?",
+    "node \"$(cat 'x/root')/scripts/ennyn.mjs\" commit-check --hook \"$1\" || exit $?",
+    "node \"$(cat \"$HOME/.claude/plugins/data/e/root\")/scripts/ennyn.mjs\" commit-check --hook \"$1\" || exit $?",
+    "node \"$(cat '/x/root')/scripts/lax.mjs\" commit-check --hook \"$1\" || exit $?",
+    "node \"$(cat '/x//root')/scripts/ennyn.mjs\" commit-check --hook \"$1\" || exit $?",
+  ]) unread(`${sh}${text}\n`);
+  // A Node hook is hand-written too, and an empty file or one of comments holds nothing printed.
+  for (const text of ['#!/usr/bin/env node\nrequire("child_process").execFileSync("node", [cli, "commit-check", process.argv[2]]);\n', "", "\n", sh, `${sh}\n# only a comment\n`, "# commit-check\n"]) unread(text);
 });
 
 test("hook in a linked worktree: a core.hooksPath an agent worktree made absolute is still the repository's, not a global directory, tracked and under husky", async () => {
@@ -1622,6 +1670,7 @@ test("hook in a linked worktree: a core.hooksPath an agent worktree made absolut
   // husky's stubs behind an absolute path, from the linked worktree: wired, through the file the stub runs.
   const husky = doctorRepo();
   mkdirSync(join(husky, ".husky", "_"), { recursive: true });
+  writeFileSync(join(husky, ".husky", "_", ".gitignore"), "*");
   writeFileSync(join(husky, ".husky", "_", "commit-msg"), HUSKY_STUB, { mode: 0o755 });
   writeFileSync(join(husky, ".husky", "commit-msg"), hookBlock(data));
   git(["add", "-A"], { cwd: husky });
@@ -1738,7 +1787,7 @@ function ownHook(text, files = {}) {
 
 const TOKEN = { "token.js": `export const token = "${SECRET}";\n` };
 
-test("a call that is not the hook's first command is no ✓, however the hook skips it: doctor warns, install-hook offers the block, and a real Revert lands a secret", async () => {
+test("a call that is not the printed line, first, is no ✓, however the hook skips it: doctor warns, install-hook offers the block, and a real Revert lands a secret", async () => {
   const { home, data } = plugged();
   const call = `node '${CLI.replace(/'/g, "'\\''")}' commit-check --hook "$1"`;
   const read = 'IFS= read -r s < "$1"\n';
@@ -1756,7 +1805,7 @@ test("a call that is not the hook's first command is no ✓, however the hook sk
   const env = outside({ HOME: home });
   for (const [name, text] of Object.entries(shapes)) {
     const dir = ownHook(text);
-    assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookLate"], name);
+    assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookUnread"], name);
     const r = installCli(dir, sessionEnv(data, SELF));
     assert.equal(r.status, 1, `${name}: ${r.stdout}`);
     assert.ok(r.stdout.endsWith(hookBlock(data)), `${name}: install-hook offers the block`);
@@ -1764,13 +1813,13 @@ test("a call that is not the hook's first command is no ✓, however the hook sk
     git(["reset", "-q", "--hard", "HEAD~1"], { cwd: dir });
     assert.equal(commitIn(dir, "feat: x", TOKEN, env).status, 1, `${name}: a typed subject is still checked`);
   }
-  // The same early exits behind the call: the call is the first command, and the Revert is refused.
-  const first = ownHook(`#!/bin/sh\n# the convention\n\nset -eu\n${call}\n${read}case $s in\n  Revert*) exit 0 ;;\nesac\n`);
+  // The same early exits behind the printed line, and the Revert is refused.
+  const first = ownHook(`#!/bin/sh\n# the convention\n\nset -eu\n${printedLine(CLI)}\n${read}case $s in\n  Revert*) exit 0 ;;\nesac\n`);
   assert.deepEqual(await hookKeys(first, { HOME: home }), ["doctor.hookOk"]);
   assert.equal(commitIn(first, 'Revert "x"', TOKEN, env).status, 1);
   // A false warning is accepted: checks of the project's own before the call warn, and stop no commit.
   const other = ownHook(`#!/bin/sh\nawk 'NR==1 && length > 72 { exit 1 }' "$1"\n${call}\n`);
-  assert.deepEqual(await hookKeys(other, { HOME: home }), ["doctor.hookLate"]);
+  assert.deepEqual(await hookKeys(other, { HOME: home }), ["doctor.hookUnread"]);
   assert.equal(commitIn(other, "feat: x", { "n.txt": "1" }, env).status, 0);
 });
 
@@ -1780,11 +1829,11 @@ test("a shebang whose flags run nothing is no ✓, for the block and for a call:
   const env = outside({ HOME: home });
   const envS = spawnSync("/usr/bin/env", ["-S", "true"]).status === 0;
   const idle = ["#!/bin/sh -n", "#!/bin/sh -s", ...(existsSync("/bin/bash") ? ["#!/bin/bash -n"] : []), ...(envS ? ["#!/usr/bin/env -S sh -n", "#!/usr/bin/env -S sh -c true"] : [])];
-  const call = `node '${CLI.replace(/'/g, "'\\''")}' commit-check --hook "$1"\n`;
+  const call = `${printedLine(CLI)}\n`;
   for (const shebang of idle) {
     for (const body of [block, call]) {
       const dir = ownHook(`${shebang}\n${body}`);
-      assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookLate"], shebang);
+      assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookUnread"], shebang);
       assert.equal(commitIn(dir, "feat: x", TOKEN, env).status, 0, `the oracle, ${shebang}: the hook ran nothing`);
     }
   }
@@ -1796,18 +1845,18 @@ test("a shebang whose flags run nothing is no ✓, for the block and for a call:
   }
   // set -n as a line: the same.
   const dir = ownHook(`#!/bin/sh\nset -n\n${block}`);
-  assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookLate"]);
+  assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookUnread"]);
   assert.equal(commitIn(dir, "feat: x", TOKEN, env).status, 0, "the oracle: set -n ran nothing");
 });
 
-test("husky's start counts only where husky made the file it sources: a tracked _/husky.sh that exits warns, and real git shows why; the one husky generates stays ✓", async () => {
+test("husky's line above the block warns whatever the file it sources: a tracked _/husky.sh that exits lands a secret, and the directory's name proves nothing; above it the block is ✓ in the git directory too", async () => {
   const { home, data } = plugged();
   const block = hookBlock(data);
   const env = outside({ HOME: home });
   const line = '. "$(dirname "$0")/_/husky.sh"\n';
   // A plain tracked directory that holds a file of that name: the line reads like husky's and ends the hook.
   const plain = ownHook(`#!/bin/sh\n${line}${block}`, { ".githooks/_/husky.sh": "exit 0\n" });
-  assert.deepEqual(await hookKeys(plain, { HOME: home }), ["doctor.hookLate"]);
+  assert.deepEqual(await hookKeys(plain, { HOME: home }), ["doctor.hookUnread"]);
   assert.equal(commitIn(plain, "feat: x", TOKEN, env).status, 0, "the oracle: the tracked file ended the hook");
   // The name proves nothing: the same in a directory called .husky.
   const named = doctorRepo();
@@ -1817,32 +1866,17 @@ test("husky's start counts only where husky made the file it sources: a tracked 
   git(["config", "core.hooksPath", ".husky"], { cwd: named });
   git(["add", "-A"], { cwd: named });
   git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "feat: base"], { cwd: named });
-  assert.deepEqual(await hookKeys(named, { HOME: home }), ["doctor.hookLate"]);
-  // A link at the directory's place or at the file's: no file husky wrote, and git is not asked about a path behind a link.
-  const linked = ownHook(`#!/bin/sh\n${line}${block}`, { "elsewhere/husky.sh": "exit 0\n" });
-  symlinkSync(join("..", "elsewhere"), join(linked, ".githooks", "_"));
-  assert.deepEqual(await hookKeys(linked, { HOME: home }), ["doctor.hookLate"]);
-  const fileLink = ownHook(`#!/bin/sh\n${line}${block}`, { "elsewhere/husky.sh": "exit 0\n" });
-  mkdirSync(join(fileLink, ".githooks", "_"));
-  symlinkSync(join("..", "..", "elsewhere", "husky.sh"), join(fileLink, ".githooks", "_", "husky.sh"));
-  assert.deepEqual(await hookKeys(fileLink, { HOME: home }), ["doctor.hookLate"]);
-  // What husky 6 to 8 generate: the file is ignored, so no clone holds it from the repository.
-  const made = doctorRepo();
-  mkdirSync(join(made, ".husky", "_"), { recursive: true });
-  writeFileSync(join(made, ".husky", "_", ".gitignore"), "*");
-  writeFileSync(join(made, ".husky", "_", "husky.sh"), HUSKY8_SH, { mode: 0o755 });
-  writeFileSync(join(made, ".husky", "commit-msg"), `#!/usr/bin/env sh\n. "$(dirname -- "$0")/_/husky.sh"\n${block}npx lint-staged\n`, { mode: 0o755 });
-  git(["config", "core.hooksPath", ".husky"], { cwd: made });
-  git(["add", "-A"], { cwd: made });
-  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "feat: base"], { cwd: made });
-  assert.ok(!git(["ls-files"], { cwd: made }).includes("husky.sh"), "the fixture: no tracked husky.sh");
-  assert.deepEqual(await hookKeys(made, { HOME: home }), ["doctor.hookOk"]);
-  assert.equal(commitIn(made, "feat: x", TOKEN, env).status, 1, "husky.sh ran the hook, and the block refused");
-  // In the git directory: no clone gets it, and the index does not hold it.
+  assert.deepEqual(await hookKeys(named, { HOME: home }), ["doctor.hookUnread"]);
+  assert.equal(commitIn(named, "feat: x", TOKEN, env).status, 0, "the oracle: the tracked file ended the hook");
+  // Above the line it holds, there and in the git directory, which no clone gets.
+  git(["reset", "-q", "--hard", "HEAD~1"], { cwd: plain });
+  writeFileSync(join(plain, ".githooks", "commit-msg"), `#!/bin/sh\n${block}${line}`);
+  assert.deepEqual(await hookKeys(plain, { HOME: home }), ["doctor.hookOk"]);
+  assert.equal(commitIn(plain, "feat: x", TOKEN, env).status, 1);
   const inside = doctorRepo();
   mkdirSync(join(inside, ".git", "own", "_"), { recursive: true });
   writeFileSync(join(inside, ".git", "own", "_", "husky.sh"), HUSKY8_SH);
-  writeFileSync(join(inside, ".git", "own", "commit-msg"), `#!/bin/sh\n${line}${block}`, { mode: 0o755 });
+  writeFileSync(join(inside, ".git", "own", "commit-msg"), `#!/bin/sh\n${block}${line}`, { mode: 0o755 });
   git(["config", "core.hooksPath", ".git/own"], { cwd: inside });
   assert.deepEqual(await hookKeys(inside, { HOME: home }), ["doctor.hookOk"]);
 });
@@ -2018,12 +2052,270 @@ test("the line install-hook advises keeps the check's verdict: first in a hook t
     const res = installHook({ cwd: dir, cliPath: CLI, pluginData });
     assert.equal(res.result, "other");
     writeFileSync(hook, `#!/bin/sh\n${res.line}\n${rest}`);
-    assert.equal(lateCheck(readFileSync(hook, "utf8")), false, res.line);
+    assert.notEqual(printedCheck(readFileSync(hook, "utf8")), null, res.line);
     assert.equal(commitIn(dir, 'Revert "x"', TOKEN, env).status, 1, res.line);
     assert.equal(commitIn(dir, "untyped subject", { "n.txt": "1" }, env).status, 1, res.line);
     assert.equal(commitIn(dir, "feat: typed", { "n.txt": "2" }, env).status, 0, res.line);
-    // The oracle: the same line with no status check loses the verdict, and doctor cannot tell (hook-wired-limits).
+    // The oracle: the same line with no status check loses the verdict, and it is not what install-hook printed.
     writeFileSync(hook, `#!/bin/sh\n${res.line.replace(" || exit $?", "")}\n${rest}`);
+    assert.equal(hookStatus(dir).unread, hook, res.line);
     assert.equal(commitIn(dir, 'Revert "x"', TOKEN, env).status, 0, res.line);
   }
+});
+
+test("the marker alone counts only where Ennyn writes: a tracked hook or husky's that holds it and exit 0 is no ✓, and real git lands the secret; the local file keeps its reading", async () => {
+  const { home } = plugged();
+  const env = outside({ HOME: home });
+  const text = `#!/bin/sh\n${HOOK_MARKER}\nexit 0\n`;
+  const tracked = ownHook(text);
+  assert.equal(hookStatus(tracked).state, "other");
+  assert.deepEqual(await hookKeys(tracked, { HOME: home }), ["doctor.hookPath"]);
+  assert.equal(commitIn(tracked, "feat: x", TOKEN, env).status, 0, "the oracle: the hook ran nothing");
+  // Ennyn's own script, copied into the tracked directory: any other text that names the check.
+  const copy = ownHook(hookScript(CLI));
+  assert.deepEqual(await hookKeys(copy, { HOME: home }), ["doctor.hookUnread"]);
+  // husky: the marker in the file git runs, or in the file its stub runs.
+  const husky = doctorRepo();
+  mkdirSync(join(husky, ".husky", "_"), { recursive: true });
+  writeFileSync(join(husky, ".husky", "_", "commit-msg"), text, { mode: 0o755 });
+  git(["config", "core.hooksPath", ".husky/_"], { cwd: husky });
+  assert.equal(hookStatus(husky).state, "other");
+  assert.deepEqual(await hookKeys(husky, { HOME: home }), ["doctor.hookPath"]);
+  // The local file: only a write on this machine puts it there, and such a write can do anything.
+  const local = doctorRepo();
+  writeFileSync(join(local, ".git", "hooks", "commit-msg"), text, { mode: 0o755 });
+  assert.equal(hookStatus(local).state, "ennyn");
+  assert.deepEqual(await hookKeys(local, { HOME: home }), ["doctor.hookOk"]);
+  // A hooks directory outside the repository holds what this machine put there, the same way.
+  const global = realpathSync(mkdtempSync(join(tmpdir(), "en-global-hooks-")));
+  writeFileSync(join(global, "commit-msg"), hookScript(CLI), { mode: 0o755 });
+  const outsider = doctorRepo();
+  git(["config", "core.hooksPath", global], { cwd: outsider });
+  assert.deepEqual([hookStatus(outsider).hooksKind, hookStatus(outsider).state], ["global", "ennyn"]);
+});
+
+test("husky's stubs count only while the index holds none: a tracked stub or runner that exits is no ✓ beside the block, and real git lands the secret; what husky generates stays ✓", async () => {
+  const { home, data } = plugged();
+  const block = hookBlock(data);
+  const env = outside({ HOME: home });
+  /** husky 9.1.7's directory as it generates it, git ignoring all of it, with the block in the project's file. */
+  const husky = () => {
+    const dir = doctorRepo();
+    mkdirSync(join(dir, ".husky", "_"), { recursive: true });
+    writeFileSync(join(dir, ".husky", "commit-msg"), block);
+    writeFileSync(join(dir, ".husky", "_", ".gitignore"), "*");
+    writeFileSync(join(dir, ".husky", "_", "h"), HUSKY_RUNNER);
+    writeFileSync(join(dir, ".husky", "_", "commit-msg"), HUSKY_STUB, { mode: 0o755 });
+    git(["config", "core.hooksPath", ".husky/_"], { cwd: dir });
+    return dir;
+  };
+  /** @param {string} dir @param {string[]} [force] paths to add past husky's own ignore file */
+  const start = (dir, force = []) => {
+    git(["add", "-A"], { cwd: dir });
+    if (force.length) git(["add", "-f", "--", ...force], { cwd: dir });
+    git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "feat: base"], { cwd: dir });
+  };
+  const made = husky();
+  start(made);
+  assert.deepEqual(await hookKeys(made, { HOME: home }), ["doctor.hookOk"]);
+  assert.equal(commitIn(made, "feat: x", TOKEN, env).status, 1, "the stub ran the block");
+  for (const file of ["commit-msg", "h"]) {
+    const dir = husky();
+    writeFileSync(join(dir, ".husky", "_", file), "#!/bin/sh\nexit 0\n");
+    start(dir, [`.husky/_/${file}`]);
+    const st = hookStatus(dir);
+    assert.deepEqual([st.late, idleReason(st)], [st.path, "late"], file);
+    assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookLate"], file);
+    const r = installCli(dir, sessionEnv(data, SELF));
+    assert.equal(r.status, 1, r.stdout);
+    assert.match(r.stdout, /may skip commit-check.*Nothing was written/);
+    assert.equal(commitIn(dir, "feat: x", TOKEN, env).status, 0, `the oracle, ${file}: the tracked file ended the hook`);
+  }
+  // Any spelling, and the directory itself: a name another case folds to, a link the repository holds, a submodule.
+  const folded = husky();
+  writeFileSync(join(folded, ".husky", "_", "Hx"), "x\n");
+  start(folded, [".husky/_/Hx"]);
+  assert.deepEqual(await hookKeys(folded, { HOME: home }), ["doctor.hookLate"]);
+  const linked = husky();
+  rmSync(join(linked, ".husky", "_"), { recursive: true });
+  mkdirSync(join(linked, "stubs"));
+  writeFileSync(join(linked, "stubs", "commit-msg"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  symlinkSync(join("..", "stubs"), join(linked, ".husky", "_"));
+  start(linked);
+  assert.deepEqual(await hookKeys(linked, { HOME: home }), ["doctor.hookLate"]);
+  assert.equal(commitIn(linked, "feat: x", TOKEN, env).status, 0, "the oracle: the link's file ended the hook");
+  // The link alone: what it points at is ignored, and a commit still chose it.
+  const pointing = husky();
+  rmSync(join(pointing, ".husky", "_"), { recursive: true });
+  mkdirSync(join(pointing, "stubs"));
+  writeFileSync(join(pointing, "stubs", "commit-msg"), HUSKY_STUB, { mode: 0o755 });
+  writeFileSync(join(pointing, ".gitignore"), "stubs\n");
+  symlinkSync(join("..", "stubs"), join(pointing, ".husky", "_"));
+  start(pointing);
+  assert.deepEqual(await hookKeys(pointing, { HOME: home }), ["doctor.hookLate"]);
+  const module_ = husky();
+  start(module_);
+  const head = git(["rev-parse", "HEAD"], { cwd: module_ }).trim();
+  git(["update-index", "--add", "--cacheinfo", `160000,${head},.husky/_`], { cwd: module_ });
+  assert.deepEqual(await hookKeys(module_, { HOME: home }), ["doctor.hookLate"]);
+});
+
+test("an empty core.hooksPath runs no hook, whatever lies at the top of the work tree or in .git/hooks: doctor says none, and install-hook writes nothing and says why", async () => {
+  const { home } = plugged();
+  const env = outside({ HOME: home });
+  const dir = doctorRepo();
+  const stray = `#!/bin/sh\n${hookModule.hookLine(CLI)}\n`;
+  writeFileSync(join(dir, "commit-msg"), stray, { mode: 0o755 });
+  writeFileSync(join(dir, ".git", "hooks", "commit-msg"), stray, { mode: 0o755 });
+  git(["add", "-A"], { cwd: dir });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "feat: base"], { cwd: dir });
+  git(["config", "core.hooksPath", ""], { cwd: dir });
+  const st = hookStatus(dir);
+  assert.deepEqual([st.state, st.there, st.runs, st.hooksKind], ["none", false, false, null]);
+  assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookMissing"]);
+  assert.equal(commitIn(dir, "feat: x", TOKEN, env).status, 0, "the oracle: neither file ran");
+  const before = git(["status", "--porcelain"], { cwd: dir });
+  const r = installCli(dir, outside({ HOME: home }));
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /core\.hooksPath is set but empty.*Nothing was written/);
+  assert.equal(git(["status", "--porcelain"], { cwd: dir }), before, "no stray file at the top of the work tree");
+  assert.equal(readFileSync(join(dir, ".git", "hooks", "commit-msg"), "utf8"), stray);
+});
+
+test("a line that ends in CR is not the printed line: doctor warns, and a bare call there lands a secret, the shell handing --hook a path with the CR in it", async () => {
+  const { home } = plugged();
+  const env = outside({ HOME: home });
+  const line = hookModule.hookLine(CLI);
+  for (const text of [`${line}\r\n`, `#!/bin/sh\n${line}\r\n`, `#!/bin/sh\r\n${line}\r\n`, `#!/bin/sh\n# ours\r\n${line}\n`, `#!/bin/sh\n${line} \n`, `#!/bin/sh\n ${line}\n`]) {
+    assert.deepEqual(await hookKeys(ownHook(text), { HOME: home }), ["doctor.hookUnread"], JSON.stringify(text));
+  }
+  const bare = ownHook(`#!/bin/sh\n${line.replace(" || exit $?", "")}\r\n`);
+  assert.deepEqual(await hookKeys(bare, { HOME: home }), ["doctor.hookUnread"]);
+  assert.equal(commitIn(bare, "feat: x", TOKEN, env).status, 0, "the oracle: the check could not read its argument");
+  // The same line with LF line ends, for both its forms.
+  assert.deepEqual(await hookKeys(ownHook(`#!/bin/sh\n${line}\n`), { HOME: home }), ["doctor.hookOk"]);
+  assert.deepEqual(await hookKeys(ownHook(`${hookModule.hookLine(CLI, join(home, ".claude", "plugins", "data", "ennyn-test"))}\n`), { HOME: home }), ["doctor.hookOk"]);
+});
+
+test("the block goes above husky's own line: there doctor says ✓, the check runs twice under husky 8.0.3 and once under 9.1.7, and real git refuses; below the line it warns", async () => {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "en-home-")));
+  const root = join(home, "version");
+  const ran = join(home, "ran");
+  mkdirSync(join(root, "scripts"), { recursive: true });
+  // A CLI that counts its runs and stops at one that names a token: what the real check does, and how often.
+  writeFileSync(join(root, "scripts", "ennyn.mjs"), `import { appendFileSync, readFileSync } from "node:fs";\nappendFileSync(${JSON.stringify(ran)}, "x");\nprocess.exit(readFileSync(".git/index").includes("token.js") ? 1 : 0);\n`);
+  const data = join(home, ".claude", "plugins", "data", "ennyn-test");
+  hookModule.recordPluginRoot(data, root);
+  const block = hookBlock(data);
+  const env = outside({ HOME: home });
+  /** @param {string} generated the files husky writes in .husky/_ @param {Record<string, string>} files @param {string} hooksPath @param {string} text .husky/commit-msg */
+  const husky = (files, hooksPath, text) => {
+    const dir = doctorRepo();
+    mkdirSync(join(dir, ".husky", "_"), { recursive: true });
+    writeFileSync(join(dir, ".husky", "_", ".gitignore"), "*");
+    for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, ".husky", "_", name), body, { mode: 0o755 });
+    writeFileSync(join(dir, ".husky", "commit-msg"), text, { mode: 0o755 });
+    git(["config", "core.hooksPath", hooksPath], { cwd: dir });
+    git(["add", "-A"], { cwd: dir });
+    git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "feat: base"], { cwd: dir });
+    return dir;
+  };
+  const source = '. "$(dirname -- "$0")/_/husky.sh"\n';
+  const eight = { "husky.sh": HUSKY8_SH };
+  // husky 9.1.7's index.js writes this _/husky.sh for a project that kept the two old lines.
+  const nine = { "husky.sh": 'echo "husky - DEPRECATED"', h: HUSKY_RUNNER, "commit-msg": HUSKY_STUB };
+  for (const [name, files, hooksPath, times] of /** @type {[string, Record<string, string>, string, number][]} */ ([["8.0.3", eight, ".husky", 2], ["9.1.7", nine, ".husky/_", 1]])) {
+    const above = husky(files, hooksPath, `#!/usr/bin/env sh\n${block}${source}\necho project\n`);
+    assert.deepEqual(await hookKeys(above, { HOME: home }), ["doctor.hookOk"], name);
+    rmSync(ran, { force: true });
+    assert.equal(commitIn(above, "feat: clean", { "n.txt": "1" }, env).status, 0, name);
+    assert.equal(readFileSync(ran, "utf8").length, times, `${name}: runs of the check`);
+    assert.equal(commitIn(above, "feat: x", { "token.js": "x\n" }, env).status, 1, name);
+    const below = husky(files, hooksPath, `#!/usr/bin/env sh\n${source}${block}`);
+    assert.deepEqual(await hookKeys(below, { HOME: home }), ["doctor.hookUnread"], name);
+    assert.equal(hookStatus(below).unread, join(below, ".husky", "commit-msg"), name);
+    const r = installCli(below, outside({ HOME: home }), "--plugin-data", data);
+    assert.equal(r.status, 1, r.stdout);
+    assert.match(r.stdout, /names commit-check.*above husky's own line/, name);
+    assert.ok(r.stdout.endsWith(block), r.stdout);
+  }
+});
+
+test("the printed line counts only where the repository cannot choose what it runs: a path in the work tree, or husky's PATH, is no ✓, and a real commit lands the secret behind each", async () => {
+  const { home } = plugged();
+  const env = outside({ HOME: home });
+  const lax = { "tools/scripts/ennyn.mjs": "process.exit(0);\n" };
+  const line = (/** @type {string} */ dir) => `#!/bin/sh\n${printedLine(join(realpathSync(dir), "tools", "scripts", "ennyn.mjs"))}\n`;
+  const empty = ownHook("", lax);
+  writeFileSync(join(empty, ".githooks", "commit-msg"), line(empty));
+  const st = hookStatus(empty);
+  assert.deepEqual([st.unread, st.late, st.block, idleReason(st)], [join(empty, ".githooks", "commit-msg"), null, null, "unread"]);
+  assert.deepEqual(await hookKeys(empty, { HOME: home }), ["doctor.hookUnread"]);
+  const r = installCli(empty, outside({ HOME: home }));
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /names commit-check.*Nothing was written/);
+  assert.doesNotMatch(r.stdout, /already runs/);
+  assert.equal(commitIn(empty, "feat: x", TOKEN, env).status, 0, "the oracle: the repository's file answered");
+  // The record's form: a record in the work tree names a version in it.
+  const record = ownHook("", { ...lax, "data/root": "x\n" });
+  writeFileSync(join(record, "data", "root"), `${join(realpathSync(record), "tools")}\n`);
+  writeFileSync(join(record, ".githooks", "commit-msg"), `#!/bin/sh\n${printedLine("", join(realpathSync(record), "data"))}\n`);
+  assert.deepEqual(await hookKeys(record, { HOME: home }), ["doctor.hookUnread"]);
+  // Seen from a linked worktree, whose top is another directory: the main checkout is still the repository's.
+  const main = ownHook("", lax);
+  writeFileSync(join(main, ".githooks", "commit-msg"), line(main));
+  git(["add", "-A"], { cwd: main });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "feat: line"], { cwd: main });
+  git(["config", "core.hooksPath", join(main, ".githooks")], { cwd: main });
+  const wt = join(realpathSync(mkdtempSync(join(tmpdir(), "en-hook-wt-"))), "wt");
+  git(["worktree", "add", "-q", "-b", "agent", wt], { cwd: main });
+  assert.deepEqual(await hookKeys(wt, { HOME: home }), ["doctor.hookUnread"]);
+  // A path elsewhere, in another repository or in none, is this machine's.
+  const elsewhere = ownHook(`#!/bin/sh\n${printedLine(CLI)}\n`);
+  assert.deepEqual([hookStatus(elsewhere).block, hookStatus(elsewhere).unread], [null, null]);
+  assert.deepEqual(await hookKeys(elsewhere, { HOME: home }), ["doctor.hookOk"]);
+  // husky 9.1.7's runner puts node_modules/.bin first: a package's bin named node answers, and the block filters it.
+  /** @param {string} text */
+  const husky = (text) => {
+    const dir = doctorRepo();
+    mkdirSync(join(dir, ".husky", "_"), { recursive: true });
+    mkdirSync(join(dir, "node_modules", ".bin"), { recursive: true });
+    writeFileSync(join(dir, "node_modules", ".bin", "node"), PLANTED, { mode: 0o755 });
+    writeFileSync(join(dir, ".gitignore"), "node_modules\n");
+    writeFileSync(join(dir, ".husky", "_", ".gitignore"), "*");
+    writeFileSync(join(dir, ".husky", "_", "h"), HUSKY_RUNNER);
+    writeFileSync(join(dir, ".husky", "_", "commit-msg"), HUSKY_STUB, { mode: 0o755 });
+    writeFileSync(join(dir, ".husky", "commit-msg"), text);
+    git(["config", "core.hooksPath", ".husky/_"], { cwd: dir });
+    git(["add", "-A"], { cwd: dir });
+    git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "feat: base"], { cwd: dir });
+    return dir;
+  };
+  const data = join(home, ".claude", "plugins", "data", "ennyn-test");
+  for (const text of [`${printedLine(CLI)}\n`, `${printedLine(CLI, data)}\n`]) {
+    const dir = husky(text);
+    assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookUnread"], text);
+    assert.equal(commitIn(dir, "feat: x", TOKEN, env).status, 0, `the oracle, ${text}: the package's node answered`);
+  }
+  const block = husky(hookBlock(data));
+  assert.deepEqual(await hookKeys(block, { HOME: home }), ["doctor.hookOk"]);
+  assert.equal(commitIn(block, "feat: x", TOKEN, env).status, 1, "the block filters PATH");
+});
+
+test("a hand-written call in the local hook, with no plugin in sight: install-hook prints the line, and the advice followed ends in ✓", async () => {
+  const { home } = plugged();
+  const dir = doctorRepo();
+  const hook = join(dir, ".git", "hooks", "commit-msg");
+  writeFileSync(hook, '#!/bin/sh\nnode x/scripts/ennyn.mjs commit-check "$1"\n', { mode: 0o755 });
+  assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookUnread"]);
+  const r = installCli(dir, outside({ HOME: home }));
+  assert.equal(r.status, 1, r.stdout);
+  const advice = /first and as it stands here: (.+)$/m.exec(r.stdout)?.[1];
+  assert.equal(advice, printedLine(CLI), r.stdout);
+  writeFileSync(hook, `#!/bin/sh\n${advice}\n`);
+  assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookOk"]);
+  assert.equal(installCli(dir, outside({ HOME: home })).status, 0);
+  // A copy in the work tree: this machine chose the path, as for Ennyn's own hook there.
+  writeFileSync(hook, `#!/bin/sh\n${printedLine(join(realpathSync(dir), "tools", "scripts", "ennyn.mjs"))}\n`);
+  assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookOk"]);
 });

@@ -41,7 +41,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { catalog } from "../core/i18n.mjs";
 import { banLines } from "../setup/scan.mjs";
-import { callsCommitCheck, hookBlock, lateCheck } from "../setup/hook.mjs";
+import { hookBlock, namesCheck, printedCheck } from "../setup/hook.mjs";
 import { accounting, declarations, testNames } from "./declarations.mjs";
 import { B62, B64, B64URL, HEX, TOKENS, UPPER_DIGITS, body, pem, rand } from "./secret-shapes.mjs";
 
@@ -60,7 +60,7 @@ export const INPUTS = {
   secrets: ["files", "head", "except", "config", "message"],
   forbidden: ["rules", "files", "head", "config", "message"],
   bans: ["text"],
-  hook: ["text", "husky"],
+  hook: ["text"],
   declarations: ["text"],
   "input-shapes": [],
 };
@@ -474,16 +474,15 @@ export const GATES = {
 
   /**
    * doctor's hook reader: `text`, a commit-msg hook, `{{block}}` in it standing for the block install-hook prints
-   * (so a cell of the printed block follows the text; an edited one holds its own); `husky`: the hook's directory
-   * is husky's. Pass: read as running commit-check; said: doctor warns, why `doctor.hookLate` when it may skip it
-   * (lateCheck).
+   * (so a cell of the printed block follows the text; an edited one holds its own). Pass: what install-hook printed,
+   * first (printedCheck); said: doctor warns, why `doctor.hookUnread` when it names commit-check.
    */
   async hook(cells) {
     return new Map(
       cells.map((c) => {
         const text = String(c.text).replaceAll("{{block}}", hookBlock("/x/plugins/data/ennyn-ennyn"));
-        const late = callsCommitCheck(text) && lateCheck(text, c.husky === true);
-        return [c.id, late ? { verdict: /** @type {Verdict} */ ("said"), why: ["doctor.hookLate"] } : { verdict: /** @type {Verdict} */ (callsCommitCheck(text) ? "pass" : "said") }];
+        if (printedCheck(text) !== null) return [c.id, { verdict: /** @type {Verdict} */ ("pass") }];
+        return [c.id, namesCheck(text) ? { verdict: /** @type {Verdict} */ ("said"), why: ["doctor.hookUnread"] } : { verdict: /** @type {Verdict} */ ("said") }];
       }),
     );
   },
