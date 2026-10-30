@@ -801,7 +801,7 @@ test("doctor: what the index holds in the folder: a worktree's files and a gitli
   merged.commit("feat: other", { ".claude/worktrees/a/f.js": "1\n" });
   git(["checkout", "-q", "main"], { cwd: merged.dir });
   merged.commit("feat: main", { ".claude/worktrees/a/f.js": "2\n" });
-  assert.equal(spawnSync("git", ["merge", "-q", "other"], { cwd: merged.dir }).status, 1);
+  assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "merge", "-q", "other"], { cwd: merged.dir }).status, 1);
   assert.deepEqual(worktreesIgnored(merged.dir), { state: "tracked", paths: [".claude/worktrees/a/f.js"] });
   // Plain files directly in the folder: the usual ways to keep it, each with its list.
   /** @type {[Record<string, string>, string, string, number][]} */
