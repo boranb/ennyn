@@ -276,15 +276,19 @@ export function projectRoot(cwd) {
 /**
  * HEAD's commit; null when the repository has no commit yet, or `cwd` is in no repository. A branch ref git
  * cannot read (garbage, no permission) makes `rev-parse --verify -q HEAD` exit 1 like a branch with no
- * commit; git log tells the two apart, in the C locale, and a broken one throws.
+ * commit; git log tells the two apart, in the C locale, and a broken one throws. `gitDir` names the git dir whose
+ * HEAD is read (the common one holds the main checkout's), given outright as a bare-looking directory may not be
+ * found (safe.bareRepository).
  * @param {string} cwd
+ * @param {{ gitDir?: string }} [opts]
  * @returns {string | null}
  */
-export function headCommit(cwd) {
+export function headCommit(cwd, { gitDir } = {}) {
   if (repoPath("--git-dir", { cwd }) === null) return null;
-  const hash = gitMaybe(["rev-parse", "--verify", "-q", "HEAD"], { cwd, absent: [1] });
+  const at = gitDir ? [`--git-dir=${gitDir}`] : [];
+  const hash = gitMaybe([...at, "rev-parse", "--verify", "-q", "HEAD"], { cwd, absent: [1] });
   if (hash) return hash;
-  const args = ["log", "-1", "--format=%H"];
+  const args = [...at, "log", "-1", "--format=%H"];
   const r = gitRun(args, { cwd, env: { ...process.env, LC_ALL: "C", LANGUAGE: "C" } });
   if (!r.error && r.status === 128 && /does not have any commits yet/.test(r.stderr)) return null;
   throw gitError(args, r.status === 0 ? { ...r, status: 1, stderr: "HEAD did not verify, yet git log found a commit" } : r);

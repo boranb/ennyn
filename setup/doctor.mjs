@@ -14,10 +14,12 @@ import { MIN_HISTORY, indexMatches, recentCommits, productionSubjects, projectFi
 import { askRules, outwardCommands, GH_COMMANDS, SETTINGS, SETTINGS_LIMIT } from "./permissions.mjs";
 import { ORPHANED, PLUGIN_RECORD, hookStatus, idleReason, replacedRoot, sessionOf, versionNote } from "./hook.mjs";
 import { instructionBudget, readBudgets } from "./budget.mjs";
-import { join, relative, resolve, sep } from "node:path";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { present, readRegular } from "../core/files.mjs";
-import { git, repoPath, gitVersion, parseVersion, versionAtLeast, stagedVersions, headFile, GIT_FLOOR } from "../core/git.mjs";
+import { commonDir, git, gitBytes, repoPath, gitVersion, parseVersion, versionAtLeast, stagedVersions, headCommit, headFile, HOOK_READ_ENV, GIT_FLOOR } from "../core/git.mjs";
 import { ciSet, ciText } from "../checks/ci.mjs";
 import { t } from "../core/i18n.mjs";
 import { literalGlob, matchAny } from "../core/glob.mjs";
@@ -160,6 +162,173 @@ export function askReport(cwd, files, add, readers = {}) {
   if (at("uncommitted").length) add("warn", "doctor.askUncommitted", { rules: named(at("uncommitted")) });
   if (at("local").length) add("warn", "doctor.askLocal", { rules: named(at("local")) });
   if (at("shared").length) add("ok", "doctor.askOk", { rules: named(at("shared")) });
+}
+
+/**
+ * Where Claude Code puts the worktrees of agents (`isolation: worktree`), --worktree and EnterWorktree: below the
+ * main checkout's top (2.1.310; only a WorktreeCreate hook puts them elsewhere). Each is a whole checkout holding an
+ * agent's unfinished code.
+ */
+export const AGENT_WORKTREES = ".claude/worktrees/";
+/**
+ * The names asked about, each a real folder. A pattern may hold a name, a shape of one (`*-*`, `?????*`) or a first
+ * letter (`[a-z]*`), so no name stands for the next: two letters with no hyphen; a long one with a hyphen, a dot, a
+ * capital and a digit first; Claude Code's own for an agent, `agent-a` and 16 hexadecimal digits.
+ */
+const WORKTREE_NAMES = ["qx", "7-Ennyn.no_pattern-names-this", "agent-a0123456789abcdef"];
+/** The names as made-up directories, for check-ignore: the / has git read a pattern for directories. */
+const WORKTREES_AS_DIRECTORIES = WORKTREE_NAMES.map((name) => `${AGENT_WORKTREES}${name}/`);
+/** The lists above the folder that a checkout of a commit holds: any other reads as this machine's. */
+const WORKTREES_GITIGNORES = [".gitignore", ".claude/.gitignore", `${AGENT_WORKTREES}.gitignore`];
+/**
+ * For a call that reads the project's index: any such read runs its core.fsmonitor hook or starts its daemon. Empty,
+ * as git 2.34 takes `false` for the name of a program.
+ */
+const NO_FSMONITOR = ["-c", "core.fsmonitor="];
+
+/**
+ * The rule that decides each path, from `check-ignore -v -n`: the empty pattern when none does.
+ * @param {string} cwd @param {string[]} paths @param {NodeJS.ProcessEnv} [env]
+ * @returns {IgnoreRule[]}
+ * @typedef {{ source: string, line: number, pattern: string }} IgnoreRule
+ */
+function ignoreRules(cwd, paths, env = process.env) {
+  // check-ignore refuses literal pathspecs, which every call gets; these paths hold no glob or magic either way.
+  const args = ["--no-literal-pathspecs", ...NO_FSMONITOR, "check-ignore", "--stdin", "-z", "-v", "-n"];
+  /** @type {string} */
+  let out;
+  try {
+    out = gitBytes(args, { cwd, env, input: paths.map((p) => `${p}\0`).join("") }).toString("utf8");
+  } catch (e) {
+    // Exit 1 is git's "none of them is ignored"; a git stopped at its limit has no status.
+    if (/** @type {{ status?: number | null }} */ (e).status !== 1) throw e;
+    return paths.map(() => ({ source: "", line: 0, pattern: "" }));
+  }
+  const fields = out.split("\0");
+  return paths.map((_, i) => ({ source: fields[i * 4], line: Number(fields[i * 4 + 1]), pattern: fields[i * 4 + 2] }));
+}
+
+/**
+ * The lists of WORKTREES_GITIGNORES that the main checkout's HEAD holds, as bytes: Claude Code puts the folder at
+ * that checkout's top, whichever one doctor runs in. None with no commit yet. A symbolic link gives none: git follows
+ * no .gitignore through one.
+ * @param {string} cwd
+ * @returns {[string, Buffer][]}
+ */
+function headLists(cwd) {
+  const head = headCommit(cwd, { gitDir: /** @type {string} */ (commonDir(cwd)) });
+  if (!head) return [];
+  const env = { ...process.env, ...HOOK_READ_ENV };
+  return git(["ls-tree", "-z", head, "--", ...WORKTREES_GITIGNORES], { cwd, env }).split("\0").flatMap((entry) => {
+    const m = /^100\d{3} blob ([0-9a-f]+)\t(.*)$/s.exec(entry);
+    return m ? [/** @type {[string, Buffer]} */ ([m[2], gitBytes(["cat-file", "blob", m[1]], { cwd, env })])] : [];
+  });
+}
+
+/**
+ * What HEAD's lists do with a worktree of any name, with nothing of this machine's: `git status` in a scratch
+ * repository of its own that holds those lists and a folder of each of WORKTREE_NAMES, shaped as a linked worktree.
+ * The .git file must lead to a real git dir: git then takes the folder whole and asks only whether it is excluded,
+ * as it does a worktree. With no such .git it goes through the files: of 46 patterns 7 read as ignored, an allow list
+ * that keeps directories or a pattern for what the folders hold; an empty folder read 26 wrong. `ignored` when git
+ * lists none of them; `rule` is the first it lists, or the folder's when no rule names that one; `asked` is what
+ * these lists alone answer for made-up names, before any folder of those names is there.
+ *
+ * Its git reads no config, ignore file or template of this machine or of the project: no git variable, no global or
+ * system config, an XDG folder with nothing in it, an empty template. So no hook or fsmonitor of the project runs.
+ * @param {string} cwd
+ * @returns {{ ignored: boolean, rule: IgnoreRule, asked: IgnoreRule[] }}
+ */
+function headReading(cwd) {
+  const lists = headLists(cwd);
+  let scratch = "";
+  try {
+    scratch = mkdtempSync(join(tmpdir(), "ennyn-worktrees-"));
+    /** @type {NodeJS.ProcessEnv} */
+    const env = {
+      ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_"))),
+      XDG_CONFIG_HOME: scratch,
+      GIT_CONFIG_GLOBAL: "/dev/null",
+      GIT_CONFIG_NOSYSTEM: "1",
+      GIT_CEILING_DIRECTORIES: dirname(scratch),
+    };
+    git(["init", "-q", "--template="], { cwd: scratch, env });
+    mkdirSync(join(scratch, AGENT_WORKTREES), { recursive: true });
+    for (const [path, bytes] of lists) writeFileSync(join(scratch, path), bytes);
+    const asked = ignoreRules(scratch, WORKTREES_AS_DIRECTORIES, env);
+    const folders = WORKTREE_NAMES.map((name) => `${AGENT_WORKTREES}${name}`);
+    for (const folder of folders) {
+      mkdirSync(join(scratch, folder));
+      writeFileSync(join(scratch, folder, ".git"), "gitdir: ../../../.git\n");
+      // A checkout's file: a git that did not take the .git for a worktree still lists the folder.
+      writeFileSync(join(scratch, folder, "README.md"), "");
+    }
+    const listed = git(["status", "--porcelain", "-z", "--untracked-files=all"], { cwd: scratch, env }).split("\0");
+    const open = folders.findIndex((folder) => listed.some((e) => e.slice(3).startsWith(`${folder}/`)));
+    const rules = ignoreRules(scratch, [...folders, AGENT_WORKTREES.slice(0, -1)], env);
+    if (open === -1) return { ignored: true, rule: rules[0], asked };
+    return { ignored: false, rule: rules[open].pattern ? rules[open] : rules[rules.length - 1], asked };
+  } catch (e) {
+    throw new Error(`the scratch repository in ${tmpdir()} failed: ${oneLine(e)}`);
+  } finally {
+    if (scratch) rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+/**
+ * What git does with what Claude Code puts in AGENT_WORKTREES. `tracked`: the index holds a worktree's files or a
+ * gitlink there, which no ignore line undoes; a plain file directly in the folder (.gitkeep, a README, its own
+ * .gitignore) holds no worktree. `listed`: git lists something untracked there, in this checkout. `ignored`: HEAD's
+ * lists ignore a worktree of any name (headReading), which is the question: not what this checkout or machine does
+ * with today's folders, and not what status says of the file. Otherwise `local`: this machine ignores it, asked of
+ * the real repository with made-up names, each as a directory; `negated`: a negation in HEAD's lists decided it;
+ * `none`. A git that fails, or a scratch repository that cannot be made, throws.
+ * @param {string} cwd the repository's top
+ * @returns {{ state: "tracked", paths: string[] } | { state: "listed", paths: string[] } | { state: "none" } | { state: "negated" | "local" | "ignored", source: string, line: number, pattern: string }}
+ */
+export function worktreesIgnored(cwd) {
+  const entries = (/** @type {string} */ out) => out.split("\0").filter(Boolean);
+  const name = (/** @type {string} */ entry) => entry.slice(entry.indexOf("\t") + 1);
+  const index = entries(git([...NO_FSMONITOR, "ls-files", "-s", "-z", "--", AGENT_WORKTREES], { cwd }));
+  const held = index.filter((e) => e.startsWith("160000 ") || name(e).slice(AGENT_WORKTREES.length).includes("/"));
+  // A conflict lists a path once for each stage.
+  if (held.length) return { state: "tracked", paths: [...new Set(held.map(name))] };
+  // A read: status takes no lock to refresh the index. A tracked file changed is no listing, so only `??`.
+  const status = git([...NO_FSMONITOR, "status", "--porcelain", "-z", "--untracked-files=all", "--", AGENT_WORKTREES], { cwd, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
+  const listed = entries(status).filter((e) => e.startsWith("?? ")).map((e) => e.slice(3));
+  if (listed.length) return { state: "listed", paths: listed };
+  const { ignored, rule, asked } = headReading(cwd);
+  if (ignored) return { state: "ignored", ...rule };
+  const here = ignoreRules(cwd, WORKTREES_AS_DIRECTORIES);
+  // Of a folder that is not there git cannot say all: an allow list or a pattern for what the folders hold reads as
+  // ignored (of 46 patterns, 8). So what HEAD's lists answer in the same words is no rule of this machine's.
+  const own = here.find((r, i) => r.pattern !== asked[i].pattern);
+  if (own && here.every((r) => r.pattern && !r.pattern.startsWith("!"))) return { state: "local", ...own };
+  return rule.pattern.startsWith("!") ? { state: "negated", ...rule } : { state: "none" };
+}
+
+/**
+ * The worktrees line: a warning for each way a worktree is not ignored. Never a ✗: no reading or gate of
+ * Ennyn's depends on it; what reads the agents' code is git status, git add -A and the project's own tools.
+ * @param {string} cwd @param {(level: DoctorItem["level"], key: string, vars?: DoctorItem["vars"]) => void} add
+ */
+function worktreesReport(cwd, add) {
+  const path = [AGENT_WORKTREES];
+  /** @type {ReturnType<typeof worktreesIgnored>} */
+  let found;
+  try {
+    found = worktreesIgnored(cwd);
+  } catch (e) {
+    return add("unmeasured", "doctor.worktreesUnmeasured", { path, error: oneLine(e) });
+  }
+  if (found.state === "tracked" || found.state === "listed") {
+    return add("warn", found.state === "tracked" ? "doctor.worktreesTracked" : "doctor.worktreesListed", { path, n: found.paths.length, examples: found.paths.slice(0, 3) });
+  }
+  if (found.state === "none") return add("warn", "doctor.worktreesNotIgnored", { path });
+  const vars = { path, source: [found.source], line: found.line, pattern: [found.pattern] };
+  if (found.state === "negated") add("warn", "doctor.worktreesNegated", vars);
+  else if (found.state === "local") add("warn", "doctor.worktreesLocal", vars);
+  else add("ok", "doctor.worktreesIgnored", vars);
 }
 
 /** The Ennyn root this doctor runs from. */
@@ -311,6 +480,7 @@ export async function checkSetup({ cwd, env = process.env, self = OWN_ROOT }) {
     }
     // The cycle asks the user before any push; an ask rule is the harness's backstop.
     askReport(cwd, files, add);
+    worktreesReport(cwd, add);
     /** @type {ReturnType<typeof instructionBudget> | null} */
     let b = null;
     try {

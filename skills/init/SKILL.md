@@ -59,7 +59,7 @@ A line that forbids a literal (`bans`: "never use `console.log`") can become a `
 
 ## 6. Handoff stub
 
-Write this only when `handoff.exists` is false. An existing handoff gets only question 6's line. Write it to `paths.handoff`:
+Only when `handoff.exists` is false, to `paths.handoff` (an existing handoff gets only question 6's line):
 
 - the commands the cycle runs: the fast test command from `commands`, then lint and typecheck when present;
 - the mutation tool from `mutation` (ask if `unmeasured` has it), or "none configured: hand-picked mutants, run with `ennyn mutate`";
@@ -68,7 +68,7 @@ Write this only when `handoff.exists` is false. An existing handoff gets only qu
 
 ## 7. Check and report
 
-When the config sets a rule only the commit-msg hook checks (doctor names them), offer `ennyn install-hook --plugin-data "${CLAUDE_PLUGIN_DATA}"`: the commit convention becomes a gate in this clone. Then run `ennyn doctor` and fix every ✗ in the files you wrote. Two kinds are not yours to fix alone. A ✗ about the machine's git (older than the floor): tell the user the version and the floor, and change nothing on their machine. A ✗ about the items of a roadmap the graph module reads: follow [graph.md](graph.md), "When doctor fails on the items". A `!` stays only when the user has seen and accepted it, for example the fix-label majority.
+When the config sets a rule only the commit-msg hook checks (doctor names them), offer `ennyn install-hook --plugin-data "${CLAUDE_PLUGIN_DATA}"`: the convention becomes a gate in this clone. Then run `ennyn doctor` and fix every ✗ in the files you wrote. Two kinds are not yours to fix alone. A ✗ about the machine's git (older than the floor): tell the user the version and the floor, and change nothing on their machine. A ✗ about the items of a roadmap the graph module reads: follow [graph.md](graph.md), "When doctor fails on the items". A `!` stays only when the user has seen and accepted it, such as the fix-label majority. Agent worktrees: [worktrees.md](worktrees.md).
 
 Report in at most thirteen lines:
 

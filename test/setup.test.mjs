@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, writeFileSync, mkdirSync, symlinkSync, chmodSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, symlinkSync, chmodSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname, delimiter } from "node:path";
+import { join, dirname, delimiter, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { git, parseVersion, versionAtLeast, GIT_FLOOR } from "../core/git.mjs";
 import { DEFAULTS, loadConfig } from "../core/config.mjs";
@@ -22,7 +22,7 @@ import {
   commitStyle,
   scanProject,
 } from "../setup/scan.mjs";
-import { checkSetup } from "../setup/doctor.mjs";
+import { checkSetup, worktreesIgnored } from "../setup/doctor.mjs";
 import { shown, t, tShown } from "../core/i18n.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
@@ -461,7 +461,9 @@ test("cli: init-scan --json is the scan; doctor prints marks and exits 1 on a pr
   // push, the other.
   assert.match(doc.stdout, /^! commit-msg hook: none, so these are rules on paper: security\.secrets; run ennyn install-hook$/m);
   assert.match(doc.stdout, /^! ask rules: no ask or deny rule for Bash\(git push \*\), PowerShell\(git push \*\) in \.claude\/settings\.json; add them to permissions\.ask \(\/ennyn:init proposes them\)$/m);
-  assert.match(doc.stdout, /^problems: 1 · warnings: 2 · unmeasured: 1$/m, "the one unmeasured: too few commits for the fix label");
+  // No .gitignore: git does not ignore where Claude Code puts agent worktrees.
+  assert.match(doc.stdout, /^! agent worktrees: git does not ignore \.claude\/worktrees\/, where Claude Code puts agent worktrees: .*; add \.claude\/worktrees\/ to \.gitignore and commit it \(\/ennyn:init proposes the line\)$/m);
+  assert.match(doc.stdout, /^problems: 1 · warnings: 3 · unmeasured: 1$/m, "the one unmeasured: too few commits for the fix label");
 });
 
 test("commit style: language guessed from subjects, also Turkish typed without diacritics; types counted, 'faz 8:' is not one", () => {
@@ -522,6 +524,535 @@ test("doctor: declared commit types are reported; a fix label that misses the fi
   assert.equal(ok.items.find((i) => i.key === "doctor.commitStyle")?.vars.language, "en", "commit language overrides the report language");
   const free = await checkSetup({ cwd: setup({}, { nodes: [{ id: "a" }] }).dir, env: {} });
   assert.ok(keys(free).includes("ok doctor.commitStyleFree"));
+});
+
+/** Claude Code's own name for an agent's worktree. */
+const AGENT = "agent-a0123456789abcdef";
+/** Names doctor does not ask about: what the next worktree may be called. */
+const NEXT = ["agent-a1b2c3d4e5f60718", "fix-login", "ab", "7-Login"];
+const LINE = ".claude/worktrees/\n";
+/** A real linked worktree where Claude Code puts one. @param {string} dir @param {string} [name] */
+function agentWorktree(dir, name = AGENT) {
+  mkdirSync(join(dir, ".claude", "worktrees"), { recursive: true });
+  git(["worktree", "add", "-q", "--detach", `.claude/worktrees/${name}`, "HEAD"], { cwd: dir });
+}
+/** Whether git shows anything of the folder: what `git add -A` would take. @param {string} dir */
+const gitLists = (dir) => git(["status", "--porcelain", "-uall"], { cwd: dir }).split("\n").some((l) => l.startsWith("?? ") && l.includes(".claude/worktrees/"));
+/** doctor's reading as its level. @param {string} dir */
+const verdict = (dir) => (worktreesIgnored(dir).state === "ignored" ? "ok" : "warn");
+/** A repository with the sources a worktree checks out, and `text` committed as its .gitignore. @param {string} [text] */
+function ignoring(text) {
+  const r = repo();
+  r.commit("feat: start", { "src/app.py": "1\n", "src/a.ts": "1\n", "README.md": "r\n", Makefile: "x:\n\ttrue\n" });
+  if (text === undefined) return r;
+  put(r.dir, { ".gitignore": text });
+  git(["add", "-f", ".gitignore"], { cwd: r.dir });
+  r.commit("chore: ignore");
+  return r;
+}
+/** `files` committed as they are, whatever the lists say of them. @param {string} dir @param {Record<string, string>} files */
+function commitForced(dir, files) {
+  put(dir, files);
+  git(["add", "-f", "--", ...Object.keys(files)], { cwd: dir });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "chore: files"], { cwd: dir });
+}
+/** A worktree in a fresh clone of `dir`, with nothing of this repository's own: what the next checkout does. @param {string} dir */
+function cloneLists(dir) {
+  const clone = mkdtempSync(join(tmpdir(), "en-wt-clone-"));
+  git(["clone", "-q", dir, "."], { cwd: clone });
+  agentWorktree(clone, "fix-login");
+  return gitLists(clone);
+}
+/** Every file below `dir`, with its time and bytes. @param {string} dir @returns {[string, string][]} */
+function snapshot(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const path = join(dir, e.name);
+    return e.isDirectory() ? snapshot(path) : [/** @type {[string, string]} */ ([path, `${statSync(path).mtimeMs} ${readFileSync(path).toString("base64")}`])];
+  });
+}
+/** `read` with these variables set, as the process that runs doctor has them. @template T @param {Record<string, string>} vars @param {() => T} read */
+function withEnv(vars, read) {
+  const was = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, vars);
+  try {
+    return read();
+  } finally {
+    for (const [k, v] of Object.entries(was)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
+
+test("doctor: HEAD's lists read as git treats the next worktree, of any name, before one is there and with some (agent-worktrees-ignored)", () => {
+  const ignored = [
+    ".claude/worktrees/\n", ".claude/worktrees\n", "/.claude/worktrees/\n", ".claude/worktrees/*\n", ".claude/worktrees/**\n", ".claude/worktrees/*/\n", ".claude/worktrees/**/*\n",
+    ".claude/\n", ".claude/*\n!.claude/settings.json\n", ".claude/\n!.claude/worktrees/\n", "**/.claude/worktrees/\n", "worktrees/\n", "worktrees\n", ".*\n!.gitignore\n", "*\n!.gitignore\n!src/\n",
+    ".claude/worktrees/*\n!.claude/worktrees/keep/\n", ".claude/worktrees/*\n!.claude/worktrees/x/\n", ".claude/**\n!.claude/*/\n", ".claude/worktrees/   \n", ".claude/worktrees/\r\n",
+  ];
+  const listed = [
+    "", "# .claude/worktrees/\n", ".claude/worktrees/ # agents\n", "\\!.claude/worktrees/\n",
+    // A name that hits a probe's own, not the folder.
+    "x\n", "x/\n", "**/x\n", "?\n", "[a-z]\n", "x*\n", "*.log\n!x\n", ".claude/worktrees/x\n", ".claude/worktrees/x/\n", ".claude/**/x\n",
+    // Allow lists: directories stay, so git lists a worktree whatever its files are.
+    "*\n!*/\n", "*\n!*/\n!*.py\n!*.ts\n!*.md\n", "*\n!.gitignore\n!*/\n!*.py\n", "*\n!*.*\n!*/\n", "*\n!*/\n!Makefile\n", "*.py\n*.ts\n*.md\nMakefile\n",
+    // The folder stays, only what it holds is named: a linked worktree holds a .git file, and git lists it whole.
+    ".claude/worktrees/*/*\n", ".claude/worktrees/*/**\n", ".claude/worktrees/*\n!.claude/worktrees/*/\n", ".claude/worktrees/**\n!.claude/worktrees/**/\n",
+    // Negations.
+    ".claude/*\n!.claude/worktrees/\n", ".claude/worktrees/*\n!.claude/worktrees/agent-*\n",
+    // Names and shapes of names: each holds some worktrees and leaves others out.
+    "tmp/\n", "feature-one/\n", ".claude/worktrees/feature-one/\n", ".claude/worktrees/feature-*\n", ".claude/worktrees/agent-*\n", ".claude/worktrees/agent-*/\n", "agent-*/\n", ".claude/worktrees/a*\n",
+    ".claude/worktrees/*-*\n", "*-*/\n", ".claude/worktrees/?????*\n", ".claude/worktrees/[a-z]*\n",
+  ];
+  for (const [texts, want, lists] of /** @type {[string[], string, boolean][]} */ ([[ignored, "ok", false], [listed, "warn", true]])) {
+    for (const text of texts) {
+      const r = ignoring(text);
+      assert.equal(verdict(r.dir), want, `${JSON.stringify(text)}, no worktree yet`);
+      for (const name of NEXT) agentWorktree(r.dir, name);
+      assert.equal(gitLists(r.dir), lists, `${JSON.stringify(text)}: git itself`);
+      assert.equal(verdict(r.dir), want, `${JSON.stringify(text)}, with worktrees`);
+    }
+  }
+  // What is on the disk today stands for no other name: a worktree the pattern holds, then the next one.
+  for (const [text, name] of [["tmp/\n", "tmp"], ["feature-*\n", "feature-one"], [".claude/worktrees/feature-*\n", "feature-one"], ["*-*\n", "feature-one"], [".claude/worktrees/agent-*\n", AGENT], [".claude/worktrees/?????*\n", "feature-one"]]) {
+    const r = ignoring(text);
+    agentWorktree(r.dir, name);
+    assert.deepEqual([gitLists(r.dir), worktreesIgnored(r.dir).state], [false, "none"], `${text} with ${name} on the disk`);
+    agentWorktree(r.dir, "ab");
+    assert.deepEqual([gitLists(r.dir), worktreesIgnored(r.dir).state], [true, "listed"], `${text}, the next worktree`);
+  }
+  // A folder of the pattern's name, with no .git.
+  const tmp = ignoring("tmp/\n");
+  put(tmp.dir, { ".claude/worktrees/tmp/a.txt": "1\n" });
+  assert.deepEqual([gitLists(tmp.dir), worktreesIgnored(tmp.dir).state], [false, "none"]);
+  // The reverse: every name but one, with that one here. The list holds; what this checkout has is said.
+  const kept = ignoring(".claude/worktrees/*\n!.claude/worktrees/feature-one/\n");
+  assert.equal(verdict(kept.dir), "ok");
+  agentWorktree(kept.dir, "feature-one");
+  assert.deepEqual([gitLists(kept.dir), worktreesIgnored(kept.dir).state], [true, "listed"]);
+  // The first folder the list leaves open is said: here one with no pattern at all.
+  assert.equal(worktreesIgnored(ignoring(".claude/worktrees/agent-*\n!.claude/worktrees/agent-a0*\n").dir).state, "none");
+  // A file in the folder is no worktree: it says nothing of the folders that will come.
+  const stray = ignoring(".claude/worktrees/*.txt\n");
+  put(stray.dir, { ".claude/worktrees/notes.txt": "n\n" });
+  assert.deepEqual([gitLists(stray.dir), verdict(stray.dir)], [false, "warn"]);
+  // A plain copy holds no .git, so git goes through its files; the lists are held to a worktree's rule.
+  const copy = ignoring(".claude/worktrees/*/*\n");
+  put(copy.dir, { ".claude/worktrees/copy/src/a.js": "1\n", ".claude/worktrees/copy/b.js": "1\n" });
+  assert.deepEqual([gitLists(copy.dir), worktreesIgnored(copy.dir).state], [false, "none"]);
+  // git reads no .gitignore through a link, on the disk or in HEAD; a link's blob holds its target, no pattern.
+  for (const [at, target] of [[".gitignore", "ignore.txt"], [".gitignore", ".claude/worktrees/"], [".claude/.gitignore", "../ignore.txt"], [".claude/.gitignore", "worktrees/"], [".claude/worktrees/.gitignore", "../../ignore.txt"], [".claude/worktrees/.gitignore", "*"]]) {
+    const linked = ignoring();
+    put(linked.dir, { "ignore.txt": LINE });
+    mkdirSync(dirname(join(linked.dir, at)), { recursive: true });
+    symlinkSync(target, join(linked.dir, at));
+    linked.commit("chore: a linked ignore file");
+    assert.equal(worktreesIgnored(linked.dir).state, "none", at);
+    assert.equal(cloneLists(linked.dir), true, at);
+  }
+});
+
+test("doctor: only HEAD's lists count, whatever this checkout and this machine do with the file (agent-worktrees-ignored)", () => {
+  const unstaged = (/** @type {string} */ bit) => (/** @type {ReturnType<typeof repo>} */ r) => {
+    r.commit("chore: ignore", { ".gitignore": "dist/\n" });
+    git(["update-index", bit, ".gitignore"], { cwd: r.dir });
+    put(r.dir, { ".gitignore": `dist/\n${LINE}` });
+  };
+  /** @type {[string, (r: ReturnType<typeof repo>) => void][]} */
+  const local = [
+    ["a .gitignore git does not track", (r) => put(r.dir, { ".gitignore": LINE })],
+    ["a new .gitignore, staged", (r) => (put(r.dir, { ".gitignore": LINE }), git(["add", ".gitignore"], { cwd: r.dir }))],
+    ["the line only in the work tree", (r) => (r.commit("chore: ignore", { ".gitignore": "dist/\n" }), put(r.dir, { ".gitignore": `dist/\n${LINE}` }))],
+    ["the line staged", (r) => (r.commit("chore: ignore", { ".gitignore": "dist/\n" }), put(r.dir, { ".gitignore": `dist/\n${LINE}` }), git(["add", ".gitignore"], { cwd: r.dir }))],
+    ["a file in .claude/ with the line only here", (r) => (r.commit("chore: ignore", { ".claude/.gitignore": "dist/\n" }), put(r.dir, { ".claude/.gitignore": "dist/\nworktrees/\n" }))],
+    ["skip-worktree, the line only on the disk", unstaged("--skip-worktree")],
+    ["assume-unchanged, the line only on the disk", unstaged("--assume-unchanged")],
+    [".git/info/exclude", (r) => writeFileSync(join(r.dir, ".git", "info", "exclude"), "# claude-code-runtime\n**/.claude/worktrees/\n")],
+    ["a tracked .gitignore elsewhere, named by core.excludesFile", (r) => (r.commit("chore: list", { "tools/.gitignore": LINE }), git(["config", "core.excludesFile", "tools/.gitignore"], { cwd: r.dir }))],
+    ["a tracked file by another name, named by core.excludesFile", (r) => (r.commit("chore: list", { "team.ignore": LINE }), git(["config", "core.excludesFile", "team.ignore"], { cwd: r.dir }))],
+    ["a listed name, read as core.excludesFile", (r) => (commitForced(r.dir, { ".claude/.gitignore": LINE }), git(["config", "core.excludesFile", ".claude/.gitignore"], { cwd: r.dir }))],
+    ["a .gitignore that ignores itself", (r) => put(r.dir, { ".gitignore": `.gitignore\n${LINE}` })],
+    ["a .gitignore git does not track, where status is told to hide such files", (r) => (put(r.dir, { ".gitignore": LINE }), git(["config", "status.showUntrackedFiles", "no"], { cwd: r.dir }))],
+  ];
+  for (const [id, prepare] of local) {
+    const r = ignoring();
+    prepare(r);
+    assert.equal(worktreesIgnored(r.dir).state, "local", `${id}, no worktree yet`);
+    agentWorktree(r.dir);
+    assert.deepEqual([gitLists(r.dir), cloneLists(r.dir)], [false, true], `${id}: ignored here, not in a clone`);
+    assert.equal(worktreesIgnored(r.dir).state, "local", `${id}, with a worktree`);
+  }
+  // The other way: HEAD holds the line, whatever this checkout did to the file.
+  /** @type {[string, (r: ReturnType<typeof repo>) => void][]} */
+  const held = [
+    ["another line, not staged", (r) => put(r.dir, { ".gitignore": `${LINE}*.tmp\n` })],
+    ["another line, staged", (r) => (put(r.dir, { ".gitignore": `${LINE}*.tmp\n` }), git(["add", ".gitignore"], { cwd: r.dir }))],
+    ["a comment above it", (r) => put(r.dir, { ".gitignore": `# agents\n${LINE}` })],
+    ["the mode changed", (r) => chmodSync(join(r.dir, ".gitignore"), 0o755)],
+    ["an untracked .gitignore below it that says the same", (r) => put(r.dir, { ".claude/.gitignore": "worktrees/\n" })],
+    ["taken off the disk by a sparse checkout", (r) => (git(["update-index", "--skip-worktree", ".gitignore"], { cwd: r.dir }), rmSync(join(r.dir, ".gitignore")))],
+    ["skip-worktree over a copy with no line", (r) => (git(["update-index", "--skip-worktree", ".gitignore"], { cwd: r.dir }), put(r.dir, { ".gitignore": "dist/\n" }))],
+    ["the line taken out, not committed, and no worktree yet", (r) => put(r.dir, { ".gitignore": "\n" })],
+    ["checked out with CRLF", (r) => {
+      git(["config", "core.autocrlf", "true"], { cwd: r.dir });
+      rmSync(join(r.dir, ".gitignore"));
+      git(["checkout", "--", ".gitignore"], { cwd: r.dir });
+      assert.equal(readFileSync(join(r.dir, ".gitignore"), "utf8"), ".claude/worktrees/\r\n");
+    }],
+  ];
+  for (const [id, prepare] of held) {
+    const r = ignoring(LINE);
+    prepare(r);
+    assert.deepEqual(worktreesIgnored(r.dir), { state: "ignored", source: ".gitignore", line: 1, pattern: ".claude/worktrees/" }, id);
+    assert.equal(cloneLists(r.dir), false, id);
+  }
+  // Each of the three files a clone gets, with an edit that is not the line beside it.
+  for (const [file, text, source] of [[".gitignore", LINE, ".gitignore"], [".claude/.gitignore", "worktrees/\n", ".claude/.gitignore"], [".claude/worktrees/.gitignore", "*\n", ".claude/worktrees/.gitignore"]]) {
+    const r = ignoring();
+    commitForced(r.dir, { [file]: text });
+    put(r.dir, { [file]: `${text}# a note\n` });
+    assert.deepEqual(worktreesIgnored(r.dir), { state: "ignored", source, line: 1, pattern: text.trim() }, file);
+    agentWorktree(r.dir);
+    assert.deepEqual([gitLists(r.dir), verdict(r.dir), cloneLists(r.dir)], [false, "ok", false], file);
+  }
+  // What this checkout lists is said even where HEAD's lists hold: the line taken out here, and a worktree here.
+  const taken = ignoring(LINE);
+  put(taken.dir, { ".gitignore": "\n" });
+  agentWorktree(taken.dir);
+  assert.deepEqual([gitLists(taken.dir), worktreesIgnored(taken.dir).state], [true, "listed"]);
+  // A negation HEAD holds decides it, whatever this checkout did to it: a list below the top one has the last word.
+  const gone = ignoring();
+  commitForced(gone.dir, { ".gitignore": LINE, ".claude/.gitignore": "!worktrees/\n" });
+  assert.deepEqual(worktreesIgnored(gone.dir), { state: "negated", source: ".claude/.gitignore", line: 1, pattern: "!worktrees/" });
+  assert.equal(cloneLists(gone.dir), true);
+  rmSync(join(gone.dir, ".claude", ".gitignore"));
+  assert.equal(worktreesIgnored(gone.dir).state, "local", "ignored here with the negation gone, not by HEAD");
+  const below = ignoring();
+  commitForced(below.dir, { ".gitignore": ".claude/worktrees/*\n", ".claude/worktrees/.gitignore": "!*\n" });
+  assert.deepEqual(worktreesIgnored(below.dir), { state: "negated", source: ".claude/worktrees/.gitignore", line: 1, pattern: "!*" });
+  rmSync(join(below.dir, ".claude", "worktrees", ".gitignore"));
+  assert.equal(worktreesIgnored(below.dir).state, "local", "ignored here with the negation gone, not by HEAD");
+  // What HEAD holds, objects as they are: a replace ref reaches no clone.
+  const replaced = ignoring("dist/\n");
+  git(["replace", git(["rev-parse", "HEAD:.gitignore"], { cwd: replaced.dir }), git(["hash-object", "-w", "--stdin"], { cwd: replaced.dir, input: LINE })], { cwd: replaced.dir });
+  assert.equal(worktreesIgnored(replaced.dir).state, "none");
+  // No commit yet: HEAD holds no list, whatever is staged.
+  const unborn = repo();
+  assert.equal(worktreesIgnored(unborn.dir).state, "none");
+  put(unborn.dir, { ".gitignore": LINE });
+  assert.equal(worktreesIgnored(unborn.dir).state, "local");
+  git(["add", ".gitignore"], { cwd: unborn.dir });
+  assert.equal(worktreesIgnored(unborn.dir).state, "local");
+  // A linked worktree: Claude Code's folder is at the main checkout's top, so its HEAD is the one read.
+  const main = ignoring();
+  const side = join(mkdtempSync(join(tmpdir(), "en-wt-side-")), "side");
+  git(["worktree", "add", "-q", "-b", "side", side], { cwd: main.dir });
+  commitForced(side, { ".gitignore": LINE });
+  assert.equal(worktreesIgnored(side).state, "local", "the branch holds the line, the main checkout's HEAD does not");
+  commitForced(main.dir, { ".gitignore": `dist/\n${LINE}` });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--amend", "-m", "chore: other", "--allow-empty"], { cwd: side });
+  git(["rm", "-q", "-f", ".gitignore"], { cwd: side });
+  assert.deepEqual(worktreesIgnored(side), { state: "ignored", source: ".gitignore", line: 2, pattern: ".claude/worktrees/" }, "the main checkout's HEAD holds it, this branch does not");
+  assert.equal(worktreesIgnored(main.dir).state, "ignored");
+  // The main checkout on a branch with no commit yet: its HEAD holds no list, whatever this branch holds.
+  const orphan = ignoring(LINE);
+  const sideOrphan = join(mkdtempSync(join(tmpdir(), "en-wt-side-")), "side");
+  git(["worktree", "add", "-q", "-b", "side", sideOrphan], { cwd: orphan.dir });
+  git(["checkout", "-q", "--orphan", "fresh"], { cwd: orphan.dir });
+  assert.equal(worktreesIgnored(sideOrphan).state, "local");
+  // Doctor's real listing is of this checkout: the main checkout's worktrees are not this one's to list.
+  const open = ignoring();
+  const sideOpen = join(mkdtempSync(join(tmpdir(), "en-wt-side-")), "side");
+  git(["worktree", "add", "-q", "-b", "side", sideOpen], { cwd: open.dir });
+  agentWorktree(open.dir);
+  assert.equal(worktreesIgnored(open.dir).state, "listed");
+  assert.equal(worktreesIgnored(sideOpen).state, "none");
+  // A file where the folder would be: no worktree can come, and git still answers.
+  for (const [file, text, state] of [[".claude", "", "none"], [".claude/worktrees", "", "none"], [".claude", LINE, "ignored"]]) {
+    const r = ignoring(text || undefined);
+    r.commit("chore: a file", { [file]: "a file\n" });
+    assert.equal(worktreesIgnored(r.dir).state, state, file);
+    const untracked = ignoring(text || undefined);
+    put(untracked.dir, { [file]: "a file\n" });
+    assert.equal(worktreesIgnored(untracked.dir).state, state, `${file}, untracked`);
+  }
+});
+
+test("doctor: what the index holds in the folder: a worktree's files and a gitlink are said, a plain file directly in it holds no worktree (agent-worktrees-ignored)", () => {
+  // One the rules cannot undo: git keeps tracking what it holds there, a line or not. A gitlink has no / below it.
+  const link = ignoring();
+  agentWorktree(link.dir);
+  git(["add", "-A"], { cwd: link.dir });
+  link.commit("feat: an agent's work", { ".gitignore": LINE });
+  assert.deepEqual(worktreesIgnored(link.dir), { state: "tracked", paths: [`.claude/worktrees/${AGENT}`] });
+  const file = ignoring();
+  file.commit("feat: a file", { ".claude/worktrees/feature-one/a.js": "1\n" });
+  file.commit("chore: ignore", { ".gitignore": LINE });
+  assert.deepEqual(worktreesIgnored(file.dir), { state: "tracked", paths: [".claude/worktrees/feature-one/a.js"] });
+  // The folder itself a submodule.
+  const sub = ignoring();
+  git(["-c", "protocol.file.allow=always", "submodule", "add", "-q", ignoring().dir, ".claude/worktrees"], { cwd: sub.dir });
+  sub.commit("feat: a submodule");
+  assert.deepEqual(worktreesIgnored(sub.dir), { state: "tracked", paths: [".claude/worktrees"] });
+  // A conflict lists a path by stage, and it is one path.
+  const merged = ignoring();
+  merged.commit("feat: a file", { ".claude/worktrees/a/f.js": "0\n" });
+  git(["checkout", "-q", "-b", "other"], { cwd: merged.dir });
+  merged.commit("feat: other", { ".claude/worktrees/a/f.js": "1\n" });
+  git(["checkout", "-q", "main"], { cwd: merged.dir });
+  merged.commit("feat: main", { ".claude/worktrees/a/f.js": "2\n" });
+  assert.equal(spawnSync("git", ["merge", "-q", "other"], { cwd: merged.dir }).status, 1);
+  assert.deepEqual(worktreesIgnored(merged.dir), { state: "tracked", paths: [".claude/worktrees/a/f.js"] });
+  // Plain files directly in the folder: the usual ways to keep it, each with its list.
+  /** @type {[Record<string, string>, string, string, number][]} */
+  const keeps = [
+    [{ ".gitignore": ".claude/worktrees/*\n!.claude/worktrees/.gitkeep\n", ".claude/worktrees/.gitkeep": "" }, ".gitignore", ".claude/worktrees/*", 1],
+    [{ ".gitignore": ".claude/worktrees/*\n!.claude/worktrees/README.md\n", ".claude/worktrees/README.md": "why\n" }, ".gitignore", ".claude/worktrees/*", 1],
+    [{ ".gitignore": LINE, ".claude/worktrees/README.md": "why\n" }, ".gitignore", ".claude/worktrees/", 1],
+    [{ ".claude/worktrees/.gitignore": "*\n!.gitignore\n" }, ".claude/worktrees/.gitignore", "*", 1],
+  ];
+  for (const [files, source, pattern, line] of keeps) {
+    const r = ignoring();
+    commitForced(r.dir, files);
+    const want = { state: "ignored", source, line, pattern };
+    assert.deepEqual(worktreesIgnored(r.dir), want, Object.keys(files).join());
+    agentWorktree(r.dir);
+    assert.deepEqual(worktreesIgnored(r.dir), want, `${Object.keys(files).join()}, with a worktree`);
+    // A keep file changed is no listing.
+    const keep = /** @type {string} */ (Object.keys(files).at(-1));
+    put(r.dir, { [keep]: `${files[keep]}# changed\n` });
+    assert.deepEqual(worktreesIgnored(r.dir), want, `${keep}, changed`);
+  }
+  // A keep file with no list: nothing ignores what comes next.
+  const bare = ignoring();
+  commitForced(bare.dir, { ".claude/worktrees/.gitkeep": "" });
+  assert.equal(worktreesIgnored(bare.dir).state, "none");
+  // A link directly in the folder holds no worktree either.
+  const pointer = ignoring();
+  mkdirSync(join(pointer.dir, ".claude", "worktrees"), { recursive: true });
+  symlinkSync("../..", join(pointer.dir, ".claude", "worktrees", "top"));
+  pointer.commit("chore: a link");
+  assert.equal(worktreesIgnored(pointer.dir).state, "none");
+});
+
+test("doctor: the worktrees line says what git said, its source, its remedy; a question git does not answer is unmeasured (agent-worktrees-ignored)", async (c) => {
+  /** The line in English. @param {{ key: string, vars: import("../core/i18n.mjs").Vars }} item */
+  const words = (item) => t(item.key, item.vars, "en");
+  /** The one worktrees line of a doctor run. @param {string} dir */
+  const line = async (dir) => {
+    const items = (await checkSetup({ cwd: dir, env: {} })).items.filter((i) => i.key.startsWith("doctor.worktrees"));
+    assert.equal(items.length, 1, JSON.stringify(items));
+    return items[0];
+  };
+  const path = [".claude/worktrees/"];
+  const at = (/** @type {string} */ source, /** @type {number} */ n, /** @type {string} */ pattern) => ({ path, source: [source], line: n, pattern: [pattern] });
+  const fresh = () => setup({}, { nodes: [{ id: "a" }] });
+
+  // No .claude folder, and none made: HEAD's lists are asked in a repository of their own.
+  const none = fresh();
+  assert.deepEqual(await line(none.dir), { level: "warn", key: "doctor.worktreesNotIgnored", vars: { path } });
+  assert.equal(existsSync(join(none.dir, ".claude")), false);
+  assert.match(words(await line(none.dir)), /add \.claude\/worktrees\/ to \.gitignore and commit it/);
+
+  // The ✓ says HEAD's list, and promises nothing of a clone: the commit may not be pushed.
+  const committed = fresh();
+  committed.commit("chore: ignore", { ".gitignore": "node_modules/\n.claude/worktrees/\n" });
+  assert.deepEqual(await line(committed.dir), { level: "ok", key: "doctor.worktreesIgnored", vars: at(".gitignore", 2, ".claude/worktrees/") });
+  assert.match(words(await line(committed.dir)), /^agent worktrees: \.gitignore:2 \(\.claude\/worktrees\/\), as HEAD holds it, ignores \.claude\/worktrees\/, whatever a worktree there is called$/);
+  const nested = fresh();
+  nested.commit("chore: ignore", { ".claude/.gitignore": "worktrees/\n" });
+  assert.deepEqual(await line(nested.dir), { level: "ok", key: "doctor.worktreesIgnored", vars: at(".claude/.gitignore", 1, "worktrees/") });
+
+  const untracked = fresh();
+  put(untracked.dir, { ".gitignore": LINE });
+  assert.deepEqual(await line(untracked.dir), { level: "warn", key: "doctor.worktreesLocal", vars: at(".gitignore", 1, ".claude/worktrees/") });
+  assert.match(words(await line(untracked.dir)), /^agent worktrees: only this machine ignores .*: the \.gitignore files HEAD holds do not.*; put \.claude\/worktrees\/ in \.gitignore and commit it$/);
+  // The source as git names it, in the real repository.
+  const exclude = fresh();
+  writeFileSync(join(exclude.dir, ".git", "info", "exclude"), "**/.claude/worktrees/\n");
+  assert.deepEqual(await line(exclude.dir), { level: "warn", key: "doctor.worktreesLocal", vars: at(".git/info/exclude", 1, "**/.claude/worktrees/") });
+  agentWorktree(exclude.dir);
+  assert.deepEqual(await line(exclude.dir), { level: "warn", key: "doctor.worktreesLocal", vars: at(".git/info/exclude", 1, "**/.claude/worktrees/") });
+  // A list for folders only is read as one: a made-up name is asked as a directory.
+  const folders = fresh();
+  writeFileSync(join(folders.dir, ".git", "info", "exclude"), ".claude/worktrees/*/\n");
+  assert.equal((await line(folders.dir)).key, "doctor.worktreesLocal");
+  // Of a folder that is not there git says too much: what HEAD's lists answer in the same words is no rule of this
+  // machine's, so a committed allow list reads as what it is, and a pattern for what the folders hold.
+  const allow = fresh();
+  allow.commit("chore: ignore", { ".gitignore": "*\n!*/\n!*.json\n!.gitignore\n" });
+  assert.deepEqual(await line(allow.dir), { level: "warn", key: "doctor.worktreesNegated", vars: at(".gitignore", 2, "!*/") });
+  const inside = fresh();
+  inside.commit("chore: ignore", { ".gitignore": ".claude/worktrees/*/*\n" });
+  assert.equal((await line(inside.dir)).key, "doctor.worktreesNotIgnored");
+  writeFileSync(join(inside.dir, ".git", "info", "exclude"), "**/.claude/worktrees/\n");
+  assert.deepEqual(await line(inside.dir), { level: "warn", key: "doctor.worktreesLocal", vars: at(".git/info/exclude", 1, "**/.claude/worktrees/") });
+  // A rule of this machine's that un-ignores is no reason to say it ignores.
+  const back = fresh();
+  put(back.dir, { ".gitignore": ".claude/worktrees/*\n!.claude/worktrees/**\n" });
+  assert.equal((await line(back.dir)).key, "doctor.worktreesNotIgnored");
+  // A list that holds some names only is no answer for the next one.
+  const some = fresh();
+  writeFileSync(join(some.dir, ".git", "info", "exclude"), ".claude/worktrees/agent-*\n");
+  assert.equal((await line(some.dir)).key, "doctor.worktreesNotIgnored");
+
+  // core.excludesFile however it is named, a .gitignore by name among them: none of them reaches another clone.
+  const named = join(mkdtempSync(join(tmpdir(), "en-excludes-")), ".gitignore");
+  writeFileSync(named, ".claude/\n");
+  const excludes = fresh();
+  git(["config", "core.excludesFile", named], { cwd: excludes.dir });
+  assert.deepEqual(await line(excludes.dir), { level: "warn", key: "doctor.worktreesLocal", vars: at(named, 1, ".claude/") });
+  git(["config", "core.excludesFile", relative(excludes.dir, named)], { cwd: excludes.dir });
+  assert.deepEqual(await line(excludes.dir), { level: "warn", key: "doctor.worktreesLocal", vars: at(relative(excludes.dir, named), 1, ".claude/") });
+  // The global ignore file core.excludesFile defaults to.
+  const global = join(String(process.env.XDG_CONFIG_HOME), "git", "ignore");
+  mkdirSync(dirname(global), { recursive: true });
+  writeFileSync(global, ".claude/worktrees\n");
+  c.after(() => rmSync(global, { force: true }));
+  assert.deepEqual(await line(none.dir), { level: "warn", key: "doctor.worktreesLocal", vars: at(global, 1, ".claude/worktrees") });
+  // A negation there is no rule of HEAD's.
+  writeFileSync(global, "!.claude/worktrees/*/\n");
+  assert.equal((await line(none.dir)).key, "doctor.worktreesNotIgnored");
+  rmSync(global);
+
+  // A negation: said with its line, of a name or of the folder itself; a pattern below a negation is not one.
+  const negated = fresh();
+  negated.commit("chore: ignore", { ".gitignore": ".claude/worktrees/*\n!.claude/worktrees/agent-*\n" });
+  assert.deepEqual(await line(negated.dir), { level: "warn", key: "doctor.worktreesNegated", vars: at(".gitignore", 2, "!.claude/worktrees/agent-*") });
+  assert.match(words(await line(negated.dir)), /and commit it/);
+  const folder = fresh();
+  folder.commit("chore: ignore", { ".gitignore": ".claude/*\n!.claude/worktrees/\n" });
+  assert.deepEqual(await line(folder.dir), { level: "warn", key: "doctor.worktreesNegated", vars: at(".gitignore", 2, "!.claude/worktrees/") });
+  // A pattern that names no worktree and a negation of something else: no negation decided this.
+  const other = fresh();
+  other.commit("chore: ignore", { ".gitignore": "*.log\n!keep.log\n" });
+  assert.equal((await line(other.dir)).key, "doctor.worktreesNotIgnored");
+
+  // What git lists: a worktree, a stray file; the folder empty is no measurement.
+  const present = fresh();
+  agentWorktree(present.dir);
+  put(present.dir, { ".claude/worktrees/notes.txt": "n\n" });
+  assert.deepEqual(await line(present.dir), { level: "warn", key: "doctor.worktreesListed", vars: { path, n: 2, examples: [`.claude/worktrees/${AGENT}/`, ".claude/worktrees/notes.txt"] } });
+  assert.match(words(await line(present.dir)), /git lists .*and commit it/);
+  // A setting that hides them from status does not hide them from this line; a plain copy's files are only counted.
+  git(["config", "status.showUntrackedFiles", "no"], { cwd: present.dir });
+  assert.equal((await line(present.dir)).key, "doctor.worktreesListed");
+  put(present.dir, Object.fromEntries(many(5, (i) => [`.claude/worktrees/copy/${i}.js`, "1\n"])));
+  const counted = await line(present.dir);
+  assert.deepEqual([counted.vars.n, /** @type {string[]} */ (counted.vars.examples).length], [7, 3]);
+  const empty = fresh();
+  mkdirSync(join(empty.dir, ".claude", "worktrees", "left-over"), { recursive: true });
+  assert.equal((await line(empty.dir)).key, "doctor.worktreesNotIgnored");
+
+  // What git tracks there; a line does not undo it, and the remedy says what does.
+  const tracked = fresh();
+  tracked.commit("feat: files", { ".claude/worktrees/.gitignore": "", ...Object.fromEntries(many(4, (i) => [`.claude/worktrees/a/${i}.js`, "1\n"])) });
+  tracked.commit("chore: ignore", { ".gitignore": LINE });
+  assert.deepEqual(await line(tracked.dir), { level: "warn", key: "doctor.worktreesTracked", vars: { path, n: 4, examples: [0, 1, 2].map((i) => `.claude/worktrees/a/${i}.js`) } });
+  assert.match(words(await line(tracked.dir)), /git rm -r --cached/);
+
+  // A link where the folder would be: with HEAD's line nothing more is asked; without it git does not answer for
+  // the machine there, which is unmeasured, never "not ignored".
+  const linked = fresh();
+  symlinkSync(mkdtempSync(join(tmpdir(), "en-claude-elsewhere-")), join(linked.dir, ".claude"));
+  const said = await line(linked.dir);
+  assert.equal(`${said.level} ${said.key}`, "unmeasured doctor.worktreesUnmeasured");
+  assert.match(String(said.vars.error), /beyond a symbolic link/);
+  linked.commit("chore: ignore", { ".gitignore": LINE });
+  assert.equal((await line(linked.dir)).key, "doctor.worktreesIgnored");
+
+  /** doctor's line of `dir` as the CLI prints it, with these variables. @param {string} dir @param {NodeJS.ProcessEnv} [vars] */
+  const printed = (dir, vars = {}) => spawnSync(process.execPath, [CLI, "doctor"], { cwd: dir, env: { ...process.env, ...vars }, encoding: "utf8" }).stdout;
+  const scratchLeft = () => readdirSync(tmpdir()).filter((f) => f.startsWith("ennyn-worktrees-"));
+  assert.deepEqual(scratchLeft(), []);
+
+  // No scratch repository: said, naming what failed, and what git lists here is still a warning.
+  const blocked = mkdtempSync(join(tmpdir(), "en-wt-blocked-"));
+  const places = [["a file", join(blocked, "file"), /ENOTDIR/], ["missing", join(blocked, "missing"), /ENOENT/]];
+  writeFileSync(join(blocked, "file"), "");
+  if (process.getuid?.() !== 0) {
+    mkdirSync(join(blocked, "read-only"));
+    chmodSync(join(blocked, "read-only"), 0o555);
+    c.after(() => chmodSync(join(blocked, "read-only"), 0o755));
+    places.push(["read-only", join(blocked, "read-only"), /EACCES/]);
+  }
+  const held = fresh();
+  held.commit("chore: ignore", { ".gitignore": LINE });
+  const real = fresh();
+  agentWorktree(real.dir);
+  for (const [id, dir, why] of /** @type {[string, string, RegExp][]} */ (places)) {
+    const out = printed(held.dir, { TMPDIR: dir });
+    assert.match(out, /^\? agent worktrees: whether git ignores \.claude\/worktrees\/ is unmeasured: the scratch repository in .* failed: /m, id);
+    assert.match(out.split("\n").find((l) => l.includes("agent worktrees")) ?? "", why, id);
+    assert.match(printed(real.dir, { TMPDIR: dir }), /^! agent worktrees: git lists 1 paths in \.claude\/worktrees\//m, id);
+  }
+
+  // A git that fails says so on the line, whichever call it is; no failure reads as "not ignored". The scratch
+  // repository goes on every exit.
+  const r = fresh();
+  r.commit("chore: ignore", { ".gitignore": LINE });
+  const bin = mkdtempSync(join(tmpdir(), "en-wt-bin-"));
+  const realGit = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+  for (const sub of ["ls-files", "status", "ls-tree", "cat-file", "init", "check-ignore"]) {
+    writeFileSync(join(bin, "git"), `#!/bin/sh\ncase " $* " in *" ${sub} "*) echo "fatal: injected" >&2; exit 128 ;; esac\nexec "${realGit}" "$@"\n`);
+    chmodSync(join(bin, "git"), 0o755);
+    const out = printed(r.dir, { PATH: `${bin}${delimiter}${process.env.PATH}` });
+    assert.match(out, /^\? agent worktrees: whether git ignores \.claude\/worktrees\/ is unmeasured: .*injected/m, `${sub}: ${out}`);
+    assert.deepEqual(scratchLeft(), [], sub);
+  }
+  // The real repository's check-ignore is asked only when HEAD's lists do not hold: it says this machine's part.
+  writeFileSync(join(bin, "git"), `#!/bin/sh\ncase " $* " in *" check-ignore "*" -n "*) case " $PWD/ " in *ennyn-worktrees-*) ;; *) echo "fatal: injected" >&2; exit 128 ;; esac ;; esac\nexec "${realGit}" "$@"\n`);
+  assert.match(printed(fresh().dir, { PATH: `${bin}${delimiter}${process.env.PATH}` }), /^\? agent worktrees: .*injected/m);
+  assert.match(printed(r.dir, { PATH: `${bin}${delimiter}${process.env.PATH}` }), /^✓ agent worktrees: /m);
+
+  // A reading: the real git dir stays as it was, though a file with a new time would have status refresh the index,
+  // and no fsmonitor of the project's runs: the scratch repository reads no config of it, and the calls here turn
+  // it off (an empty value: the floor's git takes `false` for a program's name).
+  const quiet = ignoring();
+  put(quiet.dir, { ".gitignore": LINE });
+  const log = join(mkdtempSync(join(tmpdir(), "en-wt-fsmonitor-")), "log");
+  const hook = `${log}.sh`;
+  writeFileSync(hook, `#!/bin/sh\necho ran >> "${log}"\nexit 1\n`);
+  chmodSync(hook, 0o755);
+  git(["config", "core.fsmonitor", hook], { cwd: quiet.dir });
+  utimesSync(join(quiet.dir, "README.md"), new Date(1), new Date(1));
+  const before = snapshot(join(quiet.dir, ".git"));
+  assert.equal(worktreesIgnored(quiet.dir).state, "local", "every real call made: the index, the listing, the machine's rule");
+  assert.deepEqual(snapshot(join(quiet.dir, ".git")), before, "the git dir was written");
+  // The floor's git would run this one for `core.fsmonitor=false`.
+  const programs = mkdtempSync(join(tmpdir(), "en-wt-false-"));
+  writeFileSync(join(programs, "false"), `#!/bin/sh\necho ran >> "${log}"\nexit 1\n`);
+  chmodSync(join(programs, "false"), 0o755);
+  assert.equal(withEnv({ PATH: `${programs}${delimiter}${process.env.PATH}` }, () => worktreesIgnored(quiet.dir).state), "local");
+  assert.equal(existsSync(log), false, "the project's fsmonitor ran");
+  git(["status"], { cwd: quiet.dir });
+  assert.equal(existsSync(log), true, "the hook is wired: a plain status runs it");
+
+  // Nothing of this machine's reaches HEAD's lists: git's own variables, a template, a global config.
+  const clean = ignoring();
+  const ignoreAll = join(mkdtempSync(join(tmpdir(), "en-wt-all-")), "all");
+  writeFileSync(ignoreAll, "*\n");
+  const template = mkdtempSync(join(tmpdir(), "en-wt-template-"));
+  put(template, { "info/exclude": "**/.claude/worktrees/\n" });
+  const config = join(template, "config");
+  writeFileSync(config, `[core]\n\texcludesFile = ${ignoreAll}\n`);
+  assert.equal(withEnv({ GIT_TEMPLATE_DIR: template }, () => worktreesIgnored(clean.dir).state), "none", "a template's info/exclude");
+  // The machine's own default template, which a test cannot write: a git that finds this one first stands for it.
+  const finds = mkdtempSync(join(tmpdir(), "en-wt-finds-"));
+  writeFileSync(join(finds, "git"), `#!/bin/sh\nGIT_TEMPLATE_DIR="${template}" exec "${realGit}" "$@"\n`);
+  chmodSync(join(finds, "git"), 0o755);
+  assert.equal(withEnv({ PATH: `${finds}${delimiter}${process.env.PATH}` }, () => worktreesIgnored(clean.dir).state), "none", "a default template");
+  for (const [id, vars] of /** @type {[string, Record<string, string>][]} */ ([
+    ["a variable naming a key", { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "core.excludesFile", GIT_CONFIG_VALUE_0: ignoreAll }],
+    ["git's own -c variable", { GIT_CONFIG_PARAMETERS: `'core.excludesFile=${ignoreAll}'` }],
+    ["a global config", { GIT_CONFIG_GLOBAL: config }],
+  ])) {
+    assert.deepEqual(withEnv(vars, () => worktreesIgnored(clean.dir)), { state: "local", source: ignoreAll, line: 1, pattern: "*" }, id);
+  }
+
+  // Outside a repository there is nothing to ask.
+  const outside = mkdtempSync(join(tmpdir(), "en-wt-norepo-"));
+  assert.ok(!(await checkSetup({ cwd: outside, env: {} })).items.some((i) => i.key.startsWith("doctor.worktrees")));
 });
 
 test("agent setup: cycle-like skills and reviewer agents by name, on a corpus of real names (accept and reject)", async () => {

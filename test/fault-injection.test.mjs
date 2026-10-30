@@ -172,6 +172,8 @@ const FIRST = commit(0, "feat: add", {
   ".claude/commands/ship.md": "---\ndescription: Ship the change.\n---\n\nShip it.\n",
   // Ask rules doctor finds committed: a read or a git call that fails there must be said, never judged.
   ".claude/settings.json": JSON.stringify({ permissions: { ask: ["Bash(git push *)", "PowerShell(git push *)", "Bash(npm publish *)", "PowerShell(npm publish *)"] } }),
+  // Agent worktrees ignored by a tracked .gitignore, which doctor finds: a git call that fails there must be said.
+  ".gitignore": ".claude/worktrees/\n",
   // A CI file doctor reads, and one a commit can change: a read that fails there must be said.
   ".github/workflows/ci.yml": `on: push\npermissions:\n  contents: read\njobs:\n  a:\n    steps:\n      - uses: a/b@${"0".repeat(40)}\n`,
   "src/add.js": ADD,

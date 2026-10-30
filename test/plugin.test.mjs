@@ -90,6 +90,11 @@ test("plugin: the repository asks before every command that leaves the machine, 
   for (const r of res.rules) assert.equal(r.where, "shared", `${r.rule} in .claude/settings.json`);
 });
 
+test("plugin: the repository ignores .claude/worktrees/, where Claude Code puts agent worktrees, by its .gitignore, as /ennyn:init proposes", () => {
+  // As the work tree holds it: doctor reads HEAD, and a guard edits the work tree of a clone.
+  assert.ok(read(".gitignore").split("\n").includes(".claude/worktrees/"));
+});
+
 test("plugin: hook commands point at files that exist; manifests agree on name and version", () => {
   const hooks = JSON.parse(read("hooks/hooks.json")).hooks;
   const commands = Object.values(hooks).flatMap((/** @type {any[]} */ groups) => groups.flatMap((g) => g.hooks.map((/** @type {any} */ h) => h.command)));
