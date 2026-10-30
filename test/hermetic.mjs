@@ -61,7 +61,8 @@ mkdirSync(join(home, ".config"));
 writeFileSync(join(home, ".gitconfig"), "[safe]\n\tdirectory = *\n");
 // ENNYN_CONFIG too: a developer's override would change which config every CLI test loads. ENNYN_PLUGIN_DATA and
 // Claude Code's plugin variables: a suite run from a plugin session would write the developer's plugin record.
-const PLUGIN_VARS = ["ENNYN_PLUGIN_DATA", "CLAUDE_PLUGIN_ROOT", "CLAUDE_PLUGIN_DATA", "CLAUDE_ENV_FILE"];
+// CLAUDE_CONFIG_DIR: the block of a project's own hook (hookBlock) reads the developer's record through it.
+const PLUGIN_VARS = ["ENNYN_PLUGIN_DATA", "CLAUDE_PLUGIN_ROOT", "CLAUDE_PLUGIN_DATA", "CLAUDE_ENV_FILE", "CLAUDE_CONFIG_DIR"];
 for (const k of Object.keys(process.env)) if (k.startsWith("GIT_") || k === "ENNYN_CONFIG" || PLUGIN_VARS.includes(k)) delete process.env[k];
 Object.assign(process.env, {
   HOME: home,

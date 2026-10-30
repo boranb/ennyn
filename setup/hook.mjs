@@ -3,7 +3,9 @@
  * becomes a gate instead of a line in CLAUDE.md. The hook names this
  * machine's CLI path, so it goes only into the repository's own hooks
  * directory: never into a tracked one (`core.hooksPath`), and never over a
- * hook it did not write.
+ * hook it did not write. For a tracked one, or husky's, install-hook prints a
+ * block the project puts first in its own hook (hookBlock): it names no path
+ * of any machine.
  *
  * Installed from the Claude Code plugin, the hook names no version:
  * `${CLAUDE_PLUGIN_ROOT}` is one directory per plugin version, and Claude Code
@@ -19,7 +21,7 @@
 
 import { accessSync, constants, lstatSync, readFileSync, renameSync, rmSync, writeFileSync, mkdirSync, chmodSync, realpathSync, statSync } from "node:fs";
 import { gone, present, readIfThere } from "../core/files.mjs";
-import { join, resolve, dirname, basename, relative, isAbsolute } from "node:path";
+import { join, resolve, dirname, basename, relative, isAbsolute, delimiter } from "node:path";
 import { git, gitMaybe, repoPath } from "../core/git.mjs";
 
 export const HOOK_MARKER = "# ennyn commit-msg hook";
@@ -71,8 +73,10 @@ const CONTROL = /[\x00-\x1f\x7f-\x9f]/;
  * The one answer to "may the hook run this plugin root, and may the record name it": null when both, else why
  * not. `replaced` (Claude Code's `.orphaned_at`) is one the hook still runs (that version's checks, until Claude
  * Code deletes it) but no writer records and doctor warns about; every other reason refuses the commit, and the
- * hook script refuses the same spellings (hookScript). The writer, install-hook's choice of a data directory,
- * hookStatus, idleReason and doctor all read this one predicate.
+ * hook script refuses the same spellings but for two bytes it cannot read the same way: a NUL (dash and ksh drop
+ * it, and run the path that is left) and a C1 control (what `[[:cntrl:]]` holds is the shell's and the locale's).
+ * The writer, install-hook's choice of a data directory, hookStatus, idleReason and doctor all read this one
+ * predicate.
  * @param {string} root
  * @returns {"control" | "relative" | "noCli" | "replaced" | null}
  */
@@ -109,13 +113,14 @@ export function readRecord(data) {
  * The line a commit-msg hook runs; quoted for the shell, so a path with spaces, quotes or $ survives.
  * `--hook`: a config that does not load lets the commit through with a warning instead of locking it.
  * With the plugin's data directory, the line reads the version from its record: a record that names no
- * CLI fails the commit (node finds no module), never passes it.
+ * CLI fails the commit (node finds no module), never passes it. It goes first in a hook that may go on (lateCheck),
+ * so it ends the hook on a refusal: a bare call's failure would be lost.
  * @param {string} cliPath
  * @param {string | null} [data]
  */
 export function hookLine(cliPath, data = null) {
-  if (data !== null) return `node "$(cat ${shQuote(join(data, PLUGIN_RECORD))})/scripts/ennyn.mjs" commit-check --hook "$1"`;
-  return `node ${shQuote(cliPath)} commit-check --hook "$1"`;
+  if (data !== null) return `node "$(cat ${shQuote(join(data, PLUGIN_RECORD))})/scripts/ennyn.mjs" commit-check --hook "$1" || exit $?`;
+  return `node ${shQuote(cliPath)} commit-check --hook "$1" || exit $?`;
 }
 
 /**
@@ -136,14 +141,9 @@ export function hookScript(cliPath, data = null) {
   const head = `#!/bin/sh
 ${HOOK_MARKER}: written by \`ennyn install-hook\`; delete this file to remove it.
 `;
-  const node = `if ! command -v node >/dev/null 2>&1; then
-  echo "ennyn: node not found; commit message not checked." >&2
-  exit 0
-fi
-`;
   if (data === null) {
     return `${head}cli=${shQuote(cliPath)}
-${node}if [ ! -f "$cli" ]; then
+${NODE}if [ ! -f "$cli" ]; then
   echo "ennyn: $cli not found; commit message not checked. Run ennyn install-hook again." >&2
   exit 0
 fi
@@ -155,12 +155,38 @@ exec node "$cli" commit-check --hook "$1"
   const remove = "delete this hook (git rev-parse --git-path hooks/commit-msg names it)";
   return `${head}data=${shQuote(data)}
 record="$data/${PLUGIN_RECORD}"
-${node}if [ ! -e "$record" ] && [ ! -L "$record" ]; then
-  printf '%s\\n' "ennyn: no plugin version is recorded in $data (the ennyn plugin was uninstalled, or has not run since), so the commit message is not checked." 'Run install-hook from the plugin again (/ennyn:init), or ${remove}.' >&2
+${NODE}${recordSteps(`  ${absolute}) root=$line ;;\n`, {
+    gone: "the ennyn plugin was uninstalled, or has not run since",
+    none: `Run install-hook from the plugin again (/ennyn:init), or ${remove}.`,
+    foreign: `Delete it, then run install-hook from the plugin again (/ennyn:init); or ${remove}.`,
+    stale: `Run install-hook from the plugin again (/ennyn:init; any Claude Code session with the plugin also records its version); if the plugin is uninstalled, ${remove}.`,
+    line: " ($line)",
+  })}`;
+}
+
+/** A missing node lets the commit through with a warning: hookScript's first step, and hookBlock's. */
+const NODE = `if ! command -v node >/dev/null 2>&1; then
+  echo "ennyn: node not found; commit message not checked." >&2
+  exit 0
+fi
+`;
+
+/**
+ * A plugin hook's steps from the record (`$record`, in `$data`) to commit-check, hookScript's and hookBlock's
+ * alike: nothing there lets the commit through (exit 0), a link or anything but a regular file, a first line
+ * with a control character or that `absolute` (case arms that set `root`) does not take, or a version whose CLI
+ * is gone refuses it (exit 1). `say`: why no record may be there (`gone`), the step each message names (put
+ * between single quotes: no `'` in them), and how the refusal shows the line it read (`line`). `gate`: the last
+ * step before the CLI runs.
+ * @param {string} absolute @param {{ gone: string, none: string, foreign: string, stale: string, line: string }} say @param {string} [gate]
+ */
+function recordSteps(absolute, say, gate = "") {
+  return `if [ ! -e "$record" ] && [ ! -L "$record" ]; then
+  printf '%s\\n' "ennyn: no plugin version is recorded in $data (${say.gone}), so the commit message is not checked." '${say.none}' >&2
   exit 0
 fi
 if [ -L "$record" ] || [ ! -f "$record" ]; then
-  printf '%s\\n' "ennyn: $record is no record Ennyn wrote (a link, or not a regular file), so this commit is refused." 'Delete it, then run install-hook from the plugin again (/ennyn:init); or ${remove}.' >&2
+  printf '%s\\n' "ennyn: $record is no record Ennyn wrote (a link, or not a regular file), so this commit is refused." '${say.foreign}' >&2
   exit 1
 fi
 line=
@@ -168,15 +194,240 @@ line=
 root=
 case $line in
   *[[:cntrl:]]*) ;;
-  ${absolute}) root=$line ;;
-esac
+${absolute}esac
 cli="$root/scripts/ennyn.mjs"
 if [ -z "$root" ] || [ ! -f "$cli" ]; then
-  printf '%s\\n' "ennyn: the plugin version recorded in $record ($line) is no absolute path to a version that is there, so this commit is refused." 'Run install-hook from the plugin again (/ennyn:init; any Claude Code session with the plugin also records its version); if the plugin is uninstalled, ${remove}.' >&2
+  printf '%s\\n' "ennyn: the plugin version recorded in $record${say.line} is no absolute path to a version that is there, so this commit is refused." '${say.stale}' >&2
   exit 1
 fi
-exec node "$cli" commit-check --hook "$1"
+${gate}exec node "$cli" commit-check --hook "$1"
 `;
+}
+
+/** The first line of hookBlock's block: how doctor finds the block in a project's own hook. */
+export const BLOCK_MARKER = "# >>> ennyn commit-check";
+
+/** The last part of a data directory the block can hold: what Claude Code makes of a plugin's id, and no `.`, `..` or quote. */
+export const BLOCK_ID = /^(?!\.+$)[A-Za-z0-9._-]+$/;
+
+/**
+ * hookBlock's text for a plugin's data directory named `id`. It finds the directory as Claude Code 2.1.310 keeps it
+ * (`<config>/plugins/data/<id>`, the config `CLAUDE_CONFIG_DIR` or `~/.claude`), or the one a plugin session names
+ * (`ENNYN_PLUGIN_DATA`, which also finds a directory `CLAUDE_CODE_PLUGIN_CACHE_DIR` moved), and then runs what
+ * hookScript runs, in a subshell: an exit there ends the block, not the hook, except a refusal, which the hook
+ * returns. So the project's own early exits after it (exempt subjects, a marker) skip only the project's checks.
+ *
+ * Git runs a commit-msg hook at the work tree's top, and what the repository holds must not decide the check, so
+ * the block trusts nothing under it: PATH loses every empty, relative or in-tree entry, compared as real paths
+ * (husky 9 puts `node_modules/.bin` first, and a package with no install script can link a `node` there), filtered
+ * and never refused, so a project that depends on the `node` package still commits; nothing left is a PATH naming no
+ * directory, as an empty one means the current directory to sh, dash and zsh. A data directory or a record's CLI in
+ * the work tree refuses the commit: install-hook's own refusal holds only when it runs. A real path is what the
+ * kernel finds, `cd -P` and then /bin/pwd: a logical cd takes `link/..` as text, and the builtin pwd of bash and ksh
+ * keeps the spelling it was given (a volume that folds case, a firmlink, `PWD`). node runs with no NODE_OPTIONS or
+ * NODE_PATH, which a tracked .npmrc gets into the environment through npm run. `uname` says what counts as absolute,
+ * read after the filter: a drive path only on Git for Windows and Cygwin. A refusal prints no byte it refuses.
+ * hookScript has the same exposures: hook-node-in-repo.
+ * @param {string} id
+ */
+function blockText(id) {
+  const remove = "take this block out of the hook";
+  const outside = "Keep the data directory and the version of the plugin outside the repository";
+  const inTree = (/** @type {string} */ what) => `printf '%s\\n' "ennyn: ${what}, where the repository could choose what runs, so this commit is refused." '${outside}; or ${remove}.' >&2`;
+  const body = `id=${shQuote(id)}
+physical() {
+  cd -P "$1" 2>/dev/null && { /bin/pwd -P 2>/dev/null || pwd -P; }
+}
+top=$(physical .)
+kept=
+rest=\${PATH:-}:
+while [ -n "$rest" ]; do
+  dir=\${rest%%:*}
+  rest=\${rest#*:}
+  case $dir in
+    /*) ;;
+    *) continue ;;
+  esac
+  real=$(physical "$dir") || continue
+  case $real/ in
+    "$top"/*) continue ;;
+  esac
+  kept=\${kept:+$kept:}$dir
+done
+PATH=\${kept:-/nonexistent}
+${NODE}windows=
+case $(uname -s 2>/dev/null) in
+  MINGW*|MSYS*|CYGWIN*) windows=1 ;;
+esac
+if [ -n "\${ENNYN_PLUGIN_DATA:-}" ]; then
+  data=$ENNYN_PLUGIN_DATA
+elif [ -n "\${CLAUDE_CONFIG_DIR:-}" ]; then
+  data=$CLAUDE_CONFIG_DIR/plugins/data/$id
+elif [ -n "\${HOME:-}" ]; then
+  data=$HOME/.claude/plugins/data/$id
+else
+  printf '%s\\n' "ennyn: HOME is not set, so the plugin's data directory is unknown and this commit is refused." 'Set HOME, or ENNYN_PLUGIN_DATA to the data directory of the plugin; or ${remove}.' >&2
+  exit 1
+fi
+absolute=
+case $data in
+  *[[:cntrl:]]*) ;;
+  /*) absolute=1 ;;
+  [A-Za-z]:[\\\\/]*) [ -z "$windows" ] || absolute=1 ;;
+esac
+if [ -z "$absolute" ]; then
+  printf '%s\\n' "ennyn: the plugin's data directory is no absolute path, or holds a control character, so this commit is refused." 'Set CLAUDE_CONFIG_DIR as Claude Code has it, or ENNYN_PLUGIN_DATA to the data directory; or ${remove}.' >&2
+  exit 1
+fi
+if [ -d "$data" ]; then
+  real=$(physical "$data")
+  if [ -z "$real" ]; then
+    printf '%s\\n' "ennyn: the plugin's data directory $data cannot be read, so this commit is refused." 'Make it readable; or ${remove}.' >&2
+    exit 1
+  fi
+  case $real/ in
+    "$top"/*)
+      ${inTree("the plugin's data directory $data lies inside this work tree")}
+      exit 1 ;;
+  esac
+fi
+record="$data/${PLUGIN_RECORD}"
+${recordSteps(
+  `  /*) root=$line ;;\n  [A-Za-z]:[\\\\/]*) [ -z "$windows" ] || root=$line ;;\n`,
+  {
+    gone: "the ennyn plugin is not installed for this user, was uninstalled, or has not run since",
+    none: `A Claude Code session with the plugin records it; or ${remove}.`,
+    foreign: `Delete it, then start a Claude Code session with the plugin, which records its version; or ${remove}.`,
+    stale: `Start a Claude Code session with the plugin, which records the version it runs; if the plugin is uninstalled, ${remove}.`,
+    line: "",
+  },
+  `real=$(physical "$root/scripts")
+case $real/ in
+  "$top"/*) real= ;;
+esac
+if [ -z "$real" ] || [ -L "$cli" ]; then
+  ${inTree("the plugin version recorded in $record lies inside this work tree, or its CLI is a link")}
+  exit 1
+fi
+unset NODE_OPTIONS NODE_PATH
+`,
+)}`;
+  // Indented as the subshell's body. No exit in it starts a line, which callsCommitCheck would read as the hook's end.
+  const inner = body.replace(/^(?=.)/gm, "  ");
+  return `${BLOCK_MARKER}: keep this block first in the hook, before any other command.
+# Printed by ennyn install-hook. It checks every commit this hook sees, whatever the rest of the hook skips.
+(
+${inner}) || exit $?
+# <<< ennyn commit-check
+`;
+}
+
+/**
+ * The block install-hook prints for a project's own commit-msg hook in a tracked hooks directory or husky's, where
+ * Ennyn writes nothing: the file is the project's, shared by every clone, so the block names no path of this
+ * machine (blockText). doctor reads it as wired only exact and first (printedBlock).
+ * @param {string} data the plugin's data directory install-hook was given or the session names
+ */
+export function hookBlock(data) {
+  return blockText(basename(data));
+}
+
+/** husky 6 to 8's start of a hook it runs: it ends the hook early only for HUSKY=0, as husky 9's runner does before the file. */
+const HUSKY_SH = /^\.[ \t]+"\$\(dirname (?:-- )?"\$0"\)\/_\/husky\.sh"[ \t]*$/;
+
+/**
+ * A `#!` line the hook's text is read under: a shell of the sh family by its absolute path, directly or through a plain
+ * env, the block's syntax running under each. Its one word of flags is made of e, u and x: others run nothing (-n, -s,
+ * -c), and env's own (-S, -i) change what follows.
+ */
+const SH_SHEBANG = /^#![ \t]*\/(?:\S*\/)?(?:env[ \t]+)?(?:ba|da|k|mk|z|a)?sh(?:[ \t]+-[eux]+)?[ \t]*$/;
+
+/** The same for a Node hook, with no flags: `--check` runs nothing. */
+const NODE_SHEBANG = /^#![ \t]*\/(?:\S*\/)?(?:env[ \t]+)?node[ \t]*$/;
+
+/** A line that runs nothing: blank, or a comment. */
+const NOTHING = /^[ \t]*(?:#.*)?$/;
+
+/** A `set` line that changes how the rest fails, no more: e, u and x, by letter or by name, and pipefail. `set -n` runs nothing, and `set --` changes the message's path. */
+const SET_FLAGS = /^[ \t]*set(?:[ \t]+(?:-[eux]+|-[eux]*o[ \t]+(?:errexit|nounset|pipefail|xtrace)))+(?:[ \t]+#.*|[ \t]*)$/;
+
+/**
+ * Whether a line may stand before the hook's first command.
+ * @param {string} line @param {boolean} husky the hook's directory is husky's (huskyMade): only there is its start known to be its own
+ */
+const quiet = (line, husky) => NOTHING.test(line) || SET_FLAGS.test(line) || (husky && HUSKY_SH.test(line));
+
+/** Leading `NAME=value` words: on their own they run nothing. */
+const ASSIGNMENTS = /^(?:[A-Za-z_]\w*=(?:'[^']*'|"(?:\\.|[^"\\])*"|[^\s'"])*(?:\s+|$))+/;
+
+/**
+ * The start of a command that runs a program: past `if`, `!` and `exec`, a name Ennyn is reached by, a shell given its
+ * text, a value or a path, quoted or not (`./node_modules/.bin/ennyn`, `"$cli"`). A list in the safe direction: any other
+ * word warns, so what keeps the name, tests for it, branches on it or prints it needs no entry of its own, as a list of
+ * those needed one more each time.
+ */
+const RUNS = /^(?:(?:if|!|exec)\s+)*(?:(?:node|npm|npx|pnpm|pnpx|yarn|bun|bunx|deno|ennyn|sh|bash|dash|ksh|zsh)\s|["']?\$|["']?[^\s"'$]*\/)/;
+
+/** A function's definition: its body runs when it is called, if it is. */
+const FUNCTION = /^[^\s()]+\s*\(\s*\)/;
+
+/**
+ * The block in a hook's text exactly as install-hook prints it, the id read from it: `first` when only an optional
+ * shebang of the sh family (or none, and none lower down: a `#!` under the block is an interpreter the hook has
+ * lost) and lines that may stand before the first command (`quiet`) stand before it. null without the exact text:
+ * position is read from the text that runs, never from a comment, and CRLF, a lone CR, a here-document or an edit is
+ * no exact text.
+ * @param {string} text @param {boolean} husky
+ * @returns {{ id: string, first: boolean } | null}
+ */
+function printedBlock(text, husky) {
+  const id = /^ {2}id='([^'\n]*)'$/m.exec(text)?.[1];
+  if (id === undefined || !BLOCK_ID.test(id)) return null;
+  const want = blockText(id).trimEnd();
+  const at = text.indexOf(want);
+  if (at === -1 || (at > 0 && text[at - 1] !== "\n")) return null;
+  const after = text[at + want.length];
+  if (after !== undefined && after !== "\n") return null;
+  const shebang = text.startsWith("#!");
+  const interpreter = shebang ? SH_SHEBANG.test(text.slice(0, text.indexOf("\n"))) : !/^#!/m.test(text);
+  const before = text.slice(0, at).split("\n").slice(shebang ? 1 : 0, -1);
+  return { id, first: interpreter && before.every((l) => quiet(l, husky)) };
+}
+
+/**
+ * Whether the hook's first command is a call of commit-check: past the shebang and the lines that may stand before it
+ * (`quiet`), the next line's first command runs a program (RUNS) and names it; in a Node hook, past `//` comments, the next
+ * line names it. No shell is parsed: what a `sh -c` or `eval` string holds, or a Node line beside the name, is not read.
+ * @param {string} text @param {boolean} husky
+ */
+function firstIsCheck(text, husky) {
+  const lines = text.split("\n");
+  const shebang = lines[0].startsWith("#!");
+  const js = NODE_SHEBANG.test(lines[0]);
+  if (shebang && !js && !SH_SHEBANG.test(lines[0])) return false;
+  const first = lines.slice(shebang ? 1 : 0).find((l) => !(js ? /^\s*(?:\/\/.*)?$/.test(l) : quiet(l, husky)));
+  if (first === undefined) return false;
+  if (js) return NAMES.test(jsCode(first));
+  const [command, next] = shellCommands(first).commands;
+  const run = command.text.replace(ASSIGNMENTS, "");
+  return RUNS.test(run) && !FUNCTION.test(run) && checks(command, next);
+}
+
+/**
+ * Whether a hook that runs commit-check may skip it on a path through the hook. It counts only as the hook's first
+ * command, the block exact and first (printedBlock; a text that names its marker without it is an edit) or a call
+ * (firstIsCheck): reading the shell for what could skip it failed twice, on `exit` as a word. Before it stand a
+ * shebang (flags e, u, x), comments, blank lines, `set` lines with those flags, and husky's own start where the
+ * hook's directory is husky's. Anything else reads late: a false warning stops no commit, so a hook that runs other
+ * checks first warns, and the block is the remedy. Not seen: what runs before the file (husky 9's runner and its
+ * init.sh, HUSKY=0, --no-verify), a first call whose failure the hook then drops (no `|| exit`: hook-wired-limits),
+ * and what a project line after the block does: rewriting the message file changes what is committed, unchecked.
+ * @param {string} text @param {boolean} [husky] the hook's directory is husky's (huskyMade)
+ */
+export function lateCheck(text, husky = false) {
+  const printed = printedBlock(text, husky);
+  if (printed !== null) return !printed.first;
+  return text.includes(BLOCK_MARKER) || !firstIsCheck(text, husky);
 }
 
 /** Why a plugin version cannot be recorded; `reason` names the check that refused it. */
@@ -222,17 +473,19 @@ export function recordPluginRoot(data, root) {
 }
 
 /**
- * The real path of p; for a path that does not exist yet, the real path of its nearest existing ancestor
- * with the rest appended (a hooks directory not created yet still compares correctly through a link).
+ * The real path of p, what the kernel finds: `link/..` is not read as text, and a volume that folds case gives the
+ * spelling on disk (realpathSync's own walk does neither). For a path that does not exist yet, the real path of
+ * its nearest existing ancestor with the rest appended (a hooks directory not created yet still compares
+ * correctly through a link).
  * @param {string} p
  */
 function real(p) {
   /** @type {string[]} */
   const rest = [];
-  let cur = resolve(p);
+  let cur = isAbsolute(p) ? p : resolve(p);
   for (;;) {
     try {
-      return join(realpathSync(cur), ...rest);
+      return join(realpathSync.native(cur), ...rest);
     } catch {
       const up = dirname(cur);
       if (up === cur) return resolve(p);
@@ -251,18 +504,24 @@ const readOrNull = (path) => readIfThere(path);
 
 /**
  * @param {string} cwd
- * @returns {{ path: string, hooksPath: string | null, hooksKind: "repo" | "husky" | "global" | null, state: "none" | "ennyn" | "wired" | "other", there: boolean, runs: boolean, cli: string | null, data: string | null, recorded: string | null, problem: ReturnType<typeof readRecord>["problem"] }}
+ * @param {NodeJS.ProcessEnv | Record<string, string | undefined>} [env] what the hook's block reads its data directory from
+ * @returns {{ path: string, hooksPath: string | null, hooksKind: "repo" | "husky" | "global" | null, state: "none" | "ennyn" | "wired" | "other", there: boolean, runs: boolean, cli: string | null, data: string | null, recorded: string | null, problem: ReturnType<typeof readRecord>["problem"] | "inRepository" | "noData" | "noNode", late: string | null, block: string | null }}
  *   "wired": a hook Ennyn did not write that already runs commit-check (a project's own tracked hook,
  *   or husky's .husky/commit-msg behind its generated .husky/_ stubs): a line calls it (callsCommitCheck).
- *   hooksKind: where core.hooksPath points: inside the repository ("repo", usually tracked), husky's
- *   stub directory ("husky"), or outside it ("global", every repository on this machine).
+ *   hooksKind: where core.hooksPath points: inside the repository, or inside the main checkout from a linked
+ *   worktree ("repo", usually tracked), husky's stub directory ("husky"), or outside it ("global", every
+ *   repository on this machine).
  *   runs: git would run the file at `path` (it is there and executable; git skips one that is not, with a
  *   hint). cli: the CLI an Ennyn hook names, null for any other hook (one written from a copy of Ennyn that
  *   has moved since lets every commit through unchecked; doctor looks for it); for a hook installed from the
  *   plugin, the CLI its record names when the hook would run it. data: the plugin's data directory such a
  *   hook reads its record from, null for any other hook; recorded and problem: readRecord's answer for it.
+ *   late: the file that runs commit-check (husky's: the one its stub runs) when it may skip it (lateCheck); null
+ *   otherwise. block: that file when it holds hookBlock's block exact and first; cli, data, recorded and problem
+ *   are then what the block reads in `env`: `noNode` where the filter leaves no node, `noData` where it finds no
+ *   directory it may read, `inRepository` for a record naming the work tree or a CLI that is a link.
  */
-export function hookStatus(cwd) {
+export function hookStatus(cwd, env = process.env) {
   const hooksPath = gitMaybe(["config", "--get", "core.hooksPath"], { cwd, absent: [1] }) || null;
   const dir = resolve(cwd, git(["rev-parse", "--git-path", "hooks"], { cwd }));
   const path = join(dir, "commit-msg");
@@ -273,13 +532,15 @@ export function hookStatus(cwd) {
     const top = repoPath("--show-toplevel", { cwd }) ?? cwd;
     // Both sides as real paths: git prints the real top level, while dir came through cwd (a link, /var → /private/var).
     const rel = relative(real(top), real(dir));
+    const inside = !(rel.startsWith("..") || isAbsolute(rel)) || sameRepository(cwd, dir);
     // husky v9 keeps its stubs in a "_" directory (.husky/_, or one of the project's choosing) next to the
     // runner it writes there, "h"; a tracked directory named "_" without it is the repository's own.
     const husky = basename(dir) === "_" && (basename(dirname(dir)) === ".husky" || present(join(dir, "h")));
-    hooksKind = rel.startsWith("..") || isAbsolute(rel) ? "global" : husky ? "husky" : "repo";
+    hooksKind = !inside ? "global" : husky ? "husky" : "repo";
   }
   // husky v9: .husky/_/commit-msg is a generated stub that runs .husky/commit-msg.
-  const userHook = hooksKind === "husky" ? readOrNull(join(dirname(dir), "commit-msg")) : null;
+  const userPath = hooksKind === "husky" ? join(dirname(dir), "commit-msg") : null;
+  const userHook = userPath !== null ? readOrNull(userPath) : null;
   const state =
     text !== null && text.includes(HOOK_MARKER)
       ? "ennyn"
@@ -288,12 +549,99 @@ export function hookStatus(cwd) {
         : text === null && userHook === null
           ? "none"
           : "other";
-  const data = state === "ennyn" ? quoted(/** @type {string} */ (text), "data") : null;
-  const record = data !== null ? readRecord(data) : null;
+  // The project's file that runs commit-check, and how.
+  const own = state !== "wired" ? null : text !== null && callsCommitCheck(text) ? { text, at: path } : { text: /** @type {string} */ (userHook), at: /** @type {string} */ (userPath) };
+  const husky = own !== null && hooksKind !== "global" && huskyMade(own.at);
+  const late = own !== null && lateCheck(own.text, husky) ? own.at : null;
+  const printed = own !== null && late === null ? printedBlock(own.text, husky) : null;
+  const read = printed !== null ? blockRecord(printed.id, cwd, env) : null;
+  const data = state === "ennyn" ? quoted(/** @type {string} */ (text), "data") : (read?.data ?? null);
+  const record = read?.record ?? (data !== null ? readRecord(data) : null);
   // The CLI the hook runs: one its record names only when the hook would run it (a replaced version still runs).
   const runnable = record !== null && (record.problem === null || record.problem === "replaced");
   const cli = record !== null ? (runnable ? cliOf(/** @type {string} */ (record.root)) : null) : state === "ennyn" ? hookCli(/** @type {string} */ (text)) : null;
-  return { path, hooksPath, hooksKind, state, there: text !== null, runs: executable(path), cli, data, recorded: record?.root ?? null, problem: record?.problem ?? null };
+  return { path, hooksPath, hooksKind, state, there: text !== null, runs: executable(path), cli, data, recorded: record?.root ?? null, problem: record?.problem ?? null, late, block: printed !== null ? /** @type {{ at: string }} */ (own).at : null };
+}
+
+/**
+ * Whether `dir` (a hooks directory, or what is there of it) lies in a work tree of the repository at `cwd`: the main
+ * checkout of a linked worktree, whatever its layout: Claude Code's agent-worktree setup makes a relative value
+ * absolute, in the config every worktree shares. git is asked from there, as `git worktree list` cannot say: its
+ * first entry is the git directory for a --separate-git-dir repository and for a submodule (2.34.1 and 2.56.0).
+ * `dir` in no repository git reads (no repository, one it refuses) is no repository of this.
+ * @param {string} cwd @param {string} dir
+ */
+function sameRepository(cwd, dir) {
+  let at = real(dir);
+  while (!isDir(at)) at = dirname(at);
+  const there = gitMaybe(["rev-parse", "--is-inside-work-tree", "--path-format=absolute", "--git-common-dir"], { cwd: at, absent: [128] });
+  if (there === null) return false;
+  const [worktree, common] = there.split("\n");
+  return worktree === "true" && real(common) === real(git(["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd }));
+}
+
+/**
+ * Whether the `_/husky.sh` beside a project's hook is what husky generated: a file git ignores, so no clone gets it
+ * from the repository. One the index holds, or a link at either place, is the repository's text, whatever the
+ * directory is called.
+ * @param {string} hook the hook's path
+ */
+function huskyMade(hook) {
+  const dir = dirname(hook);
+  const made = lstatOrNull(join(dir, "_", "husky.sh"));
+  if (!lstatOrNull(join(dir, "_"))?.isDirectory() || !made?.isFile()) return false;
+  return git(["ls-files", "--", "_/husky.sh"], { cwd: dir }) === "";
+}
+
+/**
+ * The plugin's data directory as hookBlock's block finds it, in its order; null with nothing to find it by.
+ * @param {string} id @param {NodeJS.ProcessEnv | Record<string, string | undefined>} env
+ */
+function blockData(id, env) {
+  if (env[SESSION_DATA]) return /** @type {string} */ (env[SESSION_DATA]);
+  // As text, as the block joins them: `link/..` is the kernel's to read.
+  if (env.CLAUDE_CONFIG_DIR) return `${env.CLAUDE_CONFIG_DIR}/plugins/data/${id}`;
+  return env.HOME ? `${env.HOME}/.claude/plugins/data/${id}` : null;
+}
+
+/**
+ * Whether the block's PATH filter leaves a node: an absolute entry that is no part of the work tree, as real paths,
+ * holding an executable file of that name. An entry the block cannot enter is dropped there too.
+ * @param {string} cwd @param {NodeJS.ProcessEnv | Record<string, string | undefined>} env
+ */
+function blockNode(cwd, env) {
+  const name = process.platform === "win32" ? "node.exe" : "node";
+  return (env.PATH ?? "").split(delimiter).some((entry) => {
+    if (!isAbsolute(entry) || inRepository(cwd, entry)) return false;
+    try {
+      accessSync(join(entry, name), constants.X_OK);
+      return statSync(join(entry, name)).isFile();
+    } catch {
+      return false;
+    }
+  });
+}
+
+/**
+ * What the block finds in `env`, as it reads it and in its order: no node left on PATH (`noNode`: the commit passes,
+ * whatever else is wrong), no directory it may read (`noData`: nothing to find it by, no absolute path, a control
+ * character, a directory in the work tree or one it cannot enter; none there at that path holds no record, so the
+ * commit passes), or readRecord's answer, with a version it runs in the work tree, or a CLI that is a link, as
+ * `inRepository`, which it refuses: a replaced version too, which only a hook of Ennyn's own still runs.
+ * @param {string} id @param {string} cwd @param {NodeJS.ProcessEnv | Record<string, string | undefined>} env
+ * @returns {{ data: string | null, record: { root: string | null, problem: ReturnType<typeof readRecord>["problem"] | "inRepository" | "noData" | "noNode" } }}
+ */
+function blockRecord(id, cwd, env) {
+  if (!blockNode(cwd, env)) return { data: null, record: { root: null, problem: "noNode" } };
+  const data = blockData(id, env);
+  const noData = { data: null, record: { root: null, problem: /** @type {const} */ ("noData") } };
+  if (data === null || CONTROL.test(data) || !isAbsolute(data)) return noData;
+  const there = isDir(data);
+  if (there && (inRepository(cwd, data) || !searchable(data))) return noData;
+  // The record through the directory's real path: `link/..` is what the kernel finds, as the block's cd -P reads it.
+  const record = readRecord(there ? realpathSync.native(data) : data);
+  const runs = record.root !== null && (record.problem === null || record.problem === "replaced");
+  return { data, record: runs && (lstatOrNull(cliOf(/** @type {string} */ (record.root)))?.isSymbolicLink() || inRepository(cwd, cliOf(/** @type {string} */ (record.root)))) ? { root: record.root, problem: "inRepository" } : record };
 }
 
 /** commit-check as a word of a command, quoted or not (`"commit-check"`, `SUB=commit-check`, `[cli, "commit-check"]`). */
@@ -304,15 +652,21 @@ const TEXT_COMMAND = /^(?:(?:if|then|else|elif|do|while|until|!|\{|\()\s+)*(?:ec
 const SWALLOW = /^(?:true|:|exit\s+0)\s*$/;
 
 /**
+ * A command of a line that runs commit-check as a check: it names it, is no text, and its line does not throw its failure away.
+ * @param {{ text: string, sep: string }} command @param {{ text: string } | undefined} next the command after it
+ */
+const checks = (command, next) => !TEXT_COMMAND.test(command.text) && NAMES.test(command.text) && !(command.sep === "||" && SWALLOW.test(next?.text ?? ""));
+
+/**
  * Whether a hook script runs commit-check as a check (a hook that does not checks nothing, and doctor must not
  * show ✓), read line by line as the shell would run it. A line counts when one of its commands names
  * commit-check as a word, quoted or not (`node cli "commit-check"`, `sh -c "… commit-check …"`,
  * `SUB=commit-check`, a Node hook's `[cli, "commit-check", …]`), and that command is not text (echo, printf,
  * `:`). Not counted: a comment (`#`; `//` in a Node hook), a here-document's body, a call whose failure its
  * line throws away (`|| true`, `|| :`, `|| exit 0`), and anything after an `exit` that starts a line (at the
- * top level, where it always runs). Not seen at this level: a block that never runs (`if false; then …`), a
- * function never called, a Node hook's block comments. test/hook.test.mjs holds the corpus, with real git as
- * the judge (an untyped subject is refused only when the hook checks).
+ * top level, where it always runs). Not seen here: a block that never runs, a function never called (lateCheck
+ * warns of both), a Node hook's block comments. test/hook.test.mjs holds the corpus, with real git as the judge
+ * (an untyped subject is refused only when the hook checks).
  * @param {string} text
  */
 export function callsCommitCheck(text) {
@@ -333,12 +687,7 @@ export function callsCommitCheck(text) {
     if (/^exit(\s+\d+)?\s*;?\s*(#.*)?$/.test(line)) return false;
     const read = shellCommands(line);
     heredoc = read.heredoc;
-    const cmds = read.commands;
-    for (let i = 0; i < cmds.length; i++) {
-      if (!NAMES.test(cmds[i].text) || TEXT_COMMAND.test(cmds[i].text)) continue;
-      if (cmds[i].sep === "||" && SWALLOW.test(cmds[i + 1]?.text ?? "")) continue;
-      return true;
-    }
+    if (read.commands.some((command, i) => checks(command, read.commands[i + 1]))) return true;
   }
   return false;
 }
@@ -417,14 +766,18 @@ function jsCode(line) {
  * directory in its place: the hook's own `[ -f "$cli" ]`); null when it checks. For a hook installed from the
  * plugin, readRecord's answer: `unrecorded` when no record is there (the hook lets every commit through),
  * `foreign` when something that is no regular file is at its place, `stale` when its line names no root the
- * hook runs (both refuse every commit). doctor and installHook read this one answer. A path that cannot be
- * looked at throws.
+ * hook runs (both refuse every commit). `late`: a project's own hook may skip it on some commits (lateCheck).
+ * For the block, the same answers from the record it reads, `noNode` where its PATH filter leaves no node (it lets
+ * every commit through) and `noData` where it finds no directory it may read (it refuses every commit). doctor and
+ * installHook read this one answer. A path that cannot be looked at throws.
  * @param {ReturnType<typeof hookStatus>} st
- * @returns {"absent" | "mode" | "cli" | "stale" | "unrecorded" | "foreign" | null}
+ * @returns {"absent" | "mode" | "late" | "noNode" | "noData" | "cli" | "stale" | "unrecorded" | "foreign" | null}
  */
 export function idleReason(st) {
   if (!st.there) return "absent";
   if (!st.runs) return "mode";
+  if (st.late !== null) return "late";
+  if (st.problem === "noNode" || st.problem === "noData") return st.problem;
   if (st.data !== null) return st.problem === "none" ? "unrecorded" : st.problem === "foreign" ? "foreign" : st.cli === null ? "stale" : null;
   if (st.cli !== null && !isFile(st.cli)) return "cli";
   return null;
@@ -455,6 +808,37 @@ function isFile(path) {
     return statSync(path).isFile();
   } catch (err) {
     if (gone(err)) return false;
+    throw err;
+  }
+}
+
+/** @param {string} path */
+function isDir(path) {
+  try {
+    return statSync(path).isDirectory();
+  } catch (err) {
+    if (gone(err)) return false;
+    throw err;
+  }
+}
+
+/** What is at `path` itself, a link not followed; null with nothing there. @param {string} path */
+function lstatOrNull(path) {
+  try {
+    return lstatSync(path);
+  } catch (err) {
+    if (gone(err)) return null;
+    throw err;
+  }
+}
+
+/** Whether a directory can be entered, as `cd` asks. @param {string} dir */
+function searchable(dir) {
+  try {
+    accessSync(dir, constants.X_OK);
+    return true;
+  } catch (err) {
+    if (/** @type {NodeJS.ErrnoException} */ (err).code === "EACCES") return false;
     throw err;
   }
 }
@@ -529,6 +913,9 @@ function inRepository(cwd, path) {
   return !(rel.startsWith("..") || isAbsolute(rel));
 }
 
+/** Whether a data directory, when there is one, ends in an id the block can hold. @param {string | null} data */
+const blockIdNames = (data) => data === null || BLOCK_ID.test(basename(data));
+
 /**
  * @param {{ cwd: string, cliPath: string, pluginData?: string | null, session?: { data: string, root: string } | null }} opts
  *   `pluginData`: the plugin's data directory given (`--plugin-data "${CLAUDE_PLUGIN_DATA}"`, as the init skill
@@ -540,11 +927,17 @@ function inRepository(cwd, path) {
  *   this copy is the plugin, install-hook writes nothing and says how to go on (`followsRecord`). Otherwise the
  *   hook names `cliPath`. A data directory inside the repository is refused (`dataInRepository`): a record
  *   there would be the repository's own file.
- * @returns {{ result: "installed" | "updated" | "unchanged" | "wired" | "notThere" | "notExecutable" | "cliGone" | "cliUnrecorded" | "cliRefused" | "cliForeign" | "cliReplaced" | "cliPinned" | "cliOtherVersion" | "replacedCopy" | "followsRecord" | "dataInRepository" | "other" | "hooksPath", path: string, hooksPath: string | null, hooksKind: "repo" | "husky" | "global" | null, line: string, cli: string | null, data: string | null, root: string, recorded: string, chmod: string, own: string }}
- *   `line`: what to add to a hook Ennyn does not write (shell-quoted); `chmod`: the command that makes the
- *   hook executable, quoted the same way; `own`: under husky, the file its stub runs. notThere /
+ * @returns {{ result: "installed" | "updated" | "unchanged" | "wired" | "notThere" | "notExecutable" | "blockLate" | "blockUnrecorded" | "blockStale" | "blockNoData" | "blockNoNode" | "cliGone" | "cliUnrecorded" | "cliRefused" | "cliForeign" | "cliReplaced" | "cliPinned" | "cliOtherVersion" | "replacedCopy" | "followsRecord" | "dataInRepository" | "dataName" | "other" | "hooksPath", path: string, hooksPath: string | null, hooksKind: "repo" | "husky" | "global" | null, line: string, block: string, cli: string | null, data: string | null, root: string, recorded: string, chmod: string, own: string }}
+ *   `line`: what to add to a hook Ennyn does not write (shell-quoted); `block`: with the plugin's data directory
+ *   known, hookBlock's block for the project's own hook, for a tracked hooks directory, husky's, or a hook that may
+ *   skip the check (else ""); dataName: that directory's last part is no id the block can hold (BLOCK_ID), so
+ *   nothing is printed. `chmod`: the command that makes the hook executable, quoted the same way; `own`: under
+ *   husky, the file its stub runs; for the results below that start with `block`, the project's file. notThere /
  *   notExecutable / cliGone / cliUnrecorded / cliRefused / cliForeign: a hook that runs commit-check and is not
- *   Ennyn's to write checks nothing or refuses every commit (idleReason), as doctor says; cliReplaced: it
+ *   Ennyn's to write checks nothing or refuses every commit (idleReason), as doctor says; blockLate: it may skip
+ *   the check (lateCheck); blockUnrecorded / blockStale / blockNoData / blockNoNode: the block, exact and first,
+ *   finds no record (every commit passes), one it cannot run, no directory it may read (every commit is refused),
+ *   or no node once it has filtered PATH (every commit passes). cliReplaced: it
  *   checks with a plugin version Claude Code has replaced (`root`); cliPinned / cliOtherVersion: versionNote.
  *   replacedCopy: this copy of Ennyn is such a version (`root`); a hook naming it, or a record of it, would
  *   stop checking when Claude Code deletes it, so nothing is written. `data`: the data directory the hook
@@ -555,7 +948,7 @@ export function installHook({ cwd, cliPath, pluginData = null, session = null })
   const st = hookStatus(cwd);
   const self = rootOf(cliPath);
   const own = st.hooksPath ? join(dirname(st.hooksPath), "commit-msg") : "";
-  const base = { path: st.path, hooksPath: st.hooksPath, hooksKind: st.hooksKind, cli: st.cli, chmod: `chmod +x ${shQuote(st.path)}`, own, root: "", recorded: st.recorded ?? "", line: hookLine(cliPath), data: st.data };
+  const base = { path: st.path, hooksPath: st.hooksPath, hooksKind: st.hooksKind, cli: st.cli, chmod: `chmod +x ${shQuote(st.path)}`, own, root: "", recorded: st.recorded ?? "", line: hookLine(cliPath), block: "", data: st.data };
   if (present(join(self, ORPHANED))) return { ...base, result: "replacedCopy", root: self };
   const fromSession = session !== null && sameRoot(session.root, self) ? session.data : null;
   const kept = st.data !== null && st.problem === null && sameRoot(/** @type {string} */ (st.recorded), self) ? st.data : null;
@@ -569,15 +962,27 @@ export function installHook({ cwd, cliPath, pluginData = null, session = null })
     const idle = idleReason(st);
     /** @type {Record<string, "notThere" | "notExecutable" | "cliGone" | "cliUnrecorded" | "cliRefused" | "cliForeign">} */
     const why = { absent: "notThere", mode: "notExecutable", cli: "cliGone", unrecorded: "cliUnrecorded", stale: "cliRefused", foreign: "cliForeign" };
+    // The hook is the project's to change: the message names its file, with the block to put first.
+    if (idle === "late") return blockIdNames(data) ? { ...base, result: "blockLate", line, own: /** @type {string} */ (st.late), block: data !== null ? hookBlock(data) : "" } : { ...base, result: "dataName", data };
+    if (st.block !== null) {
+      /** @type {Record<string, "blockUnrecorded" | "blockStale" | "blockNoData" | "blockNoNode">} */
+      const block = { unrecorded: "blockUnrecorded", stale: "blockStale", foreign: "blockStale", noData: "blockNoData", noNode: "blockNoNode" };
+      if (idle !== null && idle in block) return { ...base, result: block[idle], line, own: st.block };
+    }
     if (idle !== null) return { ...base, result: why[idle], line };
-    const replaced = replacedRoot(st);
+    const replaced = st.block === null ? replacedRoot(st) : null;
     if (replaced !== null) return { ...base, result: "cliReplaced", line, root: replaced };
     const note = versionNote(st, session);
     return { ...base, result: note === "pinned" ? "cliPinned" : note === "other" ? "cliOtherVersion" : "wired", line, root: session?.root ?? "" };
   }
   // A hooks path is someone else's arrangement: a tracked directory, husky's stubs, or a global directory
-  // for every repository. Ennyn writes into none of them; the message says what to add where.
-  if (st.hooksPath) return { ...base, result: "hooksPath", line };
+  // for every repository. Ennyn writes into none of them; the message says what to add where: in a tracked
+  // one, from the plugin, a block that names no path of this machine.
+  if (st.hooksPath) {
+    const tracked = st.hooksKind !== "global";
+    if (tracked && !blockIdNames(data)) return { ...base, result: "dataName", data };
+    return { ...base, result: "hooksPath", line, block: tracked && data !== null ? hookBlock(data) : "" };
+  }
   if (st.state === "other") return { ...base, result: "other", line };
   // A hook that follows the plugin, about to name this copy by its path: no session says this copy is the plugin.
   if (data === null && st.data !== null) return { ...base, result: "followsRecord", line, root: self };

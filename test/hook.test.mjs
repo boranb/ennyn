@@ -3,13 +3,21 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, lstatSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, statSync, existsSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { git } from "../core/git.mjs";
 import * as hookModule from "../setup/hook.mjs";
-import { HOOK_MARKER, hookScript, hookStatus, installHook } from "../setup/hook.mjs";
+import { BLOCK_MARKER, HOOK_MARKER, hookBlock, hookScript, hookStatus, idleReason, installHook, lateCheck } from "../setup/hook.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+
+/** What husky 9.1.7's index.js writes as .husky/_/commit-msg. */
+const HUSKY_STUB = '#!/usr/bin/env sh\n. "$(dirname "$0")/h"';
+/** A stand-in for .husky/_/h, with the two lines of husky 9.1.7's that matter here: node_modules/.bin first on PATH, and the project's file under sh -e. */
+const HUSKY_RUNNER = '#!/usr/bin/env sh\ns=$(dirname "$(dirname "$0")")/$(basename "$0")\nexport PATH="node_modules/.bin:$PATH"\nsh -e "$s" "$@"\n';
+
+/** What husky 8.0.3 generates as .husky/_/husky.sh, shortened to what runs here: it runs the hook again under sh -e, and git ignores it (.husky/_/.gitignore: *). */
+const HUSKY8_SH = '#!/usr/bin/env sh\nif [ -z "$husky_skip_init" ]; then\n  if [ "$HUSKY" = "0" ]; then\n    exit 0\n  fi\n  readonly husky_skip_init=1\n  export husky_skip_init\n  sh -e "$0" "$@"\n  exit $?\nfi\n';
 
 /** A repository whose config declares commit types, so the hook has something to reject. */
 function repo() {
@@ -128,11 +136,11 @@ test("hook: husky's stubs are not ours to edit; .husky/commit-msg running commit
   const dir = repo();
   writeFileSync(join(dir, ".ennyn", "graph.json"), JSON.stringify({ nodes: [{ id: "a" }] }));
   mkdirSync(join(dir, ".husky", "_"), { recursive: true });
-  writeFileSync(join(dir, ".husky", "_", "commit-msg"), '#!/usr/bin/env sh\n. "${0%/*}/h"\n', { mode: 0o755 });
+  writeFileSync(join(dir, ".husky", "_", "commit-msg"), HUSKY_STUB, { mode: 0o755 });
   git(["config", "core.hooksPath", ".husky/_"], { cwd: dir });
   const bare = installHook({ cwd: dir, cliPath: CLI });
   assert.deepEqual([bare.result, bare.hooksKind], ["hooksPath", "husky"]);
-  assert.equal(readFileSync(join(dir, ".husky", "_", "commit-msg"), "utf8"), '#!/usr/bin/env sh\n. "${0%/*}/h"\n', "stub untouched");
+  assert.equal(readFileSync(join(dir, ".husky", "_", "commit-msg"), "utf8"), HUSKY_STUB, "stub untouched");
   writeFileSync(join(dir, ".husky", "commit-msg"), 'npx ennyn commit-check "$1"\n');
   assert.equal(installHook({ cwd: dir, cliPath: CLI }).result, "wired");
   const items = (await checkSetup({ cwd: dir, env: {} })).items.map((i) => `${i.level} ${i.key}`);
@@ -145,10 +153,10 @@ test("hook: a global core.hooksPath (outside the repository) is reported as such
   git(["config", "core.hooksPath", global], { cwd: dir });
   const res = installHook({ cwd: dir, cliPath: '/opt/it\'s "x"/$HOME/ennyn.mjs' });
   assert.deepEqual([res.result, res.hooksKind], ["hooksPath", "global"]);
-  assert.equal(res.line, `node '/opt/it'\\''s "x"/$HOME/ennyn.mjs' commit-check --hook "$1"`);
+  assert.equal(res.line, `node '/opt/it'\\''s "x"/$HOME/ennyn.mjs' commit-check --hook "$1" || exit $?`);
   assert.ok(!existsSync(join(global, "commit-msg")));
   // The quoted line is one argument to sh: echo it back through a shell to be sure.
-  const echoed = spawnSync("sh", ["-c", res.line.replace(/^node /, "printf '%s' ").replace(/ commit-check --hook "\$1"$/, "")], { encoding: "utf8" });
+  const echoed = spawnSync("sh", ["-c", res.line.replace(/^node /, "printf '%s' ").replace(/ commit-check --hook "\$1" \|\| exit \$\?$/, "")], { encoding: "utf8" });
   assert.equal(echoed.stdout, `/opt/it's "x"/$HOME/ennyn.mjs`);
 });
 
@@ -338,7 +346,7 @@ test("doctor audit: review.impactRequiredGlobs with no hook is a rule on paper t
 test("install-hook audit (review): for every hook state doctor and install-hook agree: a ✓ is nothing to do, a warning is fixed or refused with why", async () => {
   const { checkSetup } = await import("../setup/doctor.mjs");
   /** @param {string} dir */
-  const hookLine = async (dir) => (await checkSetup({ cwd: dir, env: {} })).items.find((i) => i.key.startsWith("doctor.hook"));
+  const hookLine = async (dir) => (await checkSetup({ cwd: dir, env: { HOME: process.env.HOME, PATH: process.env.PATH } })).items.find((i) => i.key.startsWith("doctor.hook"));
   /** @param {string} dir */
   const install = (dir) => spawnSync(process.execPath, [CLI, "install-hook"], { cwd: dir, encoding: "utf8" });
   /** @param {(dir: string) => void} make */
@@ -427,6 +435,20 @@ test("install-hook audit (review): for every hook state doctor and install-hook 
       },
     },
     { name: "a wired hook that runs", want: "doctor.hookOk", says: /already runs commit-check/, make: (/** @type {string} */ d) => writeFileSync(join(d, ".git", "hooks", "commit-msg"), wiredLine, { mode: 0o755 }) },
+    ...[
+      ["Ennyn's block behind another command in a tracked hook", '#!/bin/sh\n[ -n "$SKIP" ] && exit 0\n', "doctor.hookLate", /may skip commit-check.*Nothing was written\. Run install-hook from the Claude Code plugin/],
+      ["Ennyn's block first in a tracked hook", "#!/bin/sh\n", "doctor.hookOk", /already runs commit-check/],
+    ].map(([name, before, want, says]) => ({
+      name: /** @type {string} */ (name),
+      want: /** @type {string} */ (want),
+      says: /** @type {RegExp} */ (says),
+      make: (/** @type {string} */ d) => {
+        hookModule.recordPluginRoot(join(/** @type {string} */ (process.env.HOME), ".claude", "plugins", "data", "ennyn-ennyn"), SELF);
+        mkdirSync(join(d, ".githooks"));
+        writeFileSync(join(d, ".githooks", "commit-msg"), `${before}${hookBlock("/x/plugins/data/ennyn-ennyn")}`, { mode: 0o755 });
+        git(["config", "core.hooksPath", ".githooks"], { cwd: d });
+      },
+    })),
   ];
   for (const c of cases) {
     if (process.platform === "win32" && c.want === "doctor.hookNotRun") continue;
@@ -549,7 +571,7 @@ test("hook audit (review round two): husky in a directory of its own choosing is
   const dir = repo();
   mkdirSync(join(dir, ".config", "husky", "_"), { recursive: true });
   writeFileSync(join(dir, ".config", "husky", "_", "h"), "#!/usr/bin/env sh\n");
-  writeFileSync(join(dir, ".config", "husky", "_", "commit-msg"), '#!/usr/bin/env sh\n. "${0%/*}/h"\n', { mode: 0o755 });
+  writeFileSync(join(dir, ".config", "husky", "_", "commit-msg"), HUSKY_STUB, { mode: 0o755 });
   writeFileSync(join(dir, ".config", "husky", "commit-msg"), 'npx ennyn commit-check "$1"\n');
   git(["config", "core.hooksPath", ".config/husky/_"], { cwd: dir });
   const st = hookStatus(dir);
@@ -590,7 +612,7 @@ const record = (/** @type {string} */ data) => readFileSync(join(data, "root"), 
 /** The hook lines of doctor's report. @param {string} dir @param {Record<string, string>} [env] @param {string} [self] */
 const hookKeys = async (dir, env = {}, self = undefined) => {
   const { checkSetup } = await import("../setup/doctor.mjs");
-  return (await checkSetup({ cwd: dir, env, ...(self ? { self } : {}) })).items.filter((i) => i.key.startsWith("doctor.hook")).map((i) => i.key);
+  return (await checkSetup({ cwd: dir, env: { PATH: process.env.PATH, ...env }, ...(self ? { self } : {}) })).items.filter((i) => i.key.startsWith("doctor.hook")).map((i) => i.key);
 };
 /** A repository doctor reads a hook line for. */
 const doctorRepo = () => {
@@ -1032,4 +1054,976 @@ test("hook follows the plugin: install-hook that writes no hook records nothing"
   hookModule.recordPluginRoot(data, v2);
   assert.equal(installHook({ cwd: dir, cliPath: CLI, pluginData: data }).result, "updated");
   assert.equal(installHook({ cwd: dir, cliPath: CLI, pluginData: data }).result, "unchanged");
+});
+
+/**
+ * A project's own commit-msg hook, as the second project kept its tracked one: early exits for the subjects it
+ * exempts and for a marker in the message, then a check of its own (a ticket in the subject). Builtins only, so
+ * it runs with no PATH. `block` goes first, as install-hook says.
+ * @param {string} block
+ */
+const projectHook = (block, shebang = "#!/bin/sh\n") => `${shebang}${block}IFS= read -r subject < "$1"
+case $subject in
+  Merge*|Revert*|fixup!*|squash!*) exit 0 ;;
+esac
+while IFS= read -r l; do
+  case $l in
+    *'[no-prevention]'*) exit 0 ;;
+  esac
+done < "$1"
+case $subject in
+  *PRJ-*) ;;
+  *) echo "project: no ticket in the subject" >&2; exit 1 ;;
+esac
+`;
+
+/** The environment of a commit made outside a Claude Code session, with `vars` over the test's. @param {Record<string, string | undefined>} vars */
+const outside = (vars) => {
+  /** @type {Record<string, string | undefined>} */
+  const env = { ...process.env };
+  for (const k of ["ENNYN_PLUGIN_DATA", "ENNYN_PLUGIN_ROOT", "CLAUDE_CONFIG_DIR"]) delete env[k];
+  for (const [k, v] of Object.entries(vars)) {
+    if (v === undefined) delete env[k];
+    else env[k] = v;
+  }
+  return env;
+};
+
+/** git commit in `dir` of `files`, staged, with `message`, in `env`. @param {string} dir @param {string} message @param {Record<string, string>} files @param {Record<string, string | undefined>} env */
+function commitIn(dir, message, files, env) {
+  for (const [p, text] of Object.entries(files)) {
+    mkdirSync(dirname(join(dir, p)), { recursive: true });
+    writeFileSync(join(dir, p), text);
+  }
+  git(["add", "-A"], { cwd: dir });
+  // By its path: a case's PATH may hold no git.
+  const r = spawnSync(GIT, ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", message], { cwd: dir, env, encoding: "utf8" });
+  // A refused commit leaves its changes staged: the next case starts from HEAD.
+  if (r.status !== 0) git(["reset", "-q", "--hard", "HEAD"], { cwd: dir });
+  return r;
+}
+
+/** A repository whose tracked hooks directory holds the project's own hook with `block` in it, committed. @param {string} block */
+function trackedHooks(block, hooksPath = ".githooks") {
+  const dir = doctorRepo();
+  mkdirSync(join(dir, ".githooks"));
+  writeFileSync(join(dir, ".githooks", "commit-msg"), projectHook(block), { mode: 0o755 });
+  git(["config", "core.hooksPath", hooksPath], { cwd: dir });
+  git(["add", "-A"], { cwd: dir });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "feat: PRJ-0 hooks"], { cwd: dir });
+  return dir;
+}
+
+test("hook in a tracked hooks directory: install-hook prints a block for the project's own hook; first there, it checks every commit the hook's early exits skip, names no path of this machine, and holds with core.hooksPath absolute", async () => {
+  const { TOKENS } = await import("./secret-shapes.mjs");
+  const home = mkdtempSync(join(tmpdir(), "en-home-"));
+  const data = join(home, ".claude", "plugins", "data", "ennyn-test");
+  hookModule.recordPluginRoot(data, SELF);
+  const probe = doctorRepo();
+  mkdirSync(join(probe, ".githooks"));
+  git(["config", "core.hooksPath", ".githooks"], { cwd: probe });
+  const res = installHook({ cwd: probe, cliPath: CLI, pluginData: data });
+  assert.equal(res.result, "hooksPath");
+  assert.ok(!existsSync(join(probe, ".githooks", "commit-msg")), "nothing written into the tracked directory");
+  assert.ok(res.block.startsWith(BLOCK_MARKER), res.block);
+  for (const path of [home, data, SELF, tmpdir()]) assert.ok(!res.block.includes(path), `the block names no path of this machine: ${path}`);
+  const dir = trackedHooks(res.block);
+  assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookOk"], "the block, first, reads as wired");
+  const env = outside({ HOME: home });
+  const secret = () => ({ "src/token.js": `export const token = "${TOKENS.github}";\n`, "src/n.txt": String(Math.random()) });
+  const clean = () => ({ "src/n.txt": String(Math.random()) });
+  // Each subject the project's hook exits early for: refused with a secret, through without one.
+  for (const message of ['Revert "feat: PRJ-1 a"', "fixup! feat: PRJ-0 hooks", "feat: PRJ-2 b\n\n[no-prevention]"]) {
+    const refused = commitIn(dir, message, secret(), env);
+    assert.equal(refused.status, 1, `${message}: ${refused.stderr}`);
+    assert.match(refused.stderr, /adds what reads as a secret/, message);
+    const passed = commitIn(dir, message, clean(), env);
+    assert.equal(passed.status, 0, `${message}: ${passed.stderr}`);
+  }
+  // A merge: git runs the commit-msg hook for the merge commit, which brings the other side's secret.
+  for (const [branch, files, want] of /** @type {[string, () => Record<string, string>, number][]} */ ([
+    ["side", secret, 1],
+    ["side-clean", clean, 0],
+  ])) {
+    git(["checkout", "-q", "-b", branch], { cwd: dir });
+    for (const [p, text] of Object.entries(files())) {
+      mkdirSync(dirname(join(dir, p)), { recursive: true });
+      writeFileSync(join(dir, p), text);
+    }
+    git(["add", "-A"], { cwd: dir });
+    git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", `feat: PRJ-3 ${branch}`], { cwd: dir });
+    git(["checkout", "-q", "main"], { cwd: dir });
+    const merge = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "merge", "-q", "--no-ff", "-m", `Merge branch '${branch}'`, branch], { cwd: dir, env, encoding: "utf8" });
+    assert.equal(merge.status, want, `${branch}: ${merge.stdout}${merge.stderr}`);
+    if (want) {
+      assert.match(merge.stderr, /adds what reads as a secret/);
+      git(["merge", "--abort"], { cwd: dir });
+    }
+  }
+  // The rest of the hook still runs: Ennyn's convention, then the project's own check, each refusing what it refuses.
+  assert.match(commitIn(dir, "untyped PRJ-4", clean(), env).stderr, /commitMsg\.types/);
+  const noTicket = commitIn(dir, "feat: no ticket", clean(), env);
+  assert.deepEqual([noTicket.status, /project: no ticket/.test(noTicket.stderr)], [1, true]);
+  assert.equal(commitIn(dir, "feat: PRJ-5 c", clean(), env).status, 0);
+  // core.hooksPath made absolute (Claude Code's agent-worktree setup writes it so): the same block, the same verdicts.
+  git(["config", "core.hooksPath", join(dir, ".githooks")], { cwd: dir });
+  assert.equal(hookStatus(dir).hooksKind, "repo");
+  assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookOk"]);
+  assert.equal(commitIn(dir, 'Revert "feat: PRJ-5 c"', secret(), env).status, 1);
+  assert.equal(commitIn(dir, 'Revert "feat: PRJ-5 c"', clean(), env).status, 0);
+  // From a plugin session, the command prints the same block after its advice, and exits 1: nothing was written.
+  const cli = installCli(probe, sessionEnv(data, SELF));
+  assert.equal(cli.status, 1, cli.stderr);
+  assert.match(cli.stdout, /Paste the block below at the top of \.githooks\/commit-msg, before any other command/);
+  assert.ok(cli.stdout.endsWith(res.block), cli.stdout);
+  assert.ok(!existsSync(join(probe, ".githooks", "commit-msg")));
+  // Outside a session with no data directory given, there is no block to print: it says how to get one.
+  const bare = installCli(probe, {});
+  assert.equal(bare.status, 1);
+  assert.match(bare.stdout, /Run install-hook from the Claude Code plugin/);
+  assert.ok(!bare.stdout.includes(BLOCK_MARKER));
+  // A global hooks directory is this machine's own: the line, as before, and no block.
+  const global = doctorRepo();
+  git(["config", "core.hooksPath", mkdtempSync(join(tmpdir(), "en-global-hooks-"))], { cwd: global });
+  const everywhere = installCli(global, sessionEnv(data, SELF));
+  assert.equal(everywhere.status, 1);
+  assert.match(everywhere.stdout, /To check them all, add this line to/);
+  assert.ok(!everywhere.stdout.includes(BLOCK_MARKER));
+});
+
+test("hook in a tracked hooks directory: the block warns and passes with no node or no record, so the project's own checks still run; it refuses a broken record or a data directory it cannot know, also under sh -e", () => {
+  const base = mkdtempSync(join(tmpdir(), "en-plugin-"));
+  const home = join(base, "home");
+  const data = join(home, ".claude", "plugins", "data", "ennyn-test");
+  const block = hookBlock(data);
+  const dir = trackedHooks(block);
+  const hook = join(dir, ".githooks", "commit-msg");
+  const msg = join(base, "msg");
+  /** The hook as git runs it, on a message, in `env`; `flags` for the shell (husky runs its user hook with sh -e). @param {string} message @param {Record<string, string | undefined>} env */
+  const run = (message, env, ...flags) => {
+    writeFileSync(msg, `${message}\n`);
+    return spawnSync("/bin/sh", [...flags, hook, msg], { cwd: dir, env, encoding: "utf8" });
+  };
+  const env = outside({ HOME: home });
+  // No record (the plugin not installed for this user, or uninstalled): through, saying so; the project's check runs.
+  const none = run("feat: PRJ-1 a", env);
+  assert.deepEqual([none.status, none.stderr.includes(`no plugin version is recorded in ${data}`)], [0, true], none.stderr);
+  const noneNoTicket = run("feat: no ticket", env);
+  assert.deepEqual([noneNoTicket.status, /project: no ticket/.test(noneNoTicket.stderr)], [1, true], noneNoTicket.stderr);
+  mkdirSync(data, { recursive: true });
+  assert.equal(run("feat: PRJ-1 a", env).status, 0, "the directory made again, empty");
+  // No node: through, saying so; the project's check runs.
+  hookModule.recordPluginRoot(data, SELF);
+  const noNode = run("untyped PRJ-1", outside({ HOME: home, PATH: "/nonexistent" }));
+  assert.deepEqual([noNode.status, /node not found/.test(noNode.stderr)], [0, true], noNode.stderr);
+  assert.equal(run("feat: no ticket", outside({ HOME: home, PATH: "/nonexistent" })).status, 1);
+  // The record found: checked (an untyped subject refused), here and under sh -e.
+  assert.equal(run("untyped PRJ-1", env).status, 1);
+  assert.equal(run("untyped PRJ-1", env, "-e").status, 1);
+  assert.equal(run("feat: PRJ-1 typed", env, "-e").status, 0);
+  rmSync(join(data, "root"));
+  assert.equal(run("feat: PRJ-1 a", env, "-e").status, 0, "no record under sh -e: through, and the project's part still runs");
+  assert.equal(run("feat: no ticket", env, "-e").status, 1);
+  // A broken record refuses the commit: a link, a relative line, a control character, a version that is gone.
+  const at = join(data, "root");
+  writeFileSync(join(base, "elsewhere"), `${SELF}\n`);
+  symlinkSync(join(base, "elsewhere"), at);
+  const link = run("feat: PRJ-1 a", env);
+  assert.deepEqual([link.status, /is no record Ennyn wrote/.test(link.stderr)], [1, true], link.stderr);
+  rmSync(at);
+  for (const line of ["relative/root", `${SELF}\r`, join(base, "gone")]) {
+    writeFileSync(at, `${line}\n`);
+    const r = run("feat: PRJ-1 a", env);
+    assert.deepEqual([r.status, /so this commit is refused/.test(r.stderr)], [1, true], `${JSON.stringify(line)}: ${r.stderr}`);
+  }
+  // Where it reads the record: the session's data directory, else CLAUDE_CONFIG_DIR's, else HOME's.
+  const sessionData = join(base, "session-data");
+  const configDir = join(base, "config");
+  hookModule.recordPluginRoot(data, pluginVersion(base, "home"));
+  hookModule.recordPluginRoot(join(configDir, "plugins", "data", "ennyn-test"), pluginVersion(base, "config"));
+  hookModule.recordPluginRoot(sessionData, pluginVersion(base, "session"));
+  assert.match(run("feat: PRJ-1 a", env).stderr, /ran home/);
+  assert.match(run("feat: PRJ-1 a", outside({ HOME: home, CLAUDE_CONFIG_DIR: configDir })).stderr, /ran config/);
+  assert.match(run("feat: PRJ-1 a", outside({ HOME: home, CLAUDE_CONFIG_DIR: configDir, ENNYN_PLUGIN_DATA: sessionData })).stderr, /ran session/);
+  // A data directory it cannot know refuses: no HOME (and no session, no CLAUDE_CONFIG_DIR), or one that is no absolute path.
+  // HOME is taken away inside the child: the test's own children always get one.
+  for (const unset of ["unset HOME", "HOME="]) {
+    writeFileSync(msg, "feat: PRJ-1 a\n");
+    const noHome = spawnSync("/bin/sh", ["-c", `${unset}; exec /bin/sh "$@"`, "sh", hook, msg], { cwd: dir, env, encoding: "utf8" });
+    assert.deepEqual([noHome.status, /HOME is not set/.test(noHome.stderr)], [1, true], `${unset}: ${noHome.stderr}`);
+  }
+  const relative = run("feat: PRJ-1 a", outside({ HOME: home, CLAUDE_CONFIG_DIR: "cfg" }));
+  assert.deepEqual([relative.status, /is no absolute path, or holds a control character, so this commit is refused/.test(relative.stderr)], [1, true], relative.stderr);
+  assert.equal(run("feat: PRJ-1 a", outside({ HOME: home, ENNYN_PLUGIN_DATA: `${sessionData}\r` })).status, 1, "a control character is no directory");
+});
+
+test("hook in a tracked hooks directory: a block behind a command that may exit is no ✓; doctor and install-hook say so, and real git shows why", async () => {
+  const home = mkdtempSync(join(tmpdir(), "en-home-"));
+  const data = join(home, ".claude", "plugins", "data", "ennyn-test");
+  hookModule.recordPluginRoot(data, SELF);
+  const block = hookBlock(data);
+  const { TOKENS } = await import("./secret-shapes.mjs");
+  // The block at the end of the project's hook, after its early exits: the trial's first wiring.
+  const dir = trackedHooks("");
+  const hook = join(dir, ".githooks", "commit-msg");
+  writeFileSync(hook, `${projectHook("")}${block}`);
+  assert.equal(hookStatus(dir).late, hook);
+  assert.equal(idleReason(hookStatus(dir)), "late");
+  assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookLate"]);
+  const before = hookStatus(dir);
+  const r = installCli(dir, {});
+  assert.equal(r.status, 1);
+  assert.match(r.stdout, /\.githooks\/commit-msg may skip commit-check.*it prints the block that goes at the top of \S*\.githooks\/commit-msg/);
+  assert.ok(!r.stdout.includes(BLOCK_MARKER), "no data directory known, no block to print");
+  assert.deepEqual(hookStatus(dir), before, "install-hook writes into no hook it did not write");
+  // Real git: the revert with a secret passes the late block; moved first, it is refused.
+  const env = outside({ HOME: home });
+  const secret = { "src/token.js": `export const token = "${TOKENS.github}";\n` };
+  assert.equal(commitIn(dir, 'Revert "feat: PRJ-0 hooks"', secret, env).status, 0, "the early exit skipped the late block");
+  git(["reset", "-q", "--hard", "HEAD~1"], { cwd: dir });
+  writeFileSync(hook, projectHook(block));
+  assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookOk"]);
+  assert.equal(commitIn(dir, 'Revert "feat: PRJ-0 hooks"', secret, env).status, 1);
+  // husky 9: the block in .husky/commit-msg, the file its stub runs; the warning names that file.
+  const husky = doctorRepo();
+  mkdirSync(join(husky, ".husky", "_"), { recursive: true });
+  writeFileSync(join(husky, ".husky", "_", "commit-msg"), HUSKY_STUB, { mode: 0o755 });
+  writeFileSync(join(husky, ".husky", "commit-msg"), `npx lint-staged\n${block}`);
+  git(["config", "core.hooksPath", ".husky/_"], { cwd: husky });
+  assert.equal(hookStatus(husky).late, join(husky, ".husky", "commit-msg"));
+  assert.deepEqual(await hookKeys(husky, { HOME: home }), ["doctor.hookLate"]);
+  const { checkSetup } = await import("../setup/doctor.mjs");
+  assert.deepEqual((await checkSetup({ cwd: husky, env: { PATH: process.env.PATH } })).items.find((i) => i.key === "doctor.hookLate")?.vars.path, [join(husky, ".husky", "commit-msg")]);
+  writeFileSync(join(husky, ".husky", "commit-msg"), `${block}npx lint-staged\n`);
+  assert.deepEqual(await hookKeys(husky, { HOME: home }), ["doctor.hookOk"]);
+  // With no .husky/commit-msg yet, install-hook from the plugin names that file and prints the block for it.
+  rmSync(join(husky, ".husky", "commit-msg"));
+  const printed = installCli(husky, sessionEnv(data, SELF));
+  assert.equal(printed.status, 1);
+  assert.match(printed.stdout, /Paste the block below at the top of \.husky\/commit-msg, before any other command.*HUSKY=0 skips the whole hook/);
+  assert.ok(printed.stdout.endsWith(block));
+  assert.ok(!existsSync(join(husky, ".husky", "commit-msg")) && readFileSync(join(husky, ".husky", "_", "commit-msg"), "utf8") === HUSKY_STUB, "nothing written");
+});
+
+/** The path of git itself: a commit in a row of the table below runs with a PATH of the row's. */
+const GIT = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+const NODE_DIR = dirname(process.execPath);
+/** The shells a row runs under, each once: /bin/sh is dash on the Linux run. */
+const SHELLS = [...new Map(["/bin/sh", "/bin/dash"].filter((s) => existsSync(s)).map((s) => [realpathSync(s), s])).values()];
+const SYSTEM = "/usr/bin:/bin";
+const PLANTED = "#!/bin/sh\nexit 0\n";
+const PLANTED_CLI = "process.exit(0);\n";
+
+/**
+ * The block as a commit runs it, on the reviewers' probes (cycle 15, task 2, round 1): `env`, `files` (written
+ * into the repository and committed), `record` (the first line of the record, for what the bytes are `recordBytes`),
+ * and `make` for what no text says; the verdict as the corpus names it (refused, said: through with a line on
+ * stderr, pass). A stand-in CLI or `node` that lets everything through makes a wrong run a silent pass.
+ *
+ * Not here, as documented limits (DESIGN.md): rt-record-nul-dash-ksh, rt-record-c1-dash and rt-record-c1-c-locale
+ * (what `[[:cntrl:]]` and `read` make of a NUL or a C1 byte is the shell's and the locale's: dash and ksh drop the
+ * NUL and run the path that is left), rt-husky9-init-sh-exit (a user's ~/.config/husky/init.sh runs before the file).
+ * Not here, measured on the real runners in review: rt-husky8-real-runner, rt-husky-zero. `every`: a row that also runs
+ * under bash, ksh and zsh, whose builtin pwd keeps a spelling dash's does not.
+ * @typedef {{ repo: string, home: string, data: string, empty: string, stand: string }} Box
+ * @typedef {{ id: string, env?: (b: Box) => Record<string, string>, files?: (b: Box) => Record<string, string>, record?: (b: Box) => string, recordBytes?: (b: Box) => string, make?: (b: Box) => void, undo?: (b: Box) => void, hook?: (block: string, shell: string) => string, message?: string, secret?: boolean, expect: "refused" | "said" | "pass", says?: RegExp, not?: RegExp, notRoot?: boolean, every?: boolean, name?: string }} Row
+ */
+/** @type {Row[]} */
+const BLOCK_ROWS = [
+  // The data directory or the record inside the work tree: no hook line changed, and the repository's own CLI would run.
+  { id: "rt-data-in-repo-session-var", env: (b) => ({ ENNYN_PLUGIN_DATA: join(b.repo, ".x") }), files: (b) => ({ ".x/root": `${join(b.repo, ".x")}\n`, ".x/scripts/ennyn.mjs": PLANTED_CLI }), secret: true, expect: "refused", says: /inside this work tree/ },
+  { id: "rt-data-in-repo-config-dir", env: (b) => ({ CLAUDE_CONFIG_DIR: join(b.repo, ".c") }), files: (b) => ({ ".c/plugins/data/ennyn-test/root": `${join(b.repo, ".x")}\n`, ".x/scripts/ennyn.mjs": PLANTED_CLI }), secret: true, expect: "refused", says: /inside this work tree/ },
+  { id: "rt-data-in-repo-through-a-link", env: (b) => ({ ENNYN_PLUGIN_DATA: join(b.stand, "into-repo", ".x") }), files: (b) => ({ ".x/root": `${join(b.repo, ".x")}\n`, ".x/scripts/ennyn.mjs": PLANTED_CLI }), make: (b) => symlinkSync(b.repo, join(b.stand, "into-repo")), secret: true, expect: "refused", says: /inside this work tree/ },
+  { id: "data-in-repo-record-outside", env: (b) => ({ ENNYN_PLUGIN_DATA: join(b.repo, ".x") }), files: (b) => ({ ".x/root": `${b.stand}\n` }), make: (b) => { mkdirSync(join(b.stand, "scripts")); writeFileSync(join(b.stand, "scripts", "ennyn.mjs"), PLANTED_CLI); }, secret: true, expect: "refused", says: /data directory .* lies inside this work tree/ },
+  { id: "rt-record-names-repo", record: (b) => join(b.repo, ".x"), files: () => ({ ".x/scripts/ennyn.mjs": PLANTED_CLI }), secret: true, expect: "refused", says: /inside this work tree/ },
+  // What counts as absolute: OS is a variable anyone sets; uname is read after the PATH filter.
+  { id: "rt-os-spoof-data-dir", env: () => ({ ENNYN_PLUGIN_DATA: "C:/x", OS: "Windows_NT" }), files: () => ({ "C:/x/root": "C:/x\n", "C:/x/scripts/ennyn.mjs": PLANTED_CLI }), secret: true, expect: "refused", says: /no absolute path/ },
+  { id: "rt-os-spoof-home", env: () => ({ HOME: "C:/h", OS: "Windows_NT" }), files: () => ({ "C:/h/.claude/plugins/data/ennyn-test/root": "C:/x\n", "C:/x/scripts/ennyn.mjs": PLANTED_CLI }), secret: true, expect: "refused", says: /no absolute path/ },
+  { id: "rt-os-spoof-record", env: () => ({ OS: "Windows_NT" }), record: () => "C:/x", files: () => ({ "C:/x/scripts/ennyn.mjs": PLANTED_CLI }), secret: true, expect: "refused", says: /is no absolute path to a version/ },
+  { id: "rt-drive-data-dir-no-os", env: () => ({ ENNYN_PLUGIN_DATA: "C:/x" }), expect: "refused", says: /no absolute path/ },
+  { id: "rt-record-drive-no-os", record: () => "C:/x", files: () => ({ "C:/x/scripts/ennyn.mjs": PLANTED_CLI }), expect: "refused" },
+  { id: "windows-data-dir", env: (b) => ({ PATH: `${b.stand}:${NODE_DIR}:${SYSTEM}`, ENNYN_PLUGIN_DATA: "C:/nowhere" }), expect: "said", says: /no plugin version is recorded in C:\/nowhere/ },
+  { id: "windows-record", env: (b) => ({ PATH: `${b.stand}:${NODE_DIR}:${SYSTEM}` }), record: () => "C:/x", files: () => ({ "C:/x/scripts/ennyn.mjs": PLANTED_CLI }), secret: true, expect: "refused", says: /inside this work tree/ },
+  { id: "uname-planted-in-the-repository", env: (b) => ({ PATH: `${join(b.repo, "tools")}:${NODE_DIR}:${SYSTEM}`, ENNYN_PLUGIN_DATA: "C:/nowhere" }), files: () => ({ "tools/uname": "#!/bin/sh\necho MINGW64_NT\n" }), expect: "refused", says: /no absolute path/ },
+  // A `node` the repository holds never runs the check.
+  { id: "rt-node-path-leading-empty", env: () => ({ PATH: `:${NODE_DIR}:${SYSTEM}` }), files: () => ({ node: PLANTED }), secret: true, expect: "refused", says: /adds what reads as a secret/ },
+  { id: "rt-node-path-dot-first", env: () => ({ PATH: `.:${NODE_DIR}:${SYSTEM}` }), files: () => ({ node: PLANTED }), secret: true, expect: "refused", says: /adds what reads as a secret/ },
+  { id: "rt-node-path-relative-dir", env: () => ({ PATH: `tools:${NODE_DIR}:${SYSTEM}` }), files: () => ({ "tools/node": PLANTED }), secret: true, expect: "refused", says: /adds what reads as a secret/ },
+  { id: "node-path-relative-outside", env: () => ({ PATH: `../stand:${NODE_DIR}:${SYSTEM}` }), make: (b) => writeFileSync(join(b.stand, "node"), PLANTED, { mode: 0o755 }), secret: true, expect: "refused", says: /adds what reads as a secret/ },
+  { id: "rt-node-path-absolute-repo-dir", env: (b) => ({ PATH: `${join(b.repo, "tools")}:${NODE_DIR}:${SYSTEM}` }), files: () => ({ "tools/node": PLANTED }), secret: true, expect: "refused", says: /adds what reads as a secret/ },
+  { id: "node-path-repo-through-a-link", env: (b) => ({ PATH: `${join(b.stand, "into-repo")}:${NODE_DIR}:${SYSTEM}` }), files: () => ({ node: PLANTED }), make: (b) => symlinkSync(b.repo, join(b.stand, "into-repo")), secret: true, expect: "refused", says: /adds what reads as a secret/ },
+  // Filtered, not refused: with no node left the commit goes through, saying so, and the planted one is not run.
+  { id: "rt-node-path-trailing-empty", env: (b) => ({ PATH: `${b.empty}:` }), files: () => ({ node: PLANTED }), secret: true, expect: "said", says: /node not found/ },
+  { id: "node-path-nothing-left", env: () => ({ PATH: "tools" }), files: () => ({ "tools/node": PLANTED, node: PLANTED }), secret: true, expect: "said", says: /node not found/ },
+  { id: "rt-no-node", env: (b) => ({ PATH: b.empty }), secret: true, expect: "said", says: /node not found/ },
+  // Nothing recorded where it looks: through, saying so.
+  { id: "rt-session-var-nowhere", env: () => ({ ENNYN_PLUGIN_DATA: "/nonexistent/x" }), message: 'Revert "x"', secret: true, expect: "said", says: /no plugin version is recorded/ },
+  { id: "rt-home-nowhere", env: () => ({ HOME: "/nonexistent/y" }), message: 'Revert "x"', secret: true, expect: "said", says: /no plugin version is recorded/ },
+  { id: "rt-config-dir-nowhere", env: () => ({ CLAUDE_CONFIG_DIR: "/nonexistent/z" }), message: 'Revert "x"', secret: true, expect: "said", says: /no plugin version is recorded/ },
+  { id: "rt-data-dir-is-a-file", env: () => ({ ENNYN_PLUGIN_DATA: "/etc/passwd" }), expect: "said", says: /no plugin version is recorded/ },
+  // A data directory it cannot use refuses, and prints no byte it refused.
+  { id: "rt-data-dir-unsearchable", make: (b) => chmodSync(b.data, 0), undo: (b) => chmodSync(b.data, 0o755), message: "untyped", expect: "refused", says: /cannot be read/, notRoot: true },
+  { id: "rt-data-dir-blank", env: () => ({ ENNYN_PLUGIN_DATA: " " }), expect: "refused" },
+  { id: "rt-config-dir-tilde", env: () => ({ CLAUDE_CONFIG_DIR: "~/.claude" }), expect: "refused" },
+  { id: "rt-data-dir-newline", env: () => ({ ENNYN_PLUGIN_DATA: "/a\nb" }), expect: "refused", not: /\/a\nb/ },
+  { id: "rt-data-dir-escape-printed", env: () => ({ ENNYN_PLUGIN_DATA: "/a\x1b]0;owned\x07b" }), expect: "refused", not: /\x1b|\x07/ },
+  // The record's first line.
+  { id: "rt-record-crlf", record: () => `${SELF}\r`, expect: "refused", not: /\r/ },
+  { id: "rt-record-escape-printed", record: () => "/a\x1b]0;owned\x07b", expect: "refused", not: /\x1b|\x07/ },
+  { id: "rt-record-no-final-newline", recordBytes: () => SELF, message: "untyped", expect: "refused", says: /commitMsg\.types/ },
+  { id: "rt-record-tab", record: () => "/a\tb", expect: "refused" },
+  { id: "rt-record-empty", recordBytes: () => "", expect: "refused" },
+  { id: "rt-record-first-line-blank", recordBytes: () => `\n${SELF}\n`, expect: "refused" },
+  { id: "rt-record-relative", record: () => "relative", expect: "refused" },
+  // What is at the record's place.
+  { id: "rt-dir-at-record", make: (b) => { rmSync(join(b.data, "root")); mkdirSync(join(b.data, "root")); }, expect: "refused", says: /is no record Ennyn wrote/ },
+  { id: "rt-fifo-at-record", make: (b) => { rmSync(join(b.data, "root")); spawnSync("mkfifo", [join(b.data, "root")]); }, expect: "refused", says: /is no record Ennyn wrote/ },
+  { id: "rt-unreadable-record", make: (b) => chmodSync(join(b.data, "root"), 0), expect: "refused", notRoot: true },
+  { id: "rt-dangling-link-at-record", make: (b) => { rmSync(join(b.data, "root")); symlinkSync(join(b.data, "nowhere"), join(b.data, "root")); }, expect: "refused", says: /is no record Ennyn wrote/ },
+  // The block given to a shell with CRLF line ends runs nothing: git has no interpreter, or the shell a syntax error.
+  { id: "rt-crlf-hook-given-to-a-shell", hook: (block, shell) => `#!${shell}\n${block}`.replace(/\n/g, "\r\n"), expect: "refused" },
+  // A PATH entry or a data directory spelled through a link and "..": read as the kernel reads them, not as text.
+  { id: "rt2-path-link-dotdot", every: true, env: (b) => ({ PATH: `${b.repo}/link/../..:${NODE_DIR}:${SYSTEM}` }), files: () => ({ "a/node": PLANTED }), make: (b) => { mkdirSync(join(b.repo, "a", "b", "c"), { recursive: true }); symlinkSync(join("a", "b", "c"), join(b.repo, "link")); }, secret: true, expect: "refused", says: /adds what reads as a secret/ },
+  { id: "data-link-dotdot", every: true, env: (b) => ({ ENNYN_PLUGIN_DATA: `${b.repo}/link/../..` }), files: () => ({ "a/root": `${SELF}\n` }), make: (b) => { mkdirSync(join(b.repo, "a", "b", "c"), { recursive: true }); symlinkSync(join("a", "b", "c"), join(b.repo, "link")); }, secret: true, expect: "refused", says: /inside this work tree/ },
+  // Another spelling of the work tree on a volume that folds case, or through a firmlink: on any other volume no such directory, and the row holds as plain.
+  { id: "rt2-path-case-fold", every: true, env: (b) => ({ PATH: `${join(dirname(b.repo), "REPO", "tools")}:${NODE_DIR}:${SYSTEM}` }), files: () => ({ "tools/node": PLANTED }), secret: true, expect: "refused", says: /adds what reads as a secret/ },
+  { id: "rt2-path-firmlink", every: true, env: (b) => ({ PATH: `/System/Volumes/Data${b.repo}/tools:${NODE_DIR}:${SYSTEM}` }), files: () => ({ "tools/node": PLANTED }), secret: true, expect: "refused", says: /adds what reads as a secret/ },
+  { id: "rt2-pwd-firmlink", every: true, env: (b) => ({ PWD: `/System/Volumes/Data${b.repo}`, PATH: `${join(b.repo, "tools")}:${NODE_DIR}:${SYSTEM}` }), files: () => ({ "tools/node": PLANTED }), secret: true, expect: "refused", says: /adds what reads as a secret/ },
+  { id: "rt2-pwd-case-fold", every: true, env: (b) => ({ PWD: join(dirname(b.repo), "REPO"), PATH: `${join(b.repo, "tools")}:${NODE_DIR}:${SYSTEM}` }), files: () => ({ "tools/node": PLANTED }), secret: true, expect: "refused", says: /adds what reads as a secret/ },
+  { id: "rt2-data-case-fold", every: true, env: (b) => ({ ENNYN_PLUGIN_DATA: join(dirname(b.repo), "REPO", ".x") }), files: (b) => ({ ".x/root": `${b.stand}\n` }), make: (b) => { mkdirSync(join(b.stand, "scripts")); writeFileSync(join(b.stand, "scripts", "ennyn.mjs"), PLANTED_CLI); }, secret: true, expect: "refused", says: /inside this work tree/ },
+  { id: "rt2-data-firmlink", every: true, env: (b) => ({ ENNYN_PLUGIN_DATA: `/System/Volumes/Data${b.repo}/.x` }), files: (b) => ({ ".x/root": `${b.stand}\n` }), make: (b) => { mkdirSync(join(b.stand, "scripts")); writeFileSync(join(b.stand, "scripts", "ennyn.mjs"), PLANTED_CLI); }, secret: true, expect: "refused", says: /inside this work tree/ },
+  // The CLI in the record's version: a link at its place, wherever it points, or its directory linked into the tree.
+  { id: "cli-link-into-tree", record: (b) => b.stand, files: () => ({ "evil.mjs": PLANTED_CLI }), make: (b) => { mkdirSync(join(b.stand, "scripts")); symlinkSync(join(b.repo, "evil.mjs"), join(b.stand, "scripts", "ennyn.mjs")); }, secret: true, expect: "refused", says: /its CLI is a link/ },
+  { id: "cli-link-outside", record: (b) => b.stand, make: (b) => { writeFileSync(join(b.stand, "real.mjs"), PLANTED_CLI); mkdirSync(join(b.stand, "scripts")); symlinkSync(join(b.stand, "real.mjs"), join(b.stand, "scripts", "ennyn.mjs")); }, secret: true, expect: "refused", says: /its CLI is a link/ },
+  { id: "scripts-link-into-tree", record: (b) => b.stand, files: () => ({ "s2/ennyn.mjs": PLANTED_CLI }), make: (b) => symlinkSync(join(b.repo, "s2"), join(b.stand, "scripts")), secret: true, expect: "refused", says: /inside this work tree/ },
+  // What a tracked .npmrc gets into node's environment through npm run, and what would load a module from the tree.
+  { id: "rt2-node-options-absolute", env: (b) => ({ NODE_OPTIONS: `--require ${join(b.repo, "p.cjs")}` }), files: () => ({ "p.cjs": PLANTED_CLI }), secret: true, expect: "refused", says: /adds what reads as a secret/ },
+  { id: "rt2-node-options-relative", env: () => ({ NODE_OPTIONS: "--require ./p.cjs" }), files: () => ({ "p.cjs": PLANTED_CLI }), secret: true, expect: "refused", says: /adds what reads as a secret/ },
+  { id: "node-path-unset", env: (b) => ({ NODE_PATH: b.repo }), record: (b) => b.stand, make: (b) => { mkdirSync(join(b.stand, "scripts")); writeFileSync(join(b.stand, "scripts", "ennyn.mjs"), 'process.stderr.write(`NODE_PATH ${process.env.NODE_PATH ?? "unset"}\\n`);\nprocess.exit(1);\n'); }, expect: "refused", says: /NODE_PATH unset/ },
+  // Under sh -e, set by a shebang or a line before the block: what it refuses it still says.
+  { id: "data-dir-unsearchable-e", hook: (block, shell) => `#!${shell} -e\n${block}`, make: (b) => chmodSync(b.data, 0), undo: (b) => chmodSync(b.data, 0o755), message: "untyped", expect: "refused", says: /cannot be read/, notRoot: true },
+  { id: "set-e-line-secret", every: true, hook: (block, shell) => `#!${shell}\nset -eu\n${block}`, secret: true, expect: "refused", says: /adds what reads as a secret/ },
+  { id: "set-e-line-clean", hook: (block, shell) => `#!${shell}\nset -eu\n${block}`, expect: "pass" },
+  { id: "shebang-e-secret", hook: (block, shell) => `#!${shell} -e\n${block}`, secret: true, expect: "refused", says: /adds what reads as a secret/ },
+  // A work tree whose path a case pattern would read: the top is compared as text.
+  ...["r*", "r[a-z]", "r'q", "r$v"].map((name) => ({ id: `glob-top ${name}`, name, env: (/** @type {Box} */ b) => ({ PATH: `${join(b.repo, "tools")}:${NODE_DIR}:${SYSTEM}` }), files: () => ({ "tools/node": PLANTED }), secret: true, expect: /** @type {const} */ ("refused"), says: /adds what reads as a secret/ })),
+  // A clean commit through a good record, and the same with a secret.
+  { id: "clean", every: true, expect: "pass" },
+  { id: "secret", every: true, secret: true, expect: "refused", says: /adds what reads as a secret/ },
+];
+
+/** The shells of an `every` row beyond SHELLS, each once. */
+const MORE_SHELLS = ["/bin/bash", "/bin/ksh", "/bin/zsh"].filter((s) => existsSync(s) && !SHELLS.some((k) => realpathSync(k) === realpathSync(s)));
+
+/** One row on a repository of its own, under `shell`. @param {Row} row @param {string} shell */
+function blockRow(row, shell) {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "en-rt-")));
+  const repo = join(base, row.name ?? "repo");
+  const home = join(base, "home");
+  const data = join(home, ".claude", "plugins", "data", "ennyn-test");
+  const b = { repo, home, data, empty: join(base, "empty"), stand: join(base, "stand") };
+  for (const d of [repo, b.empty, b.stand]) mkdirSync(d, { recursive: true });
+  // A stand-in for uname on Git for Windows, in an absolute directory outside the repository.
+  writeFileSync(join(b.stand, "uname"), "#!/bin/sh\necho MINGW64_NT-10.0\n", { mode: 0o755 });
+  git(["init", "-q", "-b", "main"], { cwd: repo });
+  mkdirSync(join(repo, ".ennyn"));
+  writeFileSync(join(repo, ".ennyn", "config.json"), JSON.stringify({ commitMsg: { types: ["feat", "fix"], fixType: "fix" } }));
+  mkdirSync(join(repo, ".githooks"));
+  const block = hookBlock(data);
+  writeFileSync(join(repo, ".githooks", "commit-msg"), row.hook ? row.hook(block, shell) : `#!${shell}\n${block}`, { mode: 0o755 });
+  git(["config", "core.hooksPath", ".githooks"], { cwd: repo });
+  for (const [path, text] of Object.entries(row.files?.(b) ?? {})) {
+    mkdirSync(dirname(join(repo, path)), { recursive: true });
+    writeFileSync(join(repo, path), text, { mode: 0o755 });
+  }
+  git(["add", "-A"], { cwd: repo });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "feat: base"], { cwd: repo });
+  mkdirSync(data, { recursive: true });
+  writeFileSync(join(data, "root"), row.recordBytes ? row.recordBytes(b) : `${row.record ? row.record(b) : SELF}\n`);
+  row.make?.(b);
+  writeFileSync(join(repo, "n.txt"), String(Math.random()));
+  if (row.secret) writeFileSync(join(repo, "token.js"), `export const token = "${SECRET}";\n`);
+  git(["add", "-A"], { cwd: repo });
+  const r = spawnSync(GIT, ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", row.message ?? "feat: x"], { cwd: repo, env: outside({ HOME: home, ...row.env?.(b) }), encoding: "utf8", timeout: 30000 });
+  row.undo?.(b);
+  return { verdict: r.status !== 0 ? "refused" : r.stderr ? "said" : "pass", stderr: r.stderr };
+}
+
+const { TOKENS: { github: SECRET } } = await import("./secret-shapes.mjs");
+const asRoot = process.getuid?.() === 0;
+
+test("block, run by real commits: every probe of rounds 1 and 2 gets its verdict, under /bin/sh and under dash where there is one, the spelling rows under each shell there is", async (t) => {
+  for (const shell of [...SHELLS, ...MORE_SHELLS]) {
+    for (const row of BLOCK_ROWS.filter((r) => r.every || SHELLS.includes(shell))) {
+      await t.test(`${row.id} (${shell})`, { skip: row.notRoot && asRoot ? "root reads what mode 0 forbids" : false }, () => {
+        const got = blockRow(row, shell);
+        assert.equal(got.verdict, row.expect, got.stderr);
+        if (row.says) assert.match(got.stderr, row.says);
+        if (row.not) assert.doesNotMatch(got.stderr, row.not);
+      });
+    }
+  }
+});
+
+test("block under husky 9.1.7's stub and PATH line: node_modules/.bin/node, linked with no install script, never runs the check; a project that depends on it still commits", (t) => {
+  if (!existsSync("/bin/sh")) return t.skip("no /bin/sh");
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "en-rt-")));
+  const home = join(base, "home");
+  const data = join(home, ".claude", "plugins", "data", "ennyn-test");
+  hookModule.recordPluginRoot(data, SELF);
+  const dir = doctorRepo();
+  mkdirSync(join(dir, ".husky", "_"), { recursive: true });
+  mkdirSync(join(dir, "node_modules", ".bin"), { recursive: true });
+  writeFileSync(join(dir, ".husky", "_", "commit-msg"), HUSKY_STUB, { mode: 0o755 });
+  writeFileSync(join(dir, ".husky", "_", "h"), HUSKY_RUNNER, { mode: 0o755 });
+  writeFileSync(join(dir, ".husky", "commit-msg"), hookBlock(data));
+  writeFileSync(join(dir, "node_modules", ".bin", "node"), PLANTED, { mode: 0o755 });
+  git(["config", "core.hooksPath", ".husky/_"], { cwd: dir });
+  git(["add", "-A"], { cwd: dir });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "feat: base"], { cwd: dir });
+  const env = outside({ HOME: home, PATH: `${NODE_DIR}:${SYSTEM}` });
+  const refused = commitIn(dir, 'Revert "x"', { "token.js": `export const token = "${SECRET}";\n` }, env);
+  assert.equal(refused.status, 1, refused.stderr);
+  assert.match(refused.stderr, /adds what reads as a secret/);
+  assert.equal(commitIn(dir, "feat: clean", { "n.txt": String(Math.random()) }, env).status, 0);
+});
+
+test("block with nothing left on PATH: an empty PATH means the current directory to sh and dash, so it names none, and the node the repository holds never runs", () => {
+  const home = mkdtempSync(join(tmpdir(), "en-home-"));
+  const data = join(home, ".claude", "plugins", "data", "ennyn-test");
+  hookModule.recordPluginRoot(data, SELF);
+  const dir = trackedHooks(hookBlock(data));
+  mkdirSync(join(dir, "tools"));
+  writeFileSync(join(dir, "tools", "node"), PLANTED, { mode: 0o755 });
+  writeFileSync(join(dir, "node"), PLANTED, { mode: 0o755 });
+  const msg = join(home, "msg");
+  writeFileSync(msg, "feat: PRJ-1 a\n");
+  // Run by hand: git puts its exec path first, so a hook it runs never finds PATH empty.
+  for (const shell of SHELLS) {
+    const r = spawnSync(shell, [join(dir, ".githooks", "commit-msg"), msg], { cwd: dir, env: outside({ HOME: home, PATH: "tools" }), encoding: "utf8" });
+    assert.deepEqual([r.status, /node not found/.test(r.stderr)], [0, true], `${shell}: ${r.stderr}`);
+  }
+});
+
+test("a call behind an early exit, marked or not, is no ✓: doctor warns, install-hook offers the block, and real git shows why", async () => {
+  const home = mkdtempSync(join(tmpdir(), "en-home-"));
+  const data = join(home, ".claude", "plugins", "data", "ennyn-test");
+  hookModule.recordPluginRoot(data, SELF);
+  const dir = doctorRepo();
+  mkdirSync(join(dir, ".githooks"));
+  const hook = join(dir, ".githooks", "commit-msg");
+  // The evidence's own hook: the exit for exempt subjects, then the line written by hand from the record.
+  const line = `node "$(cat "$HOME/.claude/plugins/data/ennyn-test/root")/scripts/ennyn.mjs" commit-check --hook "$1" || exit $?\n`;
+  writeFileSync(hook, `#!/bin/sh\nIFS= read -r s < "$1"\ncase $s in\n  Merge*|Revert*) exit 0 ;;\nesac\n${line}`, { mode: 0o755 });
+  git(["config", "core.hooksPath", ".githooks"], { cwd: dir });
+  git(["add", "-A"], { cwd: dir });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "feat: base"], { cwd: dir });
+  assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookLate"]);
+  const before = readFileSync(hook, "utf8");
+  const r = installCli(dir, sessionEnv(data, SELF));
+  assert.equal(r.status, 1, r.stdout);
+  assert.match(r.stdout, /may skip commit-check/);
+  assert.ok(r.stdout.endsWith(hookBlock(data)), r.stdout);
+  assert.equal(readFileSync(hook, "utf8"), before, "the project's hook is not written");
+  const env = outside({ HOME: home });
+  const token = { "token.js": `export const token = "${SECRET}";\n` };
+  assert.equal(commitIn(dir, 'Revert "x"', token, env).status, 0, "the oracle: the early exit skipped the line");
+  git(["reset", "-q", "--hard", "HEAD~1"], { cwd: dir });
+  writeFileSync(hook, `#!/bin/sh\n${line}IFS= read -r s < "$1"\ncase $s in\n  Merge*|Revert*) exit 0 ;;\nesac\n`);
+  assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookOk"], "the same line first");
+  assert.equal(commitIn(dir, 'Revert "x"', token, env).status, 1);
+  // An Ennyn hook holds exits of its own before its call: it is no late hook.
+  const own = doctorRepo();
+  installHook({ cwd: own, cliPath: CLI, pluginData: data });
+  assert.equal(hookStatus(own).late, null);
+  assert.deepEqual(await hookKeys(own), ["doctor.hookOk"]);
+});
+
+test("the block counts only as install-hook prints it, first, under a shell of the sh family: anything else that names it warns, read from the text and never from a comment alone", () => {
+  const block = hookBlock("/x/plugins/data/ennyn-ennyn");
+  const sh = "#!/bin/sh\n";
+  const husky = '#!/usr/bin/env sh\n. "$(dirname -- "$0")/_/husky.sh"\n';
+  for (const text of [`${sh}${block}`, block, `${sh}# ours\n\n${block}exit 0\n`, `#!/usr/bin/env sh\n${block}`, `#!/bin/bash\n${block}`, `#!/usr/bin/env bash\n${block}`, `#!/bin/dash\n${block}`, `#!/bin/ksh\n${block}`, `#!/bin/zsh\n${block}`, `${sh}${block.trimEnd()}`, `#!/bin/sh -e\n${block}`, `#!/bin/bash -eux\n${block}`, `${sh}set -e\n${block}`, `${sh}set -eu # strict\n${block}`, `${sh}set -o errexit\n${block}`, `#!/bin/bash\nset -euo pipefail\n${block}`, `${sh}set -e -u\n${block}`]) assert.equal(lateCheck(text), false, text);
+  // husky's own start counts only where the hook's directory is husky's: `husky` says so.
+  for (const text of [`${husky}${block}`, `#!/usr/bin/env sh\n. "$(dirname "$0")/_/husky.sh"\n\n${block}`]) {
+    assert.equal(lateCheck(text, true), false, text);
+    assert.equal(lateCheck(text), true, text);
+  }
+  const edits = [
+    block.replace(") || exit $?", ") || true"),
+    block.replace(") || exit $?", ")"),
+    block.replace(/^.*Printed by.*\n/m, ""),
+    block.replace("id='ennyn-ennyn'", "id=ennyn-ennyn"),
+    block.replace("id='ennyn-ennyn'", "id='../x'"),
+    block.replace(/^ {2}top=.*\n/m, ""),
+    block.replace(/\n/g, "\r\n"),
+    block.replace(/\n/g, "\r"),
+    block.trimEnd() + " # ours\n",
+    block.replace(/cd -P/g, "cd"),
+  ];
+  for (const text of edits) assert.notEqual(text, block);
+  for (const text of edits) assert.equal(lateCheck(`${sh}${text}`), true, text);
+  // No marker at all: a block's own first command is no call.
+  assert.equal(lateCheck(`${sh}${block.split("\n").filter((l) => !l.startsWith("# ")).join("\n")}`), true);
+  const shebangs = ["#!/usr/bin/env node", "#!/usr/bin/python3", "#!/bin/fish", "#!/bin/csh", "#!/bin/sh\r", "#!/bin/sh -n", "#!/bin/sh -s", "#!/bin/sh -c true", "#!/bin/sh -en", "#!/bin/sh --", "#!/bin/bash -n", "#!/usr/bin/env -S sh", "#!/usr/bin/env -S bash -e", "#!/usr/bin/env -S sh -n", "#!/usr/bin/env -S sh -c true", "#!/usr/bin/env -i sh", "#!/usr/bin/env A=1 sh", "#!sh", "#!bin/sh"];
+  for (const line of shebangs) assert.equal(lateCheck(`${line}\n${block}`), true, line);
+  for (const text of [`${block}#!/bin/bash\n`, `. ./lib.sh\n${block}`, `${husky.replace("husky.sh", "skip.sh")}${block}`, `${husky.trimEnd()} || exit 0\n${block}`, `\r\n${block}`, `${sh}[ -n "$SKIP" ] && exit 0 ${block}`, `${sh}set -n\n${block}`, `${sh}set -o noexec\n${block}`, `${sh}set -en\n${block}`, `${sh}set -- x\n${block}`, `${sh}set\n${block}`, `${sh}set -e; exit 0\n${block}`, `${sh}set -e \\\n  && exit 0\n${block}`, `${sh}set -e# x\n${block}`]) assert.equal(lateCheck(text, true), true, text);
+  // The rule for a call that is no block: it is the hook's first command, or the hook warns.
+  const call = 'node x/ennyn.mjs commit-check "$1"\n';
+  for (const text of [call, `exec ${call}`, `${sh}${call}`, `#!/bin/sh -e\n${call}`, `${sh}# the convention\n\n${call}`, `${sh}set -eu\n${call}`, `${sh}NODE_OPTIONS= ${call}`, `${sh}A=1 B="x y" ${call}`, `${sh}${call}exit 0\n`, `${sh}${call}if [ -n "$A" ]; then exit 1; fi\n`, `${sh}${call}case $A in x) exit 0 ;; esac\n`, `${sh}node x commit-check "$1" || exit 1\n`, `${sh}if ! ${call.trimEnd()}; then exit 1; fi\n`, `${sh}! ${call}`, `${sh}npx ennyn commit-check "$1"\n`, `${sh}node "$(cat "$HOME/.claude/plugins/data/e/root")/scripts/ennyn.mjs" commit-check --hook "$1"\n`, `${husky}${call}`.replace(husky, "#!/usr/bin/env sh\n")]) assert.equal(lateCheck(text), false, text);
+  // A shebang that runs nothing, or no shell, stops a call as it stops the block; a Node hook has its own reading.
+  for (const line of shebangs.filter((s) => s !== "#!/usr/bin/env node")) assert.equal(lateCheck(`${line}\n${call}`), true, line);
+  // What runs a program: a name of the list, a path or a value, quoted or not.
+  for (const word of ["node", "npm", "npx", "pnpm", "pnpx", "yarn", "bun", "bunx", "deno", "ennyn", "sh", "bash", "dash", "ksh", "zsh", "./node_modules/.bin/ennyn", "node_modules/.bin/ennyn", "/opt/ennyn/bin/ennyn", '"/opt/my tools/ennyn"', "'/opt/my tools/ennyn'", "$CLI", '"$CLI"', '"$(git rev-parse --show-toplevel)/ennyn"', "${CLI:-ennyn}"]) assert.equal(lateCheck(`${sh}${word} commit-check "$1"\n`), false, word);
+  assert.equal(lateCheck(`${husky}${call}`, true), false);
+  assert.equal(lateCheck(`${husky}${call}`), true);
+  for (const before of [`exit 0 # never\n`, `if [ -n "$A" ]; then\n  exit 0\nfi\n`, `[ -n "$A" ] && exit 0\n`, `case $A in x) exit 0 ;; esac\n`, `f() { exit 0; }\n`, `while read -r l; do\n  case $l in *x*)\n    exit 0 ;;\n  esac\ndone < "$1"\n`, `{ exit; }\n`, `(exit 1) || exit\n`, `echo exit 0\n`, `MSG="will exit now"\n`, `cat <<EOF\nexit 0\nEOF\n`, `exitcode=0\n`, `my-exit\n`, `npx lint-staged\n`, `cd "$(git rev-parse --show-toplevel)"\n`, `. ./lib.sh\n`, `exec true\n`, `set -n\n`]) assert.equal(lateCheck(`${sh}${before}${call}`), true, before);
+  // A first line that names it and does not run it there: it branches, stores it, tests for it, or runs nothing.
+  for (const line of [`case $A in [!R]*) ${call.trimEnd()} ;; esac`, `check() { ${call.trimEnd()}; }`, `check () { ${call.trimEnd()}; }`, `function check { ${call.trimEnd()}; }`, `SUB=commit-check`, `ENNYN="node x commit-check --hook"`, `A=1 B=commit-check`, `export SUB=commit-check`, `readonly SUB=commit-check`, `trap 'node x commit-check "$1"' EXIT`, `alias c='node x commit-check'`, `true ${call.trimEnd()}`, `false ${call.trimEnd()}`, `command -v commit-check >/dev/null || exit 0`, `type commit-check`, `which commit-check`, `[ -n commit-check ]`, `[[ -n commit-check ]]`, `test -n commit-check`, `for c in commit-check; do :; done`, `[ -n "$A" ] || ${call.trimEnd()}`, `grep -q Revert "$1" || ${call.trimEnd()}`, `true || ${call.trimEnd()}`, `false && ${call.trimEnd()}`, `if false; then ${call.trimEnd()}; fi`, `exit 0; ${call.trimEnd()}`, "command -v commit-check", "command -V commit-check", "if test -n commit-check; then :; fi", "! test -n commit-check", `exec true ${call.trimEnd()}`, `check ( ) { ${call.trimEnd()}; }`, "exec echo commit-check", "A=1 echo commit-check", "A=1 printf commit-check", "exec : commit-check", `sleep 0 ${call.trimEnd()}`, `cat ${call.trimEnd()}`, `grep -q commit-check "$1" && ${call.trimEnd()}`, "grep -q commit-check /dev/null", "ls commit-check", "cat commit-check", '"echo" commit-check', `node () { ${call.trimEnd()}; }`, `node ( ) { ${call.trimEnd()}; }`, `/opt/f() { ${call.trimEnd()}; }`]) assert.equal(lateCheck(`${sh}${line}\n`), true, line);
+  // A word off the list warns though it runs the call: a false warning, which stops no commit.
+  for (const line of [`time ${call.trimEnd()}`, `env ${call.trimEnd()}`, `nice ${call.trimEnd()}`, `command ${call.trimEnd()}`, `eval '${call.trimEnd()}'`, `{ ${call.trimEnd()}; }`, `(${call.trimEnd()})`]) assert.equal(lateCheck(`${sh}${line}\n`), true, line);
+  // Text, or a call whose failure its line throws away, is no first command, with the real call under it.
+  for (const line of ["echo commit-check", "printf commit-check", ": commit-check", `${call.trimEnd()} || true`, `${call.trimEnd()} || exit 0`]) assert.equal(lateCheck(`${sh}${line}\n${call}`), true, line);
+  // The marker over a plain call: an edit of the block, not the block.
+  assert.equal(lateCheck(`${sh}${BLOCK_MARKER}\n${call}`), true);
+  // A Node hook: its first statement, read by line; any other interpreter warns.
+  const js = 'require("child_process").execFileSync("node", [cli, "commit-check", process.argv[2]]);\n';
+  for (const text of [`#!/usr/bin/env node\n${js}`, `#!/usr/local/bin/node\n// the convention\n\n${js}`]) assert.equal(lateCheck(text), false, text);
+  for (const text of [`#!/usr/bin/env node\nif (skip) process.exit(0);\n${js}`, `#!/usr/bin/env node\nconst x = 1;\n${js}`, `#!/usr/bin/node --check\n${js}`, `#!/usr/bin/env -S node --check\n${js}`, `#!/usr/bin/python3\n${js}`, "#!/usr/bin/env node\n"]) assert.equal(lateCheck(text), true, text);
+  for (const text of ["", "\n", sh, `${sh}\n# only a comment\n`]) assert.equal(lateCheck(text), true, JSON.stringify(text));
+});
+
+test("hook in a linked worktree: a core.hooksPath an agent worktree made absolute is still the repository's, not a global directory, tracked and under husky", async () => {
+  const home = mkdtempSync(join(tmpdir(), "en-home-"));
+  const data = join(home, ".claude", "plugins", "data", "ennyn-test");
+  hookModule.recordPluginRoot(data, SELF);
+  const worktree = (/** @type {string} */ dir) => {
+    const wt = join(mkdtempSync(join(tmpdir(), "en-hook-wt-")), "wt");
+    git(["worktree", "add", "-q", "-b", "agent", wt], { cwd: dir });
+    return wt;
+  };
+  const dir = trackedHooks(hookBlock(data));
+  git(["config", "core.hooksPath", join(dir, ".githooks")], { cwd: dir });
+  const wt = worktree(dir);
+  assert.deepEqual([hookStatus(wt).hooksKind, hookStatus(wt).state], ["repo", "wired"]);
+  assert.deepEqual(await hookKeys(wt, { HOME: home }), ["doctor.hookOk"]);
+  // With nothing wired yet: the block for the tracked file, never a home path as a line to add to it.
+  const bare = doctorRepo();
+  mkdirSync(join(bare, ".githooks"));
+  writeFileSync(join(bare, ".githooks", "x"), "x\n");
+  git(["add", "-A"], { cwd: bare });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "feat: base"], { cwd: bare });
+  git(["config", "core.hooksPath", join(bare, ".githooks")], { cwd: bare });
+  const printed = installCli(worktree(bare), sessionEnv(data, SELF));
+  assert.equal(printed.status, 1);
+  assert.match(printed.stdout, /Paste the block below at the top of /);
+  assert.ok(!printed.stdout.includes(home), printed.stdout);
+  assert.ok(printed.stdout.endsWith(hookBlock(data)), printed.stdout);
+  // husky's stubs behind an absolute path, from the linked worktree: wired, through the file the stub runs.
+  const husky = doctorRepo();
+  mkdirSync(join(husky, ".husky", "_"), { recursive: true });
+  writeFileSync(join(husky, ".husky", "_", "commit-msg"), HUSKY_STUB, { mode: 0o755 });
+  writeFileSync(join(husky, ".husky", "commit-msg"), hookBlock(data));
+  git(["add", "-A"], { cwd: husky });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "feat: base"], { cwd: husky });
+  git(["config", "core.hooksPath", join(husky, ".husky", "_")], { cwd: husky });
+  const huskyWt = worktree(husky);
+  assert.deepEqual([hookStatus(huskyWt).hooksKind, hookStatus(huskyWt).state], ["husky", "wired"]);
+  assert.deepEqual(await hookKeys(huskyWt, { HOME: home }), ["doctor.hookOk"]);
+  // A directory outside both stays global, from a linked worktree too.
+  const global = mkdtempSync(join(tmpdir(), "en-global-hooks-"));
+  git(["config", "core.hooksPath", global], { cwd: dir });
+  assert.equal(hookStatus(wt).hooksKind, "global");
+  // A bare repository's worktree: the folder that holds the repository is no checkout of it.
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "en-hook-bare-")));
+  git(["clone", "-q", "--bare", dir, join(base, "x.git")], { cwd: base });
+  git(["worktree", "add", "-q", join(base, "wt")], { cwd: join(base, "x.git") });
+  mkdirSync(join(base, "hooks"));
+  git(["config", "core.hooksPath", join(base, "hooks")], { cwd: join(base, "wt") });
+  assert.equal(hookStatus(join(base, "wt")).hooksKind, "global");
+});
+
+test("doctor reads the record the block reads, in the block's order: nothing recorded or nothing it may run is no ✓, and install-hook says the same", async () => {
+  const base = mkdtempSync(join(tmpdir(), "en-plugin-"));
+  const home = join(base, "home");
+  const data = join(home, ".claude", "plugins", "data", "ennyn-test");
+  const dir = trackedHooks(hookBlock(data));
+  const env = { HOME: home };
+  /** @param {Record<string, string>} e */
+  const said = (e) => hookKeys(dir, e);
+  const cli = () => installCli(dir, outside({ HOME: home }));
+  assert.deepEqual(await said(env), ["doctor.hookBlockUnrecorded"], "no record: every commit goes through");
+  assert.match(cli().stdout, /where none is recorded, so every commit goes through unchecked/);
+  assert.equal(cli().status, 1);
+  hookModule.recordPluginRoot(data, SELF);
+  assert.deepEqual(await said(env), ["doctor.hookOk"]);
+  assert.equal(cli().status, 0);
+  // A record it cannot run: every commit is refused.
+  writeFileSync(join(data, "root"), `${join(base, "gone")}\n`);
+  assert.deepEqual(await said(env), ["doctor.hookBlockStale"]);
+  assert.match(cli().stdout, /so every commit is refused/);
+  assert.equal(cli().status, 1);
+  assert.equal(commitIn(dir, "feat: PRJ-1 a", { "n.txt": "1" }, outside({ HOME: home })).status, 1, "the oracle: the block refuses it");
+  rmSync(join(data, "root"));
+  symlinkSync(join(base, "gone"), join(data, "root"));
+  assert.deepEqual(await said(env), ["doctor.hookBlockStale"], "a link at the record's place");
+  rmSync(join(data, "root"));
+  mkdirSync(join(dir, ".x", "scripts"), { recursive: true });
+  writeFileSync(join(dir, ".x", "scripts", "ennyn.mjs"), PLANTED_CLI);
+  writeFileSync(join(data, "root"), `${join(dir, ".x")}\n`);
+  assert.deepEqual(await said(env), ["doctor.hookBlockStale"], "a record that names the repository");
+  rmSync(join(data, "root"));
+  // The block's order: the session's directory, then CLAUDE_CONFIG_DIR's, then HOME's.
+  hookModule.recordPluginRoot(data, SELF);
+  const config = join(base, "config");
+  assert.deepEqual(await said({ ...env, CLAUDE_CONFIG_DIR: config }), ["doctor.hookBlockUnrecorded"]);
+  hookModule.recordPluginRoot(join(config, "plugins", "data", "ennyn-test"), SELF);
+  assert.deepEqual(await said({ ...env, CLAUDE_CONFIG_DIR: config }), ["doctor.hookOk"]);
+  assert.deepEqual(await said({ ...env, CLAUDE_CONFIG_DIR: config, ENNYN_PLUGIN_DATA: join(base, "nowhere") }), ["doctor.hookBlockUnrecorded"]);
+  // A version Claude Code has replaced still runs, with that version's checks: no line for the tracked file.
+  const old = pluginVersion(base, "0.9.0");
+  writeFileSync(join(old, ".orphaned_at"), "1\n");
+  writeFileSync(join(data, "root"), `${old}\n`);
+  assert.deepEqual(await said(env), ["doctor.hookOk"]);
+  assert.equal(cli().status, 0, cli().stdout);
+  hookModule.recordPluginRoot(data, SELF);
+  // No directory it may read: no HOME, no absolute path, a control character, or one inside the repository.
+  for (const e of [{}, { HOME: "relative" }, { ENNYN_PLUGIN_DATA: `${base}\r` }, { ENNYN_PLUGIN_DATA: join(dir, ".x") }]) assert.deepEqual(await said(e), ["doctor.hookBlockNoData"], JSON.stringify(e));
+  const noData = installCli(dir, outside({ HOME: home, ENNYN_PLUGIN_DATA: join(dir, ".x") }));
+  assert.equal(noData.status, 1);
+  assert.match(noData.stdout, /finds no plugin data directory it may read here/);
+});
+
+test("install-hook refuses a data directory whose last part the block could not carry", () => {
+  const dir = doctorRepo();
+  mkdirSync(join(dir, ".githooks"));
+  git(["config", "core.hooksPath", ".githooks"], { cwd: dir });
+  for (const data of ["/x/..", "/x/.", "/", "/x/it's", "/x/a b", "/x/$(id)"]) {
+    const r = installCli(dir, {}, "--plugin-data", data);
+    assert.equal(r.status, 1, data);
+    assert.match(r.stdout, /does not end in a name the block can hold/, data);
+    assert.ok(!r.stdout.includes(BLOCK_MARKER), data);
+  }
+  assert.ok(installCli(dir, {}, "--plugin-data", "/x/ennyn_A-1.b").stdout.endsWith(hookBlock("/x/ennyn_A-1.b")));
+  // The same where the block would replace a call that may be skipped.
+  writeFileSync(join(dir, ".githooks", "commit-msg"), '#!/bin/sh\n[ -n "$A" ] && exit 0\nnode x/ennyn.mjs commit-check "$1"\n', { mode: 0o755 });
+  const late = installCli(dir, {}, "--plugin-data", "/x/..");
+  assert.equal(late.status, 1);
+  assert.match(late.stdout, /does not end in a name the block can hold/);
+  assert.ok(!late.stdout.includes(BLOCK_MARKER));
+});
+
+/** A home with the plugin recorded: this checkout as the version a hook runs. */
+function plugged() {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "en-home-")));
+  const data = join(home, ".claude", "plugins", "data", "ennyn-test");
+  hookModule.recordPluginRoot(data, SELF);
+  return { home, data };
+}
+
+/** A repository whose tracked .githooks/commit-msg is `text`, with `files`, committed. @param {string} text @param {Record<string, string>} [files] */
+function ownHook(text, files = {}) {
+  const dir = doctorRepo();
+  mkdirSync(join(dir, ".githooks"));
+  writeFileSync(join(dir, ".githooks", "commit-msg"), text, { mode: 0o755 });
+  for (const [p, body] of Object.entries(files)) {
+    mkdirSync(dirname(join(dir, p)), { recursive: true });
+    writeFileSync(join(dir, p), body);
+  }
+  git(["config", "core.hooksPath", ".githooks"], { cwd: dir });
+  git(["add", "-A"], { cwd: dir });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "feat: base"], { cwd: dir });
+  return dir;
+}
+
+const TOKEN = { "token.js": `export const token = "${SECRET}";\n` };
+
+test("a call that is not the hook's first command is no ✓, however the hook skips it: doctor warns, install-hook offers the block, and a real Revert lands a secret", async () => {
+  const { home, data } = plugged();
+  const call = `node '${CLI.replace(/'/g, "'\\''")}' commit-check --hook "$1"`;
+  const read = 'IFS= read -r s < "$1"\n';
+  const shapes = {
+    "a function above the exit": `#!/bin/sh\ncheck() {\n  ${call}\n}\n${read}case $s in\n  Merge*|Revert*) exit 0 ;;\nesac\ncheck "$1"\n`,
+    "a one-line function above the exit": `#!/bin/sh\ncheck() { ${call}; }\n${read}case $s in Revert*) exit 0 ;; esac\ncheck "$1"\n`,
+    "a variable above the exit": `#!/bin/sh\nENNYN="${call.replace(/ "\$1"$/, "")}"\n${read}case $s in\n  Revert*) exit 0 ;;\nesac\n$ENNYN "$1"\n`,
+    "a subcommand variable above the exit": `#!/bin/sh\nSUB=commit-check\n${read}case $s in\n  Revert*) exit 0 ;;\nesac\n${call.replace("commit-check", '"$SUB"')}\n`,
+    "a case arm": `#!/bin/sh\n${read}case $s in\n  Merge*|Revert*) ;;\n  *) ${call} ;;\nesac\n`,
+    "an if guard": `#!/bin/sh\n${read}case $s in Revert*) skip=1 ;; esac\nif [ -z "$skip" ]; then\n  ${call}\nfi\n`,
+    "an or guard": `#!/bin/sh\n${read}case $s in Revert*) skip=1 ;; esac\n[ -n "$skip" ] || ${call}\n`,
+    "a return in main": `#!/bin/sh\nmain() {\n  ${read}  case $s in Revert*) return 0 ;; esac\n  ${call}\n}\nmain "$@"\n`,
+    "exec true": `#!/bin/sh\n${read}case $s in Revert*) exec true ;; esac\n${call}\n`,
+  };
+  const env = outside({ HOME: home });
+  for (const [name, text] of Object.entries(shapes)) {
+    const dir = ownHook(text);
+    assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookLate"], name);
+    const r = installCli(dir, sessionEnv(data, SELF));
+    assert.equal(r.status, 1, `${name}: ${r.stdout}`);
+    assert.ok(r.stdout.endsWith(hookBlock(data)), `${name}: install-hook offers the block`);
+    assert.equal(commitIn(dir, 'Revert "x"', TOKEN, env).status, 0, `the oracle, ${name}: the Revert skipped the call`);
+    git(["reset", "-q", "--hard", "HEAD~1"], { cwd: dir });
+    assert.equal(commitIn(dir, "feat: x", TOKEN, env).status, 1, `${name}: a typed subject is still checked`);
+  }
+  // The same early exits behind the call: the call is the first command, and the Revert is refused.
+  const first = ownHook(`#!/bin/sh\n# the convention\n\nset -eu\n${call}\n${read}case $s in\n  Revert*) exit 0 ;;\nesac\n`);
+  assert.deepEqual(await hookKeys(first, { HOME: home }), ["doctor.hookOk"]);
+  assert.equal(commitIn(first, 'Revert "x"', TOKEN, env).status, 1);
+  // A false warning is accepted: checks of the project's own before the call warn, and stop no commit.
+  const other = ownHook(`#!/bin/sh\nawk 'NR==1 && length > 72 { exit 1 }' "$1"\n${call}\n`);
+  assert.deepEqual(await hookKeys(other, { HOME: home }), ["doctor.hookLate"]);
+  assert.equal(commitIn(other, "feat: x", { "n.txt": "1" }, env).status, 0);
+});
+
+test("a shebang whose flags run nothing is no ✓, for the block and for a call: real git lands a secret behind each; -e and -u still run", async () => {
+  const { home, data } = plugged();
+  const block = hookBlock(data);
+  const env = outside({ HOME: home });
+  const envS = spawnSync("/usr/bin/env", ["-S", "true"]).status === 0;
+  const idle = ["#!/bin/sh -n", "#!/bin/sh -s", ...(existsSync("/bin/bash") ? ["#!/bin/bash -n"] : []), ...(envS ? ["#!/usr/bin/env -S sh -n", "#!/usr/bin/env -S sh -c true"] : [])];
+  const call = `node '${CLI.replace(/'/g, "'\\''")}' commit-check --hook "$1"\n`;
+  for (const shebang of idle) {
+    for (const body of [block, call]) {
+      const dir = ownHook(`${shebang}\n${body}`);
+      assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookLate"], shebang);
+      assert.equal(commitIn(dir, "feat: x", TOKEN, env).status, 0, `the oracle, ${shebang}: the hook ran nothing`);
+    }
+  }
+  for (const shebang of ["#!/bin/sh -e", "#!/bin/sh -eu", "#!/bin/sh -x"]) {
+    const dir = ownHook(`${shebang}\n${block}`);
+    assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookOk"], shebang);
+    assert.equal(commitIn(dir, "feat: x", TOKEN, env).status, 1, shebang);
+    assert.equal(commitIn(dir, "feat: x", { "n.txt": "1" }, env).status, 0, shebang);
+  }
+  // set -n as a line: the same.
+  const dir = ownHook(`#!/bin/sh\nset -n\n${block}`);
+  assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookLate"]);
+  assert.equal(commitIn(dir, "feat: x", TOKEN, env).status, 0, "the oracle: set -n ran nothing");
+});
+
+test("husky's start counts only where husky made the file it sources: a tracked _/husky.sh that exits warns, and real git shows why; the one husky generates stays ✓", async () => {
+  const { home, data } = plugged();
+  const block = hookBlock(data);
+  const env = outside({ HOME: home });
+  const line = '. "$(dirname "$0")/_/husky.sh"\n';
+  // A plain tracked directory that holds a file of that name: the line reads like husky's and ends the hook.
+  const plain = ownHook(`#!/bin/sh\n${line}${block}`, { ".githooks/_/husky.sh": "exit 0\n" });
+  assert.deepEqual(await hookKeys(plain, { HOME: home }), ["doctor.hookLate"]);
+  assert.equal(commitIn(plain, "feat: x", TOKEN, env).status, 0, "the oracle: the tracked file ended the hook");
+  // The name proves nothing: the same in a directory called .husky.
+  const named = doctorRepo();
+  mkdirSync(join(named, ".husky", "_"), { recursive: true });
+  writeFileSync(join(named, ".husky", "commit-msg"), `#!/usr/bin/env sh\n${line}${block}`, { mode: 0o755 });
+  writeFileSync(join(named, ".husky", "_", "husky.sh"), "exit 0\n");
+  git(["config", "core.hooksPath", ".husky"], { cwd: named });
+  git(["add", "-A"], { cwd: named });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "feat: base"], { cwd: named });
+  assert.deepEqual(await hookKeys(named, { HOME: home }), ["doctor.hookLate"]);
+  // A link at the directory's place or at the file's: no file husky wrote, and git is not asked about a path behind a link.
+  const linked = ownHook(`#!/bin/sh\n${line}${block}`, { "elsewhere/husky.sh": "exit 0\n" });
+  symlinkSync(join("..", "elsewhere"), join(linked, ".githooks", "_"));
+  assert.deepEqual(await hookKeys(linked, { HOME: home }), ["doctor.hookLate"]);
+  const fileLink = ownHook(`#!/bin/sh\n${line}${block}`, { "elsewhere/husky.sh": "exit 0\n" });
+  mkdirSync(join(fileLink, ".githooks", "_"));
+  symlinkSync(join("..", "..", "elsewhere", "husky.sh"), join(fileLink, ".githooks", "_", "husky.sh"));
+  assert.deepEqual(await hookKeys(fileLink, { HOME: home }), ["doctor.hookLate"]);
+  // What husky 6 to 8 generate: the file is ignored, so no clone holds it from the repository.
+  const made = doctorRepo();
+  mkdirSync(join(made, ".husky", "_"), { recursive: true });
+  writeFileSync(join(made, ".husky", "_", ".gitignore"), "*");
+  writeFileSync(join(made, ".husky", "_", "husky.sh"), HUSKY8_SH, { mode: 0o755 });
+  writeFileSync(join(made, ".husky", "commit-msg"), `#!/usr/bin/env sh\n. "$(dirname -- "$0")/_/husky.sh"\n${block}npx lint-staged\n`, { mode: 0o755 });
+  git(["config", "core.hooksPath", ".husky"], { cwd: made });
+  git(["add", "-A"], { cwd: made });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "feat: base"], { cwd: made });
+  assert.ok(!git(["ls-files"], { cwd: made }).includes("husky.sh"), "the fixture: no tracked husky.sh");
+  assert.deepEqual(await hookKeys(made, { HOME: home }), ["doctor.hookOk"]);
+  assert.equal(commitIn(made, "feat: x", TOKEN, env).status, 1, "husky.sh ran the hook, and the block refused");
+  // In the git directory: no clone gets it, and the index does not hold it.
+  const inside = doctorRepo();
+  mkdirSync(join(inside, ".git", "own", "_"), { recursive: true });
+  writeFileSync(join(inside, ".git", "own", "_", "husky.sh"), HUSKY8_SH);
+  writeFileSync(join(inside, ".git", "own", "commit-msg"), `#!/bin/sh\n${line}${block}`, { mode: 0o755 });
+  git(["config", "core.hooksPath", ".git/own"], { cwd: inside });
+  assert.deepEqual(await hookKeys(inside, { HOME: home }), ["doctor.hookOk"]);
+});
+
+test("doctor says what the commit does, the block's reading in the block's order: for each state, its line and a real commit", async () => {
+  const { home, data } = plugged();
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "en-plugin-")));
+  const dir = ownHook(`#!/bin/sh\n${hookBlock(data)}`);
+  // What a case leaves in the tree stays out of its commits, so a reset takes none of it.
+  mkdirSync(join(dir, ".git", "info"), { recursive: true });
+  writeFileSync(join(dir, ".git", "info", "exclude"), ".tools\n.pd\n.x\na\nlink\n");
+  const env = outside({ HOME: home });
+  /** @param {Record<string, string>} vars @param {string} key @param {number} status @param {RegExp} says */
+  const both = async (vars, key, status, says) => {
+    const what = `${key}, ${JSON.stringify(vars)}`;
+    assert.deepEqual(await hookKeys(dir, { HOME: home, ...vars }), [key], what);
+    const r = commitIn(dir, "feat: x", { "n.txt": String(Math.random()) }, { ...env, ...vars });
+    assert.equal(r.status, status, `${what}: ${r.stderr}`);
+    assert.match(r.stderr, says, what);
+    if (status === 0) git(["reset", "-q", "--hard", "HEAD~1"], { cwd: dir });
+  };
+  // Node only in the tree: dropped by the filter, so every commit goes through, whatever else is wrong.
+  const tools = join(dir, ".tools", "bin");
+  mkdirSync(tools, { recursive: true });
+  symlinkSync(process.execPath, join(tools, "node"));
+  const inTree = { PATH: `${tools}:${join(base, "empty")}` };
+  await both(inTree, "doctor.hookBlockNoNode", 0, /node not found/);
+  await both({ ...inTree, ENNYN_PLUGIN_DATA: "relative" }, "doctor.hookBlockNoNode", 0, /node not found/);
+  await both({ PATH: "" }, "doctor.hookBlockNoNode", 0, /node not found/);
+  await both({ PATH: "relative/dir" }, "doctor.hookBlockNoNode", 0, /node not found/);
+  // A node beside it, outside the tree: it runs, and doctor is content; a directory named node is no node.
+  const outsideBin = join(base, "bin");
+  mkdirSync(join(outsideBin, "node"), { recursive: true });
+  await both({ PATH: outsideBin }, "doctor.hookBlockNoNode", 0, /node not found/);
+  await both({ PATH: `${tools}:${dirname(process.execPath)}:${SYSTEM}` }, "doctor.hookOk", 0, /^$/);
+  // A relative entry holding one is dropped wherever it lies: the commit runs at the top, and doctor anywhere.
+  const relativeBin = join(base, "relative-bin");
+  mkdirSync(relativeBin);
+  symlinkSync(process.execPath, join(relativeBin, "node"));
+  await both({ PATH: relative(process.cwd(), relativeBin) }, "doctor.hookBlockNoNode", 0, /node not found/);
+  // install-hook says the same; its own git is found through a directory that holds no node.
+  const gitOnly = join(base, "git-only");
+  mkdirSync(gitOnly);
+  writeFileSync(join(gitOnly, "git"), `#!/bin/sh\nexec ${JSON.stringify(GIT)} "$@"\n`, { mode: 0o755 });
+  const cli = installCli(dir, outside({ HOME: home, PATH: `${tools}:${gitOnly}` }));
+  assert.equal(cli.status, 1, cli.stderr);
+  assert.match(cli.stdout, /no node is left on PATH, so every commit goes through unchecked/);
+  rmSync(tools, { recursive: true });
+  // A data directory in the tree: refused when it is there, and when it is not there nothing is recorded.
+  await both({ ENNYN_PLUGIN_DATA: join(dir, "absent") }, "doctor.hookBlockUnrecorded", 0, /no plugin version is recorded/);
+  mkdirSync(join(dir, ".pd"));
+  await both({ ENNYN_PLUGIN_DATA: join(dir, ".pd") }, "doctor.hookBlockNoData", 1, /inside this work tree/);
+  // Spelled through a link and "..": where the kernel lands, not where the text does.
+  mkdirSync(join(dir, "a", "b", "c"), { recursive: true });
+  symlinkSync(join("a", "b", "c"), join(dir, "link"));
+  await both({ ENNYN_PLUGIN_DATA: `${dir}/link/../..` }, "doctor.hookBlockNoData", 1, /inside this work tree/);
+  // The same spelling outside the tree: the record the kernel finds is the one read.
+  hookModule.recordPluginRoot(join(base, "deep"), SELF);
+  mkdirSync(join(base, "deep", "x", "y"), { recursive: true });
+  symlinkSync(join("deep", "x", "y"), join(base, "out"));
+  await both({ ENNYN_PLUGIN_DATA: `${base}/out/../..` }, "doctor.hookOk", 0, /^$/);
+  hookModule.recordPluginRoot(join(base, "deep", "plugins", "data", "ennyn-test"), SELF);
+  await both({ CLAUDE_CONFIG_DIR: `${base}/out/../..` }, "doctor.hookOk", 0, /^$/);
+  // Another spelling of the tree, on a volume that folds case: found as what it is, and no such directory elsewhere.
+  if (existsSync(dir.toUpperCase())) await both({ ENNYN_PLUGIN_DATA: join(dir.toUpperCase(), ".pd") }, "doctor.hookBlockNoData", 1, /inside this work tree/);
+  rmSync(join(dir, ".pd"), { recursive: true });
+  // A directory the block cannot enter: refused, and doctor says so.
+  if (!asRoot) {
+    const locked = join(base, "locked");
+    hookModule.recordPluginRoot(locked, SELF);
+    chmodSync(locked, 0);
+    await both({ ENNYN_PLUGIN_DATA: locked }, "doctor.hookBlockNoData", 1, /cannot be read/);
+    chmodSync(locked, 0o755);
+  }
+  // The record names the tree, however: its CLI there, a replaced version there, the CLI a link, its directory a link.
+  const at = join(data, "root");
+  const record = (/** @type {string} */ root) => writeFileSync(at, `${root}\n`);
+  mkdirSync(join(dir, ".x", "scripts"), { recursive: true });
+  writeFileSync(join(dir, ".x", "scripts", "ennyn.mjs"), PLANTED_CLI);
+  record(join(dir, ".x"));
+  await both({}, "doctor.hookBlockStale", 1, /inside this work tree/);
+  writeFileSync(join(dir, ".x", ".orphaned_at"), "1\n");
+  await both({}, "doctor.hookBlockStale", 1, /inside this work tree/);
+  rmSync(join(dir, ".x", ".orphaned_at"));
+  const version = join(base, "version");
+  mkdirSync(join(version, "scripts"), { recursive: true });
+  symlinkSync(join(dir, ".x", "scripts", "ennyn.mjs"), join(version, "scripts", "ennyn.mjs"));
+  record(version);
+  await both({}, "doctor.hookBlockStale", 1, /its CLI is a link/);
+  rmSync(join(version, "scripts", "ennyn.mjs"));
+  writeFileSync(join(base, "real.mjs"), PLANTED_CLI);
+  symlinkSync(join(base, "real.mjs"), join(version, "scripts", "ennyn.mjs"));
+  await both({}, "doctor.hookBlockStale", 1, /its CLI is a link/);
+  rmSync(join(version, "scripts"), { recursive: true });
+  symlinkSync(join(dir, ".x", "scripts"), join(version, "scripts"));
+  await both({}, "doctor.hookBlockStale", 1, /inside this work tree/);
+  rmSync(join(dir, ".x"), { recursive: true });
+  // A replaced version outside the tree still runs, with that version's checks.
+  const old = pluginVersion(base, "0.9.0");
+  writeFileSync(join(old, ".orphaned_at"), "1\n");
+  record(old);
+  await both({}, "doctor.hookOk", 1, /ran 0\.9\.0/);
+});
+
+test("hook in a linked worktree of any layout: a tracked hooks directory of a --separate-git-dir repository or a submodule is the repository's, not a global directory", async () => {
+  const { home, data } = plugged();
+  const block = hookBlock(data);
+  /** @param {string} dir @param {string} name */
+  const worktree = (dir, name) => {
+    const wt = join(realpathSync(mkdtempSync(join(tmpdir(), "en-hook-wt-"))), name);
+    git(["worktree", "add", "-q", "-b", name, wt], { cwd: dir });
+    return wt;
+  };
+  /** The hooks directory made absolute, as an agent worktree's setup does, seen from a worktree of `dir`. @param {string} dir @param {string} name */
+  const seen = async (dir, name) => {
+    git(["config", "core.hooksPath", join(dir, ".githooks")], { cwd: dir });
+    const wt = worktree(dir, name);
+    assert.deepEqual([hookStatus(wt).hooksKind, hookStatus(wt).state], ["repo", "wired"], name);
+    assert.deepEqual(await hookKeys(wt, { HOME: home }), ["doctor.hookOk"], name);
+    // Nothing wired yet: the block for the tracked file, never a home path as a line to add to it.
+    rmSync(join(dir, ".githooks", "commit-msg"));
+    writeFileSync(join(dir, ".githooks", "x"), "x\n");
+    const printed = installCli(wt, sessionEnv(data, SELF));
+    assert.equal(printed.status, 1, printed.stdout);
+    assert.match(printed.stdout, /Paste the block below at the top of /, name);
+    assert.ok(!printed.stdout.includes(home), printed.stdout);
+    assert.ok(printed.stdout.endsWith(block), printed.stdout);
+    // A hooks directory not made yet is found through what is there.
+    git(["config", "core.hooksPath", join(dir, ".githooks", "not", "yet")], { cwd: dir });
+    assert.equal(hookStatus(wt).hooksKind, "repo", name);
+  };
+  // --separate-git-dir: the git directory is elsewhere, and git's own list names it as the main checkout.
+  const separate = trackedHooks(block);
+  git(["init", "-q", "--separate-git-dir", join(realpathSync(mkdtempSync(join(tmpdir(), "en-hook-sep-"))), "sep.git")], { cwd: separate });
+  await seen(separate, "separate");
+  // A submodule: its git directory is its superproject's .git/modules/mod.
+  const source = trackedHooks(block);
+  const superproject = doctorRepo();
+  git(["add", "-A"], { cwd: superproject });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "feat: base"], { cwd: superproject });
+  git(["-c", "protocol.file.allow=always", "submodule", "add", "-q", source, "mod"], { cwd: superproject });
+  await seen(join(superproject, "mod"), "module");
+  // A tracked directory of another repository is no directory of this one, from a linked worktree or not.
+  const other = trackedHooks(block);
+  const dir = doctorRepo();
+  git(["add", "-A"], { cwd: dir });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "feat: base"], { cwd: dir });
+  git(["config", "core.hooksPath", join(other, ".githooks")], { cwd: dir });
+  assert.equal(hookStatus(dir).hooksKind, "global");
+  assert.equal(hookStatus(worktree(dir, "other")).hooksKind, "global");
+  // A file at the hooks path's place, and a directory in the git directory of a bare repository: no work tree holds them.
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "en-hook-bare-")));
+  writeFileSync(join(base, "a-file"), "x\n");
+  git(["config", "core.hooksPath", join(base, "a-file")], { cwd: dir });
+  assert.equal(hookStatus(dir).hooksKind, "global");
+  git(["clone", "-q", "--bare", dir, join(base, "x.git")], { cwd: base });
+  git(["worktree", "add", "-q", join(base, "wt")], { cwd: join(base, "x.git") });
+  mkdirSync(join(base, "x.git", "own"));
+  git(["config", "core.hooksPath", join(base, "x.git", "own")], { cwd: join(base, "wt") });
+  assert.equal(hookStatus(join(base, "wt")).hooksKind, "global");
+});
+
+test("the line install-hook advises keeps the check's verdict: first in a hook that goes on, real git refuses what the check refuses, in both its forms", async () => {
+  const { home, data } = plugged();
+  const env = outside({ HOME: home });
+  const rest = 'IFS= read -r s < "$1"\ncase $s in\n  Revert*) exit 0 ;;\nesac\necho theirs\n';
+  for (const pluginData of [null, data]) {
+    const dir = repo();
+    git(["add", "-A"], { cwd: dir });
+    git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "feat: base"], { cwd: dir });
+    const hook = join(dir, ".git", "hooks", "commit-msg");
+    writeFileSync(hook, `#!/bin/sh\n${rest}`, { mode: 0o755 });
+    const res = installHook({ cwd: dir, cliPath: CLI, pluginData });
+    assert.equal(res.result, "other");
+    writeFileSync(hook, `#!/bin/sh\n${res.line}\n${rest}`);
+    assert.equal(lateCheck(readFileSync(hook, "utf8")), false, res.line);
+    assert.equal(commitIn(dir, 'Revert "x"', TOKEN, env).status, 1, res.line);
+    assert.equal(commitIn(dir, "untyped subject", { "n.txt": "1" }, env).status, 1, res.line);
+    assert.equal(commitIn(dir, "feat: typed", { "n.txt": "2" }, env).status, 0, res.line);
+    // The oracle: the same line with no status check loses the verdict, and doctor cannot tell (hook-wired-limits).
+    writeFileSync(hook, `#!/bin/sh\n${res.line.replace(" || exit $?", "")}\n${rest}`);
+    assert.equal(commitIn(dir, 'Revert "x"', TOKEN, env).status, 0, res.line);
+  }
 });

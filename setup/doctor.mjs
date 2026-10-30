@@ -435,7 +435,7 @@ export async function checkSetup({ cwd, env = process.env, self = OWN_ROOT }) {
     let version = null;
     let selfReplaced = false;
     try {
-      hook = hookStatus(cwd);
+      hook = hookStatus(cwd, env);
       if (hook.state === "ennyn" || hook.state === "wired") idle = idleReason(hook);
       if (hook.state === "ennyn" && idle === null) replaced = replacedRoot(hook);
       // Run from a version Claude Code has replaced (an old session): its view of "this session's version" is stale.
@@ -452,6 +452,13 @@ export async function checkSetup({ cwd, env = process.env, self = OWN_ROOT }) {
       // A hook git skips (husky's stub not generated yet, not executable) or one whose CLI moved checks nothing.
       if (idle === "absent") add("warn", "doctor.hookAbsent", { path: [hook.path] });
       else if (idle === "mode") add("warn", "doctor.hookNotRun", { path: [hook.path] });
+      // A project's own hook that may skip the check: the call is not its first command, or the block not exact and first.
+      else if (idle === "late") add("warn", "doctor.hookLate", { path: [String(hook.late)] });
+      // The block, exact and first: what it finds decides what each commit gets, in its own order.
+      else if (hook.block !== null && idle === "noNode") add("warn", "doctor.hookBlockNoNode", { path: [hook.block] });
+      else if (hook.block !== null && idle === "noData") add("warn", "doctor.hookBlockNoData", { path: [hook.block] });
+      else if (hook.block !== null && idle === "unrecorded") add("warn", "doctor.hookBlockUnrecorded", { path: [hook.block], data: [String(hook.data)] });
+      else if (hook.block !== null && idle !== null) add("warn", "doctor.hookBlockStale", { path: [hook.block], data: [String(hook.data)] });
       else if (idle === "cli") add("warn", "doctor.hookCliGone", { path: [hook.path], cli: [String(hook.cli)] });
       // Installed from the plugin: uninstalled (every commit passes) or the version its link names deleted (every commit is refused).
       else if (idle === "unrecorded") add("warn", "doctor.hookPluginUnrecorded", { path: [hook.path], data: [String(hook.data)] });
