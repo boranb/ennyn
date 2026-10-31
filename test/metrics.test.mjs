@@ -7,7 +7,8 @@ import { join, dirname } from "node:path";
 import { loadConfig } from "../core/config.mjs";
 import { git } from "../core/git.mjs";
 import { reworkRate, deletedCodeLines, isCodeLine, parseBound, commitMessages, readLog } from "../metrics/szz.mjs";
-import { parseConvergence, formatConvergence } from "../metrics/convergence.mjs";
+import { parseConvergence, formatConvergence, MAX_ROUNDS } from "../metrics/convergence.mjs";
+import { READ_LIMIT } from "../core/files.mjs";
 
 const cfg = (override = {}) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-m-")), env: {}, override });
 /** One-line fixtures: the strong-link floor is lowered so window, filter and range logic are under test. */
@@ -313,6 +314,358 @@ test("convergence: an explicit `?` round stays as null at the end too (round-tri
   assert.deepEqual(c?.perRound, [2, null]);
   const again = parseConvergence(formatConvergence({ realEscape: 1, fixIntroduced: 0, preExisting: 0, gateCaught: 0, perRound: [1, null] }, cfg()), cfg());
   assert.deepEqual(again?.perRound, [1, null]);
+});
+
+/** @param {string} line */
+const roundsOf = (line) => parseConvergence(`Findings: real escape 1\nNew classes per round: ${line}`, { language: "en" })?.perRound;
+/** @param {string} cell */
+const countLine = (cell) => `Findings: real escape ${cell} · fix-introduced 2 · pre-existing 3 · gate-caught 4`;
+/** A block nothing could be read from: unreported, which is not "no block" (null). */
+const NULLS = { realEscape: null, fixIntroduced: null, preExisting: null, gateCaught: null, perRound: [] };
+
+test("convergence audit: a cell is a count only when it is exactly one; anything else is null, in either line", () => {
+  const en = { language: "en" };
+  const exact = /** @type {[string, number][]} */ ([["3", 3], ["0", 0], ["007", 7], ["3.", 3], ["3;", 3], ["3,", 3], ["3.;", 3], ["**3**", 3], ["`3`", 3], ["_3_", 3], [String(Number.MAX_SAFE_INTEGER), Number.MAX_SAFE_INTEGER]]);
+  for (const [cell, n] of exact) {
+    assert.deepEqual(parseConvergence(countLine(cell), en), { realEscape: n, fixIntroduced: 2, preExisting: 3, gateCaught: 4, perRound: [] }, cell);
+    assert.deepEqual(roundsOf(`round 1 → ${cell}`), [n], cell);
+  }
+  for (const line of ["Findings: real escape: 3", "Findings: real escape : 3", "Findings: real escape=3", "Findings: real escape = 3", "Findings: real  escape\t3"]) assert.equal(parseConvergence(line, en)?.realEscape, 3, line);
+  for (const cell of ["round 1 → 3", "round 1 -> 3", "round 1: 3", "round 1 = 3", "round 1→3", "round  1  →  3"]) assert.deepEqual(roundsOf(cell), [3], cell);
+  const unread = ["?", "~3", "≈3", "3+", "-1", "+1", "1.5", "0x10", "1e3", "NaN", "Infinity", "none", "٣", "３", "~~3~~", "~~3~~ 4", "3 (two in T1)", "9007199254740992", "9007199254740993", "9999999999999999", "1".padEnd(401, "0")];
+  const separated = ["1.000", "1 000", "1 000", "1 000", "1'000", "1,000", "1·000", "1, 000", "1 · 000", "1_000", "5*2", "1`0", "5**2", "1__000", "5*_2"];
+  for (const cell of [...unread, ...separated]) {
+    assert.deepEqual(parseConvergence(countLine(cell), en), { realEscape: null, fixIntroduced: 2, preExisting: 3, gateCaught: 4, perRound: [] }, cell);
+    assert.deepEqual(roundsOf(`round 1 → ${cell} · round 2 → 6`), [null, 6], cell);
+  }
+});
+
+test("convergence audit: an estimate is unreported, not the figure and not a lost round: it keeps its place", () => {
+  const tr = { language: "tr" };
+  const block = (/** @type {string} */ rounds) => parseConvergence(`Bulgular: gerçek kaçak 1\nTur başına yeni sınıf: ${rounds}`, tr)?.perRound;
+  assert.deepEqual(block("tur 1 → ~5 · tur 2 → 4 · tur 3+ → ~2 (yalnız T2, tek sinyal)"), [null, 4, null]);
+  assert.deepEqual(block("tur 1 → ~5 · tur 2 → ~4 · tur 3+ → ~2"), [null, null, null]);
+  assert.deepEqual(block("tur 1 → 7 · tur 2 → 3 · tur 3+ → yok (tur 2'den sonra kapandı)"), [7, 3, null]);
+  assert.deepEqual(block("tur 1 → 7 · tur 2 → 3 · tur 3+ → 0"), [7, 3, 0]);
+  assert.deepEqual(roundsOf("round 2 → ~1"), [null, null]);
+  assert.deepEqual(roundsOf("round 1 → 5 · round 2 ⇒ 3"), [5, null], "a round whose arrow cannot be read is still written");
+  assert.deepEqual(roundsOf("round 1 → 5 → 6"), [null]);
+  assert.deepEqual(roundsOf("round 1 5"), [null]);
+  assert.deepEqual(roundsOf("round 3+5"), [null, null, null], "no arrow, no count");
+});
+
+test("convergence audit: what a note in parentheses mentions is no cell of the report", () => {
+  const en = { language: "en" };
+  assert.deepEqual(roundsOf("round 1 → 5 (later, round 2 → 9, was dropped)"), [null]);
+  assert.deepEqual(roundsOf("round 1 → 5 (later · round 2 → 9 · was dropped) · round 2 → 3"), [null, 3]);
+  assert.deepEqual(parseConvergence("Findings: real escape 1 (not, gate-caught 9, at all) · pre-existing 2", en), { realEscape: null, fixIntroduced: null, preExisting: 2, gateCaught: null, perRound: [] });
+  // Nested: the note ends where its depth does.
+  assert.deepEqual(parseConvergence("Findings: real escape 1 (a (b) · gate-caught 9 · c) · pre-existing 2", en), { realEscape: null, fixIntroduced: null, preExisting: 2, gateCaught: null, perRound: [] });
+  assert.deepEqual(roundsOf("round 1 → 5 (later (see), round 2 → 9, dropped)"), [null]);
+  assert.deepEqual(roundsOf("round 1 → 5 (a ((b), round 2 → 9), round 3 → 8, c) · round 2 → 3"), [null, 3]);
+  // Unclosed: it runs to the end of the line, and what follows reads null.
+  assert.deepEqual(parseConvergence("Findings: pre-existing 2 · real escape 1 (see T2 · gate-caught 9", en), { realEscape: null, fixIntroduced: null, preExisting: 2, gateCaught: null, perRound: [] });
+  assert.deepEqual(roundsOf("round 1 → 5 · round 2 → 3 (see · round 3 → 9"), [5, null]);
+  // A closing mark with no opening one opens nothing and closes nothing.
+  assert.deepEqual(parseConvergence("Findings: real escape 1) · gate-caught 9 (a) · pre-existing 2 · fix-introduced 3", en), { realEscape: null, fixIntroduced: 3, preExisting: 2, gateCaught: null, perRound: [] });
+  assert.deepEqual(parseConvergence("Findings: real escape 1)) (a · gate-caught 9) · pre-existing 2", en), { realEscape: null, fixIntroduced: null, preExisting: 2, gateCaught: null, perRound: [] });
+});
+
+test("convergence audit: text of any kind, or a config with no catalog, ends in null or English, not a throw", () => {
+  const en = { language: "en" };
+  for (const text of [null, undefined, 12, { a: 1 }, ["Findings: real escape 1"], Buffer.from("Findings: real escape 1")]) assert.equal(parseConvergence(text, en), null);
+  assert.equal(parseConvergence("", en), null);
+  for (const config of [null, undefined, {}, { language: "de" }, { language: "../../package" }, { language: 1 }]) {
+    assert.equal(parseConvergence(countLine("1"), config)?.realEscape, 1, JSON.stringify(config));
+    assert.match(formatConvergence({ realEscape: 1 }, config), /^Findings: real escape 1 ·/, JSON.stringify(config));
+  }
+});
+
+test("convergence audit: a count or a round written twice cannot be read, whichever values it holds", () => {
+  const en = { language: "en" };
+  assert.deepEqual(parseConvergence("Findings: real escape 1 · real escape 2 · gate-caught 4", en), { realEscape: null, fixIntroduced: null, preExisting: null, gateCaught: 4, perRound: [] });
+  assert.equal(parseConvergence("Findings: real escape 2 · real escape 2", en)?.realEscape, null);
+  assert.equal(parseConvergence("Findings: real escape 2 · real escape 2 · real escape 2", en)?.realEscape, null);
+  assert.equal(parseConvergence("Findings: real escape 2 · real escape", en)?.realEscape, null, "a label with no value is written all the same");
+  assert.deepEqual(roundsOf("round 1 → 5 · round 1 → 9 · round 2 → 3"), [null, 3]);
+  assert.deepEqual(roundsOf("round 1 → 5 · round 1 → 5"), [null]);
+  assert.deepEqual(roundsOf("round 1 → 5 · round 1 → 5 · round 1 → 5"), [null]);
+  assert.deepEqual(roundsOf("round 2 → 5 · round 1 → 9"), [9, 5], "order alone is no repeat");
+});
+
+test("convergence audit: only the last round from round 3 up can be an aggregate", () => {
+  assert.deepEqual(roundsOf("round 1 → 5 · round 2 → 4 · round 3+ → 3"), [5, 4, 3]);
+  assert.deepEqual(roundsOf("round 1 → 5 · round 2 → 4 · round 3 → 3 · round 4+ → 2"), [5, 4, 3, 2]);
+  assert.deepEqual(roundsOf("round 1 → 5 · round 2+ → 9"), [5, null]);
+  assert.deepEqual(roundsOf("round 1+ → 9"), [null]);
+  assert.deepEqual(roundsOf("round 3+ → 5 · round 4 → 2"), [null, null, null, 2], "an aggregate cannot be followed by a round it holds");
+});
+
+test("convergence audit: a round number is bounded; past MAX_ROUNDS it is not read, and it never sizes the list", () => {
+  assert.deepEqual(roundsOf(`round ${MAX_ROUNDS} → 1`), [...Array(MAX_ROUNDS - 1).fill(null), 1]);
+  assert.deepEqual(roundsOf(`round 1 → 5 · round ${MAX_ROUNDS + 1} → 1`), [5]);
+  for (const n of ["0", String(MAX_ROUNDS + 1), "100000000", "4294967295", "4294967296", "9007199254740993", "1".padEnd(401, "0")]) assert.deepEqual(roundsOf(`round ${n} → 1`), [], n);
+});
+
+test("convergence audit: the first line holding the findings label decides, and only a report line gives numbers", () => {
+  const en = { language: "en" };
+  const real = "Findings: real escape 1 · fix-introduced 2 · pre-existing 3 · gate-caught 4";
+  const want = { realEscape: 1, fixIntroduced: 2, preExisting: 3, gateCaught: 4, perRound: [] };
+  // Accept: the shapes a report line takes.
+  for (const line of [real, `- ${real}`, `* ${real}`, `+ ${real}`, `### ${real}`, `###### ${real}`, `1. ${real}`, `12) ${real}`, `   ${real}`, `  - ${real}`, `\uFEFF${real}`, real.replace("Findings:", "**Findings:**"), real.replace("Findings:", "_Findings:_"), `- ${real.replace("Findings:", "**Findings:**")}`, real.replace("Findings:", "Findings :")]) {
+    assert.deepEqual(parseConvergence(line, en), want, line);
+  }
+  // Decide, and give no number: whatever stands below, the real block too, is not read.
+  const decide = [
+    "Review findings: real escape 9 · gate-caught 9",
+    "We kept the findings: real escape 9",
+    "2026-10-31 Findings: real escape 9",
+    "Findings: see the table below",
+    "Findings: real escapes were few, 9 at most",
+    "### Findings: last cycle",
+    "Findings:",
+    "Findings: 9",
+    "Findings: 🔴 0 · 🟠 1",
+    "Findings: real escape N · fix-introduced N · pre-existing N · gate-caught N",
+    "```md\nFindings: real escape 9 · gate-caught 9\n```",
+    "~~~\nFindings: real escape 9\n~~~",
+    "  ```\nFindings: real escape N · fix-introduced N\n  ```",
+    "  ```\nFindings: real escape 9 · gate-caught 9\n  ```",
+    "`Findings: real escape 9 · gate-caught 9` is the format",
+    "`Findings: gate-caught 9 · real escape 9`",
+    "    Findings: real escape 9",
+    "\tFindings: real escape 9",
+    "                  Findings: real escape 9",
+    "~~Findings: real escape 9 · gate-caught 9~~",
+    "> Findings: real escape 9",
+    ">Findings: real escape 9",
+    "<!-- Findings: real escape 9 · gate-caught 9 -->",
+    "[Findings: real escape 9](x)",
+    "| Findings: real escape 9 · gate-caught 9",
+    "---- Findings: real escape 9",
+    "#Findings: real escape 9",
+    "####### Findings: real escape 9",
+    "\uFEFF\uFEFFFindings: real escape 9",
+  ];
+  for (const before of decide) {
+    assert.deepEqual(parseConvergence(`${before}\n${real}`, en), NULLS, before);
+    assert.deepEqual(parseConvergence(`${before}\n\nFindings: real escape 11\nNew classes per round: round 1 → 15`, en), NULLS, before);
+  }
+  // Not the label: the search goes on.
+  for (const before of ["Findings real escape 9", "Findings", "Refindings: real escape 9", "### Doğrulanan bulgular", "Findingsish: real escape 9"]) {
+    assert.deepEqual(parseConvergence(`${before}\n${real}`, en), want, before);
+  }
+  assert.equal(parseConvergence(`Findings:real escape 9\n${real}`, en)?.realEscape, 9, "the space after the label is optional");
+  assert.deepEqual(parseConvergence("Findings: real escapes 9\nFindings: eski 9", en), NULLS, "a word that only starts like a label is no label");
+  // A cell starts with its label.
+  assert.deepEqual(parseConvergence("Findings: x real escape 3 · gate-caught 4", en), { ...NULLS, gateCaught: 4 });
+  assert.deepEqual(roundsOf("x round 1 → 5"), []);
+  assert.deepEqual(roundsOf("x round 1 → 5 · round 2 → 3"), [null, 3]);
+  assert.deepEqual(parseConvergence("Findings: real escape 1\nNew classes per round round 1 → 5", en)?.perRound, [], "the per-round label needs its colon too");
+});
+
+test("convergence audit: an older block never answers for a newest one that cannot be read", () => {
+  const en = { language: "en" };
+  const tr = { language: "tr" };
+  const FULL_EN = "real escape 1 · fix-introduced 2 · pre-existing 3 · gate-caught 4";
+  const FULL_TR = "gerçek kaçak 1 · düzeltmenin açtığı 2 · eski 3 · kapının yakaladığı 4";
+  const OLDER_EN = "Findings: real escape 11 · fix-introduced 12 · pre-existing 13 · gate-caught 14\nNew classes per round: round 1 → 15";
+  const OLDER_TR = "Bulgular: gerçek kaçak 11 · düzeltmenin açtığı 12 · eski 13 · kapının yakaladığı 14\nTur başına yeni sınıf: tur 1 → 15";
+  const newest = /** @type {[string, { language: string }][]} */ ([
+    ["Findings: none", en], ["Bulgular: yok", tr], ["Findings: ?", en], ["Findings: 0", en], ["Findings: not measured this cycle", en], ["Findings:", en],
+    ["Findings:\n- real escape 1\n- fix-introduced 2", en],
+    ["Findings: real-escape 1 · fix introduced 2 · preexisting 3 · gatecaught 4", en], ["Findings: real escapes 1 · gate-caughts 4", en],
+    ["Bulgular: gercek kacak 1 · duzeltmenin actigi 2 · kapinin yakaladigi 4", tr],
+    ["Findings: 1 real escape, 2 fix-introduced, 3 pre-existing, 4 gate-caught", en],
+    [`Cycle 16 Findings: ${FULL_EN}`, en], [`Döngü 16 bulgular: ${FULL_TR}`, tr], [`Convergence, Findings: ${FULL_EN}`, en], [`T4 Findings: ${FULL_EN}`, en],
+    [`${" ".repeat(18)}Findings: ${FULL_EN}`, en],
+    [`\`\`\`\nFindings: ${FULL_EN}\n\`\`\``, en], [`\`\`\`md\nFindings: ${FULL_EN}\n\`\`\``, en], [`~~~\nFindings: ${FULL_EN}\n~~~`, en], [`\`\`\`md\nBulgular: ${FULL_TR}\n\`\`\``, tr],
+    ["Findings: real escape ~3 · gate-caught ~2", en], ["Findings: real escape 3 (two in T1)", en], ["Findings: real escape", en],
+  ]);
+  for (const [text, config] of newest) {
+    const older = config.language === "tr" ? OLDER_TR : OLDER_EN;
+    assert.deepEqual(parseConvergence(`## Cycle 16\n\n${text}\n\n## Cycle 15\n\n${older}\n`, config), NULLS, text);
+    assert.deepEqual(parseConvergence(`${text}\n\n${older}`, config), NULLS, `${text}, no heading between`);
+    assert.deepEqual(parseConvergence(`## Cycle 16\n\n${text}\n`, config), NULLS, `${text}, alone`);
+  }
+  assert.equal(parseConvergence(`## Cycle 16\n\nFindings: ${FULL_EN}\n\n## Cycle 15\n\n${OLDER_EN}\n`, en)?.realEscape, 1, "the control");
+  assert.equal(parseConvergence("## Cycle\nnothing measured here", en), null, "null is for a text no line of which holds the label");
+  // A line that gave nothing is a block of nulls, rounds too: the per-round line below it is no count of this block.
+  const rounds = "New classes per round: round 1 → 99";
+  for (const line of ["Findings: none", "Findings:", "Findings: real escapes 9", "```\nFindings: real escape 9\n```", "    Findings: real escape 9", "> Findings: real escape 9", "Review findings: real escape 9", "`Findings: real escape 9`"]) {
+    assert.deepEqual(parseConvergence(`${line}\n${rounds}`, en), NULLS, line);
+  }
+  assert.deepEqual(parseConvergence(`Findings: real escape ~3\n${rounds}`, en)?.perRound, [99], "a line that names a count is the block, its value unread or not");
+});
+
+test("convergence audit: the per-round line is the block's own: the first after it, before a heading or another block", () => {
+  const en = { language: "en" };
+  const tr = { language: "tr" };
+  const rounds = (/** @type {string} */ text, config = en) => parseConvergence(text, config)?.perRound;
+  assert.deepEqual(rounds("Findings: real escape 1\n\nSome text.\n\nNew classes per round: round 1 → 5"), [5], "text between the lines");
+  assert.deepEqual(rounds("### Findings: real escape 1\n### New classes per round: round 1 → 5"), [5], "both as headings");
+  assert.deepEqual(rounds("Findings: real escape 1\n#tag\nNew classes per round: round 1 → 5"), [5], "no heading: no space after the mark");
+  assert.deepEqual(rounds("Findings: real escape 1\n```\n# a comment\n```\nNew classes per round: round 1 → 5"), [5], "no heading: in a code block");
+  // A line above the block, or past it, is not its line: unreported, not wrong.
+  assert.deepEqual(rounds("New classes per round: round 1 → 9\nFindings: real escape 0"), [], "a line above the block");
+  assert.deepEqual(rounds("## 16\nFindings: real escape 1\n\n## 15\nNew classes per round: round 1 → 9"), [], "past a heading");
+  assert.deepEqual(rounds("## 16\nFindings: real escape 1\n\n   ###### 15\nNew classes per round: round 1 → 9"), [], "past an indented heading");
+  assert.deepEqual(rounds("## 16\nFindings: real escape 1\n\n#\nNew classes per round: round 1 → 9"), [], "past an empty heading");
+  assert.deepEqual(rounds("Findings: real escape 0\n\nFindings: real escape 9\nNew classes per round: round 1 → 9"), [], "past a block");
+  assert.deepEqual(rounds("Findings: real escape 1\n\nFindings: none\nNew classes per round: round 1 → 9"), [], "past a label that reads nothing");
+  assert.deepEqual(rounds("Findings: real escape 1\n\nCycle 15 Findings: real escape 9\nNew classes per round: round 1 → 9"), [], "past a label with a word before it");
+  assert.deepEqual(rounds("Findings: real escape 1\n```\nFindings: real escape 9\n```\nNew classes per round: round 1 → 9"), [], "past a fenced block");
+  assert.deepEqual(rounds("Findings: real escape 1\n\nBulgular: gerçek kaçak 9\nNew classes per round: round 1 → 9", tr), [], "past a block in the other language");
+  assert.deepEqual(rounds("Bulgular: gerçek kaçak 1\n\nFindings: real escape 7\nTur başına yeni sınıf: tur 1 → 9", tr), [], "past a block in the other language");
+  // The first line holding the label decides, as for the findings line.
+  assert.deepEqual(rounds("Findings: real escape 1\nNew classes per round: see below\nNew classes per round: round 1 → 5"), [], "a label with no rounds");
+  assert.deepEqual(rounds("Findings: real escape 1\nCycle 16 new classes per round: round 1 → 5\nNew classes per round: round 1 → 9"), [], "a word before the label");
+  assert.deepEqual(rounds("Findings: real escape 1\n```\nNew classes per round: round 1 → 9\n```\nNew classes per round: round 1 → 5"), [], "a code block");
+  assert.deepEqual(rounds("Findings: real escape 1\n~~New classes per round: round 1 → 9~~\nNew classes per round: round 1 → 5"), [], "struck text");
+  assert.deepEqual(rounds("Findings: real escape 1\n    New classes per round: round 1 → 9"), [], "indented code");
+  assert.deepEqual(rounds("Findings: real escape 1\nNew classes per round: round 1 → 5\nNew classes per round: round 1 → 9"), [5], "the first of two");
+});
+
+test("convergence audit: a text past READ_LIMIT is not read: unreported, told from a text with no block", () => {
+  const en = { language: "en" };
+  const line = "Findings: real escape 1";
+  assert.deepEqual(parseConvergence(`${line}${" ".repeat(READ_LIMIT)}`, en), NULLS);
+  assert.deepEqual(parseConvergence(" ".repeat(READ_LIMIT + 1), en), NULLS, "whether it holds a block is not known");
+  assert.equal(parseConvergence(" ".repeat(READ_LIMIT), en), null, "at the limit it is read");
+  assert.equal(parseConvergence(`${" ".repeat(READ_LIMIT - line.length - 1)}\n${line}`, en)?.realEscape, 1);
+});
+
+test("convergence audit: a Turkish project reads the first block in the document, in either language; labels match in any case", () => {
+  const tr = { language: "tr" };
+  assert.equal(parseConvergence("Findings: real escape 7\n\nBulgular: gerçek kaçak 1", tr)?.realEscape, 7, "document order: newest on top");
+  assert.equal(parseConvergence("Bulgular: gerçek kaçak 1\n\nFindings: real escape 7", tr)?.realEscape, 1);
+  assert.equal(parseConvergence("Bulgular: gerçek kaçak 1 · findings: 2", tr)?.realEscape, 1, "one line holding both: the project's language reads it");
+  assert.deepEqual(parseConvergence("Bulgular: real escape 7", tr), NULLS, "a Turkish label holds Turkish count labels");
+  const want = { realEscape: 1, fixIntroduced: 2, preExisting: 3, gateCaught: 4, perRound: [5] };
+  const english = "FINDINGS: REAL ESCAPE 1 · FIX-INTRODUCED 2 · PRE-EXISTING 3 · GATE-CAUGHT 4\nNEW CLASSES PER ROUND: ROUND 1 → 5";
+  assert.deepEqual(parseConvergence(english, tr), want);
+  assert.deepEqual(parseConvergence(english, { language: "en" }), want);
+  assert.deepEqual(parseConvergence("BULGULAR: GERÇEK KAÇAK 1 · DÜZELTMENİN AÇTIĞI 2 · ESKİ 3 · KAPININ YAKALADIĞI 4\nTUR BAŞINA YENİ SINIF: TUR 1 → 5", tr), want);
+  assert.deepEqual(parseConvergence("Bulgular: Gerçek Kaçak 1 · Düzeltmenin Açtığı 2 · Eski 3 · Kapının Yakaladığı 4\nTur Başına Yeni Sınıf: Tur 1 → 5", tr), want);
+  assert.deepEqual(parseConvergence("Bulgular: eskisi 5", tr), NULLS, "a suffix makes another word");
+  assert.deepEqual(parseConvergence("Bulgular: eski5", tr), NULLS);
+});
+
+test("convergence audit: a repeated call answers the same, in either language", () => {
+  const text = "Bulgular: gerçek kaçak 1\nTur başına yeni sınıf: tur 1 → 5";
+  const tr = { language: "tr" };
+  const first = parseConvergence(text, tr);
+  assert.equal(parseConvergence(text, { language: "en" }), null);
+  assert.deepEqual(parseConvergence(text, tr), first);
+  assert.deepEqual(parseConvergence(text, tr), first);
+  assert.equal(formatConvergence(first, tr), formatConvergence(first, tr));
+});
+
+test("convergence audit: any line end ends a line", () => {
+  const want = { realEscape: 1, fixIntroduced: null, preExisting: null, gateCaught: null, perRound: [5] };
+  for (const end of ["\n", "\r\n", "\r"]) assert.deepEqual(parseConvergence(`Findings: real escape 1${end}New classes per round: round 1 → 5${end}`, { language: "en" }), want, JSON.stringify(end));
+});
+
+test("convergence audit: for any JSON-shaped value, and a number that is no count, the formatter prints a count or `?`", () => {
+  const en = { language: "en" };
+  const notCounts = [NaN, Infinity, -Infinity, -1, 1.5, 1e21, 2 ** 53, "3", 3n, undefined, null, true, {}];
+  const all = "Findings: real escape ? · fix-introduced ? · pre-existing ? · gate-caught ?";
+  for (const n of notCounts) {
+    const counts = /** @type {any} */ ({ realEscape: n, fixIntroduced: n, preExisting: n, gateCaught: n, perRound: [n, n] });
+    const printed = formatConvergence(counts, en);
+    assert.equal(printed, `${all}\nNew classes per round: round 1 → ? · round 2 → ?`, String(n));
+    assert.deepEqual(parseConvergence(printed, en), { realEscape: null, fixIntroduced: null, preExisting: null, gateCaught: null, perRound: [null, null] });
+  }
+  assert.equal(formatConvergence(/** @type {any} */ ({ realEscape: -0 }), en).split(" · ")[0], "Findings: real escape 0");
+  assert.equal(formatConvergence(/** @type {any} */ ({ realEscape: Number.MAX_SAFE_INTEGER }), en).split(" · ")[0], `Findings: real escape ${Number.MAX_SAFE_INTEGER}`);
+  for (const counts of [null, undefined, 3, "x", {}, { perRound: "abc" }, { perRound: { length: 2 } }, { perRound: 3 }, { perRound: null }, { perRound: [] }]) {
+    assert.equal(formatConvergence(/** @type {any} */ (counts), en), all, JSON.stringify(counts));
+  }
+  // eslint-disable-next-line no-sparse-arrays
+  const printed = formatConvergence(/** @type {any} */ ({ perRound: [1, , 3] }), en);
+  assert.equal(printed, `${all}\nNew classes per round: round 1 → 1 · round 2 → ? · round 3+ → 3`, "a hole is an unmeasured round");
+});
+
+test("convergence audit: every shape the formatter prints parses back to what it was given", () => {
+  const values = [0, 1, 7, 12345, Number.MAX_SAFE_INTEGER, null];
+  for (const language of ["en", "tr"]) {
+    const c = { language };
+    for (const a of values) {
+      for (const b of values) {
+        for (const length of [0, 1, 2, 3, 4, 5, 6, MAX_ROUNDS - 1, MAX_ROUNDS]) {
+          const counts = { realEscape: a, fixIntroduced: b, preExisting: b, gateCaught: a, perRound: Array.from({ length }, (_, i) => values[(i * 5 + (a ?? 3)) % values.length]) };
+          assert.deepEqual(parseConvergence(formatConvergence(counts, c), c), counts);
+        }
+      }
+    }
+    // Past the ceiling the last round printed says the rest is unmeasured: the parser reads every round it prints.
+    const long = Array.from({ length: MAX_ROUNDS + 5 }, (_, i) => i);
+    const printed = formatConvergence({ realEscape: 1, fixIntroduced: 1, preExisting: 1, gateCaught: 1, perRound: long }, c);
+    assert.match(printed, / 100\+ → \?$/);
+    assert.deepEqual(parseConvergence(printed, c)?.perRound, [...long.slice(0, MAX_ROUNDS - 1), null]);
+  }
+});
+
+test("convergence audit: reading takes time linear in the text, by run, by line and by cell, and a run of megabytes does not crash it", () => {
+  const en = { language: "en" };
+  const tr = { language: "tr" };
+  // Growth, not a wall-clock bound (see the secret scan's test): four times the run costs about four times the time
+  // if linear, 16 if quadratic, 64 if cubic. These took 5.6 s at 3000 spaces and 15 s at 160,000 dots. CPU time, the
+  // best of five runs each.
+  const best = (/** @type {string} */ text, config = en) => Math.min(...[0, 1, 2, 3, 4].map(() => {
+    const t0 = process.cpuUsage();
+    parseConvergence(text, config);
+    const { user, system } = process.cpuUsage(t0);
+    return (user + system) / 1000;
+  }));
+  const growth = (/** @type {(size: number) => string} */ make, /** @type {number} */ small, config = en) => (best(make(small * 4), config) + 5) / (best(make(small), config) + 5);
+  const hostile = /** @type {[string, (size: number) => string, number, { language: string }?][]} */ ([
+    ["spaces in a count cell", (n) => `Findings: real escape${" ".repeat(n)}x y`, 500],
+    ["spaces in a count cell, with a repeat", (n) => `Findings: real escape 1 · ${`real escape${" ".repeat(n)}x y · `.repeat(2)}`, 500],
+    ["dots after a count", (n) => `Findings: real escape ${".".repeat(n)}x`, 20000],
+    ["dots after a round", (n) => `Findings: real escape 1\nNew classes per round: round 1 → ${".".repeat(n)}x`, 20000],
+    ["a comma before spaces", (n) => `Findings: real escape 1${`,${" ".repeat(50)}`.repeat(n / 50)}x`, 20000],
+    ["open parentheses", (n) => `Findings: real escape 1 ${"(".repeat(n)}`, 20000],
+    ["one open parenthesis, long", (n) => `Findings: real escape 1 ${"(a".repeat(n / 2)}`, 20000],
+    ["lines before the block", (n) => `${"prose line\n".repeat(n)}Findings: real escape 1`, 20000],
+    ["lines after the block", (n) => `Findings: real escape 1\n${"prose line\n".repeat(n)}`, 20000],
+    ["lines after the block, two languages", (n) => `Bulgular: gerçek kaçak 1\n${"prose line\n".repeat(n)}`, 20000, tr],
+    ["fence lines", (n) => `Findings: real escape 1\n${"\`\`\`\n".repeat(n)}`, 20000],
+    ["count cells", (n) => `Findings: ${"real escape 1 · ".repeat(n)}`, 5000],
+    ["count cells holding no label", (n) => `Findings: ${"x · ".repeat(n)}`, 5000],
+    ["round cells", (n) => `Findings: real escape 1\nNew classes per round: ${"round 1 → 5 · ".repeat(n)}`, 5000],
+    ["notes", (n) => `Findings: ${"real escape 1 (a) · ".repeat(n)}`, 5000],
+    ["deep notes", (n) => `Findings: real escape 1 ${"(".repeat(n)}${")".repeat(n)}`, 20000],
+  ]);
+  for (const [name, make, small, config] of hostile) {
+    const g = growth(make, small, config);
+    assert.ok(g < 10, `${name}: four times the run took ${g.toFixed(1)} times as long`);
+  }
+  // Past 8 MB of one run, an open repeat runs V8 out of stack.
+  const huge = 9 * 1024 * 1024;
+  const runs = [
+    `Findings: real escape 1\nNew classes per round: round ${"1".repeat(huge)} → 1`,
+    `Findings: real escape 1\nNew classes per round: round 1 → ${"1".repeat(huge)}`,
+    `Findings: real escape 1\nNew classes per round: round 1 ${" ".repeat(huge)}→ 1`,
+    `Findings: real escape 1\nNew classes per round: round 1 → ${".".repeat(huge)}`,
+    `Findings: real escape 1 ${"1".repeat(huge)}`,
+    `Findings: real escape 1${".".repeat(huge)}`,
+    `Findings: real escape ${"*".repeat(huge)}1`,
+    `${"-".repeat(huge)}Findings: real escape 1`,
+    `${"😀".repeat(huge / 2)}Findings: real escape 1`,
+    `Findings${" ".repeat(huge)}: real escape 1`,
+    `Findings: real escape 1${",".repeat(huge)}`,
+    `Findings: real escape 1,${" ".repeat(huge)}2`,
+    `Findings: real escape 1 ${"(".repeat(huge)}`,
+    `Findings: real escape 1 (${"a".repeat(huge)})`,
+    "`".repeat(huge),
+    "~".repeat(huge),
+    `${" ".repeat(huge)}\`\`\``,
+  ];
+  for (const text of runs) assert.doesNotThrow(() => parseConvergence(text, en), text.slice(0, 60));
+  assert.equal(parseConvergence(`${"prose line\n".repeat(200000)}Findings: real escape 1`, en)?.realEscape, 1);
+  assert.equal(parseConvergence(`Findings: ${"real escape 1 · ".repeat(20000)}`, en)?.realEscape, null);
+  assert.equal(formatConvergence({ realEscape: 1, fixIntroduced: 1, preExisting: 1, gateCaught: 1, perRound: Array(100000).fill(1) }, en).split("\n")[1].split(" · ").length, MAX_ROUNDS);
 });
 
 test("szz audit: a file named with a quote or a tab is reworked like any other (paths are read raw)", () => {
