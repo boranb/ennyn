@@ -194,6 +194,11 @@ commit(5, "feat: use add twice", {
     { id: "add-loses-numbers", says: "A sum is no number.", state: "closed-gate", gates: [{ commit: FIX, file: "test/add.test.js", action: "past-defects", proof: "The test adds." }] },
     { id: "add-had-a-place", says: "A place held the mistake.", state: "closed-design", gates: [{ commit: FIX, file: "test/add.test.js", action: "remove-the-place", proof: "The place went." }] },
   ] }),
+  // A findings ledger whose rows need every git call the count makes: a row with an age past the start, a test the tree must hold.
+  ".ennyn/findings.jsonl": `${[
+    { round: 1, id: "c1-add-1", source: "first-write", caughtBy: "test:test/add.test.js", fingerprint: "sum read as a number", bornIn: null },
+    { round: 1, id: "c1-add-2", source: "pre-existing", caughtBy: "test:test/add.test.js", fingerprint: "sum not checked", bornIn: FIX },
+  ].map((row) => JSON.stringify({ cycle: 1, task: "add", severity: "low", class: ["add-loses-numbers"], dupOf: null, trigger: "a word for a number", escapePoint: "none", outcome: "open", commit: null, file: "src/add.js", line: 1, ...row })).join("\n")}\n`,
 });
 // src/add.js and src/use.js change together three times: impact's co-change has an answer to lose.
 for (const [day, n] of [[6, 5], [7, 6]]) {
@@ -342,6 +347,10 @@ const CASES = [
   { args: ["classes", "--json"] },
   { args: ["classes"], cwd: "src", first: true },
   { args: ["classes"], outside: true },
+  { args: ["convergence", "--cycle", "1", "--from", FIRST] },
+  { args: ["convergence", "--cycle", "1", "--from", FIRST, "--json"] },
+  { args: ["convergence", "--cycle", "1", "--from", FIRST], cwd: "src", first: true },
+  { args: ["convergence", "--cycle", "1"], outside: true },
   { args: ["core", "--json"] },
   // The metrics log holds one budget record with no mark: the security audit is due, and the paths are read.
   { args: ["audit"] },

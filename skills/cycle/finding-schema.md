@@ -44,3 +44,5 @@ First look for its **missing row**: a reader, twin, path, newly accepted input, 
 1. Positive observations (0-3, only when sincere).
 2. Findings sorted by severity, with all fields.
 3. Count line: `Findings: 🔴 a · 🟠 b · 🟡 c · ⚪ d · low-confidence (not listed) e · source: first-write f / previous-fix g / pre-existing h`.
+
+Each finding is also a row, in the file your prompt names: [ledger-row.md](ledger-row.md).

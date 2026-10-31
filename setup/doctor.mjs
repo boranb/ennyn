@@ -25,6 +25,7 @@ import { t } from "../core/i18n.mjs";
 import { literalGlob, matchAny } from "../core/glob.mjs";
 import { secretsOff } from "../checks/secrets.mjs";
 import { checkProofs, loadClasses, registryLine } from "../metrics/classes.mjs";
+import { ledgerLine, loadLedger } from "../metrics/findings.mjs";
 
 /**
  * @typedef {{ level: "ok" | "warn" | "fail" | "unmeasured", key: string, vars: import("../core/i18n.mjs").Vars }} DoctorItem
@@ -415,6 +416,14 @@ export async function checkSetup({ cwd, env = process.env, self = OWN_ROOT }) {
     add(line.level, line.key, line.vars);
   } catch (e) {
     add("fail", "classes.unread", { error: oneLine(e) });
+  }
+
+  // One line on the findings ledger; none there yet is fine. A row refused fails: its cycle's counts read `?`.
+  try {
+    const line = ledgerLine(loadLedger({ cwd, config }));
+    add(line.level, line.key, line.vars);
+  } catch (e) {
+    add("fail", "findings.unread", { error: oneLine(e) });
   }
 
   const cm = config.commitMsg;

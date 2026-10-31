@@ -181,7 +181,7 @@ test("config: every path a config names stays in the project, whoever names the 
     // The metrics log elsewhere: a key naming its file is refused (below).
     for (const p of inside) assert.equal(/** @type {any} */ (own({ paths: { [key]: p, metricsLog: ".ennyn/other.jsonl" } })()).paths[key], p, `${key} ${JSON.stringify(p)}`);
   }
-  for (const key of ["handoff", "changelog", "graph", "metricsLog", "stateDir"]) {
+  for (const key of ["handoff", "changelog", "graph", "metricsLog", "findings", "stateDir"]) {
     for (const p of outside) assert.throws(own({ paths: { [key]: p } }), refused(`paths.${key}`, p), `${key} ${JSON.stringify(p)}`);
   }
   // The state dir lies in the git dir, however spelled: state a commit can write is never trusted

@@ -35,6 +35,25 @@ import { parseBound, shallowEdge } from "./szz.mjs";
 const timeOf = (s) => (/^\d+$/.test(s) ? Number(s) : NaN);
 
 /**
+ * The commit a cycle started at, by the revision noted then. A revision that names no commit, or one that is no
+ * longer an ancestor of HEAD, throws RangeError with why: a typo must not read as "nothing since then", and after an
+ * amend or a rebase `<from>..HEAD` reaches back to the merge base. Any other failure is git's, and throws as such.
+ * @param {string} cwd @param {string} from @param {NodeJS.ProcessEnv} [env]
+ * @returns {string} the full hash
+ */
+export function cycleStart(cwd, from, env = process.env) {
+  const start = gitMaybe(["rev-parse", "--verify", "-q", `${from}^{commit}`], { cwd, env, absent: [1] });
+  if (!start) {
+    const shallow = git(["rev-parse", "--is-shallow-repository"], { cwd, env }) === "true";
+    throw new RangeError(`from: "${from}" is not in this repository${shallow ? "; the clone is shallow, it may lie past the boundary" : ""}`);
+  }
+  if (gitMaybe(["merge-base", "--is-ancestor", start, "HEAD"], { cwd, env, absent: [1], walk: true }) === null) {
+    throw new RangeError(`from: "${from}" is not an ancestor of HEAD (amended or rebased since?); the range would count commits from before it`);
+  }
+  return start;
+}
+
+/**
  * @param {{ cwd: string, config: any, since?: string, until?: string, from?: string }} opts
  *   `since` / `until`: "YYYY-MM-DD" (local days, inclusive) or any Date.parse string; committer time.
  *   `from`: a revision; only commits after it count (`<from>..HEAD`), e.g. the HEAD a cycle started at.
@@ -48,17 +67,13 @@ export function bypassUses({ cwd, config, since, until, from }) {
   git(["rev-parse", "--git-dir"], { cwd });
   const isShallow = git(["rev-parse", "--is-shallow-repository"], { cwd }) === "true";
   if (!headCommit(cwd)) return { commits: 0, uses: [], shallow: false };
-  // A bad revision throws too: a typo must not read as "no bypass since then".
+  // A bad revision throws too: see cycleStart.
   if (from !== undefined && !from) throw new RangeError("from: empty revision");
   /** @type {string[]} */
   let range = [];
   let shallow = isShallow;
   if (from) {
-    const start = gitMaybe(["rev-parse", "--verify", "-q", `${from}^{commit}`], { cwd, absent: [1] });
-    if (!start) throw new RangeError(`from: "${from}" is not in this repository${isShallow ? "; the clone is shallow, it may lie past the boundary" : ""}`);
-    if (gitMaybe(["merge-base", "--is-ancestor", start, "HEAD"], { cwd, absent: [1], walk: true }) === null) {
-      throw new RangeError(`from: "${from}" is not an ancestor of HEAD (amended or rebased since?); the range would count commits from before it`);
-    }
+    const start = cycleStart(cwd, from);
     range = [`${start}..HEAD`];
     // Inside the range a merge can still reach past the boundary: then commits of the range are missing.
     if (isShallow) {

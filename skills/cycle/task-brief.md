@@ -16,7 +16,7 @@ One common brief for the cycle, one short brief per task, read first, in one tur
 | **Paths** | the CLI and this skill's folder, written out: an agent's shell has no `${CLAUDE_PLUGIN_ROOT}`, and a skill read from disk holds it unfilled (Claude Code 2.1.310) |
 | **Protocol** | section 2 of `SKILL.md` **without step 7**: the agent starts no reviewers, leaves `Review-Rounds:` out, commits on its branch, reports and stops |
 | **Commands** | the handoff's commands, as each runs in a worktree (no installed dependencies). **Name the project's slow gate suites** and require the whole suite on the final tree: a brief that said "do not run the full suite" let a real defect reach the main branch. A handoff that names none: the whole test command, and say so |
-| **Place** | worktree, branch, snapshot name, where findings go. Not to touch: the main checkout, the graph, the handoff. No push, no landing |
+| **Place** | worktree, branch, snapshot name, the rows file in the kept folder (the orchestrator alone appends to `paths.findings`, at the close). Not to touch: the main checkout, the graph, the handoff. No push, no landing |
 | **Traps** | the handoff's traps this work can hit; the report's language |
 | **Report** | its last message, in order: changes · impact table · commit · checks run, with results · not measured · proposed nodes · handoff text · doubts |
 

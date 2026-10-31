@@ -27,6 +27,7 @@ import { LINK_RULE, SUBMODULE_RULE, auditAnswer, cycleRecords, markCovers, readL
 import { scanProject, MIN_HISTORY } from "../setup/scan.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
 import { PROBLEMS_SHOWN, checkProofs, loadClasses, registryLine, stateCounts } from "../metrics/classes.mjs";
+import { CYCLE_MAX, complete, cycleReport, reportLines } from "../metrics/findings.mjs";
 import { RecordError, installHook, sessionOf } from "../setup/hook.mjs";
 import { instructionBudget, readBudgets, recordBudget, previousBudget, replacedAt } from "../setup/budget.mjs";
 import { journalPath, MAX_TIMEOUT_MS, MutationError, parseMutants, restoreJournal, runMutants, summarizeMutants } from "../metrics/mutation.mjs";
@@ -48,6 +49,10 @@ Commands:
   core [--json]                                     the core slots' picks: the oldest node of the highest value (or the ready need it waits on), and the best ready by value/cost
   mechanization [--json]                            best ready mechanization node
   classes [--json]                                  the defect class registry: each class's id, state and sentence, its problems, whether each gate's commit is there and each entry that claims a gate has one standing; exit 1 unless all hold
+  convergence [<ledger>] --cycle N [--from <rev>] [--json]
+                                                    cycle N's convergence block, counted from the findings ledger (default paths.findings) as skills/cycle/report-formats.md
+                                                    says, then what it could not place and why; --cycle: the cycle's number in the handoff, required; --from: the HEAD noted
+                                                    when the cycle began; exit 1 when it could not read or place something
   audit [--json]                                    whether this cycle's audit slot is the security audit (security.everyCycles), and the sensitive paths it reads
   bypass [--from <rev>] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--json]
                                                     commits that used the commit-shape bypass marker, with their reasons
@@ -1491,6 +1496,27 @@ const COMMANDS = {
     for (const p of said) out(`✗ ${shown(p).text}`);
     if (moreProblems) out(tShown("classes.more", { n: moreProblems }, lang));
     return code;
+  },
+  convergence(args) {
+    const { positional, opts, help } = parseArgs(args, { positional: 1, options: ["from", "cycle"], flags: ["json"] });
+    if (help) return (out(USAGE), 0);
+    // As bypass takes it: an empty --from is a lost cycle start. Left out, the table reads "not noted".
+    if (opts.from !== undefined && strOpt(opts.from) === null) throw new UsageError("--from needs a revision");
+    // Asked for, never read from the rows: a count does not pick its own scope from the data it counts.
+    const cycle = intOpt(opts.cycle, "cycle");
+    if (!(cycle >= 1 && cycle <= CYCLE_MAX)) throw new UsageError(`--cycle must be a whole number from 1 to ${CYCLE_MAX}`);
+    const from = strOpt(opts.from) ?? undefined;
+    // No repository stops the command, a bare one or no git too (git's own words): no block, as nothing can be placed.
+    const cwd = repoPath("--show-toplevel", { cwd: process.cwd() });
+    if (cwd === null) return (err(t("findings.noRepository", {}, config(process.cwd()).language)), 1);
+    const cfg = config(cwd);
+    // A name reads from where the command stands, as any file named on a command line.
+    const ledger = positional[0] === undefined ? undefined : resolve(process.cwd(), positional[0]);
+    const report = cycleReport({ cwd, config: cfg, ledger, from, cycle });
+    out(opts.json ? jsonShown(report) : reportLines(report, cfg).join("\n"));
+    if (complete(report)) return 0;
+    err(t("findings.unmeasured", {}, cfg.language));
+    return 1;
   },
   "gate-stats"(args) {
     const { opts, help } = parseArgs(args, { options: ["since", "until"], flags: ["json"] });

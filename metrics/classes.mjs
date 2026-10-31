@@ -1,14 +1,14 @@
 /**
  * The defect class registry (`paths.classes`, default .ennyn/classes.json): each class the project has named, with
  * a stable id, one sentence, a state, and the gates that act on it. `new: <name>` is how a class is born in a
- * finding; at a cycle's close it joins the registry or is linked to an entry (`linked`, since the ledger is only
- * appended to). The reader and the validator live here: doctor and `ennyn classes` read through this module, as
- * the findings ledger will.
+ * finding; at a cycle's close it joins the registry or is linked to an entry (`linked`, since a close does not change
+ * a row's `class`). The reader and the validator live here: doctor, `ennyn classes` and the findings ledger read
+ * through this module.
  *
  * A `new:` name resolves to an entry when it folds to that entry's id (foldName) or stands in its `linked` list, and
- * it is never refused for that: a row's validity does not change with what a later close adds, and rows are not
- * rewritten. A look-alike in another script does not fold, and stays a plain new name; a one-word id takes any row that
- * names that word, which is accepted: no harm was measured.
+ * it is never refused for that: a row's validity does not change with what a later close adds, and a close does not
+ * change a row's `class`. A look-alike in another script does not fold, and stays a plain new name; a one-word id
+ * takes any row that names that word, which is accepted: no harm was measured.
  *
  * What is checked. The shape, as the config does it: unknown keys and values are refused with reasons, all at once. A
  * key written twice keeps its last value, as the config's does. Each state takes what DESIGN.md defines: `partial` and
@@ -298,8 +298,8 @@ export const isKnown = (reg, id) => reg.byId.has(/** @type {string} */ (id));
 export const saysOf = (reg, id) => reg.byId.get(/** @type {string} */ (id))?.says ?? null;
 
 /**
- * What is wrong with a class value of a finding, or null when it is valid: a known id, a superseded one too (a
- * ledger is only appended to), or `new: <name>`, whatever that name resolves to: what a later close adds never
+ * What is wrong with a class value of a finding, or null when it is valid: a known id, a superseded one too (a close
+ * does not change a row's `class`), or `new: <name>`, whatever that name resolves to: what a later close adds never
  * refuses a row.
  * @param {Registry} reg @param {unknown} value
  * @returns {string | null}
@@ -348,21 +348,31 @@ function entryOf(reg, value) {
 }
 
 /**
+ * Where each superseded entry's chain ends, kept by registry as chains are walked: a registry can hold one chain of
+ * thousands, and a ledger can name it on every row, in any spelling that folds to it.
+ * @type {WeakMap<Registry, Map<string, string | null>>}
+ */
+const ends = new WeakMap();
+
+/**
  * The id of the live class a value counts under: a resolved `new:` name leads to its entry, a superseded entry to
  * the one that took its place. null for a value that leads to none: unknown, not resolved yet, or a circle.
  * @param {Registry} reg @param {unknown} value
  * @returns {string | null}
  */
 export function currentClass(reg, value) {
+  let known = ends.get(reg);
+  if (!known) ends.set(reg, (known = new Map()));
   let on = entryOf(reg, value);
   /** @type {Set<string>} */
   const seen = new Set();
-  while (on?.state === "superseded") {
-    if (seen.has(on.id)) return null;
+  while (on?.state === "superseded" && !known.has(on.id) && !seen.has(on.id)) {
     seen.add(on.id);
     on = reg.byId.get(/** @type {string} */ (on.by));
   }
-  return on?.id ?? null;
+  const end = on === undefined ? null : (known.get(on.id) ?? (on.state === "superseded" ? null : on.id));
+  for (const id of seen) known.set(id, end);
+  return end;
 }
 
 /** Entries by state, in the order of CLASS_STATES, the states with none left out. @param {Registry} reg @returns {[string, number][]} */

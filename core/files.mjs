@@ -154,7 +154,7 @@ function noLinkBelow(root, path, what, { last = false } = {}) {
 }
 
 /** Whether `path` lies outside `root` by its spelling. @param {string} root @param {string} path */
-const leavesRoot = (root, path) => {
+export const leavesRoot = (root, path) => {
   const rel = relative(root, path);
   return rel.split(sep)[0] === ".." || isAbsolute(rel);
 };
