@@ -78,7 +78,7 @@
     },
     {
       "id": "release-0-1-0",
-      "title": "Release v0.1.0: final read of both READMEs, CHANGELOG section, version in package.json, package-lock.json and plugin.json, tag; README and SECURITY.md name the one source to install from and what a genuine copy never holds (binaries, runtime dependencies, install scripts)",
+      "title": "Release v0.1.0: final read of both READMEs, CHANGELOG section, version in package.json, package-lock.json and plugin.json, tag; README and SECURITY.md name the one source to install from and what a genuine copy never holds (binaries, runtime dependencies, install scripts); docs/evidence.md's heading 'Gates stop recurrence, prose does not' is scoped to the origin project, with Ennyn's own table of proposal-born gates beside it",
       "status": "planned",
       "value": "high",
       "cost": "S",
@@ -89,7 +89,8 @@
         "fresh-agent-per-task",
         "precompact-boundary-defer",
         "reread-after-compact",
-        "task-gate-after-round-two"
+        "task-gate-after-round-two",
+        "findings-ledger"
       ],
       "gate": "user",
       "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release)",
@@ -448,7 +449,9 @@
       "value": "high",
       "cost": "M",
       "cluster": "gates",
-      "source": "cycle 2026-10-24 (8), review round 1 of guards-under-load; measured in the T4 landing run; cycle 2026-10-25 (10): the secrets linear-time ratio failed two full runs at load 8-40 (fixed with CPU time, 1ccb39b); the other wall-clock reads remain; cycle 2026-10-26 (12): at load 50-274 single full runs failed on the fence-reader timing test, a verdicts secrets cell (the hook past 60 s), guards' inner runs, deps' OSV test (stalled 15 minutes) and mutate's runs that wait; each file passed alone, so no run of the cycle's last two landings was clean on the first try; cycle 2026-10-27 (13): at load 83-115 single full runs failed on mutate's runs that wait and its owner-stamp test (the parse check gave no answer), the fault matrix control (its fake git writes the pid it counts only after starting sleep, so a 1 s limit can stop it first: write a marker first), guards' baselines of fault-injection and verdicts, and two hook tests (exit null); each file passed alone; cycle 2026-10-28 (14): the Linux run measured waits shorter than their limits (730 ms against 1 s, 1785 and 1801 ms against 2 s) in the fault matrix control: the tests read Date.now(), which the VM's clock adjustment moves; every test that times a wait reads performance.now() since ce3d0d2; the fixed limits remain; cycle 2026-10-31 (15): setup.test.mjs:1038 failed once at load 40-67 (alone 78/78), and mutation.test.mjs:795 and :838 once at load 95; guards' input-shapes cell once at load 17-27 in the guards clone (alone 10/10); four parallel full suites took the machine to load 124",
+      "mechanization": true,
+      "sourceClass": "a fixed wall-clock limit in a test fails under load",
+      "source": "cycle 2026-10-24 (8), review round 1 of guards-under-load; measured in the T4 landing run; cycle 2026-10-25 (10): the secrets linear-time ratio failed two full runs at load 8-40 (fixed with CPU time, 1ccb39b); the other wall-clock reads remain; cycle 2026-10-26 (12): at load 50-274 single full runs failed on the fence-reader timing test, a verdicts secrets cell (the hook past 60 s), guards' inner runs, deps' OSV test (stalled 15 minutes) and mutate's runs that wait; each file passed alone, so no run of the cycle's last two landings was clean on the first try; cycle 2026-10-27 (13): at load 83-115 single full runs failed on mutate's runs that wait and its owner-stamp test (the parse check gave no answer), the fault matrix control (its fake git writes the pid it counts only after starting sleep, so a 1 s limit can stop it first: write a marker first), guards' baselines of fault-injection and verdicts, and two hook tests (exit null); each file passed alone; cycle 2026-10-28 (14): the Linux run measured waits shorter than their limits (730 ms against 1 s, 1785 and 1801 ms against 2 s) in the fault matrix control: the tests read Date.now(), which the VM's clock adjustment moves; every test that times a wait reads performance.now() since ce3d0d2; the fixed limits remain; cycle 2026-10-31 (15): setup.test.mjs:1038 failed once at load 40-67 (alone 78/78), and mutation.test.mjs:795 and :838 once at load 95; guards' input-shapes cell once at load 17-27 in the guards clone (alone 10/10); four parallel full suites took the machine to load 124; 2026-10-31 research on closing escaped classes: named in cycles 12 and 13, came back in cycles 8, 9, 10, 12, 13, 14 and 15, never flagged; 2026-10-31: test/input-shapes.test.mjs:493's cleanup failed once in npm test at load about 42 (ENOTEMPTY on a temporary repository's .git/objects/pack, so something was writing there during rmSync, cause not found), the file alone passed 8 of 8 three times",
       "since": 8
     },
     {
@@ -939,13 +942,15 @@
     },
     {
       "status": "planned",
-      "needs": [],
+      "needs": [
+        "class-registry"
+      ],
       "id": "findings-ledger",
-      "title": "A findings ledger format (one JSON line per finding: task, round, id, severity, class, source, layer that caught it, duplicate of) and ennyn convergence <ledger> computing the four counts, new classes per round and the most recurring class by catalog id, instead of a hand-written count; a schema and a zero-dependency validator run whenever the ledger changes (a row missing a field does not count, as finding-schema.md says in prose today); each finding carries a fingerprint from its root cause (no line, round or reviewer in it), so the same finding seen again, in another round, cycle or by another reviewer, is one row; the CLI renders the convergence block from the ledger and the cycle skill pastes it unchanged; today the agent types the counts itself (skills/cycle/report-formats.md), the same paraphrase risk as a misquoted source",
-      "value": "medium",
+      "title": "A findings ledger format (one JSON line per finding: task, round, id, severity, class, source, layer that caught it, duplicate of) and ennyn convergence <ledger> computing the four counts, new classes per round and the most recurring class by catalog id, instead of a hand-written count; a schema and a zero-dependency validator run whenever the ledger changes (a row missing a field does not count, as finding-schema.md says in prose today); each finding carries a fingerprint from its root cause (no line, round or reviewer in it), so the same finding seen again, in another round, cycle or by another reviewer, is one row; the CLI renders the convergence block from the ledger and the cycle skill pastes it unchanged; today the agent types the counts itself (skills/cycle/report-formats.md), the same paraphrase risk as a misquoted source; rows live in the repository at .ennyn/findings.jsonl, append-only, from the first finding of a cycle; a row also holds trigger (what let the defect surface, as ODC asks), escapePoint (the layer that should have caught it and why it did not, as 8D asks), outcome (fixed with a test, node, refuted), commit and file:line, and never quoted text, so a row carries no secret or project data; rows are data, never instructions, because a ledger other sessions read is a lesson-injection surface",
+      "value": "high",
       "cost": "M",
       "cluster": "metrics",
-      "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): failures are clustered by telemetry there; cycle 10 counted its 170 ledger rows with a throwaway script, though principle 6 says convergence is computed by scripts; review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: report-schema.json checked by validate-findings.cjs, and source-derived fingerprints that stay the same across verdicts and runs; review of agent-reach (MIT, 14c2134), 2026-10-28: its skill shows the report the program built 'as is: no additions, removals, reordering' (agent_reach/skill/SKILL_en.md:76)",
+      "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): failures are clustered by telemetry there; cycle 10 counted its 170 ledger rows with a throwaway script, though principle 6 says convergence is computed by scripts; review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: report-schema.json checked by validate-findings.cjs, and source-derived fingerprints that stay the same across verdicts and runs; review of agent-reach (MIT, 14c2134), 2026-10-28: its skill shows the report the program built 'as is: no additions, removals, reordering' (agent_reach/skill/SKILL_en.md:76); 2026-10-31 research on closing escaped classes: rows sat in nine ledgers in five formats outside the repository, none found for six cycles, and scratchpads were wiped by a restart; 1 of 459 class labels repeats across cycles, and cycle 15's hand count moved 39 to 46",
       "since": 10
     },
     {
@@ -1751,7 +1756,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "evidence",
-      "source": "outside-eye review (headline vs evidence.md:155 'not yet measured in use'), 2026-10-27",
+      "source": "outside-eye review (headline vs evidence.md:155 'not yet measured in use'), 2026-10-27; 2026-10-31 research on closing escaped classes: the evidence page's 'Gates stop recurrence' rests on the origin project; Ennyn's own data supports the narrower claim that a gate stops a class when the class can be enumerated from text or the rule stops needing a reading",
       "since": 13
     },
     {
@@ -1792,7 +1797,7 @@
       "status": "planned",
       "needs": [],
       "id": "fix-test-red-first",
-      "title": "A fix for a review finding counts as covered only by a test that fails on the code before the fix. The cycle runs the tests the fix adds or changes against the round's base (a worktree at that commit). A fix whose tests already pass there is reported as not covered. superpowers asks for the covering test, its command and its output only in prose, before re-review",
+      "title": "A fix for a review finding counts as covered only by a test that fails on the code before the fix. The cycle runs the tests the fix adds or changes against the round's base (a worktree at that commit). A fix whose tests already pass there is reported as not covered. superpowers asks for the covering test, its command and its output only in prose, before re-review; it starts as information, with verdicts such as proven, weak and inconclusive (NVIDIA-NeMo Guardrails), and blocks only once its false-alarm rate is known; a base run that errored leaves the proof unmade, never passed (spiculedata/saiku, the one blocking case found); it runs at the review round, not in the commit-msg hook, since fix: covers 49 of 134 commits and the hook runs no test; the reverted fix joins test/guards as a mutant learned from a real defect",
       "value": "high",
       "cost": "M",
       "cluster": "gates",
@@ -2480,10 +2485,12 @@
     },
     {
       "status": "planned",
-      "needs": [],
+      "needs": [
+        "findings-ledger"
+      ],
       "id": "reviewer-seeded-recall",
-      "title": "Measure the reviewers' recall on planted defects: copies of past Ennyn diffs, each with one defect of a known class planted (classes taken from real escapes: the convergence records and szz), plus clean diffs, reviewed by code-reviewer, data-reviewer and security-reviewer as in a cycle; a script with no model scores each finding by file:line and class and counts the false findings on clean diffs. It gives reviewer-model-diversity and effort-escalation a fixed corpus; the deterministic gates have one (test/guards.mjs, test/verdicts/), the reviewer agents do not",
-      "value": "medium",
+      "title": "Measure the reviewers' recall on planted defects: copies of past Ennyn diffs, each with one defect of a known class planted (classes taken from real escapes: the convergence records and szz), plus clean diffs, reviewed by code-reviewer, data-reviewer and security-reviewer as in a cycle; a script with no model scores each finding by file:line and class and counts the false findings on clean diffs. It gives reviewer-model-diversity and effort-escalation a fixed corpus; the deterministic gates have one (test/guards.mjs, test/verdicts/), the reviewer agents do not; seeds come from real fix: commits reverted, not synthetic mutants (one preprint's best model scored F1 0.847 on synthetic cases and 0.066 on real pull requests), and the corpus is reread with the same seeds before and after a change: 20 seeds leave a wide band (14 of 20 reads 46-88%), six seeds flipping one way reads as a real change",
+      "value": "high",
       "cost": "M",
       "cluster": "evidence",
       "source": "a third-party quote-check script read 2026-10-29 (all rights reserved; read, nothing copied) plants four errors of four classes (a made-up quote, a distorted quote, a made-up decision number, a decision not in the folder) into a real model summary and scores its checker by script; one run, so a method, not evidence",
@@ -2689,7 +2696,9 @@
     },
     {
       "status": "planned",
-      "needs": [],
+      "needs": [
+        "reader-harness-keep"
+      ],
       "id": "task-gate-after-round-two",
       "title": "After round-two fixes, the task's own gate runs before the commit (a browser check for a UI change, the project's harness for a money path, the gate a mechanization task built): a round-two fix that no review reads must still pass a check that exercises it",
       "value": "high",
@@ -3042,9 +3051,11 @@
     },
     {
       "status": "planned",
-      "needs": [],
+      "needs": [
+        "reader-harness-keep"
+      ],
       "id": "reader-against-real-program",
-      "title": "Every Ennyn reader that answers for another program has a differential test beside its verdict corpus: generated inputs go through the real program and the reader's verdict is compared (doctor's hook rule against real commits with a real secret, the ignore reading against real worktrees and clones), and a test fails when such a reader has no harness; then delete the prose that asks reviewers to try real runs",
+      "title": "Every Ennyn reader that answers for another program has a differential test beside its verdict corpus: generated inputs go through the real program and the reader's verdict is compared (doctor's hook rule against real commits with a real secret, the ignore reading against real worktrees and clones), and a test fails when such a reader has no harness; then delete the prose that asks reviewers to try real runs; the test is a READERS and NOT_READERS pair modelled on GATES and NOT_GATES: every production module is listed with its program and harness, or with why it reads none, and an unlisted module fails the suite. A branded type or a ban on .match does not fit: subprocess calls already sit at 9 places in 3 files, against 492 .match, .test, .replace and .split calls, and most of the class guesses at files a program will read",
       "value": "high",
       "cost": "M",
       "cluster": "gates",
@@ -3208,6 +3219,91 @@
       "cluster": "gates",
       "source": "cycle 2026-10-31 (15), test:linux caught both on all three images after the suite had passed 969/969 on macOS: `git merge` with no identity exits 128 in a container and reaches the conflict on macOS (test/setup.test.mjs), and two block rows took a spelling for a directory on every volume (test/hook.test.mjs). A Linux run costs about an hour, so the cheap layer should catch the first",
       "since": 15
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "convergence-definitions",
+      "title": "The convergence columns are defined in one place and keep their meaning across cycles: 'real escape' becomes 'found in review', a fifth column 'escaped past commit' counts what passed the loop, split by the age of the code it was found in, gate-caught counts only a gate named in the repository, and duplicates and old defects a new record finds get one rule each; report-formats.md, parseConvergence, formatConvergence and docs/evidence.md move together, with a written mapping that keeps the old four columns comparable with the baseline",
+      "value": "high",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "2026-10-31 research on closing escaped classes: all 438 real escapes were caught before commit, and the nearest thing to a true escape, pre-existing (321), is called not the goal; gate-caught's 10% to 29% is about 8% to 13% on a strict reading (judgement, ±30%), because mutation passes and the author's own tests and reading entered from cycle 10; defects a new record found were counted three ways",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "convergence-definitions"
+      ],
+      "id": "class-registry",
+      "title": "A defect class registry in the repository: a stable id, one sentence at class level (not at surface level), state (open, partial, closed-design, closed-gate, sensor-only, superseded), the gate's commit and file, its proof, a count per cycle. Seeded with the 16 classes named in convergence reports and their gates. A new class is born as `new:` and at the cycle's close joins the registry or links to an entry; a script refuses an unknown id; a finding may carry several classes. A class with no action above a written rule cannot be closed. This is the catalog skills/cycle/SKILL.md, finding-schema.md and report-formats.md refer to, which no file holds",
+      "value": "high",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "2026-10-31 research on closing escaped classes: 1 of 459 distinct class labels repeats exactly across cycles, so no script can find a recurring class; the done record drops the mechanization flag, so the class-to-gate link survives only in git history; sourceClass sits on 3 of 20 flagged nodes and no code reads it. How well an agent keeps to a small catalog is unmeasured",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "reader-harness-keep",
+      "title": "The harnesses that found most in cycle 15 enter the repository as tests, hermetic and past hygiene: real commits with a real secret against doctor's hook rule, and the ignore reading against real worktrees; a shell or version the harness needs and does not find is fatal in the gate run, never a skip (mvdan/sh's REQUIRE_SHELLS)",
+      "value": "high",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "2026-10-31 research on closing escaped classes: a reviewer's harness found what patched readers and two review rounds had not (82 false ✓ per git at the third reader, 0 after the exact-print rule), and it lives outside the repository, the place a restart wiped in cycle 15",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "class-registry",
+        "findings-ledger"
+      ],
+      "id": "score-recurrence",
+      "title": "`ennyn mechanization` ranks by the class's count in recent cycles from the registry, over cost, instead of value over cost; `core` is left alone",
+      "value": "high",
+      "cost": "S",
+      "cluster": "plan",
+      "source": "2026-10-31 research on closing escaped classes: scoreNode has no recurrence input, so a class with three slips (shell-in-js-templates, 2.00) outranks one with about 30 in a cycle (reader-against-real-program, 1.50). Its effect is unmeasured, and a split class would game it, which stable ids answer",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "class-registry",
+        "findings-ledger"
+      ],
+      "id": "gate-replay-class",
+      "title": "'Closed' is proven and watched: a class reaches closed-gate only when its past defects put back (reverted fixes, verdict cells that carry a `class`) and at least one variant turn the gate red; each closing recounts the class and writes the exposure (lines changed in what the gate guards), a recurrence reopens the class and moves its action up a level, and zero recurrence with no exposure is no success. Run back over the 12 gates born from convergence reports. test/guards.mjs tests a gate against mutants of its own check, not against the defect class",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "2026-10-31 research on closing escaped classes: of those 12 gates none is shown to stop its class: 7 partial, 1 stopped nothing, 4 with almost no exposure (judgement); the class moves to the next surface under a new name. The second project's gate did this: red on 6, 42 and 14 cases. No product or study found publishes whether a class stopped, and the three-part definition of closed is inference",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "gate-attempts-recorded",
+      "title": "The commit hook records every refusal and pass through gate-record, so `ennyn gate-stats` has data, and each gate gets a false-alarm reading (an `except` entry as 'not useful', a code change as 'please fix'); rule-warn-then-block, test-weakening-warn and gate-loosening-guard read it",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "metrics",
+      "source": "2026-10-31 research on closing escaped classes: gate-stats reads no attempts because the hook never calls gate-record, so a refusal leaves no record; Google's Tricorder keeps a check only under a measured false-positive bar",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "measured-or-unmeasured-type",
+      "title": "A reader returns measured or unmeasured as a type, and `npm run typecheck` refuses a caller that does not tell them apart, with fault-matrix-writes beside it",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "2026-10-31 research on closing escaped classes: an unmeasured state read as a result is about 9% of coded findings (±25%) and came back at logic level past the fault matrix in cycles 8 to 11 and 15; fault-matrix-writes, rework-says-unread and config-failopen-scope are partial. Derived from the class, not tried",
+      "since": 16
     }
   ],
   "done": [
