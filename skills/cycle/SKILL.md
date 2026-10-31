@@ -41,7 +41,7 @@ Never report an unrun test, command or check as done; write `not applicable` ins
 
 1. **Graph:** update every node whose status changed; every newly discovered or leftover item becomes a node, at the end of the list and dated where the graph dates its nodes (`graph.fields.since`).
 2. **Handoff** (`paths.handoff`): what was done, what is next, open risks — each risk with a permanent home (a document that does not rotate). Its commands stay for the next cycle.
-3. **Convergence** in the format of [report-formats.md](report-formats.md): real escapes · fix-introduced · pre-existing · gate-caught, and new classes per review round. The most recurring class becomes a graph node with `mechanization: true` and its source class; if none, write why.
+3. **Convergence** in the format of [report-formats.md](report-formats.md), each finding in one column by its table, and new classes per review round. The most recurring class becomes a graph node with `mechanization: true` and its source class; if none, write why.
    Count the commit-shape bypasses of this cycle: `ennyn.mjs bypass --from <HEAD noted at the start>`. A bypass that recurs is a gate to fix, not a habit.
 4. **Retire lessons:** in one lesson file touched this cycle, mark each lesson keep / update / merge / delete; delete the prose of any lesson whose rationale now lives in a test or gate.
 5. **Security checks:** `ennyn.mjs deps` and doctor's CI line (none: no CI file); each result goes into the report as found, clean or unmeasured (naming what did not run), never clean by default. A finding is fixed now or becomes a graph node.

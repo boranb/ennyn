@@ -1,12 +1,26 @@
 /**
  * Convergence report: the two lines every cycle ends with.
  *
- *   Findings: real escape N · fix-introduced N · pre-existing N · gate-caught N
+ *   Findings: found in review N · fix-introduced N · pre-existing N · gate-caught N · escaped past commit new N · escaped past commit old N
  *   New classes per round: round 1 → N · round 2 → N · round 3+ → N
+ *
+ * What each column counts is defined in skills/cycle/report-formats.md; how to
+ * compare a report with the old columns is in docs/evidence.md. This module reads
+ * and writes the block, and decides nothing about a finding.
  *
  * Labels come from the message catalog of the project language, and every
  * project reads English labels too. The two are not ranked: handoffs keep the
  * newest cycle on top, so whichever comes first in the document is the block.
+ *
+ * Old reports stay readable: `real escape` is the label `foundInReview` had, read
+ * and never printed. Both spellings of one column on a line are a label written
+ * twice. An old report has no fifth column, so `escapedNew` and `escapedOld` read
+ * null: unreported, never 0, and such a block reads like a new one whose age was
+ * not measured: only its `real escape` label tells, and the result does not keep
+ * it. A label starts with a letter and holds no separator or parenthesis, and no
+ * count label starts another: `cut` and the cell patterns depend on it. So the
+ * split by age is two labels, not a note after a count. Turkish upper case keeps
+ * the dotted capital: `COMMIT'TEN` lowers to another word and reads null.
  *
  * The first line holding the findings label decides, and the parser never walks
  * past it to an older block: old data read as current is worse than null. A line
@@ -18,11 +32,15 @@
  * fenced example or template, indented code, a code span, struck text, a quote, a
  * one-line HTML comment. The real block below such a line is not read: that is
  * the price, and prose that starts with the label pays it too.
- * A multi-line HTML comment is not told from prose.
+ * A multi-line HTML comment is not told from prose. A line that writes the label
+ * without its colon (`Findings (estimate):`, `### Findings`) is no findings line,
+ * so an older block answers: an old limit, kept.
  *
  * The per-round line is the block's own: the first line after it holding that
  * label, read by the same rule, before a heading or any line holding a findings
  * label in either language, fenced or not. A line above the block is not its own.
+ * The search stops only at an ATX heading or a line holding a label: a Setext
+ * heading or a thematic break does not stop it, an old limit, kept.
  *
  * A cell reads as a count only when it is exactly one: digits a number holds
  * without rounding, a sentence's "." or ";" after them allowed. Any other cell
@@ -45,15 +63,19 @@ import { outsideFenceLines } from "../setup/scan.mjs";
 
 /**
  * @typedef {{
- *   realEscape: number | null,
+ *   foundInReview: number | null,
  *   fixIntroduced: number | null,
  *   preExisting: number | null,
  *   gateCaught: number | null,
+ *   escapedNew: number | null,
+ *   escapedOld: number | null,
  *   perRound: (number | null)[],
  * }} Convergence
  */
 
-const COUNT_KEYS = /** @type {const} */ (["realEscape", "fixIntroduced", "preExisting", "gateCaught"]);
+const COUNT_KEYS = /** @type {const} */ (["foundInReview", "fixIntroduced", "preExisting", "gateCaught", "escapedNew", "escapedOld"]);
+/** The catalog key of the label a column had before: read in old reports, never printed. */
+const OLD_LABEL = /** @type {Partial<Record<typeof COUNT_KEYS[number], string>>} */ ({ foundInReview: "realEscape" });
 
 /** The highest round read or printed: a round's number sets the length of perRound, so a report cannot size it. */
 export const MAX_ROUNDS = 100;
@@ -68,7 +90,7 @@ const HEADING = /^ {0,3}#{1,6}(?: |$)/;
 const languageOf = (config) => (/** @type {{ language?: unknown } | null | undefined} */ (config)?.language === "tr" ? "tr" : "en");
 
 /** @returns {Convergence} */
-const unreported = () => ({ realEscape: null, fixIntroduced: null, preExisting: null, gateCaught: null, perRound: [] });
+const unreported = () => ({ foundInReview: null, fixIntroduced: null, preExisting: null, gateCaught: null, escapedNew: null, escapedOld: null, perRound: [] });
 
 /** @param {string} key @param {string} lang */
 const label = (key, lang) => t(`convergence.${key}`, {}, lang);
@@ -88,11 +110,12 @@ const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 function reading(lang) {
   const word = (/** @type {string} */ key) => escapeRe(lower(label(key, lang), lang));
   const line = (/** @type {string} */ key) => new RegExp(`(^|[^\\p{L}])${word(key)}\\s*:`, "u");
+  const spellings = (/** @type {typeof COUNT_KEYS[number]} */ key) => [key, OLD_LABEL[key] ?? []].flat().map(word).join("|");
   return {
     lang,
     findings: line("findings"),
     perRound: line("perRound"),
-    counts: COUNT_KEYS.map((key) => ({ key, cell: new RegExp(`^${word(key)}(?: ?[:=] ?| |$)(.*)`) })),
+    counts: COUNT_KEYS.map((key) => ({ key, cell: new RegExp(`^(?:${spellings(key)})(?: ?[:=] ?| |$)(.*)`) })),
     round: new RegExp(`^${word("round")} (\\d+)(\\+?)(?: ?(?:→|->|:|=) ?(.*))?`),
   };
 }
@@ -196,7 +219,7 @@ function readRounds(cells, head) {
   }
   const last = Math.max(0, ...read.keys());
   for (const round of aggregates) if (round < AGGREGATE_FROM || round < last) read.set(round, null);
-  // A round that is not written is unmeasured, not zero (same rule as the four counts).
+  // A round that is not written is unmeasured, not zero (same rule as the counts).
   return Array.from({ length: last }, (_, i) => read.get(i + 1) ?? null);
 }
 

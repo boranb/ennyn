@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { chmodSync, readFileSync, readdirSync, readlinkSync, existsSync, rmSync, statSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, basename, posix } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { git } from "../core/git.mjs";
 import { ConfigError, loadConfig } from "../core/config.mjs";
 import { checkCommitShape } from "../checks/commit-shape.mjs";
@@ -14,6 +14,7 @@ import { hookProjectDir, projectConfig } from "../adapters/claude-code/project.m
 import { FILE_TOOLS } from "../adapters/claude-code/hooks/side-copy-rules.mjs";
 import { askRules, outwardCommands } from "../setup/permissions.mjs";
 import { projectFiles } from "../setup/scan.mjs";
+import { formatConvergence } from "../metrics/convergence.mjs";
 
 // What `claude plugin validate --strict` checks, for machines without the claude CLI.
 // Origin: a ": " inside an unquoted agent description made the YAML unparsable, and
@@ -211,6 +212,87 @@ test("docs: no table cell holds an unescaped | inside code (GitHub splits the ro
       });
   }
   assert.deepEqual(bad, []);
+});
+
+test("plugin: the convergence block in report-formats.md is the one the formatter prints, label by label", () => {
+  const block = formatConvergence({ perRound: [null, null, null] }, { language: "en" }).replaceAll("?", "N");
+  assert.ok(read("skills/cycle/report-formats.md").includes(`\n${block}\n`), block);
+});
+
+test("plugin: the age commands in report-formats.md, run on real git, read a dirty tree, a rewritten line and a partial clone the way the text says", () => {
+  const text = read("skills/cycle/report-formats.md");
+  const blame = /`(git blame -w [^`]+)`/.exec(text)?.[1];
+  const repair = /`(git blame … <base> -- <file>)`/.exec(text)?.[1];
+  const inTree = /`(git ls-tree [^`]+)`/.exec(text)?.[1];
+  assert.ok(blame && repair && inTree, "the three commands are in the text");
+  const box = mkdtempSync(join(tmpdir(), "pl-age-"));
+  const repo = join(box, "repo");
+  mkdirSync(repo);
+  const who = ["-c", "user.name=t", "-c", "user.email=t@t"];
+  const commit = (/** @type {string} */ message) => {
+    git(["add", "-A"], { cwd: repo });
+    git([...who, "commit", "-q", "-m", message], { cwd: repo });
+    return git(["rev-parse", "HEAD"], { cwd: repo });
+  };
+  const sh = (/** @type {string} */ command, cwd = repo) => spawnSync("sh", ["-c", command], { cwd, encoding: "utf8" });
+  const hash = (/** @type {string} */ command) => sh(command.replaceAll("<file>", "code.js")).stdout.split(" ")[0];
+  const bornIn = (/** @type {number} */ n) => hash(blame.replaceAll("<n>", String(n)));
+  const flags = blame.slice("git blame ".length, blame.indexOf(" -- <file>"));
+  const atBase = (/** @type {number} */ n, /** @type {string} */ base) => hash(repair.replace("…", flags).replaceAll("<n>", String(n)).replace("<base>", base));
+  const config = (/** @type {string} */ commit, /** @type {string} */ cwd) => {
+    const { status, stdout } = sh(inTree.replace("<bornIn>", commit), cwd);
+    return [status, stdout.trim()];
+  };
+  git(["init", "-q", "-b", "main"], { cwd: repo });
+  writeFileSync(join(repo, "code.js"), "legacy\n");
+  const legacy = commit("legacy");
+  mkdirSync(join(repo, ".ennyn"));
+  writeFileSync(join(repo, ".ennyn", "config.json"), "{}\n");
+  commit("adopt");
+  writeFileSync(join(repo, "code.js"), "legacy\nloop\n");
+  const loop = commit("a cycle");
+  // Uncommitted lines above and below: the numbers are the file's as it stands.
+  writeFileSync(join(repo, "code.js"), "new\nnew\nlegacy\nloop\nnew\n");
+  assert.equal(bornIn(3), legacy);
+  assert.equal(bornIn(4), loop);
+  assert.match(bornIn(1), /^0{40}$/, "an uncommitted line is a zero hash");
+  // The task rewrote the line: the blame names no old commit, the repair reads it where it stood.
+  writeFileSync(join(repo, "code.js"), "legacy(1)\nloop\n");
+  assert.match(bornIn(1), /^0{40}$/);
+  assert.equal(atBase(1, loop), legacy);
+  // The tree answers: the path, or exit 0 and nothing.
+  assert.deepEqual(config(legacy, repo), [0, ""], "written in a tree with no config");
+  assert.deepEqual(config(loop, repo), [0, ".ennyn/config.json"], "written in a tree with the config");
+  // A count that runs in a subdirectory: a path read from there would print nothing, and nothing means pre-existing.
+  mkdirSync(join(repo, "sub"));
+  assert.deepEqual(config(loop, join(repo, "sub")), [0, ".ennyn/config.json"], "from a subdirectory too");
+  // A partial clone with its origin gone: a blob that is not here changes nothing, a tree that is not here is no answer.
+  git(["config", "uploadpack.allowFilter", "true"], { cwd: repo });
+  const clone = (/** @type {string} */ filter) => {
+    const dir = join(box, filter.replace(":", "-"));
+    const made = spawnSync("git", ["clone", "-q", "--no-checkout", `--filter=${filter}`, pathToFileURL(repo).href, dir], { cwd: box, encoding: "utf8" });
+    assert.equal(made.status, 0, made.stderr);
+    return dir;
+  };
+  const blobless = clone("blob:none");
+  const treeless = clone("tree:0");
+  const shallowTrees = clone("tree:1");
+  rmSync(repo, { recursive: true, force: true });
+  assert.deepEqual(config(legacy, blobless), [0, ""]);
+  assert.deepEqual(config(loop, blobless), [0, ".ennyn/config.json"]);
+  assert.deepEqual(config(legacy, shallowTrees), [0, ""], "the root tree has no such folder");
+  for (const [commit, dir] of [[legacy, treeless], [loop, treeless], [loop, shallowTrees]]) {
+    const [status, printed] = config(commit, dir);
+    assert.notEqual(status, 0, "a tree that is not here is no answer");
+    assert.equal(printed, "");
+  }
+});
+
+test("plugin: every caughtBy value report-formats.md names is in the closed set", () => {
+  const gate = /^\*\*A gate\*\*.*$/m.exec(read("skills/cycle/report-formats.md"))?.[0] ?? "";
+  const values = [...gate.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+  assert.ok(values.includes("review") && values.includes("test:<file>") && values.includes("gate:<name>"), gate);
+  for (const value of values) assert.match(value, /^(?:review|measurement|author-reading|test:<file>|gate:[a-z<>:]+)$/, value);
 });
 
 test("i18n: every English key exists in every catalog, vars interpolate, fallback works", () => {

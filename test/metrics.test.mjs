@@ -8,6 +8,7 @@ import { loadConfig } from "../core/config.mjs";
 import { git } from "../core/git.mjs";
 import { reworkRate, deletedCodeLines, isCodeLine, parseBound, commitMessages, readLog } from "../metrics/szz.mjs";
 import { parseConvergence, formatConvergence, MAX_ROUNDS } from "../metrics/convergence.mjs";
+import { t } from "../core/i18n.mjs";
 import { READ_LIMIT } from "../core/files.mjs";
 
 const cfg = (override = {}) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-m-")), env: {}, override });
@@ -146,7 +147,7 @@ test("convergence: parses English labels with either separator", () => {
     "- Findings: real escape 2 · fix-introduced 1, pre-existing 4 · gate-caught 3",
     "- New classes per round: round 1 → 5 · round 2 → 1 · round 3+ → 0",
   ].join("\n");
-  assert.deepEqual(parseConvergence(text, cfg()), { realEscape: 2, fixIntroduced: 1, preExisting: 4, gateCaught: 3, perRound: [5, 1, 0] });
+  assert.deepEqual(parseConvergence(text, cfg()), { foundInReview: 2, fixIntroduced: 1, preExisting: 4, gateCaught: 3, escapedNew: null, escapedOld: null, perRound: [5, 1, 0] });
 });
 
 test("convergence: parses Turkish labels in a Turkish project, markdown emphasis ignored", () => {
@@ -154,14 +155,14 @@ test("convergence: parses Turkish labels in a Turkish project, markdown emphasis
     "**Bulgular:** gerçek kaçak 1 · düzeltmenin açtığı 0 · eski 2 · kapının yakaladığı 5",
     "Tur başına yeni sınıf: tur 1 → 3 · tur 2 → 2 · tur 3+ → 1",
   ].join("\n");
-  assert.deepEqual(parseConvergence(text, cfg({ language: "tr" })), { realEscape: 1, fixIntroduced: 0, preExisting: 2, gateCaught: 5, perRound: [3, 2, 1] });
+  assert.deepEqual(parseConvergence(text, cfg({ language: "tr" })), { foundInReview: 1, fixIntroduced: 0, preExisting: 2, gateCaught: 5, escapedNew: null, escapedOld: null, perRound: [3, 2, 1] });
 });
 
 test("convergence: no findings line → null; missing per-round line → []; unreported count → null", () => {
   assert.equal(parseConvergence("## Cycle\nnothing measured here", cfg()), null);
   assert.equal(parseConvergence("Bulgular: gerçek kaçak 1", cfg()), null, "an English project does not read Turkish labels");
   const partial = parseConvergence("Findings: real escape 1 · gate-caught ?", cfg());
-  assert.deepEqual(partial, { realEscape: 1, fixIntroduced: null, preExisting: null, gateCaught: null, perRound: [] });
+  assert.deepEqual(partial, { foundInReview: 1, fixIntroduced: null, preExisting: null, gateCaught: null, escapedNew: null, escapedOld: null, perRound: [] });
 });
 
 test("convergence: the first (newest) block wins and its own per-round line is used", () => {
@@ -173,16 +174,16 @@ test("convergence: the first (newest) block wins and its own per-round line is u
     "New classes per round: round 1 → 9 · round 2 → 9",
   ].join("\n");
   const c = parseConvergence(text, cfg());
-  assert.equal(c?.realEscape, 0);
+  assert.equal(c?.foundInReview, 0);
   assert.deepEqual(c?.perRound, [1]);
 });
 
 test("convergence: format and parse round-trip in both languages", () => {
   const cases = [
-    { realEscape: 2, fixIntroduced: 0, preExisting: 7, gateCaught: 1, perRound: [4, 1, 0] },
-    { realEscape: 0, fixIntroduced: 3, preExisting: 0, gateCaught: 0, perRound: [] },
-    { realEscape: 1, fixIntroduced: null, preExisting: 2, gateCaught: 0, perRound: [2, 0] },
-    { realEscape: 1, fixIntroduced: 1, preExisting: 1, gateCaught: 1, perRound: [3, 2, 1, 1] },
+    { foundInReview: 2, fixIntroduced: 0, preExisting: 7, gateCaught: 1, escapedNew: null, escapedOld: null, perRound: [4, 1, 0] },
+    { foundInReview: 0, fixIntroduced: 3, preExisting: 0, gateCaught: 0, escapedNew: null, escapedOld: null, perRound: [] },
+    { foundInReview: 1, fixIntroduced: null, preExisting: 2, gateCaught: 0, escapedNew: null, escapedOld: null, perRound: [2, 0] },
+    { foundInReview: 1, fixIntroduced: 1, preExisting: 1, gateCaught: 1, escapedNew: null, escapedOld: null, perRound: [3, 2, 1, 1] },
   ];
   for (const language of ["en", "tr"]) {
     const c = cfg({ language });
@@ -190,9 +191,9 @@ test("convergence: format and parse round-trip in both languages", () => {
   }
   assert.equal(
     formatConvergence(cases[0], cfg()),
-    "Findings: real escape 2 · fix-introduced 0 · pre-existing 7 · gate-caught 1\nNew classes per round: round 1 → 4 · round 2 → 1 · round 3+ → 0",
+    "Findings: found in review 2 · fix-introduced 0 · pre-existing 7 · gate-caught 1 · escaped past commit new ? · escaped past commit old ?\nNew classes per round: round 1 → 4 · round 2 → 1 · round 3+ → 0",
   );
-  assert.match(formatConvergence(cases[0], cfg({ language: "tr" })), /^Bulgular: gerçek kaçak 2 · düzeltmenin açtığı 0 · eski 7 · kapının yakaladığı 1\nTur başına yeni sınıf: tur 1 → 4/);
+  assert.match(formatConvergence(cases[0], cfg({ language: "tr" })), /^Bulgular: incelemede bulunan 2 · düzeltmenin açtığı 0 · eski 7 · kapının yakaladığı 1 · commit'ten kaçan yeni \? · commit'ten kaçan eski \?\nTur başına yeni sınıf: tur 1 → 4/);
 });
 
 const TOTAL = [
@@ -306,13 +307,13 @@ test("convergence: a round that is not written is null, not 0; trailing punctuat
 
 test("convergence: Turkish upper-case labels match (dotted and dotless i)", () => {
   const text = "BULGULAR: GERÇEK KAÇAK 1 · DÜZELTMENİN AÇTIĞI 2 · ESKİ 3 · KAPININ YAKALADIĞI 4";
-  assert.deepEqual(parseConvergence(text, cfg({ language: "tr" })), { realEscape: 1, fixIntroduced: 2, preExisting: 3, gateCaught: 4, perRound: [] });
+  assert.deepEqual(parseConvergence(text, cfg({ language: "tr" })), { foundInReview: 1, fixIntroduced: 2, preExisting: 3, gateCaught: 4, escapedNew: null, escapedOld: null, perRound: [] });
 });
 
 test("convergence: an explicit `?` round stays as null at the end too (round-trip keeps the length)", () => {
   const c = parseConvergence("Findings: real escape 1 · fix-introduced 0 · pre-existing 0 · gate-caught 0\nNew classes per round: round 1 → 2 · round 2 → ?", cfg());
   assert.deepEqual(c?.perRound, [2, null]);
-  const again = parseConvergence(formatConvergence({ realEscape: 1, fixIntroduced: 0, preExisting: 0, gateCaught: 0, perRound: [1, null] }, cfg()), cfg());
+  const again = parseConvergence(formatConvergence({ foundInReview: 1, fixIntroduced: 0, preExisting: 0, gateCaught: 0, escapedNew: null, escapedOld: null, perRound: [1, null] }, cfg()), cfg());
   assert.deepEqual(again?.perRound, [1, null]);
 });
 
@@ -321,21 +322,21 @@ const roundsOf = (line) => parseConvergence(`Findings: real escape 1\nNew classe
 /** @param {string} cell */
 const countLine = (cell) => `Findings: real escape ${cell} · fix-introduced 2 · pre-existing 3 · gate-caught 4`;
 /** A block nothing could be read from: unreported, which is not "no block" (null). */
-const NULLS = { realEscape: null, fixIntroduced: null, preExisting: null, gateCaught: null, perRound: [] };
+const NULLS = { foundInReview: null, fixIntroduced: null, preExisting: null, gateCaught: null, escapedNew: null, escapedOld: null, perRound: [] };
 
 test("convergence audit: a cell is a count only when it is exactly one; anything else is null, in either line", () => {
   const en = { language: "en" };
   const exact = /** @type {[string, number][]} */ ([["3", 3], ["0", 0], ["007", 7], ["3.", 3], ["3;", 3], ["3,", 3], ["3.;", 3], ["**3**", 3], ["`3`", 3], ["_3_", 3], [String(Number.MAX_SAFE_INTEGER), Number.MAX_SAFE_INTEGER]]);
   for (const [cell, n] of exact) {
-    assert.deepEqual(parseConvergence(countLine(cell), en), { realEscape: n, fixIntroduced: 2, preExisting: 3, gateCaught: 4, perRound: [] }, cell);
+    assert.deepEqual(parseConvergence(countLine(cell), en), { foundInReview: n, fixIntroduced: 2, preExisting: 3, gateCaught: 4, escapedNew: null, escapedOld: null, perRound: [] }, cell);
     assert.deepEqual(roundsOf(`round 1 → ${cell}`), [n], cell);
   }
-  for (const line of ["Findings: real escape: 3", "Findings: real escape : 3", "Findings: real escape=3", "Findings: real escape = 3", "Findings: real  escape\t3"]) assert.equal(parseConvergence(line, en)?.realEscape, 3, line);
+  for (const line of ["Findings: real escape: 3", "Findings: real escape : 3", "Findings: real escape=3", "Findings: real escape = 3", "Findings: real  escape\t3"]) assert.equal(parseConvergence(line, en)?.foundInReview, 3, line);
   for (const cell of ["round 1 → 3", "round 1 -> 3", "round 1: 3", "round 1 = 3", "round 1→3", "round  1  →  3"]) assert.deepEqual(roundsOf(cell), [3], cell);
   const unread = ["?", "~3", "≈3", "3+", "-1", "+1", "1.5", "0x10", "1e3", "NaN", "Infinity", "none", "٣", "３", "~~3~~", "~~3~~ 4", "3 (two in T1)", "9007199254740992", "9007199254740993", "9999999999999999", "1".padEnd(401, "0")];
   const separated = ["1.000", "1 000", "1 000", "1 000", "1'000", "1,000", "1·000", "1, 000", "1 · 000", "1_000", "5*2", "1`0", "5**2", "1__000", "5*_2"];
   for (const cell of [...unread, ...separated]) {
-    assert.deepEqual(parseConvergence(countLine(cell), en), { realEscape: null, fixIntroduced: 2, preExisting: 3, gateCaught: 4, perRound: [] }, cell);
+    assert.deepEqual(parseConvergence(countLine(cell), en), { foundInReview: null, fixIntroduced: 2, preExisting: 3, gateCaught: 4, escapedNew: null, escapedOld: null, perRound: [] }, cell);
     assert.deepEqual(roundsOf(`round 1 → ${cell} · round 2 → 6`), [null, 6], cell);
   }
 });
@@ -358,17 +359,17 @@ test("convergence audit: what a note in parentheses mentions is no cell of the r
   const en = { language: "en" };
   assert.deepEqual(roundsOf("round 1 → 5 (later, round 2 → 9, was dropped)"), [null]);
   assert.deepEqual(roundsOf("round 1 → 5 (later · round 2 → 9 · was dropped) · round 2 → 3"), [null, 3]);
-  assert.deepEqual(parseConvergence("Findings: real escape 1 (not, gate-caught 9, at all) · pre-existing 2", en), { realEscape: null, fixIntroduced: null, preExisting: 2, gateCaught: null, perRound: [] });
+  assert.deepEqual(parseConvergence("Findings: real escape 1 (not, gate-caught 9, at all) · pre-existing 2", en), { foundInReview: null, fixIntroduced: null, preExisting: 2, gateCaught: null, escapedNew: null, escapedOld: null, perRound: [] });
   // Nested: the note ends where its depth does.
-  assert.deepEqual(parseConvergence("Findings: real escape 1 (a (b) · gate-caught 9 · c) · pre-existing 2", en), { realEscape: null, fixIntroduced: null, preExisting: 2, gateCaught: null, perRound: [] });
+  assert.deepEqual(parseConvergence("Findings: real escape 1 (a (b) · gate-caught 9 · c) · pre-existing 2", en), { foundInReview: null, fixIntroduced: null, preExisting: 2, gateCaught: null, escapedNew: null, escapedOld: null, perRound: [] });
   assert.deepEqual(roundsOf("round 1 → 5 (later (see), round 2 → 9, dropped)"), [null]);
   assert.deepEqual(roundsOf("round 1 → 5 (a ((b), round 2 → 9), round 3 → 8, c) · round 2 → 3"), [null, 3]);
   // Unclosed: it runs to the end of the line, and what follows reads null.
-  assert.deepEqual(parseConvergence("Findings: pre-existing 2 · real escape 1 (see T2 · gate-caught 9", en), { realEscape: null, fixIntroduced: null, preExisting: 2, gateCaught: null, perRound: [] });
+  assert.deepEqual(parseConvergence("Findings: pre-existing 2 · real escape 1 (see T2 · gate-caught 9", en), { foundInReview: null, fixIntroduced: null, preExisting: 2, gateCaught: null, escapedNew: null, escapedOld: null, perRound: [] });
   assert.deepEqual(roundsOf("round 1 → 5 · round 2 → 3 (see · round 3 → 9"), [5, null]);
   // A closing mark with no opening one opens nothing and closes nothing.
-  assert.deepEqual(parseConvergence("Findings: real escape 1) · gate-caught 9 (a) · pre-existing 2 · fix-introduced 3", en), { realEscape: null, fixIntroduced: 3, preExisting: 2, gateCaught: null, perRound: [] });
-  assert.deepEqual(parseConvergence("Findings: real escape 1)) (a · gate-caught 9) · pre-existing 2", en), { realEscape: null, fixIntroduced: null, preExisting: 2, gateCaught: null, perRound: [] });
+  assert.deepEqual(parseConvergence("Findings: real escape 1) · gate-caught 9 (a) · pre-existing 2 · fix-introduced 3", en), { foundInReview: null, fixIntroduced: 3, preExisting: 2, gateCaught: null, escapedNew: null, escapedOld: null, perRound: [] });
+  assert.deepEqual(parseConvergence("Findings: real escape 1)) (a · gate-caught 9) · pre-existing 2", en), { foundInReview: null, fixIntroduced: null, preExisting: 2, gateCaught: null, escapedNew: null, escapedOld: null, perRound: [] });
 });
 
 test("convergence audit: text of any kind, or a config with no catalog, ends in null or English, not a throw", () => {
@@ -376,17 +377,17 @@ test("convergence audit: text of any kind, or a config with no catalog, ends in 
   for (const text of [null, undefined, 12, { a: 1 }, ["Findings: real escape 1"], Buffer.from("Findings: real escape 1")]) assert.equal(parseConvergence(text, en), null);
   assert.equal(parseConvergence("", en), null);
   for (const config of [null, undefined, {}, { language: "de" }, { language: "../../package" }, { language: 1 }]) {
-    assert.equal(parseConvergence(countLine("1"), config)?.realEscape, 1, JSON.stringify(config));
-    assert.match(formatConvergence({ realEscape: 1 }, config), /^Findings: real escape 1 ·/, JSON.stringify(config));
+    assert.equal(parseConvergence(countLine("1"), config)?.foundInReview, 1, JSON.stringify(config));
+    assert.match(formatConvergence({ foundInReview: 1 }, config), /^Findings: found in review 1 ·/, JSON.stringify(config));
   }
 });
 
 test("convergence audit: a count or a round written twice cannot be read, whichever values it holds", () => {
   const en = { language: "en" };
-  assert.deepEqual(parseConvergence("Findings: real escape 1 · real escape 2 · gate-caught 4", en), { realEscape: null, fixIntroduced: null, preExisting: null, gateCaught: 4, perRound: [] });
-  assert.equal(parseConvergence("Findings: real escape 2 · real escape 2", en)?.realEscape, null);
-  assert.equal(parseConvergence("Findings: real escape 2 · real escape 2 · real escape 2", en)?.realEscape, null);
-  assert.equal(parseConvergence("Findings: real escape 2 · real escape", en)?.realEscape, null, "a label with no value is written all the same");
+  assert.deepEqual(parseConvergence("Findings: real escape 1 · real escape 2 · gate-caught 4", en), { foundInReview: null, fixIntroduced: null, preExisting: null, gateCaught: 4, escapedNew: null, escapedOld: null, perRound: [] });
+  assert.equal(parseConvergence("Findings: real escape 2 · real escape 2", en)?.foundInReview, null);
+  assert.equal(parseConvergence("Findings: real escape 2 · real escape 2 · real escape 2", en)?.foundInReview, null);
+  assert.equal(parseConvergence("Findings: real escape 2 · real escape", en)?.foundInReview, null, "a label with no value is written all the same");
   assert.deepEqual(roundsOf("round 1 → 5 · round 1 → 9 · round 2 → 3"), [null, 3]);
   assert.deepEqual(roundsOf("round 1 → 5 · round 1 → 5"), [null]);
   assert.deepEqual(roundsOf("round 1 → 5 · round 1 → 5 · round 1 → 5"), [null]);
@@ -410,7 +411,7 @@ test("convergence audit: a round number is bounded; past MAX_ROUNDS it is not re
 test("convergence audit: the first line holding the findings label decides, and only a report line gives numbers", () => {
   const en = { language: "en" };
   const real = "Findings: real escape 1 · fix-introduced 2 · pre-existing 3 · gate-caught 4";
-  const want = { realEscape: 1, fixIntroduced: 2, preExisting: 3, gateCaught: 4, perRound: [] };
+  const want = { foundInReview: 1, fixIntroduced: 2, preExisting: 3, gateCaught: 4, escapedNew: null, escapedOld: null, perRound: [] };
   // Accept: the shapes a report line takes.
   for (const line of [real, `- ${real}`, `* ${real}`, `+ ${real}`, `### ${real}`, `###### ${real}`, `1. ${real}`, `12) ${real}`, `   ${real}`, `  - ${real}`, `\uFEFF${real}`, real.replace("Findings:", "**Findings:**"), real.replace("Findings:", "_Findings:_"), `- ${real.replace("Findings:", "**Findings:**")}`, real.replace("Findings:", "Findings :")]) {
     assert.deepEqual(parseConvergence(line, en), want, line);
@@ -455,7 +456,7 @@ test("convergence audit: the first line holding the findings label decides, and 
   for (const before of ["Findings real escape 9", "Findings", "Refindings: real escape 9", "### Doğrulanan bulgular", "Findingsish: real escape 9"]) {
     assert.deepEqual(parseConvergence(`${before}\n${real}`, en), want, before);
   }
-  assert.equal(parseConvergence(`Findings:real escape 9\n${real}`, en)?.realEscape, 9, "the space after the label is optional");
+  assert.equal(parseConvergence(`Findings:real escape 9\n${real}`, en)?.foundInReview, 9, "the space after the label is optional");
   assert.deepEqual(parseConvergence("Findings: real escapes 9\nFindings: eski 9", en), NULLS, "a word that only starts like a label is no label");
   // A cell starts with its label.
   assert.deepEqual(parseConvergence("Findings: x real escape 3 · gate-caught 4", en), { ...NULLS, gateCaught: 4 });
@@ -488,7 +489,7 @@ test("convergence audit: an older block never answers for a newest one that cann
     assert.deepEqual(parseConvergence(`${text}\n\n${older}`, config), NULLS, `${text}, no heading between`);
     assert.deepEqual(parseConvergence(`## Cycle 16\n\n${text}\n`, config), NULLS, `${text}, alone`);
   }
-  assert.equal(parseConvergence(`## Cycle 16\n\nFindings: ${FULL_EN}\n\n## Cycle 15\n\n${OLDER_EN}\n`, en)?.realEscape, 1, "the control");
+  assert.equal(parseConvergence(`## Cycle 16\n\nFindings: ${FULL_EN}\n\n## Cycle 15\n\n${OLDER_EN}\n`, en)?.foundInReview, 1, "the control");
   assert.equal(parseConvergence("## Cycle\nnothing measured here", en), null, "null is for a text no line of which holds the label");
   // A line that gave nothing is a block of nulls, rounds too: the per-round line below it is no count of this block.
   const rounds = "New classes per round: round 1 → 99";
@@ -532,16 +533,16 @@ test("convergence audit: a text past READ_LIMIT is not read: unreported, told fr
   assert.deepEqual(parseConvergence(`${line}${" ".repeat(READ_LIMIT)}`, en), NULLS);
   assert.deepEqual(parseConvergence(" ".repeat(READ_LIMIT + 1), en), NULLS, "whether it holds a block is not known");
   assert.equal(parseConvergence(" ".repeat(READ_LIMIT), en), null, "at the limit it is read");
-  assert.equal(parseConvergence(`${" ".repeat(READ_LIMIT - line.length - 1)}\n${line}`, en)?.realEscape, 1);
+  assert.equal(parseConvergence(`${" ".repeat(READ_LIMIT - line.length - 1)}\n${line}`, en)?.foundInReview, 1);
 });
 
 test("convergence audit: a Turkish project reads the first block in the document, in either language; labels match in any case", () => {
   const tr = { language: "tr" };
-  assert.equal(parseConvergence("Findings: real escape 7\n\nBulgular: gerçek kaçak 1", tr)?.realEscape, 7, "document order: newest on top");
-  assert.equal(parseConvergence("Bulgular: gerçek kaçak 1\n\nFindings: real escape 7", tr)?.realEscape, 1);
-  assert.equal(parseConvergence("Bulgular: gerçek kaçak 1 · findings: 2", tr)?.realEscape, 1, "one line holding both: the project's language reads it");
+  assert.equal(parseConvergence("Findings: real escape 7\n\nBulgular: gerçek kaçak 1", tr)?.foundInReview, 7, "document order: newest on top");
+  assert.equal(parseConvergence("Bulgular: gerçek kaçak 1\n\nFindings: real escape 7", tr)?.foundInReview, 1);
+  assert.equal(parseConvergence("Bulgular: gerçek kaçak 1 · findings: 2", tr)?.foundInReview, 1, "one line holding both: the project's language reads it");
   assert.deepEqual(parseConvergence("Bulgular: real escape 7", tr), NULLS, "a Turkish label holds Turkish count labels");
-  const want = { realEscape: 1, fixIntroduced: 2, preExisting: 3, gateCaught: 4, perRound: [5] };
+  const want = { foundInReview: 1, fixIntroduced: 2, preExisting: 3, gateCaught: 4, escapedNew: null, escapedOld: null, perRound: [5] };
   const english = "FINDINGS: REAL ESCAPE 1 · FIX-INTRODUCED 2 · PRE-EXISTING 3 · GATE-CAUGHT 4\nNEW CLASSES PER ROUND: ROUND 1 → 5";
   assert.deepEqual(parseConvergence(english, tr), want);
   assert.deepEqual(parseConvergence(english, { language: "en" }), want);
@@ -562,22 +563,22 @@ test("convergence audit: a repeated call answers the same, in either language", 
 });
 
 test("convergence audit: any line end ends a line", () => {
-  const want = { realEscape: 1, fixIntroduced: null, preExisting: null, gateCaught: null, perRound: [5] };
+  const want = { foundInReview: 1, fixIntroduced: null, preExisting: null, gateCaught: null, escapedNew: null, escapedOld: null, perRound: [5] };
   for (const end of ["\n", "\r\n", "\r"]) assert.deepEqual(parseConvergence(`Findings: real escape 1${end}New classes per round: round 1 → 5${end}`, { language: "en" }), want, JSON.stringify(end));
 });
 
 test("convergence audit: for any JSON-shaped value, and a number that is no count, the formatter prints a count or `?`", () => {
   const en = { language: "en" };
   const notCounts = [NaN, Infinity, -Infinity, -1, 1.5, 1e21, 2 ** 53, "3", 3n, undefined, null, true, {}];
-  const all = "Findings: real escape ? · fix-introduced ? · pre-existing ? · gate-caught ?";
+  const all = "Findings: found in review ? · fix-introduced ? · pre-existing ? · gate-caught ? · escaped past commit new ? · escaped past commit old ?";
   for (const n of notCounts) {
-    const counts = /** @type {any} */ ({ realEscape: n, fixIntroduced: n, preExisting: n, gateCaught: n, perRound: [n, n] });
+    const counts = /** @type {any} */ ({ foundInReview: n, fixIntroduced: n, preExisting: n, gateCaught: n, escapedNew: n, escapedOld: n, perRound: [n, n] });
     const printed = formatConvergence(counts, en);
     assert.equal(printed, `${all}\nNew classes per round: round 1 → ? · round 2 → ?`, String(n));
-    assert.deepEqual(parseConvergence(printed, en), { realEscape: null, fixIntroduced: null, preExisting: null, gateCaught: null, perRound: [null, null] });
+    assert.deepEqual(parseConvergence(printed, en), { foundInReview: null, fixIntroduced: null, preExisting: null, gateCaught: null, escapedNew: null, escapedOld: null, perRound: [null, null] });
   }
-  assert.equal(formatConvergence(/** @type {any} */ ({ realEscape: -0 }), en).split(" · ")[0], "Findings: real escape 0");
-  assert.equal(formatConvergence(/** @type {any} */ ({ realEscape: Number.MAX_SAFE_INTEGER }), en).split(" · ")[0], `Findings: real escape ${Number.MAX_SAFE_INTEGER}`);
+  assert.equal(formatConvergence(/** @type {any} */ ({ foundInReview: -0 }), en).split(" · ")[0], "Findings: found in review 0");
+  assert.equal(formatConvergence(/** @type {any} */ ({ foundInReview: Number.MAX_SAFE_INTEGER }), en).split(" · ")[0], `Findings: found in review ${Number.MAX_SAFE_INTEGER}`);
   for (const counts of [null, undefined, 3, "x", {}, { perRound: "abc" }, { perRound: { length: 2 } }, { perRound: 3 }, { perRound: null }, { perRound: [] }]) {
     assert.equal(formatConvergence(/** @type {any} */ (counts), en), all, JSON.stringify(counts));
   }
@@ -593,16 +594,113 @@ test("convergence audit: every shape the formatter prints parses back to what it
     for (const a of values) {
       for (const b of values) {
         for (const length of [0, 1, 2, 3, 4, 5, 6, MAX_ROUNDS - 1, MAX_ROUNDS]) {
-          const counts = { realEscape: a, fixIntroduced: b, preExisting: b, gateCaught: a, perRound: Array.from({ length }, (_, i) => values[(i * 5 + (a ?? 3)) % values.length]) };
+          const counts = { foundInReview: a, fixIntroduced: b, preExisting: b, gateCaught: a, escapedNew: b, escapedOld: a, perRound: Array.from({ length }, (_, i) => values[(i * 5 + (a ?? 3)) % values.length]) };
           assert.deepEqual(parseConvergence(formatConvergence(counts, c), c), counts);
         }
       }
     }
     // Past the ceiling the last round printed says the rest is unmeasured: the parser reads every round it prints.
     const long = Array.from({ length: MAX_ROUNDS + 5 }, (_, i) => i);
-    const printed = formatConvergence({ realEscape: 1, fixIntroduced: 1, preExisting: 1, gateCaught: 1, perRound: long }, c);
+    const printed = formatConvergence({ foundInReview: 1, fixIntroduced: 1, preExisting: 1, gateCaught: 1, escapedNew: null, escapedOld: null, perRound: long }, c);
     assert.match(printed, / 100\+ → \?$/);
     assert.deepEqual(parseConvergence(printed, c)?.perRound, [...long.slice(0, MAX_ROUNDS - 1), null]);
+  }
+});
+
+/** A new report: every column, each with its own count. */
+const NEW_EN = "Findings: found in review 1 · fix-introduced 2 · pre-existing 3 · gate-caught 4 · escaped past commit new 5 · escaped past commit old 6";
+const NEW_TR = "Bulgular: incelemede bulunan 1 · düzeltmenin açtığı 2 · eski 3 · kapının yakaladığı 4 · commit'ten kaçan yeni 5 · commit'ten kaçan eski 6";
+const SIX = { foundInReview: 1, fixIntroduced: 2, preExisting: 3, gateCaught: 4, escapedNew: 5, escapedOld: 6, perRound: [] };
+
+test("convergence columns: a new report reads in both languages, in either project", () => {
+  const en = { language: "en" };
+  const tr = { language: "tr" };
+  assert.deepEqual(parseConvergence(NEW_EN, en), SIX);
+  assert.deepEqual(parseConvergence(NEW_TR, tr), SIX);
+  assert.deepEqual(parseConvergence(NEW_EN, tr), SIX, "every project reads English labels too");
+  assert.deepEqual(parseConvergence(NEW_TR.toLocaleUpperCase("tr"), tr), SIX);
+  assert.deepEqual(parseConvergence(NEW_EN.toUpperCase(), en), SIX);
+  assert.deepEqual(parseConvergence(`${NEW_EN}\nNew classes per round: round 1 → 7`, en), { ...SIX, perRound: [7] });
+  assert.deepEqual(parseConvergence(NEW_EN.replace("escaped past commit new 5", "escaped past commit new: 5").replace("escaped past commit old 6", "escaped past commit old=6"), en), SIX);
+  assert.deepEqual(parseConvergence(NEW_EN.replace(" · ", ", "), en), SIX, "either separator");
+});
+
+test("convergence columns: an old report's first label maps to the new field, and its fifth column reads unreported, not 0", () => {
+  const en = { language: "en" };
+  const tr = { language: "tr" };
+  const old = { foundInReview: 46, fixIntroduced: 36, preExisting: 35, gateCaught: 46, escapedNew: null, escapedOld: null, perRound: [39, 26] };
+  assert.deepEqual(parseConvergence("Findings: real escape 46 · fix-introduced 36 · pre-existing 35 · gate-caught 46\nNew classes per round: round 1 → 39 · round 2 → 26", en), old);
+  assert.deepEqual(parseConvergence("Bulgular: gerçek kaçak 46 · düzeltmenin açtığı 36 · eski 35 · kapının yakaladığı 46\nTur başına yeni sınıf: tur 1 → 39 · tur 2 → 26", tr), old);
+  assert.deepEqual(parseConvergence("Findings: real escape 46 · fix-introduced 36 · pre-existing 35 · gate-caught 46\nNew classes per round: round 1 → 39 · round 2 → 26", tr), old, "an English block in a Turkish project");
+  assert.equal(parseConvergence("Bulgular: gerçek kaçak 1", en), null, "the old label belongs to its language, as the new one does");
+  assert.deepEqual(parseConvergence("Findings: real escape 1 · gate-caught 2", en), { ...NULLS, foundInReview: 1, gateCaught: 2 }, "a line holding only the old label is a block");
+});
+
+test("convergence columns: an old and a new spelling of one column on a line are not one reading", () => {
+  const en = { language: "en" };
+  const tr = { language: "tr" };
+  assert.equal(parseConvergence("Findings: found in review 1 · real escape 2 · gate-caught 4", en)?.foundInReview, null);
+  assert.equal(parseConvergence("Findings: real escape 1 · found in review 1", en)?.foundInReview, null, "the same number too");
+  assert.equal(parseConvergence("Bulgular: incelemede bulunan 1 · gerçek kaçak 2 · eski 4", tr)?.foundInReview, null);
+  assert.equal(parseConvergence("Findings: found in review 1 · real escape 2 · gate-caught 4", en)?.gateCaught, 4, "the other cells stand");
+});
+
+test("convergence columns: the fifth column is its two cells; a total, a note, or a split in another shape reads unreported", () => {
+  const en = { language: "en" };
+  const line = (/** @type {string} */ cell) => parseConvergence(`Findings: found in review 1 · ${cell}`, en);
+  for (const cell of [
+    "escaped past commit 3",
+    "escaped past commit 3 (new 2, old 1)",
+    "escaped past commit 3 · new 2 · old 1",
+    "escaped past commit new 2, old 1",
+    "escaped past commit (new) 2 · escaped past commit (old) 1",
+    "escaped past commit 3: 2 new, 1 old",
+    "escaped new 2 · escaped old 1",
+    "new 2 · old 1",
+  ]) {
+    const c = line(cell);
+    assert.equal(c?.escapedOld, null, cell);
+    if (cell !== "escaped past commit new 2, old 1") assert.equal(c?.escapedNew, null, cell);
+    assert.equal(c?.foundInReview, 1, cell);
+  }
+  assert.deepEqual(parseConvergence("Findings: escaped past commit 3", en), NULLS, "a line that names no column is unreported");
+  assert.equal(parseConvergence("Findings: escaped past commit new 2 (T1)", en)?.escapedNew, null, "the note rule holds");
+  assert.equal(parseConvergence("Findings: escaped past commit new ~2", en)?.escapedNew, null);
+  assert.equal(parseConvergence("Findings: escaped past commit new ?", en)?.escapedNew, null);
+  assert.deepEqual(parseConvergence("Findings: escaped past commit old 0", en), { ...NULLS, escapedOld: 0 }, "one cell alone: the other stays unreported, a written 0 stays 0");
+  assert.equal(parseConvergence("Findings: escaped past commit new 1 · escaped past commit new 2", en)?.escapedNew, null, "written twice");
+  assert.equal(parseConvergence("Bulgular: commit’ten kaçan yeni 2", { language: "tr" })?.escapedNew, null, "a curly apostrophe is another spelling: unreported, not guessed");
+  const eski = parseConvergence("Bulgular: commit'ten kaçan eski 2 · eski 7", { language: "tr" });
+  assert.deepEqual([eski?.escapedOld, eski?.preExisting], [2, 7], "a label that ends in another label's word is its own cell");
+});
+
+test("convergence columns: the formatter writes only the new labels, every column, and its block reads back", () => {
+  for (const language of ["en", "tr"]) {
+    const c = { language };
+    const counts = { ...SIX, perRound: [7, 8, 9] };
+    const printed = formatConvergence(counts, c);
+    assert.doesNotMatch(printed, /real escape|gerçek kaçak/);
+    assert.deepEqual(parseConvergence(printed, c), counts);
+    assert.deepEqual(parseConvergence(`## Cycle\n\n${printed}\nRecurring class: x — 3\n`, c), counts);
+    const old = formatConvergence({ foundInReview: 1, fixIntroduced: 2, preExisting: 3, gateCaught: 4 }, c);
+    assert.equal(old.split(" · ").length, 6, "an absent column is printed as unmeasured, not left out");
+    assert.equal(parseConvergence(old, c)?.escapedNew, null);
+  }
+  assert.equal(formatConvergence({ ...SIX, perRound: [] }, { language: "en" }), NEW_EN);
+  assert.equal(formatConvergence({ ...SIX, perRound: [] }, { language: "tr" }), NEW_TR);
+});
+
+test("convergence columns: a catalog label starts with a letter, and no count label starts another", () => {
+  // A separator before a digit is inside a number, so a label that starts with a digit is swallowed by the cell before it.
+  assert.equal(parseConvergence("Findings: found in review 1 · 30-day escape 2", { language: "en" })?.foundInReview, null);
+  for (const language of ["en", "tr"]) {
+    const labels = ["foundInReview", "realEscape", "fixIntroduced", "preExisting", "gateCaught", "escapedNew", "escapedOld"].map((key) => t(`convergence.${key}`, {}, language));
+    assert.equal(new Set(labels).size, labels.length, language);
+    for (const label of labels) {
+      assert.match(label, /^\p{L}/u, label);
+      assert.doesNotMatch(label, /[·,()]/, `${label}: a separator or a note mark in a label cuts its cell`);
+      for (const other of labels) if (other !== label) assert.ok(!other.startsWith(`${label} `), `${label} starts ${other}: a cell would read as the shorter label with a word for a value`);
+    }
   }
 });
 
@@ -663,9 +761,9 @@ test("convergence audit: reading takes time linear in the text, by run, by line 
     `${" ".repeat(huge)}\`\`\``,
   ];
   for (const text of runs) assert.doesNotThrow(() => parseConvergence(text, en), text.slice(0, 60));
-  assert.equal(parseConvergence(`${"prose line\n".repeat(200000)}Findings: real escape 1`, en)?.realEscape, 1);
-  assert.equal(parseConvergence(`Findings: ${"real escape 1 · ".repeat(20000)}`, en)?.realEscape, null);
-  assert.equal(formatConvergence({ realEscape: 1, fixIntroduced: 1, preExisting: 1, gateCaught: 1, perRound: Array(100000).fill(1) }, en).split("\n")[1].split(" · ").length, MAX_ROUNDS);
+  assert.equal(parseConvergence(`${"prose line\n".repeat(200000)}Findings: real escape 1`, en)?.foundInReview, 1);
+  assert.equal(parseConvergence(`Findings: ${"real escape 1 · ".repeat(20000)}`, en)?.foundInReview, null);
+  assert.equal(formatConvergence({ foundInReview: 1, fixIntroduced: 1, preExisting: 1, gateCaught: 1, escapedNew: null, escapedOld: null, perRound: Array(100000).fill(1) }, en).split("\n")[1].split(" · ").length, MAX_ROUNDS);
 });
 
 test("szz audit: a file named with a quote or a tab is reworked like any other (paths are read raw)", () => {

@@ -25,7 +25,7 @@ In a project where an agent writes the code, these problems show up over time:
 - Before editing code, the agent fills in an impact table: five questions about what the change affects, each answered, where possible, by running git grep, git log, or the tests.
 - Review gets two rounds. The second round only looks at what the first round's fixes changed. A third round needs a failing test or a measurement behind it.
 - When a class of bug recurs, the next cycle (one pass of the loop described below) turns it into a gate: a test or a commit-hook rule. The prose rule for it in CLAUDE.md is then no longer needed.
-- Each cycle closes with four metrics: bugs that got past review, regressions introduced by fixes, pre-existing bugs found along the way, and bugs a gate caught. It also measures whether the instruction text loaded in every session grew.
+- Each cycle closes with five metrics: bugs review found, regressions introduced by fixes, old bugs in code from before Ennyn, bugs a gate caught, and bugs that got past the commit and turned up later. It also measures whether the instruction text loaded in every session grew.
 - Tasks live in a work graph, a JSON file. Ennyn picks four per cycle and always keeps a slot for the oldest high-value task.
 
 Ennyn has no runtime dependencies and no install scripts. It makes network requests in only two cases. When a commit adds packages to a lock file, the commit hook looks them up on the npm registry (turn that off with `security.deps.online: false`). The `ennyn deps` command queries the OSV vulnerability database when you run it. More in [SECURITY.md](SECURITY.md).
@@ -75,7 +75,7 @@ The steps of a cycle, and the settings that apply to them:
 | Gate timing | How long the commit checks take and how often they fail, recorded on your machine. | `ennyn gate-record`, `ennyn gate-stats` |
 | Tone | You choose how the agent talks to you (`focused` or `terse`) and how long commit messages are. Numbers, paths, and warnings are never cut. | `conversation.style`, `commitMsg.style` |
 | Worktrees | When the agent works in a git worktree or a copy of the project, it still gets the project's path-specific rules. | Claude Code hook |
-| End of cycle | You get the four metrics, and the most common kind of bug becomes the next cycle's gate task. The agent cleans up one lesson file (the project's written notes on past mistakes) and deletes the lessons a gate now covers. It also checks dependencies and CI files. Every few cycles there's a security audit. The agent always asks before pushing. | `ennyn push-check`, `ennyn rework`, `ennyn bypass`, `ennyn budget`, `ennyn deps`, `ennyn audit` |
+| End of cycle | You get the five metrics, and the most common kind of bug becomes the next cycle's gate task. The agent cleans up one lesson file (the project's written notes on past mistakes) and deletes the lessons a gate now covers. It also checks dependencies and CI files. Every few cycles there's a security audit. The agent always asks before pushing. | `ennyn push-check`, `ennyn rework`, `ennyn bypass`, `ennyn budget`, `ennyn deps`, `ennyn audit` |
 
 `ennyn rework` depends on how your project labels fixes. If most commit subjects start with "fix", it ends up measuring churn more than rework, and says so. Set `metrics.fixSubject` to match your real repair commits; that pattern also has to match `commitMsg.fixType` ([details](docs/evidence.md#speed-and-rework)).
 

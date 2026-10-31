@@ -66,7 +66,7 @@ Twelve studies: six on the origin project, six on outside sources.
 - Proposals that became work-graph nodes were done 8 times out of 11, within 1-4 cycles. Proposals without a node were done 0 times out of 5; one was proposed four cycles in a row.
 - A size latch on the rules file kept new lessons out of it; they lived only in a searchable catalog.
 
-→ One slot per cycle for a mechanization node (`ennyn mechanization`); convergence counted in four numbers: real escapes, fix-introduced, pre-existing, gate-caught (`metrics/convergence.mjs`); a lesson whose reason lives in a test is deleted from the rules.
+→ One slot per cycle for a mechanization node (`ennyn mechanization`); convergence counted in columns that separate these: found in review, fix-introduced, pre-existing, gate-caught, escaped past commit (`skills/cycle/report-formats.md`, `metrics/convergence.mjs`); a lesson whose reason lives in a test is deleted from the rules.
 
 ## Context and rules
 
@@ -93,7 +93,7 @@ Twelve studies: six on the origin project, six on outside sources.
 - Cost: a median 27.3 million tokens per task, nearly all cache reads; cost grows with rounds × context length.
 - SZZ-style rework (commits linked to a later fix within 7 days): 8% (14/180) in September, 39% (11/28) in October; 4-5× at all five thresholds tried. Medium confidence: small n.
 
-**Caveat on the rework rate.** On the origin project the "fix" label did not separate defect repair from other work: 233 of the last 348 commits started with `fix(`, and generated files were rewritten in nearly every commit. Over the whole history the same measurement gives 90.8%, and 61.2% with generated files excluded. The absolute rate therefore also counts how often code changes. The September/October comparison uses the same signal on both sides, so it shows direction, not size. `ennyn rework` prints a note when most candidates are fixes; set `metrics.fixSubject` so it matches only real defect repairs. The lasting measure is the source each finding carries when it is written (fix of the previous round, real escape), not the commit subject.
+**Caveat on the rework rate.** On the origin project the "fix" label did not separate defect repair from other work: 233 of the last 348 commits started with `fix(`, and generated files were rewritten in nearly every commit. Over the whole history the same measurement gives 90.8%, and 61.2% with generated files excluded. The absolute rate therefore also counts how often code changes. The September/October comparison uses the same signal on both sides, so it shows direction, not size. `ennyn rework` prints a note when most candidates are fixes; set `metrics.fixSubject` so it matches only real defect repairs. The lasting measure is the source each finding carries when it is written (fix of the previous round, first write, already on the branch), not the commit subject.
 
 → Commit messages are a subject and a short body, checked before the expensive hook runs (`ennyn commit-check`); `ennyn rework` measures rework every cycle.
 
@@ -140,9 +140,32 @@ Three cycles ran on a second project on 2026-10-29: Python, about a hundred comm
 - The mechanization slot was empty in the first two cycles because the project's graph module could not mark a node as one; in the third a task was picked by hand, and the gate it built turned red on 6, 42 and 14 cases when past defects were put back.
 - The trial found 17 problems in Ennyn itself; each is a graph node whose source starts with "second-project trial".
 
-**Limits.** The table counts findings of every severity, so it does not compare with the baseline's serious-defect rows, and one day says nothing about rework, active time or production escapes. Both projects have the same author and a common loop lineage. A Python project without CI never exercised the dependency check (npm lock files only) or the CI checks.
+**Limits.** The columns are as they were written then ([Reading the convergence columns](#reading-the-convergence-columns)). The table counts findings of every severity, so it does not compare with the baseline's serious-defect rows, and one day says nothing about rework, active time or production escapes. Both projects have the same author and a common loop lineage. A Python project without CI never exercised the dependency check (npm lock files only) or the CI checks.
 
 A third project, by the same author, covered those the same day with init and one cycle: TypeScript, an npm lock file and two CI workflows. The dependency check read 540 lock entries and listed 53 known advisories, all but one in the build chain and that one not reachable in the project; it refused none and left none unmeasured. The CI checks stopped no commit; a commit that only added a permissions block passed, as it should, and the doctor's warning on the default token went away. mutate's parse check, given esbuild, read .ts and .tsx mutants with none invalid. Numbers for the cycle: real escapes 5, fix-introduced 3, pre-existing 9, gate-caught 2; new classes by round 4 and 0.
+
+## Reading the convergence columns
+
+The first 15 cycles on Ennyn itself wrote four numbers. Their sums, read from the 15 closing handoffs, are 438, 407, 321 and 178. The columns changed after that. By the research's reading of the handoffs, a judgement and not a count of rows, all 438 "real escapes" were caught by a reviewer before the commit, so they had not escaped the loop; and what each column held had moved from cycle to cycle. Each column now has one definition, in `skills/cycle/report-formats.md`, and each finding lands in one column. The numbers already written, here and in the handoffs, stay as they are. A new cycle compares with them this way:
+
+| Written then | Sum, 15 cycles | Written now | How to compare |
+|---|---|---|---|
+| real escape | 438 | found in review | Side by side, as hand counts (below): both count new code a reviewer stopped. The old definition also named CI and production. A CI job that stops a defect before it lands is now a gate; a job on the default branch after the push, and production, are the next cycle's row, reading escaped old. |
+| fix-introduced | 407 | fix-introduced | Close. A fix's defect that the author's own reading or an ad hoc run caught could sit in gate-caught then and is fix-introduced now: take those rows out to compare. A defect of a fix that had already landed now counts by age: `pre-existing`, gate-caught only if a gate found it in the cycle that wrote it. |
+| pre-existing | 321 | pre-existing + escaped past commit new + escaped past commit old | Add the three. On its own, pre-existing now covers only code whose tree held no Ennyn config. |
+| gate-caught | 178 | gate-caught | Not directly: see below. |
+
+The two columns differ in both directions.
+
+- Layers that are no gate. Cycles 4 and 9 already name mutation catches, and cycle 9 the author's own tests; cycles 10 and 11 list them with the author's reading, and cycle 15 with ad hoc differential runs. The new column keeps mutation runs and tests that stay in the repository and drops the other two. To compare, add back from the ledger the rows with `caughtBy` `author-reading` or `measurement` that reach line 4 or line 6 of the table in `report-formats.md`.
+- Mutation runs. In cycles 12 to 14 the handoffs keep them outside gate-caught: cycle 12 lists them apart, cycles 13 and 14 not at all. The new column holds them, so to compare with those cycles also take out the rows with `caughtBy` `gate:mutation`.
+- Some old defects. A new gate or record that found old defects was counted as gate-caught in cycles 11 (3), 12 (11) and 14 (1), as pre-existing in cycles 5, 6 and 14 (5 of 22 in one task), and not at all in cycle 13 (172 places, five nodes). Now they always count by age.
+
+So the rise in the gate's share of findings, gate-caught over gate-caught + real escape + fix-introduced, from 10% in cycles 1-4 to 29% in cycles 12-15, is not a rise of the new column. Counting only the catches a handoff names to a gate in the repository, and leaving out mutation runs and the author's new tests as well, gives about 8% and 13%, a judgement of ±30%, and most of that rise rests on cycle 12's one record. The new column is neither of these numbers.
+
+All 15 cycles are hand counts. Rechecked against the ledgers that survive, cycle 4 matched, cycle 10 was about 1% apart, and cycle 15's real escapes moved 18%, from 39 to 46. The catches named in a handoff do not always add up either: cycle 8's sum to 5 against 4 written, cycle 9's to 8 against 9. Duplicates were removed only from cycle 10 (10, 13 and 29 in cycles 10 to 12), and cycle 12's gate-caught holds 6 timing failures under load.
+
+The fifth column starts empty. The 321 cannot be split by age: the rows of those cycles record no commit for the defective line. The age rule asks whether a tree held the config, not whether a cycle wrote the line. So a config moved in or committed late reads as pre-existing, while the lines of the commit that adds the config, and old work rebased or squashed in after it, read as through the loop. A report with no such column reads as unreported, not as 0, and a report's `real escape` label reads as `found in review` (`metrics/convergence.mjs`). An old block's gate-caught reads as written, under its old meaning: a block that says `real escape`, or has no fifth column, is an old one.
 
 ## What the package does not do
 
