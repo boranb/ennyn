@@ -26,6 +26,7 @@ import { t } from "../core/i18n.mjs";
 import { loadGraph } from "../plan/mechanization.mjs";
 import { RECORD, RELATIONS, cellProblems, compare, moves, readRecord, unmeasuredOf } from "./reference/npm.mjs";
 import * as cc from "./reference/claude-code.mjs";
+import * as precompact from "./reference/precompact.mjs";
 import * as md from "./reference/markdown.mjs";
 import * as ay from "./reference/actions-yaml.mjs";
 import { MIN_RULE, ruleKey, ruleLines } from "../setup/budget.mjs";
@@ -131,6 +132,49 @@ test("reference control: each reading is compared in full: the URL, the origin, 
   assert.match(moves([tagged]).join("\n"), /differs, recorded agree/);
   const ranged = { ...listed.c, npm: { ...listed.c.npm, at: { ...listed.c.npm.at, [listed.place]: { kind: "registry", name: "a", version: "^2.0.0", registry: "https://registry.npmjs.org/", spec: "a@^2.0.0", refetch: true } } } };
   assert.match(moves([ranged]).join("\n"), /extra, recorded agree/);
+});
+
+test("reference: the PreCompact record holds what the compaction hook stands on", () => {
+  const { claudeCode, cells } = precompact.readRecord();
+  assert.match(claudeCode, /^\d+\.\d+\.\d+$/);
+  assert.deepEqual(Object.keys(cells), Object.keys(precompact.CELLS));
+  const holds = { ended: "completed", isError: false, summaries: 0, compacted: false };
+  /** @param {string} id @param {object} want */
+  const is = (id, want) => assert.deepEqual(Object.fromEntries(Object.keys(want).map((k) => [k, cells[id][k]])), want, id);
+  // stdin: no agent field, no tokens, no model. A plain stdout goes to the summary request and nowhere else.
+  assert.deepEqual(cells["stdout-joins-the-summary"].input, ["custom_instructions", "cwd", "hook_event_name", "prompt_id", "session_id", "transcript_path", "trigger"]);
+  is("stdout-joins-the-summary", { trigger: "auto", summaries: 1, marked: ["summary"], compacted: true, unansweredAtHook: false, promptIsTheTurns: true });
+  // What holds, and what ending a block can come to. Past the hard limit no request goes out and the turn ends.
+  is("exit-2-holds-and-the-turn-goes-on", holds);
+  is("stdout-json-is-a-verdict", holds);
+  is("block-under-the-hard-limit-at-1m", holds);
+  is("exit-2-is-asked-again-every-turn", { ...holds, hookRuns: 5 });
+  is("block-past-the-hard-limit-at-1m", { ended: "blocking_limit", isError: true, summaries: 0, failure: { model: "<synthetic>", error: "invalid_request", text: "Prompt is too long" } });
+  is("block-on-a-413", { ended: "prompt_too_long", isError: true, unansweredAtHook: true });
+  is("pass-on-a-413", { ended: "completed", isError: false, compacted: true, unansweredAtHook: true });
+  // A hook that fails or is killed lets the compaction through.
+  is("exit-1-lets-it-through", { summaries: 1, compacted: true });
+  is("timeout-lets-it-through", { summaries: 1, compacted: true });
+  // A subagent's compaction: the same input, the main transcript. The stream's boundary line races the end of the
+  // run, so the cell does not hold it.
+  is("a-subagent-compacts", { input: cells["stdout-joins-the-summary"].input, mainTranscriptNamed: true, summaries: 1, marked: ["summary"] });
+  assert.equal("compacted" in cells["a-subagent-compacts"], false);
+  // The fields tailFacts reads off a reply.
+  assert.deepEqual(cells["stdout-joins-the-summary"].replyShape, { usage: ["cache_creation_input_tokens", "cache_read_input_tokens", "input_tokens", "output_tokens"], model: "string", timestamp: "string", sidechain: false });
+});
+
+test("reference: the gap the compaction hook waits for is the earliest idle compaction in the record", () => {
+  const { idle } = precompact.readRecord();
+  assert.deepEqual(idle, { minTokens: 200000, tokensFloor: 100000, fraction: 0.9, fractionFloor: 0.5, fractionTop: 0.95, hourMs: 3600000 });
+  assert.deepEqual(precompact.idleMoved(idle), []);
+  assert.equal(precompact.idleMoved({ ...idle, fractionFloor: 0.4 }).length, 1, "a lower floor is seen");
+  assert.equal(precompact.idleMoved({ ...idle, hourMs: 300000 }).length, 1, "a shorter cache is seen");
+});
+
+test("reference: the model table is compared both ways", () => {
+  const ours = new Map([["a", 200000], ["b", 1000000], ["c", 200000]]);
+  assert.deepEqual(precompact.windowsMoved(ours, new Map(ours)), []);
+  assert.deepEqual(precompact.windowsMoved(ours, new Map([["a", 1000000], ["b", 1000000], ["d", 200000]])), ["a: MODEL_WINDOWS says 200000, the binary 1000000", "c: MODEL_WINDOWS says 200000, the binary nothing", "d: MODEL_WINDOWS says nothing, the binary 200000"]);
 });
 
 test("reference: every Claude Code cell compares as recorded", async () => {

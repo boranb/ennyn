@@ -25,7 +25,7 @@ import { realpathSync } from "node:fs";
 import { readRegular, writeState } from "../../../core/files.mjs";
 import { fileURLToPath } from "node:url";
 import { isAbsolute, join, resolve } from "node:path";
-import { shown, t } from "../../../core/i18n.mjs";
+import { asciiJson, shown, t } from "../../../core/i18n.mjs";
 import { mapSideCopyPath } from "../../../side-copy/map-path.mjs";
 import { hookProjectDir, projectConfig } from "../project.mjs";
 import { LEAVES, isLimit, loadPathScopedRules, readRuleBody, reasonText, rulesForPath } from "../rules-index.mjs";
@@ -148,28 +148,18 @@ export const PATH_SHOWN_MAX = 1000;
 export const NAME_SHOWN_MAX = 4100;
 
 /**
- * A name as one JSON string in printable ASCII: every other character, "<" and ">" too, as \uXXXX (a pair of
- * UTF-16 halves as two escapes). Nothing inside the value can look like its end: a list of look-alike quotes
- * and brackets (U+201D, U+FF02, U+2039, U+FF1C…) would always miss one.
- * @param {string} name
- */
-function json(name) {
-  return JSON.stringify(name).replace(/[^\x20-\x7e]|[<>]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
-}
-
-/**
  * A name as a value with a visible start and end: one JSON string, or, past `max` bytes, its start and its
  * end as two, with "…" between them.
  * @param {string} name @param {number} [max]
  */
 export function value(name, max = PATH_SHOWN_MAX) {
-  const whole = json(name);
+  const whole = asciiJson(name);
   if (bytes(whole) <= max) return whole;
   const cps = [...name];
   const half = Math.floor((max - bytes("…")) / 2);
-  const head = most(cps.length, (n) => bytes(json(cps.slice(0, n).join(""))) <= half);
-  const tail = most(cps.length - head, (n) => bytes(json(cps.slice(cps.length - n).join(""))) <= half);
-  return `${json(cps.slice(0, head).join(""))}…${json(cps.slice(cps.length - tail).join(""))}`;
+  const head = most(cps.length, (n) => bytes(asciiJson(cps.slice(0, n).join(""))) <= half);
+  const tail = most(cps.length - head, (n) => bytes(asciiJson(cps.slice(cps.length - n).join(""))) <= half);
+  return `${asciiJson(cps.slice(0, head).join(""))}…${asciiJson(cps.slice(cps.length - tail).join(""))}`;
 }
 
 /**
@@ -185,7 +175,7 @@ export function named(name) {
   // Its own bound (NAME_SHOWN_MAX), so not shown()'s.
   const plain = !shown(name, { name: true, max: Infinity }).quoted && !/[<>]/.test(name) && bytes(name) <= NAME_SHOWN_MAX;
   if (plain) return { text: name, quoted: false, cut: false };
-  return { text: value(name, NAME_SHOWN_MAX), quoted: true, cut: bytes(json(name)) > NAME_SHOWN_MAX };
+  return { text: value(name, NAME_SHOWN_MAX), quoted: true, cut: bytes(asciiJson(name)) > NAME_SHOWN_MAX };
 }
 
 /** An error as one line the user can read: no line breaks, and no control character a terminal would act on. @param {string} s */

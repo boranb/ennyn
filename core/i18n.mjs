@@ -125,6 +125,16 @@ export function unshownEscaped(text, { keepLines = false } = {}) {
   return text.replace(keepLines ? UNSHOWN_BUT_LF : UNSHOWN_ALL, escaped);
 }
 
+/**
+ * A name as one JSON string in printable ASCII: every other character, "<" and ">" too, as \uXXXX (a pair of
+ * UTF-16 halves as two escapes). Nothing inside the value can look like its end: a list of look-alike quotes
+ * and brackets (U+201D, U+FF02, U+2039, U+FF1C…) would always miss one.
+ * @param {string} name
+ */
+export function asciiJson(name) {
+  return JSON.stringify(name).replace(/[^\x20-\x7e]|[<>]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+}
+
 /** What UNSHOWN names that JSON.stringify writes as it is: it escapes the C0 controls itself, and a raw one in its output is its own line break. */
 const JSON_UNSHOWN = new RegExp(`(?![\\u0000-\\u001f])${UNSHOWN.source}`, "gu");
 

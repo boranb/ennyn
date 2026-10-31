@@ -18,7 +18,8 @@
  * The same for files: test/fault-fs.mjs, loaded into every run, counts the file reads outside Ennyn's own
  * files and fails the k-th, as a file without permission (EACCES) and as a directory in its place (EISDIR),
  * for every k. The Claude Code hooks run here too, given their stdin; their JSON output is judged as the
- * text Claude Code shows, and exit 2 (blocking) is never right.
+ * text Claude Code shows, and exit 2 (blocking) is right only where the clean run holds a compaction: a fault
+ * never makes a hook block.
  *
  * Cycle 2026-10-20 (4) found this class 11 times, each by a reviewer or a loaded machine: a timeout, a
  * process that did not start, a check with no answer, a shallow range read as a result. The first run
@@ -224,6 +225,29 @@ for (const args of [["gate-record", "--start", START, "--exit", "1", "--step", "
   execFileSync(process.execPath, [CLI, ...args], { cwd: REPO, stdio: "ignore" });
 }
 
+/**
+ * A transcript of the session, in the shape Claude Code writes, whose last Edit lies `after` seconds past HEAD's
+ * commit time; nothing else in the copy is newer than that commit by more than the fixture's own changes.
+ * @param {string} repo @param {string} file @param {number} after
+ */
+function compactCase(repo, file, after) {
+  // The session reads as idle: its last reply lies more than the gap ago, and the tree is clean. Held, the commit lies
+  // two hours back, so the reply's Edit is later than it; at a boundary the commit stays where it is, later than the reply.
+  git(["add", "-A"], { cwd: repo });
+  git(["commit", "-q", "--allow-empty", "--no-verify", "-m", "a clean tree"], { cwd: repo });
+  const now = Math.floor(Date.now() / 1000);
+  if (after > 0) git(["commit", "-q", "--amend", "--no-edit", "--no-verify", "--date", `${now - 7200} +0000`], { cwd: repo, env: { ...process.env, GIT_COMMITTER_DATE: `${now - 7200} +0000` } });
+  const timestamp = new Date((now - 7200 + after) * 1000).toISOString();
+  const usage = { input_tokens: 2, cache_creation_input_tokens: 1000, cache_read_input_tokens: 299000, output_tokens: 0 };
+  writeFileSync(join(repo, ".git", "s1.jsonl"), `${JSON.stringify({ isSidechain: false, type: "user", promptId: "p1", message: { role: "user", content: "go" } })}\n${JSON.stringify({ isSidechain: false, type: "assistant", timestamp, message: { model: "claude-opus-5-5", stop_reason: "end_turn", usage, content: [{ type: "tool_use", name: "Edit", input: { file_path: file } }] } })}\n`);
+}
+
+/** What the hook prints on every pass that read the tree: a fault that only stops the hold still has to say so, on stderr. */
+const COMPACT_ASK = /^Ennyn asks this of the summary: /;
+
+/** @param {string} repo */
+const compactInput = (repo) => ({ trigger: "auto", session_id: "s1", prompt_id: "p1", cwd: repo, transcript_path: join(repo, ".git", "s1.jsonl") });
+
 // --------------------------------------------------------------------------------------------- cases --
 
 /** Stages a src/use.js line that review.forbidden keeps out, in the main index or the one `env` names. @param {string} repo @param {NodeJS.ProcessEnv} [env] */
@@ -255,7 +279,7 @@ function stageSecret(repo) {
 }
 
 /**
- * @typedef {{ args: string[], cwd?: string, writes?: boolean, setup?: (repo: string) => void, env?: Record<string, string>, first?: boolean, outside?: boolean, hook?: string, input?: (repo: string) => unknown }} Case
+ * @typedef {{ args: string[], cwd?: string, writes?: boolean, setup?: (repo: string) => void, env?: Record<string, string>, first?: boolean, outside?: boolean, hook?: string, input?: (repo: string) => unknown, everyPass?: RegExp }} Case
  *   `cwd` is relative to the repository; a case that writes, or has a setup, runs in a copy of its own.
  *   `env` values are paths relative to the repository. `first`: only the first git call is faulted (the
  *   one that finds the project directory; the case without `cwd` sweeps the rest). `outside`: the
@@ -386,6 +410,25 @@ const CASES = [
     hook: "side-copy-reset.mjs",
     setup: (repo) => put(repo, { ".git/ennyn/side-copy/s1.json": '{"emitted":[]}\n' }),
     input: (repo) => ({ source: "compact", session_id: "s1", cwd: repo }),
+  },
+  // The PreCompact hook: holding a compaction in the clean run, so a fault must let it through and say so; and at a
+  // commit boundary, where a fault may never hold one.
+  {
+    args: ["hook:compact-boundary", "mid-task"],
+    hook: "compact-boundary.mjs",
+    setup: (repo) => compactCase(repo, join(repo, "src", "add.js"), 60),
+    input: compactInput,
+    everyPass: COMPACT_ASK,
+  },
+  {
+    args: ["hook:compact-boundary", "boundary"],
+    hook: "compact-boundary.mjs",
+    setup: (repo) => {
+      git(["reset", "-q", "--hard"], { cwd: repo });
+      compactCase(repo, join(repo, "src", "add.js"), -3600);
+    },
+    input: compactInput,
+    everyPass: COMPACT_ASK,
   },
   // The plugin's version record and the session's variable: a plugin version, a data directory and an env file
   // of their own in each run's copy.
@@ -518,8 +561,9 @@ const counted = (parts) => Number([...parts].map((p) => UNMEASURED_COUNT.exec(p)
 /**
  * What is wrong with a faulted run, measured against the clean one; null when nothing is.
  * @param {Run} clean @param {Run} got @param {boolean} hook a commit-msg hook run, which fails open
+ * @param {RegExp} [everyPass] a line the command prints on any run that passes, and so says nothing of a fault
  */
-function judge(clean, got, hook) {
+function judge(clean, got, hook, everyPass) {
   if (/^\s+at .+:\d+:\d+\)?$/m.test(got.stderr)) return "a stack trace";
   if (got.code === 2 && clean.code !== 2) return "exit 2, which a Claude Code hook reads as blocking";
   const same = got.stdout === clean.stdout && got.stderr === clean.stderr && got.code === clean.code;
@@ -535,7 +579,7 @@ function judge(clean, got, hook) {
   const before = new Set(parts(clean));
   const after = new Set(parts(got));
   const shapes = new Set([...before].map(digits));
-  const changed = [...after].filter((p) => !before.has(p));
+  const changed = [...after].filter((p) => !before.has(p) && !everyPass?.test(p));
   for (const p of changed) {
     // doctor counts its "?" lines on the summary line; with one in the clean run already (too few commits for
     // the fix label) the count moves with each line a fault leaves unmeasured. It may rise by exactly the "?"
@@ -589,7 +633,7 @@ test("fault matrix: with any git call failing, killed or never ending, or no git
         return { cell, why };
       }
       if (got.stderr.includes(NOT_STOPPED)) return { cell, why: "git was never stopped: the run still waited on it" };
-      return { cell, why: judge(clean[cell.i], got, cell.c.args.includes("--hook")) };
+      return { cell, why: judge(clean[cell.i], got, cell.c.args.includes("--hook"), cell.c.everyPass) };
     })
     .filter((r) => r.why)
     .map((r) => `${where(r.cell.c)} · ${r.cell.fault.noGit ? "no git" : r.cell.fault.closed ? "closed stdout" : `git call ${r.cell.fault.at} ${r.cell.fault.kind}`}: ${r.why}`);
@@ -613,7 +657,7 @@ test("fault matrix: with any file read failing (no permission, a directory in it
   const results = await pool(cells.map((cell) => () => run(cell.c, cell.fault)), width);
   const where = (/** @type {Case} */ c) => `${c.args.join(" ")}${c.cwd ? ` (in ${c.cwd}/)` : ""}${c.setup ? " (set up)" : ""}${c.outside ? " (no repository)" : ""}`;
   const bad = cells
-    .map((cell, k) => ({ cell, why: judge(clean[cell.i], results[k], cell.c.args.includes("--hook")) }))
+    .map((cell, k) => ({ cell, why: judge(clean[cell.i], results[k], cell.c.args.includes("--hook"), cell.c.everyPass) }))
     .filter((r) => r.why)
     .map((r) => `${where(r.cell.c)} · ${r.cell.fault.read?.kind} ${r.cell.call}: ${r.why}`);
   assert.deepEqual(bad, [], `${bad.length} of ${cells.length} cells`);
@@ -929,6 +973,11 @@ test("fault matrix control: the judge flags each way a run can hide a failure", 
   assert.equal(judge(clean, clean, false), null);
   assert.match(String(judge(clean, R({ stdout: "Rework: 0 of 10 lines (0%)\nCo-change: src/a.js (3 commits)\n" }), false)), /a number changed/);
   assert.match(String(judge(clean, R({ stdout: "Rework: 2 of 10 lines (20%)\n" }), false)), /parts dropped without saying so/);
+  // A line a pass always prints is no change, and says nothing: the fault must still be said.
+  const held = R({ code: 2 });
+  assert.equal(judge(held, R({ stdout: "Ask.\n", stderr: "could not be measured\n" }), false, /^Ask\./), null);
+  assert.match(String(judge(held, R({ stdout: "Ask.\n" }), false, /^Ask\./)), /saying nothing/);
+  assert.match(String(judge(held, R({ stdout: "Ask.\n", stderr: "could not be measured\n" }), false)), /changed without saying so/);
   assert.match(String(judge(clean, R({ stdout: "Rework: 2 of 10 lines (20%)\nCo-change: none\n" }), false)), /changed without saying so/);
   assert.match(String(judge(clean, R({ stdout: "Rework: 2 of 10 lines (20%)\nCo-change: the log could not be found\n" }), false)), /changed without saying so/);
   assert.equal(judge(clean, R({ stdout: "Rework: 2 of 10 lines (20%)\nCo-change: unmeasured: git log failed\n" }), false), null);

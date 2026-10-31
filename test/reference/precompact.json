@@ -1,0 +1,389 @@
+{
+  "claudeCode": "2.1.310",
+  "idle": {
+    "minTokens": 200000,
+    "tokensFloor": 100000,
+    "fraction": 0.9,
+    "fractionFloor": 0.5,
+    "fractionTop": 0.95,
+    "hourMs": 3600000
+  },
+  "cells": {
+    "stdout-joins-the-summary": {
+      "ended": "completed",
+      "isError": false,
+      "hookRuns": 1,
+      "summaries": 1,
+      "marked": [
+        "summary"
+      ],
+      "compacted": true,
+      "input": [
+        "custom_instructions",
+        "cwd",
+        "hook_event_name",
+        "prompt_id",
+        "session_id",
+        "transcript_path",
+        "trigger"
+      ],
+      "trigger": "auto",
+      "unansweredAtHook": false,
+      "promptIsTheTurns": true,
+      "replyShape": {
+        "usage": [
+          "cache_creation_input_tokens",
+          "cache_read_input_tokens",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "model": "string",
+        "timestamp": "string",
+        "sidechain": false
+      },
+      "failure": null,
+      "mainTranscriptNamed": true
+    },
+    "exit-2-holds-and-the-turn-goes-on": {
+      "ended": "completed",
+      "isError": false,
+      "hookRuns": 1,
+      "summaries": 0,
+      "marked": [],
+      "compacted": false,
+      "input": [
+        "custom_instructions",
+        "cwd",
+        "hook_event_name",
+        "prompt_id",
+        "session_id",
+        "transcript_path",
+        "trigger"
+      ],
+      "trigger": "auto",
+      "unansweredAtHook": false,
+      "promptIsTheTurns": true,
+      "replyShape": {
+        "usage": [
+          "cache_creation_input_tokens",
+          "cache_read_input_tokens",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "model": "string",
+        "timestamp": "string",
+        "sidechain": false
+      },
+      "failure": null,
+      "mainTranscriptNamed": true
+    },
+    "exit-2-is-asked-again-every-turn": {
+      "ended": "completed",
+      "isError": false,
+      "hookRuns": 5,
+      "summaries": 0,
+      "marked": [],
+      "compacted": false,
+      "input": [
+        "custom_instructions",
+        "cwd",
+        "hook_event_name",
+        "prompt_id",
+        "session_id",
+        "transcript_path",
+        "trigger"
+      ],
+      "trigger": "auto",
+      "unansweredAtHook": false,
+      "promptIsTheTurns": true,
+      "replyShape": {
+        "usage": [
+          "cache_creation_input_tokens",
+          "cache_read_input_tokens",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "model": "string",
+        "timestamp": "string",
+        "sidechain": false
+      },
+      "failure": null,
+      "mainTranscriptNamed": true
+    },
+    "exit-1-lets-it-through": {
+      "ended": "completed",
+      "isError": false,
+      "hookRuns": 1,
+      "summaries": 1,
+      "marked": [],
+      "compacted": true,
+      "input": [
+        "custom_instructions",
+        "cwd",
+        "hook_event_name",
+        "prompt_id",
+        "session_id",
+        "transcript_path",
+        "trigger"
+      ],
+      "trigger": "auto",
+      "unansweredAtHook": false,
+      "promptIsTheTurns": true,
+      "replyShape": {
+        "usage": [
+          "cache_creation_input_tokens",
+          "cache_read_input_tokens",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "model": "string",
+        "timestamp": "string",
+        "sidechain": false
+      },
+      "failure": null,
+      "mainTranscriptNamed": true
+    },
+    "timeout-lets-it-through": {
+      "ended": "completed",
+      "isError": false,
+      "hookRuns": 1,
+      "summaries": 1,
+      "marked": [],
+      "compacted": true,
+      "input": [
+        "custom_instructions",
+        "cwd",
+        "hook_event_name",
+        "prompt_id",
+        "session_id",
+        "transcript_path",
+        "trigger"
+      ],
+      "trigger": "auto",
+      "unansweredAtHook": false,
+      "promptIsTheTurns": true,
+      "replyShape": {
+        "usage": [
+          "cache_creation_input_tokens",
+          "cache_read_input_tokens",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "model": "string",
+        "timestamp": "string",
+        "sidechain": false
+      },
+      "failure": null,
+      "mainTranscriptNamed": true
+    },
+    "stdout-json-is-a-verdict": {
+      "ended": "completed",
+      "isError": false,
+      "hookRuns": 1,
+      "summaries": 0,
+      "marked": [],
+      "compacted": false,
+      "input": [
+        "custom_instructions",
+        "cwd",
+        "hook_event_name",
+        "prompt_id",
+        "session_id",
+        "transcript_path",
+        "trigger"
+      ],
+      "trigger": "auto",
+      "unansweredAtHook": false,
+      "promptIsTheTurns": true,
+      "replyShape": {
+        "usage": [
+          "cache_creation_input_tokens",
+          "cache_read_input_tokens",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "model": "string",
+        "timestamp": "string",
+        "sidechain": false
+      },
+      "failure": null,
+      "mainTranscriptNamed": true
+    },
+    "block-under-the-hard-limit-at-1m": {
+      "ended": "completed",
+      "isError": false,
+      "hookRuns": 1,
+      "summaries": 0,
+      "marked": [],
+      "compacted": false,
+      "input": [
+        "custom_instructions",
+        "cwd",
+        "hook_event_name",
+        "prompt_id",
+        "session_id",
+        "transcript_path",
+        "trigger"
+      ],
+      "trigger": "auto",
+      "unansweredAtHook": false,
+      "promptIsTheTurns": true,
+      "replyShape": {
+        "usage": [
+          "cache_creation_input_tokens",
+          "cache_read_input_tokens",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "model": "string",
+        "timestamp": "string",
+        "sidechain": false
+      },
+      "failure": null,
+      "mainTranscriptNamed": true
+    },
+    "block-past-the-hard-limit-at-1m": {
+      "ended": "blocking_limit",
+      "isError": true,
+      "hookRuns": 1,
+      "summaries": 0,
+      "marked": [],
+      "compacted": false,
+      "input": [
+        "custom_instructions",
+        "cwd",
+        "hook_event_name",
+        "prompt_id",
+        "session_id",
+        "transcript_path",
+        "trigger"
+      ],
+      "trigger": "auto",
+      "unansweredAtHook": false,
+      "promptIsTheTurns": true,
+      "replyShape": {
+        "usage": [
+          "cache_creation_input_tokens",
+          "cache_read_input_tokens",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "model": "string",
+        "timestamp": "string",
+        "sidechain": false
+      },
+      "failure": {
+        "model": "<synthetic>",
+        "error": "invalid_request",
+        "text": "Prompt is too long"
+      },
+      "mainTranscriptNamed": true
+    },
+    "block-on-a-413": {
+      "ended": "prompt_too_long",
+      "isError": true,
+      "hookRuns": 1,
+      "summaries": 0,
+      "marked": [],
+      "compacted": false,
+      "input": [
+        "custom_instructions",
+        "cwd",
+        "hook_event_name",
+        "prompt_id",
+        "session_id",
+        "transcript_path",
+        "trigger"
+      ],
+      "trigger": "auto",
+      "unansweredAtHook": true,
+      "promptIsTheTurns": true,
+      "replyShape": {
+        "usage": [
+          "cache_creation_input_tokens",
+          "cache_read_input_tokens",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "model": "string",
+        "timestamp": "string",
+        "sidechain": false
+      },
+      "failure": {
+        "model": "<synthetic>",
+        "error": "invalid_request",
+        "text": "Prompt is too long"
+      },
+      "mainTranscriptNamed": true
+    },
+    "pass-on-a-413": {
+      "ended": "completed",
+      "isError": false,
+      "hookRuns": 1,
+      "summaries": 1,
+      "marked": [
+        "summary"
+      ],
+      "compacted": true,
+      "input": [
+        "custom_instructions",
+        "cwd",
+        "hook_event_name",
+        "prompt_id",
+        "session_id",
+        "transcript_path",
+        "trigger"
+      ],
+      "trigger": "auto",
+      "unansweredAtHook": true,
+      "promptIsTheTurns": true,
+      "replyShape": {
+        "usage": [
+          "cache_creation_input_tokens",
+          "cache_read_input_tokens",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "model": "string",
+        "timestamp": "string",
+        "sidechain": false
+      },
+      "failure": null,
+      "mainTranscriptNamed": true
+    },
+    "a-subagent-compacts": {
+      "ended": "completed",
+      "isError": false,
+      "hookRuns": 1,
+      "summaries": 1,
+      "marked": [
+        "summary"
+      ],
+      "input": [
+        "custom_instructions",
+        "cwd",
+        "hook_event_name",
+        "prompt_id",
+        "session_id",
+        "transcript_path",
+        "trigger"
+      ],
+      "trigger": "auto",
+      "unansweredAtHook": false,
+      "promptIsTheTurns": true,
+      "replyShape": {
+        "usage": [
+          "cache_creation_input_tokens",
+          "cache_read_input_tokens",
+          "input_tokens",
+          "output_tokens"
+        ],
+        "model": "string",
+        "timestamp": "string",
+        "sidechain": false
+      },
+      "failure": null,
+      "mainTranscriptNamed": true
+    }
+  }
+}

@@ -1,6 +1,6 @@
 /**
- * `npm run test:reference`'s Claude Code half: the eval checks' self-test (test/eval/selftest.mjs) and the Claude
- * Code record (claude-code.mjs), each checked against the machine, with the same claude handed to both by its path
+ * `npm run test:reference`'s Claude Code half: the eval checks' self-test (test/eval/selftest.mjs), the Claude Code
+ * record (claude-code.mjs) and the PreCompact record (precompact.mjs), each checked against the machine, with the same claude handed to each by its path
  * (npm hands a script's arguments to its last command alone). Both run whatever the first says; the exit is 1 when
  * either fails. Where the self-test cannot run (no sandbox-exec) it says it was not measured and the record is still
  * checked.
@@ -24,7 +24,7 @@ if (!found) {
 process.stdout.write(`claude: ${found.path}${found.file === found.path ? "" : ` (${found.file})`}\n`);
 const rest = at === -1 ? argv : [...argv.slice(0, at), ...argv.slice(at + 2)];
 let failed = false;
-for (const script of [join(HERE, "..", "eval", "selftest.mjs"), join(HERE, "claude-code.mjs")]) {
+for (const script of [join(HERE, "..", "eval", "selftest.mjs"), join(HERE, "claude-code.mjs"), join(HERE, "precompact.mjs")]) {
   const r = spawnSync(process.execPath, [script, "check", "--claude", found.path, ...rest], { stdio: "inherit" });
   if (r.status !== 0) failed = true;
 }

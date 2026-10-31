@@ -235,6 +235,32 @@ export function readRegular(root, path, { limit } = {}) {
   }
 }
 
+/**
+ * The last `limit` bytes of a regular file below `root` (see noLinkBelow) and the size it had, however large it is;
+ * null when nothing is there. A file that grows while it is read is read up to the size it had.
+ * @param {string} root @param {string} path absolute @param {number} limit
+ * @returns {{ bytes: Buffer, size: number } | null}
+ */
+export function readTail(root, path, limit) {
+  const fd = openRegular(root, path, constants.O_RDONLY, "could not be read");
+  if (fd === null) return null;
+  try {
+    const { size } = fstatSync(fd);
+    const bytes = Buffer.allocUnsafe(Math.min(size, limit));
+    let done = 0;
+    while (done < bytes.length) {
+      const n = readSync(fd, bytes, done, bytes.length - done, size - bytes.length + done);
+      if (n === 0) break;
+      done += n;
+    }
+    return { bytes: bytes.subarray(0, done), size };
+  } catch (e) {
+    throw new Error(`${path} could not be read: ${/** @type {Error} */ (e).message}`);
+  } finally {
+    closeSync(fd);
+  }
+}
+
 /** Makes the directories of `path` below `root`, once no link stands among them. @param {string} root @param {string} path */
 function parents(root, path) {
   noLinkBelow(root, path, "was not written");
@@ -317,6 +343,18 @@ export function writeState(root, path, text, how, { sole = false } = {}) {
   } finally {
     closeSync(fd);
   }
+}
+
+/**
+ * Appends `text` to a log of Ennyn's own below `root`; past `max` bytes the file is cut to its newer half, from the
+ * start of a line. Two processes that cut at once may lose a line, which a log can bear.
+ * @param {string} root @param {string} path absolute @param {string} text @param {number} max
+ */
+export function appendBounded(root, path, text, max) {
+  writeState(root, path, text, "append");
+  if ((readTail(root, path, 0)?.size ?? 0) <= max) return;
+  const newer = readTail(root, path, Math.floor(max / 2));
+  if (newer) writeState(root, path, newer.bytes.subarray(newer.bytes.indexOf(0x0a) + 1).toString("utf8"), "replace");
 }
 
 /**

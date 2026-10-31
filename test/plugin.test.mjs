@@ -1,3 +1,4 @@
+import { GIT_CALLS, GIT_MS, SETTLE_MS } from "../adapters/claude-code/compact-boundary.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -304,6 +305,12 @@ test("i18n: every English key exists in every catalog, vars interpolate, fallbac
   assert.throws(() => t("no.such.key"));
 });
 
+test("hooks.json: the PreCompact hook gets both triggers, and its own limits end inside the time Claude Code gives it", () => {
+  const [entry] = JSON.parse(read("hooks/hooks.json")).hooks.PreCompact;
+  assert.equal(entry.matcher, "auto|manual");
+  assert.ok(GIT_MS * GIT_CALLS + SETTLE_MS < entry.hooks[0].timeout * 1000, `${entry.hooks[0].timeout} s`);
+});
+
 test("hooks.json: the PostToolUse matcher sends exactly the file tools the side-copy hook handles, by a quoted command that resolves to it", () => {
   const [entry] = JSON.parse(read("hooks/hooks.json")).hooks.PostToolUse;
   assert.deepEqual(entry.matcher.split("|").sort(), [...FILE_TOOLS].sort());
@@ -387,7 +394,7 @@ function runWired(b, projectDir, extra = {}, log) {
   return wiredHooks().flatMap(({ event, sends, script }) =>
     sends.map((send) => {
       const base = { session_id: "s1", hook_event_name: event, cwd: projectDir ?? b.proj };
-      const input = event === "PostToolUse" ? { ...base, tool_name: send, tool_input: send === "NotebookEdit" ? { notebook_path: b.file } : { file_path: b.file } } : { ...base, source: send };
+      const input = event === "PostToolUse" ? { ...base, tool_name: send, tool_input: send === "NotebookEdit" ? { notebook_path: b.file } : { file_path: b.file } } : event === "PreCompact" ? { ...base, trigger: send, custom_instructions: null } : { ...base, source: send };
       const before = tree(b.box);
       const gitBefore = calls();
       const r = spawnSync(process.execPath, [join(ROOT, script)], {

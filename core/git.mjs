@@ -201,12 +201,13 @@ export function gitBytes(args, { cwd, env = process.env, keepIndex = false, inpu
  * (code ETIMEDOUT), whatever its status: git may have exited, with a code that means something, while a process it
  * started held the output. Every reader looks at `error` before the status; gitError's error has no status.
  * @param {string[]} args
- * @param {{ cwd: string, env?: NodeJS.ProcessEnv, walk?: boolean }} opts
+ * @param {{ cwd: string, env?: NodeJS.ProcessEnv, walk?: boolean, within?: number }} opts `within`: ms a caller with a
+ *   deadline of its own gives the call, never more than GIT_LIMITS allows
  * @returns {GitRun}
  * @typedef {{ status: number | null, signal: string | null, stdout: string, stderr: string, error?: Error }} GitRun
  */
-export function gitRun(args, { cwd, env = process.env, walk = false }) {
-  const limit = walk ? GIT_LIMITS.walk : GIT_LIMITS.call;
+export function gitRun(args, { cwd, env = process.env, walk = false, within = Infinity }) {
+  const limit = Math.min(within, walk ? GIT_LIMITS.walk : GIT_LIMITS.call);
   const r = spawnSync("git", [...FIXED_CONFIG, ...args], { cwd, env: cleanEnv(env, false), encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: limit, killSignal: "SIGKILL" });
   const error = r.error && /** @type {NodeJS.ErrnoException} */ (r.error).code === "ETIMEDOUT" ? stopped(args, limit) : r.error;
   return { status: r.status, signal: r.signal, stdout: r.stdout ?? "", stderr: r.stderr ?? "", ...(error ? { error } : {}) };

@@ -91,6 +91,7 @@ export const GATES = [
       { id: "hooks-every-session", why: "the version record written only where a config is", file: "adapters/claude-code/hooks/plugin-root.mjs", old: "  if (!root || !data) return;", new: "  if (!root || !data || !process.env.ENNYN_CONFIG) return;", pattern: "hooks: in a project without an Ennyn config" },
       { id: "hooks-git-filter", why: "the side-copy and style hooks asking git in every project", file: "adapters/claude-code/project.mjs", old: "  if (!mayHold(projectDir, rel)) return null;\n", new: "", pattern: "hooks: in a project without an Ennyn config" },
       { id: "hooks-record-reads-config", why: "the version record reading the config", file: "adapters/claude-code/hooks/plugin-root.mjs", old: "  const root = process.env.CLAUDE_PLUGIN_ROOT;", new: "  if (process.env.ENNYN_CONFIG) (await import(\"node:fs\")).readFileSync(process.env.ENNYN_CONFIG);\n  const root = process.env.CLAUDE_PLUGIN_ROOT;", pattern: "hooks: the version record reads nothing of the project" },
+      { id: "hooks-compact-triggers", why: "the compaction hook wired for one trigger, or past its own time", file: "hooks/hooks.json", old: '"matcher": "auto|manual"', new: '"matcher": "auto"', pattern: "hooks.json: the PreCompact hook gets both triggers" },
       { id: "hooks-gate-judge", why: "runs that never reach a side copy, so silence proves nothing", file: "test/plugin.test.mjs", old: 'file: join(box, "side", "src", "a.js")', new: 'file: join(box, "proj", "src", "a.js")', pattern: "hooks: in a project without an Ennyn config" },
     ],
     others: {
@@ -308,6 +309,9 @@ export const GATES = [
       { id: "reference-specs-overrides", why: "the root's overrides not read, though npm fetches what they name", file: "checks/deps.mjs", old: "    if (from === \"\") overrides(pkg.overrides);\n", new: "", pattern: "reference: every npm cell compares" },
       { id: "reference-specs-folders", why: "a workspace's package.json read from the lock's copy, not from disk as npm reads it", file: "checks/deps.mjs", old: "if (parentOf(k) === null) top(k, folders(k), packages[k]);", new: "if (parentOf(k) === null) top(k, undefined, packages[k]);", pattern: "reference: every npm cell compares" },
       { id: "reference-git-tilde", why: "a path in the home directory read as GitHub shorthand, which npm reads as a file", file: "checks/deps.mjs", old: '  if (spec.startsWith("~/")) return false;\n', new: "", pattern: "reference: every npm cell compares" },
+      { id: "reference-precompact-limit", why: "a record that no longer shows a block past the hard limit ending the turn", file: "test/reference/precompact.json", old: '"ended": "blocking_limit"', new: '"ended": "completed"', pattern: "reference: the PreCompact record holds" },
+      { id: "reference-precompact-gap", why: "a gap held to no number of the binary: an earlier idle compaction goes unseen", file: "test/reference/precompact.mjs", old: "(idle.fractionFloor * idle.hourMs === gap ? [] :", new: "(true ? [] :", pattern: "reference: the gap the compaction hook waits for" },
+      { id: "reference-precompact-table", why: "a model table compared one way only: a model the binary added goes unseen", file: "test/reference/precompact.mjs", old: "[...new Set([...ours.keys(), ...theirs.keys()])].sort()", new: "[...ours.keys()].sort()", pattern: "reference: the model table is compared both ways" },
       { id: "reference-record-version", why: "a record that names no npm version", file: "test/reference/npm.json", old: '"npm": {"npm":"', new: '"npm": {"npmx":"', pattern: "reference: the npm record names its npm" },
       { id: "reference-judge-same", why: "a judge that takes every reading for npm's", file: "test/reference/npm.mjs", old: 'else out.set(k, { relation: same(claim, n) ? "agree" : "differs", claim, npm: n });', new: 'else out.set(k, { relation: "agree", claim, npm: n });', pattern: "reference control: the judge" },
       { id: "reference-judge-path", why: "a judge that takes any path npm reads for the gate's", file: "test/reference/npm.mjs", old: 'if (at.kind === "file" || at.kind === "directory" || at.kind === "link") return at.path === claim.path;', new: 'if (at.kind === "file" || at.kind === "directory" || at.kind === "link") return true;', pattern: "reference control: each reading is compared" },
@@ -543,6 +547,7 @@ const CLI_ONLY = { reason: "runs the CLI on temporary repositories", allow: '"sc
 export const NOT_GATES = {
   "test/budget.test.mjs": { reason: "runs the CLI on temporary repositories, and on the metrics-log corpus", allow: '"scripts", "ennyn\\.mjs"|"__fixtures__", "metrics-log"' },
   "test/ci.test.mjs": CLI_ONLY,
+  "test/compact-boundary.test.mjs": { reason: "runs the PreCompact hook on temporary projects", allow: '"\\.\\./adapters/claude-code/hooks/compact-boundary\\.mjs", import\\.meta\\.url' },
   "test/bypass.test.mjs": CLI_ONLY,
   "test/classes.test.mjs": CLI_ONLY,
   "test/findings.test.mjs": CLI_ONLY,

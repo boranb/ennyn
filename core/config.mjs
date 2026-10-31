@@ -119,6 +119,8 @@ export const DEFAULTS = Object.freeze({
   },
   // Claude Code keeps a hook's added context to 10,000 characters; the rules and the list after them fit in it.
   sideCopy: { roots: [], maxInjectBytes: 9000 },
+  // Whether the PreCompact hook runs: false turns it off, the hold and the summary's ask both (adapters/claude-code/compact-boundary.mjs).
+  compaction: { defer: true },
   impact: {
     referenceCommand: null,
     // Seconds the reference command may run before it is stopped and S1's references are unmeasured.
