@@ -20,6 +20,7 @@ export const DEFAULTS = Object.freeze({
     changelog: "CHANGELOG.md",
     graph: ".ennyn/graph.json",
     metricsLog: ".ennyn/metrics.jsonl",
+    classes: ".ennyn/classes.json",
     stateDir: ".git/ennyn",
   },
   graph: {
@@ -186,7 +187,7 @@ const NULLABLE = new Map([
 ]);
 
 // Keys that name a file or directory Ennyn reads or writes, resolved against the project directory.
-const PATH_KEYS = ["paths.handoff", "paths.changelog", "paths.graph", "paths.metricsLog", "paths.stateDir", "impact.ceilingRegistry"];
+const PATH_KEYS = ["paths.handoff", "paths.changelog", "paths.graph", "paths.metricsLog", "paths.classes", "paths.stateDir", "impact.ceilingRegistry"];
 
 /**
  * Whether a path leaves the directory it is resolved against, by its spelling as POSIX and Windows read it:

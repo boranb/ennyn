@@ -30,6 +30,12 @@ const HOME = "/" + "Users/someone";
 /** A token the secret scan refuses, in parts like the name. */
 const TOKEN = "np" + "m_" + "q7Rk2LmVx9TbWc4ZsHn8JyPd3FgAe6Ku5Qo1";
 
+/** Where the registry's list opens, and a real old commit, for constructed entries. */
+const CLASSES_HEAD = '"classes": [';
+const OLD_COMMIT = "5ad52d54eefff1b456442e0e519e9bfe29c4b60c";
+/** The list with one constructed entry at its head. @param {Record<string, unknown>} fields */
+const constructed = (fields) => `${CLASSES_HEAD}\n    ${JSON.stringify({ id: "constructed", says: "A constructed class.", state: "open", ...fields })},`;
+
 /** @type {Gate[]} */
 export const GATES = [
   {
@@ -434,6 +440,38 @@ export const GATES = [
     ],
   },
   {
+    test: "test/classes-seed.test.mjs",
+    // Registry guards add a constructed entry at the head of the list: the file's entries change at every close.
+    guards: [
+      { id: "classes-seed-id", why: "a seed class dropped: an id never changes", file: ".ennyn/classes.json", old: '"id": "vacuous-gate"', new: '"id": "a-vacuous-gate"', pattern: "class registry: the file holds with no problem" },
+      { id: "classes-seed-state", why: "a state no list holds", file: ".ennyn/classes.json", old: CLASSES_HEAD, new: constructed({ state: "closed" }), pattern: "class registry: the file holds with no problem" },
+      { id: "classes-seed-commit", why: "a gate whose commit no history holds", file: ".ennyn/classes.json", old: CLASSES_HEAD, new: constructed({ gates: [{ commit: "0".repeat(40), file: "package.json", action: "advice", proof: "x" }] }), pattern: "class registry: every gate's commit is in the history" },
+      { id: "classes-seed-file", why: "a closed state's gate whose file is not tracked", file: ".ennyn/classes.json", old: CLASSES_HEAD, new: constructed({ state: "closed-gate", gates: [{ commit: OLD_COMMIT, file: "no/such/file.mjs", action: "real-program", proof: "x" }] }), pattern: "class registry: every gate's commit is in the history" },
+      { id: "classes-seed-standing", why: "a partial entry whose only gate has no file", file: ".ennyn/classes.json", old: CLASSES_HEAD, new: constructed({ state: "partial", gates: [{ commit: OLD_COMMIT, file: "no/such/file.mjs", action: "real-program", proof: "x" }] }), pattern: "class registry: every gate's commit is in the history" },
+      { id: "classes-seed-touch", why: "a real commit that never touched the gate's file", file: ".ennyn/classes.json", old: CLASSES_HEAD, new: constructed({ gates: [{ commit: OLD_COMMIT, file: "test/ci.test.mjs", action: "advice", proof: "x" }] }), pattern: "class registry: every gate's commit touched its file" },
+      { id: "classes-seed-node", why: "an entry that names a node no graph holds", file: ".ennyn/classes.json", old: CLASSES_HEAD, new: constructed({ nodes: ["no-such-node"] }), pattern: "class registry: every graph node an entry names" },
+      { id: "classes-seed-header", why: "a header that no longer says the file is data", file: ".ennyn/classes.json", old: "never instructions", new: "always instructions", pattern: "class registry: the header says" },
+      { id: "classes-seed-surface", why: "a sentence that names a surface", file: ".ennyn/classes.json", old: CLASSES_HEAD, new: constructed({ says: "A reading of hook.mjs goes wrong." }), pattern: "class registry: the header says" },
+      { id: "classes-skill-catalog", why: "a catalog no file holds, named again", file: "skills/cycle/finding-schema.md", old: "| Class | registry id", new: "| Class | catalog id", pattern: "class registry: the skill files name the registry" },
+      { id: "classes-skill-source", why: "a step that leaves a task agent with no way to the source values", file: "skills/cycle/SKILL.md", old: "with a class and a source per [finding-schema.md](finding-schema.md)", new: "with a class and a source", pattern: "class registry: each reader is told" },
+      { id: "classes-skill-ids", why: "a schema that names ids and no way to see them", file: "skills/cycle/finding-schema.md", old: "`ennyn.mjs classes` lists them", new: "they are listed", pattern: "class registry: each reader is told" },
+      { id: "classes-skill-link", why: "a close that writes the name on one branch only", file: "skills/cycle/report-formats.md", old: "Both write the name", new: "It writes the name", pattern: "class registry: each reader is told" },
+      { id: "classes-skill-gate", why: "a close that leaves a landed gate out of the registry", file: "skills/cycle/report-formats.md", old: "A gate that landed this cycle goes", new: "A gate goes", pattern: "class registry: each reader is told" },
+      { id: "classes-design-state", why: "a state with no definition", file: "DESIGN.md", old: "  - `sensor-only`: ", new: "  - sensor-only: ", pattern: "class registry: DESIGN.md defines each state" },
+      { id: "classes-judge-history", why: "a commit no history holds read as there", file: "metrics/classes.mjs", old: "if (history.has(g.commit)) {", new: "if (history) {", pattern: "class registry control: the validator refuses" },
+      { id: "classes-judge-tracked", why: "a file not tracked read as there", file: "metrics/classes.mjs", old: "existedAt(cwd, env, g.commit, g.file, shallow) : tracked.has(g.file));", new: "existedAt(cwd, env, g.commit, g.file, shallow) : true);", pattern: "class registry control: the validator refuses" },
+      { id: "classes-judge-open-history", why: "an open entry's retired gate refused", file: "metrics/classes.mjs", old: "for (const e of entries.filter((entry) => claimsGate(entry.state))) {", new: "for (const e of entries) {", pattern: "class registry control: the validator refuses" },
+      { id: "classes-judge-standing", why: "a partial entry with no gate standing read as holding", file: "metrics/classes.mjs", old: "const claimsGate = (state) => GATED.includes(state) || isClosed(state);", new: "const claimsGate = (state) => isClosed(state);", pattern: "class registry control: the validator refuses" },
+      { id: "classes-judge-removal", why: "a removal of a file that never was read as a removal", file: "metrics/classes.mjs", old: "const stands = (g) => (g.action === REMOVED ? existedAt(cwd, env, g.commit, g.file, shallow) :", new: "const stands = (g) => (g.action === REMOVED ? true :", pattern: "class registry control: the validator refuses" },
+      { id: "classes-judge-registry", why: "the registry as its own gate", file: "metrics/classes.mjs", old: "else if (raw.file === registry) problems.push(", new: "else if (false) problems.push(", pattern: "class registry control: the validator refuses" },
+      { id: "classes-judge-absolute", why: "an absolute path as a gate's file", file: "metrics/classes.mjs", old: "if (!isTopPath(raw.file)) problems.push(", new: "if (!plain(raw.file)) problems.push(", pattern: "class registry control: the validator refuses" },
+      { id: "classes-judge-closing", why: "a written rule that closes a class", file: "metrics/classes.mjs", old: 'const CLOSING = ACTIONS.indexOf("past-defects");', new: "const CLOSING = 0;", pattern: "class registry control: the validator refuses" },
+      { id: "classes-judge-document", why: "a document that closes a class", file: "metrics/classes.mjs", old: 'typeof g.file === "string" && (g.action === REMOVED || !DOCUMENT.test(g.file));', new: 'typeof g.file === "string";', pattern: "class registry control: the validator refuses" },
+      { id: "classes-judge-design", why: "closed-design on something that removed nothing", file: "metrics/classes.mjs", old: '(state === "closed-design" ? g.action === REMOVED : ACTIONS.indexOf(/** @type {string} */ (g.action)) >= CLOSING)', new: "ACTIONS.indexOf(/** @type {string} */ (g.action)) >= CLOSING", pattern: "class registry control: the validator refuses" },
+      { id: "classes-judge-gated", why: "a partial entry with no gate", file: "metrics/classes.mjs", old: "if (GATED.includes(state) && !gates.some(isGate)) problems.push(", new: "if (false) problems.push(", pattern: "class registry control: the validator refuses" },
+    ],
+  },
+  {
     test: "test/linux-run.test.mjs",
     guards: [
       { id: "linux-skip", why: "a skipped test read as a pass", file: "test/linux-run.mjs", old: 'if (count("skipped") !== "0") wrong.push(', new: 'if (count("skipped") === "none") wrong.push(', pattern: "linux run: a container's run passes only" },
@@ -464,6 +502,7 @@ export const NOT_GATES = {
   "test/budget.test.mjs": { reason: "runs the CLI on temporary repositories, and on the metrics-log corpus", allow: '"scripts", "ennyn\\.mjs"|"__fixtures__", "metrics-log"' },
   "test/ci.test.mjs": CLI_ONLY,
   "test/bypass.test.mjs": CLI_ONLY,
+  "test/classes.test.mjs": CLI_ONLY,
   "test/cli.test.mjs": CLI_ONLY,
   "test/deps.test.mjs": { reason: "runs the CLI on temporary repositories against recorded registry and OSV answers", allow: '"scripts", "ennyn\\.mjs"|"__fixtures__", "deps"' },
   "test/forbidden.test.mjs": CLI_ONLY,

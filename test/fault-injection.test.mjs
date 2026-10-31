@@ -187,7 +187,14 @@ const BARE = join(TEMPLATE, "origin.git");
 git(["init", "-q", "--bare", BARE], { cwd: TEMPLATE });
 git(["remote", "add", "origin", BARE], { cwd: REPO });
 git(["push", "-q", "-u", "origin", "main"], { cwd: REPO });
-commit(5, "feat: use add twice", { "src/use.js": 'import { add } from "./add.js";\nexport const three = add(1, 2);\nexport const four = add(2, 2);\n' });
+commit(5, "feat: use add twice", {
+  "src/use.js": 'import { add } from "./add.js";\nexport const three = add(1, 2);\nexport const four = add(2, 2);\n',
+  // A class registry whose gates doctor checks against the history, the tree and a removal's commit: a read or a git call that fails there must be said.
+  ".ennyn/classes.json": JSON.stringify({ classes: [
+    { id: "add-loses-numbers", says: "A sum is no number.", state: "closed-gate", gates: [{ commit: FIX, file: "test/add.test.js", action: "past-defects", proof: "The test adds." }] },
+    { id: "add-had-a-place", says: "A place held the mistake.", state: "closed-design", gates: [{ commit: FIX, file: "test/add.test.js", action: "remove-the-place", proof: "The place went." }] },
+  ] }),
+});
 // src/add.js and src/use.js change together three times: impact's co-change has an answer to lose.
 for (const [day, n] of [[6, 5], [7, 6]]) {
   commit(day, `feat: step ${n}`, { "src/add.js": `${ADD}export const step${n} = ${n};\n`, "src/use.js": `import { add } from "./add.js";\nexport const three = add(1, 2);\nexport const n${n} = add(${n}, 0);\n` });
@@ -331,6 +338,10 @@ const CASES = [
   { args: ["bypass", "--from", FIRST, "--json"] },
   { args: ["mechanization"] },
   { args: ["mechanization"], cwd: "src", first: true },
+  { args: ["classes"] },
+  { args: ["classes", "--json"] },
+  { args: ["classes"], cwd: "src", first: true },
+  { args: ["classes"], outside: true },
   { args: ["core", "--json"] },
   // The metrics log holds one budget record with no mark: the security audit is due, and the paths are read.
   { args: ["audit"] },

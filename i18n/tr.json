@@ -551,5 +551,12 @@
   "mutate.reason.checkNoAnswer": "ayrıştırma denetimi yanıt vermedi (süresini aştı ya da başlamadı)",
   "mutate.summary": "Öldü {killed}/{total} ({timeout} zaman aşımıyla) · geçersiz {invalid} · uygulanmadı {unapplied} · ayrıştırma denetiminin okumadığı dosyalarda: {unchecked} düştü, {uncheckedSurvived} geçti",
   "mutate.survivors": "Hayatta kalanlar: {list}. Her birine bir test yaz ya da neden eşdeğer olduğunu söyle.",
-  "mutate.uncheckedHint": "{n} mutant hiçbir ayrıştırma denetiminin okumadığı dosyalarda, sayıma girmedi; saymak için --check \"<komut> {file}\" ver."
+  "mutate.uncheckedHint": "{n} mutant hiçbir ayrıştırma denetiminin okumadığı dosyalarda, sayıma girmedi; saymak için --check \"<komut> {file}\" ver.",
+  "classes.none": "henüz sınıf kaydı yok ({path}): denetlenecek bir şey yok",
+  "classes.ok": "sınıf kaydı {path}: toplam {total} ({states}), sorun yok",
+  "classes.bad": "sınıf kaydı {path}: toplam {total} ({states}), sorun {count}, ilki: {first}",
+  "classes.badUnmeasured": "sınıf kaydı {path}: toplam {total} ({states}), sorun {count}, ilki: {first}; commit ve dosyaları ölçülmedi: {error}",
+  "classes.unmeasured": "sınıf kaydı {path}: toplam {total} ({states}); commit ve dosyaları ölçülmedi: {error}",
+  "classes.more": "ve {n} sorun daha",
+  "classes.unread": "sınıf kaydı: {error}"
 }

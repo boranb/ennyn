@@ -551,5 +551,12 @@
   "mutate.reason.checkNoAnswer": "the parse check gave no answer (it ran past its time or did not start)",
   "mutate.summary": "Killed {killed}/{total} ({timeout} by timeout) · invalid {invalid} · not applied {unapplied} · in files no parse check read: {unchecked} failed, {uncheckedSurvived} passed",
   "mutate.survivors": "Survived: {list}. Write a test for each, or say why it is equivalent.",
-  "mutate.uncheckedHint": "{n} mutants are in files no parse check read and stay out of the count; pass --check \"<command> {file}\" to count them."
+  "mutate.uncheckedHint": "{n} mutants are in files no parse check read and stay out of the count; pass --check \"<command> {file}\" to count them.",
+  "classes.none": "no class registry yet ({path}): nothing to check",
+  "classes.ok": "class registry {path}: total {total} ({states}), no problems",
+  "classes.bad": "class registry {path}: total {total} ({states}), problems {count}, first: {first}",
+  "classes.badUnmeasured": "class registry {path}: total {total} ({states}), problems {count}, first: {first}; its commits and files unmeasured: {error}",
+  "classes.unmeasured": "class registry {path}: total {total} ({states}); its commits and files unmeasured: {error}",
+  "classes.more": "and {n} more problems",
+  "classes.unread": "class registry: {error}"
 }

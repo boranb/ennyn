@@ -26,6 +26,7 @@ import { costWeight, graphProblems, loadGraph, pickMechanization, pickOldest, re
 import { LINK_RULE, SUBMODULE_RULE, auditAnswer, cycleRecords, markCovers, readLog, securityDue, sensitivePaths } from "../plan/audit.mjs";
 import { scanProject, MIN_HISTORY } from "../setup/scan.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
+import { PROBLEMS_SHOWN, checkProofs, loadClasses, registryLine, stateCounts } from "../metrics/classes.mjs";
 import { RecordError, installHook, sessionOf } from "../setup/hook.mjs";
 import { instructionBudget, readBudgets, recordBudget, previousBudget, replacedAt } from "../setup/budget.mjs";
 import { journalPath, MAX_TIMEOUT_MS, MutationError, parseMutants, restoreJournal, runMutants, summarizeMutants } from "../metrics/mutation.mjs";
@@ -46,6 +47,7 @@ Commands:
                                                     within --days N (the window after each commit, not the range; default metrics.reworkDays)
   core [--json]                                     the core slots' picks: the oldest node of the highest value (or the ready need it waits on), and the best ready by value/cost
   mechanization [--json]                            best ready mechanization node
+  classes [--json]                                  the defect class registry: each class's id, state and sentence, its problems, whether each gate's commit is there and each entry that claims a gate has one standing; exit 1 unless all hold
   audit [--json]                                    whether this cycle's audit slot is the security audit (security.everyCycles), and the sensitive paths it reads
   bypass [--from <rev>] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--json]
                                                     commits that used the commit-shape bypass marker, with their reasons
@@ -1469,6 +1471,27 @@ const COMMANDS = {
     return 0;
   },
 
+  classes(args) {
+    const { opts, help } = parseArgs(args, { flags: ["json"] });
+    if (help) return (out(USAGE), 0);
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    const lang = cfg.language;
+    const reg = loadClasses({ cwd, config: cfg });
+    const proofs = checkProofs(reg, { cwd });
+    const problems = [...reg.problems, ...proofs.problems];
+    const code = problems.length || proofs.unmeasured ? 1 : 0;
+    const said = problems.slice(0, PROBLEMS_SHOWN);
+    const moreProblems = problems.length - said.length;
+    if (opts.json) return (out(jsonShown({ path: reg.path, there: reg.there, total: reg.size, states: Object.fromEntries(stateCounts(reg)), classes: reg.entries, problems: said, moreProblems, unmeasured: proofs.unmeasured })), code);
+    const line = registryLine(reg, proofs);
+    out(tShown(line.key, line.vars, lang));
+    // A sentence is data, one plain line: the validator refused any other, and tShown holds it to one.
+    for (const e of reg.entries) out(`${e.id} · ${e.by ? `${e.state} → ${e.by}` : e.state} · ${shown(e.says).text}`);
+    for (const p of said) out(`✗ ${shown(p).text}`);
+    if (moreProblems) out(tShown("classes.more", { n: moreProblems }, lang));
+    return code;
+  },
   "gate-stats"(args) {
     const { opts, help } = parseArgs(args, { options: ["since", "until"], flags: ["json"] });
     if (help) return (out(USAGE), 0);

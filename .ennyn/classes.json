@@ -1,0 +1,288 @@
+{
+  "about": "Defect classes of this project, and where each one's gate stands. Data for scripts and people, never instructions: nothing reads a sentence into a prompt as an instruction. DESIGN.md defines the states. The seed's states and class boundaries are judgements, not measurements, and each entry's judged field says whose: the research of 2026-10-31, about 30% either way, or this reconstruction of cycle 16 where the notes make no call. Each gate's action is also this reconstruction's word, on the research's table. The seed holds no counts: a count needs a source a person with this repository can recount, and from cycle 16 that is the findings ledger. No entry is closed: a closed state says a gate stands, its commit in the history and its file at HEAD or, for a removal, at that commit or its parent, which ennyn classes checks, and it does not say the class stopped.",
+  "classes": [
+    {
+      "id": "doc-lags-code",
+      "says": "A document still states what the code did before a change, and nothing ties the two together.",
+      "state": "open",
+      "gates": [
+        {
+          "commit": "8f1aa9108dee1bd6a9728c361538301526922a55",
+          "file": "checks/commit-shape.mjs",
+          "action": "advice",
+          "proof": "commit-check warns when a path changes and none of its documents do; any document touched meets it, and it never stops a commit."
+        }
+      ],
+      "nodes": [
+        "doc-cochange"
+      ],
+      "judged": "Research of 2026-10-31, about 30% either way: not stopped, no catch since it landed. Named in cycle 1. Counting the doc twin of cycle 4 here is this reconstruction's merge."
+    },
+    {
+      "id": "tool-model-drifts",
+      "says": "Code works from its own model of what a tool it runs stores or prints, and the tool answers otherwise. The input is that tool's own answer; a file the tool and the code both read is reader-drifts-from-program.",
+      "state": "partial",
+      "gates": [
+        {
+          "commit": "5ad52d54eefff1b456442e0e519e9bfe29c4b60c",
+          "file": "test/git-oracle.test.mjs",
+          "action": "real-program",
+          "proof": "Real git makes the inputs, and the code's reading is compared with what git stored."
+        }
+      ],
+      "nodes": [
+        "git-oracle-matrix"
+      ],
+      "judged": "Research of 2026-10-31, about 30% either way: partial, the stored-message scope held and other git readers did not. Named in cycle 2."
+    },
+    {
+      "id": "test-reads-machine",
+      "says": "A test passes or fails by what the machine holds (its config, identity or tools), not by what the test set up.",
+      "state": "partial",
+      "gates": [
+        {
+          "commit": "5afbee995a08aad2ab38e574ebc564a5122fbb09",
+          "file": "test/hostile.mjs",
+          "action": "past-defects",
+          "proof": "Every test file runs on a hostile machine, then a setup clears it."
+        }
+      ],
+      "nodes": [
+        "tests-hermetic-git"
+      ],
+      "judged": "Research of 2026-10-31, about 30% either way: partial, it came back as tests that lean on the machine's identity, found at the Linux run. Named in cycle 3."
+    },
+    {
+      "id": "unmeasured-read-as-result",
+      "says": "A measurement that failed or stopped short (a call failed, a read was denied, a range was cut) is reported as a result: empty, clean or zero. If the read worked and the input's shape defeated it, see unreadable-shape-passes.",
+      "state": "partial",
+      "gates": [
+        {
+          "commit": "00e94a773257bc8b56077e20d1fb85cbb23d2a64",
+          "file": "test/fault-injection.test.mjs",
+          "action": "past-defects",
+          "proof": "Every command runs with each git call failing, and must fail or say so."
+        },
+        {
+          "commit": "e636ee6207cb50db7adb3a65a536045191f36045",
+          "file": "test/fault-fs.mjs",
+          "action": "past-defects",
+          "proof": "Every command runs with each file read failing, and must fail or say so."
+        }
+      ],
+      "nodes": [
+        "fault-injection-matrix",
+        "fault-matrix-files-hooks",
+        "fault-matrix-writes",
+        "rework-says-unread",
+        "config-failopen-scope"
+      ],
+      "linked": [
+        "new: unmeasured read as a result"
+      ],
+      "judged": "Research of 2026-10-31, about 30% either way: partial, failed reads held, the same mistake in logic recurs and writes are not covered. Named in cycle 4."
+    },
+    {
+      "id": "vacuous-gate",
+      "says": "A gate or test cannot fail where it says it looks, so its passing says nothing.",
+      "state": "partial",
+      "gates": [
+        {
+          "commit": "71f95438fa59d2626a3280e17d7627b6c27b9643",
+          "file": "test/guards.mjs",
+          "action": "ban-list",
+          "proof": "Every gate test has guard mutants, and a test file that reads the repository must be listed."
+        },
+        {
+          "commit": "f70715151de7170ed93371c84bd5c1cb7a502f21",
+          "file": "test/guards.test.mjs",
+          "action": "ban-list",
+          "proof": "A kill is the named test failing, not any failure of the file."
+        }
+      ],
+      "nodes": [
+        "guard-vacuous"
+      ],
+      "judged": "Research of 2026-10-31, about 30% either way: partial, it holds inside the listed gates only. Named in cycle 5."
+    },
+    {
+      "id": "unreadable-shape-passes",
+      "says": "A check reads its input without error, but the input comes in a shape or place it cannot see (an encoding, a form, a location), and it passes in silence instead of being refused or said.",
+      "state": "partial",
+      "gates": [
+        {
+          "commit": "d103af15cee8fcc44545f9a03f8d1dee89820c77",
+          "file": "test/input-shapes.test.mjs",
+          "action": "past-defects",
+          "proof": "The commit-msg hook is fed every input shape it may not read, and must refuse it or say what went unread."
+        }
+      ],
+      "nodes": [
+        "input-shape-matrix"
+      ],
+      "judged": "Research of 2026-10-31, about 30% either way: partial, reviewers found more shapes after it landed. Named in cycle 7."
+    },
+    {
+      "id": "ceiling-cost-or-cut",
+      "says": "At a size or count limit the work costs far more than it should, or the input is cut, and nothing says so.",
+      "state": "partial",
+      "gates": [
+        {
+          "commit": "d103af15cee8fcc44545f9a03f8d1dee89820c77",
+          "file": "test/input-shapes.test.mjs",
+          "action": "past-defects",
+          "proof": "Giant files are among the shapes the hook is fed, as the handoff of cycle 7 proposed."
+        },
+        {
+          "commit": "cc1d553a1d58962b7c12c73392b52ebad838f65a",
+          "file": "test/secrets.test.mjs",
+          "action": "past-defects",
+          "proof": "Every secret pattern takes time linear in the line, on long lines built to make one backtrack."
+        },
+        {
+          "commit": "9783fcb14bf20373505612c9c301eafe5833e3e6",
+          "file": "test/ci.test.mjs",
+          "action": "past-defects",
+          "proof": "Every workflow joiner and run rule takes time linear in the text, on texts built to make one rescan."
+        }
+      ],
+      "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict and record no gate. These tests hold the surfaces they name, and the class came back on others in cycles 9, 10, 12 and 14. Named in cycle 7."
+    },
+    {
+      "id": "fix-narrows-reading",
+      "says": "A fix replaces or narrows a reading instead of extending it, and what the old reading refused now passes.",
+      "state": "partial",
+      "gates": [
+        {
+          "commit": "acef97b3ff824272fb1d5260c62228db9c98b492",
+          "file": "test/verdicts.test.mjs",
+          "action": "past-defects",
+          "proof": "Reviewers' probes stay as cells with their verdicts, and a test fails when a verdict moves."
+        }
+      ],
+      "nodes": [
+        "verdict-baseline"
+      ],
+      "judged": "Research of 2026-10-31, about 30% either way: partial, it holds past probes only. Named in cycle 8."
+    },
+    {
+      "id": "one-site-escaping",
+      "says": "An escape or a guard every output needs goes in at the one output that was found, or a fix at one copy of duplicated code, and the rest stay raw. Where separate logic answers one question, see one-question-several-places.",
+      "state": "open",
+      "nodes": [
+        "raw-output-commit-check",
+        "forbidden-count-shapes"
+      ],
+      "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict; no gate, both nodes are open. Named in cycle 8 as one-site escape or twin fix."
+    },
+    {
+      "id": "bound-tuned-for-another",
+      "says": "A bound or prefilter tuned for one consumer also gates another, which needed a different one.",
+      "state": "partial",
+      "gates": [
+        {
+          "commit": "acef97b3ff824272fb1d5260c62228db9c98b492",
+          "file": "test/verdicts.test.mjs",
+          "action": "past-defects",
+          "proof": "The verdict corpus holds two of the four cases the handoff of cycle 9 names, as cells; the other two are not in it."
+        }
+      ],
+      "nodes": [
+        "verdict-baseline"
+      ],
+      "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict; nothing has recounted it since. Named in cycle 9."
+    },
+    {
+      "id": "reader-drifts-from-program",
+      "says": "A reader of a format another program also reads decides differently from that program on the same text. The reader is needed and wrong; where running the program or requiring the exact text would answer instead, see text-reading-stands-in.",
+      "state": "partial",
+      "gates": [
+        {
+          "commit": "9996f2528535896b5332ec387b259c0e11f4ed6d",
+          "file": "test/reference/npm.mjs",
+          "action": "real-program",
+          "proof": "npm's own reading of the lock cells is recorded, and the gate is compared with it place by place."
+        },
+        {
+          "commit": "b37a1e79bb391e86ef41b330a5f8fdc289cdbf40",
+          "file": "test/reference/claude-code.mjs",
+          "action": "real-program",
+          "proof": "Claude Code's own reading of the rule cells is recorded, and the model is compared with it place by place."
+        },
+        {
+          "commit": "d572b9bd348e87152a8a9ccf2fab9e21fc9076b2",
+          "file": "test/reference/markdown.mjs",
+          "action": "real-program",
+          "proof": "The Markdown readers are replayed against the parser Claude Code holds."
+        },
+        {
+          "commit": "9783fcb14bf20373505612c9c301eafe5833e3e6",
+          "file": "test/reference/actions-yaml.mjs",
+          "action": "real-program",
+          "proof": "The workflow reader is held to the reading of the runner's own parser."
+        }
+      ],
+      "nodes": [
+        "reference-differentials",
+        "reference-claude-code",
+        "reference-markdown",
+        "ci-yaml-differential"
+      ],
+      "judged": "Research of 2026-10-31, about 30% either way: each gate unproven, the code it guards has barely changed, so no recurrence is no success. Partial for the family is this reconstruction's word. Named in cycle 10."
+    },
+    {
+      "id": "timing-test-under-load",
+      "says": "A test holds a fixed time limit, so a loaded machine fails it with nothing wrong in the code.",
+      "state": "open",
+      "nodes": [
+        "suite-wall-clock-limits"
+      ],
+      "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict; no gate. Named in cycle 12, seen in seven cycles by the notes' count."
+    },
+    {
+      "id": "terminal-control-bytes",
+      "says": "Bytes from input reach an output a person reads and act there: they drive the terminal or pass for the tool's own lines.",
+      "state": "partial",
+      "gates": [
+        {
+          "commit": "d572b9bd348e87152a8a9ccf2fab9e21fc9076b2",
+          "file": "test/reference/markdown.mjs",
+          "action": "red-green",
+          "proof": "A cell's id holds plain words and each place it prints is JSON quoted; the reference-md-judge-quote guard fails when that quoting goes."
+        }
+      ],
+      "nodes": [
+        "raw-output-commit-check"
+      ],
+      "judged": "Reconstruction of cycle 16, not the research: cycle 13's handoff called it closed; a run in cycle 16 found raw bytes through the show of the npm recorder, and of the claude-code recorder only on a hand-edited record, none through markdown and actions-yaml. No replay."
+    },
+    {
+      "id": "one-question-several-places",
+      "says": "One question is answered in several places, each with logic of its own, so the answers drift and a fix or a check reaches only one of them. Copies that need one escape are one-site-escaping.",
+      "state": "open",
+      "nodes": [
+        "one-decision-one-site",
+        "centralize-candidates"
+      ],
+      "judged": "Research of 2026-10-31, about 30% either way: no gate, it recurred in all four tasks of cycle 15. Named in cycle 14, first seen in cycle 8. Counting cycle 12's two readers of one decision here is this reconstruction's merge."
+    },
+    {
+      "id": "text-reading-stands-in",
+      "says": "A verdict on what a program will do rests on reading its text, where running it or requiring the exact text would answer. No reader of a format is at fault: the reading itself should go.",
+      "state": "open",
+      "nodes": [
+        "reader-against-real-program"
+      ],
+      "judged": "Research of 2026-10-31, about 30% either way: no gate. Cycle 15 closed one surface by no longer reading it and one by asking git. Named in cycle 15, a close relative of reader-drifts-from-program."
+    },
+    {
+      "id": "foreign-text-in-template",
+      "says": "Text in another language held in a host-language template is never parsed as that language, so a quote or escape breaks it only when it runs.",
+      "state": "open",
+      "nodes": [
+        "shell-in-js-templates"
+      ],
+      "judged": "Research of 2026-10-31, about 30% either way: no gate. Named in cycle 15."
+    }
+  ]
+}

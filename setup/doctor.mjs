@@ -24,6 +24,7 @@ import { ciSet, ciText } from "../checks/ci.mjs";
 import { t } from "../core/i18n.mjs";
 import { literalGlob, matchAny } from "../core/glob.mjs";
 import { secretsOff } from "../checks/secrets.mjs";
+import { checkProofs, loadClasses, registryLine } from "../metrics/classes.mjs";
 
 /**
  * @typedef {{ level: "ok" | "warn" | "fail" | "unmeasured", key: string, vars: import("../core/i18n.mjs").Vars }} DoctorItem
@@ -405,6 +406,15 @@ export async function checkSetup({ cwd, env = process.env, self = OWN_ROOT }) {
     readRegular(cwd, resolve(cwd, config.paths.handoff));
   } catch (e) {
     add("fail", "doctor.handoffBad", { error: /** @type {Error} */ (e).message });
+  }
+
+  // One line on the class registry; none there yet is fine. A file refused or unreadable fails: nothing can read it.
+  try {
+    const reg = loadClasses({ cwd, config });
+    const line = registryLine(reg, checkProofs(reg, { cwd }));
+    add(line.level, line.key, line.vars);
+  } catch (e) {
+    add("fail", "classes.unread", { error: oneLine(e) });
   }
 
   const cm = config.commitMsg;

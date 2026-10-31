@@ -48,6 +48,29 @@ const isDevNull = (/** @type {import("node:fs").BigIntStats} */ st) => {
   return st.isCharacterDevice() && devNull !== null && st.rdev === devNull;
 };
 
+/** What a read past `limit` says. @param {number} limit */
+const tooLarge = (limit) => `larger than ${limit % (1024 * 1024) ? `${limit} bytes` : `${limit / 1024 / 1024} MB`}`;
+
+/**
+ * The bytes of `fd` from where it stands, to its end and not to the size the file had: it may grow while read. It
+ * stops at `limit` bytes and one more, so a result longer than `limit` is a file past it.
+ * @param {number} fd @param {number} limit
+ * @returns {Buffer}
+ */
+function readUpTo(fd, limit) {
+  /** @type {Buffer[]} */
+  const parts = [];
+  let total = 0;
+  while (total <= limit) {
+    const part = Buffer.allocUnsafe(Math.min(64 * 1024, limit + 1 - total));
+    const n = readSync(fd, part, 0, part.length, null);
+    if (n === 0) break;
+    parts.push(part.subarray(0, n));
+    total += n;
+  }
+  return Buffer.concat(parts);
+}
+
 /**
  * A file's text, or null when nothing is there; a file that is there but cannot be read throws, naming the
  * path (Node's EISDIR message names none). A file found in the project is read only when it is a regular file
@@ -97,22 +120,8 @@ export function readIfThere(path, { limit = READ_LIMIT, head = false, given = fa
   try {
     // Looked at again through the descriptor: what was checked is what is read.
     if (!fstatSync(fd).isFile()) throw refused("ENOTREG", "not a regular file (a pipe, a socket or a device)");
-    /** @type {Buffer[]} */
-    const parts = [];
-    let total = 0;
-    // Read to the end, not to the size the file had: it may grow while read, and past the limit it is refused.
-    for (;;) {
-      const part = Buffer.allocUnsafe(Math.min(64 * 1024, limit + 1 - total));
-      const n = readSync(fd, part, 0, part.length, null);
-      if (n === 0) break;
-      parts.push(part.subarray(0, n));
-      total += n;
-      if (total > limit) {
-        if (head) break;
-        throw refused("EFBIG", `larger than ${limit % (1024 * 1024) ? `${limit} bytes` : `${limit / 1024 / 1024} MB`}`);
-      }
-    }
-    const bytes = Buffer.concat(parts);
+    const bytes = readUpTo(fd, limit);
+    if (bytes.length > limit && !head) throw refused("EFBIG", tooLarge(limit));
     return (head ? bytes.subarray(0, limit) : bytes).toString("utf8");
   } catch (err) {
     if (/** @type {Error} */ (err).message.startsWith(`${path} could not be read: `)) throw err;
@@ -204,17 +213,23 @@ function openRegular(root, path, flags, what) {
 
 /**
  * A file's bytes, read only as a regular file below `root` (see noLinkBelow); null when nothing is there. A path
- * outside `root`, a link below it, a FIFO, a device or a directory is refused, naming the path: "could not be read: …".
+ * outside `root`, a link below it, a FIFO, a device or a directory is refused, naming the path: "could not be read: …",
+ * and so is a file past `limit` bytes when one is given (code EFBIG).
  * @param {string} root @param {string} path absolute
+ * @param {{ limit?: number }} [opts]
  * @returns {Buffer | null}
  */
-export function readRegular(root, path) {
+export function readRegular(root, path, { limit } = {}) {
   const fd = openRegular(root, path, constants.O_RDONLY, "could not be read");
   if (fd === null) return null;
   try {
-    return readFileSync(fd);
+    if (limit === undefined) return readFileSync(fd);
+    const bytes = readUpTo(fd, limit);
+    if (bytes.length > limit) throw Object.assign(new Error(`EFBIG: ${tooLarge(limit)}`), { code: "EFBIG" });
+    return bytes;
   } catch (e) {
-    throw new Error(`${path} could not be read: ${/** @type {Error} */ (e).message}`);
+    const err = /** @type {NodeJS.ErrnoException} */ (e);
+    throw Object.assign(new Error(`${path} could not be read: ${err.message}`), { code: err.code });
   } finally {
     closeSync(fd);
   }
