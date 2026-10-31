@@ -2,9 +2,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, readFileSync, readdirSync, readlinkSync, existsSync, statSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, readFileSync, readdirSync, readlinkSync, existsSync, rmSync, statSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname, basename } from "node:path";
+import { join, dirname, basename, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { git } from "../core/git.mjs";
 import { ConfigError, loadConfig } from "../core/config.mjs";
@@ -65,6 +65,74 @@ test("plugin: every agent and skill has front matter a YAML parser reads, named 
 
 test("plugin: every SKILL.md stays under 8 KB (DESIGN.md: skills are read whole, every time)", () => {
   for (const { path } of skills) assert.ok(statSync(join(ROOT, path)).size < 8 * 1024, `${path}: ${statSync(join(ROOT, path)).size} bytes`);
+});
+
+/** The tree as test/guards.test.mjs cloneOfTree reads it: what git lists, tracked or not, that is there. @param {string} root @param {string} folder */
+const treeFiles = (root, folder) =>
+  git(["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", folder], { cwd: root })
+    .split("\0")
+    .filter((f) => f && existsSync(join(root, f)));
+
+test("plugin: a skill links every file of its tree beside its SKILL.md, and every link in its files leads to a file", () => {
+  // These files load on demand: one the SKILL.md does not name is never read, one a skill names and is gone is a step that cannot be taken.
+  // The tree, not the index or the folder: a file not yet added counts, a .DS_Store does not. Read as a model reads them, so a link in a fence still names the file.
+  const box = mkdtempSync(join(tmpdir(), "pl-tree-"));
+  git(["init", "-q"], { cwd: box });
+  mkdirSync(join(box, "s"));
+  for (const [f, text] of [[".gitignore", "ignored\n"], ["s/kept", ""], ["s/removed", ""]]) writeFileSync(join(box, f), text);
+  git(["add", "-A"], { cwd: box });
+  rmSync(join(box, "s/removed"));
+  for (const f of ["s/new", "s/ignored"]) writeFileSync(join(box, f), "");
+  assert.deepEqual(treeFiles(box, "s").sort(), ["s/kept", "s/new"]);
+
+  const linked = (/** @type {string} */ text) => [...new Set([...text.matchAll(/\]\((?![a-z]+:)([^)#\s]+)/g)].map((m) => posix.normalize(m[1])))].sort();
+  assert.deepEqual(linked("[b](./b.md) [a](a.md#rounds) [b](b.md) [site](https://example.com/c.md)"), ["a.md", "b.md"]);
+  for (const { path, name } of skills) {
+    const folder = `skills/${name}`;
+    const files = treeFiles(ROOT, folder);
+    assert.deepEqual(linked(read(path)), files.filter((f) => f !== path).map((f) => posix.relative(folder, f)).sort(), path);
+    for (const f of files) for (const target of linked(read(f))) assert.ok(existsSync(join(ROOT, dirname(f), target)), `${f}: ${target}`);
+  }
+});
+
+test("plugin: the snapshot script in task-brief.md keeps an unfinished tree in a ref, and fails where it keeps nothing", () => {
+  const script = /```sh\n([\s\S]*?)```/.exec(read("skills/cycle/task-brief.md"))?.[1].replace(/^ {2}/gm, "");
+  assert.ok(script, "the script is in the brief");
+  const dir = mkdtempSync(join(tmpdir(), "pl-snapshot-"));
+  const file = join(dir, "snapshot.sh");
+  writeFileSync(file, script);
+  const repo = join(dir, "repo");
+  mkdirSync(repo);
+  git(["init", "-q"], { cwd: repo });
+  writeFileSync(join(repo, ".gitignore"), "ignored\n");
+  writeFileSync(join(repo, "tracked"), "a\n");
+  git(["add", "-A"], { cwd: repo });
+  const who = ["-c", "user.name=t", "-c", "user.email=t@t"];
+  git([...who, "commit", "-q", "-m", "base"], { cwd: repo });
+  writeFileSync(join(repo, "tracked"), "b\n");
+  writeFileSync(join(repo, "untracked"), "c\n");
+  writeFileSync(join(repo, "ignored"), "d\n");
+  const status = git(["status", "--porcelain"], { cwd: repo });
+  const head = git(["rev-parse", "HEAD"], { cwd: repo });
+  const run = (/** @type {string[]} */ args, /** @type {Record<string, string>} */ env = {}) =>
+    spawnSync("sh", [file, ...args], { cwd: repo, encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", ...env } });
+  const refs = () => git(["for-each-ref", "--format=%(refname) %(objectname)", "refs/snapshot"], { cwd: repo });
+
+  assert.notEqual(run([]).status, 0, "no name: no silent success");
+  assert.equal(refs(), "");
+
+  assert.equal(run(["t1"]).status, 0);
+  assert.equal(git(["show", "refs/snapshot/t1:tracked"], { cwd: repo }).trim(), "b");
+  assert.deepEqual(git(["ls-tree", "--name-only", "refs/snapshot/t1"], { cwd: repo }).trim().split("\n"), [".gitignore", "tracked", "untracked"]);
+  assert.equal(git(["rev-parse", "refs/snapshot/t1^"], { cwd: repo }), head);
+  assert.equal(git(["status", "--porcelain"], { cwd: repo }), status);
+  assert.equal(git(["rev-parse", "HEAD"], { cwd: repo }), head);
+
+  const kept = refs();
+  writeFileSync(join(repo, "tracked"), "e\n");
+  assert.notEqual(run(["t1"], { GIT_AUTHOR_NAME: "" }).status, 0, "git refuses the identity: the script says so");
+  assert.notEqual(run(["no such"]).status, 0, "git refuses the name: the script says so");
+  assert.equal(refs(), kept, "and the last snapshot stands");
 });
 
 test("plugin: the fix label /ennyn:init writes reads every form the commit gate admits as the fix type", () => {

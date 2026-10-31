@@ -17,6 +17,8 @@ Write reports in the project's `language`.
 
 `**Task N done:** [result] | Impact: [summary or not needed — why] | Review-Rounds: [N] | Mutation: [first a/b · last c/d] | Checks: [passed] | Commit: [subject or "no commit" + why]`
 
+`**Task N stopped:** [remaining failure, or what could not run] | Failed: [count] · agents: [N] | Root cause: [likely] | Changed: [files] | Kept: [branch, brief] | Next: [safest step]`
+
 ## End of cycle
 
 ```md
@@ -27,6 +29,7 @@ Write reports in the project's `language`.
 ### Documents       → documents updated
 ### Audit           → feature or security audit / why chosen / result / next candidate
 ### Convergence     → format below
+### Stopped         → none, or each stopped task's line
 ### Remaining risks → none, or each risk with its permanent home
 ### Push            → N commits waiting; approval asked
 ```

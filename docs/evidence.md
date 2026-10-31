@@ -73,8 +73,9 @@ Twelve studies: six on the origin project, six on outside sources.
 - Always-loaded rule text was 72-74% of a session's first request and a median 27% of context in later turns. The project's rule text measured 1.98 bytes per token; a size check that assumed 2.4 undercounted by 21%.
 - **Path-scoped rules did not load in side copies** (git worktrees, plain copies). In the main tree a Read loaded them in 24 of 24 cases; in side copies, 4 times in more than 2,000 turns. A controlled headless session confirmed it. One cycle wrote seven code commits with no rule in context; it was the cycle with the most "same decision in several places" defects.
 - Reading files in parallel could save at most 12.7% of task turns (about 3 minutes per task). A small lever.
+- Earlier cycles ran tasks in forks of the orchestrator; the second project's orchestrator stood at about 652K tokens in the middle of its cycle 2. In cycle 15 tasks ran in fresh agents on a written brief; two tasks that reached a third correction (566K and 533K tokens) moved to a new agent with one consolidated brief, and the first passed both reviewers' checks at once. Two tasks, one author: an example, not a measurement.
 
-→ The side-copy hook maps a side-copy path back to the project and injects the matching rules (`hooks/hooks.json`, `adapters/claude-code/`).
+→ The side-copy hook maps a side-copy path back to the project and injects the matching rules (`hooks/hooks.json`, `adapters/claude-code/`). Each task runs in a fresh agent on a written brief (`skills/cycle/task-brief.md`).
 
 ## Speed and rework
 
@@ -164,7 +165,7 @@ A third project, by the same author, covered those the same day with init and on
 | Fakes | Keeping fakes in sync with the real thing is the main difficulty (Spadini 2017/2019). 36% of agent test commits add mocks, 26% of human ones (Hora & Robbes 2026). | Case study |
 | Bad fixes | 14.8-24.4% of post-release fixes are incorrect (Yin et al., FSE 2011). 29.6% of test-passing agent patches differ from the human patch, ~11% are clearly wrong (Wang, Pradel, Liu, ICSE 2026). | Case study / experimental |
 | Self-correction | Without outside feedback, self-correction does not improve and sometimes degrades (Huang et al., ICLR 2024); with a reliable outside signal it helps (Kamoi et al. 2024). | Experimental |
-| Long context | Reliability drops as context grows (Chroma 2025, Du 2025, NoLiMa); successful agent traces mostly stay under 20-30K tokens (Raju 2026). | Experimental |
+| Long context | Reliability drops as context grows (Chroma 2025, Du 2025, NoLiMa); successful agent traces mostly stay under 20-30K tokens (Raju 2026). Multi-turn conversations: an average drop of 39% across six generation tasks, and the authors advise a new conversation that repeats the information (Laban et al. 2025). | Experimental |
 | Instruction density | At 500 instructions the best model followed 68% (IFScale 2025). Context files add no significant success and raise cost by more than 20% (Gloaguen et al. 2026). | Experimental |
 | AI and delivery | AI amplifies: without strong tests and small batches, instability rises (DORA 2025). Review time +441% (Faros 2026). | Survey / case study |
 
@@ -181,7 +182,7 @@ Practitioners point the same way: a short instruction file with rules moved into
 ## Sources
 
 - Defects and review: Porter, Siy, Toman, Votta, TSE 1997 · Porter, Votta, Basili, TSE 1995 · Biffl et al. 2001 · Mays et al., IBM Systems Journal 1990 · Fagan 1976 · Juergens et al., ICSE 2009 · Yin et al., FSE 2011 · Park et al., MSR 2012 / EMSE 2016 · Wang, Pradel, Liu, ICSE 2026 (arXiv 2503.15223) · Huang et al., ICLR 2024 · Kamoi et al., TACL 2024 · Song, arXiv 2603.16244 · Shukla, arXiv 2506.11022 · Sadowski et al., CACM 2018.
-- Agents and context: Gloaguen et al., arXiv 2602.11988 · IFScale, arXiv 2507.11538 · Chroma, "Context Rot" 2025 · Raju, arXiv 2602.16069 · Fan, arXiv 2609.20804 · CodePlan, FSE 2024 · ProMax, arXiv 2608.09802 · Stengg, arXiv 2512.19481 · Hora & Robbes, MSR 2026 (arXiv 2602.00409).
+- Agents and context: Laban et al., arXiv 2505.06120 · Du et al., arXiv 2510.05381 · Gloaguen et al., arXiv 2602.11988 · IFScale, arXiv 2507.11538 · Chroma, "Context Rot" 2025 · Raju, arXiv 2602.16069 · Fan, arXiv 2609.20804 · CodePlan, FSE 2024 · ProMax, arXiv 2608.09802 · Stengg, arXiv 2512.19481 · Hora & Robbes, MSR 2026 (arXiv 2602.00409).
 - Testing: Spadini et al., MSR 2017 / EMSE 2019 · Ravi & Coblenz, OOPSLA 2025 · Wang & Stolee, FSE 2018 · Wang et al., MSR 2020 · Petrović et al., ICSE 2021 · Zimmermann et al., ICSE 2004.
 - Process: DORA 2025 · METR 2025, Feb 2026 · Faros 2025/2026 · GitClear 2025/2026.
 - Practitioners: Every, compound engineering · OpenAI, "Harness engineering" (Feb 2026) · Anthropic, "Effective harnesses for long-running agents" (Nov 2025), "Harness design for long-running apps" (Mar 2026), "Effective context engineering" (Sep 2025) · Stripe, Minions part 2 · Cognition, multi-agent writing · Cursor, self-driving codebases and Bugbot learned rules · Ralph (Jul 2025) · beads (Oct 2025) · BMAD v6 · GitHub Spec Kit · Kiro.

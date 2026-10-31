@@ -37,7 +37,7 @@ First look for its **missing row**: a reader, twin, path, newly accepted input, 
 - **Round 1:** full review.
 - **Round 2:** only the diff of round-one fixes and the impact-table delta; the same reviewer continues (its context and corpus are kept). Question: "what did this fix open?"
 - **Round 3+:** only when an independent signal (test, mutation run, real-system measurement) shows a new class; the reason goes into the commit body.
-- **Left after round 2:** a critical or high finding is still fixed; a failing-then-passing test proves the fix, not another round. If no test can prove it, the author stops and asks the user.
+- **Left after round 2:** a critical or high finding is still fixed; a failing-then-passing test proves the fix, not another round. If no test can prove it, stop and ask the user.
 
 ## Report
 

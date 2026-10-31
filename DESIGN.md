@@ -2,7 +2,7 @@
 
 ## What this is
 
-A development method for coding agents, packaged so any project can adopt it. The method runs in **cycles of four tasks** picked from a **work graph**: two core tasks, one **mechanization** task (turns a recurring defect class into a gate, test, type or lint), and one **legacy audit** (re-checks a finished feature). Every task follows the same protocol: read → impact table (for risky changes) → implement → test → mutation pass → bounded adversarial review → commit. Every cycle ends with a **convergence** report (how many findings were real escapes, fix-introduced, pre-existing, or caught by a gate) and a handoff.
+A development method for coding agents, packaged so any project can adopt it. The method runs in **cycles of four tasks** picked from a **work graph**: two core tasks, one **mechanization** task (turns a recurring defect class into a gate, test, type or lint), and one **legacy audit** (re-checks a finished feature). Every task runs in a fresh agent on a written brief and follows the same protocol: read → impact table (for risky changes) → implement → test → mutation pass → bounded adversarial review → commit. Every cycle ends with a **convergence** report (how many findings were real escapes, fix-introduced, pre-existing, or caught by a gate) and a handoff.
 
 The method was extracted from a production project where it was measured (2026-10): see `docs/evidence.md`.
 
@@ -14,13 +14,14 @@ The method was extracted from a production project where it was measured (2026-1
 4. **Instruction text is a budget.** Always-loaded instructions are measured in tokens and only shrink.
 5. **Small batches.** The cycle ends by asking for push approval, with a Claude Code ask rule as the backstop (`setup/permissions.mjs`); a warning fires above a threshold of unpushed commits.
 6. **Measure the loop itself.** Findings carry a class and a source when they are written; convergence, rework (SZZ-style) and review-round yield are computed by scripts, not estimated.
+7. **A task gets a fresh context.** Each task runs in a fresh agent on a written brief, not in a fork of the orchestrator's context; the orchestrator keeps the plan, the verdicts and the landing. A verification that sends a task back counts against the task, across agents, its first review round excepted: the second failure restarts it once in a fresh agent on one consolidated brief, the third or later stops that task, and a landed task is closed (`skills/cycle/task-brief.md`). A host with no subagents has no fresh context, and Ennyn has not run a cycle on one.
 
 ## Layout
 
 ```
 .claude-plugin/plugin.json          Claude Code plugin manifest
 .claude-plugin/marketplace.json     single-repo marketplace (source "./")
-skills/                             the method (SKILL.md files, < 8 KB each)
+skills/                             the method (SKILL.md files, < 8 KB each, and the on-demand files each one links)
 agents/                             reviewer agents sharing one finding schema
 hooks/hooks.json                    Claude Code hooks (side-copy rule bridge, conversation style: only in a project with a config; plugin version record)
 scripts/ennyn.mjs                   CLI entry (no top-level bin/ — claude.ai/Cowork reject it)

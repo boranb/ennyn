@@ -62,6 +62,11 @@ export const GATES = [
     test: "test/plugin.test.mjs",
     guards: [
       { id: "plugin-size", why: "a skill over 8 KB", file: "skills/cycle/SKILL.md", old: "# Cycle — four tasks, measured\n", new: `# Cycle — four tasks, measured\n\n${"x".repeat(8192)}\n`, pattern: "plugin: every SKILL.md stays under 8 KB" },
+      { id: "plugin-unlinked", why: "an on-demand file its skill never names", file: "skills/cycle/SKILL.md", old: "[task-brief.md](task-brief.md)", new: "task-brief.md", pattern: "plugin: a skill links every file" },
+      { id: "plugin-link-gone", why: "a skill that links a file that is not there", file: "skills/init/SKILL.md", old: "Follow [graph.md](graph.md):", new: "Follow [graph.md](graph.md), [x.md](x.md):", pattern: "plugin: a skill links every file" },
+      { id: "plugin-on-demand-link", why: "an on-demand file that links a file that is not there", file: "skills/cycle/task-brief.md", old: "[finding-schema.md](finding-schema.md)", new: "[finding-schema.md](finding-schemas.md)", pattern: "plugin: a skill links every file" },
+      { id: "plugin-snapshot-name", why: "a snapshot script that goes on with no name", file: "skills/cycle/task-brief.md", old: "name=${1:?task name}", new: "name=${1:-x}", pattern: "plugin: the snapshot script" },
+      { id: "plugin-snapshot-untracked", why: "a snapshot that leaves new files out", file: "skills/cycle/task-brief.md", old: "GIT_INDEX_FILE=$idx git add -A", new: "GIT_INDEX_FILE=$idx git add -u", pattern: "plugin: the snapshot script" },
       { id: "plugin-yaml", why: "front matter a YAML parser misreads", file: "agents/security-reviewer.md", old: "description: Adversarial security review — ", new: "description: Adversarial security review: ", pattern: "plugin: every agent and skill has front matter" },
       { id: "plugin-version", why: "a plugin version the package does not have", file: ".claude-plugin/plugin.json", old: '"version": "0.0.1"', new: '"version": "0.0.2"', pattern: "plugin: hook commands point" },
       { id: "plugin-pipe", why: "a table cell that splits, in a nested document", file: "docs/evidence.md", old: "# Evidence\n", new: "# Evidence\n\n| `a|b` | x |\n", pattern: "docs: no table cell holds" },
