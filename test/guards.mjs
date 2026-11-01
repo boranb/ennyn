@@ -228,6 +228,22 @@ export const GATES = [
         new: "",
         pattern: "fault matrix control: a git call that never ends",
       },
+      {
+        id: "git-limit-early",
+        why: "a limit that falls at once on the first gitRun of a run, hidden by the run the control drops",
+        file: "core/git.mjs",
+        old: 'encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: limit, killSignal: "SIGKILL" });',
+        new: 'encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: process.env.ENNYN_FAULT_GIT_LIMIT_MS && !globalThis.early ? (globalThis.early = 1) : limit, killSignal: "SIGKILL" });',
+        pattern: "fault matrix control: a git call that never ends",
+      },
+      {
+        id: "git-limit-deaf",
+        why: "every other stream deaf to its output, so a steady git is stopped while it writes and passes on the next run",
+        file: "core/git.mjs",
+        old: "  const heard = () => timer.refresh();\n",
+        new: "  const deaf = (globalThis.streams = (globalThis.streams ?? 0) + 1) % 2 === 1;\n  const heard = () => void (deaf || timer.refresh());\n",
+        pattern: "fault matrix control: a git call that never ends",
+      },
     ],
     others: {
       "fault matrix: with any git call failing, killed or never ending, or no git at all, a command fails or says so; a closed pipe is no crash":

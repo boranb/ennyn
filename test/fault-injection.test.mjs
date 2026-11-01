@@ -831,18 +831,21 @@ test("fault matrix: a diff that stops after its output is read again whole, and 
 
 // ----------------------------------------------------------------------------------- positive controls --
 
-test("fault matrix control: a git call that never ends is stopped at its limit and fails naming the command and the limit, also when a process it started holds its output; one that keeps writing is not stopped", async () => {
+test("fault matrix control: a git call that never ends is stopped at its limit and fails naming the command and the limit, also when a process it started holds its output; one that keeps writing is not stopped", async (t) => {
   // A git that starts a process holding its output, then waits on it, or exits with ENNYN_HANG_EXIT and leaves the
   // output held (cycle 11: a cat-file whose stdin never ended held the commit for 16 minutes). ENNYN_HANG_SAY is
-  // written first; ENNYN_HANG_TRAP ignores SIGTERM; ENNYN_HANG_DRIP writes a line every 0.1 s for 1.5 s to stdout
-  // (out) or stderr (err), and ends.
+  // written first; ENNYN_HANG_TRAP ignores SIGTERM; ENNYN_HANG_DRIP leaves a mark in "dripped", writes a line every 0.1 s
+  // for 1.5 s to stdout (out) or stderr (err), and ends; ENNYN_HANG_FIRST ends it at once; ENNYN_HANG_SLOW makes the first
+  // run of its value wait in silence, as a git that has not started does.
   const hang = join(BIN, "hang");
   mkdirSync(hang, { recursive: true });
   writeFileSync(
     join(hang, "git"),
     [
       "#!/bin/sh",
-      `if [ -n "$ENNYN_HANG_DRIP" ]; then exec perl -e '$| = 1; my $to = $ENV{ENNYN_HANG_DRIP} eq "err" ? *STDERR : *STDOUT; for (1 .. 15) { print $to "line $_\\n"; select(undef, undef, undef, 0.1) }'; fi`,
+      'if [ -n "$ENNYN_HANG_FIRST" ]; then exit 0; fi',
+      'if [ -n "$ENNYN_HANG_SLOW" ] && [ ! -e "$ENNYN_FAULT_DIR/slow-$ENNYN_HANG_SLOW" ]; then : > "$ENNYN_FAULT_DIR/slow-$ENNYN_HANG_SLOW"; exec sleep 3600; fi',
+      `if [ -n "$ENNYN_HANG_DRIP" ]; then exec perl -e '$| = 1; open(my $m, ">>", "$ENV{ENNYN_FAULT_DIR}/dripped"); print $m "x"; close $m; my $to = $ENV{ENNYN_HANG_DRIP} eq "err" ? *STDERR : *STDOUT; for (1 .. 15) { print $to "line $_\\n"; select(undef, undef, undef, 0.1) }'; fi`,
       "if [ -n \"$ENNYN_HANG_TRAP\" ]; then trap '' TERM; fi",
       "printf '%b' \"$ENNYN_HANG_SAY\"",
       "sleep 3600 &",
@@ -853,18 +856,40 @@ test("fault matrix control: a git call that never ends is stopped at its limit a
     ].join("\n"),
   );
   chmodSync(join(hang, "git"), 0o755);
+  // macOS holds the first run of a new file until a system check has read it (cycle 17): 0.2 to 0.9 s alone, 7 s behind
+  // 25 other new files at load 15, 17 s behind 60, 4 ms from then on. Beside the suite's own new files the limits below
+  // fell on a git whose shell had not reached its first line. So that run is had here, under no limit.
+  const firstAt = performance.now();
+  const first = spawnSync(join(hang, "git"), [], { env: { ...process.env, ENNYN_HANG_FIRST: "1" }, timeout: HANG_WATCHDOG_MS });
+  assert.equal(first.status, 0, "the hung git did not start");
+  t.diagnostic(`the first run of the hung git took ${Math.round(performance.now() - firstAt)} ms`);
   const box = mkdtempSync(join(tmpdir(), "en-fault-hang-"));
   const gitModule = JSON.stringify(new URL("../core/git.mjs", import.meta.url).href);
   // Each call alone, timed, with its own variables. A line handed on after a call failed is counted. The probe ends
-  // by itself, and says what it still holds: a pipe, a child or a timer left behind.
+  // by itself, and says what it still holds: a pipe, a child or a timer left behind. A limit that falls on a git that
+  // has not started shows nothing about the call, and with processes slow to start it does (cycle 17: 2 of 12 runs at
+  // load 71-91, the first run already had). So a git that did not reach its hang, or a steady one that was stopped, runs
+  // again, up to five runs, and each run dropped is judged below: it must be that lost start and nothing else. Each call
+  // is noted in "calls" as it goes, for a probe that does not end.
   const probe = `
+    import { appendFileSync, readFileSync } from "node:fs";
     import { git, gitBytes, gitRun, gitMaybe, streamStagedBlobs, streamStagedDiff } from ${gitModule};
     const cwd = process.cwd();
     const out = {};
     let settled = false;
     let late = 0;
+    const dropped = [];
     const onLine = () => void (settled && late++);
-    async function call(name, vars, f) {
+    const size = (file) => {
+      try {
+        return readFileSync(file, "utf8").length;
+      } catch {
+        return 0;
+      }
+    };
+    const note = (text) => appendFileSync("calls", (performance.now() / 1000).toFixed(1) + " s: " + text + "\\n");
+    async function once(name, vars, f) {
+      note("on " + name);
       for (const k of ["ENNYN_HANG_EXIT", "ENNYN_HANG_SAY", "ENNYN_HANG_TRAP", "ENNYN_HANG_DRIP"]) delete process.env[k];
       Object.assign(process.env, vars);
       settled = false;
@@ -879,6 +904,16 @@ test("fault matrix control: a git call that never ends is stopped at its limit a
       }
       settled = true;
       await new Promise((r) => setTimeout(r, 50));
+      note(name + ": " + out[name].said);
+    }
+    async function call(name, vars, f) {
+      for (let run = 1; run <= 5; run++) {
+        const pids = size("held");
+        const marks = size("dripped");
+        await once(name, vars, f);
+        if (vars.ENNYN_HANG_DRIP ? out[name].said.startsWith("answered") : size("held") > pids) return;
+        dropped.push({ name, ...out[name], started: size("dripped") > marks });
+      }
     }
     await call("bytes", {}, () => gitBytes(["cat-file", "--batch-check"], { cwd, input: "x\\n" }));
     await call("bytes, git exits 0", { ENNYN_HANG_EXIT: "0" }, () => gitBytes(["-c", "a.b=c", "ls-files", "-z"], { cwd }));
@@ -895,11 +930,15 @@ test("fault matrix control: a git call that never ends is stopped at its limit a
     await call("diff, a line with no end, then silence", { ENNYN_HANG_EXIT: "0", ENNYN_HANG_SAY: "diff --git a/x b/x\\\\n+++ b/x\\\\n@@ -0,0 +1 @@\\\\n+partial" }, () => streamStagedDiff(cwd, null, { onLine }));
     await call("diff, steady output", { ENNYN_HANG_DRIP: "out" }, () => streamStagedDiff(cwd, null, { onLine }));
     await call("diff, steady warnings", { ENNYN_HANG_DRIP: "err" }, () => streamStagedDiff(cwd, null, { onLine }));
+    await call("bytes, a first run that does not start", { ENNYN_HANG_SLOW: "hang" }, () => gitBytes(["show"], { cwd }));
+    await call("diff, steady output, a first run that does not start", { ENNYN_HANG_SLOW: "steady", ENNYN_HANG_DRIP: "out" }, () => streamStagedDiff(cwd, null, { onLine }));
     out.late = late;
+    out.dropped = dropped;
     out.held = process.getActiveResourcesInfo();
     process.stdout.write(JSON.stringify(out));
   `;
   const env = { ...process.env, PATH: `${hang}${delimiter}${process.env.PATH}`, ENNYN_FAULT_DIR: box, ENNYN_FAULT_GIT_LIMIT_MS: "1000" };
+  writeFileSync(join(box, "calls"), "");
   /** @type {{ code: number | null, stdout: string, stderr: string }} */
   const got = await new Promise((done) => {
     const child = spawn(process.execPath, ["--import", FAULT_FS, "--input-type=module", "-e", probe], { cwd: box, env, stdio: ["ignore", "pipe", "pipe"] });
@@ -907,16 +946,22 @@ test("fault matrix control: a git call that never ends is stopped at its limit a
     let stderr = "";
     child.stdout.on("data", (d) => (stdout += d));
     child.stderr.on("data", (d) => (stderr += d));
-    // Under the guard runner's own limit (its baseline plus 30 s): a guard that makes a call hang fails here.
-    const watchdog = setTimeout(() => ((stderr += `\n${NOT_STOPPED}`), child.kill("SIGKILL")), 45_000);
+    // Under the guard runner's own limit (three times its baseline, at least the baseline plus 30 s): a guard that makes
+    // a call hang fails here. A slow machine can end here too: what it got through tells the two apart.
+    const watchdog = setTimeout(() => ((stderr += "\nthe probe had not ended after 45 s, and was killed"), child.kill("SIGKILL")), 45_000);
     child.on("close", (code) => (clearTimeout(watchdog), done({ code, stdout, stderr })));
   });
   const held = endHeld(box);
-  assert.equal(got.code, 0, got.stderr);
-  const { late, held: resources, ...out } = JSON.parse(got.stdout);
+  const calls = readFileSync(join(box, "calls"), "utf8");
+  assert.equal(got.code, 0, `${got.stderr}\nits calls, the last line where it was:\n${calls}`);
+  const { late, held: resources, dropped, ...out } = JSON.parse(got.stdout);
+  for (const d of dropped) t.diagnostic(`ran again: ${d.name}: ${d.said}, after ${Math.round(d.ms)} ms`);
+  // Two lines a run, whatever a load did to how many ran.
+  assert.equal(calls.split("\n").length - 1, 2 * (Object.keys(out).length + dropped.length), calls);
   /** @type {Record<string, string>} */
   const said = Object.fromEntries(Object.entries(out).map(([k, v]) => [k, /** @type {{ said: string }} */ (v).said]));
-  assert.deepEqual(said, {
+  /** @type {Record<string, string>} */
+  const wanted = {
     bytes: "git cat-file: did not finish in 1 s and was stopped",
     "bytes, git exits 0": "git ls-files: did not finish in 1 s and was stopped",
     "bytes, a walk": "git log: did not finish in 2 s and was stopped",
@@ -932,9 +977,14 @@ test("fault matrix control: a git call that never ends is stopped at its limit a
     "diff, a line with no end, then silence": "git diff: wrote nothing for 1 s and was stopped",
     "diff, steady output": 'answered: {"shown":[],"stopped":false}',
     "diff, steady warnings": 'answered: {"shown":[],"stopped":false}',
-  });
+    "bytes, a first run that does not start": "git show: did not finish in 1 s and was stopped",
+    "diff, steady output, a first run that does not start": 'answered: {"shown":[],"stopped":false}',
+  };
+  assert.deepEqual(said, wanted);
+  /** @param {string} k */
+  const floor = (k) => (/a walk/.test(k) ? 1900 : 900);
   // Each waited out its limit: none failed early on something else.
-  for (const [k, v] of Object.entries(out)) if (!k.startsWith("diff, steady")) assert.ok(/** @type {{ ms: number }} */ (v).ms >= (/a walk/.test(k) ? 1900 : 900), `${k}: ${JSON.stringify(v)}`);
+  for (const [k, v] of Object.entries(out)) if (!k.startsWith("diff, steady")) assert.ok(/** @type {{ ms: number }} */ (v).ms >= floor(k), `${k}: ${JSON.stringify(v)}`);
   // The stop is the message too; a thrown error has no exit status to read as an answer (merge-base's 1 is "not an
   // ancestor"). gitRun hands back `error` beside git's own status, and its readers look at `error` first.
   for (const [k, v] of Object.entries(out)) {
@@ -942,10 +992,23 @@ test("fault matrix control: a git call that never ends is stopped at its limit a
     const { said: text, message, status } = /** @type {{ said: string, message: string, status?: number | null }} */ (v);
     assert.deepEqual({ message, status }, { message: text, status: k.startsWith("run") ? undefined : null }, k);
   }
+  // A run dropped was a limit that fell on a start, and shows it: the call's words, its whole limit, no exit status, and
+  // for a steady git no mark, or a stream stopped while it wrote would pass on the next run.
+  /** @param {{ name: string, said: string, message: string, status?: number | null, ms: number, started: boolean }} d */
+  const fault = (d) => {
+    const words = d.name.startsWith("diff, steady") ? "git diff: wrote nothing for 1 s and was stopped" : wanted[d.name];
+    if (d.said !== words || d.message !== words) return "other words";
+    if (d.status !== (d.name.startsWith("run") ? undefined : null)) return "an exit status";
+    if (d.ms < floor(d.name)) return "before its limit";
+    return d.started ? "it had started" : null;
+  };
+  const lost = { name: "blobs", said: wanted.blobs, message: wanted.blobs, status: null, ms: 1000, started: false };
+  assert.deepEqual([{}, { said: "x" }, { message: "x" }, { status: 1 }, { ms: 5 }, { started: true }].map((o) => fault({ ...lost, ...o })), [null, "other words", "other words", "an exit status", "before its limit", "it had started"]);
+  for (const d of dropped) assert.equal(fault(d), null, `a dropped run: ${JSON.stringify(d)}`);
   assert.equal(late, 0, "a line handed on after its call failed");
   // Its own stdout and stderr are pipes; a child, a timer or a pipe of a stopped git is held.
   assert.ok(resources.every((/** @type {string} */ r) => r === "PipeWrap") && resources.length <= 2, `the probe still holds ${resources}`);
-  assert.equal(held, 13, "every call that should hang reached the hung git");
+  assert.equal(held, 14, "every call that should hang reached the hung git");
 });
 
 test("fault matrix control: the preload fails the read a cell names, counts only reads outside Ennyn's files, and nothing without its variable", () => {
