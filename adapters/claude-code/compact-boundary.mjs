@@ -180,14 +180,13 @@ export function listed(text) {
 }
 
 /**
- * What every git call of the hook is given, on top of core/git.mjs: nothing here may run the repository's code or
- * reach a network. Takes no optional lock (a merge may be under way) and runs no file-system monitor: the value is
- * empty, as the floor, 2.34.1, takes `false` for a program's name. From git 2.38 a bare-looking folder a clone brought
- * in is no repository; a lower git, the floor too, ignores the setting and reads the folder as one. No promisor fetch
- * and no replaced object (HOOK_READ_ENV); a git that does not read that yet (the floor does not) starts a fetch, and
- * GIT_ALLOW_PROTOCOL stops it before any transport.
+ * What every git call of the hook is given, on top of core/git.mjs, whose every call runs no file-system monitor and,
+ * from git 2.38, reads no bare-looking folder a clone brought in as a repository (a lower git, the floor too, does):
+ * nothing here may run the repository's code or reach a network. Takes no optional lock (a merge may be under way). No
+ * promisor fetch and no replaced object (HOOK_READ_ENV); a git that does not read that yet (the floor does not) starts
+ * a fetch, and GIT_ALLOW_PROTOCOL stops it before any transport.
  */
-const QUIET = ["--no-optional-locks", "-c", "core.fsmonitor=", "-c", "safe.bareRepository=explicit"];
+const QUIET = ["--no-optional-locks"];
 
 /**
  * git's answer, or a throw.

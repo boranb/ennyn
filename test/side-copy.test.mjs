@@ -569,7 +569,7 @@ test("map-path audit: a copy git will not open is mapped by its .git file only w
   for (const sub of ["worktrees/side", "modules/sub"]) {
     const gitdir = join(proj, ".git", sub);
     git(["init", "-q", "--bare", gitdir], { cwd: proj });
-    git(["config", "core.repositoryformatversion", "99"], { cwd: gitdir });
+    git(["--git-dir", gitdir, "config", "core.repositoryformatversion", "99"], { cwd: proj });
   }
   const copy = (/** @type {string} */ sub) => {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), "en-sc-copy-")));

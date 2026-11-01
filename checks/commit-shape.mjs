@@ -391,7 +391,9 @@ function shapeOf(message, { config, stagedPaths = [], cleanup = "strip", cut, co
 
   if (rv.impactRequiredGlobs.length) {
     const hits = stagedPaths.filter((p) => matchAny(p, rv.impactRequiredGlobs) && !matchAny(p, rv.impactIgnoreGlobs));
-    if (hits.length && !bodyLines.some((l) => l.trimStart().startsWith(rv.impactLine))) {
+    // The line carries the summary: a letter or a digit on it, so a mark or a character that shows as nothing is no record,
+    // the Hangul fillers (letters to Unicode) among them. A replacement character is bytes a legacy encoding wrote: content.
+    if (hits.length && !bodyLines.some((l) => l.trimStart().startsWith(rv.impactLine) && /(?!\p{DI})[\p{L}\p{N}\uFFFD]/u.test(l.trimStart().slice(rv.impactLine.length)))) {
       errors.push(t("shape.impactMissing", { line: rv.impactLine, paths: hits.slice(0, 3).map(pathShown).join(", ") }, lang));
     }
   }

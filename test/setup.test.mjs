@@ -1025,7 +1025,8 @@ test("doctor: the worktrees line says what git said, its source, its remedy; a q
   chmodSync(join(programs, "false"), 0o755);
   assert.equal(withEnv({ PATH: `${programs}${delimiter}${process.env.PATH}` }, () => worktreesIgnored(quiet.dir).state), "local");
   assert.equal(existsSync(log), false, "the project's fsmonitor ran");
-  git(["status"], { cwd: quiet.dir });
+  // Plain git: core/git.mjs's calls carry the guard this is the control of.
+  spawnSync("git", ["status"], { cwd: quiet.dir });
   assert.equal(existsSync(log), true, "the hook is wired: a plain status runs it");
 
   // Nothing of this machine's reaches HEAD's lists: git's own variables, a template, a global config.

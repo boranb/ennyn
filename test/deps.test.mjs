@@ -7,7 +7,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ANSWER_LIMIT, HELD_LIMIT, advisoriesOf, depsMessages, fetchJson, lockEntries, lockPath, newEntries, npmrcFindings, judgeEntry, pathInside, pkgJson, pkgPathOf, folderKeys, reasonText, registryOf, registryResolver, registryVerdicts, shownSource, sourceForm, specSource, thresholdPercent } from "../checks/deps.mjs";
+import { ANSWER_LIMIT, HELD_LIMIT, advisoriesOf, depsMessages, fetchJson, lockEntries, lockPath, newEntries, npmrcEntries, npmrcFindings, scriptsGuardDropped, judgeEntry, pathInside, pkgJson, pkgPathOf, folderKeys, reasonText, registryOf, registryResolver, registryVerdicts, shownSource, sourceForm, specSource, thresholdPercent } from "../checks/deps.mjs";
 import { git, indexKinds } from "../core/git.mjs";
 import { loadConfig, ConfigError } from "../core/config.mjs";
 
@@ -828,6 +828,96 @@ test("deps npmrc: read as npm's ini reads it; a registry no list names is refuse
   const said = npmrcFindings("replace-registry-host=always\n//registry.npmjs.org/:_authToken=${NPM_TOKEN}\nregistry=${REG}\n${KEY}=https://evil.example/\nhttps-proxy=http://proxy.example:8080\nstrict-ssl=false\ncafile=/tmp/ca.pem\nscript-shell=/bin/zsh\nnode-options=--require x\nignore-scripts=false\nfund=false\nregistry=not a url\n", r).said;
   assert.deepEqual(said.map((x) => [x.n, x.reason.key]), [[1, "replaceHost"], [3, "fromEnv"], [4, "fromEnvKey"], [5, "proxy"], [6, "tls"], [7, "tls"], [8, "runsCode"], [9, "runsCode"], [10, "scriptsOn"], [12, "notUrl"]]);
   assert.deepEqual(npmrcFindings("replace-registry-host=npmjs\nstrict-ssl=true\nignore-scripts=true\n", r), { refuse: [], said: [] });
+});
+
+test("deps: an .npmrc value npm reads as false is said in each spelling npm takes, and no other (measured: npm ci, 10.9.9)", () => {
+  const r = rule();
+  const said = (/** @type {string} */ line) => npmrcFindings(`${line}\n`, r).said.map((x) => x.reason.key);
+  for (const v of ["false", "0", "null", "0.0", "0x0", "-0"]) assert.deepEqual(said(`ignore-scripts=${v}`), ["scriptsOn"], v);
+  for (const v of ["true", "1", "no", "off", "yes", "FALSE", ""]) assert.deepEqual(said(`ignore-scripts=${v}`), [], v);
+  assert.deepEqual(said("ignore-scripts"), []);
+  for (const v of ["false", "0", "null"]) assert.deepEqual(said(`strict-ssl=${v}`), ["tls"], v);
+  assert.deepEqual(said("strict-ssl=1"), []);
+  // A boolean npm reads as true counts as `true` does.
+  const offline = (/** @type {string} */ v) => npmrcFindings(`offline=${v}\ncache=./c\n`, r).said.map((x) => x.reason.key);
+  for (const v of ["true", "1", "yes"]) assert.deepEqual(offline(v), ["offlineCache"], v);
+  for (const v of ["false", "0", "null"]) assert.deepEqual(offline(v), [], v);
+});
+
+test("deps: a boolean is read key by key as npm does: white space trimmed, undefined back to the key's default, an environment value unmeasured (npm ci and a real handshake, 10.9.9)", () => {
+  const r = rule();
+  const said = (/** @type {string} */ line) => npmrcFindings(`${line}\n`, r).said.map((x) => x.reason.key);
+  // `undefined` unsets the key: ignore-scripts goes back to false and install scripts run; strict-ssl goes back to true.
+  for (const v of ["undefined", '"undefined"', "'undefined'", "undefined ; c", '" undefined "', `'"undefined"'`, '"\\u00a0undefined"']) {
+    assert.deepEqual(said(`ignore-scripts=${v}`), ["scriptsOn"], v);
+    assert.deepEqual(said(`strict-ssl=${v}`), [], v);
+  }
+  assert.deepEqual(said("ignore-scripts=true\nignore-scripts=undefined"), ["scriptsOn"]);
+  for (const v of ["Undefined", "UNDEFINED"]) assert.deepEqual(said(`ignore-scripts=${v}`), [], v);
+  // npm trims first, the white space quotes keep too, and what JavaScript's trim takes; a zero-width space is text to it.
+  for (const v of ['" false"', '"false "', '"\\tfalse"', '"\\nfalse"', '"\\u00a0false"', '"\\ufefffalse"', '"\\u2003false"', '" null "']) assert.deepEqual(said(`ignore-scripts=${v}`), ["scriptsOn"], v);
+  for (const v of ['" false"', '"false "']) assert.deepEqual(said(`strict-ssl=${v}`), ["tls"], v);
+  for (const v of ['" "', '"\\t"', '" true"', '" 1"', '"\\u200bfalse"']) assert.deepEqual(said(`ignore-scripts=${v}`), [], v);
+  // What the variable holds is the machine's: the file does not say.
+  for (const key of ["ignore-scripts", "strict-ssl"]) {
+    for (const v of ["${X}", "${X?}", '"${X}"', "true${X}", "${X}${Y}"]) assert.deepEqual(said(`${key}=${v}`), ["fromEnv"], `${key}=${v}`);
+    assert.deepEqual(said(`${key}=$X`), [], "npm expands only the braces");
+  }
+  // `'[]'` is an empty list to npm's ini, and the key goes unset as with undefined; a list with anything in it does not.
+  assert.deepEqual(said("ignore-scripts='[]'"), ["scriptsOn"]);
+  assert.deepEqual(said("ignore-scripts=true\nignore-scripts='[]'"), ["scriptsOn"]);
+  assert.deepEqual(said("strict-ssl='[]'"), []);
+  for (const v of ["'[true]'", "'[1]'", "'[null]'", "'[[]]'", "'{}'", '"[]"']) assert.deepEqual(said(`ignore-scripts=${v}`), [], v);
+  // As one element of a list it unsets nothing, and as a key it is no key of npm's.
+  assert.deepEqual(said("ignore-scripts[]='[]'"), []);
+  assert.deepEqual(npmrcEntries("'[]'=x\n").map((x) => x.key), [""]);
+  // A key with a false default stays off for undefined as for false: no offline, so no committed cache to warn of.
+  assert.deepEqual(npmrcFindings("offline=undefined\ncache=./c\n", r).said, []);
+  // A guard that was never on cannot be dropped.
+  for (const v of ["undefined", '" false"', '" null "']) assert.equal(scriptsGuardDropped(`ignore-scripts=${v}\n`, null), null, v);
+  for (const v of ["${X}", "true", '" true"']) assert.ok(scriptsGuardDropped(`ignore-scripts=${v}\n`, null), v);
+});
+
+test("deps: a commit that leaves npm reading an older ignore-scripts line loses the setting, though that line is no new one", () => {
+  const dropped = (/** @type {string} */ b, /** @type {string} */ a) => scriptsGuardDropped(b, a)?.line ?? null;
+  for (const v of ["false", "0", "null", "undefined", "${X}", "'[]'"]) {
+    const head = `ignore-scripts=${v}\nignore-scripts=true\n`;
+    assert.equal(dropped(head, `ignore-scripts=${v}\n`), "ignore-scripts=true", `${v}: the line after it goes`);
+    assert.equal(dropped(head, `ignore-scripts=true\nignore-scripts=${v}\n`), "ignore-scripts=true", `${v}: the two change places`);
+    assert.equal(dropped(head, `fund=false\n${head}`), null, `${v}: npm still reads true last`);
+  }
+  // A line new to the file is npmrcFindings' to say: said once, not twice.
+  assert.equal(dropped("ignore-scripts=true\n", "ignore-scripts=false\n"), null);
+  assert.equal(dropped("ignore-scripts=true\n", "ignore-scripts=true\nignore-scripts=0\n"), null);
+  // npm's own pattern takes no line holding U+2028, so the key is gone from the file: a drop.
+  assert.equal(dropped("ignore-scripts=true\n", "ignore-scripts=\u2028false\n"), "ignore-scripts=true");
+});
+
+test("deps: a commit that drops ignore-scripts from an .npmrc loses the setting wherever it goes, and only then", () => {
+  const off = "fund=false\nignore-scripts=true\n";
+  const line = (/** @type {string} */ b, /** @type {string | null} */ a) => scriptsGuardDropped(b, a)?.n ?? null;
+  // Gone: the file, the line.
+  assert.equal(line(off, null), 2);
+  assert.equal(line(off, "fund=false\n"), 2);
+  // A bare key is true to npm, and the last line is the one that counts.
+  assert.equal(line("ignore-scripts\n", null), 1);
+  assert.equal(line("ignore-scripts=false\nignore-scripts=true\n", ""), 2);
+  // Still named: `true` keeps it, and `false` is npmrcFindings' to say.
+  assert.equal(line(off, off), null);
+  assert.equal(line(off, "ignore-scripts=false\n"), null);
+  // Nothing to lose: HEAD did not turn them off, or a section npm does not read held the key.
+  assert.equal(line("fund=false\n", null), null);
+  assert.equal(line("ignore-scripts=false\n", null), null);
+  assert.equal(line("[x]\nignore-scripts=true\n", null), null);
+  // A key under a section in the new text is no key: the guard is gone.
+  assert.equal(line(off, "[x]\nignore-scripts=true\n"), 2);
+  // Any value npm reads as true keeps them off, so losing it is said; one it reads as false kept nothing.
+  assert.equal(line("ignore-scripts=1\n", null), 1);
+  assert.equal(line("ignore-scripts=no\n", null), 1);
+  assert.equal(line("ignore-scripts=0\n", null), null);
+  assert.equal(line("ignore-scripts=null\n", null), null);
+  // npm's keys are exact: this spelling turned nothing off.
+  assert.equal(line("IGNORE-SCRIPTS=true\n", null), null);
 });
 
 /** The CLI, run without blocking this process: the local servers answer it. @param {string[]} args @param {string} cwd @param {NodeJS.ProcessEnv} [env] */

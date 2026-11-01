@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, realpathSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -258,7 +258,8 @@ test("cli audit: a tracked instruction file that cannot be read fails budget; in
   p.commit({ "CLAUDE.md": "# Rules\n\n- Every change keeps the tests green before it is committed.\n" }, "docs: rules", 0);
   const inside = run(join(p.dir, ".git"), "budget");
   assert.equal(inside.code, 1);
-  assert.match(inside.stderr, /must be run in a work tree/);
+  // A git from 2.38 to 2.43 refuses the folder itself under safe.bareRepository=explicit: both are git's words for no project.
+  assert.match(inside.stderr, /must be run in a work tree|cannot use bare repository/);
   if (process.getuid?.() === 0) return t.skip("root reads any file");
   chmodSync(join(p.dir, "CLAUDE.md"), 0o000);
   const locked = run(p.dir, "budget");
@@ -655,4 +656,60 @@ test("cli: in a clone without trees the commit-msg hook's amend! lookup fetches 
   if (reads) assert.equal(readFileSync(log, "utf8"), "", `no connection to the promisor remote\n${r.stderr}`);
   // A git that does not read GIT_NO_LAZY_FETCH (SECURITY.md names them) fetches the tree.
   else assert.notEqual(readFileSync(log, "utf8"), "", "a git that does not read GIT_NO_LAZY_FETCH fetches the tree");
+});
+
+/**
+ * A repository whose commit holds a bare-looking folder `sub`, cloned for real: its config names its own folder as the
+ * work tree and a file-system monitor in it, which any read of its index runs. No `.git` entry is involved, so a commit
+ * carries all of it.
+ * @returns {{ sub: string, ran: string }} the clone's folder, and the file the monitor makes
+ */
+function plantedFolder() {
+  const origin = project({ language: "en" });
+  const box = mkdtempSync(join(tmpdir(), "pl-cli-plant-"));
+  const ran = join(box, "ran");
+  const folder = join(origin.dir, "sub");
+  mkdirSync(join(folder, "objects"), { recursive: true });
+  mkdirSync(join(folder, "refs"));
+  mkdirSync(join(folder, ".ennyn"));
+  writeFileSync(join(folder, "objects", ".keep"), "");
+  writeFileSync(join(folder, "refs", ".keep"), "");
+  writeFileSync(join(folder, "HEAD"), "ref: refs/heads/main\n");
+  writeFileSync(join(folder, ".ennyn", "config.json"), JSON.stringify({ language: "en" }));
+  writeFileSync(join(folder, "mon.sh"), `#!/bin/sh\n: > ${JSON.stringify(ran)}\n`);
+  chmodSync(join(folder, "mon.sh"), 0o755);
+  writeFileSync(join(folder, "config"), "[core]\n\trepositoryformatversion = 0\n\tbare = false\n\tworktree = .\n\tfsmonitor = ./mon.sh\n");
+  // git's own env, not core/git.mjs's: that one drops GIT_INDEX_FILE.
+  assert.equal(spawnSync("git", ["read-tree", "--empty"], { cwd: origin.dir, env: { ...process.env, GIT_INDEX_FILE: join(folder, "index") } }).status, 0);
+  origin.commit({}, "feat: a bare-looking folder");
+  const clone = join(box, "clone");
+  assert.equal(spawnSync("git", ["clone", "-q", origin.dir, clone]).status, 0);
+  return { sub: join(clone, "sub"), ran };
+}
+
+test("cli: a bare-looking folder a clone brought in runs nothing its config names, and a command there stops on git's words", () => {
+  const { sub, ran } = plantedFolder();
+  // The control: plain git reads that folder as a repository and runs its monitor, so the commands below are asked of a live plant.
+  assert.equal(spawnSync("git", ["ls-files"], { cwd: sub }).status, 0);
+  assert.ok(existsSync(ran), "plain git runs the planted monitor");
+  rmSync(ran);
+  const { version } = gitVersion({ cwd: sub });
+  const explicit = version !== null && versionAtLeast(version, [2, 38]);
+  for (const args of [["audit"], ["budget"], ["init-scan", "--json"], ["impact", "--symbol", "x"], ["deps"], ["doctor"]]) {
+    const r = run(sub, ...args);
+    assert.ok(!existsSync(ran), `${args[0]} ran the planted monitor`);
+    // Below 2.38 git ignores the setting, so only the monitor's guard stands there.
+    if (explicit) assert.match(`${r.stderr}${r.stdout}`, /bare repository/, args[0]);
+  }
+});
+
+test("cli: a linked worktree of a bare clone is read as any checkout, under the same guard", () => {
+  const origin = project({ language: "en" });
+  origin.commit({ "a.txt": "a\n" }, "feat: a");
+  const box = mkdtempSync(join(tmpdir(), "pl-cli-bare-"));
+  assert.equal(spawnSync("git", ["clone", "-q", "--bare", origin.dir, join(box, "repo.git")]).status, 0);
+  assert.equal(spawnSync("git", ["worktree", "add", "-q", join(box, "wt"), "main"], { cwd: join(box, "repo.git") }).status, 0);
+  const r = run(join(box, "wt"), "audit");
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stdout, /security audit/);
 });

@@ -112,6 +112,45 @@ test("cleanup: a whitespace-only line still separates the trailer paragraph, as 
   assert.deepEqual(checkCommitShape(msg, { config: c, cleanup: "whitespace" }).errors, []);
 });
 
+test("commit shape: an Impact line counts with a letter or a digit on it, and a refusal says the summary goes on that line", () => {
+  const c = cfg({ review: { impactRequiredGlobs: ["src/auth/**"] } });
+  const stagedPaths = ["src/auth/a.js"];
+  const ok = (/** @type {string} */ message) => checkCommitShape(message, { config: c, stagedPaths }).ok;
+  // Marks and characters that show as nothing fill the line and say nothing.
+  for (const rest of ["-", ".", "#", "--", "…", "\u200b", "\u200d", "\u2060", "\u00ad", "\u180e", "\u0085", "\u001f", "\ufeff", " \u200b "]) assert.equal(ok(`feat: x\n\nImpact: ${rest}\n`), false, JSON.stringify(rest));
+  // Hangul fillers are letters to Unicode and show as nothing: Default_Ignorable_Code_Point says so.
+  for (const rest of ["\u3164", "\uffa0", "\u115f", "\u1160", "\u3164 \uffa0", "- \u3164"]) assert.equal(ok(`feat: x\n\nImpact: ${rest}\n`), false, JSON.stringify(rest));
+  for (const rest of ["영향 없음", "\u3164영향"]) assert.equal(ok(`feat: x\n\nImpact: ${rest}\n`), true, JSON.stringify(rest));
+  // A line in a legacy i18n.commitEncoding reads as replacement characters: bytes were there, and the rule is against empty lines.
+  for (const rest of ["\ufffd", "\ufffd\ufffd \ufffd"]) assert.equal(ok(`feat: x\n\nImpact: ${rest}\n`), true, JSON.stringify(rest));
+  // A word is a word: no reader can judge one, a person can.
+  for (const rest of ["none", "n/a", "x", "7", "tablo değişmedi", "影響なし", "- the auth check", "\u200bthe auth check"]) assert.equal(ok(`feat: x\n\nImpact: ${rest}\n`), true, JSON.stringify(rest));
+  assert.equal(ok("feat: x\n\nImpact:the auth check\n"), true);
+  // The summary on the lines below the label stays refused, and the words say what to do: the line is already there.
+  for (const body of ["Impact:\n  the auth check\n  and the session\n", "Impact:\n- the auth check\n", "Impact:\nthe auth check\n"]) {
+    for (const [language, words] of /** @type {const} */ ([["en", /holds the summary on that same line/], ["tr", /özeti aynı satırda/]])) {
+      const r = checkCommitShape(`feat: x\n\n${body}`, { config: cfg({ language, review: { impactRequiredGlobs: ["src/auth/**"] } }), stagedPaths });
+      assert.equal(r.ok, false, body);
+      assert.match(r.errors.join("\n"), words, body);
+    }
+  }
+});
+
+test("commit shape: an Impact line with nothing on it says nothing, so it does not count", () => {
+  const c = cfg({ review: { impactRequiredGlobs: ["src/auth/**"] } });
+  const stagedPaths = ["src/auth/a.js"];
+  const ok = (/** @type {string} */ message) => checkCommitShape(message, { config: c, stagedPaths }).ok;
+  assert.equal(ok("feat: x\n\nImpact:\n"), false);
+  assert.equal(ok("feat: x\n\nImpact:   \n"), false);
+  assert.equal(ok("feat: x\n\n  Impact:\t\n"), false);
+  // commit.cleanup=verbatim keeps a line's end: the one mode that reaches the check with spaces after the label.
+  assert.equal(checkCommitShape("feat: x\n\nImpact:   \n", { config: c, stagedPaths, cleanup: "verbatim" }).ok, false);
+  assert.equal(checkCommitShape("feat: x\n\nImpact: said\n", { config: c, stagedPaths, cleanup: "verbatim" }).ok, true);
+  assert.equal(ok("feat: x\n\nImpact: the auth check\n"), true);
+  assert.equal(ok("feat: x\n\n  Impact: indented, as a body may be\n"), true);
+  assert.equal(ok("feat: x\n\nImpact: not needed: a local rename\n"), true);
+});
+
 test("impact: a change touching only tests next to a guarded path needs no impact line", () => {
   const c = cfg({ review: { impactRequiredGlobs: ["src/auth/**"] } });
   assert.ok(checkCommitShape("s", { config: c, stagedPaths: ["src/auth/login.test.ts"] }).ok);

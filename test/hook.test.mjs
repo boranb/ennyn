@@ -1690,7 +1690,7 @@ test("hook in a linked worktree: a core.hooksPath an agent worktree made absolut
   // A bare repository's worktree: the folder that holds the repository is no checkout of it.
   const base = realpathSync(mkdtempSync(join(tmpdir(), "en-hook-bare-")));
   git(["clone", "-q", "--bare", dir, join(base, "x.git")], { cwd: base });
-  git(["worktree", "add", "-q", join(base, "wt")], { cwd: join(base, "x.git") });
+  git([`--git-dir=${join(base, "x.git")}`, "worktree", "add", "-q", join(base, "wt")], { cwd: base });
   mkdirSync(join(base, "hooks"));
   git(["config", "core.hooksPath", join(base, "hooks")], { cwd: join(base, "wt") });
   assert.equal(hookStatus(join(base, "wt")).hooksKind, "global");
@@ -2037,7 +2037,7 @@ test("hook in a linked worktree of any layout: a tracked hooks directory of a --
   git(["config", "core.hooksPath", join(base, "a-file")], { cwd: dir });
   assert.equal(hookStatus(dir).hooksKind, "global");
   git(["clone", "-q", "--bare", dir, join(base, "x.git")], { cwd: base });
-  git(["worktree", "add", "-q", join(base, "wt")], { cwd: join(base, "x.git") });
+  git([`--git-dir=${join(base, "x.git")}`, "worktree", "add", "-q", join(base, "wt")], { cwd: base });
   mkdirSync(join(base, "x.git", "own"));
   git(["config", "core.hooksPath", join(base, "x.git", "own")], { cwd: join(base, "wt") });
   assert.equal(hookStatus(join(base, "wt")).hooksKind, "global");

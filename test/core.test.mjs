@@ -346,8 +346,9 @@ test("git audit: headCommit is null with no commit or no repository, and throws 
   assert.equal(headCommit(dir), null, "no commit yet");
   git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x"], { cwd: dir });
   assert.equal(headCommit(dir), git(["rev-parse", "HEAD"], { cwd: dir }));
-  // Inside .git there is no work tree: no project directory, not "outside a repository".
-  assert.throws(() => repoPath("--show-toplevel", { cwd: join(dir, ".git") }), /must be run in a work tree/);
+  // Inside .git there is no work tree: no project directory, not "outside a repository". A git from 2.38 to 2.43 refuses
+  // the folder outright under safe.bareRepository=explicit: git's word differs, the read fails either way.
+  assert.throws(() => repoPath("--show-toplevel", { cwd: join(dir, ".git") }), /must be run in a work tree|cannot use bare repository/);
   // rev-parse --verify -q exits 1 here as for a branch with no commit; it is no "no commits".
   writeFileSync(join(dir, ".git", "refs", "heads", "main"), "garbage\n");
   assert.throws(() => headCommit(dir), /appears to be broken/);

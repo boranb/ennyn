@@ -1177,7 +1177,7 @@ test("mutate: the search covers each work tree git lists once, one inside anothe
   const bare = join(realpathSync(mkdtempSync(join(tmpdir(), "en-mut-bare-"))), "b.git");
   git(["clone", "-q", "--bare", p.dir, bare], { cwd: p.dir });
   const side = join(dirname(bare), "side");
-  git(["worktree", "add", "-q", "--detach", side], { cwd: bare });
+  git([`--git-dir=${bare}`, "worktree", "add", "-q", "--detach", side], { cwd: dirname(bare) });
   writeFileSync(join(side, "x.txt"), "x\n");
   const x = statSync(join(side, "x.txt"), { bigint: true });
   // The side tree's .git file and x.txt.

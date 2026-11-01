@@ -183,12 +183,6 @@ const WORKTREES_AS_DIRECTORIES = WORKTREE_NAMES.map((name) => `${AGENT_WORKTREES
 /** The lists above the folder that a checkout of a commit holds: any other reads as this machine's. */
 const WORKTREES_GITIGNORES = [".gitignore", ".claude/.gitignore", `${AGENT_WORKTREES}.gitignore`];
 /**
- * For a call that reads the project's index: any such read runs its core.fsmonitor hook or starts its daemon. Empty,
- * as git 2.34 takes `false` for the name of a program.
- */
-const NO_FSMONITOR = ["-c", "core.fsmonitor="];
-
-/**
  * The rule that decides each path, from `check-ignore -v -n`: the empty pattern when none does.
  * @param {string} cwd @param {string[]} paths @param {NodeJS.ProcessEnv} [env]
  * @returns {IgnoreRule[]}
@@ -196,7 +190,7 @@ const NO_FSMONITOR = ["-c", "core.fsmonitor="];
  */
 function ignoreRules(cwd, paths, env = process.env) {
   // check-ignore refuses literal pathspecs, which every call gets; these paths hold no glob or magic either way.
-  const args = ["--no-literal-pathspecs", ...NO_FSMONITOR, "check-ignore", "--stdin", "-z", "-v", "-n"];
+  const args = ["--no-literal-pathspecs", "check-ignore", "--stdin", "-z", "-v", "-n"];
   /** @type {string} */
   let out;
   try {
@@ -291,12 +285,12 @@ function headReading(cwd) {
 export function worktreesIgnored(cwd) {
   const entries = (/** @type {string} */ out) => out.split("\0").filter(Boolean);
   const name = (/** @type {string} */ entry) => entry.slice(entry.indexOf("\t") + 1);
-  const index = entries(git([...NO_FSMONITOR, "ls-files", "-s", "-z", "--", AGENT_WORKTREES], { cwd }));
+  const index = entries(git(["ls-files", "-s", "-z", "--", AGENT_WORKTREES], { cwd }));
   const held = index.filter((e) => e.startsWith("160000 ") || name(e).slice(AGENT_WORKTREES.length).includes("/"));
   // A conflict lists a path once for each stage.
   if (held.length) return { state: "tracked", paths: [...new Set(held.map(name))] };
   // A read: status takes no lock to refresh the index. A tracked file changed is no listing, so only `??`.
-  const status = git([...NO_FSMONITOR, "status", "--porcelain", "-z", "--untracked-files=all", "--", AGENT_WORKTREES], { cwd, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
+  const status = git(["status", "--porcelain", "-z", "--untracked-files=all", "--", AGENT_WORKTREES], { cwd, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } });
   const listed = entries(status).filter((e) => e.startsWith("?? ")).map((e) => e.slice(3));
   if (listed.length) return { state: "listed", paths: listed };
   const { ignored, rule, asked } = headReading(cwd);

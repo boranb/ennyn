@@ -1068,8 +1068,8 @@ export async function registryVerdicts(entries, rule, { now = Date.now(), signal
   return { young, unadopted, tampered, hiddenScripts, unread };
 }
 
-/** @param {string} val */
-function iniUnsafe(val) {
+/** @param {string} val @param {boolean} [keyValue] a key's whole value, not a key or one element of a list */
+function iniUnsafe(val, keyValue = false) {
   // npm's ini (5.0, npm 10): trimmed; quoted, unquoted and JSON-parsed; else cut at the first ; or # not escaped.
   let v = (val || "").trim();
   if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) {
@@ -1079,7 +1079,8 @@ function iniUnsafe(val) {
     } catch {
       // as written
     }
-    return String(v);
+    // A key's value `'[]'` parses to an empty list and npm then unsets the key, as `undefined` does; String would give "", a true.
+    return keyValue && Array.isArray(v) && !v.length ? "undefined" : String(v);
   }
   let esc = false;
   let out = "";
@@ -1118,10 +1119,25 @@ export function npmrcEntries(text) {
     const list = key.length > 2 && key.endsWith("[]");
     if (list) key = key.slice(0, -2);
     // The line as shown: credentials in a URL are not printed.
-    out.push({ n: i + 1, line: line.trim().replace(/(\/\/)[^/@\s]*@/g, "$1…@"), key, value: m[3] ? iniUnsafe(m[4]) : "true", top: !section, list });
+    out.push({ n: i + 1, line: line.trim().replace(/(\/\/)[^/@\s]*@/g, "$1…@"), key, value: m[3] ? iniUnsafe(m[4], !list) : "true", top: !section, list });
   });
   return out;
 }
+
+/**
+ * Whether npm reads a boolean's value as false: `false`, `null` and a number that is zero, once trimmed as npm's own
+ * reader does first (white space a quote kept). Any other text is true to it, `no` and `off` and an empty value too.
+ * Measured with npm ci, 10.9.9: `ignore-scripts=0` runs install scripts, `ignore-scripts=no` does not; `npm config get`
+ * shows only the text.
+ * @param {string} value
+ */
+function npmFalse(value) {
+  const text = value.trim();
+  return text === "false" || text === "null" || (text !== "" && Number(text) === 0);
+}
+
+/** npmFalse for a key npm defaults to false: `undefined` unsets a key, so it falls back to false too. `strict-ssl`, default true, is the one key here it does not fit. @param {string} value */
+const npmOff = (value) => npmFalse(value) || value.trim() === "undefined";
 
 /** Keys an `.npmrc` sets that let other bytes in, or run code, said when a commit adds them. @type {Record<string, (value: string) => string | null>} */
 const SAID_KEYS = {
@@ -1129,14 +1145,16 @@ const SAID_KEYS = {
   proxy: (v) => (v && v !== "false" && v !== "null" ? "proxy" : null),
   "https-proxy": (v) => (v && v !== "false" && v !== "null" ? "proxy" : null),
   "http-proxy": (v) => (v && v !== "false" && v !== "null" ? "proxy" : null),
-  "strict-ssl": (v) => (v === "false" ? "tls" : null),
+  // A real handshake, 10.9.9: only `false` turned the check off (make-fetch-happen asks `!== false`); `0`, `null` and
+  // every `${…}` tried left it on. Those stay said: a said line stops nothing, and the next npm may read them otherwise.
+  "strict-ssl": (v) => (v.includes("${") ? "fromEnv" : npmFalse(v) ? "tls" : null),
   ca: () => "tls",
   cafile: () => "tls",
   "script-shell": () => "runsCode",
   "node-options": () => "runsCode",
   git: () => "runsCode",
   shell: () => "runsCode",
-  "ignore-scripts": (v) => (v === "false" ? "scriptsOn" : null),
+  "ignore-scripts": (v) => (v.includes("${") ? "fromEnv" : npmOff(v) ? "scriptsOn" : null),
 };
 
 /** Keys that make npm read another config file, which the check does not read: a project has no use for them. */
@@ -1150,6 +1168,21 @@ function registryListed(value, listed) {
   } catch {
     return false;
   }
+}
+
+/**
+ * The line of HEAD's `.npmrc` that keeps install scripts off, when the staged version no longer reads that way: npm runs
+ * them by default, so a deleted file or a dropped line turns them on as `ignore-scripts=false` does, and neither leaves
+ * a line for npmrcFindings to read. Nor does a commit that leaves npm on an older line, which is no new line to it (npm
+ * reads the last). null otherwise, a line the commit adds being npmrcFindings' to say.
+ * @param {string} before HEAD's text @param {string | null} text the staged text, null when the commit deletes the file
+ */
+export function scriptsGuardDropped(before, text) {
+  const last = (/** @type {string} */ s) => npmrcEntries(s).filter((x) => x.top && x.key === "ignore-scripts").at(-1);
+  const kept = last(before);
+  if (!kept || npmOff(kept.value)) return null;
+  const now = text === null ? undefined : last(text);
+  return !now || (SAID_KEYS["ignore-scripts"](now.value) && npmrcEntries(before).some((x) => x.line === now.line)) ? kept : null;
 }
 
 /**
@@ -1210,7 +1243,7 @@ export function npmrcFindings(text, rule) {
     const why = Object.hasOwn(SAID_KEYS, key) ? SAID_KEYS[key](value) : null;
     if (why) said.push({ n, line, reason: { key: why } });
   }
-  const offline = entries.some((x) => ["offline", "prefer-offline"].includes(x.key.toLowerCase()) && x.value === "true");
+  const offline = entries.some((x) => ["offline", "prefer-offline"].includes(x.key.toLowerCase()) && !npmOff(x.value));
   for (const x of entries) if (offline && x.key.toLowerCase() === "cache") said.push({ n: x.n, line: x.line, reason: { key: "offlineCache" } });
   return { refuse, said };
 }
@@ -1301,6 +1334,10 @@ export async function depsMessages(versions, rule, lang, { now = Date.now(), bes
     if (v.unread) {
       said(path, { key: v.unread });
       continue;
+    }
+    if (npmrcPath(path) && v.head && !v.headUnread) {
+      const dropped = scriptsGuardDropped(lockText(v.head) ?? "", v.staged ? lockText(v.staged) : null);
+      if (dropped) warnings.push(tShown("deps.npmrcSaid", { path: [path], where: [`${dropped.n}: ${dropped.line}`], why: reasonText({ key: "scriptsDropped" }, lang) }, lang));
     }
     if (!v.staged) continue;
     const text = lockText(v.staged);

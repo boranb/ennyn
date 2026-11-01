@@ -10,6 +10,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { git } from "../core/git.mjs";
 import { ConfigError, loadConfig } from "../core/config.mjs";
 import { checkCommitShape } from "../checks/commit-shape.mjs";
+import { npmrcEntries } from "../checks/deps.mjs";
 import { t } from "../core/i18n.mjs";
 import { hookProjectDir, projectConfig } from "../adapters/claude-code/project.mjs";
 import { FILE_TOOLS } from "../adapters/claude-code/hooks/side-copy-rules.mjs";
@@ -63,6 +64,108 @@ test("plugin: every agent and skill has front matter a YAML parser reads, named 
   // The check itself rejects the defect that started it.
   assert.ok(plainScalarProblem("Starts from the path table: every way in"));
   assert.equal(plainScalarProblem('Review — "how does this break?". Use after a task.'), null);
+});
+
+/**
+ * The two forms Claude Code 2.1.310 runs as a shell command when it loads a skill, read from the binary: a fence opened
+ * with ```! and !`command` at a line's start or after white space, in a text whose other inline code is blanked first.
+ * @param {string} text
+ */
+function shellForms(text) {
+  const blanked = text.replace(/`[^`\n]+`/g, (code, at) => (text[at - 1] === "!" || text[at - 1] === "`" ? code : `\`${" ".repeat(code.length - 2)}\``));
+  return [...text.matchAll(/```!\s*\n?[\s\S]*?\n?```/g), ...blanked.matchAll(/(?<=^|\s)!`[^`]+`/gm)].map((m) => m[0]);
+}
+
+/**
+ * What a front matter holds, line by line: its keys as written, and any other line whole. Claude Code 2.1.310 grants tools
+ * from `allowed-tools` and reads `hooks` here (the binary): lines, not a reader of keys, so a quoted key or a list counts.
+ * The block as the binary's pattern finds it, a CRLF file too; one opened and never closed is no clean read, so it counts.
+ * @param {string} text
+ */
+function frontMatterLines(text) {
+  if (!/^\s*---/.test(text)) return [];
+  const block = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text);
+  return block ? block[1].split("\n").map((line) => line.split(":")[0]) : ["a front matter no pattern closes"];
+}
+
+/** Whether an `.npmrc` keeps install scripts off as npm reads it: one assignment of the key, `true`, and no section at all. @param {string} text */
+function scriptsKeptOff(text) {
+  const set = npmrcEntries(text).filter((x) => x.key === "ignore-scripts");
+  return set.length === 1 && set[0].value === "true" && !set[0].list && !/^\s*\[/m.test(text);
+}
+
+/** What a package.json brings in beyond dev dependencies at one exact version each: any other section, and any version that is a URL or a range. @param {Record<string, any>} pkg */
+const packagesBeyond = (pkg) => [...Object.keys(pkg).filter((k) => k !== "devDependencies" && /dependenc|overrides/i.test(k)), ...Object.entries(pkg.devDependencies ?? {}).filter(([, version]) => !/^\d+\.\d+\.\d+$/.test(version)).map(([name]) => name)];
+
+/** The markup a drawing needs, as this icon uses it: nothing that loads, runs or embeds. */
+const ICON_MARKUP = new Set(["circle", "defs", "feColorMatrix", "feComposite", "feGaussianBlur", "feTurbulence", "filter", "linearGradient", "path", "radialGradient", "rect", "stop", "svg"]);
+
+/** The attributes those need, as this icon uses them: no handler, no `href`, nothing that loads. */
+const ICON_ATTRIBUTES = new Set(["baseFrequency", "cx", "cy", "d", "fill", "filter", "gradientUnits", "height", "id", "in2", "numOctaves", "offset", "opacity", "operator", "r", "rx", "seed", "stdDeviation", "stop-color", "stop-opacity", "stroke", "stroke-dasharray", "stroke-linecap", "stroke-linejoin", "stroke-opacity", "stroke-width", "transform", "type", "values", "viewBox", "width", "x", "x1", "x2", "xmlns", "y", "y1", "y2"]);
+
+/** Every word inside a tag but its name, quoted values left out: an unquoted value counts, as an attribute's name would, and so does the odd quote a `>` in a value leaves. @param {string} text */
+const iconAttributes = (text) => [...text.matchAll(/<[^\s>/!?]+([^>]*)>/g)].flatMap((m) => m[1].replace(/"[^"]*"|'[^']*'/g, " ").match(/[^\s=/]+/g) ?? []);
+
+/** What an SVG holds beyond a drawing: other markup (`<!` and `<?` read as names, so they count) or attributes, a reference out of the file, an import, or the `&` or `\\` that would spell one. @param {string} text */
+const iconExtras = (text) => [...[...text.matchAll(/<\/?([^\s>/]*)/g)].map((m) => m[1]).filter((name) => !ICON_MARKUP.has(name)), ...iconAttributes(text).filter((name) => !ICON_ATTRIBUTES.has(name)), ...(text.match(/url\((?!#)|@import|&|\\/gi) ?? [])];
+
+/** Every file below a folder, none when it is not there; Node 20.0 has no recursive read. @param {string} dir @param {string} [root] @returns {string[]} */
+const filesBelow = (dir, root = ROOT) => (existsSync(join(root, dir)) ? readdirSync(join(root, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? filesBelow(`${dir}/${e.name}`, root) : [`${dir}/${e.name}`])) : []);
+
+/** Where Claude Code 2.1.310's plugin loader reads Markdown by default (the binary). Its `themes` hold JSON and its `workflows` scripts, so neither has front matter. @param {string} [root] */
+const pluginMarkdown = (root = ROOT) => ["skills", "agents", "commands", "output-styles"].flatMap((folder) => filesBelow(folder, root));
+
+/** The files of those whose front matter can grant something: an agent's is held by its `tools` line. @param {string} [root] */
+const grantingFiles = (root = ROOT) => pluginMarkdown(root).filter((f) => !f.startsWith("agents/") && (!f.startsWith("skills/") || /\/skill\.md$/i.test(f)));
+
+/** Whatever a front matter holds but a name and a description. @param {string} text */
+const beyondName = (text) => (frontMatterLines(text) ?? []).filter((line) => !["name", "description"].includes(line));
+
+
+test("plugin: what SECURITY.md says of this repository's own files holds: no runtime dependency, no install script, tools a reviewer is given, no shell a skill runs, an icon that runs nothing", () => {
+  const pkg = JSON.parse(read("package.json"));
+  // Only the dev dependencies, each at one exact version: a URL or a range would be another package tomorrow.
+  assert.deepEqual(packagesBeyond({ devDependencies: { a: "1.2.3" } }), []);
+  for (const key of ["dependencies", "optionalDependencies", "peerDependencies", "peerDependenciesMeta", "bundleDependencies", "bundledDependencies", "overrides"]) assert.deepEqual(packagesBeyond({ [key]: {} }), [key]);
+  for (const version of ["^1.2.3", "~1.2.3", "1.2.x", "latest", "https://example.invalid/a-1.2.3.tgz", "git+https://example.invalid/a#1.2.3", "npm:b@1.2.3"]) assert.deepEqual(packagesBeyond({ devDependencies: { a: version } }), ["a"], version);
+  assert.deepEqual(packagesBeyond(pkg), [], "package.json has no runtime dependency");
+  assert.deepEqual(Object.keys(pkg.devDependencies).sort(), ["@types/node", "typescript"]);
+  // An allow list: npm ci runs names no prefix tells, `dependencies` among them (npm 10.9.9, measured).
+  assert.deepEqual(Object.keys(pkg.scripts).sort(), ["test", "test:linux", "test:reference", "test:short", "typecheck", "validate:plugin"], "no script npm runs by itself");
+  assert.ok(scriptsKeptOff("ignore-scripts=true\n"));
+  for (const text of ["ignore-scripts=true\nignore-scripts=false\n", "[x]\nignore-scripts=true\n", "ignore-scripts=true\n[x]\n", "ignore-scripts=false\n", "; ignore-scripts=true\n", "ignore-scripts[]=true\n", "IGNORE-SCRIPTS=true\n", ""]) assert.ok(!scriptsKeptOff(text), text);
+  assert.ok(scriptsKeptOff(read(".npmrc")), ".npmrc keeps install scripts off");
+  // A plugin agent's hooks, mcpServers and permissionMode are ignored (2.1.310, read from the binary); its tools are not.
+  for (const a of agents) assert.equal(frontMatter(read(a.path))?.get("tools"), "Read, Grep, Glob, Bash", a.path);
+  // The positive control: what a loader runs, and the `!` these skills write as a word, which it does not.
+  assert.equal(shellForms("x\n!`id`\n").length, 1);
+  assert.equal(shellForms("x !`id`").length, 1);
+  assert.equal(shellForms("```!\nid\n```\n").length, 1);
+  assert.deepEqual(shellForms("On a `!`, propose the line `a`.\n"), []);
+  // Every folder the loader reads, the day one exists: a command is a skill's sibling, and an output style can force itself on.
+  const box = mkdtempSync(join(tmpdir(), "pl-folders-"));
+  for (const f of ["commands/sub/go.md", "output-styles/s.md", "agents/a.md", "skills/s/SKILL.md", "skills/s/notes.md", "styles/x.md"]) {
+    mkdirSync(dirname(join(box, f)), { recursive: true });
+    writeFileSync(join(box, f), "");
+  }
+  assert.deepEqual(pluginMarkdown(box).sort(), ["agents/a.md", "commands/sub/go.md", "output-styles/s.md", "skills/s/SKILL.md", "skills/s/notes.md"]);
+  assert.deepEqual(grantingFiles(box).sort(), ["commands/sub/go.md", "output-styles/s.md", "skills/s/SKILL.md"]);
+  for (const f of pluginMarkdown()) assert.deepEqual(shellForms(read(f)), [], f);
+  // Nothing a loader grants: a tool list as a value, as a list, under a quoted key, in a CRLF file, past a block left open.
+  assert.deepEqual(beyondName("---\nname: a\ndescription: b\n---\n"), []);
+  assert.deepEqual(beyondName("---\ndescription: b\n---\n"), []);
+  assert.deepEqual(beyondName("no front matter\n"), []);
+  assert.deepEqual(beyondName("---\r\nname: a\r\n---\r\n"), []);
+  assert.deepEqual(beyondName("---  \nname: a\n---  \n"), []);
+  for (const text of ["---\nname: a\nallowed-tools: Bash\n---\n", "---\nallowed-tools:\n  - Bash\n---\n", '---\n"allowed-tools": Bash\n---\n', "---\nhooks: x\n---\n", "---\nforce-for-plugin: true\n---\n", "---\r\nallowed-tools: Bash\r\n---\r\n", "---  \nallowed-tools: Bash\n---  \n", "---\nallowed-tools: Bash\n"]) assert.notDeepEqual(beyondName(text), [], text);
+  assert.ok(grantingFiles().length >= 2);
+  for (const f of grantingFiles()) assert.deepEqual(beyondName(read(f)), [], f);
+  // The positive control of the icon's lists: each way a file could do more than draw, then the file.
+  assert.deepEqual(iconExtras('<svg><path d="M0 0"/></svg>'), []);
+  assert.deepEqual(iconExtras('<rect fill="url(#a)"/>'), []);
+  const beyond = { onload: '<svg onload="x"></svg>', onclick: "<rect onclick='x'/>", unquoted: "<rect onclick=x />", href: '<linearGradient href="#x"/>', xlink: '<linearGradient xlink:href="x"/>', filter: '<filter href="x"/>', data: '<rect href="data:text/html,x"/>', past: '<svg id=">" onload="x">', style: '<rect style="fill:red"/>', script: "<script/>", embed: '<iframe src="x"/>', image: '<image href="x"/>', use: '<use href="x"/>', styleSheet: "<style>a{}</style>", pi: '<?xml-stylesheet href="x"?>', outside: '<rect fill="url(https://example.invalid/x#a)"/>', quoted: "<rect fill=\"url('https://example.invalid/x')\"/>", upper: '<rect fill="URL(x)"/>', import: "@import 'x';", doctype: '<!DOCTYPE svg [<!ENTITY s "x">]>', entity: '<rect fill="u&#114;l(x)"/>', escape: '<rect fill="u\\72 l(x)"/>' };
+  for (const [what, text] of Object.entries(beyond)) assert.notDeepEqual(iconExtras(text), [], what);
+  assert.deepEqual(iconExtras(read(".claude-plugin/icon.svg")), [], "the icon is paths and gradients");
 });
 
 test("plugin: every SKILL.md stays under 8 KB (DESIGN.md: skills are read whole, every time)", () => {

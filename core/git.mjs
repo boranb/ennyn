@@ -33,10 +33,22 @@ const SHAPING_ENV = ["GIT_DIFF_OPTS", "GIT_EXTERNAL_DIFF", "GIT_ICASE_PATHSPECS"
 /**
  * Config that would change parsed output, set back for every call; the defaults of diff.algorithm and
  * diff.indentHeuristic keep those two settings out of the rework rate. Paths in a pathspec are literal.
+ *
+ * And what a repository's own config may not start. A commit can hold a bare-looking folder (HEAD, objects, refs and a
+ * config file, anywhere in the tree), git reads it as a repository for a command started inside it, and that config
+ * can name programs. `safe.bareRepository=explicit` refuses such a folder, in git's words, from git 2.38; a checkout,
+ * a linked worktree and `--git-dir` are untouched. The refusal reaches a real git dir as well when a call starts inside
+ * one: `.git` below git 2.44, `.git/worktrees/<name>` below 2.45, and `.git/modules/<name>` on 2.39.5 though not on 2.50.
+ * It reads as a failed call, no clean read. A command typed there lands on it, and a test's setup did until it named
+ * `--git-dir`; no real flow does: git runs a commit-msg hook from the top of the work tree, and no call here sets a
+ * working directory in a git dir. A lower git, the floor 2.34.1 too, ignores the setting, so `core.fsmonitor` is set as
+ * well: any read of an index runs the program it names or starts its daemon. Empty, as the floor takes `false` for a
+ * program's name. Below 2.38 the folder's other settings stay open, and on 2.34.1 two routes still run what they name:
+ * SECURITY.md has them.
  */
 const FIXED_CONFIG = [
   "--literal-pathspecs",
-  ...["log.showSignature=false", "i18n.logOutputEncoding=UTF-8", "diff.interHunkContext=0", "diff.algorithm=myers", "diff.indentHeuristic=true", "log.follow=false", "log.showRoot=true"].flatMap((kv) => ["-c", kv]),
+  ...["log.showSignature=false", "i18n.logOutputEncoding=UTF-8", "diff.interHunkContext=0", "diff.algorithm=myers", "diff.indentHeuristic=true", "log.follow=false", "log.showRoot=true", "safe.bareRepository=explicit", "core.fsmonitor="].flatMap((kv) => ["-c", kv]),
 ];
 
 /** ENOENT from spawn: no git on PATH, or the working directory is not there. */
