@@ -9,7 +9,7 @@ No `.ennyn/` in the project yet: run the init skill first. Project settings come
 
 ## 1. Pick the four tasks
 
-Read in one turn, once `ennyn.mjs doctor` shows no ✗ (else stop): the config, the handoff (`paths.handoff`; unset → `HANDOFF.md`) and the graph. The handoff names the commands later steps run (fast test, lint, typecheck, the mutation tool; one it does not name → `commands` and `mutation` of `ennyn.mjs init-scan --json`), the previous cycle's next step and its open risks. Note HEAD: the cycle's bypass count starts there.
+Read in one turn, once `ennyn.mjs doctor` shows no ✗ (else stop): the config, the handoff (`paths.handoff`; unset → `HANDOFF.md`) and the graph. The handoff names the commands later steps run (fast test, whole test, lint, typecheck, the mutation tool; one it does not name → `commands` and `mutation` of `ennyn.mjs init-scan --json`), the previous cycle's next step and its open risks. Note HEAD: the cycle's bypass count starts there.
 
 | Slot | Source | Rule |
 |---|---|---|
@@ -23,11 +23,11 @@ A critical problem (crash, data loss, auth break, blocker) may replace one core 
 
 The orchestrator (the session running the cycle) keeps the plan, step 7's verdicts and the landing. Each task runs in a fresh agent on a written brief, not a fork of that session; the agent skips step 7 and stops at its commit. Briefs, task states, a host with no subagents: [task-brief.md](task-brief.md).
 
-1. **Read** only the relevant files. Independent reads (files, searches, history) go in the **same turn**.
+1. **Read** only the relevant files; independent reads go in the **same turn**.
 2. **Design brief** for UI work — [design-brief.md](design-brief.md).
 3. **Impact table** before the first edit when the change touches a shared decision, predicate, gate or accept/reject rule: `ennyn.mjs impact --symbol <name> --files <paths>`, then complete the five rows it asks. Each row is answered by a command's output, never by recall. For heuristic rules, dictionaries and thresholds: build an accept **and** reject corpus and a failing test first. Details: [impact-table.md](impact-table.md).
 4. **Implement**, matching existing patterns.
-5. **Test** the changed files with the handoff's fast test command, then its lint and typecheck when it names them.
+5. **Test:** a new test alone first, its control seen failing once; then the handoff's fast test, lint and typecheck.
 6. **Mutation pass** on the changed files with the handoff's mutation tool; with none (or "not applicable"), hand-pick mutants of the changed lines and run them with `ennyn.mjs mutate <list.json> --command "<fast test>"`, adding `--check "<parse command> {file}"` for files other than JavaScript and JSON. It edits files in place: while a reviewer reads the tree, run it in a separate worktree. Record the first-run result (`killed/total`); write a test for each survivor or justify it as equivalent.
 7. **Review** with the reviewer agents that match the change: those in `review.agents` when set, otherwise Ennyn's (correctness, security, data correctness). Give them the changed files, the impact table and [finding-schema.md](finding-schema.md). **At most two rounds** (see its Rounds); a third needs an independent signal (test, mutation run, real measurement) showing a new class. For security work the round limit is replaced by the path table: list every way to reach the protected state first.
 8. **A fix is a new write.** If a fix changes a row of the impact table, update the table and give round two the delta.

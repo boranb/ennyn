@@ -15,7 +15,7 @@ A development loop for coding agents, shipped as a Claude Code plugin and a zero
 
 ## Tests
 
-- `npm test` and `npm run typecheck` both pass before every commit.
+- `npm test` and `npm run typecheck` both pass before main moves.
 - Before a push, `npm run test:linux` passes: the suite on Linux at the Node and git floors and on newer Node majors (needs docker). CI starts no job while the repository is private.
 - Tests are hermetic: temporary directories only, never a path outside the repository.
 

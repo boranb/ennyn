@@ -61,7 +61,7 @@ A line that forbids a literal (`bans`: "never use `console.log`") can become a `
 
 Only when `handoff.exists` is false, to `paths.handoff` (an existing handoff gets only question 6's line):
 
-- the commands the cycle runs: the fast test command from `commands`, then lint and typecheck when present;
+- commands from `commands`: fast test, whole test (holds every slow gate), lint and typecheck when present;
 - the mutation tool from `mutation` (ask if `unmeasured` has it), or "none configured: hand-picked mutants, run with `ennyn mutate`";
 - where the graph is;
 - "Next: run the cycle skill".

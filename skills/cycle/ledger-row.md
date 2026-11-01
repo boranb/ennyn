@@ -16,7 +16,7 @@ A row with a field missing, of the wrong type, outside its set or past its bound
 |---|---|
 | `cycle` | the cycle's number in the handoff, 1 to 9999. The command counts the cycle it is given, and says a row of a higher one |
 | `task` | the graph node id of the task |
-| `round` | `0` for what the author found before review (own test, mutation pass, measurement, full suite); `1`, `2`, `3` for review rounds |
+| `round` | `0` for what the author found before review (own test, mutation pass, measurement, a suite); `1`, `2`, `3` for review rounds |
 | `id` | unique in the file, lower-case words and digits parted by dashes: `c16-t2-sec-r1-03` (cycle, task, who, round, number) |
 | `severity` | `critical` · `high` · `medium` · `low` |
 | `class` | a list of one to 20: a registry id (`ennyn.mjs classes` lists them), or `new: <short name>`, at class level, not at surface level: words that would fit a defect in another program |
