@@ -11,10 +11,23 @@
           "file": "checks/commit-shape.mjs",
           "action": "advice",
           "proof": "commit-check warns when a path changes and none of its documents do; any document touched meets it, and it never stops a commit."
+        },
+        {
+          "commit": "58e260ef5c6c94af8f336c34b97850082976841b",
+          "file": "test/findings-format.test.mjs",
+          "action": "red-green",
+          "proof": "The row format's fields, closed sets and bounds are compared with the validator's, with guard mutants. It holds that one document, and landed in cycle 16 with nothing shown yet."
         }
       ],
       "nodes": [
         "doc-cochange"
+      ],
+      "linked": [
+        "new: volatile number in a durable document",
+        "new: stated reason outlived by a method change",
+        "new: ordered protocol not reconciled with a split of who runs which step",
+        "new: reader missed in a sweep",
+        "new: documentation says fallback while the code takes the first"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: not stopped, no catch since it landed. Named in cycle 1. Counting the doc twin of cycle 4 here is this reconstruction's merge."
     },
@@ -33,6 +46,15 @@
       "nodes": [
         "git-oracle-matrix"
       ],
+      "linked": [
+        "new: reading a file another process writes from a queue before the queue drains",
+        "new: a list of cases copied by hand and tested against itself",
+        "new: an allow list built from one corpus with nothing to say what it misses",
+        "new: a parser of a format its producer calls unstable",
+        "new: directory listing that misses a nested layout of the producer",
+        "new: list of switches narrower than the program it models",
+        "new: revision argument with no end-of-options separator"
+      ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, the stored-message scope held and other git readers did not. Named in cycle 2."
     },
     {
@@ -49,6 +71,11 @@
       ],
       "nodes": [
         "tests-hermetic-git"
+      ],
+      "linked": [
+        "new: test reads the working tree where the repository was meant",
+        "new: test reads the index where the working tree was meant",
+        "new: recorder rule not held by a new recorder"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, it came back as tests that lean on the machine's identity, found at the Linux run. Named in cycle 3."
     },
@@ -78,7 +105,13 @@
         "config-failopen-scope"
       ],
       "linked": [
-        "new: unmeasured read as a result"
+        "new: unmeasured read as a result",
+        "new: failure reported as success through an exit trap",
+        "new: behaviour closed by an unrelated failure",
+        "new: could not measure read as a change",
+        "new: check on the reader side only",
+        "new: meaning lost on read",
+        "new: refused row dropped without a mark"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, failed reads held, the same mistake in logic recurs and writes are not covered. Named in cycle 4."
     },
@@ -103,6 +136,21 @@
       "nodes": [
         "guard-vacuous"
       ],
+      "linked": [
+        "new: check of an environment input the program ignores",
+        "new: test narrower than the claim made for it",
+        "new: test fixture that does not produce the state it names",
+        "new: test added to a gate file with no guard named",
+        "new: a test that reads the value it should pin",
+        "new: a test that passes for a reason other than the one it names",
+        "new: a fake that skips the branch it was written for",
+        "new: a fixture that no longer is what its name says",
+        "new: a lab that asserted nothing about reaching its target",
+        "new: two proofs checked apart",
+        "new: message promises what no check does",
+        "new: fixture holds what the test assumes absent",
+        "new: check runs only when someone asks"
+      ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, it holds inside the listed gates only. Named in cycle 5."
     },
     {
@@ -119,6 +167,24 @@
       ],
       "nodes": [
         "input-shape-matrix"
+      ],
+      "linked": [
+        "new: relative input resolved against the process folder",
+        "new: the rule reads one location and the work happens in another",
+        "new: an absent thing read as no change",
+        "new: a string conversion that turns a missing value into a plausible word",
+        "new: invalid row placed by fall through",
+        "new: locale folding of a loan word",
+        "new: exact match guards a spelled name",
+        "new: unreadable value dropped instead of held as unknown",
+        "new: number read past its exact range",
+        "new: separator inside a value splits the value",
+        "new: cleanup pass rewrites the value it should protect",
+        "new: repeated key resolved silently",
+        "new: qualifier on a key ignored",
+        "new: line ending shape not normalized",
+        "new: one pass over a nested structure sees only the innermost pair",
+        "new: unrecognised record skipped so an older record answers"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, reviewers found more shapes after it landed. Named in cycle 7."
     },
@@ -146,6 +212,15 @@
           "proof": "Every workflow joiner and run rule takes time linear in the text, on texts built to make one rescan."
         }
       ],
+      "linked": [
+        "new: truncated input read as measured",
+        "new: error text cut before the part that explains it",
+        "new: quadratic step past the read limit",
+        "new: regex backtracking cost on crafted text",
+        "new: open regex repeat exhausts the stack",
+        "new: input value used as a size with no ceiling",
+        "new: no ceiling on the size of untrusted text"
+      ],
       "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict and record no gate. These tests hold the surfaces they name, and the class came back on others in cycles 9, 10, 12 and 14. Named in cycle 7."
     },
     {
@@ -163,6 +238,15 @@
       "nodes": [
         "verdict-baseline"
       ],
+      "linked": [
+        "new: narrowing a rule to one reader while another still needs it",
+        "new: requirement dropped by a redesign with no statement that it was",
+        "new: open list accepts what a closed list refused",
+        "new: exception wider than its reason",
+        "new: skipping examples exposes older data as current",
+        "new: quoted example rule drops a real record",
+        "new: narrowed reader loses a valid shape"
+      ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, it holds past probes only. Named in cycle 8."
     },
     {
@@ -172,6 +256,13 @@
       "nodes": [
         "raw-output-commit-check",
         "forbidden-count-shapes"
+      ],
+      "linked": [
+        "new: protection names one artifact of several the incident lost",
+        "new: a write after the last review with no reader",
+        "new: one route of a family closed while the sibling routes stay open",
+        "new: weaker twin of an existing escaping rule",
+        "new: guard applied to one of two code paths that resolve the same input"
       ],
       "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict; no gate, both nodes are open. Named in cycle 8 as one-site escape or twin fix."
     },
@@ -189,6 +280,17 @@
       ],
       "nodes": [
         "verdict-baseline"
+      ],
+      "linked": [
+        "new: a hold on a request the requester needs to go on",
+        "new: a user's configured limit treated as a default",
+        "new: a rule for one kind of entry applied to every kind in a list",
+        "new: a skip written for one kind of entry that also drops a sibling kind",
+        "new: a flag carried over from the command it replaced",
+        "new: rule shaped by this repository shipped to every project",
+        "new: a duplicate check reads only the entries that passed every other check",
+        "new: a check excludes its own strongest case",
+        "new: liveness check refuses history"
       ],
       "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict; nothing has recounted it since. Named in cycle 9."
     },
@@ -264,6 +366,13 @@
         "one-decision-one-site",
         "centralize-candidates"
       ],
+      "linked": [
+        "new: constant stated where a config key decides",
+        "new: two rules answer one state differently",
+        "new: text and its check drift",
+        "new: second statement of one rule differs",
+        "new: twin definitions disagree"
+      ],
       "judged": "Research of 2026-10-31, about 30% either way: no gate, it recurred in all four tasks of cycle 15. Named in cycle 14, first seen in cycle 8. Counting cycle 12's two readers of one decision here is this reconstruction's merge."
     },
     {
@@ -272,6 +381,9 @@
       "state": "open",
       "nodes": [
         "reader-against-real-program"
+      ],
+      "linked": [
+        "new: a claim about another program written from reading its code and not run"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: no gate. Cycle 15 closed one surface by no longer reading it and one by asking git. Named in cycle 15, a close relative of reader-drifts-from-program."
     },
@@ -283,6 +395,279 @@
         "shell-in-js-templates"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: no gate. Named in cycle 15."
+    },
+    {
+      "id": "code-no-test-holds",
+      "says": "Code can change or go and every test stays green: a branch, flag, bound or refusal was written with no test that needs it. A test that exists and cannot fail where it says it looks is vacuous-gate.",
+      "state": "open",
+      "linked": [
+        "new: failure path of the last step left unasserted",
+        "new: partial validity accepted by a sum",
+        "new: a settling wait with no test of its own",
+        "new: a check no test can tell from its neighbour",
+        "new: two conditions joined with only one tested",
+        "new: one branch of a list of roots untested",
+        "new: a filter narrower than its test",
+        "new: a table checked only by a run the suite does not make",
+        "new: a flag kept with no test that crosses it",
+        "new: a rule whose reject cases are all caught by its neighbour",
+        "new: a normalization only one kind of disk can show",
+        "new: a branch written with no test that reaches it",
+        "new: guard with no test that needs it",
+        "new: survivor of a mutation pass",
+        "new: boundary of a rule left unpinned",
+        "new: boundary test misses the boundary",
+        "new: growth test measures one shape of size"
+      ],
+      "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
+    },
+    {
+      "id": "claim-outruns-evidence",
+      "says": "A written statement says more than, or other than, what was read or measured: it comes from memory, a summary or one tried case, and nothing holds it to its source. A statement that was true until the code moved is doc-lags-code.",
+      "state": "open",
+      "gates": [
+        {
+          "commit": "f59fbdc9eeca7bac82dea207ba8eda38b9c38aa8",
+          "file": "test/classes-seed.test.mjs",
+          "action": "red-green",
+          "proof": "A gate row's commit must have touched its file and an entry that claims a gate must have one standing, with guard mutants. It holds the registry's own rows and no other statement."
+        }
+      ],
+      "linked": [
+        "new: paired numbers reordered against their source",
+        "new: method claim with no source",
+        "new: required analysis skipped by a ruling its own trigger contradicts",
+        "new: fact about another program stated wider than it holds",
+        "new: a promise in the documents wider than what the code does",
+        "new: a sweeping statement about what a program reads",
+        "new: limit stated from one tried route instead of the family",
+        "new: a version number written from memory",
+        "new: claim stronger than the source",
+        "new: recipe covers one of two moved sets",
+        "new: limit not carried into a comparison",
+        "new: safety claim covers one direction",
+        "new: a pointer copied from a secondary source and not checked against what it points at",
+        "new: closed state wider than what was measured",
+        "new: absence recorded without looking",
+        "new: reconstruction attributed to its source",
+        "new: merge of two names left unrecorded",
+        "new: claim written down before it was measured",
+        "new: absolute promise wider than the code"
+      ],
+      "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet."
+    },
+    {
+      "id": "procedure-leaves-case-open",
+      "says": "A written procedure or definition reaches a case with no single answer or no next step, or leans on something nothing provides, so the reader stalls or guesses. Two texts that answer one case differently are one-question-several-places.",
+      "state": "open",
+      "gates": [
+        {
+          "commit": "7fd12bb4f20a44d8487366b48e0e47f676f07b80",
+          "file": "test/plugin.test.mjs",
+          "action": "red-green",
+          "proof": "A skill must link every file of its tree and each link must lead to a file, with guard mutants, so a step cannot name a file that is gone. It holds a skill's links and no other gap."
+        }
+      ],
+      "linked": [
+        "new: rule meant to bound a loop leaves one path unbounded",
+        "new: step with no branch for its own failure",
+        "new: limit counts an event the design treats as a different one",
+        "new: fallback path described for one step of many",
+        "new: exclusion justified by a state another option removes",
+        "new: required input with no producer",
+        "new: durable count with no durable home",
+        "new: scope of an action left undefined after concurrency arrived",
+        "new: command given without how it must be run",
+        "new: method names an input only one project has",
+        "new: rule applied to a state outside the machine it was written for",
+        "new: exemption keyed to the wrong event",
+        "new: prose rule with an existing mechanism left unused",
+        "new: required input with no carrier",
+        "new: decision table with an unstated exit",
+        "new: instruction depends on an unshipped format",
+        "new: path valid only in this repository",
+        "new: definition ignores when a gate runs",
+        "new: rule leaves a judgement it says it removed",
+        "new: repair path undefined",
+        "new: categories that do not separate their cases",
+        "new: a procedure's branch omits a step its reader depends on",
+        "new: validity of a stored value changes with later state",
+        "new: a size cut removes the only copy one reader sees",
+        "new: write path of a record left unnamed",
+        "new: instruction names a list without saying where it is",
+        "new: state label with no rule behind it",
+        "new: shared log with no landing rule",
+        "new: format says appended while its fields need editing",
+        "new: stated repair forbidden by another rule"
+      ],
+      "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet."
+    },
+    {
+      "id": "stand-in-for-the-fact",
+      "says": "A decision rests on a stand-in for the fact it needs (an estimate, a sum, a marker, a last-seen value, a time, a spelling), and the two part on some input. A stand-in the input can set on purpose is input-steers-its-check; reading a program's text is text-reading-stands-in.",
+      "state": "open",
+      "linked": [
+        "new: text merge read as behaviour unchanged",
+        "new: an estimate taken as evidence for a safety decision",
+        "new: safety decision read from a value of the past state",
+        "new: a sum that mixes two meanings taken as evidence for a safety decision",
+        "new: a later event in another stream taken as covering this one",
+        "new: a side effect tied to the verdict and not to what was measured",
+        "new: a marker of a state read as the only cause of it",
+        "new: an output tied to a measurement it does not need",
+        "new: limit read from the last observation instead of the state the next action runs under",
+        "new: a time compared with a commit stands in for a comparison with the index",
+        "new: a timing margin standing where a direct reading was available",
+        "new: coordinate read on another tree",
+        "new: linear boundary on a branching history",
+        "new: fallback gives a confident wrong answer",
+        "new: rule reads a coordinate that does not survive a rewrite",
+        "new: file level reading used for a line level fact",
+        "new: order read by ancestry on a branching history",
+        "new: heuristic list refuses a legitimate case",
+        "new: list of spellings stands for a kind",
+        "new: normalised match merges short names",
+        "new: check asks the step and not where it ends"
+      ],
+      "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate.",
+      "gates": [
+        {
+          "commit": "bccbd14363abf302656ec8e000834206f23fe258",
+          "file": "test/compact-boundary.test.mjs",
+          "action": "red-green",
+          "proof": "Holds what the first design read from a last reply or an estimate, by reproducers run with and without the hook: a hold no longer rests on a guessed window."
+        }
+      ]
+    },
+    {
+      "id": "input-steers-its-check",
+      "says": "A check that must hold against its input takes its answer from a value that input supplies or can move (a date, a setting, a number in the data), so the input picks the result.",
+      "state": "open",
+      "linked": [
+        "new: decision compares clocks the input controls",
+        "new: boundary taken from a value the input's config supplies",
+        "new: guard tests a derived value the input can part from the one that matters",
+        "new: a boundary check that reads one of two values the input's config can move",
+        "new: a fallback that takes the value the check is meant to doubt",
+        "new: selector taken from the data it selects",
+        "new: default scope read from the data being measured"
+      ],
+      "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
+    },
+    {
+      "id": "reader-takes-lookalike",
+      "says": "A reader of free text takes a line that only looks like the record it wants (a quoted example, an older copy, a label in prose) or runs past the record's end, and returns that as the answer. A record it fails to recognise and passes by is unreadable-shape-passes.",
+      "state": "open",
+      "linked": [
+        "new: label match not bound to its position",
+        "new: first match taken without checking it is the record",
+        "new: quoted example read as data",
+        "new: search runs past the record it belongs to",
+        "new: preference overrides document order",
+        "new: example in code read as live data",
+        "new: boundary computed for one language while two are read",
+        "new: weak signal chooses the record",
+        "new: document order overrides project language"
+      ],
+      "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
+    },
+    {
+      "id": "boundary-value-unchecked",
+      "says": "A value from outside reaches code that assumes its type or range, with nothing checking it at the edge, so the code throws, prints nonsense or does damage where it should refuse. A value read wrong in silence is unreadable-shape-passes.",
+      "state": "open",
+      "linked": [
+        "new: config value accepted by location but not by the name it creates",
+        "new: untrusted value formatted before its type is known",
+        "new: missing type guard at an untyped boundary",
+        "new: writer prints what its reader refuses",
+        "new: holes in a list skipped by its iterator"
+      ],
+      "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
+    },
+    {
+      "id": "test-built-on-assumption",
+      "says": "A test, fake or record is written from what its author assumes the code prints or keeps, not from what it does, so it fails or breaks with nothing wrong in the code. A test that passes where it cannot fail is vacuous-gate.",
+      "state": "open",
+      "linked": [
+        "new: test assumes a helper returns raw output",
+        "new: record pins a reading that varies between runs",
+        "new: an assertion written to the message's shape from memory",
+        "new: a fake broader than the call it means to fail",
+        "new: test pinned to data that changes by routine",
+        "new: fake failure spelled as an answer",
+        "new: test assumes an output shape it did not read",
+        "new: a test pinned the accident a path failed on, not the rule that stops it"
+      ],
+      "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
+    },
+    {
+      "id": "text-over-project-limit",
+      "says": "Text the project holds to a size or shape limit is written past it, and only the gate finds out, since the writer counted by hand or not at all.",
+      "state": "open",
+      "linked": [
+        "new: commit message over the project's shape limit",
+        "new: size limit passed by own edit",
+        "new: text limit found only by the gate"
+      ],
+      "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
+    },
+    {
+      "id": "code-with-no-effect",
+      "says": "Code no input can reach, or that changes no outcome, is written or left behind and reads as if it protected something. Code that works and no test holds is code-no-test-holds.",
+      "state": "open",
+      "linked": [
+        "new: code that guards a case the input format excludes",
+        "new: settings kept after the reason for them went",
+        "new: a guard that repeats what the next rule already decides",
+        "new: a helper left behind when its reason went",
+        "new: a guard against a danger the input cannot pose",
+        "new: dead branch in new code",
+        "new: guard kept for a cause not measured on that code",
+        "new: dead branch left in a rule"
+      ],
+      "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
+    },
+    {
+      "id": "guard-above-version-floor",
+      "says": "A guard or setting works only on versions newer than the oldest one supported and was measured on the newest alone, so at the floor it does nothing or means something else.",
+      "state": "open",
+      "linked": [
+        "new: a safety statement true only above the version floor",
+        "new: setting whose meaning differs across supported versions of the program",
+        "new: safety flag ignored by a supported version and documented as holding",
+        "new: a guard that exists only from a version above the supported floor",
+        "new: a safety flag offered as a fix on a version that ignores it"
+      ],
+      "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
+    },
+    {
+      "id": "write-creates-its-target",
+      "says": "A write step makes the place it expected to find, so a state that should have stopped the write becomes a new folder or file.",
+      "state": "open",
+      "linked": [
+        "new: a write helper that creates the place it should have found",
+        "new: side effect in a state the table says is left alone"
+      ],
+      "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate. Its own entry: one defect, named twice by two reviewers, that fits nothing else."
+    },
+    {
+      "id": "invisible-character-in-source",
+      "says": "A character that shows as nothing is written raw into source where its escape was meant, so tests pass on it and no reader sees it.",
+      "state": "open",
+      "linked": [
+        "new: an invisible character written raw into source where its escape was meant",
+        "new: invisible character in source"
+      ],
+      "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate. Its own entry: two rows that fit nothing else."
+    },
+    {
+      "id": "list-element-breaks-its-unit",
+      "says": "A list whose elements stand for one unit each is given a block of several, so whatever counts, joins or escapes by element reads it wrong.",
+      "state": "open",
+      "linked": [
+        "new: list element holds several output lines"
+      ],
+      "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate. Its own entry: a singleton that fits nothing else."
     }
   ]
 }

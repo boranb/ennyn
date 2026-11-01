@@ -24,7 +24,7 @@
     },
     {
       "id": "second-project-cycles",
-      "title": "Run cycles on a second project from its own session and record the four convergence numbers against the baseline",
+      "title": "Run cycles on a second project from its own session and record the convergence numbers against the baseline",
       "status": "planned",
       "value": "high",
       "cost": "L",
@@ -86,11 +86,10 @@
       "needs": [
         "second-project-cycles",
         "external-audit-before-release",
-        "fresh-agent-per-task",
-        "precompact-boundary-defer",
         "reread-after-compact",
         "task-gate-after-round-two",
-        "findings-ledger"
+        "gate-loosening-guard",
+        "ci-gate-file-isolation"
       ],
       "gate": "user",
       "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release)",
@@ -451,7 +450,7 @@
       "cluster": "gates",
       "mechanization": true,
       "sourceClass": "a fixed wall-clock limit in a test fails under load",
-      "source": "cycle 2026-10-24 (8), review round 1 of guards-under-load; measured in the T4 landing run; cycle 2026-10-25 (10): the secrets linear-time ratio failed two full runs at load 8-40 (fixed with CPU time, 1ccb39b); the other wall-clock reads remain; cycle 2026-10-26 (12): at load 50-274 single full runs failed on the fence-reader timing test, a verdicts secrets cell (the hook past 60 s), guards' inner runs, deps' OSV test (stalled 15 minutes) and mutate's runs that wait; each file passed alone, so no run of the cycle's last two landings was clean on the first try; cycle 2026-10-27 (13): at load 83-115 single full runs failed on mutate's runs that wait and its owner-stamp test (the parse check gave no answer), the fault matrix control (its fake git writes the pid it counts only after starting sleep, so a 1 s limit can stop it first: write a marker first), guards' baselines of fault-injection and verdicts, and two hook tests (exit null); each file passed alone; cycle 2026-10-28 (14): the Linux run measured waits shorter than their limits (730 ms against 1 s, 1785 and 1801 ms against 2 s) in the fault matrix control: the tests read Date.now(), which the VM's clock adjustment moves; every test that times a wait reads performance.now() since ce3d0d2; the fixed limits remain; cycle 2026-10-31 (15): setup.test.mjs:1038 failed once at load 40-67 (alone 78/78), and mutation.test.mjs:795 and :838 once at load 95; guards' input-shapes cell once at load 17-27 in the guards clone (alone 10/10); four parallel full suites took the machine to load 124; 2026-10-31 research on closing escaped classes: named in cycles 12 and 13, came back in cycles 8, 9, 10, 12, 13, 14 and 15, never flagged; 2026-10-31: test/input-shapes.test.mjs:493's cleanup failed once in npm test at load about 42 (ENOTEMPTY on a temporary repository's .git/objects/pack, so something was writing there during rmSync, cause not found), the file alone passed 8 of 8 three times",
+      "source": "cycle 2026-10-24 (8), review round 1 of guards-under-load; measured in the T4 landing run; cycle 2026-10-25 (10): the secrets linear-time ratio failed two full runs at load 8-40 (fixed with CPU time, 1ccb39b); the other wall-clock reads remain; cycle 2026-10-26 (12): at load 50-274 single full runs failed on the fence-reader timing test, a verdicts secrets cell (the hook past 60 s), guards' inner runs, deps' OSV test (stalled 15 minutes) and mutate's runs that wait; each file passed alone, so no run of the cycle's last two landings was clean on the first try; cycle 2026-10-27 (13): at load 83-115 single full runs failed on mutate's runs that wait and its owner-stamp test (the parse check gave no answer), the fault matrix control (its fake git writes the pid it counts only after starting sleep, so a 1 s limit can stop it first: write a marker first), guards' baselines of fault-injection and verdicts, and two hook tests (exit null); each file passed alone; cycle 2026-10-28 (14): the Linux run measured waits shorter than their limits (730 ms against 1 s, 1785 and 1801 ms against 2 s) in the fault matrix control: the tests read Date.now(), which the VM's clock adjustment moves; every test that times a wait reads performance.now() since ce3d0d2; the fixed limits remain; cycle 2026-10-31 (15): setup.test.mjs:1038 failed once at load 40-67 (alone 78/78), and mutation.test.mjs:795 and :838 once at load 95; guards' input-shapes cell once at load 17-27 in the guards clone (alone 10/10); four parallel full suites took the machine to load 124; 2026-10-31 research on closing escaped classes: named in cycles 12 and 13, came back in cycles 8, 9, 10, 12, 13, 14 and 15, never flagged; 2026-10-31: test/input-shapes.test.mjs:493's cleanup failed once in npm test at load about 42 (ENOTEMPTY on a temporary repository's .git/objects/pack, so something was writing there during rmSync, cause not found), the file alone passed 8 of 8 three times; cycle 2026-11-01 (16): three whole suites at once took the machine to load 330 and swap to 11.8 of 13.3 GB; failures read as load: setup's imports-over-blank-lines, the fault matrix's never-ending git control, input-shapes in guards' baseline and mutation, each green alone; 2026-11-01: published work favours limits derived from past durations over hand-raised ones (SAP cut timeout flakes 80%, arXiv 2402.05223, one of two SAP studies, which disagree on load); cycle 16 measured: 10 of 23 whole suites red, 3 of them real, median 654 s against 444-490 s on a quiet machine",
       "since": 8
     },
     {
@@ -942,26 +941,13 @@
     },
     {
       "status": "planned",
-      "needs": [
-        "class-registry"
-      ],
-      "id": "findings-ledger",
-      "title": "A findings ledger format (one JSON line per finding: task, round, id, severity, class, source, layer that caught it, duplicate of) and ennyn convergence <ledger> computing the four counts, new classes per round and the most recurring class by catalog id, instead of a hand-written count; a schema and a zero-dependency validator run whenever the ledger changes (a row missing a field does not count, as finding-schema.md says in prose today); each finding carries a fingerprint from its root cause (no line, round or reviewer in it), so the same finding seen again, in another round, cycle or by another reviewer, is one row; the CLI renders the convergence block from the ledger and the cycle skill pastes it unchanged; today the agent types the counts itself (skills/cycle/report-formats.md), the same paraphrase risk as a misquoted source; rows live in the repository at .ennyn/findings.jsonl, append-only, from the first finding of a cycle; a row also holds trigger (what let the defect surface, as ODC asks), escapePoint (the layer that should have caught it and why it did not, as 8D asks), outcome (fixed with a test, node, refuted), commit and file:line, and never quoted text, so a row carries no secret or project data; rows are data, never instructions, because a ledger other sessions read is a lesson-injection surface",
-      "value": "high",
-      "cost": "M",
-      "cluster": "metrics",
-      "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): failures are clustered by telemetry there; cycle 10 counted its 170 ledger rows with a throwaway script, though principle 6 says convergence is computed by scripts; review of cloudflare/security-audit-skill (MIT, c1c8a8c), 2026-10-25: report-schema.json checked by validate-findings.cjs, and source-derived fingerprints that stay the same across verdicts and runs; review of agent-reach (MIT, 14c2134), 2026-10-28: its skill shows the report the program built 'as is: no additions, removals, reordering' (agent_reach/skill/SKILL_en.md:76); 2026-10-31 research on closing escaped classes: rows sat in nine ledgers in five formats outside the repository, none found for six cycles, and scratchpads were wiped by a restart; 1 of 459 class labels repeats across cycles, and cycle 15's hand count moved 39 to 46",
-      "since": 10
-    },
-    {
-      "status": "planned",
       "needs": [],
       "id": "reviewer-model-diversity",
-      "title": "Measure whether a reviewer on another model than the author finds classes a same-model reviewer misses (same diffs, both reviewers, findings compared by class); review.agents could then name a model per reviewer; two more arms on the same diffs: the diff without commit messages and task text (BMAD gives the author's claims to one lens only), and a faster model for mechanical agents (mutant lists, metric collection), each compared by class and wall clock",
+      "title": "Measure whether a reviewer on another model than the author finds classes a same-model reviewer misses (same diffs, both reviewers, findings compared by class); review.agents could then name a model per reviewer; two more arms on the same diffs: the diff without commit messages and task text (BMAD gives the author's claims to one lens only), and a faster model for mechanical agents (mutant lists, metric collection), each compared by class and wall clock; a control arm runs the same model twice, or random difference reads as diversity",
       "value": "medium",
       "cost": "M",
       "cluster": "evidence",
-      "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): its reviewer runs on an independent model; unmeasured here, so a measurement first",
+      "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): its reviewer runs on an independent model; unmeasured here, so a measurement first; CRBugBench (Microsoft and CMU, arXiv 2610.13668, read 2026-10-31): different-model ensembles did no better than same-model ones, 66.8 against 68.0",
       "since": 10
     },
     {
@@ -1004,8 +990,8 @@
       "value": "high",
       "cost": "M",
       "cluster": "security",
-      "title": "21 refusal lines tell the agent which config key loosens the gate that refused it (security.secrets.except, security.deps.allowScripts, sources, registries, a forbidden rule's except) and nothing flags a commit that widens them or switches a check off: the commit-msg hook refuses such a commit unless the message carries a line saying the user approved it, the cycle skill says an agent never writes that line, and security refusals say loosening is the user's call; also security.deps.advisories and the security.deps.registries values",
-      "source": "cycle 2026-10-25 (11), a second session's review (context-mode, MIT, docs/adr/0003-routing-deny-reasons.md: refusal wording drives the agent's next step); .ennyn/config.json joined review.impactRequiredGlobs in this cycle's closing commit, which an agent can still satisfy; cycle 14 security review probe deps-advisories-foreign-origin",
+      "title": "21 refusal lines tell the agent which config key loosens the gate that refused it (security.secrets.except, security.deps.allowScripts, sources, registries, a forbidden rule's except) and nothing flags a commit that widens them or switches a check off: the commit-msg hook refuses such a commit unless the message carries a line saying the user approved it, the cycle skill says an agent never writes that line, and security refusals say loosening is the user's call; also security.deps.advisories and the security.deps.registries values; a local hook cannot tell the user from an agent, so the closing report also lists, for the user before the push, each bypass with its reason and each key this cycle loosened: the count alone is not enough",
+      "source": "cycle 2026-10-25 (11), a second session's review (context-mode, MIT, docs/adr/0003-routing-deny-reasons.md: refusal wording drives the agent's next step); .ennyn/config.json joined review.impactRequiredGlobs in this cycle's closing commit, which an agent can still satisfy; cycle 14 security review probe deps-advisories-foreign-origin; GitHub's Copilot runtime rewrite post (read 2026-10-31): an agent that had lost an SDK method met a failing schema check and 'The agent’s response was to apply the repo’s schema-break-ok automation label', found only when a person asked why; its lesson: 'Protect the oracle from the agent.'",
       "since": 11
     },
     {
@@ -1200,11 +1186,11 @@
       "status": "planned",
       "needs": [],
       "id": "smallest-change-row",
-      "title": "Before writing, every core task answers a smallest-change row by command: the line of the task that asks for each new piece (a piece no line asks for is left out and named in one line), what the repository already has for it (`git grep -w` of its names and verbs), the platform, git or an installed dependency that does it, and only then new code. Never cut: validation at trust boundaries, data-loss handling, security, accessibility, anything the task asks for. The row lives in impact-table.md, read on demand, not in text every session loads",
+      "title": "Before writing, every core task answers a smallest-change row by command: the line of the task that asks for each new piece (a piece no line asks for is left out and named in one line), what the repository already has for it (`git grep -w` of its names and verbs), the platform, git or an installed dependency that does it, and only then new code. Never cut: validation of anything read from outside the process (stdin, files, arguments, pasted data), data-loss handling, security, accessibility, anything the task asks for. The row lives in impact-table.md, read on demand, not in text every session loads",
       "value": "high",
       "cost": "S",
       "cluster": "method",
-      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its ladder (does it need to exist? already in this codebase? the platform? an installed dependency? one line? the minimum) cut delivered code 53% against the same agent with no skill, at the same hidden-check pass rate (39 tasks x 5 runs, Opus 5.5); its rung 'already in this codebase' came from duplicated code (its issue 217); bare 'follow YAGNI' prompts dropped safety guards (98.9% and 94.4% safe against 100%), hence the never-cut list; Ennyn's source grew from 5,593 lines (cycle 5) to 12,680 (cycle 11)",
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its ladder (does it need to exist? already in this codebase? the platform? an installed dependency? one line? the minimum) cut delivered code 53% over 38 tasks in the author's own run, 30% on the 18 tasks whose code was run, where the hidden-check pass rate was flat (87/90 against 86/90), the rest judged by a model only; an independent run of an older version got 53% fewer statements with robustness 96.7 to 82.5 on stdin scripts where bad input was not mentioned; its rung 'already in this codebase' came from duplicated code (its issue 217); the 98.9% and 94.4% figures come from a file the author marked SUPERSEDED, where the plugin's hook fired on every arm, so the never-cut list now rests on the independent run; Ennyn's source grew from 5,593 lines (cycle 5) to 12,680 (cycle 11)",
       "since": 11
     },
     {
@@ -1323,7 +1309,7 @@
       "status": "planned",
       "needs": [],
       "id": "cycle-cost",
-      "title": "budget --record also records what the cycle cost: tokens (input, cache write, cache read, output), agent time and, where Claude Code wrote it, dollars, summed from this project's session transcripts since the previous record, numbers only, never text; unmeasured when no transcript is there; the cycle report gives the cost per task, per review round and per real escape; usage is summed once per message id: Claude Code writes one transcript line per content block and repeats the message's usage on each (this repository's last 8 sessions, version field 2.1.306: summing per line gave 1.78 to 2.61 times the per-id sum, every repeated id with the same usage); a call that timed out or returned no JSON is unmeasured, never 0 USD; an estimate is never added to a measured cost; the greenfield intake and the first cycle are recorded the same way: token and time cost is among the most-reacted complaints about spec-kit, superpowers and Kiro (spec-kit #1492: 'usage limits are typically reached in under an hour of active work.')",
+      "title": "budget --record also records what the cycle cost: tokens (input, cache write, cache read, output), agent time and, where Claude Code wrote it, dollars, summed from this project's session transcripts since the previous record, numbers only, never text; unmeasured when no transcript is there; the cycle report gives the cost per task, per review round and per finding found in review; usage is summed once per message id: Claude Code writes one transcript line per content block and repeats the message's usage on each (this repository's last 8 sessions, version field 2.1.306: summing per line gave 1.78 to 2.61 times the per-id sum, every repeated id with the same usage); a call that timed out or returned no JSON is unmeasured, never 0 USD; an estimate is never added to a measured cost; the greenfield intake and the first cycle are recorded the same way: token and time cost is among the most-reacted complaints about spec-kit, superpowers and Kiro (spec-kit #1492: 'usage limits are typically reached in under an hour of active work.'); also hours from the cycle's start to its closing, and the count of defects found after a closing in what that cycle landed: these two numbers decide whether a cut in the loop stays",
       "value": "medium",
       "cost": "M",
       "cluster": "metrics",
@@ -1462,7 +1448,7 @@
       "value": "low",
       "cost": "S",
       "cluster": "gates",
-      "source": "cycle 2026-10-26 (12), a full run of reference-claude-code's branch at load 50-110",
+      "source": "cycle 2026-10-26 (12), a full run of reference-claude-code's branch at load 50-110; cycle 2026-11-01 (16): ENOTEMPTY again, in whole suites and in guards' baseline, 8 of 8 alone",
       "since": 12
     },
     {
@@ -1775,7 +1761,7 @@
       "status": "planned",
       "needs": [],
       "id": "statusline",
-      "title": "ennyn statusline: the budget and the last cycle's four numbers in Claude Code's status line; local, time-bounded, fail-open, added to settings.json only by the user",
+      "title": "ennyn statusline: the budget and the last cycle's convergence numbers in Claude Code's status line; local, time-bounded, fail-open, added to settings.json only by the user",
       "value": "low",
       "cost": "M",
       "cluster": "metrics",
@@ -1863,18 +1849,18 @@
       "status": "planned",
       "needs": [],
       "id": "impact-scoped-tests",
-      "title": "During a task the agent runs only the tests the impact table's files reach, using a file-to-test map read from the tests' imports. The full suite runs only at the commit gate. Measure wall clock per task and failed gate attempts against cycles 12-13",
+      "title": "During a task the agent runs only the tests the impact table's files reach, using a file-to-test map recorded from real runs with NODE_V8_COVERAGE, which child processes inherit; any change outside .mjs runs everything, because coverage does not see files read with readFileSync; the last failed and the new tests always run. The full suite runs only at the commit gate. Measure wall clock per task and failed gate attempts against cycles 12-13",
       "value": "medium",
       "cost": "M",
       "cluster": "method",
-      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn; Bun's rewrite post (read 2026-10-31): parallel agents were told 'No cargo either. No slow commands at all.'; GitHub's Copilot rewrite prompt: 'Don't bother running full test suites; that'll be handled in CI.'; Ennyn's cycle 16: one whole suite about 10 minutes, three at once took the machine to load 330; measured 2026-10-31 on test/verdicts.test.mjs, one run on a loaded machine: an import walk found 11 source files, recorded coverage 24, 13 of them reached only at run time, scripts/ennyn.mjs among them; 49 s plain, 48 s recorded, 253 MB of disk; 24 of 31 test files import core/git.mjs, so a change there saves nothing. Needs task-short-suite first: that is the cheaper cut",
       "since": 13
     },
     {
       "status": "planned",
       "needs": [],
       "id": "step-drop-trial",
-      "title": "On a new model release, one cycle step is switched off for one cycle, starting with the step that caught the fewest defects. The four convergence numbers and rework are compared with the cycles before. A step that costs time and catches nothing goes. The legacy audit also names what Ennyn does that Claude Code now does itself. Anthropic dropped context resets, sprints and per-sprint QA from its own harness as models improved; Agent OS retired the phases that plan mode and todos now cover",
+      "title": "On a new model release, one cycle step is switched off for one cycle, starting with the step that caught the fewest defects. The convergence numbers and rework are compared with the cycles before. A step that costs time and catches nothing goes. The legacy audit also names what Ennyn does that Claude Code now does itself. Anthropic dropped context resets, sprints and per-sprint QA from its own harness as models improved; Agent OS retired the phases that plan mode and todos now cover; the trial is judged by the escaped-defect count of cycle-cost, since severity labels are the author's judgement",
       "value": "medium",
       "cost": "S",
       "cluster": "method",
@@ -1911,7 +1897,7 @@
       "value": "high",
       "cost": "S",
       "cluster": "distribution",
-      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn; Codex's own code read 2026-10-28, the cut tails measured with tail -c",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn; Codex's own code read 2026-10-28, the cut tails measured with tail -c; cycle 2026-11-01 (16): skills/cycle/SKILL.md stands at 7,969 bytes; skills/init/SKILL.md does not, and no test caps either at 8,000",
       "since": 13
     },
     {
@@ -2032,7 +2018,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "security",
-      "source": "cycle 2026-10-27 (13), reference-markdown security review round 2; cycle 2026-10-28 (14), hooks-project-gate round 1 rerun; cycle 2026-10-31 (15): the machine slept with four agents running and a restart wiped /private/tmp: four worktrees of uncommitted work, the ledger and the briefs, rebuilt only because subagent transcripts hold every Edit, Write and Bash call (replayed in order, deduplicated by tool id, 0 divergences). The cycle needs: worktrees in a folder a restart keeps, the machine kept awake, trees snapshotted into refs while a task is uncommitted. Also: a reviewer's failed `cd` chained with `;` let a `cp` overwrite two test files in the main checkout (restored, equal to HEAD): reviewers get a folder of their own and chain with &&",
+      "source": "cycle 2026-10-27 (13), reference-markdown security review round 2; cycle 2026-10-28 (14), hooks-project-gate round 1 rerun; cycle 2026-10-31 (15): the machine slept with four agents running and a restart wiped /private/tmp: four worktrees of uncommitted work, the ledger and the briefs, rebuilt only because subagent transcripts hold every Edit, Write and Bash call (replayed in order, deduplicated by tool id, 0 divergences). The cycle needs: worktrees in a folder a restart keeps, the machine kept awake, trees snapshotted into refs while a task is uncommitted. Also: a reviewer's failed `cd` chained with `;` let a `cp` overwrite two test files in the main checkout (restored, equal to HEAD): reviewers get a folder of their own and chain with &&; cycle 2026-11-01 (16): skills/cycle/task-brief.md now says where everything the cycle needs is kept (7fd12bb); the test runner's warning about a parent folder's node_modules/.bin is what stays open",
       "since": 13
     },
     {
@@ -2489,7 +2475,7 @@
         "findings-ledger"
       ],
       "id": "reviewer-seeded-recall",
-      "title": "Measure the reviewers' recall on planted defects: copies of past Ennyn diffs, each with one defect of a known class planted (classes taken from real escapes: the convergence records and szz), plus clean diffs, reviewed by code-reviewer, data-reviewer and security-reviewer as in a cycle; a script with no model scores each finding by file:line and class and counts the false findings on clean diffs. It gives reviewer-model-diversity and effort-escalation a fixed corpus; the deterministic gates have one (test/guards.mjs, test/verdicts/), the reviewer agents do not; seeds come from real fix: commits reverted, not synthetic mutants (one preprint's best model scored F1 0.847 on synthetic cases and 0.066 on real pull requests), and the corpus is reread with the same seeds before and after a change: 20 seeds leave a wide band (14 of 20 reads 46-88%), six seeds flipping one way reads as a real change",
+      "title": "Measure the reviewers' recall on planted defects: copies of past Ennyn diffs, each with one defect of a known class planted (classes taken from the class registry and szz), plus clean diffs, reviewed by code-reviewer, data-reviewer and security-reviewer as in a cycle; a script with no model scores each finding by file:line and class and counts the false findings on clean diffs. It gives reviewer-model-diversity and effort-escalation a fixed corpus; the deterministic gates have one (test/guards.mjs, test/verdicts/), the reviewer agents do not; seeds come from real fix: commits reverted, not synthetic mutants (one preprint's best model scored F1 0.847 on synthetic cases and 0.066 on real pull requests), and the corpus is reread with the same seeds before and after a change: 20 seeds leave a wide band (14 of 20 reads 46-88%), six seeds flipping one way reads as a real change",
       "value": "high",
       "cost": "M",
       "cluster": "evidence",
@@ -2498,13 +2484,13 @@
     },
     {
       "status": "planned",
-      "needs": ["cycle-cost", "reviewer-seeded-recall"],
+      "needs": ["cycle-cost", "reviewer-seeded-recall", "task-short-suite", "heavy-job-limit"],
       "id": "effort-escalation",
       "title": "Measure whether a task's author and reviewers can run at low or medium effort and re-run at high only when a mechanical check fails (tests, ennyn mutate, finding-quote-check), with the failures passed back: the same tasks run both ways, compared by tasks passing their gates, escaped defects and cost; only then does the cycle skill name an effort per step. Anthropic's figures for Opus 5.5 on 478 SWE-bench Pro problems: everything at high 95.3% solved at $0.29 per task, low with failures re-run at high about 97% at about $0.17; its condition is 'You can check outputs (tests, a verifier)', and its re-run points 'are worked out task by task from the fixed-setting runs, not run separately'",
       "value": "medium",
       "cost": "M",
       "cluster": "evidence",
-      "source": "platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence, fetched 2026-10-29 (HTTP 200): 'These results are Anthropic-internal' and 'directional, not guarantees'. A third-party pipeline (all rights reserved; read, nothing copied) runs Opus at low effort and again at high only when its quote checker finds a problem",
+      "source": "platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence, fetched 2026-10-29 (HTTP 200): 'These results are Anthropic-internal' and 'directional, not guarantees'. A third-party pipeline (all rights reserved; read, nothing copied) runs Opus at low effort and again at high only when its quote checker finds a problem; 2026-10-31: each failure costs another gate run, so this waits for shorter runs; review stays at high effort, since a reviewer that finds less gives no failure signal to escalate on",
       "since": 15
     },
     {
@@ -2598,34 +2584,12 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "precompact-boundary-defer",
-      "title": "A PreCompact hook defers automatic and idle compaction while a task is mid-way (an Edit or Write since the last commit, or changes in the tree made after it) up to a ceiling below the hard limit, lets it through at a commit boundary, and names the task, its files and the next step on stdout for the summary; it logs every block and pass",
-      "value": "high",
-      "cost": "M",
-      "cluster": "cycle",
-      "source": "research 2026-10-29: Claude Code 2.1.310 read in its binary and docs (code.claude.com/docs/en/hooks.md, context-window.md), published studies and agent-workflow repositories fetched raw; numbers are the sources' own unless said. Measured here: 6 of the 7 compactions in this repository's last 20 sessions were idle compactions, on the first message after 62 to 906 idle minutes, at 275K to 645K tokens; one was at the 967K threshold. In 2.1.310, PreCompact's auto matcher includes idle compaction, exit 2 blocks it, and a non-blocking hook's stdout is joined into the summary's additional instructions (undocumented; binary offset 228742740). The origin project runs this design: its boundary rule recognised 140 of 140 commit points in recorded sessions, and 3 of its first 6 real compactions landed on a commit boundary and 3 at the ceiling. arxiv.org/abs/2610.31710 (Compact-Bench, preprint): continuing from a summary broke 5-64% of 22 repairs that had succeeded with the full history",
-      "since": 15
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "fresh-agent-per-task",
-      "title": "The cycle runs each task in a fresh agent given a written brief (the node, the impact table, the files, the handoff's commands), not in a fork that inherits the orchestrator's context; the orchestrator keeps plans, verdicts and commits; a task that fails verification twice restarts in a fresh agent with one consolidated brief instead of a third correction in the same context",
-      "value": "high",
-      "cost": "S",
-      "cluster": "cycle",
-      "source": "research 2026-10-29: Claude Code 2.1.310 read in its binary and docs (code.claude.com/docs/en/hooks.md, context-window.md), published studies and agent-workflow repositories fetched raw; numbers are the sources' own unless said. arxiv.org/abs/2505.06120: an average drop of 39% across six generation tasks (Code among them) in multi-turn conversations, and a new conversation that repeats the information does better; arxiv.org/abs/2510.05381: 13.9-85% degradation as input length grows even with perfect retrieval (HumanEval among the tasks); superpowers, GSD and Task Master give each task a fresh context. Here: cycles ran tasks in forks of the orchestrator, and the second project's orchestrator stood at about 652K tokens in the middle of its cycle 2; cycle 2026-10-31 (15): tasks ran in fresh agents with a written brief; two tasks that reached a third correction moved to a new agent with one consolidated brief (old contexts 566K and 533K tokens), the first passed both reviewers' oracles at once, and the hook task took a third fresh agent for the exact-print rule (445K tokens, 80 minutes; 0 false ✓ in the review's own harnesses, rerun independently); the brief must name the slow gate suites (test/fault-injection, test/guards) for the task to run: a brief that said only `do not run the full suite` let a real defect reach main, caught by the fault matrix",
-      "since": 15
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "reread-after-compact",
       "title": "After a compaction the cycle re-reads the current task's changed files (git diff against the task's start) and its impact table before the next edit, and the SessionStart compact hook names them in one line: Claude Code brings back at most five recent files (5,000 tokens each, 50,000 in all) and path-scoped rules only on demand",
       "value": "medium",
       "cost": "S",
       "cluster": "cycle",
-      "source": "research 2026-10-29: Claude Code 2.1.310 read in its binary and docs (code.claude.com/docs/en/hooks.md, context-window.md), published studies and agent-workflow repositories fetched raw; numbers are the sources' own unless said. Binary constants in 2.1.310 (offset 227694979) and context-window.md \"What survives compaction\"; arxiv.org/abs/2607.09691 (preprint): summaries answered 4 of 45 behaviour questions, the source 27 of 45",
+      "source": "research 2026-10-29: Claude Code 2.1.310 read in its binary and docs (code.claude.com/docs/en/hooks.md, context-window.md), published studies and agent-workflow repositories fetched raw; numbers are the sources' own unless said. Binary constants in 2.1.310 (offset 227694979) and context-window.md \"What survives compaction\"; arxiv.org/abs/2607.09691 (preprint): summaries answered 4 of 45 behaviour questions, the source 27 of 45; a cheap check before building it, from GitHub's Copilot rewrite post (read 2026-10-31): pair each compaction with the 20 tool calls on each side ('That produced ~4,000 comparable windows.') and compare the mix of reading and editing, on Ennyn's own transcripts; it shows re-orientation, not silent loss",
       "since": 15
     },
     {
@@ -2810,11 +2774,11 @@
       "status": "planned",
       "needs": [],
       "id": "test-weakening-warn",
-      "title": "The commit-msg hook warns when a commit adds a skip or focus marker to a test (.skip, .only, it.todo, test.fixme, xit, pytest.mark.skip or xfail, t.Skip) or removes assertions from an existing test file, unless the message has a line saying why; the cycle report counts them",
+      "title": "The commit-msg hook warns when a commit adds a skip or focus marker to a test (.skip, .only, it.todo, test.fixme, xit, pytest.mark.skip or xfail, t.Skip) or removes assertions from an existing test file, unless the message has a line saying why; the cycle report counts them; also a commit that deletes a test file or test case, or changes a record under test/reference or a verdict corpus, and the closing report names each one",
       "value": "medium",
       "cost": "M",
       "cluster": "gates",
-      "source": "Claude Code #319: 'it simply updated the make file to only run tests that were passing'; BMAD #2208: 'it never added a single line of test'; spec-kit #627: 'many times tests are adapted to bugs, instead of correcting code.'; the theme appears in all five tool repositories searched (c-demand report, theme 5)",
+      "source": "Claude Code #319: 'it simply updated the make file to only run tests that were passing'; BMAD #2208: 'it never added a single line of test'; spec-kit #627: 'many times tests are adapted to bugs, instead of correcting code.'; the theme appears in all five tool repositories searched (c-demand report, theme 5); GitHub's Copilot runtime rewrite post (read 2026-10-31): 'silently redefine correctness by weakening a test, updating a snapshot, raising a compatibility baseline, or applying an escape-hatch label'; one port deleted the end-to-end test of what it dropped, 'prompting a new rule that agents must not change E2E tests without explicit consent'",
       "since": 15
     },
     {
@@ -3223,30 +3187,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "convergence-definitions",
-      "title": "The convergence columns are defined in one place and keep their meaning across cycles: 'real escape' becomes 'found in review', a fifth column 'escaped past commit' counts what passed the loop, split by the age of the code it was found in, gate-caught counts only a gate named in the repository, and duplicates and old defects a new record finds get one rule each; report-formats.md, parseConvergence, formatConvergence and docs/evidence.md move together, with a written mapping that keeps the old four columns comparable with the baseline",
-      "value": "high",
-      "cost": "S",
-      "cluster": "metrics",
-      "source": "2026-10-31 research on closing escaped classes: all 438 real escapes were caught before commit, and the nearest thing to a true escape, pre-existing (321), is called not the goal; gate-caught's 10% to 29% is about 8% to 13% on a strict reading (judgement, ±30%), because mutation passes and the author's own tests and reading entered from cycle 10; defects a new record found were counted three ways",
-      "since": 16
-    },
-    {
-      "status": "planned",
-      "needs": [
-        "convergence-definitions"
-      ],
-      "id": "class-registry",
-      "title": "A defect class registry in the repository: a stable id, one sentence at class level (not at surface level), state (open, partial, closed-design, closed-gate, sensor-only, superseded), the gate's commit and file, its proof, a count per cycle. Seeded with the 16 classes named in convergence reports and their gates. A new class is born as `new:` and at the cycle's close joins the registry or links to an entry; a script refuses an unknown id; a finding may carry several classes. A class with no action above a written rule cannot be closed. This is the catalog skills/cycle/SKILL.md, finding-schema.md and report-formats.md refer to, which no file holds",
-      "value": "high",
-      "cost": "S",
-      "cluster": "metrics",
-      "source": "2026-10-31 research on closing escaped classes: 1 of 459 distinct class labels repeats exactly across cycles, so no script can find a recurring class; the done record drops the mechanization flag, so the class-to-gate link survives only in git history; sourceClass sits on 3 of 20 flagged nodes and no code reads it. How well an agent keeps to a small catalog is unmeasured",
-      "since": 16
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "reader-harness-keep",
       "title": "The harnesses that found most in cycle 15 enter the repository as tests, hermetic and past hygiene: real commits with a real secret against doctor's hook rule, and the ignore reading against real worktrees; a shell or version the harness needs and does not find is fatal in the gate run, never a skip (mvdan/sh's REQUIRE_SHELLS)",
       "value": "high",
@@ -3303,6 +3243,408 @@
       "cost": "M",
       "cluster": "gates",
       "source": "2026-10-31 research on closing escaped classes: an unmeasured state read as a result is about 9% of coded findings (±25%) and came back at logic level past the fault matrix in cycles 8 to 11 and 15; fault-matrix-writes, rework-says-unread and config-failopen-scope are partial. Derived from the class, not tried",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "reviewer-long-justification",
+      "title": "code-reviewer.md names two more breakers: a workaround that needs a paragraph-long comment to justify it, and a stub or placeholder standing where the task asked for behaviour. Run with reviewer-seeded-recall, so the line stays only if it finds something",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "Bun's rewrite post (read 2026-10-31): 'If you need a paragraph-long comment to justify why the workaround is OK, the code is wrong — fix the code.'; it also says the agent read compile-all-crates as 'stub out the functions with compilation errors'. One anecdote, unmeasured there",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "tsc-flags-trial",
+      "title": "After v0.1.0, try the stricter tsc flags on shipped code and read their errors for real defects: noImplicitReturns 5 errors, exactOptionalPropertyTypes 25, noPropertyAccessFromIndexSignature 132, noUncheckedIndexedAccess 278 (measured on bc40006); test/ is not typechecked at all. A flag stays only when its errors held a real defect",
+      "value": "low",
+      "cost": "S",
+      "cluster": "method",
+      "source": "measured 2026-10-31, on whether a language change would pay: 10 of cycle 16's 207 findings (hand labels, 4.8%) are ones a language or its standard library would have stopped, so a language change is not worth it and these flags are the cheap part of the same question",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "cycle-node-limit",
+      "title": "A cycle takes at most four graph nodes, counted as nodes and not as slots, and the cycle's longest chain of tasks that must land in order is named at the start; a node whose code has no caller outside tests is not picked unless the task adds the caller",
+      "value": "high",
+      "cost": "S",
+      "cluster": "method",
+      "source": "measured, cycle 16: planned for four slots, ran six tasks; the third slot became three nodes in sequence; task time set by two chains, so shortening one saved nothing. T4 and T3a held 349 minutes of chain, about 62 USD at list price and 104 findings on a parser no production code calls (parseConvergence, checked on main and all c16 branches). Rank correlation of lines to active hours by cycle 0.89, n=13",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "task-short-suite",
+      "title": "During a task the author runs a short suite: the test files without guards, hook and fault-injection, unless the task touches what they read. The whole suite runs at landing only, where it stays. Each new test gets one run of its own control before it enters the suite",
+      "value": "high",
+      "cost": "S",
+      "cluster": "method",
+      "source": "measured, cycle 16: 19 of 23 whole suites were authors', 216 minutes; one guards test is 92-98% of each run's calendar time but removing it alone saves about 25%, because hook.test.mjs (388-486 s) and fault-injection.test.mjs (327-517 s) then set the limit; without the three a run takes 3.5-4.5 minutes, setup.test.mjs the longest (estimate); the three real failures of 10 red runs were the new test's own record or setup. Handoff's figures are stale: guards 443 s, fault-injection 379 s. The fault matrix stays at landing: in cycle 15 a brief that skipped it let a real defect reach main",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "task-short-suite"
+      ],
+      "id": "heavy-job-limit",
+      "title": "One machine-wide limit covers whole suites, mutation runs and labs, in place of a lock on suites alone: a heavy job waits for a free slot and the wait is logged. It lands after task-short-suite, because a limit alone only moves time into a queue",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "measured, cycle 16: three or more heavy jobs ran together for 29% of calendar time, load median 56 on 10 cores; the suite lock added at 16:48 ended the 24-minute runs but not the median (586 to 669 s), since mutation, gates and labs stayed outside it, and it made 32.6 minutes of queue. node --test limits files, not the processes they spawn",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "impact-scoped-tests"
+      ],
+      "id": "mutate-scoped-tests",
+      "title": "Each mutant runs only the test files that load its file, read from the impact-scoped-tests map; a full list runs before a release, because a change in another file can weaken a test. No random sampling: the aim is surviving mutants, not a score",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "measured, cycle 16: mutation gave 37 findings, 0 high, 3 medium, for 4.74 agent-hours of waiting; 31 of the 37 closed with a test, which is its product; T4 narrowed by hand to one test file and finished its first pass in 4.1 + 9.1 minutes, T2b's first run took 43.8 alone (different mutants and load, so direction only). Stryker and cargo-mutants also ask for a periodic full run",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "task-stop-condition",
+      "title": "A brief names the one measurement its task's claim rests on; the author runs it before writing the rest, and when it does not hold, writing stops and the task goes back to the orchestrator. No separate plan reviewer. Enforced by the brief's table, since a limit that lives only in prose gets lost",
+      "value": "high",
+      "cost": "S",
+      "cluster": "method",
+      "source": "measured, cycle 16: the two longest items were T2's rewrite (191 minutes) and first design (149); T2's own lab showed 0 of 9 recorded compactions would be held as soon as the writing ended, and the design changed only after review. superpowers removed its plan reviewer after 5 trials over 5 versions showed the same quality at double the time, and lost a five-round limit to a compaction, running 18 rounds (its release notes, self-reported)",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "review-depth-by-code",
+      "title": "A pure function of the diff picks review depth: size and a path list, where a small config change is never trivial and a floor can only move depth up. Round two reads the diff of the fixes only. Round one stays, and so does round two after a fix that changes behaviour. review.impactRequiredGlobs gains skills/**, agents/** and hooks/**",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "method",
+      "source": "measured, cycle 16: round two gave 34 findings, 23 born of a round one fix; T3a's took 11 minutes and found 3 high, T1's took 52. T1 looked like docs and tests, changed skills/cycle/ and gave 9 medium in round two; those paths are outside the glob list. Saves little here, since most of Ennyn is gates, hooks or rule text. Cloudflare picks tiers by diff size and a path list; gstack uses a pure function, Compound Engineering a floor that only moves up; a small config change escaped Meta's risk score (CORA, ESEM 2026). Agents skipped the design in 6 of 6 runs when superpowers let the model decide size",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "comment-why-only",
+      "title": "A comment says why a branch exists and points at the proof; a description of what the code does moves to a test or DESIGN.md. Applied on files a task already touches, never as a sweep: JSDoc type markup is 8.5% of all characters and tsc needs it, and rewrites lost reasons along with descriptions",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "measured on bc40006: comments are 32.2% of shipped lines and 42.2% of characters; convergence.mjs grew from 136 to 280 lines with 89 of the 144 added lines comments. Rewriting five modules with behaviour unchanged cut 5.1% of tokens and 7.9% of code lines, 11.6% of all lines, mostly comments. A batch shortening breaks 6 of 45 guard anchors, and one lab rewrite opened a hole past 68 tests and a fuzzer",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "no-job-code",
+      "title": "Decide for each: give it a caller or delete it. parseConvergence (no production caller), planner.mechanizationSlots (read by no code), schema/config.schema.json (named by DESIGN.md and package.json, not on disk), and the 11 options no caller passes",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "code density lab, 2026-10-31, at bc40006; parseConvergence checked by hand on main and all c16 branches; T3c's use of formatConvergence gives the formatter a job, not the parser. Recount the 11 options after cycle 16 lands",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ci-gate-file-isolation",
+      "title": "One staged file that makes the workflow reader throw turns security.ci off for the whole commit, exit 0, over a workflow refused on three counts when it stands alone: unescape in checks/ci.mjs calls String.fromCodePoint on a code point past 10FFFF, and the hook's catch drops every file's refusals. Two defects: the throw, and the whole-commit catch. Each file is read alone, a file that cannot be read is named as unread, the other files' refusals stand; whether unread refuses the commit is this task's call against the rule that a crash blocks no commit; check security.secrets, security.deps and review.forbidden for the same whole-gate catch",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "a density lab, 2026-11-01, reproduced on bc40006 by the orchestrator of cycle 16: a pull_request_target workflow alone exits 1 on three refusals, with a decoy holding \\U00110000 beside it exits 0 saying security.ci was not checked, by hand exits 1. It needs a staged file written for it and a local hook is no boundary (no-verify-gap), so this is the agent or poisoned-content case",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "init-handoff-slow-suites",
+      "title": "init's handoff stub names the project's slow gate suites, so a task brief can name them: today a project set up by init has nowhere to read them from, and skills/cycle/task-brief.md falls back to the whole test command. skills/init/SKILL.md is at its size limit",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "cycle",
+      "source": "cycle 2026-11-01 (16), fresh-agent-per-task review round 1",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "restart-outcome-count",
+      "title": "The cycle report counts restarts and whether the fresh agent passed first time: the evidence for restarting at the second failure is a handful of tasks",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-01 (16), fresh-agent-per-task",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "eval-task-agent-type",
+      "title": "plugin-eval checks that a cycle's task calls name an agent type and are never a fork of the session: nothing gates the rule",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "evidence",
+      "source": "cycle 2026-11-01 (16), fresh-agent-per-task",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "correction-goes-fresh-by-context",
+      "title": "A short decided correction list goes to a fresh agent when the author's context is large, though the failure count says the same agent corrects: skills/cycle/task-brief.md names a size, or says the count is the only rule",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "cycle",
+      "source": "cycle 2026-11-01 (16): three correction lists went to fresh agents, with the authors at 723K, 605K and 657K tokens, against the table; each took 254K to 411K tokens, and the two with no new security route landed on the first try. The orchestrator's decision, written in the cycle report",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "compact-hold-side-copies",
+      "title": "The compaction hook counts changes in worktrees and side copies: sessions that orchestrate and edit in worktrees read as a clean main checkout, so the hook holds none of their idle compactions",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "cycle",
+      "source": "cycle 2026-11-01 (16), precompact-boundary-defer: 0 of 9 recorded compactions would be held on a clean tree, 6 of 9 on a dirty one; 84 commit calls ran in other trees",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "compact-log-report",
+      "title": "A command reads compact-boundary.jsonl by reason: the log has no reader, so a hold that stops (a new line kind in a future Claude Code, a mark logged as since-reply) is seen by nobody",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "cycle",
+      "source": "cycle 2026-11-01 (16), precompact-boundary-defer review round 2",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "idle-compaction-cell",
+      "title": "The pty lab that reaches real idle compaction enters test/reference: it needs about 30 minutes a run, a feature flag held in the cell's own .claude.json and the one-hour cache setting",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "evidence",
+      "source": "cycle 2026-11-01 (16), precompact-boundary-defer: the lab is kept in a kept folder outside the repository",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "compaction-bookkeeping-recorded",
+      "title": "The compaction hook's list of bookkeeping line kinds is held to a recorded turn end: a new kind in a Claude Code update stops every hold and only the log's mark shows it, while the record's check stays green",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "cycle",
+      "source": "cycle 2026-11-01 (16), precompact-boundary-defer review round 2: a printing Stop hook wrote attachment/hook_success and every hold stopped, seen on real idle timers",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "compact-gitfile-worktree-dir",
+      "title": "Five planted routes still print another repository's names through the compaction hook: a .git file naming a linked worktree dir, a separate git dir or a folder with commondir, a planted .git dir whose index is a link, a .git link to a store of another name. All need a .git entry no commit can hold; closing them means reading repository text",
+      "value": "low",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-11-01 (16), precompact-boundary-defer security rounds",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "state-root-bare-looking",
+      "title": "stateRoot trusts a common dir that a commit can write, and other state writers use it: the compaction hook's log now asks whether the session lies inside its git dir, the others do not ask. By reading, not measured",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-01 (16), precompact-boundary-defer security rounds",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "statedir-git-names",
+      "title": "A committed paths.stateDir can stop git: the rule checks where the value lies, not the name it creates, so .git/index.lock, .git/HEAD.lock, .git/packed-refs or .git/refs/heads as a folder makes add, commit, status or gc fail. The side-copy hook and the compaction log make that folder unattended",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-01 (16), precompact-boundary-defer security review round 1: 11 of 24 names harmed git after one compaction",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "reference-fsmonitor-floor",
+      "title": "test/reference/claude-code.mjs and its test still pass core.fsmonitor=false, which git 2.34.1 reads as a program name: the hook now passes the empty value",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-01 (16), precompact-boundary-defer security review round 2: git 2.34.1 ran a program named false 4 times in one hook run",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "source-format-characters",
+      "title": "A test fails on raw format or control characters in source where an escape was meant: a file writing tool turned written escapes into a raw BOM and direction marks",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-01 (16), class-registry",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "gate-commit-touches-file",
+      "title": "ennyn classes checks that a gate's commit touched its file: only this repository's seed test holds that today",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-01 (16), class-registry review round 1",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "source-class-is-registry-id",
+      "title": "The sourceClass values on open nodes become registry ids that code reads",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-01 (16), class-registry",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "recorder-raw-print",
+      "title": "test/reference/npm.mjs show prints a place raw, and test/reference/claude-code.mjs:717 too: terminal control bytes reach the terminal from a lock path, so terminal-control-bytes holds on two recorders of four",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-01 (16), class-registry data review: real add then show exits 0 with 2 raw ESC bytes",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "top-path-one-rule",
+      "title": "repoPath in metrics/findings.mjs and isTopPath in metrics/classes.mjs answer one question in two places",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-01 (16), class-registry",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ledger-check-in-hook",
+      "title": "The commit hook validates paths.findings when it is staged: today the validator runs at doctor and at the close, so between them a line that is no row commits at exit 0, and turning a landed row to refuted moves a count with nothing said",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-01 (16), findings-ledger: left out by the orchestrator at the end of a long cycle; measured with the hook on real commits",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ledger-append-only",
+      "title": "A closed cycle's rows stay unchanged, by a check: skills/cycle/ledger-row.md states the rule and its one exception, and nothing holds it",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-01 (16), findings-ledger",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ledger-content-guard",
+      "title": "The ledger's gate test returns when the file is missing, and it sits in test/guards.mjs's others list: the file is tracked now, so a guard must break it and deleting the ledger must fail",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-01 (16), findings-ledger review round 1",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "fingerprint-near-match",
+      "title": "Fingerprints catch only what a writer already linked: 0 repeats with no dupOf on 207 rows, while 6 pairs overlap by half or more of their words, 5 within one task. Measure a near match, or say fingerprints do not find repeats",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-01 (16), findings-ledger measurement on the real ledger",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hang-control-under-load",
+      "title": "The fault matrix's control for a git call that never ends fails under load, 12 of 13 calls reaching the hung git, and guards' baseline fails with it: the test's own control needs a bound that load cannot move",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-01 (16): failed at load 25 to 100 in several whole suites, 11 of 11 alone",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "fault-matrix-reads-output",
+      "title": "The fault matrix passes a cell on any non-zero exit with stderr, whatever numbers it printed: a mutant that keeps numbers in the columns on a git failure and exits 1 passes all 43 convergence cells; test/findings.test.mjs kills it there, other commands have no such test",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-01 (16), findings-ledger review round 1",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "method-rules-walked",
+      "title": "A written method rule with states, counts or limits carries a small executable walk beside it: a test enumerates its states and asserts each ends, each answers once, and no two rules answer one state differently; the task-brief failure count first, then report-formats' table beyond what ennyn convergence runs. No reader of prose: the rule's states are written as data in the test, and a change to the text that the data does not follow is caught by a pointer test",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "mechanization": true,
+      "sourceClass": "procedure-leaves-case-open",
+      "source": "cycle 2026-11-01 (16): the most recurring class of the cycle's ledger, ennyn convergence",
+      "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "mutate-kills-its-tree",
+      "title": "A run that stops a test at its time limit leaves no process behind: a test process with --test-name-pattern=convergence, its parent gone, spun at 100% of a core for 10.5 hours in a hermetic temporary folder during cycle 16, most likely from a mutant that loops and a kill that reached only its parent; mutate kills the whole process group and a test asserts nothing is left",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-01 (16): PID 4018 found by an author, stopped by hand; which run left it is not known, the cause is a reading",
       "since": 16
     }
   ],
@@ -3783,6 +4125,42 @@
       "title": "Legacy audit of rework (audit slot): a commit that moves only a submodule is no candidate and no sweep member, a fix that moved only a submodule is counted as unread, fix! counts as a fix in the label, init and doctor, an inverted range and a window no number holds are refused, reworkDays is refused by rework and never by the loader; blame's cost on a deep history measured, six nodes opened (071eed1)",
       "status": "done",
       "finished": "2026-10-31"
+    },
+    {
+      "id": "fresh-agent-per-task",
+      "title": "Each task runs in a fresh agent on a written brief; the orchestrator keeps the plan, the verdicts and the landing; a verification that sends a task back counts across agents, its first review round excepted: the second restarts it on a consolidated brief, the third stops it; skills/cycle/task-brief.md holds the briefs and task states (7fd12bb)",
+      "status": "done",
+      "finished": "2026-11-01"
+    },
+    {
+      "id": "precompact-boundary-defer",
+      "title": "A PreCompact hook holds only idle compaction while a task is mid-way, so a hold leaves the session as if idle compaction did not exist; every summary is asked to name the task, its files and the next step; compaction.defer: false turns it off; narrowed from the node's automatic and idle by review (bccbd14)",
+      "status": "done",
+      "finished": "2026-11-01"
+    },
+    {
+      "id": "convergence-audit-16",
+      "title": "Legacy audit of metrics/convergence.mjs (audit slot): the first line holding the findings label decides and the parser never walks past it to an older block; only an exact count is a count; a text past READ_LIMIT is unreported; 26 real blocks, 0 mismatches (60d5c40)",
+      "status": "done",
+      "finished": "2026-11-01"
+    },
+    {
+      "id": "convergence-definitions",
+      "title": "One definition per convergence column in skills/cycle/report-formats.md: found in review, escaped past commit split new and old, a closed caughtBy set, bornIn taken from the file as it stands, the old four columns mapped in docs/evidence.md (bc40006)",
+      "status": "done",
+      "finished": "2026-11-01"
+    },
+    {
+      "id": "class-registry",
+      "title": ".ennyn/classes.json with 16 seed classes and metrics/classes.mjs: states, standing gates, a new: name resolves by fold or linked and is never refused for that (f59fbdc)",
+      "status": "done",
+      "finished": "2026-11-01"
+    },
+    {
+      "id": "findings-ledger",
+      "title": ".ennyn/findings.jsonl and ennyn convergence --cycle N --from <start>: the block is computed from rows, a refused row reads ?, the orchestrator is the only writer; the commit hook is left to ledger-check-in-hook (58e260e)",
+      "status": "done",
+      "finished": "2026-11-01"
     }
   ]
 }
