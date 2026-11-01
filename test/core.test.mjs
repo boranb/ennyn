@@ -64,12 +64,28 @@ test("config: defaults when no file", () => {
   assert.equal(cfg.configPath, null);
 });
 
-test("config audit: a scale the project gives replaces the default one", () => {
-  const c = loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-cfg-scale-")), env: {}, override: { graph: { costScale: { S: 1, M: 3, L: 8 } } } });
-  assert.deepEqual(c.graph.costScale, { S: 1, M: 3, L: 8 }, "no XL: 5 left from the default to outrank L");
-  assert.deepEqual(c.graph.valueScale, DEFAULTS.graph.valueScale, "a scale not given stays the default");
+test("config audit: a registry list the project gives replaces the default one", () => {
+  const c = loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-cfg-scale-")), env: {}, override: { security: { deps: { registries: { "https://r.example": null } } } } });
+  assert.deepEqual(c.security.deps.registries, { "https://r.example": null }, "no default left to be contacted");
   // Replaced, still checked.
-  assert.throws(() => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-cfg-scale-")), env: {}, override: { graph: { valueScale: { high: "3", low: null } } } }), (e) => e instanceof ConfigError && /"graph\.valueScale\.high" must be number, got string/.test(e.message) && /"graph\.valueScale\.low" must be number, got null/.test(e.message));
+  assert.throws(() => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-cfg-scale-")), env: {}, override: { security: { deps: { registries: { "https://r.example": 3 } } } } }), (e) => e instanceof ConfigError && /"security\.deps\.registries\.https:\/\/r\.example" must be string \| null, got number/.test(e.message));
+});
+
+test("config: a key lean-audit removed is an unknown key, said by name, with the rest of what is wrong", () => {
+  const load = (/** @type {Record<string, unknown>} */ override) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-cfg-gone-")), env: {}, override });
+  /** @type {[Record<string, unknown>, string][]} */
+  const gone = [
+    [{ planner: { mechanizationSlots: 1 } }, "planner.mechanizationSlots"],
+    [{ paths: { changelog: "CHANGELOG.md" } }, "paths.changelog"],
+    [{ graph: { valueScale: { high: 3 } } }, "graph.valueScale"],
+    [{ graph: { costScale: { S: 1 } } }, "graph.costScale"],
+    [{ impact: { coChangeMin: 3 } }, "impact.coChangeMin"],
+    [{ metrics: { reworkDays: 7 } }, "metrics.reworkDays"],
+    [{ metrics: { maxFixFiles: 15 } }, "metrics.maxFixFiles"],
+  ];
+  for (const [override, key] of gone) assert.throws(() => load(override), (e) => e instanceof ConfigError && e.problems.length === 1 && e.problems[0] === `unknown key "${key}"`, key);
+  assert.throws(() => load({ language: "xx", planner: { mechanizationSlots: 1 } }), (e) => e instanceof ConfigError && e.problems.length === 2, "said beside the rest");
+  assert.deepEqual(Object.keys(DEFAULTS.planner), ["splitAbove"]);
 });
 
 test("config audit: a byte order mark before the JSON is no parse error", () => {
@@ -138,12 +154,6 @@ test("config: commit language, types and fix type are checked together", () => {
   assert.throws(() => loadConfig({ cwd: dir2, env: {}, override: { review: { agents: [""] } } }), /"review\.agents" entries must be agent names/);
 });
 
-test("config: metrics.reworkDays is type-checked when it loads; its range is the rework command's, so a typo stops no commit gate", () => {
-  const load = (/** @type {unknown} */ reworkDays) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-cfg-days-")), env: {}, override: { metrics: { reworkDays } } }).metrics.reworkDays;
-  for (const value of [-1, Infinity, 3.5, 2 ** 53]) assert.equal(load(value), value);
-  for (const value of ["7", null]) assert.throws(() => load(value), (e) => e instanceof ConfigError && /"metrics\.reworkDays" must be number/.test(e.message), String(value));
-});
-
 test("config: ENNYN_CONFIG points elsewhere; broken JSON is a ConfigError", () => {
   const dir = mkdtempSync(join(tmpdir(), "pl-cfg-"));
   writeFileSync(join(dir, "alt.json"), JSON.stringify({ language: "tr" }));
@@ -177,11 +187,11 @@ test("config: every path a config names stays in the project, whoever names the 
   const refused = (/** @type {string} */ key, /** @type {string} */ value) => (/** @type {unknown} */ e) =>
     e instanceof ConfigError && e.problems.length === 1 && e.problems[0] === `"${key}": ${JSON.stringify(value)} leads outside the project directory; every path a config names stays inside it`;
   // The metrics log has a rule of its own (below): a .jsonl file in .ennyn/.
-  for (const key of ["handoff", "changelog", "graph"]) {
+  for (const key of ["handoff", "graph"]) {
     // The metrics log elsewhere: a key naming its file is refused (below).
     for (const p of inside) assert.equal(/** @type {any} */ (own({ paths: { [key]: p, metricsLog: ".ennyn/other.jsonl" } })()).paths[key], p, `${key} ${JSON.stringify(p)}`);
   }
-  for (const key of ["handoff", "changelog", "graph", "metricsLog", "findings", "stateDir"]) {
+  for (const key of ["handoff", "graph", "metricsLog", "findings", "stateDir"]) {
     for (const p of outside) assert.throws(own({ paths: { [key]: p } }), refused(`paths.${key}`, p), `${key} ${JSON.stringify(p)}`);
   }
   // The state dir lies in the git dir, however spelled: state a commit can write is never trusted
@@ -242,7 +252,7 @@ test("config: every path a config names stays in the project, whoever names the 
   // As git refuses its own paths: the code points HFS+ ignores in a name, NTFS streams and short names.
   const gitDir = [".git/config", ".git/hooks/commit-msg", "./.git/ennyn/metrics.jsonl", ".git", "x/../.git/config", ".GIT/config", ".git./config", ".git /config", "GIT~1/config", "vendor/lib/.git/config", ".git\\config",
     ".g\u200cit/config", "\ufeff.git/config", ".g\u202eit/config", ".git\u206f/config", ".git::$INDEX_ALLOCATION/config", ".git:x", "GIT~2/config", "GI7EBA~1/config"];
-  for (const key of ["handoff", "changelog", "graph", "metricsLog"]) {
+  for (const key of ["handoff", "graph", "metricsLog"]) {
     for (const p of gitDir) assert.throws(own({ paths: { [key]: p } }), inGit(`paths.${key}`, p), `${key} ${JSON.stringify(p)}`);
     if (key === "metricsLog") continue;
     for (const p of [".github/x.json", ".gitx/x.json", "a/.git/../b.json", ".gitignore.d/x", "git/x.json", "gitdata/x.json", ".git\t/x.json", "gi~1/x.json"]) assert.equal(/** @type {any} */ (own({ paths: { [key]: p } })()).paths[key], p, `${key} ${JSON.stringify(p)}`);
@@ -267,7 +277,6 @@ test("config: every path a config names stays in the project, whoever names the 
   for (const [cfg, key, other] of /** @type {[any, string, string][]} */ ([
     [{ impact: { ceilingRegistry: ".ennyn/registry.jsonl" }, paths: { metricsLog: ".ennyn/registry.jsonl" } }, "impact.ceilingRegistry", ".ennyn/registry.jsonl"],
     [{ paths: { handoff: ".ennyn/handoff.jsonl", metricsLog: ".ennyn/handoff.jsonl" } }, "paths.handoff", ".ennyn/handoff.jsonl"],
-    [{ paths: { changelog: ".ennyn/changes.jsonl", metricsLog: ".ennyn/changes.jsonl" } }, "paths.changelog", ".ennyn/changes.jsonl"],
     [{ paths: { graph: ".ennyn/graph.jsonl", metricsLog: ".ennyn/graph.jsonl" } }, "paths.graph", ".ennyn/graph.jsonl"],
     [{ paths: { graph: "./docs/G.jsonl", metricsLog: "docs/x/../g.jsonl" } }, "paths.graph", "./docs/G.jsonl"],
     [{ paths: { handoff: "docs\\h.jsonl", metricsLog: "docs/h.jsonl" } }, "paths.handoff", "docs\\h.jsonl"],
@@ -276,7 +285,7 @@ test("config: every path a config names stays in the project, whoever names the 
   ])) assert.throws(own(cfg), shared(cfg.paths.metricsLog, key, other), JSON.stringify(cfg));
   // A log that leads outside is said once, as leading outside: not also as shared.
   assert.throws(own({ paths: { handoff: "../h.jsonl", metricsLog: "../h.jsonl" } }), (e) => e instanceof ConfigError && e.problems.length === 2 && e.problems.every((p) => /leads outside/.test(p)));
-  assert.equal(/** @type {any} */ (own({ paths: { handoff: ".ennyn/handoff.jsonl", graph: ".ennyn/graph.jsonl", changelog: "docs/metrics.jsonl" } })()).paths.metricsLog, ".ennyn/metrics.jsonl");
+  assert.equal(/** @type {any} */ (own({ paths: { handoff: ".ennyn/handoff.jsonl", graph: ".ennyn/graph.jsonl" } })()).paths.metricsLog, ".ennyn/metrics.jsonl");
   writeFileSync(join(box, "local.json"), JSON.stringify({ paths: { metricsLog: ".git/ennyn/metrics.jsonl", stateDir: ".git/ennyn" } }));
   assert.throws(() => loadConfig({ cwd: dir, env: { ENNYN_CONFIG: join(box, "local.json") } }), inGit("paths.metricsLog", ".git/ennyn/metrics.jsonl"));
 });

@@ -176,34 +176,6 @@ test("cli audit: rework says a fix that moved only a submodule, in the report an
   assert.match(run(q.dir, "rework").stdout, /^Note: 3 of 4 candidate commits are fixes\./m);
 });
 
-test("cli audit: a metrics.reworkDays out of range stops rework, by its key, and never the commit gate", () => {
-  const p = project();
-  p.commit({ "src/a.js": SRC }, "feat: add", 0);
-  mkdirSync(join(p.dir, ".ennyn"), { recursive: true });
-  const write = (/** @type {string} */ value) => writeFileSync(join(p.dir, ".ennyn", "config.json"), `{ "commitMsg": { "types": ["feat", "fix"] }, "metrics": { "reworkDays": ${value} } }\n`);
-  writeFileSync(join(p.dir, ".git", "NO-TYPE"), "this subject has no type\n");
-  writeFileSync(join(p.dir, ".git", "TYPED"), "feat: this subject has a type\n");
-  for (const value of ["1e400", "-1", "9007199254740993"]) {
-    write(value);
-    const res = run(p.dir, "rework");
-    assert.equal(res.code, 1, `${value}: ${res.stderr}`);
-    assert.match(res.stderr, /^- "metrics\.reworkDays" must be a number from 0 to 9007199254740991$/m, value);
-    assert.doesNotMatch(res.stderr, /days must be a non-negative number/, value);
-    // --days replaces the value, so nothing reads it.
-    assert.equal(run(p.dir, "rework", "--days", "7").code, 0, value);
-    // The config loads: the hook checks the message both ways, and says nothing went unchecked.
-    const refused = run(p.dir, "commit-check", "--hook", ".git/NO-TYPE");
-    assert.equal(refused.code, 1, `${value}: the hook still refuses: ${refused.stderr}`);
-    const passed = run(p.dir, "commit-check", "--hook", ".git/TYPED");
-    assert.equal(passed.code, 0, `${value}: ${passed.stderr}`);
-    for (const r of [refused, passed]) assert.doesNotMatch(r.stderr, /does not load|was not checked/, value);
-  }
-  for (const value of ["0", "3.5", "9007199254740991"]) {
-    write(value);
-    assert.equal(run(p.dir, "rework").code, 0, value);
-  }
-});
-
 test("cli audit: rework's help says the range is in local days and --days is the window, not the range", () => {
   const help = run(mkdtempSync(join(tmpdir(), "pl-cli-help-")), "rework", "--help");
   assert.equal(help.code, 0);
@@ -303,7 +275,10 @@ test("cli: mechanization refuses a graph doctor fails, and says what it picks on
   const guess = run(p.dir, "mechanization");
   assert.equal(guess.code, 0);
   assert.equal(guess.stdout.trim(), "G1 (score 1.00)");
-  assert.match(guess.stderr, /^! work graph: G1 has value "hgih", which graph\.valueScale does not know; it is scored as 1$/m);
+  assert.match(guess.stderr, /^! work graph: G1 has value "hgih", which is no positive number and none of high, medium, low; it is scored as 1$/m);
+  // Zero is a number, and no weight.
+  write({ nodes: [{ id: "G1", mechanization: true, value: 0, cost: "S" }], done: [] });
+  assert.match(run(p.dir, "mechanization").stderr, /^! work graph: G1 has value "0", which is no positive number and none of high, medium, low; it is scored as 1$/m);
 });
 
 test("cli: mechanization picks from the graph; a missing graph is an error", () => {

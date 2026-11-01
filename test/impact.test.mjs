@@ -82,13 +82,24 @@ function fixtureRepo() {
     { "src/lib/engine/parse.js": PARSE + "// v2\n", "src/ui/view.js": 'import { parseRow } from "../lib/engine/parse.js";\nexport const v = parseRow; // v2\n' },
     "feat: v2",
   );
-  commit(dir, { "src/lib/engine/parse.js": PARSE + "// v3\n", "README.md": "# y\n" }, "docs: v3");
+  commit(dir, { "src/lib/engine/parse.js": PARSE + "// v3\n", "README.md": "# y\n", "src/ui/below.js": "export const b = 1;\n" }, "docs: v3");
+  commit(
+    dir,
+    { "src/lib/engine/parse.js": PARSE + "// v4\n", "src/ui/view.js": 'import { parseRow } from "../lib/engine/parse.js";\nexport const v = parseRow; // v4\n', "src/ui/below.js": "export const b = 2;\n" },
+    "feat: v4",
+  );
   return dir;
 }
 
 const IMPACT = {
-  impact: { twins: [["src/lib/engine", "server/lib"]], coChangeMin: 2, ceilingRegistry: "ceilings.json" },
+  impact: { twins: [["src/lib/engine", "server/lib"]], ceilingRegistry: "ceilings.json" },
 };
+
+test("impact: co-change below the threshold says the number it asked for", () => {
+  const dir = fixtureRepo();
+  const { rows } = buildImpactTable({ cwd: dir, config: cfg(IMPACT), symbol: "parseRow", files: ["ceilings.json"] });
+  assert.match(rows[0].answer, /no file changed together with the input files in at least 3 commits/);
+});
 
 test("impact: every row is answered from the repository", () => {
   const dir = fixtureRepo();
@@ -109,8 +120,9 @@ test("impact: every row is answered from the repository", () => {
   assert.ok(!s1.includes("rows.test.js"), "test files are not readers");
   assert.ok(!s1.includes("parseRowLike"), "whole-word match only");
   assert.match(s1, /twins: src\/lib\/engine\/parse\.js ↔ server\/lib\/parse\.js/);
-  assert.match(s1, /co-change: src\/ui\/view\.js \(2 commits\)$/m);
+  assert.match(s1, /co-change: src\/ui\/view\.js \(3 commits\)$/m);
   assert.ok(!s1.includes("README"), "excluded paths do not count as co-change");
+  assert.ok(!s1.includes("below.js"), "two commits are below the threshold");
   assert.ok(rows[0].commands.some((c) => c.startsWith("git grep")));
 
   // S2: entry points only, the input file itself is not "another path".

@@ -88,10 +88,10 @@ test("findings format control: the validator refuses what the format forbids", (
   const row = /** @type {Record<string, unknown>} */ (JSON.parse(EXAMPLE));
   const refused = (/** @type {string} */ text) => parseFindings(text, reg).refused.flatMap((r) => r.problems).join("; ");
   const line = (/** @type {Record<string, unknown>} */ over) => JSON.stringify({ ...row, ...over });
-  const { trigger, ...short } = row;
-  assert.ok(trigger);
+  const { fingerprint, ...short } = row;
+  assert.ok(fingerprint);
   assert.match(refused(line({ quote: "x" })), /unknown field/);
-  assert.match(refused(JSON.stringify(short)), /no trigger/);
+  assert.match(refused(JSON.stringify(short)), /no fingerprint/);
   assert.match(refused(line({ dupOf: row.id })), /circle/);
   assert.match(refused(line({ cycle: 20261031 })), /cycle must be/);
   assert.match(refused(line({ caughtBy: "test:./test/x.test.mjs" })), /caughtBy must be/);

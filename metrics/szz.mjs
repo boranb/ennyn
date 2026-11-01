@@ -14,7 +14,7 @@
  * Only a strong link counts, the criterion the origin project checked by hand
  * (precision 60-67%, n=15): the origin owns at least `minLines` of the fix's
  * meaningful deleted lines AND at least `minShare` of them, or the fix message
- * names the origin's hash. Sweep fixes (more than `maxFixFiles` production
+ * names the origin's hash. Sweep fixes (more than MAX_FIX_FILES production
  * files) and origins whose subject says they moved code are skipped: blame
  * would name them for lines they did not write.
  *
@@ -30,6 +30,10 @@ import { git, headCommit, rawChange } from "../core/git.mjs";
 import { readIfThere } from "../core/files.mjs";
 
 const DAY = 86400;
+/** The window after a commit, in days, when `rework` is given no --days. */
+export const REWORK_DAYS = 7;
+/** A fix touching more production files than this is a sweep, not a defect repair. */
+const MAX_FIX_FILES = 15;
 
 /**
  * `fixCommits` is the number of candidates whose subject matches the fix pattern:
@@ -254,14 +258,13 @@ export function shallowEdge(cwd) {
 }
 
 /**
- * @param {{ cwd: string, since?: string | Date | null, until?: string | Date | null, days?: number, config: any, now?: number }} opts
+ * @param {{ cwd: string, since?: string | Date | null, until?: string | Date | null, days: number, config: any, now?: number }} opts
  *   `now` (epoch seconds, default: the clock) closes observation windows.
  * @returns {ReworkResult}
  */
 export function reworkRate({ cwd, since, until, days, config, now }) {
   const m = config.metrics;
-  const windowDays = days ?? m.reworkDays;
-  if (!(Number.isFinite(windowDays) && windowDays >= 0)) throw new RangeError(`days must be a non-negative number, got ${windowDays}`);
+  if (!(Number.isFinite(days) && days >= 0)) throw new RangeError(`days must be a non-negative number, got ${days}`);
   const sinceSec = parseBound(since, "start");
   const untilSec = parseBound(until, "end");
   const nowSec = now ?? Math.floor(Date.now() / 1000);
@@ -275,7 +278,7 @@ export function reworkRate({ cwd, since, until, days, config, now }) {
   const isMove = (/** @type {string} */ s) => moveRe.test(s) || moveRe.test(s.toLocaleLowerCase(commitLang === "tr" ? "tr" : "en"));
   const isProduction = (/** @type {string} */ p) => !exclude.test(p) && !testRe.test(p);
 
-  const window = windowDays * DAY;
+  const window = days * DAY;
   const inRange = (/** @type {number} */ t, /** @type {number} */ extra) =>
     (sinceSec === null || t >= sinceSec) && (untilSec === null || t <= untilSec + extra);
   // A candidate is in [since, until]; a fix may come up to a window after it.
@@ -305,7 +308,7 @@ export function reworkRate({ cwd, since, until, days, config, now }) {
     const production = fix.changes.filter((ch) => isProduction(ch.path));
     // No line to read is no clean answer: said, as an open window is.
     if (!production.length && fix.submodules.some(isProduction)) submoduleFixes += 1;
-    if (production.length > m.maxFixFiles) continue;
+    if (production.length > MAX_FIX_FILES) continue;
     /** @type {Map<string, { lines: number, files: Set<string> }>} */
     const owned = new Map();
     let total = 0;

@@ -20,7 +20,7 @@ import { readIfThere, readRegular } from "../core/files.mjs";
 import { SecretScanner, masked, secretsOff } from "../checks/secrets.mjs";
 import { ConfigPicked, ConfigUnread, LOOSENING_LINE, commitConfig, looseningErrors } from "../checks/loosening.mjs";
 import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
-import { reworkRate } from "../metrics/szz.mjs";
+import { REWORK_DAYS, reworkRate } from "../metrics/szz.mjs";
 import { bypassUses } from "../metrics/bypass.mjs";
 import { gateLogPath, readAttempts, recordAttempt, summarizeAttempts, KINDS } from "../metrics/gate-log.mjs";
 import { costWeight, graphProblems, loadGraph, pickMechanization, pickOldest, readyNodes, scoreNode, splitAt, splitFirst, GraphError } from "../plan/mechanization.mjs";
@@ -46,7 +46,7 @@ Commands:
   impact --symbol <s> [--files a,b]                 five-row impact table (markdown)
   rework [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--days N] [--json]
                                                     SZZ-style rework rate: commits from --since to --until (local days) whose lines a fix changed
-                                                    within --days N (the window after each commit, not the range; default metrics.reworkDays)
+                                                    within --days N (the window after each commit, not the range; default ${REWORK_DAYS})
   core [--json]                                     the core slots' picks: the oldest node of the highest value (or the ready need it waits on), and the best ready by value/cost
   mechanization [--json]                            best ready mechanization node
   classes [--json]                                  the defect class registry: each class's id, state and sentence, its problems, whether each gate's commit is there and each entry that claims a gate has one standing; exit 1 unless all hold
@@ -1294,26 +1294,22 @@ const COMMANDS = {
     const { opts, help } = parseArgs(args, { options: ["since", "until", "days"], flags: ["json"] });
     if (help) return (out(USAGE), 0);
     const { since, until } = dateRange(opts);
-    const days = opts.days === undefined ? undefined : intOpt(opts.days, "days");
+    const days = opts.days === undefined ? REWORK_DAYS : intOpt(opts.days, "days");
     // Past 2^53 the number read is not the one written, and 400 digits read as Infinity. (gate-record's --start
     // keeps such a number on purpose: a start in nanoseconds is recorded, undated.)
-    if (days !== undefined && !Number.isSafeInteger(days)) throw new UsageError(`--days must be a whole number up to ${Number.MAX_SAFE_INTEGER}`);
+    if (!Number.isSafeInteger(days)) throw new UsageError(`--days must be a whole number up to ${Number.MAX_SAFE_INTEGER}`);
     const cwd = projectDir();
     const cfg = config(cwd);
-    const windowDays = days ?? cfg.metrics.reworkDays;
-    // Here and not in the loader: a window the rate cannot use stops this command, never the commit gate. JSON reads
-    // 1e400 as Infinity, and past 2^53 a number is not the one written.
-    if (!(windowDays >= 0 && windowDays <= Number.MAX_SAFE_INTEGER)) throw new ConfigError([`"metrics.reworkDays" must be a number from 0 to ${Number.MAX_SAFE_INTEGER}`]);
-    const res = reworkRate({ cwd, since, until, days: windowDays, config: cfg });
-    if (opts.json) return (out(jsonShown({ ...res, days: windowDays })), 0);
+    const res = reworkRate({ cwd, since, until, days, config: cfg });
+    if (opts.json) return (out(jsonShown({ ...res, days })), 0);
     const lang = cfg.language;
     if (res.rate === null) out(t("rework.none", {}, lang));
     else {
       const pct = `${(res.rate * 100).toFixed(1)}%`;
-      out(t("rework.summary", { reworked: res.reworked, commits: res.commits, pct, days: windowDays }, lang));
+      out(t("rework.summary", { reworked: res.reworked, commits: res.commits, pct, days }, lang));
       if (res.fixCommits * 2 > res.commits) out(t("rework.fixMajority", { fixes: res.fixCommits, commits: res.commits }, lang));
     }
-    if (res.censored) out(t("rework.censored", { n: res.censored, days: windowDays }, lang));
+    if (res.censored) out(t("rework.censored", { n: res.censored, days }, lang));
     if (res.skewed) out(t("rework.skewed", { n: res.skewed }, lang));
     if (res.submoduleFixes) out(t("rework.submoduleFixes", { n: res.submoduleFixes }, lang));
     if (res.shallow) out(t("rework.shallow", {}, lang));

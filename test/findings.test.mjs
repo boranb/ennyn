@@ -89,6 +89,9 @@ const ACCEPT = [
   ["a trigger at the limit", lines(row({ trigger: "t".repeat(NOTE_MAX) }))],
   ["an escape point at the limit", lines(row({ escapePoint: "e".repeat(NOTE_MAX) }))],
   ["Turkish text", lines(row({ trigger: "ölçülemeyen bir durum", escapePoint: "İlk inceleme" }))],
+  ["a row with no trigger", lines(without("trigger"))],
+  ["a row with no escape point", lines(without("escapePoint"))],
+  ["a row with neither, beside an old row that holds both", lines({ ...without("trigger"), escapePoint: undefined }, second())],
   ["a short commit", lines(row({ commit: "4ca4ecc" }))],
   ["a full commit", lines(row({ commit: HASH }))],
   ["a finding with no place", lines(row({ file: null, line: null }))],
@@ -116,7 +119,7 @@ const REJECT = [
   ["text", '"x"', /must be a JSON object/],
   ["the second line is the bad one", lines(row(), "{"), /line 2: /],
   // Fields.
-  ...["cycle", "task", "round", "id", "severity", "class", "source", "caughtBy", "dupOf", "fingerprint", "trigger", "escapePoint", "outcome", "commit", "bornIn", "file", "line"].map((/** @type {string} */ key) => /** @type {[string, string, RegExp]} */ ([`no ${key}`, lines(without(key)), new RegExp(`\\bno ${key}\\b`)])),
+  ...["cycle", "task", "round", "id", "severity", "class", "source", "caughtBy", "dupOf", "fingerprint", "outcome", "commit", "bornIn", "file", "line"].map((/** @type {string} */ key) => /** @type {[string, string, RegExp]} */ ([`no ${key}`, lines(without(key)), new RegExp(`\\bno ${key}\\b`)])),
   ["an unknown field", lines(row({ quote: "a line of the source" })), /unknown field "quote"/],
   ["__proto__ as a field", `{${JSON.stringify(row()).slice(1, -1)},"__proto__":{"dupOf":"x"}}`, /unknown field "__proto__"/],
   // Types and closed sets.

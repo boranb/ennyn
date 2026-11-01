@@ -113,7 +113,7 @@ test("szz: zero candidate commits gives a null rate, not zero", () => {
   assert.deepEqual(res, { commits: 0, reworked: 0, rate: null, fixCommits: 0, censored: 0, skewed: 0, submoduleFixes: 0, shallow: false, pairs: [] });
   const empty = mkdtempSync(join(tmpdir(), "pl-szz-empty-"));
   git(["init", "-q"], { cwd: empty });
-  assert.equal(reworkRate({ cwd: empty, config: cfg() }).rate, null);
+  assert.equal(reworkRate({ cwd: empty, days: 7, config: cfg() }).rate, null);
 });
 
 test("szz: fixCommits counts candidates whose subject is a fix (churn signal)", () => {
@@ -129,7 +129,14 @@ test("szz: fixCommits counts candidates whose subject is a fix (churn signal)", 
 });
 
 test("szz: outside a repository it throws instead of reporting zero", () => {
-  assert.throws(() => reworkRate({ cwd: mkdtempSync(join(tmpdir(), "pl-norepo-")), config: cfg() }));
+  assert.throws(() => reworkRate({ cwd: mkdtempSync(join(tmpdir(), "pl-norepo-")), days: 7, config: cfg() }), /not a git repository|fatal/i);
+});
+
+test("szz: a window the rate cannot use is refused, none given included", () => {
+  const r = repo();
+  r.commit(0, "feat: add", { "src/a.js": ORIGIN });
+  for (const days of [undefined, -1, Infinity, NaN]) assert.throws(() => reworkRate({ cwd: r.dir, days: /** @type {number} */ (days), config: cfg() }), (e) => e instanceof RangeError && /days must be a non-negative number/.test(e.message), String(days));
+  assert.equal(reworkRate({ cwd: r.dir, days: 0, config: cfg() }).commits, 1, "no window at all is a window");
 });
 
 test("szz helpers: comment and blank lines are not code; old-side line numbers", () => {
@@ -251,13 +258,14 @@ test("szz strong link: an origin owning under minShare of the fix's deleted line
 });
 
 test("szz strong link: sweep fixes are skipped", () => {
-  const sweep = repo();
-  const files = Object.fromEntries(Array.from({ length: 16 }, (_, i) => [`src/m${i}.js`, TOTAL]));
-  sweep.commit(0, "feat: modules", files);
-  const fixed = Object.fromEntries(Object.keys(files).map((f) => [f, TOTAL_FIXED]));
-  sweep.commit(2, "fix: tax rounding everywhere", fixed);
-  assert.equal(reworkRate({ cwd: sweep.dir, days: 7, config: cfg() }).reworked, 0, "16 production files > maxFixFiles 15");
-  assert.equal(reworkRate({ cwd: sweep.dir, days: 7, config: cfg({ metrics: { maxFixFiles: 16 } }) }).reworked, 1);
+  for (const [n, reworked] of [[16, 0], [15, 1]]) {
+    const sweep = repo();
+    const files = Object.fromEntries(Array.from({ length: n }, (_, i) => [`src/m${i}.js`, TOTAL]));
+    sweep.commit(0, "feat: modules", files);
+    const fixed = Object.fromEntries(Object.keys(files).map((f) => [f, TOTAL_FIXED]));
+    sweep.commit(2, "fix: tax rounding everywhere", fixed);
+    assert.equal(reworkRate({ cwd: sweep.dir, days: 7, config: cfg() }).reworked, reworked, `${n} production files, a sweep past 15`);
+  }
 });
 
 test("szz: an origin whose subject says it moved code is skipped; blame follows a cut-and-paste move", () => {
@@ -987,7 +995,7 @@ test("rework audit: a gitlink is no file of a sweep; a file a gitlink replaced i
     r.commit(0, "feat: modules", files(Number(n), TOTAL));
     gitlink(r, "lib/sub", "2");
     r.commit(2, "fix: tax rounding everywhere", files(Number(n), TOTAL_FIXED));
-    assert.equal(reworkRate({ cwd: r.dir, days: 7, config: cfg() }).reworked, reworked, `${n} files and a gitlink, maxFixFiles 15`);
+    assert.equal(reworkRate({ cwd: r.dir, days: 7, config: cfg() }).reworked, reworked, `${n} files and a gitlink, a sweep past 15`);
   }
   // The commit took the file's lines away, so it stays a commit with a change (status T, a fix reads no such file).
   const r = repo();

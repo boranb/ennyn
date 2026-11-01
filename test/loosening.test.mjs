@@ -123,7 +123,7 @@ test("loosening corpus: a tightening or neutral edit names no key", () => {
     "a list in another order": (c) => (c.commitMsg.types.reverse(), c.review.impactIgnoreGlobs.reverse(), (c.commitMsg.structuredLines = [...DEFAULTS.commitMsg.structuredLines].reverse())),
     "a registry gone": (c) => (c.security.deps.registries = {}),
     "skip pattern gone": (c) => (c.commitMsg.skipSubjects = []),
-    "a key no gate reads": (c) => ((c.language = "tr"), (c.commitMsg.language = "tr"), (c.commitMsg.fixType = "feat"), (c.planner = { splitAbove: 3 }), (c.paths = { handoff: "H.md" }), (c.review.agents = ["a"]), (c.metrics = { reworkDays: 3 })),
+    "a key no gate reads": (c) => ((c.language = "tr"), (c.commitMsg.language = "tr"), (c.commitMsg.fixType = "feat"), (c.planner = { splitAbove: 3 }), (c.paths = { handoff: "H.md" }), (c.review.agents = ["a"]), (c.metrics = { minLines: 2 })),
   };
   for (const [name, change] of Object.entries(accept)) assert.deepEqual(keysOf(change), [], name);
   // From nothing to something is tighter: no list was there to widen.

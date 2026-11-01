@@ -93,15 +93,12 @@ export const GATE_KEYS = [...MOVES.keys()];
 const NO_GATE = new Set([
   "language",
   "conversation.style",
-  ...["handoff", "changelog", "graph", "metricsLog", "classes", "findings", "stateDir"].map((k) => `paths.${k}`),
+  ...["handoff", "graph", "metricsLog", "classes", "findings", "stateDir"].map((k) => `paths.${k}`),
   "graph.exports.open",
   "graph.exports.done",
   ...["id", "status", "needs", "gate", "value", "cost", "cluster", "mechanization", "source", "since"].map((k) => `graph.fields.${k}`),
   "graph.openGateValue",
   "graph.doneStatus",
-  ...["high", "medium", "low"].map((k) => `graph.valueScale.${k}`),
-  ...["S", "M", "L", "XL"].map((k) => `graph.costScale.${k}`),
-  "planner.mechanizationSlots",
   "planner.splitAbove",
   "commitMsg.language",
   "commitMsg.fixType",
@@ -109,8 +106,8 @@ const NO_GATE = new Set([
   "sideCopy.roots",
   "sideCopy.maxInjectBytes",
   "compaction.defer",
-  ...["referenceCommand", "referenceTimeout", "twins", "coChangeMin", "ceilingRegistry", "fakeGlobs", "fixtureGlobs"].map((k) => `impact.${k}`),
-  ...["reworkDays", "fixSubject", "excludeRe", "testRe", "minLines", "minShare", "maxFixFiles", "moveSubject"].map((k) => `metrics.${k}`),
+  ...["referenceCommand", "referenceTimeout", "twins", "ceilingRegistry", "fakeGlobs", "fixtureGlobs"].map((k) => `impact.${k}`),
+  ...["fixSubject", "excludeRe", "testRe", "minLines", "minShare", "moveSubject"].map((k) => `metrics.${k}`),
 ]);
 
 /**

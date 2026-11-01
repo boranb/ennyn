@@ -8,7 +8,8 @@
  * bytes escaped), and a reason quotes no free text of a row. A row points at a place and names a cause in the
  * writer's words; it holds no quoted text.
  *
- * What is checked, row by row: every field there, of its type, in its closed set, no other field; `class` through
+ * What is checked, row by row: every field there (`trigger` and `escapePoint` may be left out: nothing reads them, and
+ * a row that holds one is held to its bound), of its type, in its closed set, no other field; `class` through
  * metrics/classes.mjs; `id` unique; `dupOf` names a row, and a chain ends; a `pre-existing` row names a file, and a
  * line needs one. A row that fails is refused and every count reads `?`, whichever cycle it says: it may have said
  * its cycle wrongly. Never a smaller number. So does a class registry that cannot be read or holds a problem: a class
@@ -101,19 +102,19 @@ const RULES = {
   caughtBy: [(v) => NOT_GATES.includes(/** @type {string} */ (v)) || (typeof v === "string" && ((GATE.test(v) && v.length <= NAME_MAX) || (v.startsWith("test:") && cleanPath(v.slice(5))))), `one of ${NOT_GATES.join(", ")}, test:<file>, gate:<name>`],
   dupOf: [(v) => v === null || isId(v), "null or a row's id"],
   fingerprint: text(FINGERPRINT_MAX),
-  trigger: text(NOTE_MAX),
-  escapePoint: text(NOTE_MAX),
   outcome: [(v) => OUTCOMES.includes(/** @type {string} */ (v)) || (typeof v === "string" && /^node:\S+$/.test(v) && plain(v, NAME_MAX)), `one of ${OUTCOMES.join(", ")}, node:<graph id>`],
   commit: [(v) => v === null || (typeof v === "string" && COMMIT.test(v)), "null or a commit's hash"],
   bornIn: [(v) => v === null || (typeof v === "string" && HASH.test(v)), "null or a full commit hash"],
   file: [(v) => v === null || cleanPath(v), "null or a path from the repository's top"],
   line: [(v) => v === null || (Number.isSafeInteger(v) && /** @type {number} */ (v) >= 1), "null or a line number"],
 };
+/** The fields a row may leave out, with what they must be when it holds them. @type {typeof RULES} */
+const OPTIONAL = { trigger: text(NOTE_MAX), escapePoint: text(NOTE_MAX) };
 /** Every field of a row, in the order ledger-row.md lists them. */
 export const FIELDS = ["cycle", "task", "round", "id", "severity", "class", "source", "caughtBy", "dupOf", "fingerprint", "trigger", "escapePoint", "outcome", "commit", "bornIn", "file", "line"];
 
 /**
- * @typedef {{ cycle: number, task: string, round: number, id: string, severity: string, class: string[], source: string, caughtBy: string, dupOf: string | null, fingerprint: string, trigger: string, escapePoint: string, outcome: string, commit: string | null, bornIn: string | null, file: string, line: number | null }} Row
+ * @typedef {{ cycle: number, task: string, round: number, id: string, severity: string, class: string[], source: string, caughtBy: string, dupOf: string | null, fingerprint: string, trigger?: string, escapePoint?: string, outcome: string, commit: string | null, bornIn: string | null, file: string, line: number | null }} Row
  * @typedef {{ raw: Record<string, unknown>, at: string, problems: string[] }} Entry a row as it is read, valid or not
  * @typedef {{ at: string, problems: string[] }} Refused
  * @typedef {{ rows: Row[], refused: Refused[], refusedCount: number, stopped: boolean, same: string[][], total: number }} Parsed
@@ -142,6 +143,7 @@ function rowProblems(raw, reg) {
     if (!Object.hasOwn(raw, field)) problems.push(`no ${field}`);
     else if (!holds(raw[field])) problems.push(`${field} must be ${must}`);
   }
+  for (const [field, [holds, must]] of Object.entries(OPTIONAL)) if (Object.hasOwn(raw, field) && !holds(raw[field])) problems.push(`${field} must be ${must}`);
   if (!Object.hasOwn(raw, "class")) problems.push("no class");
   else if (reg) problems.push(...classProblems(reg, raw.class));
   if (raw.source !== "pre-existing" && typeof raw.bornIn === "string") problems.push("bornIn belongs only to a pre-existing row");

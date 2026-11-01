@@ -6,7 +6,7 @@
  *
  * Ready = flagged, not done, gate open (or no gate field), every `needs` id done
  * (listed in the done export, or an open node carrying the done status).
- * Score = value / cost, categorical values mapped through the configured scales;
+ * Score = value / cost, value and cost words mapped to their weights;
  * ties break by id so the pick is deterministic.
  */
 
@@ -91,8 +91,15 @@ export async function loadGraph({ cwd, config }) {
   return { open: /** @type {GraphNode[]} */ (open), done: /** @type {GraphNode[]} */ (done) };
 }
 
+/** What a value word weighs; a number is its own weight. */
+const VALUE_WEIGHTS = { high: 3, medium: 2, low: 1 };
+/** What a cost word weighs; a number is its own weight. */
+const COST_WEIGHTS = { S: 1, M: 2, L: 3, XL: 5 };
+/** The middle of the cost words' weights: L and XL are split first. */
+const SPLIT_AT = 2.5;
+
 /**
- * A value or cost as a positive weight; null when it is neither a positive number nor a name the scale gives one.
+ * A value or cost as a positive weight; null when it is neither a positive number nor a word the scale gives one.
  * @param {unknown} v
  * @param {Record<string, number>} scale
  * @returns {number | null}
@@ -112,7 +119,7 @@ const weight = (v, scale) => known(v, scale) ?? 1;
  */
 export function scoreNode(node, config) {
   const f = config.graph.fields;
-  return weight(node[f.value], config.graph.valueScale) / weight(node[f.cost], config.graph.costScale);
+  return weight(node[f.value], VALUE_WEIGHTS) / weight(node[f.cost], COST_WEIGHTS);
 }
 
 /**
@@ -121,36 +128,25 @@ export function scoreNode(node, config) {
  * @param {any} config
  */
 export function costWeight(node, config) {
-  return weight(node[config.graph.fields.cost], config.graph.costScale);
+  return weight(node[config.graph.fields.cost], COST_WEIGHTS);
 }
-
-/** The positive weights of the cost scale, smallest first. @param {any} config */
-const costWeights = (config) => Object.values(config.graph.costScale).filter((w) => typeof w === "number" && w > 0).sort((a, b) => a - b);
 
 /**
  * The weight above which a core pick is split first: planner.splitAbove when set (costs given as numbers,
- * such as hours), else the middle of the cost scale, so a project's own scale reads as the default one does
- * (2.5 there: L and XL).
+ * such as hours), else SPLIT_AT.
  * @param {any} config
  */
-export function splitAt(config) {
-  const set = config.planner.splitAbove;
-  if (set !== null) return set;
-  const w = costWeights(config);
-  if (!w.length) return Infinity;
-  const mid = Math.floor(w.length / 2);
-  return w.length % 2 ? w[mid] : (w[mid - 1] + w[mid]) / 2;
-}
+export const splitAt = (config) => config.planner.splitAbove ?? SPLIT_AT;
 
 /**
- * Whether a core pick is split first: its cost weighs more than splitAt, and more than the scale's smallest
- * weight, so a step written at that weight is never told to split again.
+ * Whether a core pick is split first: its cost weighs more than splitAt, and more than S, so a step written at
+ * the smallest cost is never told to split again.
  * @param {GraphNode} node
  * @param {any} config
  */
 export function splitFirst(node, config) {
   const w = costWeight(node, config);
-  return w > splitAt(config) && w > (costWeights(config)[0] ?? 0);
+  return w > splitAt(config) && w > COST_WEIGHTS.S;
 }
 
 /**
@@ -210,7 +206,7 @@ export function readyNodes(graph, config) {
  */
 export function graphProblems(graph, config) {
   const f = config.graph.fields;
-  const { doneStatus, openGateValue, valueScale, costScale } = config.graph;
+  const { doneStatus, openGateValue } = config.graph;
   /** @type {GraphProblem[]} */
   const out = [];
   const named = (/** @type {GraphNode} */ n) => {
@@ -296,10 +292,10 @@ export function graphProblems(graph, config) {
     const ring = [...new Set(cycle)];
     out.push({ level: "fail", key: "doctor.needsCycle", vars: { cycle: cycle.map(String).join(" → "), where: whereById(ring, ring.map((id) => /** @type {GraphNode} */ (waiting.get(id)))) } });
   }
-  for (const [field, scale, name] of /** @type {const} */ ([[f.value, valueScale, "valueScale"], [f.cost, costScale, "costScale"]])) {
+  for (const [field, scale] of /** @type {[string, Record<string, number>][]} */ ([[f.value, VALUE_WEIGHTS], [f.cost, COST_WEIGHTS]])) {
     for (const n of waitingNodes) {
       const v = n[field];
-      if (v !== undefined && known(v, scale) === null) out.push({ level: "warn", key: "doctor.weightUnknown", vars: { id: String(n[f.id]), field, value: String(v), scale: name } });
+      if (v !== undefined && known(v, scale) === null) out.push({ level: "warn", key: "doctor.weightUnknown", vars: { id: String(n[f.id]), field, value: String(v), words: Object.keys(scale).join(", ") } });
     }
     // A graph that never names a cost compares values alone; one that names it for some nodes guesses for the rest.
     const absent = waitingNodes.filter((n) => n[field] === undefined).length;
@@ -388,7 +384,7 @@ export function byAge(nodes, config) {
  */
 export function pickOldest(graph, config) {
   const f = config.graph.fields;
-  const { doneStatus, openGateValue, valueScale } = config.graph;
+  const { doneStatus, openGateValue } = config.graph;
   const core = (/** @type {GraphNode} */ n) => n[f.mechanization] !== true;
   const ready = new Set(readyNodes(graph, config).filter(core));
   const waiting = graph.open.filter((n) => n[f.status] !== doneStatus);
@@ -398,7 +394,7 @@ export function pickOldest(graph, config) {
   const levels = new Map();
   for (const n of byAge(waiting, config)) {
     if (!core(n) || !gateOpen(n)) continue;
-    const w = weight(n[f.value], valueScale);
+    const w = weight(n[f.value], VALUE_WEIGHTS);
     const level = levels.get(w);
     if (level) level.push(n);
     else levels.set(w, [n]);

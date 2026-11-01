@@ -294,13 +294,17 @@ test("oracle: the log readers return what git stores, under a global config that
   const fix4 = commit("fix: k", { "src/k.js": [F, F, ""].join("\n") });
   const allowed = commit("feat: shape\n\n[commit-shape-allow: İngilizce değil, gerekçe burada]\n\n\n", { "b.txt": "1\n" });
   const odd = commit("feat: control \x01\x1e\x1f characters\n\n", { "c.txt": "1\n" });
+  // Three commits that hold both files: co-change counts from there.
+  const USE = String(readFileSync(join(dir, "src/use.js")));
+  const AT_END = String(readFileSync(join(dir, "src/a.js")));
+  for (const n of [1, 2]) commit(`feat: together ${n}`, { "src/a.js": `${AT_END}// ${n}\n`, "src/use.js": `${USE}// ${n}\n` });
   const hashes = [a, b, fmt, fix, c, d, fix2, e, fix3, g1, g2, fix4, allowed, odd];
   // Every byte git stored: the git helper drops the last newline of its output.
   const raw = (/** @type {string} */ h) => {
     const text = spawnSync("git", ["cat-file", "commit", h], { cwd: dir, env: ENV, encoding: "utf8" }).stdout;
     return text.slice(text.indexOf("\n\n") + 2);
   };
-  const config = loadConfig({ cwd: mkdtempSync(join(ROOT, "cfg-")), env: {}, override: { metrics: { minLines: 1, fixSubject: "^(fix|düzeltme)(\\(|:)" }, impact: { coChangeMin: 1 } } });
+  const config = loadConfig({ cwd: mkdtempSync(join(ROOT, "cfg-")), env: {}, override: { metrics: { minLines: 1, fixSubject: "^(fix|düzeltme)(\\(|:)" } } });
   const read = () => ({
     messages: Object.fromEntries(commitMessages(dir, hashes)),
     bypass: bypassUses({ cwd: dir, config }).uses.map((u) => [u.hash, u.subject, u.reason]),
@@ -318,7 +322,7 @@ test("oracle: the log readers return what git stores, under a global config that
   const third = 0.333;
   assert.deepEqual(new Set(clean.rework.map(pair)), new Set([`${a} ${fix} 1 ${third}`, `${fmt} ${fix} 1 ${third}`, `${b} ${fix} 1 ${third}`, `${c} ${fix2} 1 0.5`, `${d} ${fix2} 1 0.5`, `${g1} ${fix4} 1 1`]));
   assert.deepEqual(clean.scan.at(-1), { subject: "feat: one to three", paths: ["src/a.js"] });
-  assert.match(clean.impact[0], /^references: 2 references in 1 files .*: src\/use\.js:1,2\n.*\nco-change: src\/use\.js \(1 commit/);
+  assert.match(clean.impact[0], /^references: 2 references in 1 files .*: src\/use\.js:1,2\n.*\nco-change: src\/use\.js \(3 commits/);
 
   const hostile = join(ROOT, "hostile-gitconfig");
   const ignored = join(ROOT, "ignore-revs");

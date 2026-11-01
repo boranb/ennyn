@@ -69,21 +69,20 @@ test("ready: a need satisfied only by an open node carrying the done status", ()
   assert.equal(pickMechanization({ open: [{ id: "B", mechanization: true, needs: ["A"] }], done: [] }, c), null);
 });
 
-test("ready: configured field names, open gate value and scales", () => {
+test("ready: configured field names and open gate value", () => {
   const c = cfg({
     graph: {
       fields: { status: "durum", gate: "kapi", value: "deger", cost: "maliyet", mechanization: "mekanizasyon" },
       openGateValue: "yok",
       doneStatus: "tamam",
-      valueScale: { yuksek: 3, orta: 2, dusuk: 1 },
     },
   });
   const graph = {
     open: [
-      { id: "a", mekanizasyon: true, durum: "planli", kapi: "talep", deger: "yuksek", maliyet: "S" },
-      { id: "b", mekanizasyon: true, durum: "planli", kapi: "yok", deger: "orta", maliyet: "S" },
-      { id: "c", mekanizasyon: true, durum: "planli", kapi: "yok", deger: "yuksek", maliyet: "M" },
-      { id: "d", mekanizasyon: true, durum: "tamam", kapi: "yok", deger: "yuksek", maliyet: "S" },
+      { id: "a", mekanizasyon: true, durum: "planli", kapi: "talep", deger: "high", maliyet: "S" },
+      { id: "b", mekanizasyon: true, durum: "planli", kapi: "yok", deger: "medium", maliyet: "S" },
+      { id: "c", mekanizasyon: true, durum: "planli", kapi: "yok", deger: "high", maliyet: "M" },
+      { id: "d", mekanizasyon: true, durum: "tamam", kapi: "yok", deger: "high", maliyet: "S" },
     ],
     done: [],
   };
@@ -208,8 +207,6 @@ test("oldest: split by weight, not by a cost name", () => {
   assert.equal(splitAt(cfg()), 2.5);
   const hours = cfg({ planner: { splitAbove: 16 } });
   assert.deepEqual([splitFirst({ cost: 8 }, hours), splitFirst({ cost: 40 }, hours), costWeight({ cost: 40 }, hours), splitAt(hours)], [false, true, 40, 16]);
-  // An empty scale (one given replaces the default): no middle, nothing split.
-  assert.deepEqual([splitAt(cfg({ graph: { costScale: {} } })), splitFirst({ cost: 40 }, cfg({ graph: { costScale: {} } }))], [Infinity, false]);
 });
 
 test("oldest (review round 2): a date is a number; any other since is read as undated and said, even on every node", () => {
@@ -237,21 +234,11 @@ test("oldest (review round 2): the age and its warnings read only open core node
   assert.deepEqual(graphProblems({ open: [{ id: "d", status: "done", since: "x" }, { id: "a", since: 3 }, { id: "e", status: "done" }], done: [{ id: "f" }] }, cfg()), []);
 });
 
-test("oldest (review round 2): the split threshold follows the cost scale, and a step at its smallest weight is never split", () => {
-  const split = (/** @type {Record<string, number>} */ costScale, /** @type {any} */ over = {}) => {
-    const c = cfg({ graph: { costScale }, ...over });
-    return Object.keys(costScale).filter((cost) => splitFirst({ cost }, c));
-  };
-  assert.deepEqual(split({ S: 1, M: 2, L: 3, XL: 5 }), ["L", "XL"]);
-  assert.deepEqual(split({ S: 3, M: 5, L: 8 }), ["L"], "the split step, S, was told to split again");
-  assert.deepEqual(split({ XS: 1, S: 2, M: 3, L: 5, XL: 8 }), ["L", "XL"], "M was split");
-  assert.deepEqual(split({ S: 0.5, M: 1, L: 2, XL: 4 }), ["L", "XL"], "L was never split");
-  assert.deepEqual(split({ small: 1, large: 3 }), ["large"]);
-  // A scale written in any order, and one with a weight of 0 or less (no weight: such a cost counts as 1).
-  assert.deepEqual(split({ L: 8, S: 3, M: 5 }), ["L"]);
-  assert.deepEqual(split({ N: -10, S: 1, M: 2, L: 3 }), ["L"]);
+test("oldest (review round 2): a step at the smallest cost is never split", () => {
+  const split = (/** @type {any} */ over = {}) => ["S", "M", "L", "XL"].filter((cost) => splitFirst({ cost }, cfg(over)));
+  assert.deepEqual(split(), ["L", "XL"]);
   // An override below the smallest weight still never splits that weight.
-  assert.deepEqual(split({ S: 1, M: 2, L: 3 }, { planner: { splitAbove: 0.5 } }), ["M", "L"]);
+  assert.deepEqual(split({ planner: { splitAbove: 0.5 } }), ["M", "L", "XL"]);
   for (const v of [0, -1, "M", Infinity]) assert.throws(() => cfg({ planner: { splitAbove: v } }), /planner\.splitAbove/, JSON.stringify(v));
   // Costs given as numbers (hours) with no threshold of their own: said; with one, not.
   const hours = [{ id: "a", cost: 8 }, { id: "b", cost: 40 }, { id: "m", mechanization: true, cost: 3 }];
@@ -260,20 +247,19 @@ test("oldest (review round 2): the split threshold follows the cost scale, and a
   assert.deepEqual([splitFirst({ cost: 8 }, cfg({ planner: { splitAbove: 16 } })), splitFirst({ cost: 40 }, cfg({ planner: { splitAbove: 16 } }))], [false, true]);
 });
 
-test("oldest: configured field names, open gate value and scales", () => {
+test("oldest: configured field names and open gate value", () => {
   const c = cfg({
     graph: {
       fields: { id: "kimlik", status: "durum", gate: "kapi", value: "deger", needs: "gerekir", mechanization: "mekanizasyon" },
       openGateValue: "yok",
       doneStatus: "tamam",
-      valueScale: { yuksek: 3, dusuk: 1 },
     },
   });
   const open = [
-    { kimlik: "a", deger: "yuksek", kapi: "talep" },
-    { kimlik: "b", deger: "yuksek", kapi: "yok", gerekir: ["c"] },
-    { kimlik: "c", deger: "dusuk", kapi: "yok", durum: "tamam" },
-    { kimlik: "d", deger: "yuksek", kapi: "yok", mekanizasyon: true },
+    { kimlik: "a", deger: "high", kapi: "talep" },
+    { kimlik: "b", deger: "high", kapi: "yok", gerekir: ["c"] },
+    { kimlik: "c", deger: "low", kapi: "yok", durum: "tamam" },
+    { kimlik: "d", deger: "high", kapi: "yok", mekanizasyon: true },
   ];
   const p = pickOldest({ open, done: [] }, c);
   assert.deepEqual(p && [p.node.kimlik, p.oldest.kimlik], ["b", "b"]);

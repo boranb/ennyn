@@ -27,6 +27,8 @@ import { clipped, t } from "../core/i18n.mjs";
  */
 
 const LIST_MAX = 10;
+/** The commits a file must share with an input file to count as changing with it. */
+const COCHANGE_MIN = 3;
 const OUTPUT_LINES = 40;
 const ENTRY_POINT_RE = /(route|handler|cron|schedul|(?:^|[/._-])cli(?:[/._-]|$)|import|webhook|job)/i;
 const CATCH_RE = /\bcatch\b\s*[({]/g;
@@ -308,7 +310,6 @@ function rowS1(c) {
   }
 
   const coLabel = t("impact.part.coChange", {}, lang);
-  const min = config.impact.coChangeMin;
   if (!c.files.length) parts.push({ label: coLabel, text: t("impact.reason.noFiles", {}, lang), measured: false });
   else if (c.repoError()) parts.push({ label: coLabel, text: t("impact.reason.gitFailed", { error: String(c.repoError()) }, lang), measured: false });
   else {
@@ -338,12 +339,12 @@ function rowS1(c) {
     else {
       const top = [...shared]
         .map(([name, commits]) => ({ name, n: commits.size }))
-        .filter((x) => x.n >= min)
+        .filter((x) => x.n >= COCHANGE_MIN)
         .sort((x, y) => y.n - x.n || (x.name < y.name ? -1 : x.name > y.name ? 1 : 0))
         .slice(0, 5);
       parts.push({
         label: coLabel,
-        text: top.length ? top.map((x) => t("impact.s1.coChange", { file: x.name, n: x.n }, lang)).join(", ") : t("impact.s1.noCoChange", { min }, lang),
+        text: top.length ? top.map((x) => t("impact.s1.coChange", { file: x.name, n: x.n }, lang)).join(", ") : t("impact.s1.noCoChange", { min: COCHANGE_MIN }, lang),
         measured: true,
       });
     }

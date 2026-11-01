@@ -20,7 +20,6 @@ export const DEFAULTS = Object.freeze({
   // Resolved against the project directory, and kept in it (see loadConfig).
   paths: {
     handoff: "HANDOFF.md",
-    changelog: "CHANGELOG.md",
     graph: ".ennyn/graph.json",
     metricsLog: ".ennyn/metrics.jsonl",
     classes: ".ennyn/classes.json",
@@ -43,12 +42,10 @@ export const DEFAULTS = Object.freeze({
     },
     openGateValue: null,
     doneStatus: "done",
-    valueScale: { high: 3, medium: 2, low: 1 },
-    costScale: { S: 1, M: 2, L: 3, XL: 5 },
   },
-  // A core pick whose cost weighs more than this is split first (core says so); null: the middle weight of
-  // graph.costScale. Set it when costs are numbers such as hours.
-  planner: { mechanizationSlots: 1, splitAbove: null },
+  // A core pick whose cost weighs more than this is split first (core says so); null: the middle of the cost words'
+  // weights (plan/mechanization.mjs). Set it when costs are numbers such as hours.
+  planner: { splitAbove: null },
   commitMsg: {
     // Language of commit text; null follows `language` (reports and conversation).
     language: null,
@@ -129,13 +126,11 @@ export const DEFAULTS = Object.freeze({
     // Seconds the reference command may run before it is stopped and S1's references are unmeasured.
     referenceTimeout: 120,
     twins: [],
-    coChangeMin: 3,
     ceilingRegistry: null,
     fakeGlobs: ["**/*.test.*"],
     fixtureGlobs: ["**/__fixtures__/**"],
   },
   metrics: {
-    reworkDays: 7,
     // fix, fix(scope) and fix! (a breaking fix): every subject the commit gate admits as the fix type.
     fixSubject: "^fix(\\(|!?:)",
     // Generated output and lockfiles are rewritten by ordinary commits; counting them measures churn.
@@ -146,8 +141,6 @@ export const DEFAULTS = Object.freeze({
     // deleted lines, or the fix message names the origin's hash.
     minLines: 3,
     minShare: 0.1,
-    // A fix touching more production files than this is a sweep, not a defect repair.
-    maxFixFiles: 15,
     // Origins whose subject says they moved code: blame names them for lines they did not write.
     moveSubject: "^refactor|\\b(rename[ds]?|move[ds]?|split|extract(ed)?|codemod|prettier|reformat(ted)?)\\b",
   },
@@ -198,16 +191,9 @@ function kind(v) {
 }
 
 // Keys whose value is a free-form map (any key allowed below them).
-const OPEN_MAPS = new Set(["graph.exports", "graph.fields", "graph.valueScale", "graph.costScale", "security.deps.registries"]);
-/**
- * Maps the project gives in place of the default one, with the kinds their values take: a default name left in
- * a scale (XL: 5) would outrank its own, and a registry left in the list would still be contacted.
- */
-const REPLACED_MAPS = new Map([
-  ["graph.valueScale", ["number"]],
-  ["graph.costScale", ["number"]],
-  ["security.deps.registries", ["string", "null"]],
-]);
+const OPEN_MAPS = new Set(["graph.exports", "graph.fields", "security.deps.registries"]);
+/** Maps the project gives in place of the default one, with the kinds their values take: a registry left in the list would still be contacted. */
+const REPLACED_MAPS = new Map([["security.deps.registries", ["string", "null"]]]);
 // Keys whose default is null but accept a value of this kind.
 const NULLABLE = new Map([
   ["commitMsg.language", ["string"]],
@@ -218,7 +204,7 @@ const NULLABLE = new Map([
 ]);
 
 // Keys that name a file or directory Ennyn reads or writes, resolved against the project directory.
-const PATH_KEYS = ["paths.handoff", "paths.changelog", "paths.graph", "paths.metricsLog", "paths.classes", "paths.findings", "paths.stateDir", "impact.ceilingRegistry"];
+const PATH_KEYS = ["paths.handoff", "paths.graph", "paths.metricsLog", "paths.classes", "paths.findings", "paths.stateDir", "impact.ceilingRegistry"];
 /** The files appended to, a record a line: each a .jsonl file of its own. */
 const LOG_KEYS = ["paths.metricsLog", "paths.findings"];
 
@@ -317,7 +303,7 @@ function merge(base, over, prefix, problems) {
     const vk = kind(v);
     const kinds = REPLACED_MAPS.get(path);
     if (bk === "object" && vk === "object" && kinds) {
-      // Replaced, and still checked: each value is of a kind the default's values are (a weight is a number).
+      // Replaced, and still checked: each value is of a kind the default's values are.
       for (const [sk, sv] of Object.entries(/** @type {Record<string, unknown>} */ (v))) if (!kinds.includes(kind(sv))) problems.push(`"${path}.${sk}" must be ${kinds.join(" | ")}, got ${kind(sv)}`);
       out[k] = { .../** @type {object} */ (v) };
       continue;
