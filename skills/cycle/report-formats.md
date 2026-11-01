@@ -15,7 +15,7 @@ Write reports in the project's `language`.
 
 ## End of task
 
-`**Task N done:** [result] | Impact: [summary or not needed — why] | Review-Rounds: [N] | Mutation: [first a/b · last c/d] | Checks: [passed] | Commit: [subject or "no commit" + why]`
+`**Task N done:** [result] | Impact: [summary or not needed — why] | Review-Rounds: [N] | Mutation: [first a/b · last c/d] | Gate: [result · last round clean · none and why] | Checks: [passed] | Commit: [subject or "no commit" + why]`
 
 `**Task N stopped:** [remaining failure, or what could not run] | Failed: [count] · agents: [N] | Root cause: [likely] | Changed: [files] | Kept: [branch, brief] | Next: [safest step]`
 

@@ -185,6 +185,27 @@ test("plugin: the approval line of a loosening is the user's: the cycle skill sa
   assert.match(read("SECURITY.md"), /a tripwire and a record, not a boundary/);
 });
 
+test("plugin: a brief names the task's gate, and a fix no review reads passes it: the agent before it amends, the orchestrator's rerun counted", () => {
+  const brief = read("skills/cycle/task-brief.md");
+  const row = (/** @type {string} */ name) => new RegExp(`^\\| \\*\\*${name}\\*\\* \\|.*$`, "m").exec(brief)?.[0] ?? "";
+  const gate = row("Gate");
+  for (const kind of ["in one line, by command:", "a browser check for a UI change", "the project's harness for a money path", "a test file otherwise", "the audited feature's own check", "for a security audit, the suites of the gates it touches, named in the brief", "until its report names the command", "`none` and why"]) assert.ok(gate.includes(kind), kind);
+  // A line written before the fix cannot know where the fix lands: cycle 17's round-two errno fix passed the line its brief could have named.
+  assert.ok(gate.includes("beside the test that proves a fix, never instead"), gate);
+  assert.ok(brief.indexOf(gate) < brief.indexOf("## What the orchestrator keeps"), "the gate is a part of the brief");
+  // The rule's one place: a brief's rows reach the agent, the state table does not.
+  assert.ok(row("Protocol").includes("After every fix round, before it amends, it runs the brief's gate"));
+  const report = row("Report");
+  assert.ok(report.includes("the gate's command and result"));
+  assert.ok(report.includes("for each fix, what exercises it: the gate, a test that failed first, or `none` and why (a comment, a case only another git or platform reaches); the orchestrator reads this when no review follows"), report);
+  const fixed = row("Last round fixed");
+  for (const part of ["The orchestrator reruns the task's gate on the amended commit", "before `Review-Rounds:` goes in", "Red in that rerun is a failed verification"]) assert.ok(fixed.includes(part), part);
+  assert.match(brief, /^\*\*A failed verification\*\* is a result[^\n]*the task's gate after the last round's fixes/m);
+  // The consolidated brief replaces the task's: without this the gate is lost at a restart.
+  assert.ok(row("Verification").includes("the task's gate among them"));
+  assert.match(read("skills/cycle/report-formats.md"), /^`\*\*Task N done:\*\*.* \| Gate: \[result · last round clean · none and why\] \| /m);
+});
+
 /** The tree as test/guards.test.mjs cloneOfTree reads it: what git lists, tracked or not, that is there. @param {string} root @param {string} folder */
 const treeFiles = (root, folder) =>
   git(["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", folder], { cwd: root })

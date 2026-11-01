@@ -12,13 +12,14 @@ One common brief for the cycle, one short brief per task, read first, in one tur
 |---|---|
 | **Task** | the node, where its evidence is, what to deliver, the commit type |
 | **Impact table** | its path, or `not needed` and why; the agent writes what it learns there |
+| **Gate** | the check that exercises this change end to end, in one line, by command: a browser check for a UI change, the project's harness for a money path, a test file otherwise; for an audit, the audited feature's own check; for a security audit, the suites of the gates it touches, named in the brief; for a mechanization task, in words, what it will build, until its report names the command. `none` and why for a task with nothing to run. It runs beside the test that proves a fix, never instead |
 | **Files** | what to read first, what to search instead |
 | **Paths** | the CLI and this skill's folder, written out: an agent's shell has no `${CLAUDE_PLUGIN_ROOT}`, and a skill read from disk holds it unfilled (Claude Code 2.1.310) |
-| **Protocol** | section 2 of `SKILL.md` **without step 7**: the agent starts no reviewers, leaves `Review-Rounds:` out, commits on its branch, reports and stops |
+| **Protocol** | section 2 of `SKILL.md` **without step 7**: the agent starts no reviewers, leaves `Review-Rounds:` out, commits on its branch, reports and stops. After every fix round, before it amends, it runs the brief's gate |
 | **Commands** | the handoff's commands, as each runs in a worktree (no installed dependencies). **Name the project's slow gate suites.** The agent runs a new test alone first, its control seen failing once, then the handoff's fast test command on the final tree, with any slow gate the task touches; a fast command with no slow list is run as it is. A task that adds a slow test says so in its report, and the orchestrator adds it wherever the project lists slow gates. The whole test command, with any slow gate it does not hold, runs at landing, before the main branch moves: a brief that said "do not run the full suite", with no such run before landing, let a real defect reach the main branch. A handoff that names no command short of the whole suite: the whole test command, and say so |
 | **Place** | worktree, branch, snapshot name, the rows file in the kept folder (the orchestrator alone appends to `paths.findings`, at the close). Not to touch: the main checkout, the graph, the handoff. No push, no landing |
 | **Traps** | the handoff's traps this work can hit; the report's language |
-| **Report** | its last message, in order: changes · impact table · commit · checks run, with results · not measured · proposed nodes · handoff text · doubts |
+| **Report** | its last message, in order: changes · impact table · commit · the gate's command and result · for each fix, what exercises it: the gate, a test that failed first, or `none` and why (a comment, a case only another git or platform reaches); the orchestrator reads this when no review follows · checks run, with results · not measured · proposed nodes · handoff text · doubts |
 
 Leave out the plan for other tasks; mark a guess at a cause or a fix as a guess.
 
@@ -61,11 +62,12 @@ A task agent cannot reach the user. Refused with `User-Approved-Loosening:`, it 
 
 The orchestrator writes each task's state and count to a file in that folder at every change: context does not survive compaction.
 
-**A failed verification** is a result that sends the task back: a check the orchestrator reran, a review round, the test that proves a fix after round two, the landing suite, or the agent's report that it cannot pass (still red after three tries at one failure). The task's first review round does not count: its findings are the work. Nothing else is exempt, whatever the finding's Source. An agent's own red runs before it reports are no results. A timing failure under load is rerun alone before anything counts, whoever runs the suite.
+**A failed verification** is a result that sends the task back: a check the orchestrator reran, a review round, the test that proves a fix after round two, the task's gate after the last round's fixes, the landing suite, or the agent's report that it cannot pass (still red after three tries at one failure). The task's first review round does not count: its findings are the work. Nothing else is exempt, whatever the finding's Source. An agent's own red runs before it reports are no results. A timing failure under load is rerun alone before anything counts, whoever runs the suite.
 
 | State | What happens |
 |---|---|
 | **Sent back** | First failure: the agent corrects and amends. Second: restart. Third or later: stopped. The count is the task's, and nothing resets it |
+| **Last round fixed** | The orchestrator reruns the task's gate on the amended commit, before `Review-Rounds:` goes in. Red in that rerun is a failed verification, and it counts |
 | **Restart** | Once per task. The agent stops; a fresh agent on a new branch takes the consolidated brief; the old branch stays. The reviewers keep their context, and a reviewer or the orchestrator runs what they left. A new design is a first write nobody has read: it gets one narrow review, with the failures as step 7's signal |
 | **Landing** | One task at a time: rebase, the handoff's whole test command and every slow gate it does not hold (no single whole command: each test command), whatever the agent ran, then the main branch moves. A clean rebase is no change: it does not recheck meaning, and the suite is the net. A red suite counts; a conflict goes to the agent uncounted. What either changes goes to the reviewers as a delta: that failure or conflict is step 7's signal, and `Third-round:` names it |
 | **Landed** | Closed: restart and stop no longer apply. A defect found later counts for nothing: a new `fix:` commit, written and reviewed as a first write, or a node |
@@ -84,7 +86,7 @@ A state this table does not name is the orchestrator's decision, written in the 
 | **What failed and why** | the failing command and its result; the cause, marked measured or guessed |
 | **Open findings** | each one whole, with the path of its probe or harness |
 | **Tests to carry** | by path, the tests that closed earlier findings: any new start keeps them |
-| **Verification** | the commands and harnesses that must pass, with expected numbers, and who runs them |
+| **Verification** | the commands and harnesses that must pass, the task's gate among them, with expected numbers, and who runs them |
 
 It leaves out the old conversation, explanations no command backs, closed findings, and the failed design as an instruction: the fresh agent may keep that code or start from the base.
 

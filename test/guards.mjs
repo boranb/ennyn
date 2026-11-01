@@ -67,6 +67,7 @@ export const GATES = [
   {
     test: "test/plugin.test.mjs",
     guards: [
+      { id: "plugin-task-gate", why: "a gate after the last round that nothing counts", file: "skills/cycle/task-brief.md", old: "Red in that rerun is a failed verification, and it counts", new: "Red in that rerun is noted", pattern: "plugin: a brief names the task's gate" },
       { id: "plugin-size", why: "a skill over 8 KB", file: "skills/cycle/SKILL.md", old: "# Cycle — four tasks, measured\n", new: `# Cycle — four tasks, measured\n\n${"x".repeat(8192)}\n`, pattern: "plugin: every SKILL.md stays under 8 KB" },
       { id: "repo-runtime-dep", why: "a runtime dependency where SECURITY.md says none", file: "package.json", old: '"devDependencies": {', new: '"dependencies": { "left-pad": "1.3.0" },\n  "devDependencies": {', pattern: "plugin: what SECURITY.md says of this repository" },
       { id: "repo-install-script", why: "a script npm runs by itself", file: "package.json", old: '"typecheck": "tsc -p jsconfig.json",', new: '"postinstall": "node x",\n    "typecheck": "tsc -p jsconfig.json",', pattern: "plugin: what SECURITY.md says of this repository" },
