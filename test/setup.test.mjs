@@ -50,7 +50,7 @@ function repo() {
     commit(message, files = {}) {
       put(dir, files);
       git(["add", "-A"], { cwd: dir });
-      git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", message], { cwd: dir });
+      git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false", "commit", "-q", "--allow-empty", "-m", message], { cwd: dir });
     },
   };
 }

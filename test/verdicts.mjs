@@ -432,7 +432,7 @@ export function hookOutcome(id, code, stderr, timedOut = false) {
  * @param {T[]} items @param {number} n @param {(item: T) => Promise<R>} task
  * @returns {Promise<R[]>}
  */
-async function pool(items, n, task) {
+export async function pool(items, n, task) {
   /** @type {R[]} */
   const out = [];
   let next = 0;
