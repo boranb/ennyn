@@ -10,8 +10,8 @@
 
 import { loadConfig, ConfigError } from "../core/config.mjs";
 import { loadGraph, readyNodes, readyMechanization, graphProblems, GraphError } from "../plan/mechanization.mjs";
-import { MIN_HISTORY, indexMatches, recentCommits, productionSubjects, projectFiles, githubRemotes } from "./scan.mjs";
-import { askRules, outwardCommands, GH_COMMANDS, SETTINGS, SETTINGS_LIMIT } from "./permissions.mjs";
+import { MIN_HISTORY, indexMatches, recentCommits, productionSubjects, projectFiles, remotesByHost } from "./scan.mjs";
+import { askRules, capped, ghApplies, outwardCommands, GH_COMMANDS, SETTINGS, SETTINGS_LIMIT } from "./permissions.mjs";
 import { ORPHANED, PLUGIN_RECORD, hookStatus, idleReason, replacedRoot, sessionOf, versionNote } from "./hook.mjs";
 import { instructionBudget, readBudgets } from "./budget.mjs";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -113,7 +113,7 @@ function ciReport(cwd, tracked, config, add) {
  * `read` replaces the readers (tests).
  * @param {string} cwd @param {string[] | null} files tracked files; null when git could not list them
  * @param {(level: DoctorItem["level"], key: string, vars?: DoctorItem["vars"]) => void} add
- * @param {{ read?: (rel: string, opts?: { limit?: number }) => string | null | undefined, githubRemotes?: (cwd: string) => string[], headFile?: typeof headFile }} [readers]
+ * @param {{ read?: (rel: string, opts?: { limit?: number }) => string | null | undefined, remotes?: (cwd: string) => { github: string[], others: string[] }, headFile?: typeof headFile }} [readers]
  */
 export function askReport(cwd, files, add, readers = {}) {
   const project = projectFiles(cwd);
@@ -135,11 +135,11 @@ export function askReport(cwd, files, add, readers = {}) {
       }
     },
   };
-  let github = false;
+  let gh = false;
   /** @type {string | null} */
   let remotesError = null;
   try {
-    github = (readers.githubRemotes ?? githubRemotes)(cwd).length > 0;
+    gh = ghApplies((readers.remotes ?? remotesByHost)(cwd));
   } catch (e) {
     remotesError = oneLine(e);
   }
@@ -151,19 +151,20 @@ export function askReport(cwd, files, add, readers = {}) {
       return undefined;
     }
   };
-  const { rules, unread, head } = askRules(pf, outwardCommands(files, github, (rel) => project.present(rel)), { committed, failed });
+  const { rules, unread, head } = askRules(pf, outwardCommands(files, gh, (rel) => project.present(rel)), { committed, failed });
   const left = unread.filter((p) => !failed.has(p));
   if (left.length) add("unmeasured", "doctor.askUnread", { list: left });
   for (const error of errors) add("unmeasured", "doctor.askUnmeasured", { error });
-  if (remotesError !== null) add("unmeasured", "doctor.askGithubUnmeasured", { error: remotesError, commands: GH_COMMANDS });
+  if (remotesError !== null) add("unmeasured", "doctor.askGithubUnmeasured", { error: remotesError, commands: capped(GH_COMMANDS) });
   if (head) add("unmeasured", "doctor.askHeadKind", { path: [SETTINGS[0]] });
   const at = (/** @type {string | null} */ where) => rules.filter((r) => r.where === where);
-  const named = (/** @type {typeof rules} */ list) => list.map((r) => r.rule);
+  const named = (/** @type {typeof rules} */ list) => capped(list.map((r) => r.rule));
   if (at("unknown").length) add("unmeasured", "doctor.askUnknown", { rules: named(at("unknown")) });
   if (at(null).length) add("warn", "doctor.askMissing", { rules: named(at(null)) });
   if (at("uncommitted").length) add("warn", "doctor.askUncommitted", { rules: named(at("uncommitted")) });
   if (at("local").length) add("warn", "doctor.askLocal", { rules: named(at("local")) });
-  if (at("shared").length) add("ok", "doctor.askOk", { rules: named(at("shared")) });
+  // Counted: the warnings above name what is missing, and the limits below are what this line is read for.
+  if (at("shared").length) add("ok", "doctor.askOk", { n: at("shared").length });
 }
 
 /**

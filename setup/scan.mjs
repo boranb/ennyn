@@ -18,7 +18,7 @@ import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
 import { literalGlob } from "../core/glob.mjs";
 import { clipped, ends } from "../core/i18n.mjs";
 import { LEAVES, keptPaths, loadPathScopedRules, markdownFiles, reasonText, splitFrontMatter, parsePaths } from "../adapters/claude-code/rules-index.mjs";
-import { askRules, isGithubHost, outwardCommands, readSettings, SETTINGS, SETTINGS_LIMIT, urlHost } from "./permissions.mjs";
+import { askRules, ghApplies, isGithubHost, OFFERED, outwardCommands, readSettings, SETTINGS, SETTINGS_LIMIT, urlHost } from "./permissions.mjs";
 
 /** Fewer commits than this and a share says little: the default stays. */
 export const MIN_HISTORY = 30;
@@ -435,18 +435,20 @@ export function roadmapFiles(cwd, files) {
 }
 
 /**
- * The remotes whose fetch or push URL is on a GitHub host (isGithubHost), each name once, as `git remote -v`
- * lists them; none without a remote. A git that fails throws.
+ * The remotes `git remote -v` lists, each name once: `github`, those whose fetch or push URL is on a GitHub host
+ * (isGithubHost); `others`, the rest. Both empty without a remote. A git that fails throws.
  * @param {string} cwd
  */
-export function githubRemotes(cwd) {
+export function remotesByHost(cwd) {
   /** @type {Set<string>} */
-  const names = new Set();
+  const github = new Set();
+  /** @type {Set<string>} */
+  const others = new Set();
   for (const line of git(["remote", "-v"], { cwd }).split("\n")) {
     const m = /^(\S+)\t(.*) \((?:fetch|push)\)$/.exec(line);
-    if (m && isGithubHost(urlHost(m[2]))) names.add(m[1]);
+    if (m) (isGithubHost(urlHost(m[2])) ? github : others).add(m[1]);
   }
-  return [...names];
+  return { github: [...github], others: [...others].filter((name) => !github.has(name)) };
 }
 
 /** @param {string} cwd */
@@ -1024,9 +1026,12 @@ export function scanProject({ cwd, env = process.env }) {
   const setup = agentSetup(cwd, files);
   // Which settings file holds a rule for each command that leaves the machine: /ennyn:init proposes the missing.
   const pf = projectFiles(cwd);
-  const remotes = repo ? githubRemotes(cwd) : [];
-  const commands = outwardCommands(files, remotes.length > 0, (rel) => pf.present(rel));
-  const ask = { ...askRules(pf, commands, { committed: (path) => (repo ? headFile(cwd, path, SETTINGS_LIMIT) : null) }), githubRemotes: remotes };
+  const remotes = repo ? remotesByHost(cwd) : { github: [], others: [] };
+  const commands = outwardCommands(files, ghApplies(remotes), (rel) => pf.present(rel));
+  const ask = { ...askRules(pf, commands, { committed: (path) => (repo ? headFile(cwd, path, SETTINGS_LIMIT) : null) }), githubRemotes: remotes.github, otherRemotes: remotes.others };
+  // Offered apart, as a choice: a rule the project holds, in either file, committed or not, is not offered again.
+  const notHeld = (/** @type {readonly string[]} */ list) => askRules(pf, [...list]).rules.filter((r) => r.where === null).map((r) => r.rule);
+  const offered = { destroys: notHeld(OFFERED.destroys), installs: notHeld(OFFERED.installs) };
   const declared = projectCommands(cwd);
   const churn = churnPaths(commits, cwd, patterns.re);
   const roadmap = roadmapFiles(cwd, files);
@@ -1050,7 +1055,7 @@ export function scanProject({ cwd, env = process.env }) {
     github: repo ? githubRepo(cwd) : null,
     pathScopedRules: rules.n,
     pathScopedRulesLinkedOut: rules.linkedOut,
-    agentSetup: { ...setup, ask },
+    agentSetup: { ...setup, ask, offered },
     // Outside a repository there is no index to count in: the lines are listed in agentSetup, `unmeasured` says why.
     bans: repo ? banMatches(cwd, setup.instructions, config.review.forbidden, configPath ? [relative(cwd, configPath).split(sep).join("/")] : []) : [],
     commands: declared.commands,

@@ -15,7 +15,7 @@ import { GATE_KEYS, LOOSENING_LINE } from "../checks/loosening.mjs";
 import { t } from "../core/i18n.mjs";
 import { hookProjectDir, projectConfig } from "../adapters/claude-code/project.mjs";
 import { FILE_TOOLS } from "../adapters/claude-code/hooks/side-copy-rules.mjs";
-import { askRules, outwardCommands } from "../setup/permissions.mjs";
+import { askRules, OFFERED, outwardCommands } from "../setup/permissions.mjs";
 import { projectFiles } from "../setup/scan.mjs";
 import { formatConvergence } from "../metrics/convergence.mjs";
 
@@ -272,8 +272,57 @@ test("plugin: the repository asks before every command that leaves the machine, 
   const pf = projectFiles(ROOT);
   const res = askRules(pf, outwardCommands(["package.json"], true), { committed: (path) => ({ text: pf.read(path) ?? "" }) });
   assert.deepEqual(res.unread, []);
-  assert.equal(res.rules.length, 10, "git push, npm publish and three gh commands, each for Bash and PowerShell");
+  assert.equal(res.rules.length, 38, "git push, npm publish and seventeen gh commands, each for Bash and PowerShell");
   for (const r of res.rules) assert.equal(r.where, "shared", `${r.rule} in .claude/settings.json`);
+});
+
+test("plugin: the repository writes no offered rule: it runs cycles, and such a rule stops them", () => {
+  const ask = JSON.parse(read(".claude/settings.json")).permissions.ask;
+  const held = askRules(projectFiles(ROOT), [...OFFERED.destroys, ...OFFERED.installs], { committed: () => ({ text: read(".claude/settings.json") }) }).rules.filter((r) => r.where !== null);
+  assert.deepEqual(held, []);
+  assert.equal(ask.some((/** @type {string} */ r) => /git (clean|reset|checkout|restore|branch|worktree|stash)/.test(r)), false);
+});
+
+test("plugin: Claude Code keeps the repository's ask rules as one file: the record holds that file whole, and its rules stop what they name", () => {
+  const rec = JSON.parse(read("test/reference/claude-code.json"));
+  const own = JSON.parse(read(".claude/settings.json")).permissions.ask;
+  for (const id of ["ask-file-whole-push", "ask-file-whole-gh"]) {
+    const cell = rec.cells.find((/** @type {{ id: string }} */ c) => c.id === id);
+    assert.deepEqual(JSON.parse(cell.files[".claude/settings.json"]).permissions.ask, own, id);
+    assert.match(cell.cc.call, /^stopped/, id);
+  }
+});
+
+test("plugin: /ennyn:init offers what destroys or installs apart, writes none unasked, and its report says what these rules cannot do", () => {
+  const gates = read("skills/init/gates.md");
+  assert.ok(read("skills/init/SKILL.md").includes("`agentSetup.offered`"), "the skill sends init to the list");
+  for (const words of [
+    "These rules read command text and are no boundary: an option before the subcommand, a script or an interpreter gets past them.",
+    "A rule here stops an unattended cycle: it cannot tell a task's worktree from the main checkout.",
+    "Asked nothing, write nothing.",
+    // The interview's other questions take "ok" as yes: this one must not, or a word about the rest writes these.
+    'Its default is none: "ok" to this question writes none.',
+    "They stop on text, so some harmless commands stop too:",
+  ]) assert.ok(gates.includes(words), words);
+  // Asked in the interview's one message, and "ok" there means cycles run: `pip install` stalls a cycle as `git clean` does.
+  // A plain no is the only way to the offer, whose own default stays none. The report says why.
+  const interview = read("skills/init/SKILL.md").split("## 2. Ask once")[1].split("## 3.")[0];
+  const [asked, after] = interview.split("Nothing else is asked");
+  assert.ok(asked.includes("Will cycles run unattended? Default yes; only a plain no opens `agentSetup.offered`."), "the question is in the one message");
+  assert.match(after, /^ but that offer;/, "the offer is the one question after it");
+  assert.ok(gates.includes('Yes, a bare "ok" or no answer: offer neither set.'));
+  assert.ok(gates.includes("**On a plain no, offer** each set in one question"));
+  assert.ok(!gates.includes("**Ask first**"), "a second interview");
+  assert.ok(gates.includes("Neither set was offered: a rule on these commands stops an unattended cycle, since it cannot tell a task's worktree from the main checkout."));
+  // No count of lines to go stale, and the skill's closed report list reaches them.
+  assert.doesNotMatch(gates, /the (two|three|\d+) lines of step/);
+  assert.ok(read("skills/init/SKILL.md").split("Report in at most")[1].includes("the lines gates.md says to report"), "the report list sends the agent to them");
+  // True of what a project's hook can do, and of what a read's text can trigger.
+  assert.ok(gates.includes("unless a `PermissionRequest` hook in the settings answers it"));
+  assert.doesNotMatch(gates, /over any allow rule, and `\.claude\/settings\.json`/);
+  assert.ok(gates.includes("A read whose text holds `-X POST` stops like a write"));
+  // What stays open is one line, and gh api's limit says more than -f.
+  for (const spelling of ["-XPOST", "-iX POST", "--method=POST"]) assert.ok(gates.includes(spelling), spelling);
 });
 
 test("plugin: the repository ignores .claude/worktrees/, where Claude Code puts agent worktrees, by its .gitignore, as /ennyn:init proposes", () => {

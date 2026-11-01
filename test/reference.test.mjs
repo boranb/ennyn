@@ -15,7 +15,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -281,10 +281,11 @@ test("reference control: the Claude Code judge finds a reading that moved", () =
   assert.equal(cc.moves([folds === rec.caseFolds ? elsewhere : here]).length, 0);
   assert.deepEqual(cc.RELATIONS, ["agree", "stricter", "extra", "differs", "unmeasured"]);
   // A cell whose paths could leave the recorder's directory, or that a marker cannot spell back whole, is no cell.
-  for (const bad of [{ files: { "../x": "" } }, { files: { "/abs/x": "" } }, { files: { "a/./b": "" } }, { files: { "a b": "" } }, { files: { "a\\b": "" } }, { call: { Read: "../x" } }, { cwd: ".." }, { plugin: "/p" }, { call: { Bash: "x", Read: "y" } }, { call: { Bash: 1 } }, { call: { Bash: "git push" } }, { call: { Bash: "toString" } }, { except: { "*": "extra: x (other)" } }, { case: false }, { ennyn: { call: 1 } }]) {
+  for (const bad of [{ files: { "../x": "" } }, { files: { "/abs/x": "" } }, { files: { "a/./b": "" } }, { files: { "a b": "" } }, { files: { "a\\b": "" } }, { call: { Read: "../x" } }, { cwd: ".." }, { plugin: "/p" }, { worktree: "x" }, { agent: "foreground" }, { agent: "other", call: { Bash: "push" } }, { agent: "background", call: { Read: "x.txt" } }, { call: { Bash: "x", Read: "y" } }, { call: { Bash: 1 } }, { call: { Bash: "git push" } }, { call: { Bash: "toString" } }, { except: { "*": "extra: x (other)" } }, { case: false }, { ennyn: { call: 1 } }]) {
     assert.notDeepEqual(cc.cellProblems({ id: "x", from: "control", files: {}, ...bad }), [], JSON.stringify(bad));
   }
   assert.deepEqual(cc.cellProblems({ id: "x", from: "control", files: { ".claude/rules/a.md": "" }, call: { Read: "src/x.ts" }, cwd: "sub", plugin: "." }), []);
+  assert.deepEqual(cc.cellProblems({ id: "x", from: "control", files: {}, call: { Bash: "push" }, worktree: true, agent: "background" }), []);
   assert.notDeepEqual(cc.cellProblems({ id: "x", from: "control", files: { "a.json": "{{bytes:4194305}}" } }), []);
   // One marker a file: where `{{mark}}` puts it, else at the end of a Markdown file; none in other files.
   assert.deepEqual(cc.rendered({ id: "x", from: "control", files: { "a.md": "d: {{mark}}", "b.md": "b", "c.json": "{}", "d.json": "{{bytes:3}}" } }, "/d"), { "a.md": "d: MARK:a.md", "b.md": "b\nMARK:b.md\n", "c.json": "{}", "d.json": "aaa" });
@@ -307,7 +308,7 @@ test("reference: doctor's ask line names as unmatched every spelling Claude Code
   // Each class the line names, by its words; the items no cell measures, named; the older versions apart.
   /** @type {Record<string, string>} */
   const phrases = { option: "a git option before push", quoted: "a quoted or escaped push", shell: "a command fed to a shell or another program", built: "a command word built as it runs" };
-  const unmeasured = ["an alias", "a script that pushes", "gh api", "an MCP tool"];
+  const unmeasured = ["an alias", "a script that pushes", "gh api with no method or one written otherwise (-f, -XPOST, -iX POST, --method=POST, -X post, -X \"POST\")", "an MCP tool"];
   const line = t("doctor.askOk", { rules: "x" }, "en");
   const list = line.slice(line.indexOf("not matched: ") + "not matched: ".length);
   // Commas inside parentheses part no items.
@@ -323,7 +324,62 @@ test("reference: doctor's ask line names as unmatched every spelling Claude Code
   for (const text of ["push'tan önce bir git seçeneği", "tırnaklı ya da kaçışlı bir push", "bir kabuğa ya da başka bir programa verilen komut", "çalışırken kurulan bir komut sözcüğü", "eski sürümlerde tam yol (2.1.309'dan önce) ya da alt kabuk (2.1.207)"]) assert.ok(tr.includes(text), `tr: ${text}`);
 });
 
-test("reference control: a cell runs no command of its own and reaches nothing outside it: the recorder refuses each way the review found", () => {
+test("reference: what the ask rules' reports claim rests on Claude Code's recorded run", () => {
+  const rec = cc.readRecord();
+  const call = (/** @type {string} */ id) => {
+    const c = rec.cells.find((x) => x.id === id);
+    assert.ok(c, id);
+    return String(c.cc?.call);
+  };
+  const stops = (/** @type {string[]} */ ...ids) => ids.forEach((id) => assert.match(call(id), /^stopped/, id));
+  const runs = (/** @type {string[]} */ ...ids) => ids.forEach((id) => assert.equal(call(id), "ran", id));
+  // A rule on the command stops it at the top and after a cd into a worktree alike, and in a subagent, which is why
+  // the list is offered: the same call with no rule runs. No rule stops the one and passes the other.
+  stops("ask-worktree-top", "ask-worktree-cd", "ask-worktree-subagent-foreground", "ask-worktree-subagent-background");
+  runs("ask-worktree-control", "ask-worktree-subagent-control");
+  stops("ask-worktree-exact-top", "ask-worktree-exact-cd", "ask-worktree-allow-narrow");
+  // A rule reads text, not a place: one option gets past it, and a rule naming a path or a compound holds that text alone.
+  runs("ask-worktree-dash-C", "ask-worktree-dash-C-top");
+  stops("ask-worktree-path-rule-text", "ask-worktree-compound-rule");
+  runs("ask-worktree-path-rule-same-place", "ask-worktree-compound-semi", "ask-worktree-compound-slash", "ask-worktree-compound-top");
+  // gh api: the proposed form stops a write method anywhere, and a search for a word; the forms it replaced miss the
+  // real spelling. It reads text, so a read whose text holds `-X POST` stops too, a grep after a pipe among them.
+  stops("ask-gh-end", "ask-gh-first", "ask-gh-middle", "ask-gh-word-end", "ask-gh-repo-delete", "ask-gh-gist-create");
+  runs("ask-gh-search", "ask-gh-read", "ask-gh-form-spaced", "ask-gh-form-first", "ask-gh-form-colon", "ask-gh-form-space-end");
+  stops("ask-gh-glob-stops-search", "ask-gh-search-phrase", "ask-gh-grep-after", "ask-gh-repo-create-push");
+  // A `:*` after a wildcard stops nothing: doctor must not read one as held.
+  runs("ask-colon-after-flag", "ask-colon-after-method", "ask-colon-checkout");
+  // The limits doctor's line and gates.md name.
+  runs("ask-gh-glued", "ask-gh-equals", "ask-gh-lower", "ask-gh-field", "ask-gh-group", "ask-gh-quoted", "ask-pipe-sh-s", "ask-npm-global-after");
+  // The offered spellings, and what each plain form would miss.
+  stops("ask-reset-hard", "ask-reset-hard-rev", "ask-reset-rev-hard", "ask-checkout-dashes", "ask-checkout-rev", "ask-compose-v", "ask-compose-volumes", "ask-npx-rule", "ask-npm-global", "ask-pipe-sh", "ask-pipe-bash");
+  runs("ask-reset-soft", "ask-checkout-new", "ask-compose-plain", "ask-sh-c-plain", "ask-reset-plain-rule", "ask-checkout-plain-rule", "ask-npx-plain-rule");
+  // What the review measured as closing a spelling, and what each leaves alone. A rule on a shell stops a pipe; with no rule it runs.
+  stops("ask-offered-sh-s", "ask-offered-bash-s", "ask-offered-npm-after", "ask-offered-npm-global", "ask-offered-npm-global-after", "ask-offered-pnpm-after", "ask-offered-pnpm-global", "ask-offered-compose-v1", "ask-offered-checkout-dot", "ask-offered-branch-d-f");
+  runs("ask-pipe-control", "ask-offered-npm-local", "ask-offered-npm-dev", "ask-offered-pnpm-local", "ask-offered-compose-v1-plain", "ask-offered-checkout-dotfile", "ask-offered-branch-d", "ask-offered-bash-script");
+  // The script the rule leaves alone is the recorder's, and it ran: the run shows more than a call no rule stopped.
+  assert.deepEqual(rec.cells.find((c) => c.id === "ask-offered-bash-script")?.cc?.ran, ["x.txt"]);
+  // What gates.md's report says of harmless commands: a word that holds the flag, and a pipe, which is read as one text.
+  stops("ask-offered-compose-service", "ask-offered-compose-pipe", "ask-offered-npm-global-style");
+  // Leaving a quoted method open is a decision: a rule that holds the quotes stops it, and none of these reads `"-X" POST`.
+  stops("ask-gh-quoted-rule");
+  runs("ask-gh-quoted-flag");
+  // A subagent's call is the subagent's: the run says so, in both modes, and each has a control with no rule.
+  for (const id of ["ask-worktree-subagent-foreground", "ask-worktree-subagent-background", "ask-worktree-subagent-control", "ask-worktree-subagent-foreground-control"]) assert.equal(rec.cells.find((c) => c.id === id)?.cc?.by, "subagent", id);
+  runs("ask-worktree-subagent-foreground-control");
+  // A cell that ran a program reaching outside ran the stand-in, and a spelling of a program outside names one.
+  for (const c of rec.cells) {
+    const spelling = c.call && "Bash" in c.call ? cc.SPELLINGS[c.call.Bash] : undefined;
+    const program = spelling && cc.STUBBED.find((p) => new RegExp(`(^|[;&|] *)${p} `).test(spelling.command));
+    if (program && c.cc?.call === "ran") assert.deepEqual(c.cc.ran, [program], c.id);
+  }
+  for (const [name, s] of Object.entries(cc.SPELLINGS)) {
+    if (name === "plugin-bin" || !(s.about || s.class === "none")) continue;
+    for (const part of s.command.split(/&&|\||;/)) assert.ok(["git", "cd", "echo", "grep", "sh", "bash", ...cc.STUBBED].includes(part.trim().split(" ")[0]), `${name}: ${part}`);
+  }
+});
+
+test("reference control: a cell runs no command of its own and reaches nothing outside it: the recorder refuses each way the review found", async () => {
   const base = { from: "review", files: { "x.txt": "x" } };
   /** @type {Record<string, object>} */
   const probes = {
@@ -341,6 +397,10 @@ test("reference control: a cell runs no command of its own and reaches nothing o
     "rec-git-hook": { files: { ".git/hooks/pre-commit": "#!/bin/sh\ntouch /tmp/x\n", "x.txt": "x" } },
     "rec-git-fsmonitor": { files: { ".git/config": "[core]\n\tfsmonitor = touch /tmp/x\n" } },
     "rec-git-case": { files: { ".GIT/config": "[core]\n\tfsmonitor = touch /tmp/x\n" } },
+    // A folder git takes for a repository, with no .git in any path: its config runs a command in any spelling that reads the index.
+    "rec-embedded-bare": { cwd: "sub", call: { Bash: "clean-top" }, files: { "sub/HEAD": "ref: refs/heads/main\n", "sub/config": "[core]\n\tfsmonitor = touch /tmp/x\n", "sub/objects/k": "k", "sub/refs/k": "k" } },
+    "rec-embedded-bare-case": { cwd: "sub", call: { Bash: "reset-hard" }, files: { "sub/head": "ref: refs/heads/main\n", "sub/config": "[core]\n\tfsmonitor = touch /tmp/x\n", "sub/objects/k": "k", "sub/refs/k": "k" } },
+    "rec-embedded-commondir": { cwd: "sub", call: { Bash: "clean-top" }, files: { "sub/HEAD": "ref: refs/heads/main\n", "sub/commondir": "../x\n", "x/config": "[core]\n\tfsmonitor = touch /tmp/x\n", "x/objects/k": "k", "x/refs/k": "k" } },
     "rec-bytes-many": { files: { "a.txt": "{{bytes:4194304}}", "b.txt": "{{bytes:4194304}}", "c.txt": "{{bytes:1}}" } },
     "rec-bytes-file": { files: { "a.txt": "{{bytes:4194304}}{{bytes:1}}" } },
     "rec-plugin-hook": { plugin: "p", files: { "p/.claude-plugin/plugin.json": "{}", "p/hooks/hooks.json": JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: "touch /tmp/x" }] }] } }) } },
@@ -352,8 +412,33 @@ test("reference control: a cell runs no command of its own and reaches nothing o
     "rec-import-home": { files: { "CLAUDE.md": "@~/.ssh/id_rsa" } },
     "rec-import-absolute": { files: { "CLAUDE.md": "@/etc/hosts" } },
     "rec-project-skill": { files: { ".claude/skills/s/SKILL.md": "---\nname: s\n---\nx" } },
+    // The file a spelling hands to a shell is the recorder's: bash reads it from the call's folder, a disk that folds case opens it in any case.
+    "rec-run-own-file": { call: { Bash: "bash-script" }, files: { "x.txt": "touch /tmp/x\n" } },
+    "rec-run-own-file-case": { call: { Bash: "bash-script" }, files: { "X.TXT": "touch /tmp/x\n" } },
+    "rec-run-own-file-below": { cwd: "sub", call: { Bash: "bash-script" }, files: { "sub/x.txt": "touch /tmp/x\n" } },
+    // A plugin's bin/ in another case is the same folder on such a disk, and on PATH.
+    "rec-plugin-bin-case": { plugin: "p", call: { Bash: "plugin-bin" }, files: { "p/BIN/en-probe-bin": "{{nomark}}#!/bin/sh\ntouch /tmp/x\n" } },
   };
   for (const [id, probe] of Object.entries(probes)) assert.notDeepEqual(cc.cellProblems({ id, ...base, ...probe }), [], id);
+  // The refusal is of the file a call runs: that spelling with no such file passes, and so does the name under a spelling that runs nothing.
+  assert.deepEqual(cc.cellProblems({ id: "ok", from: "control", call: { Bash: "bash-script" }, files: {} }), []);
+  assert.deepEqual(cc.cellProblems({ id: "ok", from: "control", call: { Bash: "push" }, files: { "x.txt": "touch /tmp/x\n" } }), []);
+  // Every spelling that hands a shell a file names it in `runs`, so that a new one cannot pass the refusal above unread.
+  const handsAFile = (/** @type {string} */ command) => /(^|[;&|(] *)(\S*\/)?((ba|da|k|z)?sh|source|\.) +[^-<\s]/.test(command);
+  for (const command of ["sh y.sh", "true && /bin/bash y", "x | zsh y", ". ./y", "cd z; source y"]) assert.ok(handsAFile(command), command);
+  for (const command of ["sh -c true", "echo x | sh", "echo x | bash -s -- -y", 'sh <<< "x"', "cd . && git push"]) assert.ok(!handsAFile(command), command);
+  const names = (/** @type {(s: { command: string, runs?: string }) => boolean} */ pick) => Object.entries(cc.SPELLINGS).filter(([, s]) => pick(s)).map(([name]) => name);
+  assert.deepEqual(names((s) => s.runs !== undefined), names((s) => handsAFile(s.command)));
+  // Only the marker script is written runnable: a placeholder before `#!` leaves a file no PATH lookup runs, in any folder.
+  const modes = mkdtempSync(join(tmpdir(), "en-ref-modes-"));
+  cc.writeCell({ id: "x", from: "control", files: { "p/bin/en-probe-bin": "#!/bin/sh\n{{ran}}\n", "a.txt": "{{nomark}}#!/bin/sh\ntouch /tmp/x\n", "b.txt": "{{bytes:0}}#!/bin/sh\ntouch /tmp/x\n" } }, modes);
+  assert.deepEqual(["p/bin/en-probe-bin", "a.txt", "b.txt"].map((f) => statSync(join(modes, f)).mode & 0o100), [0o100, 0, 0]);
+  // The recorder stops at such a cell before anything runs, and writes the file a spelling runs itself: the run marker.
+  const own = { id: "own", from: "control", call: { Bash: "bash-script" }, files: { "x.txt": "touch /tmp/x\n" } };
+  await assert.rejects(cc.ccReading(own, "unused"), /the recorder writes it/);
+  const run = mkdtempSync(join(tmpdir(), "en-ref-run-"));
+  cc.writeCell({ ...own, files: {} }, run);
+  assert.equal(readFileSync(join(run, "x.txt"), "utf8"), `echo x.txt >> ${run}/.ran\n`);
   // What the record's cells hold stays allowed: the run marker, sh running it, a script that is only it, EN_PROBE_ names.
   assert.deepEqual(cc.cellProblems({ id: "ok", from: "control", plugin: "p", call: { Bash: "push" }, files: {
     ".claude/settings.json": JSON.stringify({ permissions: { ask: ["Bash(git push *)"] }, env: { EN_PROBE_A: 5 }, en_probe_pad: "{{bytes:2097162}}", hooks: { SessionStart: [{ hooks: [{ type: "command", command: "{{ran}}" }] }] } }),

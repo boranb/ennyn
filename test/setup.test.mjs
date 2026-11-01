@@ -30,6 +30,9 @@ const cfg = () => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "en-s-")), env: {
 const pat = () => pathPatterns(DEFAULTS, []).re;
 
 /** @param {string} dir @param {Record<string, string>} files */
+/** A repository's remote on another host: the gh commands are not asked about, in a test about something else. @param {{ dir: string }} r */
+const elsewhere = (r) => (git(["remote", "add", "elsewhere", "https://gitlab.com/a/b.git"], { cwd: r.dir }), r);
+
 function put(dir, files) {
   for (const [path, content] of Object.entries(files)) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
@@ -460,7 +463,7 @@ test("cli: init-scan --json is the scan; doctor prints marks and exits 1 on a pr
   // security.secrets is on by default, and only the hook checks it: with no hook, a warning; no ask rule for a
   // push, the other.
   assert.match(doc.stdout, /^! commit-msg hook: none, so these are rules on paper: security\.secrets; run ennyn install-hook$/m);
-  assert.match(doc.stdout, /^! ask rules: no ask or deny rule for Bash\(git push \*\), PowerShell\(git push \*\) in \.claude\/settings\.json; add them to permissions\.ask \(\/ennyn:init proposes them\)$/m);
+  assert.match(doc.stdout, /^! ask rules: no ask or deny rule for Bash\(git push \*\), PowerShell\(git push \*\), .*, \+\d+ in \.claude\/settings\.json; add them to permissions\.ask \(\/ennyn:init proposes them\)$/m);
   // No .gitignore: git does not ignore where Claude Code puts agent worktrees.
   assert.match(doc.stdout, /^! agent worktrees: git does not ignore \.claude\/worktrees\/, where Claude Code puts agent worktrees: .*; add \.claude\/worktrees\/ to \.gitignore and commit it \(\/ennyn:init proposes the line\)$/m);
   assert.match(doc.stdout, /^problems: 1 · warnings: 3 · unmeasured: 1$/m, "the one unmeasured: too few commits for the fix label");
@@ -2102,13 +2105,176 @@ test("ask rules: a content rule counts in the forms whose reading the docs fix; 
   assert.equal(ruleCovers("Bash(gh release create *)", "gh release"), false, "gh release upload is not asked about");
 });
 
+// destructive-ask-rules. Each accept and reject here is a reading of Claude Code's: test/reference/claude-code.json
+// holds them (ask-gh-*, ask-reset-*), and compare() holds ruleCovers to them.
+test("ask rules: a command that holds its own wildcard counts only under a rule Claude Code stops it with", async () => {
+  const { ruleCovers, ruleFor } = await import("../setup/permissions.mjs");
+  const post = "gh api *-X POST*";
+  const accept = ["Bash(gh api *-X POST*)", "Bash(gh api *)", "Bash(gh api:*)", "Bash(gh *)", "Bash(gh api *-X*)", "Bash(gh api *-X *)"];
+  // `gh api repos/x -X POST`: a ` *` at the end of a rule with another `*` in it does not match the bare end, and a
+  // method named first or after a space misses the method placed after the path.
+  const reject = ["Bash(gh api * -X POST *)", "Bash(gh api -X POST *)", "Bash(gh api *-X POST *)", "Bash(gh api *-X POST:*)", "Bash(gh api * -X POST*)", "Bash(gh api *-X POST* *)", "Bash(gh api *-X*POST*)"];
+  for (const r of accept) assert.equal(ruleCovers(r, post), true, `accept ${r}`);
+  for (const r of reject) assert.equal(ruleCovers(r, post), false, `reject ${r}`);
+  assert.equal(ruleCovers("PowerShell(gh api *-X POST*)", post, "PowerShell"), true);
+  assert.equal(ruleCovers("Bash(gh api *-X POST*)", post, "PowerShell"), false);
+  // A plain command keeps its prefix reading; the wildcard forms change nothing for it.
+  assert.equal(ruleCovers("Bash(git * push *)", "git push"), false);
+  assert.equal(ruleCovers("Bash(git push)", "git push"), false, "matches one exact command, not every push");
+  // A shell at the end of a pipe is matched whole: `sh` alone, never `sh -c` or a script.
+  assert.equal(ruleCovers("Bash(sh)", "sh"), true);
+  assert.equal(ruleCovers("Bash(sh *)", "sh"), true);
+  assert.equal(ruleCovers("Bash(s)", "sh"), false);
+  assert.equal(ruleCovers("Bash(bash)", "sh"), false);
+  assert.equal(ruleFor("git push", "Bash"), "Bash(git push *)");
+  assert.equal(ruleFor(post, "PowerShell"), "PowerShell(gh api *-X POST*)");
+  assert.equal(ruleFor("sh", "Bash"), "Bash(sh)");
+});
+
+test("ask rules: a `:*` after another wildcard stops nothing, so it is never read as held", async () => {
+  const { askRules, ruleCovers } = await import("../setup/permissions.mjs");
+  const { projectFiles } = await import("../setup/scan.mjs");
+  // Corpus c1, c2 of the review: with a wildcard before it Claude Code reads the colon as text (ask-colon-*).
+  const nothing = [["Bash(gh api *-X:*)", "gh api *-X POST*"], ["Bash(gh api *--method:*)", "gh api *--method DELETE*"], ["Bash(gh api *-X POST:*)", "gh api *-X POST*"], ["Bash(git checkout *--:*)", "git checkout *-- *"], ["Bash(docker compose down *-v:*)", "docker compose down *-v*"], ["Bash(git reset *--hard:*)", "git reset *--hard*"]];
+  for (const [rule, command] of nothing) assert.equal(ruleCovers(rule, command), false, rule);
+  // With no other wildcard it stays the trailing ` *` written the older way.
+  for (const [rule, command] of [["Bash(gh api:*)", "gh api *-X POST*"], ["Bash(gh:*)", "gh api *-X POST*"], ["Bash(git push:*)", "git push"], ["Bash(git checkout:*)", "git checkout *-- *"]]) assert.equal(ruleCovers(rule, command), true, rule);
+  // Through what doctor reads, and doctor itself: it counts the push rules and no colon rule.
+  const r = setup({}, { nodes: [{ id: "a" }] });
+  r.commit("feat: ask", { ".claude/settings.json": JSON.stringify({ permissions: { ask: ["Bash(git push *)", "PowerShell(git push *)", "Bash(gh api *-X:*)", "Bash(gh api *--method:*)", "Bash(git checkout *--:*)"] } }) });
+  const { rules } = askRules(projectFiles(r.dir), ["gh api *-X POST*", "gh api *--method DELETE*", "git checkout *-- *"]);
+  assert.deepEqual(rules.filter((x) => x.tool === "Bash").map((x) => x.where), [null, null, null]);
+  assert.deepEqual((await checkSetup({ cwd: r.dir, env: {} })).items.find((i) => i.key === "doctor.askOk")?.vars, { n: 2 });
+});
+
+test("ask rules: the gh commands come with a GitHub remote or with no remote at all; a project whose remotes are all elsewhere is told what that leaves", async () => {
+  const { GH_COMMANDS, ghApplies, ruleFor, TOOLS } = await import("../setup/permissions.mjs");
+  const graph = { nodes: [{ id: "a" }] };
+  const rules = (/** @type {string} */ dir) => JSON.parse(spawnSync(process.execPath, [CLI, "init-scan", "--json"], { cwd: dir, encoding: "utf8" }).stdout).agentSetup.ask.rules.map((/** @type {any} */ x) => x.command);
+  const missing = async (/** @type {string} */ dir) => (await checkSetup({ cwd: dir, env: {} })).items.find((i) => i.key === "doctor.askMissing")?.vars.rules;
+  assert.deepEqual([ghApplies({ github: [], others: [] }), ghApplies({ github: ["a"], others: [] }), ghApplies({ github: ["a"], others: ["b"] }), ghApplies({ github: [], others: ["b"] })], [true, true, true, false]);
+  // No remote: `gh repo create x --source . --push` runs before there is one.
+  const none = setup({}, graph);
+  assert.deepEqual(rules(none.dir), ["git push", ...GH_COMMANDS].flatMap((c) => [c, c]));
+  assert.ok((await missing(none.dir)).includes(ruleFor("gh pr merge", TOOLS[0])), "doctor follows");
+  assert.doesNotMatch(spawnSync(process.execPath, [CLI, "init-scan"], { cwd: none.dir, encoding: "utf8" }).stdout, /gh commands not proposed/, "nothing to say: they are");
+  // Every remote elsewhere: none proposed, none missing, and the limit said.
+  const elsewhere = setup({}, graph);
+  git(["remote", "add", "origin", "https://gitlab.com/a/b.git"], { cwd: elsewhere.dir });
+  assert.deepEqual(rules(elsewhere.dir), ["git push", "git push"]);
+  assert.deepEqual(await missing(elsewhere.dir), ["Bash(git push *)", "PowerShell(git push *)"]);
+  const text = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: elsewhere.dir, encoding: "utf8" }).stdout;
+  assert.match(text, /· the gh commands not proposed: every remote is on another host \(an SSH alias or an Enterprise host the scan cannot recognize reads as one\), so gh repo create and gh api run unasked\.$/m);
+  assert.deepEqual(JSON.parse(spawnSync(process.execPath, [CLI, "init-scan", "--json"], { cwd: elsewhere.dir, encoding: "utf8" }).stdout).agentSetup.ask.otherRemotes, ["origin"]);
+  // One remote on GitHub among others is enough; so is a push URL there.
+  git(["remote", "add", "up", "git@github.com:a/b.git"], { cwd: elsewhere.dir });
+  assert.ok(rules(elsewhere.dir).includes("gh repo create"));
+  const pushOnly = setup({}, graph);
+  git(["remote", "add", "origin", "https://gitlab.com/a/b.git"], { cwd: pushOnly.dir });
+  git(["remote", "set-url", "--push", "origin", "git@github.com:a/b.git"], { cwd: pushOnly.dir });
+  assert.ok(rules(pushOnly.dir).includes("gh repo create"));
+  const both = JSON.parse(spawnSync(process.execPath, [CLI, "init-scan", "--json"], { cwd: pushOnly.dir, encoding: "utf8" }).stdout).agentSetup.ask;
+  assert.deepEqual([both.githubRemotes, both.otherRemotes], [["origin"], []], "one remote is on one side");
+  // What the sentence says of a host it cannot recognize: an SSH alias reads as another host, and the gh rules go.
+  const alias = setup({}, graph);
+  git(["remote", "add", "origin", "git@gh-work:a/b.git"], { cwd: alias.dir });
+  assert.deepEqual(rules(alias.dir), ["git push", "git push"]);
+  assert.deepEqual(JSON.parse(spawnSync(process.execPath, [CLI, "init-scan", "--json"], { cwd: alias.dir, encoding: "utf8" }).stdout).agentSetup.ask.otherRemotes, ["origin"]);
+  assert.ok(t("scan.askNoGithub", {}, "tr").includes("SSH takma adı ya da Enterprise hostu"), "the Turkish line says it too");
+});
+
+test("ask rules: what leaves the machine is proposed; what destroys local work or installs outside the project is offered apart", async () => {
+  const { GH_COMMANDS, OFFERED, outwardCommands, ruleFor } = await import("../setup/permissions.mjs");
+  const gh = outwardCommands([], true);
+  for (const c of ["gh repo create", "gh repo edit", "gh repo delete", "gh repo rename", "gh repo archive", "gh gist create"]) assert.ok(gh.includes(c), c);
+  assert.deepEqual(gh.filter((c) => c.startsWith("gh api")), ["-X", "--method"].flatMap((f) => ["POST", "PATCH", "PUT", "DELETE"].map((m) => `gh api *${f} ${m}*`)));
+  assert.deepEqual(gh, ["git push", ...GH_COMMANDS]);
+  assert.equal(outwardCommands([], false).some((c) => c.startsWith("gh")), false, "the gh commands stay under a GitHub remote");
+  // None of them is proposed as a default: outwardCommands holds no offered command, whatever the repository.
+  const outward = new Set(outwardCommands(null, true));
+  for (const c of [...OFFERED.destroys, ...OFFERED.installs]) assert.equal(outward.has(c), false, c);
+  assert.deepEqual(OFFERED.destroys.filter((c) => OFFERED.installs.includes(c)), []);
+  // The node's lists, by what a rule must stop.
+  const rules = (/** @type {string[]} */ list) => list.map((c) => ruleFor(c, "Bash"));
+  for (const r of ["Bash(git clean *)", "Bash(git reset *--hard*)", "Bash(git checkout *-- *)", "Bash(git restore *)", "Bash(git branch -D *)", "Bash(git worktree remove *)", "Bash(git stash drop *)", "Bash(git stash clear *)", "Bash(docker system prune *)", "Bash(docker volume prune *)", "Bash(docker network prune *)", "Bash(docker image prune *)", "Bash(docker volume rm *)", "Bash(docker compose down *-v*)", "Bash(dropdb *)", "Bash(terraform destroy *)", "Bash(prisma migrate reset *)", "Bash(npx prisma migrate reset *)", "Bash(prisma db push --force-reset *)", "Bash(npx prisma db push --force-reset *)"]) assert.ok(rules(OFFERED.destroys).includes(r), r);
+  for (const r of ["Bash(npm install -g *)", "Bash(npm i -g *)", "Bash(pnpm add -g *)", "Bash(pip install *)", "Bash(pip3 install *)", "Bash(brew install *)", "Bash(cargo install *)", "Bash(go install *)", "Bash(sh)", "Bash(bash)"]) assert.ok(rules(OFFERED.installs).includes(r), r);
+  // What the review measured as closing a spelling, each with a cell that says so and a cell it leaves alone.
+  for (const r of ["Bash(docker-compose down *-v*)", "Bash(git checkout . *)", "Bash(git branch -d -f *)"]) assert.ok(rules(OFFERED.destroys).includes(r), r);
+  for (const r of ["Bash(npm install * -g*)", "Bash(npm install *--global*)", "Bash(pnpm add * -g*)", "Bash(pnpm add *--global*)", "Bash(sh -s*)", "Bash(bash -s*)"]) assert.ok(rules(OFFERED.installs).includes(r), r);
+});
+
+test("ask rules: init-scan names the offered rules apart from the outward ones, and doctor says nothing of one declined", async () => {
+  const { OFFERED, ruleFor, TOOLS } = await import("../setup/permissions.mjs");
+  const r = elsewhere(setup({}, { nodes: [{ id: "a" }] }));
+  const both = (/** @type {string} */ c) => TOOLS.map((tool) => ruleFor(c, tool));
+  r.commit("feat: ask", { ".claude/settings.json": JSON.stringify({ permissions: { ask: [...both("git push"), ...both("git clean")] } }) });
+  const scan = () => JSON.parse(spawnSync(process.execPath, [CLI, "init-scan", "--json"], { cwd: r.dir, encoding: "utf8" }).stdout);
+  const json = scan();
+  assert.deepEqual(json.agentSetup.ask.rules.map((/** @type {any} */ x) => x.command), ["git push", "git push"], "no offered command among the outward rules");
+  assert.deepEqual(json.agentSetup.offered.installs, OFFERED.installs.flatMap(both));
+  // What the project holds is not offered again.
+  assert.deepEqual(json.agentSetup.offered.destroys, OFFERED.destroys.filter((c) => c !== "git clean").flatMap(both));
+  const text = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: r.dir, encoding: "utf8" }).stdout;
+  assert.match(text, new RegExp(`^Ask rules to offer, never written unasked: ${json.agentSetup.offered.destroys.length} for what destroys local work or data, ${json.agentSetup.offered.installs.length} for what installs outside the project \\(init-scan --json lists them\\)\\.$`, "m"));
+  // Declined, all of them: nothing to act on, nothing said.
+  const items = (await checkSetup({ cwd: r.dir, env: {} })).items.filter((i) => i.key.startsWith("doctor.ask"));
+  assert.deepEqual(items.map((i) => `${i.level} ${i.key}`), ["ok doctor.askOk"]);
+  assert.deepEqual(items[0].vars, { n: 2 }, "the rules doctor asks for, counted: a held offered rule is not one");
+  // Held in the local file, or written and not committed: still held, so not offered.
+  put(r.dir, { ".claude/settings.local.json": JSON.stringify({ permissions: { ask: both("brew install") } }) });
+  assert.deepEqual(scan().agentSetup.offered.installs, OFFERED.installs.filter((c) => c !== "brew install").flatMap(both));
+  put(r.dir, { ".claude/settings.json": JSON.stringify({ permissions: { ask: [...both("git push"), ...both("git clean"), ...both("dropdb")] } }) });
+  assert.deepEqual(scan().agentSetup.offered.destroys, OFFERED.destroys.filter((c) => c !== "git clean" && c !== "dropdb").flatMap(both));
+  rmSync(join(r.dir, ".claude", "settings.local.json"));
+  r.commit("feat: back", { ".claude/settings.json": JSON.stringify({ permissions: { ask: [...both("git push"), ...both("git clean")] } }) });
+  // Their lists are the same in a repository with a GitHub remote: the condition is the outward list's alone.
+  git(["remote", "add", "origin", "https://github.com/acme/demo.git"], { cwd: r.dir });
+  assert.deepEqual(scan().agentSetup.offered.installs, OFFERED.installs.flatMap(both));
+});
+
+test("ask rules: doctor counts what it holds and caps what it names, whatever the number of rules", async () => {
+  const { capped, GH_COMMANDS, ruleFor, TOOLS } = await import("../setup/permissions.mjs");
+  const setupGithub = () => {
+    const made = setup({}, { nodes: [{ id: "a" }] });
+    git(["remote", "add", "origin", "https://github.com/acme/demo.git"], { cwd: made.dir });
+    return made;
+  };
+  const r = setupGithub();
+  const all = ["git push", ...GH_COMMANDS].flatMap((c) => TOOLS.map((tool) => ruleFor(c, tool)));
+  assert.equal(all.length, 36);
+  const ask = async () => (await checkSetup({ cwd: r.dir, env: {} })).items.filter((i) => i.key.startsWith("doctor.ask"));
+  // Nothing held: the first rules by name, the rest as a number.
+  const [missing] = await ask();
+  assert.equal(missing.key, "doctor.askMissing");
+  assert.deepEqual(missing.vars.rules, [...all.slice(0, 8), "+28"]);
+  // All held: a number, and the line stays the limits it says.
+  r.commit("feat: ask", { ".claude/settings.json": JSON.stringify({ permissions: { ask: all } }) });
+  const held = await ask();
+  assert.deepEqual(held.map((i) => [i.key, i.vars]), [["doctor.askOk", { n: 36 }]]);
+  const line = tShown(held[0].key, held[0].vars, "en");
+  assert.match(line, /^ask rules: 36 held in \.claude\/settings\.json, as committed\. Claude Code applies them only in a session started at the repository's top/);
+  assert.ok(line.length < 900, `${line.length}: the line stays readable`);
+  // Eight is said in full; the ninth is the first counted.
+  const names = Array.from({ length: 9 }, (_, i) => `r${i}`);
+  assert.deepEqual(capped(names.slice(0, 8)), names.slice(0, 8));
+  assert.deepEqual(capped(names), [...names.slice(0, 8), "+1"]);
+  // init-scan's line keeps to the same cap, whatever the list.
+  const text = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: setupGithub().dir, encoding: "utf8" }).stdout;
+  const line2 = String(text.split("\n").find((l) => l.startsWith("Ask rules before what leaves the machine:")));
+  assert.match(line2, /none: Bash\(git push \*\), .*, \+\d+\.$/, line2);
+  assert.equal(line2.split("Bash(").length - 1 + line2.split("PowerShell(").length - 1, 8, line2);
+  const r2 = elsewhere(setup({}, { nodes: [{ id: "a" }] }));
+  r2.commit("feat: ask", { "package.json": "{}", ".claude/settings.json": JSON.stringify({ permissions: { ask: ["Bash(npm publish *)"] } }) });
+  assert.deepEqual((await checkSetup({ cwd: r2.dir, env: {} })).items.find((i) => i.key === "doctor.askMissing")?.vars.rules, ["Bash(git push *)", "PowerShell(git push *)", "PowerShell(npm publish *)"]);
+});
+
 test("ask rules: what is asked about, and where each rule is: committed, uncommitted, local; a file Claude Code skips gives none", async () => {
-  const { askRules, outwardCommands, parseSettings, SETTINGS_LIMIT } = await import("../setup/permissions.mjs");
+  const { askRules, GH_COMMANDS, outwardCommands, parseSettings, SETTINGS_LIMIT } = await import("../setup/permissions.mjs");
   const { projectFiles } = await import("../setup/scan.mjs");
   // ask-monorepo-private-root: a package.json anywhere proposes npm publish; a GitHub remote, the gh commands.
   assert.deepEqual(outwardCommands([], false), ["git push"]);
   assert.deepEqual(outwardCommands(["packages/a/package.json"], false), ["git push", "npm publish"]);
-  assert.deepEqual(outwardCommands(["package.json"], true), ["git push", "npm publish", "gh pr merge", "gh repo sync", "gh release"]);
+  assert.deepEqual(outwardCommands(["package.json"], true), ["git push", "npm publish", ...GH_COMMANDS]);
   assert.deepEqual(outwardCommands(["xpackage.json", "package.jsonx"], false), ["git push"]);
   assert.deepEqual(outwardCommands(null, false), ["git push", "npm publish"], "files git could not list: asked about");
 
@@ -2185,29 +2351,30 @@ test("ask rules: init-scan's hooks reader and the ask rules count the same files
 });
 
 test("ask rules: doctor says which file holds each rule and whether it is committed, with where Claude Code applies it; init-scan lists them", async () => {
+  const { GH_COMMANDS, ruleFor, TOOLS } = await import("../setup/permissions.mjs");
   const graph = { nodes: [{ id: "a" }] };
   const ask = (/** @type {Awaited<ReturnType<typeof checkSetup>>} */ res) => res.items.filter((i) => i.key.startsWith("doctor.ask")).map((i) => ({ level: i.level, key: i.key, vars: i.vars }));
   const both = (/** @type {string} */ c) => [`Bash(${c} *)`, `PowerShell(${c} *)`];
-  const none = setup({}, graph);
+  const none = elsewhere(setup({}, graph));
   assert.deepEqual(ask(await checkSetup({ cwd: none.dir, env: {} })), [{ level: "warn", key: "doctor.askMissing", vars: { rules: both("git push") } }]);
-  const r = setup({}, graph);
+  const r = elsewhere(setup({}, graph));
   r.commit("feat: ask", { "packages/p/package.json": JSON.stringify({ name: "p" }), ".claude/settings.json": JSON.stringify({ permissions: { ask: ["Bash(git push *)", "PowerShell(git push *)"] } }) });
   assert.deepEqual(ask(await checkSetup({ cwd: r.dir, env: {} })), [
     { level: "warn", key: "doctor.askMissing", vars: { rules: both("npm publish") } },
-    { level: "ok", key: "doctor.askOk", vars: { rules: both("git push") } },
+    { level: "ok", key: "doctor.askOk", vars: { n: 2 } },
   ]);
   // Written but not committed; only in the local file.
   put(r.dir, { ".claude/settings.json": JSON.stringify({ permissions: { ask: [...both("git push"), "Bash(npm publish *)"] } }), ".claude/settings.local.json": JSON.stringify({ permissions: { deny: ["PowerShell(npm publish:*)"] } }) });
   assert.deepEqual(ask(await checkSetup({ cwd: r.dir, env: {} })), [
     { level: "warn", key: "doctor.askUncommitted", vars: { rules: ["Bash(npm publish *)"] } },
     { level: "warn", key: "doctor.askLocal", vars: { rules: ["PowerShell(npm publish *)"] } },
-    { level: "ok", key: "doctor.askOk", vars: { rules: both("git push") } },
+    { level: "ok", key: "doctor.askOk", vars: { n: 2 } },
   ]);
   // The ✓ line says what was read and where Claude Code applies it, not that a push is asked about.
-  const okLine = tShown("doctor.askOk", { rules: ["Bash(git push *)"] }, "en");
-  assert.match(okLine, /^ask rules: \.claude\/settings\.json, as committed, holds Bash\(git push \*\)\. Claude Code applies them only in a session started at the repository's top/);
+  const okLine = tShown("doctor.askOk", { n: 2 }, "en");
+  assert.match(okLine, /^ask rules: 2 held in \.claude\/settings\.json, as committed\. Claude Code applies them only in a session started at the repository's top/);
   assert.match(okLine, /skips the file whole and shows a Settings Error/);
-  assert.match(okLine, /not matched: a git option before push \(git -C <dir> push, git -c k=v push\), a quoted or escaped push \(git "push"\), a command fed to a shell or another program \(sh -c, eval, xargs, find -exec\), a command word built as it runs \(\$\(…\), `…`\), an alias, a script that pushes, gh api, an MCP tool, and on older versions a full path \(before 2\.1\.309\) or a subshell \(2\.1\.207\)$/);
+  assert.match(okLine, /not matched: a git option before push \(git -C <dir> push, git -c k=v push\), a quoted or escaped push \(git "push"\), a command fed to a shell or another program \(sh -c, eval, xargs, find -exec\), a command word built as it runs \(\$\(…\), `…`\), an alias, a script that pushes, gh api with no method or one written otherwise \(-f, -XPOST, -iX POST, --method=POST, -X post, -X "POST"\), an MCP tool, and on older versions a full path \(before 2\.1\.309\) or a subshell \(2\.1\.207\)$/);
   assert.doesNotMatch(okLine, /unasked|in every permission mode/);
   // A file that gives no rule is said; a read that fails is said once, with its error.
   r.commit("feat: broken", { ".claude/settings.json": "{" });
@@ -2236,7 +2403,7 @@ test("ask rules: doctor says which file holds each rule and whether it is commit
   assert.deepEqual(json.agentSetup.ask.rules.map((/** @type {any} */ x) => `${x.rule} ${x.where}`), [
     "Bash(git push *) shared",
     "PowerShell(git push *) local",
-    ...["npm publish", "gh pr merge", "gh repo sync", "gh release"].flatMap((c) => both(c).map((x) => `${x} null`)),
+    ...["npm publish", ...GH_COMMANDS].flatMap((c) => TOOLS.map((tool) => `${ruleFor(c, tool)} null`)),
   ]);
   const text = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: scan.dir, encoding: "utf8" }).stdout;
   assert.match(text, /^Ask rules before what leaves the machine: committed in \.claude\/settings\.json: Bash\(git push \*\) · only in \.claude\/settings\.local\.json \(this machine\): PowerShell\(git push \*\) · none: Bash\(npm publish \*\), /m);
@@ -2258,14 +2425,14 @@ test("ask rules (review two): a HEAD that cannot be read, or holds no regular fi
     askReport(cwd, [], (level, key, vars = {}) => out.push({ level, key, vars }), read);
     return out;
   };
-  const r = setup({}, graph);
+  const r = elsewhere(setup({}, graph));
   r.commit("feat: ask", { ".claude/settings.json": all });
   // A git that fails on HEAD: said, and the rules are neither ✓ nor "commit the file".
   const failing = items(r.dir, { headFile: () => { throw Object.assign(new Error("x"), { stderr: "fatal: ls-tree failed" }); } });
   assert.deepEqual(failing.map((i) => `${i.level} ${i.key}`), ["unmeasured doctor.askUnmeasured", "unmeasured doctor.askUnknown"]);
   assert.deepEqual([failing[0].vars.error, failing[1].vars.rules], ["fatal: ls-tree failed", ["Bash(git push *)", "PowerShell(git push *)"]]);
   // A committed symbolic link: clones have the file through it; HEAD holds no regular file there, not judged.
-  const link = setup({}, graph);
+  const link = elsewhere(setup({}, graph));
   put(link.dir, { "shared/settings.json": all });
   mkdirSync(join(link.dir, ".claude"));
   symlinkSync("../shared/settings.json", join(link.dir, ".claude", "settings.json"));
@@ -2273,7 +2440,7 @@ test("ask rules (review two): a HEAD that cannot be read, or holds no regular fi
   const linked = (await checkSetup({ cwd: link.dir, env: {} })).items.filter((i) => i.key.startsWith("doctor.ask"));
   assert.deepEqual(linked.map((i) => `${i.level} ${i.key}`), ["unmeasured doctor.askHeadKind", "unmeasured doctor.askUnknown"]);
   // A link in HEAD on the way to the file is the same.
-  const dirLink = setup({}, graph);
+  const dirLink = elsewhere(setup({}, graph));
   put(dirLink.dir, { "conf/settings.json": all });
   symlinkSync("conf", join(dirLink.dir, ".claude"));
   dirLink.commit("feat: linked directory");
@@ -2282,7 +2449,7 @@ test("ask rules (review two): a HEAD that cannot be read, or holds no regular fi
   const linkScan = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: link.dir, encoding: "utf8" }).stdout;
   assert.match(linkScan, /^Ask rules before what leaves the machine: in \.claude\/settings\.json, unmeasured whether committed \(HEAD holds no regular file there\): Bash\(git push \*\), PowerShell\(git push \*\) · /m);
   // HEAD is read only when the work tree's file holds a rule: with none, a HEAD that cannot be read says nothing.
-  const bare = setup({}, graph);
+  const bare = elsewhere(setup({}, graph));
   assert.deepEqual(items(bare.dir, { headFile: () => { throw new Error("no"); } }).map((i) => i.key), ["doctor.askMissing"]);
   // headFile: a regular file (executable too), a link (itself or a directory on its way), something else, past
   // the limit, nothing there, no commit yet.
@@ -2315,16 +2482,16 @@ test("ask rules (review two): doctor reads every remote for a GitHub host; a rem
   const { askReport } = await import("../setup/doctor.mjs");
   const { urlHost, isGithubHost } = await import("../setup/permissions.mjs");
   const graph = { nodes: [{ id: "a" }] };
-  const gh = ["gh pr merge", "gh repo sync", "gh release"];
+  const { GH_COMMANDS: gh, capped, ruleFor, TOOLS } = await import("../setup/permissions.mjs");
   const r = setup({}, graph);
   // A GitHub Enterprise remote not named origin.
   git(["remote", "add", "upstream", "git@github.mycorp.com:org/repo.git"], { cwd: r.dir });
   const missing = (await checkSetup({ cwd: r.dir, env: {} })).items.find((i) => i.key === "doctor.askMissing");
-  assert.deepEqual(missing?.vars.rules, ["git push", ...gh].flatMap((c) => [`Bash(${c} *)`, `PowerShell(${c} *)`]));
+  assert.deepEqual(missing?.vars.rules, capped(["git push", ...gh].flatMap((c) => TOOLS.map((tool) => ruleFor(c, tool)))));
   /** @type {{ level: string, key: string, vars: any }[]} */
   const out = [];
-  askReport(r.dir, [], (level, key, vars = {}) => out.push({ level, key, vars }), { githubRemotes: () => { throw Object.assign(new Error("x"), { stderr: "fatal: remote failed" }); } });
-  assert.deepEqual(out.find((i) => i.key === "doctor.askGithubUnmeasured")?.vars, { error: "fatal: remote failed", commands: gh });
+  askReport(r.dir, [], (level, key, vars = {}) => out.push({ level, key, vars }), { remotes: () => { throw Object.assign(new Error("x"), { stderr: "fatal: remote failed" }); } });
+  assert.deepEqual(out.find((i) => i.key === "doctor.askGithubUnmeasured")?.vars, { error: "fatal: remote failed", commands: capped(gh) });
   assert.deepEqual(out.find((i) => i.key === "doctor.askMissing")?.vars.rules, ["Bash(git push *)", "PowerShell(git push *)"]);
   // Hosts: github.com, ssh.github.com and github.<domain>, in every URL form git takes.
   const hosts = {
@@ -2356,7 +2523,7 @@ test("ask rules (review two): a hooks value Claude Code drops leaves the file co
   assert.deepEqual(outwardCommands([], false, (/** @type {string} */ p) => p === "package.json"), ["git push", "npm publish"]);
   assert.deepEqual(outwardCommands([], false, () => false), ["git push"]);
   // doctor: a package.json git does not list, in a repository.
-  const untracked = setup({}, { nodes: [{ id: "a" }] });
+  const untracked = elsewhere(setup({}, { nodes: [{ id: "a" }] }));
   put(untracked.dir, { "package.json": "{}" });
   const doc = (await checkSetup({ cwd: untracked.dir, env: {} })).items.find((i) => i.key === "doctor.askMissing");
   assert.deepEqual(doc?.vars.rules, ["git push", "npm publish"].flatMap((c) => [`Bash(${c} *)`, `PowerShell(${c} *)`]));
@@ -2364,12 +2531,12 @@ test("ask rules (review two): a hooks value Claude Code drops leaves the file co
   const out = mkdtempSync(join(tmpdir(), "en-ask-norepo-scan-"));
   put(out, { "package.json": "{}", ".ennyn/config.json": "{}" });
   const json = JSON.parse(spawnSync(process.execPath, [CLI, "init-scan", "--json"], { cwd: out, encoding: "utf8" }).stdout);
-  assert.deepEqual([...new Set(json.agentSetup.ask.rules.map((/** @type {any} */ x) => x.command))], ["git push", "npm publish"]);
-  // No remote on a GitHub host: the gh rules are not proposed, and init-scan says why.
+  assert.deepEqual([...new Set(json.agentSetup.ask.rules.map((/** @type {any} */ x) => x.command))], ["git push", "npm publish", ...(await import("../setup/permissions.mjs")).GH_COMMANDS]);
+  // Every remote on another host: the gh rules are not proposed, and init-scan says what that leaves.
   const r = setup({}, { nodes: [{ id: "a" }] });
   git(["remote", "add", "origin", "https://gitlab.com/a/b.git"], { cwd: r.dir });
   const text = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: r.dir, encoding: "utf8" }).stdout;
-  assert.match(text, /^Ask rules before what leaves the machine: .* · gh pr merge, gh repo sync and gh release not proposed: no remote names a GitHub host\.$/m);
+  assert.match(text, /^Ask rules before what leaves the machine: .* · the gh commands not proposed: every remote is on another host \(an SSH alias or an Enterprise host the scan cannot recognize reads as one\), so gh repo create and gh api run unasked\.$/m);
   // A push URL on GitHub counts as well as a fetch URL.
   const push = setup({}, { nodes: [{ id: "a" }] });
   git(["remote", "add", "up", "https://gitlab.com/a/b.git"], { cwd: push.dir });

@@ -20,7 +20,11 @@
  *
  * A cell runs no command of its own: commands come from this file only. A Bash call names one of SPELLINGS; a hook's
  * or MCP server's command is `{{ran}}`, which appends the file's path to a list, and a plugin's `bin/` script is that
- * too; cellProblems refuses any other command, a settings key that runs or redirects something (a helper, a status
+ * too; the programs that reach outside (STUBBED) are stand-ins on PATH that add their name to that list, so a spelling
+ * no rule stops writes nothing and calls no one, and a real gh would have no host to reach. The one file a spelling
+ * hands to a shell (`runs`) is written here with that marker in it, and only the marker script is written runnable. A cell may give the repository a linked worktree outside it (`worktree`,
+ * at ../w) and make its call from a subagent (`agent`: the stand-in calls Agent, and the Bash call comes in the
+ * subagent's request). cellProblems refuses any other command, a cell holding the file its spelling runs, a settings key that runs or redirects something (a helper, a status
  * line, an `env` other than EN_PROBE_*, MCP servers of the project), a path under `.git`, an import outside the cell,
  * and `{{bytes:N}}` past 4 MiB a file or 8 MiB a cell. Not measured by the review that set these rules: reads Claude
  * Code makes in the real home, sockets it opens past a proxy, a process that outlives the run's kill, and the case
@@ -51,7 +55,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { dirname, join, posix } from "node:path";
+import { delimiter, dirname, join, posix } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DEFAULTS } from "../../core/config.mjs";
 import { sensitivePaths } from "../../plan/audit.mjs";
@@ -64,7 +68,7 @@ export { claudeBinary, safePath, versionOf };
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const RECORD = join(HERE, "claude-code.json");
-const CELL_KEYS = ["id", "from", "case", "files", "call", "cwd", "plugin", "cc", "except", "ennyn"];
+const CELL_KEYS = ["id", "from", "case", "files", "call", "cwd", "plugin", "worktree", "agent", "cc", "except", "ennyn"];
 export const RELATIONS = /** @type {const} */ (["agree", "stricter", "extra", "differs", "unmeasured"]);
 
 /**
@@ -73,7 +77,11 @@ export const RELATIONS = /** @type {const} */ (["agree", "stricter", "extra", "d
  * a rule applies; `option`, `quoted`, `shell`, `built`, the classes doctor's line names as unmatched; `none`, no
  * outward command (the cell checks something else). Claude Code before 2.1.309 ran a full path (2.1.306 and 2.1.308
  * measured) and 2.1.207 a subshell, which the line says apart; the record's version matches them. A spelling in a
- * class the line names that Claude Code stops all the same (`G=git; $G push`) is stricter, listed with why.
+ * class the line names that Claude Code stops all the same (`G=git; $G push`) is stricter, listed with why. `about`
+ * is the command the spelling is judged under, for one that is no push; the cell's rules are read for that command.
+ * `runs` is the file the command hands to a shell, in lower case: the recorder writes it, and a cell that makes this
+ * call may not hold the name.
+ * @type {Readonly<Record<string, { command: string, class: string, about?: string, runs?: string }>>}
  */
 export const SPELLINGS = Object.freeze({
   push: { command: "git push", class: "plain" },
@@ -137,12 +145,77 @@ export const SPELLINGS = Object.freeze({
   "env-var": { command: "env GIT_TRACE=0 git push", class: "matched" },
   "cd-and": { command: "cd . && git push", class: "matched" },
   "plugin-bin": { command: "en-probe-bin", class: "none" },
+  // What the ask rules' reports claim of a command that is no push (setup/permissions.mjs, skills/init/gates.md).
+  "gh-api-end": { command: "gh api repos/x -X POST", class: "plain", about: "gh api *-X POST*" },
+  "gh-api-first": { command: "gh api -X POST repos/x", class: "plain", about: "gh api *-X POST*" },
+  "gh-api-middle": { command: "gh api repos/x -X POST -f a=b", class: "plain", about: "gh api *-X POST*" },
+  "gh-api-word-end": { command: "gh api repos/x --method DELETE", class: "plain", about: "gh api *--method DELETE*" },
+  "gh-api-glued": { command: "gh api repos/x -XPOST", class: "option", about: "gh api *-X POST*" },
+  "gh-api-equals": { command: "gh api repos/x --method=POST", class: "option", about: "gh api *--method POST*" },
+  "gh-api-lower": { command: "gh api repos/x -X post", class: "option", about: "gh api *-X POST*" },
+  "gh-api-field": { command: "gh api repos/x -f a=b", class: "option", about: "gh api *-X POST*" },
+  "gh-api-search": { command: "gh api search/issues -X GET -f q=POST", class: "none" },
+  "gh-api-read": { command: "gh api repos/x", class: "none" },
+  "gh-repo-delete": { command: "gh repo delete x --yes", class: "plain", about: "gh repo delete" },
+  "gh-gist-create": { command: "gh gist create f", class: "plain", about: "gh gist create" },
+  "clean-top": { command: "git clean -fd", class: "plain", about: "git clean" },
+  "clean-cd-worktree": { command: "cd ../w && git clean -fd", class: "matched", about: "git clean" },
+  "clean-semi-worktree": { command: "cd ../w; git clean -fd", class: "matched", about: "git clean" },
+  "clean-cd-slash-worktree": { command: "cd ../w/ && git clean -fd", class: "matched", about: "git clean" },
+  "clean-dash-C-worktree": { command: "git -C ../w clean -fd", class: "option", about: "git clean" },
+  "clean-dash-C-dot": { command: "git -C . clean -fd", class: "option", about: "git clean" },
+  "clean-dash-C-slash": { command: "git -C ./ clean -fd", class: "option", about: "git clean" },
+  "reset-hard": { command: "git reset --hard", class: "plain", about: "git reset *--hard*" },
+  "reset-hard-rev": { command: "git reset --hard HEAD", class: "plain", about: "git reset *--hard*" },
+  "reset-rev-hard": { command: "git reset HEAD --hard", class: "plain", about: "git reset *--hard*" },
+  "reset-soft": { command: "git reset --soft HEAD", class: "none" },
+  "checkout-dashes": { command: "git checkout -- x.txt", class: "plain", about: "git checkout *-- *" },
+  "checkout-rev-dashes": { command: "git checkout HEAD -- x.txt", class: "plain", about: "git checkout *-- *" },
+  "checkout-new": { command: "git checkout -b other", class: "none" },
+  "compose-down-v": { command: "docker compose down -v", class: "plain", about: "docker compose down *-v*" },
+  "compose-down-volumes": { command: "docker compose down --volumes", class: "plain", about: "docker compose down *-v*" },
+  "compose-down": { command: "docker compose down --remove-orphans", class: "none" },
+  "npx-prisma": { command: "npx prisma migrate reset", class: "plain", about: "npx prisma migrate reset" },
+  "npm-global": { command: "npm install -g tsx", class: "plain", about: "npm install -g" },
+  "npm-global-after": { command: "npm install tsx -g", class: "option", about: "npm install -g" },
+  "pipe-to-sh": { command: "echo true | sh", class: "plain", about: "sh" },
+  "pipe-to-bash": { command: "echo true | bash", class: "plain", about: "bash" },
+  "pipe-to-sh-s": { command: "echo true | sh -s", class: "option", about: "sh" },
+  "sh-c-plain": { command: "sh -c true", class: "none" },
+  "gh-api-group": { command: "gh api repos/x -iX POST", class: "option", about: "gh api *-X POST*" },
+  "gh-api-quoted": { command: 'gh api repos/x -X "POST"', class: "option", about: "gh api *-X POST*" },
+  "gh-api-search-phrase": { command: "gh api search/issues -X GET -f 'q=curl -X POST'", class: "none" },
+  "gh-api-grep": { command: "gh api repos/x | grep -- '-X POST'", class: "none" },
+  "gh-repo-create-push": { command: "gh repo create x --source . --push", class: "plain", about: "gh repo create" },
+  "sh-s-rule": { command: "echo true | sh -s", class: "plain", about: "sh -s*" },
+  "bash-s-rule": { command: "echo true | bash -s -- -y", class: "plain", about: "bash -s*" },
+  "bash-script": { command: "bash x.txt", class: "none", runs: "x.txt" },
+  "npm-after-rule": { command: "npm install tsx -g", class: "plain", about: "npm install * -g*" },
+  "npm-global-long": { command: "npm install --global tsx", class: "plain", about: "npm install *--global*" },
+  "npm-global-long-after": { command: "npm install tsx --global", class: "plain", about: "npm install *--global*" },
+  "npm-local": { command: "npm install my-gizmo", class: "none" },
+  "npm-dev": { command: "npm install --save-dev tsx", class: "none" },
+  "pnpm-after": { command: "pnpm add tsx -g", class: "plain", about: "pnpm add * -g*" },
+  "pnpm-global": { command: "pnpm add --global tsx", class: "plain", about: "pnpm add *--global*" },
+  "pnpm-local": { command: "pnpm add my-gizmo", class: "none" },
+  "compose-v1-down-v": { command: "docker-compose down -v", class: "plain", about: "docker-compose down *-v*" },
+  "compose-v1-down": { command: "docker-compose down --remove-orphans", class: "none" },
+  "compose-service": { command: "docker compose down api-v2", class: "none" },
+  "checkout-dot": { command: "git checkout .", class: "plain", about: "git checkout ." },
+  "checkout-dotfile": { command: "git checkout .gitignore", class: "none" },
+  "branch-d-f": { command: "git branch -d -f y", class: "plain", about: "git branch -d -f" },
+  "branch-d": { command: "git branch -d y", class: "none" },
+  "compose-down-pipe": { command: "docker compose down 2>&1 | grep -v warning", class: "none" },
+  "npm-global-style": { command: "npm install --global-style tsx", class: "none" },
+  "gh-api-flag-quoted": { command: 'gh api "-X" POST repos/x', class: "option", about: "gh api *-X POST*" },
 });
 /** The classes doctor's line names as not matched. */
 export const UNMATCHED = Object.freeze(["option", "quoted", "shell", "built"]);
 
 /** The only script a cell may hold (a plugin's `bin/`), and the only MCP server: each writes the run marker. */
 const SCRIPT = "#!/bin/sh\n{{ran}}\n";
+/** The programs a spelling names that reach outside the cell: each a stand-in that does nothing, first on PATH. */
+export const STUBBED = ["gh", "docker", "docker-compose", "npm", "npx", "pnpm"];
 /** Top-level settings keys a cell may write, beside `en_probe_*` ones: none runs or redirects anything. */
 const SETTINGS_KEYS = ["permissions", "hooks", "model", "env"];
 const PERMISSION_KEYS = ["allow", "ask", "deny", "defaultMode", "additionalDirectories"];
@@ -158,10 +231,10 @@ const safe = (p) => typeof p === "string" && /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+
 const MARK = /MARK:([A-Za-z0-9._/-]+)/g;
 
 /**
- * @typedef {{ start: string[], after?: string[], call?: string, ran?: string[] }} CcReading what Claude Code loaded at the
- *   start and after the call (paths), what became of the call (`ran`, `stopped: <reason>`, `unmeasured: …`), which
- *   files' commands ran
- * @typedef {{ id: string, from: string, case?: true, files: Record<string, string>, call?: { Bash: string } | { Read: string }, cwd?: string, plugin?: string, cc?: CcReading, except?: Record<string, string>, ennyn?: Record<string, string> }} Cell
+ * @typedef {{ start: string[], after?: string[], call?: string, ran?: string[], by?: "subagent" }} CcReading what Claude Code
+ *   loaded at the start and after the call (paths), what became of the call (`ran`, `stopped: <reason>`, `unmeasured:
+ *   …`), which files' commands ran, and `by`: the run names the cell's subagent as the call's parent
+ * @typedef {{ id: string, from: string, case?: true, files: Record<string, string>, call?: { Bash: string } | { Read: string }, cwd?: string, plugin?: string, worktree?: true, agent?: "foreground" | "background", cc?: CcReading, except?: Record<string, string>, ennyn?: Record<string, string> }} Cell
  *   `case`: Claude Code's reading hangs on the disk folding case (a name in another case), so it is compared only on a
  *   disk that folds case as the record's did; `ennyn`: Ennyn's reading at each place `except` lists, so an accepted
  *   difference that moves to another wrong value is seen
@@ -190,24 +263,28 @@ export function rendered(c, dir) {
   );
 }
 
-/** Writes a cell's files under `dir`. @param {Cell} c @param {string} dir */
+/** Writes a cell's files under `dir`, and the file its spelling runs, which holds the run marker. @param {Cell} c @param {string} dir */
 export function writeCell(c, dir) {
   for (const [path, body] of Object.entries(rendered(c, dir))) {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
-    // A script is written runnable, as a plugin's bin/ holds it.
-    writeFileSync(join(dir, path), body, { mode: body.startsWith("#!") ? 0o755 : 0o644 });
+    // The marker script is written runnable, as a plugin's bin/ holds it; nothing else is, whatever its text comes to.
+    writeFileSync(join(dir, path), body, { mode: c.files[path] === SCRIPT ? 0o755 : 0o644 });
   }
+  const runs = c.call && "Bash" in c.call ? SPELLINGS[/** @type {keyof typeof SPELLINGS} */ (c.call.Bash)]?.runs : undefined;
+  if (runs) writeFileSync(join(dir, runs), `echo ${runs} >> ${dir}/.ran\n`);
 }
 
 /**
- * Ennyn's readings of a cell whose files are written in `dir`: whether its rules ask about `git push`, the kind
+ * Ennyn's readings of a cell whose files are written in `dir`: whether its rules ask about `git push` (or what the
+ * spelling is judged under), the kind
  * each instruction file loads as and the file whose import loads it (agentSetup), the rules the side-copy hook
  * gives for a Read's path, and the files the security audit lists.
  * @param {Cell} c @param {string} dir
  */
 export function readings(c, dir) {
   const files = Object.keys(c.files).sort();
-  const rule = askRules(projectFiles(dir), ["git push"]).rules.some((r) => r.tool === "Bash" && r.where !== null && r.where !== "unknown");
+  const about = (c.call && "Bash" in c.call ? SPELLINGS[c.call.Bash]?.about : undefined) ?? "git push";
+  const rule = askRules(projectFiles(dir), [about]).rules.some((r) => r.tool === "Bash" && r.where !== null && r.where !== "unknown");
   const setup = agentSetup(dir, files);
   const kinds = new Map(setup.instructions.map((i) => [i.path, i.loads]));
   const via = new Map(setup.instructions.flatMap((i) => ("via" in i && i.via ? [[i.path, i.via]] : [])));
@@ -393,8 +470,12 @@ function fileProblems(c) {
     total += bytes;
     if (bytes > FILE_BYTES) out.push(`${at}: {{bytes}} past ${FILE_BYTES} in a file`);
     if (parts.some((x) => x.toLowerCase() === ".git")) out.push(`${at}: a path under .git (git's hooks and config run code)`);
+    // git takes a folder with a HEAD for a repository, with no .git in any path, and with commondir it needs no objects
+    // or refs beside it; no HEAD, no repository. Any spelling that reads the index would then run that folder's config.
+    if (parts.some((x) => x.toLowerCase() === "head")) out.push(`${at}: a HEAD makes its folder a repository, whose config runs code`);
     if (/@[/~]/.test(text)) out.push(`${at}: an import outside the cell`);
-    if (text.startsWith("#!") || parts.includes("bin")) {
+    // A disk that folds case opens a plugin's bin/ under any case of the name, and it goes on PATH.
+    if (text.startsWith("#!") || parts.some((x) => x.toLowerCase() === "bin")) {
       if (text !== SCRIPT) out.push(`${at}: a script is the run marker only`);
       continue;
     }
@@ -459,9 +540,14 @@ export function cellProblems(c) {
   if (!isObject(c.files) || !Object.entries(c.files).every(([k, v]) => safe(k) && typeof v === "string")) out.push(`${c.id}: files maps relative paths of plain names to text`);
   else out.push(...fileProblems(c));
   if (c.call !== undefined && !(isObject(c.call) && Object.keys(c.call).length === 1 && ((typeof c.call.Bash === "string" && Object.hasOwn(SPELLINGS, c.call.Bash)) || safe(c.call.Read)))) out.push(`${c.id}: call is { Bash: <a name of SPELLINGS> } or { Read: <relative path> }`);
+  // A shell runs what the file holds. In any folder and any case: `cwd` moves the call, and a disk that folds case opens it.
+  const runs = isObject(c.call) && typeof c.call.Bash === "string" && Object.hasOwn(SPELLINGS, c.call.Bash) ? SPELLINGS[c.call.Bash].runs : undefined;
+  if (runs !== undefined && isObject(c.files)) for (const p of Object.keys(c.files)) if (p.split("/").some((x) => x.toLowerCase() === runs)) out.push(`${c.id}: ${p}: ${c.call.Bash} runs ${runs}: the recorder writes it, never a cell`);
   for (const k of ["cwd", "plugin"]) if (c[k] !== undefined && !(safe(c[k]) || (k === "plugin" && c[k] === "."))) out.push(`${c.id}: ${k} is a relative path of plain names`);
   for (const k of Object.keys(c)) if (!CELL_KEYS.includes(k)) out.push(`${c.id}: ${k} is no key of a cell (${CELL_KEYS.join(", ")})`);
   if (c.case !== undefined && c.case !== true) out.push(`${c.id}: case is true or left out`);
+  if (c.worktree !== undefined && c.worktree !== true) out.push(`${c.id}: worktree is true or left out`);
+  if (c.agent !== undefined && !(["foreground", "background"].includes(c.agent) && isObject(c.call) && "Bash" in c.call)) out.push(`${c.id}: agent is foreground or background, on a Bash call`);
   if (c.except !== undefined && (!isObject(c.except) || "*" in c.except || !Object.values(c.except).every((v) => typeof v === "string" && ["stricter", "extra", "differs", "gap", "unmeasured"].includes(v.split(":")[0])))) out.push(`${c.id}: except maps a place (each by name) to "stricter: …", "extra: … (<node>)", "unmeasured: …", "differs: …" or "gap: <node>"`);
   if (c.ennyn !== undefined && (!isObject(c.ennyn) || !Object.values(c.ennyn).every((v) => typeof v === "string"))) out.push(`${c.id}: ennyn maps a place to Ennyn's reading there`);
   return out;
@@ -495,16 +581,24 @@ export function compareAll(cells, caseFolds) {
 
 /** A key the stand-in is given: no key of Anthropic's. Claude Code asks once whether to use a key; the cell's config says yes. */
 const KEY = "sk-ant-stand-in-000000000000000000000000";
+/** What a cell's subagent is told: the stand-in knows its requests by it. */
+const AGENT_PROMPT = "en-probe-subagent";
+/** The stand-in's Agent call: what the run names as the parent of each thing the subagent does. */
+const AGENT_CALL = "toolu_stand_in_agent";
 
 /**
  * The stand-in for the model: the first request that offers the call's tool gets that call; every other one, text.
- * @param {{ name: string, input: object } | null} call
+ * With `agent`, the first request that offers Agent starts a subagent with AGENT_PROMPT, and the call waits for a
+ * request whose first message holds that prompt: the subagent's. The main thread's history holds it too, in the Agent
+ * call, and in the background the main thread's next request can come first.
+ * @param {{ name: string, input: object } | null} call @param {"foreground" | "background"} [agent]
  * @returns {Promise<{ port: number, bodies: any[], close: () => void }>}
  */
-function standIn(call) {
+function standIn(call, agent) {
   /** @type {any[]} */
   const bodies = [];
   let called = false;
+  let started = false;
   const server = createServer((req, res) => {
     let body = "";
     req.on("data", (chunk) => (body += chunk));
@@ -528,10 +622,16 @@ function standIn(call) {
       const usage = { input_tokens: 1, output_tokens: 1 };
       /** @type {[string, object]} */
       const start = ["message_start", { message: { id: "msg_stand_in", type: "message", role: "assistant", model: json.model ?? "stand-in", content: [], stop_reason: null, stop_sequence: null, usage } }];
-      const offered = call !== null && !called && (json.tools ?? []).some((/** @type {any} */ t) => t.name === call.name);
-      if (offered && call) {
+      const offers = (/** @type {string} */ name) => (json.tools ?? []).some((/** @type {any} */ t) => t.name === name);
+      /** @param {string} id @param {string} name @param {object} input */
+      const use = (id, name, input) => sse([start, ["content_block_start", { index: 0, content_block: { type: "tool_use", id, name, input: {} } }], ["content_block_delta", { index: 0, delta: { type: "input_json_delta", partial_json: JSON.stringify(input) } }], ["content_block_stop", { index: 0 }], ["message_delta", { delta: { stop_reason: "tool_use", stop_sequence: null }, usage }], ["message_stop", {}]]);
+      if (agent && !started && offers("Agent")) {
+        started = true;
+        return use(AGENT_CALL, "Agent", { description: "stand-in", prompt: AGENT_PROMPT, subagent_type: "general-purpose", run_in_background: agent === "background" });
+      }
+      if (call && !called && offers(call.name) && (!agent || JSON.stringify(json.messages?.[0]?.content ?? "").includes(AGENT_PROMPT))) {
         called = true;
-        return sse([start, ["content_block_start", { index: 0, content_block: { type: "tool_use", id: "toolu_stand_in", name: call.name, input: {} } }], ["content_block_delta", { index: 0, delta: { type: "input_json_delta", partial_json: JSON.stringify(call.input) } }], ["content_block_stop", { index: 0 }], ["message_delta", { delta: { stop_reason: "tool_use", stop_sequence: null }, usage }], ["message_stop", {}]]);
+        return use("toolu_stand_in", call.name, call.input);
       }
       sse([start, ["content_block_start", { index: 0, content_block: { type: "text", text: "" } }], ["content_block_delta", { index: 0, delta: { type: "text_delta", text: "done" } }], ["content_block_stop", { index: 0 }], ["message_delta", { delta: { stop_reason: "end_turn", stop_sequence: null }, usage }], ["message_stop", {}]]);
     });
@@ -579,18 +679,21 @@ export async function ccReading(c, bin) {
   const R = realpathSync(mkdtempSync(join(existsSync("/tmp") ? "/tmp" : tmpdir(), "en-cc-")));
   try {
     const P = join(R, "p");
-    for (const d of ["p", "cfg", "home", "run", "tmp", "hooks"]) mkdirSync(join(R, d));
+    for (const d of ["p", "cfg", "home", "run", "tmp", "hooks", "bin"]) mkdirSync(join(R, d));
     writeCell(c, P);
+    // Each says it ran, in the cell's list: the reading shows that the stand-in ran and the real program did not.
+    for (const name of STUBBED) writeFileSync(join(R, "bin", name), `#!/bin/sh\necho ${name} >> ${P}/.ran\n`, { mode: 0o755 });
     const { env: git, args: quiet } = gitEnv(R);
     execFileSync("git", [...quiet, "init", "-q"], { cwd: P, env: git });
     execFileSync("git", [...quiet, "add", "-A"], { cwd: P, env: git });
     execFileSync("git", [...quiet, "commit", "-qm", "cell", "--allow-empty", "--no-verify"], { cwd: P, env: git });
+    if (c.worktree) execFileSync("git", [...quiet, "worktree", "add", "-q", "-b", "en-task", join(R, "w")], { cwd: P, env: git });
     writeFileSync(join(R, "cfg", ".claude.json"), JSON.stringify({ customApiKeyResponses: { approved: [KEY.slice(-20)], rejected: [] }, hasCompletedOnboarding: true }));
     const spelling = c.call && "Bash" in c.call ? SPELLINGS[/** @type {keyof typeof SPELLINGS} */ (c.call.Bash)] : undefined;
     const call = !c.call ? null : spelling ? { name: "Bash", input: { command: spelling.command, description: "stand-in" } } : { name: "Read", input: { file_path: join(P, /** @type {{ Read: string }} */ (c.call).Read) } };
-    const server = await standIn(call);
+    const server = await standIn(call, c.agent);
     const env = {
-      PATH: safePath(),
+      PATH: `${join(R, "bin")}${delimiter}${safePath()}`,
       HOME: join(R, "home"),
       TMPDIR: join(R, "tmp"),
       CLAUDE_CODE_TMPDIR: join(R, "tmp"),
@@ -603,6 +706,7 @@ export async function ccReading(c, bin) {
       DISABLE_TELEMETRY: "1",
       DISABLE_ERROR_REPORTING: "1",
       GIT_CONFIG_NOSYSTEM: "1",
+      GH_HOST: "en-probe.invalid",
     };
     const args = ["-p", "--permission-mode", "bypassPermissions", "--output-format", "stream-json", "--verbose", ...(c.plugin ? ["--plugin-dir", join(P, c.plugin)] : []), "stand-in"];
     /** @type {{ out: string, code: number | null, timedOut: boolean }} */
@@ -631,10 +735,17 @@ export async function ccReading(c, bin) {
       // The run's result lists the calls it stopped (2.1.310 also sends a permission_denied event, 2.1.207 does not);
       // the tool result's text says whether a deny rule or an ask stopped it.
       const denied = (events.find((e) => e.type === "result")?.permission_denials ?? []).some((/** @type {any} */ d) => d.tool_use_id === "toolu_stand_in");
-      const result = events.flatMap((e) => (e.type === "user" && Array.isArray(e.message?.content) ? e.message.content : [])).find((/** @type {any} */ x) => x.type === "tool_result" && x.tool_use_id === "toolu_stand_in");
+      const isResult = (/** @type {any} */ x) => x.type === "tool_result" && x.tool_use_id === "toolu_stand_in";
+      const turn = events.find((e) => e.type === "user" && Array.isArray(e.message?.content) && e.message.content.some(isResult));
+      const result = turn?.message.content.find(isResult);
       const text = JSON.stringify(result?.content ?? "");
       const how = /has been denied/.test(text) ? "deny" : /requested permissions/.test(text) ? "ask" : "other";
       reading.call = run.timedOut ? "unmeasured: the run did not end" : denied ? `stopped: ${how}` : result ? "ran" : `unmeasured: no call (${main.length} request(s), exit ${run.code})`;
+      // A call in a cell with `agent` counts only as the run says whose it was.
+      if (c.agent) {
+        if (turn?.parent_tool_use_id === AGENT_CALL) reading.by = "subagent";
+        else reading.call = `unmeasured: not the subagent's call (${reading.call})`;
+      }
       if (main.length > 1) {
         const first = new Set(reading.start);
         reading.after = marks(main[main.length - 1]).filter((m) => !first.has(m)).sort();

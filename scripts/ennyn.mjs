@@ -27,6 +27,7 @@ import { costWeight, graphProblems, loadGraph, pickMechanization, pickOldest, re
 import { LINK_RULE, SUBMODULE_RULE, auditAnswer, cycleRecords, markCovers, readLog, securityDue, sensitivePaths } from "../plan/audit.mjs";
 import { scanProject, MIN_HISTORY } from "../setup/scan.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
+import { capped, ghApplies } from "../setup/permissions.mjs";
 import { PROBLEMS_SHOWN, checkProofs, loadClasses, registryLine, stateCounts } from "../metrics/classes.mjs";
 import { CYCLE_MAX, complete, cycleReport, reportLines } from "../metrics/findings.mjs";
 import { RecordError, installHook, sessionOf } from "../setup/hook.mjs";
@@ -612,11 +613,12 @@ const COMMANDS = {
     const held = { shared: "scan.askShared", uncommitted: "scan.askUncommitted", local: "scan.askLocal", unknown: "scan.askUnknown", none: "scan.askNone" };
     const askParts = Object.entries(held).flatMap(([where, key]) => {
       const rules = ag.ask.rules.filter((r) => (r.where ?? "none") === where).map((r) => r.rule);
-      return rules.length ? [tShown(key, { rules }, lang)] : [];
+      return rules.length ? [tShown(key, { rules: capped(rules) }, lang)] : [];
     });
     if (ag.ask.unread.length) askParts.push(tShown("scan.askUnread", { list: ag.ask.unread }, lang));
-    if (res.repository && !ag.ask.githubRemotes.length) askParts.push(t("scan.askNoGithub", {}, lang));
+    if (!ghApplies({ github: ag.ask.githubRemotes, others: ag.ask.otherRemotes })) askParts.push(t("scan.askNoGithub", {}, lang));
     say("scan.ask", { list: { shown: askParts.join(" · ") } });
+    say("scan.offered", { destroys: ag.offered.destroys.length, installs: ag.offered.installs.length });
     const unreadable = [...res.unreadable, ...ag.unreadable];
     if (unreadable.length) say("scan.unreadable", { list: unreadable });
     if (res.outside.length) say("scan.outside", { list: res.outside });

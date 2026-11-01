@@ -1,15 +1,20 @@
 /**
  * The commands that leave the machine, and which of the project's Claude Code settings files holds an ask or
  * deny rule for each. The cycle asks the user before any push; such a rule is the harness's backstop, not the
- * gate: it prompts in every permission mode, bypassPermissions included, over any allow rule, and a project's
- * .claude/settings.json applies it without the workspace trust step (code.claude.com/docs/en/permissions).
+ * gate: it prompts in every permission mode, bypassPermissions included, over any allow rule and a PreToolUse
+ * hook's allow, unless a PermissionRequest hook answers it; a project's .claude/settings.json applies it without
+ * the workspace trust step (code.claude.com/docs/en/permissions).
  *
  * This says what Ennyn read, not what Claude Code will do. Claude Code applies the file only in a session
  * started at the repository's top, skips it whole when any setting in it is one it rejects (Ennyn does not
  * mirror that schema), and matches a rule against the command as it reads it: a push written another way
- * (a git option before push, `sh -c`, `eval`, an alias, a script that pushes, `gh api`, an MCP tool) is not
- * matched. The reports say these limits instead of claiming the push is asked about; what Claude Code did with
- * each spelling is recorded in test/reference/claude-code.json.
+ * (a git option before push, `sh -c`, `eval`, an alias, a script that pushes, `gh api` with no method or one
+ * written otherwise, an MCP tool) is not matched. The reports say these limits instead of claiming the push is asked about; what Claude
+ * Code did with each spelling is recorded in test/reference/claude-code.json.
+ *
+ * What destroys local work or data and what installs outside the project is OFFERED apart, never proposed as a
+ * default: a rule reads command text and cannot tell a task's worktree from the main checkout, so one on these
+ * commands stops an unattended cycle. The record holds that too (ask-worktree-*).
  *
  * Only the project's own files are read, through the scan's projectFiles rule; user and managed settings are
  * not the repository's. A read that fails throws, as the scan's reads do; doctor names it.
@@ -22,8 +27,23 @@ export const TOOLS = /** @type {const} */ (["Bash", "PowerShell"]);
 /** Claude Code skips a settings file larger than this. */
 export const SETTINGS_LIMIT = 2 * 1024 * 1024;
 
+/** How many rules a report line names before it counts the rest. */
+const NAMED = 8;
+/** A list a report line can hold: at most NAMED names, then `+<the rest>`. @param {readonly string[]} list */
+export const capped = (list) => (list.length > NAMED ? [...list.slice(0, NAMED), `+${list.length - NAMED}`] : [...list]);
+
 /** @param {unknown} v @returns {v is Record<string, any>} */
 const isObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+
+/** Commands a rule matches as the whole of a command: the shell at the end of a pipe, not `sh -c` or a script. */
+const WHOLE = ["sh", "bash"];
+
+/**
+ * The rule proposed for a command: `Tool(<command> *)`, a prefix. A command that ends in `*` holds its wildcard
+ * already and one in WHOLE takes none: each is the rule's text as it stands.
+ * @param {string} command @param {string} tool
+ */
+export const ruleFor = (command, tool) => `${tool}(${command.endsWith("*") || WHOLE.includes(command) ? command : `${command} *`})`;
 
 /**
  * A settings file's text as Ennyn reads it: the one predicate the hooks reader (init-scan) and the ask rules
@@ -76,36 +96,75 @@ export function readSettings(pf, path) {
 /**
  * Whether a permission rule, in `ask` or `deny`, matches every command `tool` runs that starts with `command`
  * ("git push" and "git push origin main"). Only a content rule whose one wildcard is the trailing `*` or `:*`
- * counts (`Bash(git push *)`, `Bash(git push:*)`, `Bash(git *)`, `PowerShell(git push *)`). A tool-wide rule
- * (`Bash`, `Bash(*)`) does not: with the sandbox on, Claude Code auto-allows a sandboxed command past it. Any
- * other form is not counted either: a missed rule is a warning, never a push read as asked about.
+ * counts (`Bash(git push *)`, `Bash(git push:*)`, `Bash(git *)`, `PowerShell(git push *)`), or the rule ruleFor
+ * writes for the command. A tool-wide rule (`Bash`, `Bash(*)`) does not: with the sandbox on, Claude Code
+ * auto-allows a sandboxed command past it. Any other form is not counted either: a missed rule is a warning,
+ * never a push read as asked about.
+ *
+ * A command that ends in `*` (`gh api *-X POST*`) is a pattern: a prefix of it that ends in `*` or ` *` covers it.
+ * Anything else is not counted: ` *` after the whole pattern, which a rule with another `*` in it does not match at
+ * the end of a command, and `:*` after another `*`, whose colon Claude Code reads as text: such a rule stops nothing.
  * @param {unknown} rule @param {string} command @param {string} [tool]
  */
 export function ruleCovers(rule, command, tool = "Bash") {
   if (typeof rule !== "string" || !rule.startsWith(`${tool}(`) || !rule.endsWith(")")) return false;
+  if (rule === ruleFor(command, tool)) return true;
   const body = rule.slice(tool.length + 1, -1);
+  if (body.endsWith(":*") && body.slice(0, -2).includes("*")) return false;
   // `:*` is the trailing ` *` written the older way; a `*` without a space before it continues the word.
   const prefix = body.endsWith(":*") ? `${body.slice(0, -2)} ` : body.endsWith("*") ? body.slice(0, -1) : "";
   // Compared as text: a `*` left in the prefix (`Bash(git * push *)`) matches no command, so it is not counted.
   // A trailing ` *` also matches the bare command.
-  return prefix !== "" && `${command} `.startsWith(prefix);
+  return prefix !== "" && (command.endsWith("*") ? command : `${command} `).startsWith(prefix);
 }
 
-/** The gh commands asked about with a remote on a GitHub host. */
-export const GH_COMMANDS = ["gh pr merge", "gh repo sync", "gh release"];
+/**
+ * `gh api` with a method that writes, wherever it stands: the real spelling puts it after the path, last or not,
+ * and only this form stops all of them (`gh api repos/x -X POST` runs under `Bash(gh api * -X POST *)`, recorded).
+ * gh sends more than these match. With no method `-f`, `-F` and `--input` post, and a rule wide enough for them stops
+ * `-f` with `-X GET`, which is how an agent searches. A method written glued (`-XPOST`, `-iX POST`), with `=`, in lower
+ * case or quoted runs too, and that is a decision: a rule that holds the spelling stops it (`Bash(gh api *-X "POST"*)`
+ * stops `-X "POST"`, recorded), but there is one more rule for each spelling and each method, and `"-X" POST` still runs
+ * under that one. They wait for a hook that reads the command (`gh-api-write-hook`). The form reads text, so a read whose
+ * text holds `-X POST` stops as well.
+ */
+const GH_API_WRITES = ["-X", "--method"].flatMap((flag) => ["POST", "PATCH", "PUT", "DELETE"].map((method) => `gh api *${flag} ${method}*`));
+
+/** The gh commands asked about when ghApplies holds. */
+export const GH_COMMANDS = ["gh pr merge", "gh repo sync", "gh release", "gh repo create", "gh repo edit", "gh repo delete", "gh repo rename", "gh repo archive", "gh gist create", ...GH_API_WRITES];
+
+/**
+ * Whether the gh commands are asked about: with a remote on a GitHub host, or with no remote at all, since
+ * `gh repo create x --source . --push` runs before there is one. A project whose remotes are all elsewhere is left
+ * out, and init-scan says what that leaves.
+ * @param {{ github: readonly string[], others: readonly string[] }} remotes
+ */
+export const ghApplies = ({ github, others }) => github.length > 0 || others.length === 0;
+
+/**
+ * The rules offered apart from the outward ones, each list a choice: `destroys` local work or data, `installs`
+ * outside the project. Their spellings are measured as the outward ones are: `git reset --hard *` misses
+ * `git reset HEAD --hard` and `git checkout -- *` misses `git checkout HEAD -- f`; npx is no wrapper a rule looks
+ * through; `pip install` also asks inside a virtualenv, which a rule cannot see. The project's own reset and drop
+ * scripts are the user's to name.
+ */
+export const OFFERED = /** @type {const} */ ({
+  destroys: ["git clean", "git reset *--hard*", "git checkout *-- *", "git checkout .", "git restore", "git branch -D", "git branch -d -f", "git worktree remove", "git stash drop", "git stash clear", "docker system prune", "docker volume prune", "docker network prune", "docker image prune", "docker volume rm", "docker compose down *-v*", "docker-compose down *-v*", "dropdb", "terraform destroy", "prisma migrate reset", "npx prisma migrate reset", "prisma db push --force-reset", "npx prisma db push --force-reset"],
+  installs: ["npm install -g", "npm install * -g*", "npm install *--global*", "npm i -g", "pnpm add -g", "pnpm add * -g*", "pnpm add *--global*", "pip install", "pip3 install", "brew install", "cargo install", "go install", ...WHOLE, "sh -s*", "bash -s*"],
+});
 
 /**
  * The commands Ennyn asks a rule for: `git push` always; `npm publish` when the repository holds a
  * package.json anywhere (a private root still publishes its workspaces), git could not list its files, or the
- * work tree has one git does not list (an unborn repository, or none); with a remote on a GitHub host,
- * GH_COMMANDS (`gh release`: create, upload, edit).
+ * work tree has one git does not list (an unborn repository, or none); when `gh` holds (ghApplies), GH_COMMANDS
+ * (`gh release`: create, upload, edit). OFFERED is no part of this: what a project declines is no warning.
  * @param {string[] | null} files tracked files; null when git could not list them
- * @param {boolean} github
+ * @param {boolean} gh
  * @param {(rel: string) => boolean} [present] whether the work tree holds a file
  */
-export function outwardCommands(files, github, present = () => false) {
+export function outwardCommands(files, gh, present = () => false) {
   const pkg = files === null || files.some((f) => /(^|\/)package\.json$/.test(f)) || present("package.json");
-  return ["git push", ...(pkg ? ["npm publish"] : []), ...(github ? GH_COMMANDS : [])];
+  return ["git push", ...(pkg ? ["npm publish"] : []), ...(gh ? GH_COMMANDS : [])];
 }
 
 /**
@@ -179,7 +238,7 @@ export function askRules(pf, commands, { committed = () => null, failed = new Se
         const where = has(shared)
           ? atHead === null ? "unknown" : atHead ? "shared" : "uncommitted"
           : failed.has(SETTINGS[0]) ? "unknown" : has(local) ? "local" : failed.has(SETTINGS[1]) ? "unknown" : null;
-        return { command, tool, rule: `${tool}(${command} *)`, where };
+        return { command, tool, rule: ruleFor(command, tool), where };
       }),
     ),
     unread,
