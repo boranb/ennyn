@@ -1,0 +1,534 @@
+{
+  "claudeCode": "2.1.310",
+  "cells": {
+    "a-silent-hook-lets-it-run": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": true,
+      "hookRuns": 1,
+      "tool": "Bash",
+      "input": [
+        "cwd",
+        "effort",
+        "hook_event_name",
+        "permission_mode",
+        "prompt_id",
+        "session_id",
+        "tool_input",
+        "tool_name",
+        "tool_use_id",
+        "transcript_path"
+      ],
+      "toolInput": [
+        "command",
+        "description"
+      ]
+    },
+    "deny-stops-the-call": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": 1
+    },
+    "deny-holds-over-an-allow-rule": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": 1
+    },
+    "deny-holds-with-the-skip-flag": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": 1
+    },
+    "deny-holds-from-an-installed-plugin": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": 1
+    },
+    "deny-holds-in-a-subagent": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": 1,
+      "agentId": "string",
+      "mode": "bypassPermissions"
+    },
+    "a-subagent-runs-past-a-silent-hook": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": true,
+      "hookRuns": 1,
+      "agentId": "string",
+      "mode": "bypassPermissions"
+    },
+    "exit-2-stops-the-call": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": 1
+    },
+    "a-printed-deny-holds-over-exit-1": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": 1
+    },
+    "exit-1-runs-the-call": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": true,
+      "hookRuns": 1
+    },
+    "a-crash-runs-the-call": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": true,
+      "hookRuns": 0
+    },
+    "a-missing-script-runs-the-call": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": true,
+      "hookRuns": 0
+    },
+    "a-killed-hook-runs-the-call": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": true,
+      "hookRuns": 1
+    },
+    "a-timeout-runs-the-call": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": true,
+      "hookRuns": 1
+    },
+    "output-no-json-runs-the-call": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": true,
+      "hookRuns": 1
+    },
+    "a-bad-decision-runs-the-call": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": true,
+      "hookRuns": 1
+    },
+    "a-message-reaches-the-session-not-the-model": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": false,
+      "hookRuns": 1,
+      "stream": {
+        "type": "system",
+        "subtype": "informational",
+        "content": "PreToolUse:Bash says: EN-PRETOOLUSE",
+        "level": "notice"
+      },
+      "model": false
+    },
+    "a-call-with-no-command-reaches-no-hook": {
+      "ended": "success",
+      "calls": [
+        "invalid"
+      ],
+      "reached": false,
+      "hookRuns": 0
+    },
+    "the-settings-env-reaches-the-hook": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": false,
+      "hookRuns": 1,
+      "envSeen": true
+    },
+    "monitor-runs-past-a-bash-matcher": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": true,
+      "hookRuns": 0
+    },
+    "monitor-stopped-by-a-hook-that-names-it": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": 1,
+      "tool": "Monitor",
+      "input": [
+        "cwd",
+        "effort",
+        "hook_event_name",
+        "permission_mode",
+        "prompt_id",
+        "session_id",
+        "tool_input",
+        "tool_name",
+        "tool_use_id",
+        "transcript_path"
+      ],
+      "toolInput": [
+        "command",
+        "description",
+        "timeout_ms"
+      ]
+    },
+    "monitor-asks-under-a-bash-rule": {
+      "ended": "success",
+      "calls": [
+        "rule"
+      ],
+      "reached": false,
+      "hookRuns": 1
+    },
+    "powershell-reaches-a-hook-that-names-it": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": false,
+      "hookRuns": 1,
+      "tool": "PowerShell",
+      "input": [
+        "cwd",
+        "effort",
+        "hook_event_name",
+        "permission_mode",
+        "prompt_id",
+        "session_id",
+        "tool_input",
+        "tool_name",
+        "tool_use_id",
+        "transcript_path"
+      ],
+      "toolInput": [
+        "command",
+        "description"
+      ]
+    },
+    "the-hook-refuses-a-spelling": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "the-hook-passes-a-plain-command": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "the-hook-leaves-a-plain-push-to-the-rule": {
+      "ended": "success",
+      "calls": [
+        "rule"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "the-hook-leaves-a-push-in-a-compound": {
+      "ended": "success",
+      "calls": [
+        "rule"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "the-hook-leaves-a-commit-then-a-push-and-a-pipe": {
+      "ended": "success",
+      "calls": [
+        "rule"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "the-hook-leaves-the-folder-it-advises": {
+      "ended": "success",
+      "calls": [
+        "rule"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "the-hook-leaves-the-folder-it-advises-in-a-subagent": {
+      "ended": "success",
+      "calls": [
+        "rule"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "the-rule-in-the-local-file-asks-the-same": {
+      "ended": "success",
+      "calls": [
+        "rule"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "the-hook-refuses-what-the-rule-cannot-read": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "the-hook-refuses-a-compound-the-rule-cannot-read": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "a-config-name-nothing-holds-does-not-switch-it-off": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "the-hook-refuses-in-monitor": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "refused-then-written-plain-is-asked": {
+      "ended": "success",
+      "calls": [
+        "hook",
+        "rule"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "the-hook-ends-at-once-with-no-config": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": true,
+      "hookRuns": null
+    },
+    "the-rule-reads-a-compound-of-10000-characters": {
+      "ended": "success",
+      "calls": [
+        "rule"
+      ],
+      "reached": false,
+      "hookRuns": 1
+    },
+    "the-rule-does-not-read-a-compound-of-10001": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": true,
+      "hookRuns": 1
+    },
+    "the-rule-asks-about-a-sole-push-of-10001": {
+      "ended": "success",
+      "calls": [
+        "rule"
+      ],
+      "reached": false,
+      "hookRuns": 1
+    },
+    "the-rule-reads-a-commit-with-those-words-in-a-quoted-message": {
+      "ended": "success",
+      "calls": [
+        "rule"
+      ],
+      "reached": false,
+      "hookRuns": 1
+    },
+    "the-rule-does-not-read-past-a-commit-body": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": true,
+      "hookRuns": 1
+    },
+    "the-rule-does-not-read-past-a-body-in-a-substitution": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": true,
+      "hookRuns": 1
+    },
+    "the-rule-reads-past-13-substitutions": {
+      "ended": "success",
+      "calls": [
+        "rule"
+      ],
+      "reached": false,
+      "hookRuns": 1
+    },
+    "the-rule-does-not-read-past-14-substitutions": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": true,
+      "hookRuns": 1
+    },
+    "a-push-first-is-read-past-14-substitutions": {
+      "ended": "success",
+      "calls": [
+        "rule"
+      ],
+      "reached": false,
+      "hookRuns": 1
+    },
+    "the-rule-does-not-read-past-a-comment-after-a-redirect": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": true,
+      "hookRuns": 1
+    },
+    "the-rule-reads-past-that-comment-with-no-apostrophe": {
+      "ended": "success",
+      "calls": [
+        "rule"
+      ],
+      "reached": false,
+      "hookRuns": 1
+    },
+    "the-rule-does-not-read-past-repeated-substitutions": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": true,
+      "hookRuns": 1
+    },
+    "the-rule-reads-past-three-repeated-substitutions": {
+      "ended": "success",
+      "calls": [
+        "rule"
+      ],
+      "reached": false,
+      "hookRuns": 1
+    },
+    "the-publish-rule-does-not-read-past-that-comment": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": true,
+      "hookRuns": 1
+    },
+    "the-publish-rule-reads-past-a-comment-with-no-apostrophe": {
+      "ended": "success",
+      "calls": [
+        "rule"
+      ],
+      "reached": false,
+      "hookRuns": 1
+    },
+    "the-hook-refuses-a-push-after-a-comment": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "the-hook-refuses-a-push-after-repeated-substitutions": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "the-hook-leaves-lines-of-plain-words-to-the-rule": {
+      "ended": "success",
+      "calls": [
+        "rule"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "the-hook-leaves-a-compound-of-8999-characters-to-the-rule": {
+      "ended": "success",
+      "calls": [
+        "rule"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "claude-code-holds-a-brace-zsh-counts": {
+      "ended": "success",
+      "calls": [
+        "rule"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "claude-code-holds-a-numeric-glob-before-a-hash": {
+      "ended": "success",
+      "calls": [
+        "rule"
+      ],
+      "reached": false,
+      "hookRuns": null
+    }
+  }
+}

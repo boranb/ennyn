@@ -8,67 +8,11 @@
  * hook that runs in every session: it writes the plugin's own data folder and reads nothing of the project.
  */
 
-import { lstatSync, realpathSync } from "node:fs";
-import { basename, dirname, isAbsolute, join } from "node:path";
 import { loadConfig } from "../../core/config.mjs";
-import { gone } from "../../core/files.mjs";
 import { projectRoot } from "../../core/git.mjs";
+import { mayHold } from "./config-place.mjs";
 
-/**
- * The project a hook runs for: CLAUDE_PROJECT_DIR (the folder the session started in, whose `.claude/` Claude
- * Code reads), else the input's cwd, else the hook's own.
- * @param {unknown} input the hook's input as parsed, or null when it was no JSON
- * @param {NodeJS.ProcessEnv} [env]
- */
-export function hookProjectDir(input, env = process.env) {
-  const cwd = input !== null && typeof input === "object" ? /** @type {{ cwd?: unknown }} */ (input).cwd : undefined;
-  return env.CLAUDE_PROJECT_DIR || (typeof cwd === "string" && cwd) || process.cwd();
-}
-
-/**
- * Whether something is at `rel` below `dir`, each part looked at without following a link: a link on the way may
- * lead to a config (which loadConfig then refuses, and the hooks say so), never to "nothing there". A place that
- * cannot be looked at may hold one.
- * @param {string} dir @param {string} rel
- */
-function there(dir, rel) {
-  let at = dir;
-  for (const part of rel.split(/[\\/]/).filter(Boolean)) {
-    at = join(at, part);
-    try {
-      if (lstatSync(at).isSymbolicLink()) return true;
-    } catch (e) {
-      return !gone(e);
-    }
-  }
-  return true;
-}
-
-/**
- * Whether a config could be found from `projectDir` at all: the file an absolute ENNYN_CONFIG names, or something
- * at the config's relative place in the folder or a folder above it, by its real path, which is where git looks for
- * the top. Not a second lookup, a cost filter: a project with none asks git nothing, so in projects that never used
- * Ennyn the side-copy and style hooks run no git (the reset asks git where its lists are, as before). A session
- * folder that is not there holds none.
- * @param {string} projectDir @param {string} rel
- */
-function mayHold(projectDir, rel) {
-  let dir;
-  try {
-    dir = realpathSync(projectDir);
-  } catch (e) {
-    if (gone(e)) return false;
-    throw e;
-  }
-  // An absolute ENNYN_CONFIG is the user's own path, read following its links (loadConfig): only its last part is
-  // looked at, so a link to it still counts.
-  if (isAbsolute(rel)) return there(dirname(rel), basename(rel));
-  for (;;) {
-    if (there(dir, rel)) return true;
-    if (dirname(dir) === dir) return false;
-    dir = dirname(dir);
-  }
-}
+export { hookProjectDir } from "./config-place.mjs";
 
 /**
  * The project's config, or null when it has none: the one answer every hook but the version record acts on. Read

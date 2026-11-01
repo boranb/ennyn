@@ -27,6 +27,7 @@ import { loadGraph } from "../plan/mechanization.mjs";
 import { RECORD, RELATIONS, cellProblems, compare, moves, readRecord, unmeasuredOf } from "./reference/npm.mjs";
 import * as cc from "./reference/claude-code.mjs";
 import * as precompact from "./reference/precompact.mjs";
+import * as pretooluse from "./reference/pretooluse.mjs";
 import * as md from "./reference/markdown.mjs";
 import * as ay from "./reference/actions-yaml.mjs";
 import { MIN_RULE, ruleKey, ruleLines } from "../setup/budget.mjs";
@@ -161,6 +162,74 @@ test("reference: the PreCompact record holds what the compaction hook stands on"
   assert.equal("compacted" in cells["a-subagent-compacts"], false);
   // The fields tailFacts reads off a reply.
   assert.deepEqual(cells["stdout-joins-the-summary"].replyShape, { usage: ["cache_creation_input_tokens", "cache_read_input_tokens", "input_tokens", "output_tokens"], model: "string", timestamp: "string", sidechain: false });
+});
+
+test("reference: the PreToolUse record holds what the push hook stands on", () => {
+  const { claudeCode, cells } = pretooluse.readRecord();
+  assert.match(claudeCode, /^\d+\.\d+\.\d+$/);
+  assert.deepEqual(Object.keys(cells), Object.keys(pretooluse.CELLS));
+  /** @param {string} id @param {object} want */
+  const is = (id, want) => assert.deepEqual(Object.fromEntries(Object.keys(want).map((k) => [k, cells[id][k]])), want, id);
+  const stopped = { ended: "success", calls: ["hook"], reached: false };
+  const ran = { ended: "success", calls: ["ran"], reached: true };
+  // The claim the hook stands on: a deny holds in bypassPermissions, over an allow rule, from an installed plugin and a subagent.
+  for (const id of ["deny-stops-the-call", "deny-holds-over-an-allow-rule", "deny-holds-with-the-skip-flag", "deny-holds-from-an-installed-plugin", "deny-holds-in-a-subagent", "exit-2-stops-the-call", "a-printed-deny-holds-over-exit-1"]) is(id, stopped);
+  // A silent hook is the control; every way a hook can fail to answer runs the call: the fault direction rests on this.
+  for (const id of ["a-silent-hook-lets-it-run", "a-subagent-runs-past-a-silent-hook", "exit-1-runs-the-call", "a-crash-runs-the-call", "a-missing-script-runs-the-call", "a-killed-hook-runs-the-call", "a-timeout-runs-the-call", "output-no-json-runs-the-call", "a-bad-decision-runs-the-call"]) is(id, ran);
+  is("deny-holds-in-a-subagent", { agentId: "string", mode: "bypassPermissions" });
+  // The input the hook reads, on each tool.
+  for (const id of ["a-silent-hook-lets-it-run", "monitor-stopped-by-a-hook-that-names-it", "powershell-reaches-a-hook-that-names-it"]) assert.ok(cells[id].toolInput.includes("command") && cells[id].input.includes("tool_input"), id);
+  is("powershell-reaches-a-hook-that-names-it", { tool: "PowerShell", hookRuns: 1 });
+  // No command, no hook: what reaches the hook in a shape it cannot read is a change of Claude Code's.
+  is("a-call-with-no-command-reaches-no-hook", { calls: ["invalid"], hookRuns: 0 });
+  // A systemMessage reaches the session, not the model.
+  is("a-message-reaches-the-session-not-the-model", { stream: { type: "system", subtype: "informational", content: "PreToolUse:Bash says: EN-PRETOOLUSE", level: "notice" }, model: false, calls: ["ran"] });
+  // Monitor shares Bash's rule and not its matcher.
+  is("monitor-runs-past-a-bash-matcher", { ...ran, hookRuns: 0 });
+  is("monitor-stopped-by-a-hook-that-names-it", { ...stopped, tool: "Monitor", hookRuns: 1 });
+  is("monitor-asks-under-a-bash-rule", { calls: ["rule"], reached: false, hookRuns: 1 });
+  is("the-settings-env-reaches-the-hook", { envSeen: true });
+  // The real hook, in bypassPermissions: a spelling refused, on Monitor too, a plain command run, a plain push left to the
+  // rule, in a compound too, a config name nothing holds changing nothing; a push written as the refusal says is asked about,
+  // the folder it advises in one call among them, from a subagent too; with no config the hook does nothing.
+  is("the-hook-refuses-a-spelling", stopped);
+  is("the-hook-refuses-in-monitor", stopped);
+  is("the-hook-passes-a-plain-command", { calls: ["ran"], reached: false });
+  is("the-hook-leaves-a-plain-push-to-the-rule", { calls: ["rule"], reached: false });
+  for (const id of ["the-hook-leaves-a-push-in-a-compound", "the-hook-leaves-a-commit-then-a-push-and-a-pipe", "the-hook-leaves-the-folder-it-advises", "the-hook-leaves-the-folder-it-advises-in-a-subagent", "the-rule-in-the-local-file-asks-the-same"]) is(id, { calls: ["rule"], reached: false });
+  is("a-config-name-nothing-holds-does-not-switch-it-off", stopped);
+  is("refused-then-written-plain-is-asked", { calls: ["hook", "rule"], reached: false });
+  is("the-hook-ends-at-once-with-no-config", ran);
+  // Why only some compounds are left: the rule reads one only if Claude Code's parser finishes. At 10,001 characters, on a
+  // body line that starts with the here-document's delimiter and holds a `)`, at 14 levels of substitutions, it gives up, and
+  // a push later in the text runs unasked, past the rule and in bypassPermissions. Each has its control: one character
+  // less, the same words in a quoted message, one level less, the push first. No hook but a silent one: a `check` rereads
+  // this on each Claude Code version.
+  is("the-rule-reads-a-compound-of-10000-characters", { calls: ["rule"], reached: false });
+  is("the-rule-does-not-read-a-compound-of-10001", ran);
+  is("the-rule-asks-about-a-sole-push-of-10001", { calls: ["rule"], reached: false });
+  is("the-rule-reads-a-commit-with-those-words-in-a-quoted-message", { calls: ["rule"], reached: false });
+  is("the-rule-does-not-read-past-a-commit-body", ran);
+  is("the-rule-does-not-read-past-a-body-in-a-substitution", ran);
+  is("the-rule-reads-past-13-substitutions", { calls: ["rule"], reached: false });
+  is("the-rule-does-not-read-past-14-substitutions", ran);
+  // Text of no hostile kind. After a redirect a comment holding an apostrophe ends what the rule reads, the parser finished,
+  // and twelve short substitutions spend the parser's budget; each with its control, under another rule too.
+  is("the-rule-does-not-read-past-a-comment-after-a-redirect", ran);
+  is("the-rule-reads-past-that-comment-with-no-apostrophe", { calls: ["rule"], reached: false });
+  is("the-rule-does-not-read-past-repeated-substitutions", ran);
+  is("the-rule-reads-past-three-repeated-substitutions", { calls: ["rule"], reached: false });
+  is("the-publish-rule-does-not-read-past-that-comment", ran);
+  is("the-publish-rule-reads-past-a-comment-with-no-apostrophe", { calls: ["rule"], reached: false });
+  // The hook refuses those two, and leaves what holds nothing to misread, at its longest too.
+  for (const id of ["the-hook-refuses-a-push-after-a-comment", "the-hook-refuses-a-push-after-repeated-substitutions"]) is(id, stopped);
+  for (const id of ["the-hook-leaves-lines-of-plain-words-to-the-rule", "the-hook-leaves-a-compound-of-8999-characters-to-the-rule"]) is(id, { calls: ["rule"], reached: false });
+  // The reader sees no push in these two. Claude Code's own checks hold them, and an update that stops is seen here.
+  for (const id of ["claude-code-holds-a-brace-zsh-counts", "claude-code-holds-a-numeric-glob-before-a-hash"]) is(id, { calls: ["rule"], reached: false });
+  is("a-push-first-is-read-past-14-substitutions", { calls: ["rule"], reached: false });
+  // The hook refuses those.
+  is("the-hook-refuses-a-compound-the-rule-cannot-read", stopped);
+  is("the-hook-refuses-what-the-rule-cannot-read", stopped);
 });
 
 test("reference: the gap the compaction hook waits for is the earliest idle compaction in the record", () => {
@@ -311,6 +380,11 @@ test("reference: doctor's ask line names as unmatched every spelling Claude Code
   const unmeasured = ["an alias", "a script that pushes", "gh api with no method or one written otherwise (-f, -XPOST, -iX POST, --method=POST, -X post, -X \"POST\")", "an MCP tool"];
   const line = t("doctor.askOk", { rules: "x" }, "en");
   const list = line.slice(line.indexOf("not matched: ") + "not matched: ".length);
+  // What the rule does not read, as the record holds it, and what the hook takes off the list: a line apart, so the list stays the rule's.
+  const hook = t("doctor.pushHook", {}, "en");
+  assert.match(hook, /^push hook: an ask rule reads a compound command only if Claude Code's parser finishes; when it gives up, on length, nodes, a deadline, a stack, a budget spent over the text or a here-document case, a command later in the text runs unasked in bypassPermissions, a push among them, and a comment holding an apostrophe after a redirect does the same\. In a plugin session/);
+  assert.match(hook, /\. In a plugin session a hook refuses every push but a plain git push with literal words at the head of a top-level command, .* an alias in a config file, a script that pushes, an interpreter, gh api and an MCP tool, and it is no boundary\b/);
+  assert.doesNotMatch(hook, /10,000/, "the length is one way the parser gives up");
   // Commas inside parentheses part no items.
   const items = list.split(/, (?![^(]*\))/);
   // A full path and a subshell are named only for the versions that did not match them: the record's stops both.
@@ -322,6 +396,7 @@ test("reference: doctor's ask line names as unmatched every spelling Claude Code
   // The Turkish line names the same.
   const tr = t("doctor.askOk", { rules: "x" }, "tr");
   for (const text of ["push'tan önce bir git seçeneği", "tırnaklı ya da kaçışlı bir push", "bir kabuğa ya da başka bir programa verilen komut", "çalışırken kurulan bir komut sözcüğü", "eski sürümlerde tam yol (2.1.309'dan önce) ya da alt kabuk (2.1.207)"]) assert.ok(tr.includes(text), `tr: ${text}`);
+  for (const text of ["yalnız Claude Code'un ayrıştırıcısı işini bitirirse okur", "üst düzey bir komutun başındaki düz sözcüklü git push dışında her push'u reddeder"]) assert.ok(t("doctor.pushHook", {}, "tr").includes(text), text);
 });
 
 test("reference: what the ask rules' reports claim rests on Claude Code's recorded run", () => {

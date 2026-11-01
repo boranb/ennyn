@@ -9,8 +9,16 @@
  * started at the repository's top, skips it whole when any setting in it is one it rejects (Ennyn does not
  * mirror that schema), and matches a rule against the command as it reads it: a push written another way
  * (a git option before push, `sh -c`, `eval`, an alias, a script that pushes, `gh api` with no method or one
- * written otherwise, an MCP tool) is not matched. The reports say these limits instead of claiming the push is asked about; what Claude
- * Code did with each spelling is recorded in test/reference/claude-code.json.
+ * written otherwise, an MCP tool) is not matched. And it reads a compound command only if Claude Code's parser finishes:
+ * when the parser gives up, on length, nodes, a deadline, a stack, a budget spent over the text or a here-document case,
+ * a command later in the text runs unasked in bypassPermissions, under every ask rule, and a comment holding an apostrophe
+ * after a redirect does the same. The reports say these limits instead of claiming the push is
+ * asked about; what Claude Code did with each spelling is recorded in test/reference/claude-code.json and
+ * test/reference/pretooluse.json. In a plugin session the PreToolUse hook (adapters/claude-code/hooks/push-spellings.mjs)
+ * refuses every push but a plain `git push` at the head of a top-level command, in a text of plain words and list separators:
+ * those spellings and an alias set in the command or the session's environment among them. Left are an alias in a config
+ * file, a script that pushes, an interpreter, `gh api` and an MCP tool; the hook is no boundary, and with no plugin there
+ * is none.
  *
  * What destroys local work or data and what installs outside the project is OFFERED apart, never proposed as a
  * default: a rule reads command text and cannot tell a task's worktree from the main checkout, so one on these

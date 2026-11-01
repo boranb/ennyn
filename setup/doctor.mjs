@@ -113,7 +113,7 @@ function ciReport(cwd, tracked, config, add) {
  * `read` replaces the readers (tests).
  * @param {string} cwd @param {string[] | null} files tracked files; null when git could not list them
  * @param {(level: DoctorItem["level"], key: string, vars?: DoctorItem["vars"]) => void} add
- * @param {{ read?: (rel: string, opts?: { limit?: number }) => string | null | undefined, remotes?: (cwd: string) => { github: string[], others: string[] }, headFile?: typeof headFile }} [readers]
+ * @param {{ read?: (rel: string, opts?: { limit?: number }) => string | null | undefined, remotes?: (cwd: string) => { github: string[], others: string[] }, headFile?: typeof headFile, configured?: boolean }} [readers] `configured`: an Ennyn config was found, where the push hook acts
  */
 export function askReport(cwd, files, add, readers = {}) {
   const project = projectFiles(cwd);
@@ -165,6 +165,8 @@ export function askReport(cwd, files, add, readers = {}) {
   if (at("local").length) add("warn", "doctor.askLocal", { rules: named(at("local")) });
   // Counted: the warnings above name what is missing, and the limits below are what this line is read for.
   if (at("shared").length) add("ok", "doctor.askOk", { n: at("shared").length });
+  // Another question from the same text: what the hook does. It acts only with a config, and speaks of a rule on push.
+  if (readers.configured && rules.some((r) => r.where !== null && /\(git push\b/.test(r.rule))) add("ok", "doctor.pushHook", {});
 }
 
 /**
@@ -502,7 +504,7 @@ export async function checkSetup({ cwd, env = process.env, self = OWN_ROOT }) {
       add("unmeasured", "doctor.filesUnmeasured", { error: oneLine(e) });
     }
     // The cycle asks the user before any push; an ask rule is the harness's backstop.
-    askReport(cwd, files, add);
+    askReport(cwd, files, add, { configured: Boolean(config.configPath) });
     worktreesReport(cwd, add);
     /** @type {ReturnType<typeof instructionBudget> | null} */
     let b = null;

@@ -10,7 +10,7 @@
     {
       "name": "ennyn",
       "source": "./",
-      "description": "A Claude Code plugin and Node CLI that gives the agent a working routine: impact analysis before code is written, a two-round review, and checks on every commit for recurring classes of bugs. In every session its hooks record the plugin's version in the plugin's own data folder; everything else they do only in a project with an Ennyn config (.ennyn/config.json, or the file ENNYN_CONFIG names): pass the project's path-scoped rules into worktrees and copies, apply the conversation style you chose, hold idle compaction while a task is mid-way, and ask every summary to name the task, its files and the next step (`compaction.defer: false` turns both off).",
+      "description": "A Claude Code plugin and Node CLI that gives the agent a working routine: impact analysis before code is written, a two-round review, and checks on every commit for recurring classes of bugs. In every session its hooks record the plugin's version in the plugin's own data folder; everything else they do only in a project with an Ennyn config (.ennyn/config.json, or the file ENNYN_CONFIG names): pass the project's path-scoped rules into worktrees and copies, apply the conversation style you chose, refuse every git push but a plain one the ask rule reads for certain, hold idle compaction while a task is mid-way, and ask every summary to name the task, its files and the next step (`compaction.defer: false` turns both off).",
       "category": "development",
       "tags": ["workflow", "code-review", "mutation-testing", "impact-analysis", "git-hooks", "software-quality"]
     }

@@ -47,7 +47,7 @@ const MODEL = "claude-opus-5-5";
 const WINDOW_100K = { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "100000" };
 
 /**
- * @typedef {{ i: number, summary: boolean, sub: boolean, reply: (content: object[], tokens: number, stop?: string) => void, refuse: () => void }} Turn
+ * @typedef {{ i: number, summary: boolean, sub: boolean, json: any, reply: (content: object[], tokens: number, stop?: string) => void, refuse: () => void }} Turn
  * @typedef {{ hook: keyof typeof HOOKS, env?: Record<string, string>, timeout?: number, turns: (t: Turn) => void, varies?: string[] }} Cell
  */
 
@@ -98,11 +98,11 @@ export const CELLS = {
 };
 
 /**
- * The stand-in. `summary`: the request is a summary request; `sub`: a subagent's.
+ * The stand-in. `summary`: the request is a summary request; `sub`: a subagent's; `json`: the request as sent.
  * @param {Cell["turns"]} turns
  * @returns {Promise<{ port: number, bodies: { summary: boolean, text: string }[], close: () => void }>}
  */
-function standIn(turns) {
+export function standIn(turns) {
   /** @type {{ summary: boolean, text: string }[]} */
   const bodies = [];
   let main = 0;
@@ -134,6 +134,7 @@ function standIn(turns) {
         i,
         summary,
         sub,
+        json,
         refuse: () => {
           res.writeHead(400, { "content-type": "application/json" });
           res.end(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "prompt is too long: 205000 tokens > 200000 maximum" } }));

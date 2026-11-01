@@ -497,6 +497,16 @@ test("hooks.json: the PreCompact hook gets both triggers, and its own limits end
   assert.ok(GIT_MS * GIT_CALLS + SETTLE_MS < entry.hooks[0].timeout * 1000, `${entry.hooks[0].timeout} s`);
 });
 
+test("hooks.json: the PreToolUse matcher names the tools that run a command, the record's three, by a quoted command that resolves to the hook", () => {
+  const [entry] = JSON.parse(read("hooks/hooks.json")).hooks.PreToolUse;
+  assert.deepEqual(entry.matcher.split("|").sort(), ["Bash", "Monitor", "PowerShell"]);
+  const [cmd] = entry.hooks;
+  const m = /^node "\$\{CLAUDE_PLUGIN_ROOT\}\/([^"]+)"$/.exec(cmd.command);
+  assert.equal(m?.[1], "adapters/claude-code/hooks/push-spellings.mjs");
+  assert.ok(read(m[1]).startsWith("#!/usr/bin/env node\n"));
+  assert.ok(cmd.timeout >= 5, "a hook that times out lets the call run");
+});
+
 test("hooks.json: the PostToolUse matcher sends exactly the file tools the side-copy hook handles, by a quoted command that resolves to it", () => {
   const [entry] = JSON.parse(read("hooks/hooks.json")).hooks.PostToolUse;
   assert.deepEqual(entry.matcher.split("|").sort(), [...FILE_TOOLS].sort());
@@ -580,7 +590,7 @@ function runWired(b, projectDir, extra = {}, log) {
   return wiredHooks().flatMap(({ event, sends, script }) =>
     sends.map((send) => {
       const base = { session_id: "s1", hook_event_name: event, cwd: projectDir ?? b.proj };
-      const input = event === "PostToolUse" ? { ...base, tool_name: send, tool_input: send === "NotebookEdit" ? { notebook_path: b.file } : { file_path: b.file } } : event === "PreCompact" ? { ...base, trigger: send, custom_instructions: null } : { ...base, source: send };
+      const input = event === "PreToolUse" ? { ...base, tool_name: send, tool_input: { command: "git -C . push", description: "x" } } : event === "PostToolUse" ? { ...base, tool_name: send, tool_input: send === "NotebookEdit" ? { notebook_path: b.file } : { file_path: b.file } } : event === "PreCompact" ? { ...base, trigger: send, custom_instructions: null } : { ...base, source: send };
       const before = tree(b.box);
       const gitBefore = calls();
       const r = spawnSync(process.execPath, [join(ROOT, script)], {

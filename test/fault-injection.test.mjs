@@ -433,6 +433,12 @@ const CASES = [
     input: compactInput,
     everyPass: COMPACT_ASK,
   },
+  // The push hook: refused in the clean run, reading no file of the project and asking git nothing, so no fault may turn it into a pass.
+  {
+    args: ["hook:push-spellings"],
+    hook: "push-spellings.mjs",
+    input: (repo) => ({ tool_name: "Bash", tool_input: { command: "git -C . push", description: "x" }, session_id: "s1", cwd: repo }),
+  },
   // The plugin's version record and the session's variable: a plugin version, a data directory and an env file
   // of their own in each run's copy.
   {

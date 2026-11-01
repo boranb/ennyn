@@ -22,7 +22,7 @@ import {
   commitStyle,
   scanProject,
 } from "../setup/scan.mjs";
-import { checkSetup, worktreesIgnored } from "../setup/doctor.mjs";
+import { askReport, checkSetup, worktreesIgnored } from "../setup/doctor.mjs";
 import { shown, t, tShown } from "../core/i18n.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
@@ -2376,6 +2376,24 @@ test("ask rules: doctor says which file holds each rule and whether it is commit
   assert.match(okLine, /skips the file whole and shows a Settings Error/);
   assert.match(okLine, /not matched: a git option before push \(git -C <dir> push, git -c k=v push\), a quoted or escaped push \(git "push"\), a command fed to a shell or another program \(sh -c, eval, xargs, find -exec\), a command word built as it runs \(\$\(…\), `…`\), an alias, a script that pushes, gh api with no method or one written otherwise \(-f, -XPOST, -iX POST, --method=POST, -X post, -X "POST"\), an MCP tool, and on older versions a full path \(before 2\.1\.309\) or a subshell \(2\.1\.207\)$/);
   assert.doesNotMatch(okLine, /unasked|in every permission mode/);
+  // The hook is a line of its own, right after, and only where it says something true: with a config, the hook's gate, and a
+  // rule on push, whatever file holds it.
+  const sayings = (await checkSetup({ cwd: r.dir, env: {} })).items.map((i) => i.key);
+  assert.equal(sayings[sayings.indexOf("doctor.askOk") + 1], "doctor.pushHook");
+  assert.match(tShown("doctor.pushHook", {}, "en"), /^push hook: an ask rule reads a compound command only if Claude Code's parser finishes/);
+  const hookLine = (/** @type {Record<string, string>} */ files, /** @type {boolean} */ configured) => {
+    /** @type {string[]} */
+    const keys = [];
+    askReport(r.dir, [], (_level, key) => keys.push(key), { configured, read: (rel) => files[rel], remotes: () => ({ github: ["origin"], others: [] }), headFile: (_cwd, rel) => (files[rel] === undefined ? null : { text: files[rel] }) });
+    return keys.includes("doctor.pushHook");
+  };
+  const push = JSON.stringify({ permissions: { ask: ["Bash(git push *)"] } });
+  const other = JSON.stringify({ permissions: { ask: ["Bash(gh release *)"] } });
+  assert.equal(hookLine({ ".claude/settings.json": push }, true), true);
+  assert.equal(hookLine({ ".claude/settings.local.json": push }, true), true);
+  assert.equal(hookLine({ ".claude/settings.json": push }, false), false, "no config: the hook ends at once");
+  assert.equal(hookLine({ ".claude/settings.json": other }, true), false, "no rule on push");
+  assert.equal(hookLine({}, true), false);
   // A file that gives no rule is said; a read that fails is said once, with its error.
   r.commit("feat: broken", { ".claude/settings.json": "{" });
   rmSync(join(r.dir, ".claude", "settings.local.json"));
@@ -2416,7 +2434,6 @@ test("ask rules: doctor says which file holds each rule and whether it is commit
 
 // Review round two of push-approval-gate.
 test("ask rules (review two): a HEAD that cannot be read, or holds no regular file, is unmeasured, never uncommitted", async () => {
-  const { askReport } = await import("../setup/doctor.mjs");
   const graph = { nodes: [{ id: "a" }] };
   const all = JSON.stringify({ permissions: { ask: ["Bash(git push *)", "PowerShell(git push *)"] } });
   const items = (/** @type {string} */ cwd, /** @type {any} */ read) => {
@@ -2479,7 +2496,6 @@ test("ask rules (review two): a HEAD that cannot be read, or holds no regular fi
 });
 
 test("ask rules (review two): doctor reads every remote for a GitHub host; a remote read that fails names the gh commands not checked", async () => {
-  const { askReport } = await import("../setup/doctor.mjs");
   const { urlHost, isGithubHost } = await import("../setup/permissions.mjs");
   const graph = { nodes: [{ id: "a" }] };
   const { GH_COMMANDS: gh, capped, ruleFor, TOOLS } = await import("../setup/permissions.mjs");

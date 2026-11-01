@@ -1,6 +1,18 @@
 {
-  "description": "ennyn. In every session: record the plugin version the session runs in the plugin's own data folder and name it to the session's commands (ENNYN_PLUGIN_DATA, ENNYN_PLUGIN_ROOT), which a commit-msg hook installed from the plugin follows; this reads nothing of the project. Everything else only in a project with an Ennyn config (.ennyn/config.json at the repository's top, or the file ENNYN_CONFIG names; anywhere else those hooks end at once, printing and writing nothing): inject the project's path-scoped rules when a file tool touches a side copy (git worktree or plain copy) of it; forget them after compaction or /clear so they come back, a list left from an earlier config too; give the session the conversation style the config sets; before compaction, hold idle compaction alone, while a task is mid-way and below a ceiling under the context limit, and ask every summary for the task, its files and its next step, giving it the changed file names; this reads the end of the session's transcripts and asks git for names and times, sending no tracked file's content through a filter (git reads .gitignore) and running none of the repository's code (`compaction.defer: false` turns all of this off). No hook makes a network call.",
+  "description": "ennyn. In every session: record the plugin version the session runs in the plugin's own data folder and name it to the session's commands (ENNYN_PLUGIN_DATA, ENNYN_PLUGIN_ROOT), which a commit-msg hook installed from the plugin follows; this reads nothing of the project. Everything else only in a project with an Ennyn config (.ennyn/config.json at the repository's top, or the file ENNYN_CONFIG names; anywhere else those hooks end at once, printing and writing nothing): refuse every git push but a plain one the project's ask rule reads for certain, reading the command's text and running none of it; inject the project's path-scoped rules when a file tool touches a side copy (git worktree or plain copy) of it; forget them after compaction or /clear so they come back, a list left from an earlier config too; give the session the conversation style the config sets; before compaction, hold idle compaction alone, while a task is mid-way and below a ceiling under the context limit, and ask every summary for the task, its files and its next step, giving it the changed file names; this reads the end of the session's transcripts and asks git for names and times, sending no tracked file's content through a filter (git reads .gitignore) and running none of the repository's code (`compaction.defer: false` turns all of this off). No hook makes a network call.",
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Monitor|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/adapters/claude-code/hooks/push-spellings.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Read|Edit|Write|MultiEdit|NotebookEdit",
