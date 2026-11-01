@@ -234,9 +234,9 @@ function compactCase(repo, file, after) {
   // The session reads as idle: its last reply lies more than the gap ago, and the tree is clean. Held, the commit lies
   // two hours back, so the reply's Edit is later than it; at a boundary the commit stays where it is, later than the reply.
   git(["add", "-A"], { cwd: repo });
-  git(["commit", "-q", "--allow-empty", "--no-verify", "-m", "a clean tree"], { cwd: repo });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "--no-verify", "-m", "a clean tree"], { cwd: repo });
   const now = Math.floor(Date.now() / 1000);
-  if (after > 0) git(["commit", "-q", "--amend", "--no-edit", "--no-verify", "--date", `${now - 7200} +0000`], { cwd: repo, env: { ...process.env, GIT_COMMITTER_DATE: `${now - 7200} +0000` } });
+  if (after > 0) git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--amend", "--no-edit", "--no-verify", "--date", `${now - 7200} +0000`], { cwd: repo, env: { ...process.env, GIT_COMMITTER_DATE: `${now - 7200} +0000` } });
   const timestamp = new Date((now - 7200 + after) * 1000).toISOString();
   const usage = { input_tokens: 2, cache_creation_input_tokens: 1000, cache_read_input_tokens: 299000, output_tokens: 0 };
   writeFileSync(join(repo, ".git", "s1.jsonl"), `${JSON.stringify({ isSidechain: false, type: "user", promptId: "p1", message: { role: "user", content: "go" } })}\n${JSON.stringify({ isSidechain: false, type: "assistant", timestamp, message: { model: "claude-opus-5-5", stop_reason: "end_turn", usage, content: [{ type: "tool_use", name: "Edit", input: { file_path: file } }] } })}\n`);
