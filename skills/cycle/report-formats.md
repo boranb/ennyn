@@ -24,7 +24,7 @@ Write reports in the project's `language`.
 ```md
 ## Cycle complete
 ### Done            → results 1-4
-### Checks          → commit gate / build / viewport checks [result or not applicable] · security: `ennyn.mjs deps` and doctor's CI line [found / clean / unmeasured: what did not run] · commit-shape bypass: N (`ennyn.mjs bypass --from <cycle start>`; each use with its reason) · instruction budget: N KB every session (± since the last record), repeated rule lines
+### Checks          → commit gate / build / viewport checks [result or not applicable] · security: `ennyn.mjs deps` and doctor's CI line [found / clean / unmeasured: what did not run] · bypasses and loosened keys, for the user before the push (`ennyn.mjs bypass --from <cycle start>`, pasted: each use with its reason, each key with its approval line or none; exit 1 is unmeasured, never none) · instruction budget: N KB every session (± since the last record), repeated rule lines
 ### Commits         → subjects
 ### Documents       → documents updated
 ### Audit           → feature or security audit / why chosen / result / next candidate

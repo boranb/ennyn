@@ -218,7 +218,9 @@ test("ci hook: what HEAD already holds stays; a deleted file and an excepted one
   git(["rm", "-q", "-f", WF], { cwd: r.dir });
   const deleted = r.check("--hook");
   assert.deepEqual([deleted.status, deleted.stderr], [0, ""], "a deleted workflow brings nothing, and nothing is said");
-  r.stage({ ".ennyn/config.json": JSON.stringify({ security: { ci: { except: [".github/workflows/legacy.yml"] } } }), ".github/workflows/legacy.yml": "steps:\n  - uses: a/b@v1\n" });
+  r.stage({ ".ennyn/config.json": JSON.stringify({ security: { ci: { except: [".github/workflows/legacy.yml"] } } }) });
+  assert.equal(r.commit("chore: except, past the hook", "--no-verify").status, 0);
+  r.stage({ ".github/workflows/legacy.yml": "steps:\n  - uses: a/b@v1\n" });
   assert.equal(r.check("--hook").status, 0, "an excepted file is not read");
   const wide = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("steps:\n  - uses: a/b@v1\n", "utf16le")]);
   r.stage({ [WF]: wide });
@@ -430,19 +432,20 @@ test("ci round one: the hook reads past a HEAD it cannot read, names security.ci
   const replaced = r.check("--hook");
   assert.equal(replaced.status, 1);
   assert.match(replaced.stderr, /ci\.yml: 1 new uses/);
-  // An index from outside the git dir: the message names every check that went without the staged paths.
   writeFileSync(join(r.dir, ".git", "MSG"), "chore: ci\n");
-  const foreign = spawnSync(process.execPath, [CLI, "commit-check", "--hook", ".git/MSG"], { cwd: r.dir, encoding: "utf8", env: { ...process.env, GIT_INDEX_FILE: join(r.dir, "foreign-index") } });
-  assert.match(foreign.stderr, /review\.forbidden, security\.ci, security\.deps and security\.secrets checks ran without them/);
   // A pattern in the config that does not compile: the message goes unchecked, the workflow's errors stand.
   put(r.dir, { ".ennyn/config.json": JSON.stringify({ commitMsg: { skipSubjects: ["("] } }) });
   git(["add", ".ennyn/config.json"], { cwd: r.dir });
+  assert.equal(r.commit("chore: config", "--no-verify", ".ennyn/config.json").status, 0);
   const broken = r.check("--hook");
   assert.equal(broken.status, 1);
   assert.match(broken.stderr, /ci\.yml: 1 new uses/);
+  assert.match(broken.stderr, /this commit's message was not checked, nor its review\.forbidden lines \(.*\); security\.ci, security\.deps and security\.secrets ran/);
+  assert.doesNotMatch(broken.stderr, /not its lines/, "three gates ran");
   // paths [] turns the check off.
   put(r.dir, { ".ennyn/config.json": JSON.stringify({ security: { ci: { paths: [] } } }) });
   git(["add", ".ennyn/config.json"], { cwd: r.dir });
+  assert.equal(r.commit("chore: config", "--no-verify", ".ennyn/config.json").status, 0);
   assert.deepEqual([r.check("--hook").status, r.check("--hook").stderr], [0, ""]);
 });
 
@@ -1322,6 +1325,7 @@ test("gate failure: a throw of the forbidden scan refuses a commit it reads, and
   assert.equal(hook.status, 1, hook.stderr);
   assert.match(hook.stderr, /review\.forbidden was not checked, so this commit is refused: .*\(stopped here\)/);
   r.stage({ ".ennyn/config.json": JSON.stringify({ commitMsg: { skipSubjects: ["("] } }) });
+  assert.equal(r.commit("chore: config", "--no-verify", ".ennyn/config.json").status, 0);
   assert.equal(r.check("--hook").status, 0);
 });
 

@@ -9,15 +9,16 @@
 import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { isAbsolute, relative, resolve, sep } from "node:path";
-import { loadConfig, ConfigError } from "../core/config.mjs";
-import { HOOK_READ_ENV, MISSING_OBJECT, NAMES_BUFFER, READ_BUDGET, blobBytes, diffGroups, git, headBlob, headCommit, hookIndexFile, indexEntries, indexKinds, indexNames, machineFault, mergeHeads, projectRoot, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, stagedVersionsEach, stateRoot, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
+import { CONFIG_PATH, loadConfig, ConfigError } from "../core/config.mjs";
+import { HOOK_INDEX_ENV, HOOK_READ_ENV, MISSING_OBJECT, NAMES_BUFFER, READ_BUDGET, blobBytes, diffGroups, git, headCommit, hookElsewhere, indexEntries, indexKinds, indexNames, machineFault, mergeHeads, projectRoot, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, stagedVersionsEach, stateRoot, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
 import { ends, jsonShown, shown, t, tShown, unshownEscaped } from "../core/i18n.mjs";
-import { globToRegExp, matchAny } from "../core/glob.mjs";
+import { matchAny } from "../core/glob.mjs";
 import { checkCommitShape, nameShown, secretErrors, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
 import { ciCallees, ciMessages } from "../checks/ci.mjs";
 import { advisoriesOf, depsMessages, dirOf, judgeEntry, judgeLock, lockEntries, lockPath, lockText, npmrcFindings, npmrcPath, pkgJson, pkgJsonPath, pkgPathOf, reasonText, registryOf, registryResolver } from "../checks/deps.mjs";
 import { readIfThere, readRegular } from "../core/files.mjs";
 import { SecretScanner, masked, secretsOff } from "../checks/secrets.mjs";
+import { ConfigPicked, ConfigUnread, LOOSENING_LINE, commitConfig, looseningErrors } from "../checks/loosening.mjs";
 import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
 import { reworkRate } from "../metrics/szz.mjs";
 import { bypassUses } from "../metrics/bypass.mjs";
@@ -55,7 +56,8 @@ Commands:
                                                     when the cycle began; exit 1 when it could not read or place something
   audit [--json]                                    whether this cycle's audit slot is the security audit (security.everyCycles), and the sensitive paths it reads
   bypass [--from <rev>] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--json]
-                                                    commits that used the commit-shape bypass marker, with their reasons
+                                                    commits that used the commit-shape bypass marker, with their reasons, and each key a
+                                                    commit loosened, with its approval line; exit 1 when a commit could not be compared
   mutate <list.json> --command <cmd> [--check <cmd>] [--timeout <s>] [--json]
                                                     run hand-picked mutants one at a time against the tests; one that does not parse is never killed;
                                                     give --check's {file} unquoted: Ennyn quotes it
@@ -174,54 +176,6 @@ function foldTarget(cwd, message, cleanup, comment, cut) {
   };
 }
 
-/**
- * security.secrets.except as a config file holds it: the list, [] when unset, null when the file does not parse
- * or holds no list of globs that compile there.
- * @param {Buffer} bytes
- * @returns {string[] | null}
- */
-function exceptIn(bytes) {
-  try {
-    const list = JSON.parse(bytes.toString("utf8").replace(/^\uFEFF/, ""))?.security?.secrets?.except;
-    if (list === undefined) return [];
-    if (!Array.isArray(list) || !list.every((g) => typeof g === "string" && g !== "")) return null;
-    for (const g of list) globToRegExp(g);
-    return list;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * The except list the commit's own config holds, when the config is tracked: one written in the work tree and
- * not staged does not loosen the scan, and a config the commit deletes means the defaults. `before`: HEAD's list
- * (null with none); a name is exempt only where both lists name it. `said`: what to tell (the work tree's list
- * is not the commit's; the commit changes the list so that it lets staged paths through; the commit's config
- * does not parse, or is deleted).
- * @param {string} cwd @param {any} cfg @param {string[]} staged @param {NodeJS.ProcessEnv} env
- * @returns {{ except: string[], before: string[] | null, said: string[] }}
- */
-function committedExcept(cwd, cfg, staged, env) {
-  const work = cfg.security.secrets.except;
-  const rel = cfg.configPath ? relative(cwd, cfg.configPath).split(sep).join("/") : "";
-  if (!rel || rel.startsWith("../")) return { except: work, before: null, said: [] };
-  const lang = cfg.language;
-  const blob = stagedBlobs(cwd, [rel], { env }).blobs.get(rel);
-  const head = headBlob(cwd, rel);
-  const before = head ? exceptIn(head) : null;
-  // Not in the index: the work tree's config is the only one, unless HEAD holds one the commit deletes.
-  if (!blob) return head ? { except: [], before, said: [t("cli.secretsConfigDeleted", { path: rel }, lang)] } : { except: work, before: null, said: [] };
-  const own = exceptIn(blob);
-  if (own === null) return { except: work, before, said: [t("cli.secretsConfigUnread", { path: rel }, lang)] };
-  const same = (/** @type {string[]} */ a, /** @type {string[]} */ b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
-  const said = same(own, work) ? [] : [t("cli.secretsExceptUnstaged", { path: rel }, lang)];
-  if (before !== null && !same(own, before)) {
-    const through = staged.filter((p) => matchAny(p, own) && !matchAny(p, before));
-    if (through.length) said.push(t("cli.secretsExceptWidened", { n: through.length, paths: namesShown(through) }, lang));
-  }
-  return { except: own, before, said };
-}
-
 /** The paths a map holds, by the reason each was not read. @param {Map<string, string>} unread @returns {Map<string, string[]>} */
 function byReason(unread) {
   /** @type {Map<string, string[]>} */
@@ -257,18 +211,19 @@ const append = (list, more) => {
 };
 
 /**
- * security.secrets for one commit. except as the commit's own config holds it (committedExcept); the names the
+ * security.secrets for one commit. except as the commit's own config holds it, in `cfg` (commitConfig), and as HEAD
+ * holds it in `before`, null with no config there: a name is exempt only where both lists name it. The names the
  * commit adds; the lines it adds, streamed through SecretScanner, smallest files first while their new sizes fit
  * READ_BUDGET, so a commit of large files costs a bounded time and memory (the scan keeps a window, not the lines), apart
  * from review.forbidden's own read; a file whose added lines look like part of a key read whole for the key
  * around them; in a merge, which hits the other side brings. A file git cannot be asked for by name (not UTF-8),
  * or one its diff could not read (stopped, failed), is read whole by its objects (readWhole). What it cannot read is
  * said by name, with why, a line for each reason; run by hand (`hook` false) that fails instead.
- * @param {string} cwd @param {any} cfg @param {string[]} staged @param {string[]} notUtf8 @param {boolean} hook
+ * @param {string} cwd @param {any} cfg @param {string[] | null} before @param {string[]} notUtf8 @param {boolean} hook
  * @param {boolean} brought the commit adds or changes a file (gateFailed)
- * @returns {Promise<{ errors: string[], said: string[], except: string[] }>}
+ * @returns {Promise<{ errors: string[], said: string[] }>}
  */
-async function secretScan(cwd, cfg, staged, notUtf8, hook, brought) {
+async function secretScan(cwd, cfg, before, notUtf8, hook, brought) {
   const lang = cfg.language;
   /** @type {string[]} */
   const said = [];
@@ -279,19 +234,15 @@ async function secretScan(cwd, cfg, staged, notUtf8, hook, brought) {
   };
   const reason = (/** @type {unknown} */ e) => String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message).trim().split("\n")[0];
   /** @type {string[]} */
-  let except = cfg.security.secrets.except;
-  /** @type {string[] | null} */
-  let before = null;
-  const done = (/** @type {string[]} */ errors) => ({ errors, said, except });
+  const except = cfg.security.secrets.except;
+  const done = (/** @type {string[]} */ errors) => ({ errors, said });
   try {
     // Outside a repository nothing is staged.
     if (repoPath("--git-dir", { cwd }) === null) return done([]);
-    const own = committedExcept(cwd, cfg, staged, process.env);
-    ({ except, before } = own);
-    said.push(...own.said);
   } catch (e) {
+    // One failed look at the repository is no reason to skip what the next calls can still read.
     if (!hook) throw e;
-    said.push(t("cli.secretsConfigUnmeasured", { error: reason(e) }, lang));
+    said.push(t("cli.secretsProbeFailed", { error: reason(e) }, lang));
   }
   if (secretsOff(except)) return done([]);
   let changes;
@@ -429,7 +380,7 @@ async function secretScan(cwd, cfg, staged, notUtf8, hook, brought) {
     if (!hook) throw e;
     gateFailed(e, lang, unchecked, "security.secrets", "cli.secretsUnmeasured");
   }
-  return done([...unchecked, ...secretErrors({ config: cfg, hits: scan.hits, names, secretsExcept: except })]);
+  return done([...unchecked, ...secretErrors({ config: cfg, hits: scan.hits, names })]);
 }
 
 // Every line written passes unshownEscaped: a value that reached a line without tShown (an error that quotes a
@@ -829,9 +780,12 @@ const COMMANDS = {
     if (help) return (out(USAGE), 0);
     if (!positional[0]) throw new UsageError("commit-check needs a message file");
     // Every git call the check makes reads objects as they are, and fetches none a partial clone lacks.
-    Object.assign(process.env, HOOK_READ_ENV);
+    Object.assign(process.env, HOOK_READ_ENV, opts.hook ? HOOK_INDEX_ENV : {});
     let cwd;
     try {
+      // Before any gate: past this, the repository the hook asks is the one git commits in.
+      const place = opts.hook ? hookElsewhere(process.cwd(), process.env) : null;
+      if (place) return (err("untold" in place ? tShown("cli.hookWhereUntold", { error: place.untold }, "en") : t("cli.hookElsewhere", {}, "en")), 1);
       cwd = projectDir();
     } catch (e) {
       // From the commit-msg hook a git that fails lets the commit through, saying so.
@@ -840,16 +794,29 @@ const COMMANDS = {
       err(t("cli.hookGitFailed", { error: String(error.stderr ?? error.message).trim().split("\n")[0] }, "en"));
       return 0;
     }
-    let cfg;
+    // One reading of the config for the whole check, the commit's own (commitConfig).
+    let read;
     try {
-      cfg = config(cwd);
+      read = commitConfig({ cwd, env: process.env, hook: Boolean(opts.hook) });
     } catch (e) {
-      // From the commit-msg hook a config that does not load (broken, or there but unreadable) must not lock
-      // every commit, the one that fixes it included.
+      // From the commit-msg hook a config no version of which loads must not lock every commit, the one that fixes it
+      // included, and a git that fails lets the commit through, as anywhere. Anything else is no verdict on the config,
+      // and passing here would pass every later commit unread: refused, in words of its own, as no commit can repair a
+      // file git does not hold.
       if (!opts.hook) throw e;
-      err(t("cli.hookConfigBroken", { error: oneLine(/** @type {Error} */ (e).message) }, "en"));
-      return 0;
+      if (e instanceof ConfigPicked) {
+        /** @type {string[]} */
+        const refused = [];
+        gateFailed(e.cause, "en", refused, t("cli.everyGate", {}, "en"), "cli.configUnmeasured");
+        for (const line of refused) err(line);
+        return 1;
+      }
+      const error = masked(oneLine(/** @type {Error} */ (e).message));
+      if (e instanceof ConfigUnread) return (err(tShown("cli.hookConfigUnread", { git: masked(e.git), error }, "en")), 0);
+      if (e instanceof ConfigError) return (err(tShown("cli.hookConfigBroken", { error }, "en")), 0);
+      return (err(tShown("cli.hookConfigRefused", { path: process.env.ENNYN_CONFIG || CONFIG_PATH, error }, "en")), 1);
     }
+    const cfg = read.cfg;
     let message;
     try {
       message = readFileSync(positional[0], "utf8");
@@ -860,18 +827,32 @@ const COMMANDS = {
       err(t("cli.cannotRead", { path: positional[0], error }, cfg.language));
       return 1;
     }
-    // A config git tracks that is not in the work tree (a sparse checkout without .ennyn/), or an ENNYN_CONFIG
-    // naming no file: the defaults would check another project's rules, so the hook says nothing was checked.
-    if (opts.hook && !cfg.configPath) {
-      const named = process.env.ENNYN_CONFIG;
-      let tracked = "";
+    // An ENNYN_CONFIG naming no file, with no config tracked: the defaults would check another project's rules, so
+    // the hook says nothing was checked.
+    if (opts.hook && read.absent) return (err(t("cli.hookConfigAbsent", { path: String(process.env.ENNYN_CONFIG) }, "en")), 0);
+    for (const s of read.said) {
+      const text = tShown(s.key, s.vars, cfg.language);
+      if (!opts.hook && s.fails) throw new Error(text);
+      err(text);
+    }
+    // Whether the commit loosens a gate holds for every message, the bypass marker and a skipped subject too, and is
+    // said now: nothing a gate below does can skip it. The approval line is read on the narrowest reading of what git
+    // may store, comment lines out and cut at a scissors line: `--cleanup=` and `-v` reach no hook, and a line that may
+    // not be stored must not count. A line that would have stayed costs moving it, and nothing else.
+    let loosens = false;
+    if (read.keys.length) {
+      /** @type {string | null} */
+      let comment = null;
+      let unknown = "";
       try {
-        if (!named && repoPath("--git-dir", { cwd }) !== null) tracked = git(["ls-files", "-z", "--", ".ennyn/config.json"], { cwd });
+        ({ comment } = hookCommitMode({ cwd, message, env: process.env }));
       } catch (e) {
-        const error = /** @type {Error & { stderr?: unknown }} */ (e);
-        return (err(t("cli.hookGitFailed", { error: String(error.stderr || error.message).trim().split("\n")[0] }, "en")), 0);
+        // The message check below asks git the same and says so. With the marker unknown no line can be told from a comment git drops.
+        unknown = oneLine(String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message));
       }
-      if (named || tracked) return (err(t("cli.hookConfigAbsent", { path: named || ".ennyn/config.json" }, "en")), 0);
+      const refused = comment === null ? [tShown("shape.looseningNoComment", { keys: read.keys.join(", "), error: unknown, line: LOOSENING_LINE }, cfg.language)] : looseningErrors(read.keys, storedMessage(message, "strip", comment, true), cfg.language);
+      for (const e of refused) err(e);
+      loosens = refused.length > 0;
     }
     /** What a gate could not read of what the commit brings, for a reason its content can pick: each refuses it (gateFailed). */
     /** @type {string[]} */
@@ -885,12 +866,8 @@ const COMMANDS = {
     /** @type {Set<string>} */
     let deleted = new Set();
     try {
-      // An index git gave the hook that is not this repository's own (GIT_INDEX_FILE set outside its git dir):
-      // the main index would be read instead, another commit's files.
-      const given = process.env.GIT_INDEX_FILE;
-      if (opts.hook && given && !hookIndexFile(cwd, process.env)) err(t("cli.stagedUnmeasured", { error: t("cli.hookIndexForeign", { path: given }, cfg.language) }, cfg.language));
       // Outside a repository nothing is staged: the message is all there is to check.
-      else if (repoPath("--git-dir", { cwd }) !== null) {
+      if (repoPath("--git-dir", { cwd }) !== null) {
         const listed = stagedNames(cwd, { env: process.env });
         ({ paths: staged, notUtf8, deleted } = listed);
         if (listed.deletedUnread) err(t("cli.stagedDeletedUnread", { mb: NAMES_BUFFER / 1024 / 1024 }, cfg.language));
@@ -954,7 +931,7 @@ const COMMANDS = {
     }
     // security.secrets: every file and name the commit adds, except as the commit's own config holds it, read
     // apart from review.forbidden and before the message: what the files bring stands when the message check fails.
-    const secrets = await secretScan(cwd, cfg, staged, notUtf8, Boolean(opts.hook), bringing.size > 0);
+    const secrets = await secretScan(cwd, cfg, read.headExcept, notUtf8, Boolean(opts.hook), bringing.size > 0);
     for (const said of secrets.said) err(said);
     // CI files (security.ci): the uses, triggers and permissions the commit brings, against HEAD's version. The
     // files under the directories `security.ci.paths` names are read with the staged ones, and every local callee
@@ -1084,7 +1061,7 @@ const COMMANDS = {
       const { cleanup, comment, cut } = hookCommitMode({ cwd, message, env: process.env });
       const fold = foldTarget(cwd, message, cleanup, comment, cut);
       if (fold.missed) err(t("cli.foldNotFound", { subject: fold.subject, where: t(`cli.foldWhere.${fold.missed}`, {}, cfg.language) }, cfg.language));
-      res = checkCommitShape(message, { config: cfg, stagedPaths: staged, cleanup, cut, comment, foldTarget: fold.target, addedLines, secretsExcept: secrets.except, exempt, wideUnread });
+      res = checkCommitShape(message, { config: cfg, stagedPaths: staged, cleanup, cut, comment, foldTarget: fold.target, addedLines, exempt, wideUnread });
     } catch (e) {
       // A git that fails, or a pattern in the config that does not compile, is no reason to lock commits either:
       // the commit goes through, and the message says it was not checked. That is the message's rule; a gate's own
@@ -1092,15 +1069,14 @@ const COMMANDS = {
       if (!opts.hook) throw e;
       const error = /** @type {Error & { stderr?: unknown, gate?: string }} */ (e);
       if (error.gate) gateFailed(e, cfg.language, unchecked, error.gate, "cli.forbiddenUnmeasured");
-      else if (typeof error.stderr === "string") err(t("cli.hookGitFailed", { error: error.stderr.trim().split("\n")[0] }, cfg.language));
-      else err(t("cli.hookConfigBroken", { error: error.message }, "en"));
+      else err(t("cli.hookMessageUnchecked", { error: masked(typeof error.stderr === "string" ? error.stderr.trim().split("\n")[0] : error.message) }, cfg.language));
       // What the files bring was read apart from the message: it still stands, the secrets they hold too.
       for (const x of [...unchecked, ...ci.errors, ...ci.warnings, ...deps.errors, ...deps.warnings, ...secrets.errors]) err(x);
-      return unchecked.length || ci.errors.length || deps.errors.length || secrets.errors.length ? 1 : 0;
+      return loosens || unchecked.length || ci.errors.length || deps.errors.length || secrets.errors.length ? 1 : 0;
     }
     for (const e of [...unchecked, ...ci.errors, ...deps.errors, ...secrets.errors, ...res.errors]) err(e);
     for (const w of [...(res.warnings ?? []), ...ci.warnings, ...deps.warnings]) err(w);
-    return res.ok && !unchecked.length && !ci.errors.length && !deps.errors.length && !secrets.errors.length ? 0 : 1;
+    return res.ok && !loosens && !unchecked.length && !ci.errors.length && !deps.errors.length && !secrets.errors.length ? 0 : 1;
   },
 
   async deps(args) {
@@ -1355,23 +1331,38 @@ const COMMANDS = {
     // An empty --from (a lost cycle start) must not widen the count to the whole history.
     if (opts.from !== undefined && strOpt(opts.from) === null) throw new UsageError("--from needs a revision");
     const from = strOpt(opts.from) ?? undefined;
+    // Objects as the hook reads them: a replace ref must not lay another commit over a loosening.
+    Object.assign(process.env, HOOK_READ_ENV);
     const cwd = projectDir();
-    const cfg = config(cwd);
-    const res = bypassUses({ cwd, config: cfg, since, until, from });
-    if (opts.json) return (out(jsonShown(res)), 0);
-    const lang = cfg.language;
+    const res = bypassUses({ cwd, since, until, from });
+    const lang = res.language;
+    /** @param {import("../metrics/bypass.mjs").Said} said */
+    const text = (said) => t(said.key, said.vars, lang);
+    const unread = res.unread.map((u) => ({ hash: u.hash, reason: text(u.reason) }));
+    const unmeasured = res.unmeasured.map(text);
+    // What could not be compared is no "none loosened".
+    const code = unread.length || unmeasured.length ? 1 : 0;
+    if (opts.json) return (out(jsonShown({ ...res, unread, unmeasured })), code);
     if (res.shallow) out(t("bypass.shallow", {}, lang));
-    if (!res.commits) return (out(t("bypass.noCommits", {}, lang)), 0);
-    out(t(res.uses.length ? "bypass.summary" : "bypass.none", { n: res.uses.length, commits: res.commits }, lang));
-    for (const u of res.uses) {
-      // The local day, as --since / --until read it.
-      const d = new Date(u.time * 1000);
-      // A commit object with no committer time has no day.
-      const date = Number.isFinite(u.time) ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : "—";
-      // A subject and a reason from history: shown as one line can show them.
-      out(tShown("bypass.item", { hash: u.hash.slice(0, 10), date, subject: u.subject, reason: u.reason || t("bypass.noReason", {}, lang) }, lang));
+    for (const said of res.unmeasured) out(tShown(said.key, said.vars, lang));
+    for (const u of unread) out(tShown("bypass.looseUnread", { hash: u.hash.slice(0, 10), reason: u.reason }, lang));
+    if (!res.commits) out(t("bypass.noCommits", {}, lang));
+    // The local day, as --since / --until read it. A commit object with no committer time has no day.
+    const dayOf = (/** @type {number} */ time) => {
+      const d = new Date(time * 1000);
+      return Number.isFinite(time) ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : "—";
+    };
+    if (res.commits && (res.uses.length || !unmeasured.length)) out(t(res.uses.length ? "bypass.summary" : "bypass.none", { n: res.uses.length, commits: res.commits }, lang));
+    // A subject and a reason from history: shown as one line can show them.
+    for (const u of res.uses) out(tShown("bypass.item", { hash: u.hash.slice(0, 10), date: dayOf(u.time), subject: u.subject, reason: u.reason || t("bypass.noReason", {}, lang) }, lang));
+    // No "none" while anything is unread, and none of a range with no commits to count.
+    if (res.loosened.length || (res.commits && !code)) out(t(res.loosened.length ? "bypass.looseSummary" : "bypass.looseNone", { n: res.loosened.length, commits: Math.max(res.commits, res.loosened.length) }, lang));
+    for (const l of res.loosened) {
+      out(tShown("bypass.looseItem", { hash: l.hash.slice(0, 10), date: dayOf(l.time), subject: l.subject, keys: l.keys.join(", ") }, lang));
+      for (const line of l.lines) out(tShown("bypass.looseLine", { line }, lang));
+      if (l.unapproved.length) out(tShown("bypass.looseMissing", { keys: l.unapproved.join(", ") }, lang));
     }
-    return 0;
+    return code;
   },
 
   async core(args) {

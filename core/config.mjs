@@ -10,6 +10,9 @@ import { underGitDir } from "./git.mjs";
 import { join, isAbsolute, posix } from "node:path";
 import { globToRegExp } from "./glob.mjs";
 
+/** The config's place in a repository, unless ENNYN_CONFIG names another. */
+export const CONFIG_PATH = ".ennyn/config.json";
+
 export const DEFAULTS = Object.freeze({
   language: "en",
   // How the agent talks: normal | focused | terse (styles/). Never files or commits.
@@ -152,6 +155,31 @@ export const DEFAULTS = Object.freeze({
 
 /** Conversation styles; every one but "normal" has rules in styles/<style>.<lang>.md. */
 export const CONVERSATION_STYLES = ["normal", "focused", "terse"];
+
+/**
+ * The lists a config holds as strings, each of them. A member of any other kind is a config that does not load: a gate
+ * would skip it, or throw on it and check nothing. `review.cochange`, `review.forbidden` and `impact.twins` hold rules
+ * and pairs, each with a check of its own in configFrom. test/loosening.test.mjs fails on a list in neither group.
+ */
+export const STRING_LISTS = new Set([
+  "commitMsg.types",
+  "commitMsg.structuredLines",
+  "commitMsg.skipSubjects",
+  "review.agents",
+  "review.impactRequiredGlobs",
+  "review.impactIgnoreGlobs",
+  "security.ci.paths",
+  "security.ci.except",
+  "security.deps.paths",
+  "security.deps.allow",
+  "security.deps.allowScripts",
+  "security.deps.sources",
+  "security.deps.advisoryRegistries",
+  "security.secrets.except",
+  "sideCopy.roots",
+  "impact.fakeGlobs",
+  "impact.fixtureGlobs",
+]);
 
 export class ConfigError extends Error {
   /** @param {string[]} problems */
@@ -318,16 +346,27 @@ function merge(base, over, prefix, problems) {
  * @returns {typeof DEFAULTS & { projectDir: string, configPath: string | null }}
  */
 export function loadConfig({ cwd, env = process.env, override }) {
-  const rel = env.ENNYN_CONFIG || ".ennyn/config.json";
+  const rel = env.ENNYN_CONFIG || CONFIG_PATH;
   const configPath = isAbsolute(rel) ? rel : join(cwd, rel);
-  /** @type {Record<string, unknown>} */
-  let user = {};
-  let found = null;
   // A config that is there but cannot be read is no config problem to report and go on from: it throws. One
   // the user named (ENNYN_CONFIG) is read whatever it is (`<(…)`, /dev/stdin); the project's own as a regular
   // file through no link a commit may hold (core/files.mjs), so no file outside reaches a parse error.
   const own = env.ENNYN_CONFIG ? null : readRegular(cwd, configPath);
   const text = env.ENNYN_CONFIG ? readIfThere(configPath, { given: true }) : own && own.toString("utf8");
+  return configFrom(text, { cwd, configPath, override });
+}
+
+/**
+ * A config from its text, wherever that was read (a file, a commit, the index), held to everything loadConfig
+ * holds a file to; null text is no config, the defaults.
+ * @param {string | null} text
+ * @param {{ cwd: string, configPath: string, override?: Record<string, unknown> }} opts
+ * @returns {typeof DEFAULTS & { projectDir: string, configPath: string | null }}
+ */
+export function configFrom(text, { cwd, configPath, override }) {
+  /** @type {Record<string, unknown>} */
+  let user = {};
+  let found = null;
   if (text !== null) {
     found = configPath;
     try {
@@ -342,6 +381,16 @@ export function loadConfig({ cwd, env = process.env, override }) {
   const problems = [];
   let cfg = merge(/** @type {any} */ (DEFAULTS), user, "", problems);
   if (override) cfg = merge(cfg, override, "", problems);
+  // First: every check below reads these members as strings, and one that is not can throw there. The config fails
+  // either way, so they go on without it, and what else is wrong is said with it. `cfg` holds its own copy of any list
+  // a user wrote, down the path merge() walked.
+  for (const key of STRING_LISTS) {
+    const path = key.split(".");
+    const list = /** @type {unknown[]} */ (valueOf(cfg, key));
+    if (list.every((v) => typeof v === "string")) continue;
+    problems.push(`"${key}" must be a list of strings`);
+    /** @type {any} */ (path.slice(0, -1).reduce((/** @type {any} */ o, k) => o[k], cfg))[String(path.at(-1))] = list.filter((v) => typeof v === "string");
+  }
   // Every config's paths stay in the project, whoever names the config: a commit writes the project's, and one
   // ENNYN_CONFIG names may be the project's under another spelling (a case, a hard link, a parent's path). The
   // state dir lies in the git dir, where no commit writes: Ennyn trusts what it finds there (a mutation journal).

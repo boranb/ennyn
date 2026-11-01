@@ -63,6 +63,7 @@ test("cli: --help, no command and an unknown command", () => {
 
 test("cli: commit-check passes a good message, fails a long subject, reads staged paths", () => {
   const p = project({ review: { impactRequiredGlobs: ["src/**"] } });
+  git(["add", ".ennyn/config.json"], { cwd: p.dir });
   const msg = join(p.dir, ".git", "MSG");
   writeFileSync(msg, "feat: short subject\n");
   assert.deepEqual(run(p.dir, "commit-check", msg), { code: 0, stdout: "", stderr: "" });
@@ -502,7 +503,7 @@ test("cli: commit-check follows commit.cleanup (strip, whitespace, verbatim, sci
 test("cli: commit-check prints a cochange warning on stderr and still passes", () => {
   const p = project({ review: { cochange: [{ paths: ["README.md"], docs: ["README.tr.md"] }] } });
   writeFileSync(join(p.dir, "README.md"), "# x\n");
-  git(["add", "README.md"], { cwd: p.dir });
+  git(["add", "README.md", ".ennyn/config.json"], { cwd: p.dir });
   const msg = join(p.dir, ".git", "MSG");
   writeFileSync(msg, "feat: readme\n");
   const r = run(p.dir, "commit-check", msg);

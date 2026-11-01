@@ -20,7 +20,7 @@
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { basename, dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import { isUtf8 } from "node:buffer";
-import { realpathSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import { readIfThere } from "./files.mjs";
 import { startsWithMark, wideEncoding, wideLines } from "./encoding.mjs";
 
@@ -420,11 +420,57 @@ export function gitVersion({ cwd }) {
   return { text, version: /^git version /.test(text) ? parseVersion(text) : null };
 }
 
+/** Whether two names lead to the one directory, however each is spelled: a link, a case, `/.`. @param {string} a @param {string} b */
+function sameDir(a, b) {
+  const [x, y] = [a, b].map((p) => statSync(p, { bigint: true, throwIfNoEntry: false }));
+  return Boolean(x && y && x.dev === y.dev && x.ino === y.ino);
+}
+
 /**
- * The index a running hook was given, when it belongs to the repository at
- * `cwd`. `git commit -- <path>` hands its hooks a temporary index through
- * GIT_INDEX_FILE; reading the main index there sees the wrong staged set. An
- * index from another repository (a leaked hook environment) is ignored.
+ * Whether a commit-msg hook stands anywhere but the top of the repository git is committing in. Every call here drops
+ * GIT_DIR and friends (LEAKY_ENV), so it asks what the working directory holds, while git builds the commit from what it
+ * was handed; with a work tree apart from the git dir (`--work-tree`, GIT_WORK_TREE, core.worktree, GIT_DIR from a
+ * subdirectory) those are two repositories, or none, and a gate would read the wrong one. git names a repository it did
+ * not find from here in GIT_DIR, so with none of the variables set the two cannot differ: a plain repository hands a
+ * hook none of them, a linked worktree or a submodule GIT_DIR alone, at the top. Asked with LEAKY_ENV gone; a git that
+ * exits with anything else than 0 refuses the folder, a decoy's unreadable config too, and only a git that did not exit
+ * is the machine's fault, and throws. A bare repository with a work tree of its own (a dotfiles setup) is refused.
+ * "elsewhere" is what the answers show; a git that refused to answer shows nothing of the place, so that is `untold`,
+ * in git's words: it stays refused, and no cause is named that nobody measured. No repository here is an answer.
+ * @param {string} cwd the hook's working directory
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {{ elsewhere: true } | { untold: string } | null} null at the top
+ */
+export function hookElsewhere(cwd, env) {
+  if (!env.GIT_DIR && !env.GIT_WORK_TREE && !env.GIT_COMMON_DIR) return null;
+  let words = "";
+  const ask = (/** @type {string} */ flag) => {
+    const args = ["rev-parse", flag];
+    const r = gitRun(args, { cwd, env: { ...env, LC_ALL: "C", LANGUAGE: "C" } });
+    if (r.error || r.status === null) throw gitError(args, r);
+    if (r.status !== 0) words = r.stderr.trim().split("\n")[0] || `exit ${r.status}`;
+    return r.status === 0 ? r.stdout.replace(/\n$/, "") : null;
+  };
+  const dir = ask("--absolute-git-dir");
+  const top = dir === null ? null : ask("--show-toplevel");
+  const common = top === null ? null : ask("--git-common-dir");
+  if (dir === null || top === null || common === null) return /not a git repository/.test(words) ? { elsewhere: true } : { untold: words };
+  const apart = !sameDir(top, cwd) || (env.GIT_DIR && !sameDir(resolve(cwd, env.GIT_DIR), dir)) || (env.GIT_COMMON_DIR && !sameDir(resolve(cwd, env.GIT_COMMON_DIR), resolve(cwd, common)));
+  return apart ? { elsewhere: true } : null;
+}
+
+/**
+ * Set by `commit-check --hook`, where git is the caller: the index it names is the one it builds the commit from,
+ * wherever that lies. Measured with a real commit on 2.56 and 2.34.1: a leaked GIT_INDEX_FILE builds the tree too, so a
+ * hook that left it out would read another commit.
+ */
+export const HOOK_INDEX_ENV = { ENNYN_HOOK_INDEX: "1" };
+
+/**
+ * The index a running hook was given. `git commit -- <path>` hands its hooks a temporary index through GIT_INDEX_FILE;
+ * reading the main index there sees the wrong staged set. In the hook (HOOK_INDEX_ENV) that is the index, wherever it
+ * lies. Run by hand no commit is being built, so one outside this repository's git dir (a leaked hook environment) is
+ * ignored.
  * @param {string} cwd
  * @param {NodeJS.ProcessEnv} env
  * @returns {string | null}
@@ -432,6 +478,7 @@ export function gitVersion({ cwd }) {
 export function hookIndexFile(cwd, env) {
   const raw = env.GIT_INDEX_FILE;
   if (!raw) return null;
+  if (env.ENNYN_HOOK_INDEX) return resolve(cwd, raw);
   const gitDir = repoPath("--absolute-git-dir", { cwd });
   if (!gitDir) return null;
   // A name with nothing behind it stays as given; one that cannot be looked at throws (the hook then says it
@@ -459,8 +506,10 @@ export function hookIndexFile(cwd, env) {
  * it is read as missing and said unread instead. git reads GIT_NO_LAZY_FETCH from 2.45 and in the maintenance
  * releases of May 2024 (2.39.4, 2.40.2, 2.41.1, 2.42.2, 2.43.4, 2.44.1), as do distribution builds that took that
  * fix (Ubuntu 22.04's 2.34.1, Debian 12's 2.39.5); a git without it, 2.44.0 among them, fetches the object.
+ * `.git/info/grafts` lays other parents over a commit as a replace ref does; no flag turns it off, so GIT_GRAFT_FILE, a
+ * name git's manual leaves out and both 2.34.1 and 2.56 read, points where no file can be, and git says nothing of it.
  */
-export const HOOK_READ_ENV = { GIT_NO_REPLACE_OBJECTS: "1", GIT_NO_LAZY_FETCH: "1" };
+export const HOOK_READ_ENV = { GIT_NO_REPLACE_OBJECTS: "1", GIT_NO_LAZY_FETCH: "1", GIT_GRAFT_FILE: "/dev/null/no-grafts" };
 
 /**
  * One object's bytes, read by its id: a file whose name git cannot be asked for, or one its diff could not read.
@@ -724,6 +773,12 @@ export function batchCheck(cwd, oids, { env } = {}) {
   }
   return lines;
 }
+
+/**
+ * The type a `batchCheck` line names when the object is here and is no blob; null for a blob and for a missing object.
+ * @param {string} line
+ */
+const otherType = (line) => /^\S+ (?!blob )(\w+) \d+$/.exec(line)?.[1] ?? null;
 
 /** What the secret scan reads of one commit's added lines, in bytes: a bound on the hook's time, whatever the commit holds. */
 export const READ_BUDGET = 64 * 1024 * 1024;
@@ -1036,17 +1091,19 @@ export function headFile(cwd, path, limit) {
 }
 
 /**
- * A file as HEAD's tree holds it, or null with no commit yet or no such file there; objects as HOOK_READ_ENV reads
- * them. A git that fails throws.
- * @param {string} cwd @param {string} path
- * @returns {Buffer | null}
+ * A file as a commit's tree holds it: its bytes, null with nothing there, "other" for a link, a submodule or a
+ * directory, "wrongType" for an entry a file's mode gives to an object that is no blob, which `ls-tree` cannot say: it
+ * types an entry by its mode. Objects as HOOK_READ_ENV reads them; a git that fails, or an object it does not hold, throws.
+ * @param {string} cwd @param {string} rev @param {string} path
+ * @returns {Buffer | "other" | "wrongType" | null}
  */
-export function headBlob(cwd, path) {
-  if (!headCommit(cwd)) return null;
+export function blobAt(cwd, rev, path) {
   const env = { ...process.env, ...HOOK_READ_ENV };
-  const entry = gitBytes(["-c", "core.precomposeUnicode=false", "ls-tree", "-z", "HEAD", "--", path], { cwd, env }).toString("utf8").split("\0")[0];
-  const m = /^\d+ blob ([0-9a-f]+)\t/.exec(entry ?? "");
-  return m ? gitBytes(["cat-file", "blob", m[1]], { cwd, env }) : null;
+  const entry = gitBytes(["-c", "core.precomposeUnicode=false", "ls-tree", "-z", rev, "--", path], { cwd, env }).toString("utf8").split("\0")[0];
+  const m = /^(\d+) (\w+) ([0-9a-f]+)\t/.exec(entry ?? "");
+  if (!m) return null;
+  if (!m[1].startsWith("100")) return "other";
+  return otherType(batchCheck(cwd, [m[3]], { env })[0] ?? "") ? "wrongType" : gitBytes(["cat-file", "blob", m[3]], { cwd, env });
 }
 
 /**
@@ -1125,6 +1182,19 @@ export function mergeHeads(cwd) {
   const heads = text.split("\n").map((l) => l.trim()).filter(Boolean);
   if (!heads.every((h) => /^[0-9a-f]{40,64}$/.test(h))) throw new Error(`${path} holds something that is not a commit hash`);
   return heads;
+}
+
+/**
+ * The names in MERGE_HEAD a merge can gain anything from: commits that are no ancestor of HEAD. MERGE_HEAD is a plain
+ * file, and what it names need not become a parent: git drops an ancestor, or under MERGE_MODE's no-ff keeps it and
+ * gains nothing. `git merge` starts no merge of an ancestor (measured on 2.34.1 and 2.56), so an honest merge always has
+ * such a name. git's ancestry goes by the objects as HOOK_READ_ENV reads them, and by `.git/shallow` (DESIGN.md). What it
+ * cannot answer is left out: no commit, no HEAD, a walk stopped at its limit.
+ * @param {string} cwd
+ * @returns {string[]}
+ */
+export function newParents(cwd) {
+  return mergeHeads(cwd).filter((rev) => gitRun(["merge-base", "--is-ancestor", rev, "HEAD"], { cwd, walk: true }).status === 1);
 }
 
 /**
@@ -1270,13 +1340,15 @@ function splitNul(out) {
  * `core.precomposeUnicode` off, 500 paths a listing and at most 3 × WIDE_LIMIT a cat-file call. What cannot be read is said per side, as a code: `unread` for
  * the index side (`symlink`, `submodule`, `large` past WIDE_LIMIT, `notBlob`, `unmerged`: a conflict not
  * resolved), `headUnread` for HEAD's (its `head` is then null); a listing of HEAD past git()'s buffer (a name that was
- * a directory there) is `large` for its call's names. `failed`: no version was read (the caller's). Names are handed
- * to git as written: one that is not UTF-8 cannot be (stagedNames), and the caller says so.
+ * a directory there) is `large` for its call's names. `failed`: no version was read (the caller's). `notBlob` covers an
+ * object this machine does not hold and one of another type; `wrongType` beside it, on the index side, names that type:
+ * a missing object is the machine's, a wrong one the commit's content. Names are handed to git as written: one that is
+ * not UTF-8 cannot be (stagedNames), and the caller says so.
  * @param {string} cwd the repository's top
  * @param {string[]} paths
  * @param {{ env?: NodeJS.ProcessEnv }} [opts]
  * @returns {Map<string, StagedVersion>}
- * @typedef {{ staged: Buffer | null, head: Buffer | null, unread?: Unread, headUnread?: Unread, oid?: string, headOid?: string }} StagedVersion
+ * @typedef {{ staged: Buffer | null, head: Buffer | null, unread?: Unread, headUnread?: Unread, wrongType?: string, oid?: string, headOid?: string }} StagedVersion
  *   `oid`, `headOid`: each side's object, also where its bytes are not read
  * @typedef {"symlink" | "submodule" | "large" | "notBlob" | "unmerged" | "failed"} Unread
  */
@@ -1331,17 +1403,21 @@ export function stagedVersions(cwd, paths, { env } = {}) {
   }
   // An unmerged path has no one staged version.
   const read = wanted.filter((w) => !(w.side === "staged" && out.get(w.path)?.unread === "unmerged"));
+  const answers = batchCheck(cwd, read.map((w) => w.oid), { env: readEnv });
   const sizes = new Map(
-    batchCheck(cwd, read.map((w) => w.oid), { env: readEnv })
+    answers
       .map((l) => /^([0-9a-f]+) blob (\d+)$/.exec(l))
       .filter((m) => m !== null)
       .map((m) => [/** @type {RegExpExecArray} */ (m)[1], Number(/** @type {RegExpExecArray} */ (m)[2])]),
   );
+  const types = new Map(answers.map((l) => [l.split(" ")[0], otherType(l)]));
   const readable = read.filter((w) => {
     const size = sizes.get(w.oid);
     const item = /** @type {StagedVersion} */ (out.get(w.path));
+    const type = types.get(w.oid);
     if (size === undefined) mark(item, w.side, "notBlob");
     else if (size > WIDE_LIMIT) mark(item, w.side, "large");
+    if (w.side === "staged" && type) item.wrongType = type;
     return size !== undefined && size <= WIDE_LIMIT;
   });
   // As few cat-file calls as git()'s buffer allows: each reads at most 3 × WIDE_LIMIT, whatever the files add up to.
@@ -1365,6 +1441,13 @@ export function stagedVersions(cwd, paths, { env } = {}) {
       /** @type {any} */ (out.get(w.path))[w.side] = bytes.subarray(eol + 1, eol + 1 + Number(m[2]));
       at = eol + 1 + Number(m[2]) + 1;
     }
+  }
+  // `git add -N` leaves an entry that reads as the empty file, and no tree holds it: `diff --cached` does not list it as
+  // there (2.56, 2.34.1), and a real empty file it does. One HEAD holds the same way is no change to list.
+  const empty = unique.filter((p) => out.get(p)?.staged?.length === 0 && out.get(p)?.head?.length !== 0);
+  if (empty.length) {
+    const held = new Set(splitNul(gitBytes(["-c", "core.precomposeUnicode=false", "diff", "--cached", "--name-only", "--no-renames", "--diff-filter=d", "-z", "--", ...empty], { cwd, env: readEnv, keepIndex: Boolean(index) })).map((b) => b.toString("utf8")));
+    for (const p of empty) if (!held.has(p)) /** @type {StagedVersion} */ (out.get(p)).staged = null;
   }
   return out;
 }

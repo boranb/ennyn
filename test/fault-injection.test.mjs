@@ -282,7 +282,7 @@ function stageSecret(repo) {
 }
 
 /**
- * @typedef {{ args: string[], cwd?: string, writes?: boolean, setup?: (repo: string) => void, env?: Record<string, string>, first?: boolean, outside?: boolean, hook?: string, input?: (repo: string) => unknown, everyPass?: RegExp }} Case
+ * @typedef {{ args: string[], noReads?: boolean, cwd?: string, writes?: boolean, setup?: (repo: string) => void, env?: Record<string, string>, first?: boolean, outside?: boolean, hook?: string, input?: (repo: string) => unknown, everyPass?: RegExp }} Case
  *   `cwd` is relative to the repository; a case that writes, or has a setup, runs in a copy of its own.
  *   `env` values are paths relative to the repository. `first`: only the first git call is faulted (the
  *   one that finds the project directory; the case without `cwd` sweeps the rest). `outside`: the
@@ -366,8 +366,8 @@ const CASES = [
   { args: ["rework"] },
   { args: ["rework", "--since", "2026-01-01", "--json"] },
   { args: ["rework"], cwd: "src", first: true },
-  { args: ["bypass"] },
-  { args: ["bypass", "--from", FIRST, "--json"] },
+  { args: ["bypass"], noReads: true },
+  { args: ["bypass", "--from", FIRST, "--json"], noReads: true },
   { args: ["mechanization"] },
   { args: ["mechanization"], cwd: "src", first: true },
   { args: ["classes"] },
@@ -675,7 +675,8 @@ test("fault matrix: with any file read failing (no permission, a directory in it
   const width = Math.max(2, Math.min(8, availableParallelism()));
   const clean = await pool(CASES.map((c) => () => run(c, {})), width);
   // A preload that stopped counting would leave no cells, and a green test.
-  for (const [i, c] of CASES.entries()) assert.ok(clean[i].reads.length > 0, `${c.args.join(" ")} reads files`);
+  // And a command that reads none is held to that: `bypass` takes nothing from the work tree.
+  for (const [i, c] of CASES.entries()) assert.equal(clean[i].reads.length > 0, !c.noReads, `${c.args.join(" ")} ${c.noReads ? "reads no file" : "reads files"}`);
   /** @type {{ c: Case, i: number, fault: Fault, call: string }[]} */
   const cells = [];
   for (const [i, c] of CASES.entries()) {

@@ -308,7 +308,7 @@ test("secrets round two: the commit message git will store is scanned, and a nam
   assert.ok(!esc.errors[0].includes("\x1b"), esc.errors[0]);
   assert.match(esc.errors[0], /"lib\/x\\u001b\[2Kok\.txt":1/);
   // Off only when except names every path, the message too.
-  assert.equal(checkCommitShape(`feat: x\n\n${TOKENS.npm}\n`, { config, cleanup: "whitespace", secretsExcept: ["**"] }).ok, true);
+  assert.equal(checkCommitShape(`feat: x\n\n${TOKENS.npm}\n`, { config: loadConfig({ cwd: mkdtempSync(join(tmpdir(), "en-sec-off-")), env: {}, override: { security: { secrets: { except: ["**"] } } } }), cleanup: "whitespace" }).ok, true);
 });
 
 test("secrets round two: a review.forbidden error escapes a path's control characters too", () => {
@@ -435,7 +435,7 @@ test("secrets: doctor counts security.secrets among the rules only the hook chec
   assert.equal(await missing(), undefined);
 });
 
-test("secrets round two: the hook reads except from the config the commit holds, and says when the work tree's or HEAD's differs", () => {
+test("secrets round two: the hook reads except from the config the commit holds, says when the work tree's differs, and refuses a list the commit widens", () => {
   const { dir, put, commit } = repo();
   // Widened in the work tree, not staged: the commit's own list holds, and the hook says so.
   writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ security: { secrets: { except: ["**"] } } }));
@@ -443,15 +443,18 @@ test("secrets round two: the hook reads except from the config the commit holds,
   git(["add", "deploy.sh"], { cwd: dir });
   let r = commit("-m", "feat: deploy script");
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /security\.secrets\.except in the work tree's \.ennyn\/config\.json is not what this commit holds/);
+  assert.match(r.stderr, /\.ennyn\/config\.json in the work tree is not what this commit holds/);
   assert.match(r.stderr, /deploy\.sh:1 \(npm-token/);
-  // Widened in the commit itself: it lands, saying which staged paths the new list lets through.
+  // Widened in the commit itself: refused until the message names the key; the commit's own list then holds.
   git(["reset", "-q"], { cwd: dir });
   rmSync(join(dir, "deploy.sh"));
   put({ ".ennyn/config.json": JSON.stringify({ security: { secrets: { except: ["deploy/**"] } } }), "deploy/env.sh": `export NPM_TOKEN=${TOKENS.npm}\n` });
   r = commit("-m", "feat: deploy script");
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stderr, /This commit loosens security\.secrets\.except,/);
+  assert.doesNotMatch(r.stderr, /deploy\/env\.sh/);
+  r = commit("-m", "feat: deploy script\n\nUser-Approved-Loosening: security.secrets.except\n");
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stderr, /this commit changes security\.secrets\.except, and the new list lets 1 staged path\(s\) through unscanned \("deploy\/env\.sh"\)/);
 });
 
 test("secrets round two: the hook finds a private key replaced under the header the commit keeps, and material added under a header committed before", () => {
@@ -595,24 +598,23 @@ test("secrets round three: every name the commit adds is scanned, unread files' 
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("secrets round three: a committed except that does not compile, or a deleted config, is said and does not turn the scan off or break every commit", () => {
+test("secrets round three: a committed except that does not compile, or a deleted config, does not turn the scan off or break every commit", () => {
   const { dir, put, commit } = repo({ security: { secrets: { except: ["test/**"] } } });
   // The work tree's list is valid; the one staged does not compile.
   put({ ".ennyn/config.json": JSON.stringify({ security: { secrets: { except: ["[z-a]"] } } }), "deploy.sh": `export NPM_TOKEN=${TOKENS.npm}\n` });
   writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ security: { secrets: { except: ["test/**"] } } }));
   let r = commit("-m", "feat: deploy");
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /as staged does not parse, or holds no list of globs/);
+  assert.match(r.stderr, /as this commit holds it does not load/);
+  assert.match(r.stderr, /This commit loosens \.ennyn\/config\.json,/);
   assert.match(r.stderr, /deploy\.sh:1 \(npm-token/);
-  assert.doesNotMatch(r.stderr, /Invalid regular expression/);
   git(["reset", "-q"], { cwd: dir });
   rmSync(join(dir, "deploy.sh"));
-  // The config deleted from the index: the defaults, not the work tree's list, and said.
+  // The config deleted from the index: the defaults, not the work tree's list.
   put({ "test/t.env": `T=${TOKENS.npm}\n` });
   git(["rm", "-q", "--cached", ".ennyn/config.json"], { cwd: dir });
   r = commit("-m", "test: env");
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /this commit deletes \.ennyn\/config\.json, so security\.secrets\.except is the default/);
   assert.match(r.stderr, /test\/t\.env:1/);
   rmSync(dir, { recursive: true, force: true });
 });

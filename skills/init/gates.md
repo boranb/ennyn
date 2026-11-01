@@ -41,3 +41,7 @@ The cycle asks the user before any push. A Claude Code ask rule is the backstop:
 2. **Write** them into `permissions.ask` of `.claude/settings.json` on the user's yes, keeping every other key, and commit the file with the config: `uncommitted` or `local` rules reach no other clone.
 3. **Say the limits** as `ennyn doctor`'s ask line words them (where Claude Code applies the file, the spellings it does not match). The rule is a backstop, not the gate.
 4. **Check** with `ennyn doctor`: `✓ ask rules` names the rules the committed file holds, with these limits; `!` names those missing, uncommitted or only local; `?` what it could not read. `Bash(gh release *)` also asks before `gh release view`, `list` and `download`.
+
+## A first config that loosens a default
+
+The commit-msg hook compares a first config with the defaults, as it compares any config with HEAD's. A value looser than the default (a shorter `security.deps.cooldownDays`, a longer `security.everyCycles`, the project's own `commitMsg.structuredLines`) is refused until the commit's message holds a body line `User-Approved-Loosening: <key>, <key>` naming each key. The user's answer to the question that set the key is that yes, for that key alone. A key they were not asked about: ask, in plain words, before you write the line.

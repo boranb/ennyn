@@ -186,6 +186,9 @@ test("hook: a config that does not load lets the commit through with a warning, 
   const dir = repo();
   installHook({ cwd: dir, cliPath: CLI });
   writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ commitMsg: { types: ["feat"], typo: 1 } }));
+  // Past the hook: HEAD's config does not load either, so nothing is left to check by.
+  git(["add", "-A"], { cwd: dir });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "chore: broken"], { cwd: dir });
   const r = commit(dir, "anything at all");
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stderr, /config does not load, so this commit was not checked: not its message, not its lines/);
@@ -208,6 +211,8 @@ test("hook: a pattern in the config that does not compile warns instead of locki
   const dir = repo();
   installHook({ cwd: dir, cliPath: CLI });
   writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ commitMsg: { skipSubjects: ["^(Merge "] } }));
+  git(["add", "-A"], { cwd: dir });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "chore: a pattern past the hook"], { cwd: dir });
   const r = commit(dir, "anything");
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stderr, /was not checked/);

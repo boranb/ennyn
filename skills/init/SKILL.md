@@ -28,7 +28,7 @@ Send one message with at most six questions. Each question carries the survey's 
 3. **Generated files and test layout.** From `churn.paths`, ask which are build output; a `generatedMarker` is a strong hint, not proof. Confirmed paths go into `metrics.excludeRe`. When `tests.proposal` is set, show its example files and ask whether they are tests; a production file that matches would leave the rework rate.
 4. **Risky paths and security** (`risky`): they need an impact table before any edit, and the security audit reads them; the user adds or removes. Confirm the config's values, else the defaults: a security audit every 3 cycles (`security.everyCycles`); a new dependency version waits 7 days (`security.deps.cooldownDays`), refused under 1% of its package's weekly downloads and 1,000 of its own (`minShare`, `minWeekly`); the cycle asks OSV about public packages (`security.deps.advisories`; `""`: none). Each `agentSetup.ask` rule with `where` null or `local` is proposed: [gates.md](gates.md).
 5. **Where the work comes from**:
-   - the `roadmap` files (with open/done counts);
+   - the `roadmap` files;
    - open GitHub issues (`gh issue list --state open --limit 50 --json number,title,labels`, only when `github` is set and `gh` works);
    - or the user's own words: "What should this project do next? Which finished features matter most?"
 6. **What the project already has** (`agentSetup.overlaps`), only when it lists something. A cycle-like skill or command (`overlaps.cycle`): does Ennyn's cycle replace it, or stay beside it for other work? The answer goes into the handoff: in the stub, or, when the handoff exists, as one line added at its end on the user's yes. Reviewer agents (`overlaps.reviewers`): which of them review the cycle's changes (`review.agents`, given the finding schema); none keeps Ennyn's three.
@@ -78,8 +78,8 @@ Report in at most thirteen lines:
 - what was changed in the project's own instructions (lines replaced, lines turned into gates), or left in conflict and why; an audit queue the project already keeps;
 - node counts: open, done and ready;
 - the instruction text the project loads: `agentSetup.size.always` in every session, `size.onDemand` by path;
-- the ✗ left open: how many, and for each, as the lines allow, its cause and who fixes it;
-- what was estimated or left at its default;
+- the ✗ left open: how many, and for each its cause and who fixes it;
+- what was estimated or defaulted;
 - "Next: /ennyn:cycle".
 
-Ask before committing the files, and never push.
+Ask before committing the files, and never push. A config that loosens a default: [gates.md](gates.md).

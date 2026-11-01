@@ -159,8 +159,8 @@ test("review.forbidden: an added line with the text fails the commit in the rule
   const res = checkCommitShape("feat: x", { config, addedLines: added });
   assert.equal(res.ok, false);
   assert.deepEqual(res.errors, [
-    'src/a.js:3 adds "console.log", which review.forbidden rule 1 keeps out (use the logger). Take it out, or name the file in that rule\'s except list in the config.',
-    'src/a.js:9, src/log.js:1 adds "debugger", which review.forbidden rule 2 keeps out. Take it out, or name the file in that rule\'s except list in the config.',
+    'src/a.js:3 adds "console.log", which review.forbidden rule 1 keeps out (use the logger). Take it out; naming the file in that rule\'s except list is for the user to decide.',
+    'src/a.js:9, src/log.js:1 adds "debugger", which review.forbidden rule 2 keeps out. Take it out; naming the file in that rule\'s except list is for the user to decide.',
   ]);
   // Without the lines (not read), only the shape is checked.
   assert.equal(checkCommitShape("feat: x", { config }).ok, true);
@@ -351,32 +351,33 @@ test("review.forbidden through the hook: the config holding the text commits; a 
   assert.match(evil.stderr, /^a\.js:2, b\.js:2 adds "debugger".* The merge brings 1 of these lines from [0-9a-f]+/m);
 });
 
-test("review.forbidden through the hook: an index from outside the git dir, or a config not in the work tree, is said, not checked as clean", () => {
+test("review.forbidden through the hook: an index from outside the git dir, a named config not there, a config not in the work tree: said, or checked by the commit's own", () => {
   const { dir, stage, commit } = repo({ review: { forbidden: [RULE] } });
   stage({ "src/a.js": "1\n" });
   assert.equal(commit("first").status, 0);
   installHook({ cwd: dir, cliPath: CLI });
-  // git builds the commit from the index GIT_INDEX_FILE names; the hook cannot tell it from a leaked one.
+  // git builds the commit from the index GIT_INDEX_FILE names, wherever that lies: the rule reads that index.
   const alt = join(mkdtempSync(join(tmpdir(), "en-fb-idx-")), "index");
   const env = { ...process.env, GIT_INDEX_FILE: alt };
   spawnSync("git", ["read-tree", "HEAD"], { cwd: dir, env });
   put(dir, { "src/a.js": "1\nconsole.log(1);\n" });
   spawnSync("git", ["add", "src/a.js"], { cwd: dir, env });
   const foreign = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "alt"], { cwd: dir, env, encoding: "utf8" });
-  assert.match(foreign.stderr, /Staged paths could not be read \(the hook was given an index outside this repository's git dir/);
-  assert.match(foreign.stderr, /review\.forbidden(,? (?:and )?\S+)* checks ran without them/);
-  // The config named by ENNYN_CONFIG is not there: the defaults would check nothing of this project.
+  assert.equal(foreign.status, 1, foreign.stderr);
+  assert.match(foreign.stderr, /console\.log/);
+  // ENNYN_CONFIG naming nothing, with a config tracked: the commit's own config checks it, and the variable is said.
   stage({ "src/a.js": "2\nconsole.log(2);\n" });
   const named = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "named"], { cwd: dir, env: { ...process.env, ENNYN_CONFIG: join(dir, "nope.json") }, encoding: "utf8" });
-  assert.equal(named.status, 0);
-  assert.match(named.stderr, /nope\.json is not in the work tree .* so this commit was not checked/);
-  // A sparse checkout that leaves .ennyn/ out.
+  assert.equal(named.status, 1);
+  assert.match(named.stderr, /ENNYN_CONFIG names .*nope\.json; the checks used the commit's own \.ennyn\/config\.json/);
+  // A sparse checkout that leaves .ennyn/ out: the index still holds the config.
   stage({ "src/a.js": "3\nconsole.log(3);\n" });
   git(["update-index", "--skip-worktree", ".ennyn/config.json"], { cwd: dir });
   rmSync(join(dir, ".ennyn"), { recursive: true });
   const sparse = commit("sparse");
-  assert.equal(sparse.status, 0);
-  assert.match(sparse.stderr, /\.ennyn\/config\.json is not in the work tree/);
+  assert.equal(sparse.status, 1);
+  assert.match(sparse.stderr, /src\/a\.js:2 adds "console\.log"/);
+  assert.match(sparse.stderr, /\.ennyn\/config\.json in the work tree is not what this commit holds/);
 });
 
 test("commit-check run by hand fails when the staged lines cannot be read; the hook says so and goes on", () => {
@@ -400,8 +401,10 @@ test("commit-check run by hand fails when the staged lines cannot be read; the h
   assert.match(hook.stderr, /review\.forbidden was not checked in 1 staged path\(s\) \("src\/a\.js"\): fatal: injected/);
   assert.doesNotMatch(hook.stderr, /security\.secrets was not checked/);
   // By hand with the secret scan off, review.forbidden alone fails the command.
-  put(dir, { "off.json": JSON.stringify({ review: { forbidden: [RULE] }, security: { secrets: { except: ["**"] } } }) });
-  const alone = spawnSync(process.execPath, [CLI, "commit-check", ".git/MSG"], { cwd: dir, env: { ...env, ENNYN_CONFIG: join(dir, "off.json") }, encoding: "utf8" });
+  stage({ ".ennyn/config.json": JSON.stringify({ review: { forbidden: [RULE] }, security: { secrets: { except: ["**"] } } }) });
+  assert.equal(commit("off", "--no-verify").status, 0);
+  stage({ "src/a.js": "1\n2\n3\n" });
+  const alone = spawnSync(process.execPath, [CLI, "commit-check", ".git/MSG"], { cwd: dir, env, encoding: "utf8" });
   assert.notEqual(alone.status, 0, alone.stderr);
   assert.match(alone.stderr, /injected/);
 });
@@ -596,7 +599,7 @@ test("round two: with no config, a git that fails while the hook looks for one l
   chmodSync(join(bin, "git"), 0o755);
   const r = spawnSync(process.execPath, [CLI, "commit-check", "--hook", ".git/MSG"], { cwd: dir, env: { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}` }, encoding: "utf8" });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stderr, /git failed \(.*injected.*\), so this commit was not checked/);
+  assert.match(r.stderr, /The commit's own config could not be read \(fatal: injected\)/);
 });
 
 test("round two: doctor and the scan count lines in files git calls binary, as the hook reads them", async () => {

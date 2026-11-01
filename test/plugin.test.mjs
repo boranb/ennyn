@@ -11,6 +11,7 @@ import { git } from "../core/git.mjs";
 import { ConfigError, loadConfig } from "../core/config.mjs";
 import { checkCommitShape } from "../checks/commit-shape.mjs";
 import { npmrcEntries } from "../checks/deps.mjs";
+import { GATE_KEYS, LOOSENING_LINE } from "../checks/loosening.mjs";
 import { t } from "../core/i18n.mjs";
 import { hookProjectDir, projectConfig } from "../adapters/claude-code/project.mjs";
 import { FILE_TOOLS } from "../adapters/claude-code/hooks/side-copy-rules.mjs";
@@ -170,6 +171,18 @@ test("plugin: what SECURITY.md says of this repository's own files holds: no run
 
 test("plugin: every SKILL.md stays under 8 KB (DESIGN.md: skills are read whole, every time)", () => {
   for (const { path } of skills) assert.ok(statSync(join(ROOT, path)).size < 8 * 1024, `${path}: ${statSync(join(ROOT, path)).size} bytes`);
+});
+
+test("plugin: the approval line of a loosening is the user's: the cycle skill says so, and the design lists every key a gate reads", () => {
+  assert.ok(read("skills/cycle/SKILL.md").includes(`ask the user; \`${LOOSENING_LINE} <key>\` only on their plain yes for that key`));
+  assert.ok(read("skills/cycle/SKILL.md").includes("a task agent stops and reports the keys"));
+  assert.match(read("skills/cycle/task-brief.md"), /it stops and reports the keys and why the task needs them\. The orchestrator asks the user/);
+  assert.ok(read("skills/init/gates.md").includes(`${LOOSENING_LINE} <key>, <key>`));
+  const design = read("DESIGN.md");
+  const section = design.slice(design.indexOf("## What a commit may loosen"), design.indexOf("## Module contracts"));
+  for (const key of GATE_KEYS) assert.ok(section.includes(`\`${key}\``) || section.includes(`\`${key.split(".").at(-1)}\``), key);
+  assert.match(section, /a tripwire and a record, not a boundary/);
+  assert.match(read("SECURITY.md"), /a tripwire and a record, not a boundary/);
 });
 
 /** The tree as test/guards.test.mjs cloneOfTree reads it: what git lists, tracked or not, that is there. @param {string} root @param {string} folder */

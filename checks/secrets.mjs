@@ -502,11 +502,17 @@ export function textSecrets(text) {
 }
 
 /**
- * A text with every secret it holds cut to what a hit shows of it (an issuer's prefix), for output.
+ * A text with every secret it holds cut to what a hit shows of it (an issuer's prefix), and each URL's user and
+ * password, up to the word's last `@`: no shape tells a plain password from a host. For output. One pass over the words,
+ * so a long text with no end of `://` in it stays linear.
  * @param {string} text
  */
 export function masked(text) {
   let out = text;
   for (const s of textSecrets(text)) out = out.split(s.value).join(s.shown.includes("…") ? `${s.value.slice(0, 4)}…` : "…");
-  return out;
+  return out.replace(/[^\s"'<>]+/g, (word) => {
+    const scheme = word.indexOf("://");
+    const at = word.lastIndexOf("@");
+    return scheme > 0 && at > scheme ? `${word.slice(0, scheme + 3)}…${word.slice(at)}` : word;
+  });
 }

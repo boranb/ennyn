@@ -53,6 +53,10 @@ It does not get the author's reasoning. It works in a **folder of its own**, on 
 - **Shell steps chain with `&&`** after a `cd`, never `;`: after a failed `cd` the next step runs in the wrong tree.
 - **Scenario trees are real copies** (`git archive`, a `cp` of plain files), never links into a checkout.
 
+## A commit refused for loosening a gate
+
+A task agent cannot reach the user. Refused with `User-Approved-Loosening:`, it does not retry, write the line, or reword the change around the gate: it stops and reports the keys and why the task needs them. The orchestrator asks the user, in plain words for each key, and only on a plain yes continues the agent with the line to write; on a no, or with the user away, that task is Stopped and the others go on.
+
 ## The failure count
 
 The orchestrator writes each task's state and count to a file in that folder at every change: context does not survive compaction.

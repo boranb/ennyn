@@ -353,7 +353,7 @@ test("deps specs: every dependency spec npm may fetch from that is no registry s
   // (npm asks a git one for its manifest, cloning it: recorded).
   const gitSpec = lockEntries(JSON.stringify({ lockfileVersion: 3, packages: { "": { dependencies: { y: "github:x/y" } } } })).specs ?? [];
   assert.deepEqual(Object.keys(judgeEntry(gitSpec[0], rule({ sources: ["github:x/y"] }), {})), ["sourced", "sealed"]);
-  assert.equal(reasonText(/** @type {any} */ (judgeEntry(gitSpec[0], rule({}), {})).reason, "en"), "github:x/y: not pinned to a full commit; or list this exact spec, github:x/y, in security.deps.sources");
+  assert.equal(reasonText(/** @type {any} */ (judgeEntry(gitSpec[0], rule({}), {})).reason, "en"), "github:x/y: not pinned to a full commit; listing this exact spec, github:x/y, in security.deps.sources is for the user to decide");
   assert.deepEqual(specs({ "node_modules/p": { ...reg("p"), bundleDependencies: ["c"], dependencies: { c: "*" } }, "node_modules/p/node_modules/c": { version: "1.0.0", inBundle: true, dependencies: { d: "github:u/d" } } }), ["node_modules/d node_modules/p/node_modules/c github:u/d"]);
   // A folder outside the lock's own is none npm reads; a path to one is read as the repository's.
   assert.deepEqual(folderKeys(JSON.stringify({ packages: { "": {}, "packages/w": {}, "../shared": {}, "./a/../b": {}, "node_modules/x": {}, "node_modules/l": { link: true }, "vendor/l": {} } })), ["packages/w", "./a/../b", "vendor/l"]);
@@ -542,8 +542,8 @@ test("deps sources: an entry from a place no list names fails, a git dependency 
   });
   const none = await check(brought, r);
   // Nothing listed: every place no list names is refused, git apart; a file the repository holds is said.
-  assert.equal(none.errors.find((e) => /cannot prove/.test(e)), "package-lock.json: 8 new entries come from a source the check cannot prove, and nothing measured them: aliased@1.0.0 (npm:real@1.0.0: neither a listed registry's tarball nor a path inside the repository: install it from a listed registry or list this exact resolved in security.deps.sources), far@1.0.0 (file:../shared/x.tgz: outside the repository: list this exact resolved in security.deps.sources), linked (../linked: outside the repository: list this exact resolved in security.deps.sources), and 5 more");
-  assert.equal(none.errors.find((e) => /git dependencies/.test(e)), "package-lock.json: 4 new entries are git dependencies, which npm builds by running their prepare script, even with ignore-scripts, and checks no integrity: hosted@1.0.0 (github:o/hosted: not pinned to a full commit), moving@1.0.0 (git+ssh://git@github.com/o/moving.git#main: not pinned to a full commit), pinned@1.0.0 (git+ssh://git@github.com/o/pinned.git#0123456789abcdef0123456789abcdef01234567), and 1 more; list the exact resolved, pinned to a full commit, in security.deps.sources");
+  assert.equal(none.errors.find((e) => /cannot prove/.test(e)), "package-lock.json: 8 new entries come from a source the check cannot prove, and nothing measured them: aliased@1.0.0 (npm:real@1.0.0: neither a listed registry's tarball nor a path inside the repository: install it from a listed registry; listing this exact resolved in security.deps.sources is for the user to decide), far@1.0.0 (file:../shared/x.tgz: outside the repository: listing this exact resolved in security.deps.sources is for the user to decide), linked (../linked: outside the repository: listing this exact resolved in security.deps.sources is for the user to decide), and 5 more");
+  assert.equal(none.errors.find((e) => /git dependencies/.test(e)), "package-lock.json: 4 new entries are git dependencies, which npm builds by running their prepare script, even with ignore-scripts, and checks no integrity: hosted@1.0.0 (github:o/hosted: not pinned to a full commit), moving@1.0.0 (git+ssh://git@github.com/o/moving.git#main: not pinned to a full commit), pinned@1.0.0 (git+ssh://git@github.com/o/pinned.git#0123456789abcdef0123456789abcdef01234567), and 1 more; listing the exact resolved, pinned to a full commit, in security.deps.sources is for the user to decide");
   assert.ok(none.warnings.some((w) => /near@1\.0\.0/.test(w) && /a file the repository holds/.test(w)), none.warnings.join("\n"));
   assert.ok(![...none.errors, ...none.warnings].some((x) => /workspace/.test(x)), "a link inside the repository is the project's own code");
   // Listed in sources: exact, sealed or pinned entries pass; a moving git ref and an unsealed tarball do not.
@@ -575,9 +575,9 @@ test("deps sources: an entry from a place no list names fails, a git dependency 
   assert.deepEqual(v1url.errors, []);
   // A version 1 entry whose version is a source is that source, as npm converts it: its resolved is ignored.
   const both = await check(JSON.stringify({ lockfileVersion: 1, dependencies: { b: { version: "https://evil.example/b-1.0.0.tgz", resolved: `${LISTED}/b/-/b-1.0.0.tgz`, integrity: "sha512-x" } } }), r);
-  assert.match(both.errors.join("\n"), /1 new entries come from a source the check cannot prove.*b \(from https:\/\/evil\.example: list that registry/);
+  assert.match(both.errors.join("\n"), /1 new entries come from a source the check cannot prove.*b \(from https:\/\/evil\.example: listing that registry/);
   assert.match(old.errors.find((e) => /git dependencies/.test(e)) ?? "", /1 new entries are git dependencies.*: g \(git\+https:\/\/github\.com\/o\/g\.git#0123/);
-  assert.match(old.errors.find((e) => /cannot prove/.test(e)) ?? "", /2 new entries come from a source the check cannot prove.*: f \(\.\.\/f: outside the repository: list this exact resolved in security\.deps\.sources\), t \(from https:\/\/evil\.example: list that registry/);
+  assert.match(old.errors.find((e) => /cannot prove/.test(e)) ?? "", /2 new entries come from a source the check cannot prove.*: f \(\.\.\/f: outside the repository: listing this exact resolved in security\.deps\.sources is for the user to decide\), t \(from https:\/\/evil\.example: listing that registry/);
   // A link that moves out of the repository is new; one HEAD already holds is not.
   const before = lock({ "node_modules/linked": { resolved: "../linked", link: true } });
   const kept = await depsMessages(new Map([["package-lock.json", { staged: Buffer.from(before), head: Buffer.from(before) }]]), r, "en");
@@ -946,7 +946,9 @@ function repo(origin, deps = {}, more = {}) {
     git(["add", "-A"], { cwd: dir });
   };
   put({ ".ennyn/config.json": JSON.stringify({ ...more, security: { deps: { registries: { [origin]: origin }, advisories: origin, advisoryRegistries: [origin], timeout: 120, ...deps } } }) });
-  const commit = () => git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--no-verify", "-m", "chore: base"], { cwd: dir });
+  const commit = () => git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--no-verify", "--allow-empty", "-m", "chore: base"], { cwd: dir });
+  // The config is the commit's own from the start: the check reads it from the index and compares it with HEAD's.
+  commit();
   const check = (/** @type {string} */ message = "chore: deps\n", /** @type {string[]} */ flags = ["--hook"]) => {
     writeFileSync(join(dir, ".git", "MSG"), message);
     return cli(["commit-check", ...flags, ".git/MSG"], dir);
@@ -1119,7 +1121,7 @@ test("deps hook: a path inside the repository holds what the commit holds only w
     const subbed = lock({ "node_modules/s": { resolved: "packages/sub/pkg", link: true } });
     writeFileSync(join(r.dir, "package-lock.json"), subbed);
     git(["add", "package-lock.json"], { cwd: r.dir });
-    assert.match((await r.check()).stderr, /s \(packages\/sub\/pkg: a submodule holds it and not this commit: list this exact resolved in security\.deps\.sources\)/);
+    assert.match((await r.check()).stderr, /s \(packages\/sub\/pkg: a submodule holds it and not this commit: listing this exact resolved in security\.deps\.sources is for the user to decide\)/);
     git(["rm", "-q", "--cached", "packages/sub"], { cwd: r.dir });
     r.put({
       "package-lock.json": lock({
@@ -1132,7 +1134,7 @@ test("deps hook: a path inside the repository holds what the commit holds only w
     });
     const out = await r.check();
     assert.equal(out.status, 1);
-    assert.match(out.stderr, /3 new entries come from a source the check cannot prove.*a \(packages\/a: a symbolic link the index holds leads out of the repository: link the folder itself or list this exact resolved in security\.deps\.sources\), t@1\.0\.0 \(file:vendor\/t-1\.0\.0\.tgz: a symbolic link/);
+    assert.match(out.stderr, /3 new entries come from a source the check cannot prove.*a \(packages\/a: a symbolic link the index holds leads out of the repository: link the folder itself; listing this exact resolved in security\.deps\.sources is for the user to decide\), t@1\.0\.0 \(file:vendor\/t-1\.0\.0\.tgz: a symbolic link/);
     assert.match(out.stderr, /u \(packages\/untracked: the index holds nothing there/);
     assert.ok(!/ b \(|\.npmrc/.test(out.stderr), out.stderr);
     // An entry with no resolved URL asks for the .npmrc: one the check cannot read is named then.
@@ -1193,7 +1195,7 @@ test("deps hook: allow and allowScripts name an identity the tarball proves; a n
     assert.deepEqual([(await byUrl.check()).status], [0], "an exact resolved URL allows its scripts");
     const scriptsOnly = repo(reg.origin, { allowScripts: ["https://elsewhere.example/minimist.tgz"] });
     scriptsOnly.put({ "package-lock.json": elsewhere });
-    assert.match((await scriptsOnly.check()).stderr, /1 new entries come from a source the check cannot prove.*minimist@1\.2\.7 \(from https:\/\/elsewhere\.example: list that registry/);
+    assert.match((await scriptsOnly.check()).stderr, /1 new entries come from a source the check cannot prove.*minimist@1\.2\.7 \(from https:\/\/elsewhere\.example: listing that registry/);
     const off = repo(reg.origin, { allowScripts: ["minimist"], online: false });
     off.put({ "package-lock.json": young });
     const said = await off.check();
@@ -1303,11 +1305,11 @@ test("deps command: known advisories with every place that holds them, install s
     assert.match(found.stdout, /^✗ spoof@1\.0\.0 \(sub\/package-lock\.json\) names one package and installs another: resolved is \/evil\/-\/evil-0\.0\.1\.tgz/m);
     assert.ok(!osv.bodies.some((b) => b.includes('"spoof"')), "an entry whose tarball is another package's is not asked about by its name");
     // An entry from a host no list names is a problem, as in the hook, and is not named to OSV.
-    assert.match(found.stdout, /^✗ o@1\.0\.0 \(package-lock\.json\) comes from a source the check cannot prove: from https:\/\/other\.example: list that registry in security\.deps\.registries/m);
+    assert.match(found.stdout, /^✗ o@1\.0\.0 \(package-lock\.json\) comes from a source the check cannot prove: from https:\/\/other\.example: listing that registry in security\.deps\.registries or this exact resolved in security\.deps\.sources is for the user to decide/m);
     assert.ok(!osv.bodies.some((b) => b.includes('"o"')));
     assert.match(found.stdout, /entries: 5 · advisories: 1 · install scripts: 1 · refused: 2 · unmeasured: 0$/m);
     const json = JSON.parse((await cli(["deps", "--json"], r.dir)).stdout);
-    assert.deepEqual([json.advisories.map((/** @type {any} */ a) => a.id), json.scripts, json.clean, json.refused], [["GHSA-xvch-5gv4-984h"], ["nat@1.0.0 (package-lock.json)"], false, [{ entry: "o@1.0.0 (package-lock.json)", kind: "unlisted", code: "from", reason: "from https://other.example: list that registry in security.deps.registries or this exact resolved in security.deps.sources" }]]);
+    assert.deepEqual([json.advisories.map((/** @type {any} */ a) => a.id), json.scripts, json.clean, json.refused], [["GHSA-xvch-5gv4-984h"], ["nat@1.0.0 (package-lock.json)"], false, [{ entry: "o@1.0.0 (package-lock.json)", kind: "unlisted", code: "from", reason: "from https://other.example: listing that registry in security.deps.registries or this exact resolved in security.deps.sources is for the user to decide" }]]);
   } finally {
     await osv.close();
   }
@@ -1406,7 +1408,7 @@ test("deps command: a source no list names, git and a link out of the repository
     r.put({ "packages/w/package.json": "{}\n", "package-lock.json": lock({ "node_modules/l": { resolved: "../outside", link: true }, "node_modules/w": { resolved: "packages/w", link: true } }) });
     const link = await cli(["deps"], r.dir);
     assert.equal(link.status, 1);
-    assert.match(link.stdout, /^✗ l \(package-lock\.json\) comes from a source the check cannot prove: \.\.\/outside: outside the repository: list this exact resolved/m);
+    assert.match(link.stdout, /^✗ l \(package-lock\.json\) comes from a source the check cannot prove: \.\.\/outside: outside the repository: listing this exact resolved/m);
     assert.ok(!link.stdout.includes("w ("), link.stdout);
     // A link through a symbolic link to a folder the repository holds is said, as in the hook.
     mkdirSync(join(r.dir, "shared"), { recursive: true });

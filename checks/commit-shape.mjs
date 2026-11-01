@@ -12,6 +12,7 @@ import { matchAny } from "../core/glob.mjs";
 import { markLength, wideForms } from "../core/encoding.mjs";
 import { gitMaybe, parseTrailers } from "../core/git.mjs";
 import { shown, t } from "../core/i18n.mjs";
+import { LOOSENING_LINE } from "./loosening.mjs";
 import { masked, secretHits, secretsOff, textSecrets } from "./secrets.mjs";
 
 /** @param {string} s */
@@ -200,12 +201,12 @@ export function skippedSubject(subject, config) {
  * Those two are about content, not the message: they hold for every commit the hook sees, whatever its subject
  * or an empty message, and the bypass marker, which loosens the shape, does not loosen them.
  * @param {string} message raw commit message (as given to a commit-msg hook)
- * @param {Parameters<typeof shapeOf>[1] & { addedLines?: Map<string, AddedLine[]>, secretLines?: Map<string, AddedLine[]>, keyFiles?: Map<string, Buffer>, secretsExcept?: string[], exempt?: string[], wideUnread?: Map<string, string> }} opts
+ * @param {Parameters<typeof shapeOf>[1] & { addedLines?: Map<string, AddedLine[]>, secretLines?: Map<string, AddedLine[]>, keyFiles?: Map<string, Buffer>, exempt?: string[], wideUnread?: Map<string, string> }} opts
  *   `addedLines`: the lines the commit adds, per staged path (stagedAddedLines); `exempt`: paths no rule reads
  *   (the config, which holds every rule's text); `secretLines`: the lines the secret scan reads (the config's
  *   too: a secret there is still one), and by its keys the names the commit adds; `keyFiles`: staged files
- *   read whole for a private key around their added lines (keyCandidates); `secretsExcept`: the except list
- *   as the commit's own config holds it (default: the config's). The message git will store is scanned too.
+ *   read whole for a private key around their added lines (keyCandidates). The message git will store is scanned
+ *   too.
  * @returns {{ ok: boolean, errors: string[], warnings?: string[], skipped?: string }}
  */
 export function checkCommitShape(message, opts) {
@@ -279,12 +280,12 @@ function scannedMessage(message, { comment = "#", cut = false }) {
  * places, each with its kind and never the secret; in a merge, how many the other side brings. None when except
  * holds a catch-all (secretsOff). Apart from the message's own check, so the hook can stand by what the files
  * bring when reading how git cleans the message fails.
- * @param {{ config: any, hits?: import("./secrets.mjs").SecretHit[], names?: string[], secretLines?: Map<string, AddedLine[]>, keyFiles?: Map<string, Buffer>, secretsExcept?: string[], message?: string, comment?: string, cut?: boolean }} opts
+ * @param {{ config: any, hits?: import("./secrets.mjs").SecretHit[], names?: string[], secretLines?: Map<string, AddedLine[]>, keyFiles?: Map<string, Buffer>, message?: string, comment?: string, cut?: boolean }} opts
  * @returns {string[]}
  */
 export function secretErrors(opts) {
   const { config } = opts;
-  const except = opts.secretsExcept ?? config.security.secrets.except;
+  const except = config.security.secrets.except;
   if (secretsOff(except)) return [];
   const lang = config.language;
   /** @type {{ where: string, from?: string }[]} */
@@ -367,7 +368,7 @@ function shapeOf(message, { config, stagedPaths = [], cleanup = "strip", cut, co
     proseCandidates = lastBlank === -1 ? [] : bodyLines.slice(0, lastBlank);
   }
 
-  const structuredPrefixes = [...cm.structuredLines, rv.roundsLine, rv.thirdRoundLine, rv.impactLine];
+  const structuredPrefixes = [...cm.structuredLines, rv.roundsLine, rv.thirdRoundLine, rv.impactLine, LOOSENING_LINE];
   const isStructured = (/** @type {string} */ l) => structuredPrefixes.some((p) => l.trimStart().startsWith(p));
   const prose = proseCandidates.filter((l) => l.trim() !== "" && !isStructured(l));
   // Terse commits: the subject says what changed; measurements stay as structured lines; detail lives in the graph.

@@ -8,7 +8,7 @@
  * they `expect` (or pass in silence as the `gap` they name), and never rewrites a recorded line.
  *
  * The commit-msg hook's gates (ci, deps, secrets, forbidden) replay through the hook itself: each cell is a
- * repository with its files staged (names as bytes, `head` committed first), its config in the work tree and
+ * repository with its files staged (names as bytes, `head` committed first), its config committed with `head` and
  * `commit-check --hook` run on its message, so what the hook does around the checks (which files it reads, the
  * names and the message it scans, the budget, a key's file read whole) is replayed too. Their why is each line
  * the hook prints, as its catalog key and the values in it (counts, places), sorted. The readers that are no
@@ -290,6 +290,8 @@ export function cellEnv(env = process.env) {
   return { ...out, GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: devNull, LC_ALL: out.LC_ALL ?? "C" };
 }
 
+const CONFIG_FILE = ".ennyn/config.json";
+
 /** How long a cell's hook may run: some 300 times what it takes on a quiet machine, so a hook that hangs fails the cell, not the run. */
 const HOOK_LIMIT = 60_000;
 
@@ -354,8 +356,9 @@ const merged = (a, b) => Object.fromEntries([...new Set([...Object.keys(a), ...O
 
 /**
  * One cell through the commit-msg hook: a repository with `head` committed and `files` staged, the gate's config
- * in the work tree, `commit-check --hook` on the message as `git commit -m` gives it. A hook that dies (a stack
- * trace, an exit other than 0 and 1) throws.
+ * committed with `head`, `commit-check --hook` on the message as `git commit -m` gives it. A cell whose `head` or
+ * `files` holds the config itself says what the commit holds, and its gate config is an edit left in the work tree.
+ * A hook that dies (a stack trace, an exit other than 0 and 1) throws.
  * @param {string} gate @param {Cell} raw
  * @returns {Promise<Outcome>}
  */
@@ -381,20 +384,22 @@ async function hookCell(gate, raw) {
     }
     const c = gate === "deps" || gate === "secrets" ? filled(raw, { registry }) : raw;
     answers = isObject(c.answers) ? c.answers : {};
-    await g(dir, ["init", "-q"]);
-    await stage(dir, c.head);
-    await g(dir, ["commit", "-q", "--no-verify", "--allow-empty", "-m", "head"]);
-    await stage(dir, c.workflow === undefined ? c.files : { ".github/workflows/w.yml": c.workflow, ...(isObject(c.files) ? c.files : {}) });
-    // A cell that stages nothing (no files, or files HEAD already holds) gives the hook nothing to read but a message.
-    if ((await run("git", ["diff", "--cached", "--quiet"], { cwd: dir })).code === 0 && typeof c.message !== "string") throw new Error(`${raw.id}: stages nothing (no files, or files equal to head): a dead cell`);
     /** @type {Record<string, any>} */
     const base =
       gate === "forbidden" ? { review: { forbidden: /** @type {any[]} */ (c.rules ?? []).map((r) => ({ ...r, paths: r.paths ?? ["**"] })) } }
       : gate === "deps" ? { security: { deps: { registries: { [registry]: registry }, ...(isObject(c.rule) ? c.rule : {}) } } }
       : gate === "secrets" && c.except !== undefined ? { security: { secrets: { except: c.except } } }
       : {};
+    const config = JSON.stringify(merged(base, isObject(c.config) ? c.config : {}));
+    const own = (/** @type {unknown} */ files) => isObject(files) && Object.hasOwn(files, CONFIG_FILE);
+    await g(dir, ["init", "-q"]);
+    await stage(dir, own(c.head) || own(c.files) ? c.head : { ...(isObject(c.head) ? c.head : {}), [CONFIG_FILE]: config });
+    await g(dir, ["commit", "-q", "--no-verify", "--allow-empty", "-m", "head"]);
+    await stage(dir, c.workflow === undefined ? c.files : { ".github/workflows/w.yml": c.workflow, ...(isObject(c.files) ? c.files : {}) });
+    // A cell that stages nothing (no files, or files HEAD already holds) gives the hook nothing to read but a message.
+    if ((await run("git", ["diff", "--cached", "--quiet"], { cwd: dir })).code === 0 && typeof c.message !== "string") throw new Error(`${raw.id}: stages nothing (no files, or files equal to head): a dead cell`);
     mkdirSync(join(dir, ".ennyn"));
-    writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify(merged(base, isObject(c.config) ? c.config : {})));
+    writeFileSync(join(dir, CONFIG_FILE), config);
     writeFileSync(join(dir, ".git", "CELL_MSG"), typeof c.message === "string" ? c.message : "feat: a cell\n");
     const r = await run(process.execPath, [CLI, "commit-check", "--hook", ".git/CELL_MSG"], { cwd: dir, env: { ...cellEnv(), GIT_EDITOR: ":" } });
     // The cell's registry is a port of this run: a line that names it says {{registry}}, as the cell does.
