@@ -1249,7 +1249,7 @@ test("deps hook: HEAD's lock it cannot read is said, and every entry the commit 
   }
 });
 
-test("deps hook: what the lock brings stands when the message check throws, and a name that is not UTF-8 is said, escaped", async () => {
+test("deps hook: what the lock brings stands when the message check throws, and a name that is not UTF-8 is refused, escaped", async () => {
   const reg = await npm();
   try {
     // A skipSubjects pattern that does not compile: the message cannot be checked; the lock was.
@@ -1263,7 +1263,7 @@ test("deps hook: what the lock brings stands when the message check throws, and 
     const name = Buffer.from([...Buffer.from("app‮"), 0xff, ...Buffer.from("/package-lock.json")]);
     git(["update-index", "--add", "--index-info"], { cwd: named.dir, input: Buffer.concat([Buffer.from(`100644 ${hash}\t`), name, Buffer.from("\n")]) });
     const hook = await named.check();
-    assert.equal(hook.status, 0);
+    assert.equal(hook.status, 1);
     assert.match(hook.stderr, /security\.deps was not checked in 1 staged path\(s\) whose names are not UTF-8 \("app\\u202e�\/package-lock\.json"\)/);
     const hand = await named.check("chore: deps\n", []);
     assert.equal(hand.status, 1);

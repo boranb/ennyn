@@ -172,12 +172,13 @@ const NAMES = ["sp ace.js", "tab\there.js", 'q"uote.js', "back\\slash.js", "new\
 NAMES.forEach((n, i) => refused(`name-${i}`, [{ name: `src/n${i}/${n}`, data: `${LOG}\n` }]));
 // Names git may not hand back as it was given them.
 refused("name-nfd", [{ name: "src/nfd/u\u0308.js", data: `${LOG}\n` }]);
-// The secret scan says the same names: each cell names the check it wants said, so one cannot hide the other.
+// Each cell names the check it wants said, so the secret scan's line cannot hide it.
 const FORBIDDEN_SAID = "review.forbidden was not checked";
-refused("name-not-utf8", [{ name: Buffer.from([...Buffer.from("src/bad/"), 0xff, 0xfe, ...Buffer.from(".js")]), data: `${LOG}\n` }], "src/bad/", { warns: FORBIDDEN_SAID });
+// A name git cannot be asked for, under a rule's paths, refuses the commit: review.forbidden names it.
+refused("name-not-utf8", [{ name: Buffer.from([...Buffer.from("src/bad/"), 0xff, 0xfe, ...Buffer.from(".js")]), data: `${LOG}\n` }], "src/bad/", { strict: true });
 refused("glob-nfc-name-nfd", [{ name: "do\u0308k/a.js", data: `${LOG}\n` }], "dök/a.js".normalize("NFD"));
 // Two names that read alike: one not UTF-8 holding the text, one spelled with U+FFFD itself.
-refused("name-collision", [{ name: Buffer.from([...Buffer.from("src/bad2/"), 0xff, ...Buffer.from(".js")]), data: `${LOG}\n` }, { name: "src/bad2/\ufffd.js", data: "a\n" }], "src/bad2/", { warns: FORBIDDEN_SAID });
+refused("name-collision", [{ name: Buffer.from([...Buffer.from("src/bad2/"), 0xff, ...Buffer.from(".js")]), data: `${LOG}\n` }, { name: "src/bad2/\ufffd.js", data: "a\n" }], "src/bad2/", { strict: true });
 // A name that is not UTF-8 where every rule that names it excepts it: nothing to say.
 landed("name-not-utf8-excepted", [{ name: Buffer.from([...Buffer.from("exc/ok/"), 0xff, ...Buffer.from(".js")]), data: `${LOG}\n` }], { unsaid: "review.forbidden" });
 // A name that is not UTF-8 beside a file that holds the text: the one is said, the other still refused.

@@ -85,9 +85,9 @@ function ciReport(cwd, tracked, config, add) {
   /** @type {Set<string>} */
   const forms = new Set();
   for (const [path, f] of findings) {
-    unpinned.push(...f.uses.filter((u) => !u.pinned).map((u) => ({ path, value: u.value })));
+    for (const u of f.uses) if (!u.pinned) unpinned.push({ path, value: u.value });
     if (f.pwn.length) pwn.add(path);
-    unpermitted.push(...f.unpermitted.map((j) => ({ path, job: j.job })));
+    for (const j of f.unpermitted) unpermitted.push({ path, job: j.job });
     if (f.writeAll.length) writeAll.add(path);
     if (f.unread.length) forms.add(path);
   }

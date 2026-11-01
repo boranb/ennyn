@@ -54,6 +54,21 @@ test("hook: installs once, runs on every commit, rejects an untyped subject and 
   assert.equal(git(["log", "--format=%s"], { cwd: dir }), "feat: a page");
 });
 
+test("hook: a staged file the workflow reader cannot take costs no other file its refusals, and the commit does not land", () => {
+  const dir = repo();
+  installHook({ cwd: dir, cliPath: CLI });
+  mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+  writeFileSync(join(dir, ".github", "workflows", "pwn.yml"), "on: pull_request_target\njobs:\n  a:\n    runs-on: x\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n");
+  const alone = commit(dir, "feat: a workflow");
+  assert.notEqual(alone.status, 0);
+  writeFileSync(join(dir, ".github", "workflows", "decoy.yml"), 'on: push\npermissions: {}\nname: "\\U00110000"\n');
+  const beside = commit(dir, "feat: a workflow");
+  assert.notEqual(beside.status, 0, "exit 0 here was the whole gate switched off");
+  for (const re of [/pwn\.yml: 1 new uses/, /pwn\.yml: a pull_request_target workflow checks out/, /pwn\.yml: neither the workflow nor these jobs set permissions/, /decoy\.yml: YAML the check cannot follow/]) assert.match(beside.stderr, re);
+  assert.doesNotMatch(beside.stderr, /security\.ci was not checked/);
+  assert.equal(spawnSync("git", ["rev-parse", "-q", "--verify", "HEAD"], { cwd: dir, encoding: "utf8" }).status, 1, "nothing was committed");
+});
+
 test("hook: never over a hook it did not write; a project's own hook counts as wired only with what install-hook printed", () => {
   const dir = repo();
   const path = hookStatus(dir).path;

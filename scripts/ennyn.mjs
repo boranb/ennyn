@@ -10,7 +10,7 @@ import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import { loadConfig, ConfigError } from "../core/config.mjs";
-import { HOOK_READ_ENV, MISSING_OBJECT, READ_BUDGET, blobBytes, diffGroups, git, headBlob, headCommit, hookIndexFile, indexEntries, indexKinds, indexNames, mergeHeads, projectRoot, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, stateRoot, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
+import { HOOK_READ_ENV, MISSING_OBJECT, NAMES_BUFFER, READ_BUDGET, blobBytes, diffGroups, git, headBlob, headCommit, hookIndexFile, indexEntries, indexKinds, indexNames, machineFault, mergeHeads, projectRoot, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, stagedVersionsEach, stateRoot, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
 import { ends, jsonShown, shown, t, tShown, unshownEscaped } from "../core/i18n.mjs";
 import { globToRegExp, matchAny } from "../core/glob.mjs";
 import { checkCommitShape, nameShown, secretErrors, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
@@ -234,6 +234,29 @@ function byReason(unread) {
 const namesShown = (list) => list.slice(0, 3).map(nameShown).join(", ");
 
 /**
+ * A gate's read that failed in the hook. The rule of every such catch has two questions. What was the read of? Context
+ * (`brought` false: what the commit leaves alone or deletes, what HEAD holds) is said and the commit goes on: a commit
+ * is never locked by what HEAD already holds, and a deletion never refuses. Who can pick the failure? A read of what the
+ * commit adds or changes is said only for a fault of the machine (machineFault), since a crash must lock no commit, the
+ * one that repairs it included. Any other failure there is one the commit's own content can pick (a name past what
+ * arguments hold, a throw of our own code on its text), and letting it through would be an off switch the content
+ * holds: it goes on `unchecked`, which refuses the commit. A size past a ceiling is neither: said, and held to its file.
+ * @param {unknown} e @param {string} lang @param {string[]} unchecked @param {string} gate
+ * @param {string} key the line that says it @param {Record<string, string>} [vars] `paths`: the names not read, when known
+ * @param {boolean} [brought] the read was of what the commit adds or changes
+ */
+function gateFailed(e, lang, unchecked, gate, key, vars = {}, brought = true) {
+  const error = String(/** @type {Error & { stderr?: unknown }} */ (e)?.stderr || /** @type {Error} */ (e)?.message || e).trim().split("\n")[0];
+  if (!brought || machineFault(e)) err(t(key, { ...vars, error }, lang));
+  else unchecked.push(t("cli.gateRefused", { gate, what: vars.paths ?? t("cli.gateWhatUnnamed", {}, lang), error }, lang));
+}
+
+/** Every item of `more` on the end of `list`: a list a file can make long is not spread into a call. @template T @param {T[]} list @param {T[]} more */
+const append = (list, more) => {
+  for (const x of more) list.push(x);
+};
+
+/**
  * security.secrets for one commit. except as the commit's own config holds it (committedExcept); the names the
  * commit adds; the lines it adds, streamed through SecretScanner, smallest files first while their new sizes fit
  * READ_BUDGET, so a commit of large files costs a bounded time and memory (the scan keeps a window, not the lines), apart
@@ -242,9 +265,10 @@ const namesShown = (list) => list.slice(0, 3).map(nameShown).join(", ");
  * or one its diff could not read (stopped, failed), is read whole by its objects (readWhole). What it cannot read is
  * said by name, with why, a line for each reason; run by hand (`hook` false) that fails instead.
  * @param {string} cwd @param {any} cfg @param {string[]} staged @param {string[]} notUtf8 @param {boolean} hook
+ * @param {boolean} brought the commit adds or changes a file (gateFailed)
  * @returns {Promise<{ errors: string[], said: string[], except: string[] }>}
  */
-async function secretScan(cwd, cfg, staged, notUtf8, hook) {
+async function secretScan(cwd, cfg, staged, notUtf8, hook, brought) {
   const lang = cfg.language;
   /** @type {string[]} */
   const said = [];
@@ -271,18 +295,19 @@ async function secretScan(cwd, cfg, staged, notUtf8, hook) {
   }
   if (secretsOff(except)) return done([]);
   let changes;
+  /** What the commit's own content could pick to stop this read: refuses it (gateFailed). @type {string[]} */
+  const unchecked = [];
   try {
     changes = stagedChanges(cwd, { env: process.env });
   } catch (e) {
     if (!hook) throw e;
-    said.push(t("cli.secretsUnmeasured", { error: reason(e) }, lang));
-    return done([]);
+    gateFailed(e, lang, unchecked, "security.secrets", "cli.secretsUnmeasured", {}, brought);
+    return done(unchecked);
   }
   // The names the commit adds; one is exempt only where the list HEAD holds names it too.
   const names = [...changes].filter(([p, c]) => c.status === "A" && !(matchAny(p, except) && (before === null || matchAny(p, before)))).map(([p]) => p);
   // Smallest first: a large file cannot crowd out the small one beside it. The lines a file adds are at most its new size.
-  const kept = [...changes].filter(([, c]) => c.status !== "D");
-  const read = kept.filter(([p]) => !matchAny(p, except)).sort((a, b) => a[1].newSize - b[1].newSize || (a[0] < b[0] ? -1 : 1));
+  const read = [...changes].filter(([p]) => !matchAny(p, except)).sort((a, b) => a[1].newSize - b[1].newSize || (a[0] < b[0] ? -1 : 1));
   /** @type {Set<string>} */
   const planned = new Set();
   /** @type {string[]} */
@@ -331,7 +356,7 @@ async function secretScan(cwd, cfg, staged, notUtf8, hook) {
     try {
       const fresh = blobBytes(cwd, c.oid);
       const before = c.oldOid && !c.oldMissing ? blobBytes(cwd, c.oldOid) : null;
-      scan.hits.splice(0, scan.hits.length, ...scan.hits.filter((h) => h.path !== p));
+      scan.hits = scan.hits.filter((h) => h.path !== p);
       const from = scan.hits.length;
       scan.file((current = p));
       let n = 1;
@@ -342,7 +367,7 @@ async function secretScan(cwd, cfg, staged, notUtf8, hook) {
       }
       scan.close();
       current = null;
-      if (before) scan.hits.splice(from, scan.hits.length - from, ...scan.hits.slice(from).filter((h) => !before.includes(Buffer.from(h.value))));
+      if (before) scan.hits = [...scan.hits.slice(0, from), ...scan.hits.slice(from).filter((h) => !before.includes(Buffer.from(h.value)))];
     } catch (e) {
       lost([p], e);
     }
@@ -402,9 +427,9 @@ async function secretScan(cwd, cfg, staged, notUtf8, hook) {
     }
   } catch (e) {
     if (!hook) throw e;
-    said.push(t("cli.secretsUnmeasured", { error: reason(e) }, lang));
+    gateFailed(e, lang, unchecked, "security.secrets", "cli.secretsUnmeasured");
   }
-  return done(secretErrors({ config: cfg, hits: scan.hits, names, secretsExcept: except }));
+  return done([...unchecked, ...secretErrors({ config: cfg, hits: scan.hits, names, secretsExcept: except })]);
 }
 
 // Every line written passes unshownEscaped: a value that reached a line without tShown (an error that quotes a
@@ -830,7 +855,7 @@ const COMMANDS = {
       message = readFileSync(positional[0], "utf8");
     } catch (e) {
       const error = oneLine(/** @type {Error} */ (e).message);
-      // The hook lets the commit through when it cannot read what it would check, and says so.
+      // The hook lets the commit through when it cannot read its own message, and says so; a gate's read is gateFailed's.
       if (opts.hook) return (err(t("cli.hookMessageUnreadable", { path: positional[0], error }, cfg.language)), 0);
       err(t("cli.cannotRead", { path: positional[0], error }, cfg.language));
       return 1;
@@ -848,22 +873,55 @@ const COMMANDS = {
       }
       if (named || tracked) return (err(t("cli.hookConfigAbsent", { path: named || ".ennyn/config.json" }, "en")), 0);
     }
+    /** What a gate could not read of what the commit brings, for a reason its content can pick: each refuses it (gateFailed). */
+    /** @type {string[]} */
+    const unchecked = [];
     /** @type {string[]} */
     let staged = [];
     /** Staged names that are not UTF-8: git cannot be asked for them by name. */
     /** @type {string[]} */
     let notUtf8 = [];
+    /** Staged names the commit deletes. */
+    /** @type {Set<string>} */
+    let deleted = new Set();
     try {
       // An index git gave the hook that is not this repository's own (GIT_INDEX_FILE set outside its git dir):
       // the main index would be read instead, another commit's files.
       const given = process.env.GIT_INDEX_FILE;
-      if (opts.hook && given && !hookIndexFile(cwd, process.env)) throw new Error(t("cli.hookIndexForeign", { path: given }, cfg.language));
+      if (opts.hook && given && !hookIndexFile(cwd, process.env)) err(t("cli.stagedUnmeasured", { error: t("cli.hookIndexForeign", { path: given }, cfg.language) }, cfg.language));
       // Outside a repository nothing is staged: the message is all there is to check.
-      if (repoPath("--git-dir", { cwd }) !== null) ({ paths: staged, notUtf8 } = stagedNames(cwd, { env: process.env }));
+      else if (repoPath("--git-dir", { cwd }) !== null) {
+        const listed = stagedNames(cwd, { env: process.env });
+        ({ paths: staged, notUtf8, deleted } = listed);
+        if (listed.deletedUnread) err(t("cli.stagedDeletedUnread", { mb: NAMES_BUFFER / 1024 / 1024 }, cfg.language));
+      }
     } catch (e) {
       if (!opts.hook) throw e;
-      err(t("cli.stagedUnmeasured", { error: String(/** @type {Error} */ (e).message).split("\n")[0] }, cfg.language));
+      gateFailed(e, cfg.language, unchecked, t("cli.everyGate", {}, cfg.language), "cli.stagedUnmeasured");
     }
+    /** What the commit adds or changes: a read of anything else is context (gateFailed). */
+    const bringing = new Set(staged.filter((p) => !deleted.has(p)));
+    const brings = (/** @type {string} */ p) => bringing.has(p);
+    const shownNames = (/** @type {string[]} */ list) => list.slice(0, 3).map((p) => shown(masked(p), { name: true }).text).join(", ");
+    /**
+     * Both versions of `paths` for a gate: what cannot be read is held to its names and weighed by each name (gateFailed),
+     * a line for each kind of failure. Read by hand, any failure fails the command. A name not read is not in the map.
+     * @param {string[]} paths @param {string} gate @param {string} key
+     */
+    const gateRead = (paths, gate, key) => {
+      const { versions, unaskable, failed } = stagedVersionsEach(cwd, paths, { env: process.env });
+      /** @type {Map<string, { path: string, error: unknown }[]>} */
+      const kinds = new Map();
+      for (const lost of [...unaskable.map((path) => ({ path, error: /** @type {unknown} */ (new Error(t("cli.ciCalleesNoName", {}, cfg.language))) })), ...failed]) {
+        if (!opts.hook) throw lost.error;
+        const kind = `${brings(lost.path)} ${machineFault(lost.error)}`;
+        const group = kinds.get(kind);
+        if (group) group.push(lost);
+        else kinds.set(kind, [lost]);
+      }
+      for (const group of kinds.values()) gateFailed(group[0].error, cfg.language, unchecked, gate, key, { paths: shownNames(group.map((l) => l.path)) }, brings(group[0].path));
+      return versions;
+    };
     // The config holds every rule's text: it names the literal without breaking the rule.
     const exempt = cfg.configPath ? [relative(cwd, cfg.configPath).split(sep).join("/")] : [];
     // The lines review.forbidden reads: those of the staged paths a rule names. Unread, the hook says so and the
@@ -873,13 +931,13 @@ const COMMANDS = {
     /** Files that look like UTF-16 or UTF-32 and could not be read whole to be decoded, with why. */
     /** @type {Map<string, string>} */
     const wideUnread = new Map();
-    const ruled = staged.filter((p) => !exempt.includes(p) && cfg.review.forbidden.some((/** @type {{ paths: string[] }} */ r) => matchAny(p, r.paths)));
+    const ruled = staged.filter((p) => brings(p) && !exempt.includes(p) && cfg.review.forbidden.some((/** @type {{ paths: string[] }} */ r) => matchAny(p, r.paths)));
     // A name that is not UTF-8 may read the same as another staged name: neither is asked for, both are said.
     const unnamed = [...new Set(ruled.filter((p) => notUtf8.includes(p) && cfg.review.forbidden.some((/** @type {{ paths: string[], except?: string[] }} */ r) => matchAny(p, r.paths) && !matchAny(p, r.except ?? []))))];
     if (unnamed.length) {
       const said = t("cli.forbiddenNamesUnread", { n: unnamed.length, paths: namesShown(unnamed) }, cfg.language);
       if (!opts.hook) throw new Error(said);
-      err(said);
+      unchecked.push(said);
     }
     const named = ruled.filter((p) => !notUtf8.includes(p));
     if (named.length) {
@@ -890,28 +948,27 @@ const COMMANDS = {
         addedLines = stagedAddedLines(cwd, named, { env: process.env, wideUnread, ...(opts.hook ? { unread } : {}) });
       } catch (e) {
         if (!opts.hook) throw e;
-        const error = /** @type {Error & { stderr?: unknown }} */ (e);
-        err(t("cli.forbiddenUnmeasured", { error: String(error.stderr || error.message).trim().split("\n")[0] }, cfg.language));
+        gateFailed(e, cfg.language, unchecked, "review.forbidden", "cli.forbiddenUnmeasured");
       }
       for (const [why, paths] of byReason(unread)) err(t("cli.forbiddenReadFailed", { n: paths.length, paths: namesShown(paths), error: why }, cfg.language));
     }
     // security.secrets: every file and name the commit adds, except as the commit's own config holds it, read
     // apart from review.forbidden and before the message: what the files bring stands when the message check fails.
-    const secrets = await secretScan(cwd, cfg, staged, notUtf8, Boolean(opts.hook));
+    const secrets = await secretScan(cwd, cfg, staged, notUtf8, Boolean(opts.hook), bringing.size > 0);
     for (const said of secrets.said) err(said);
     // CI files (security.ci): the uses, triggers and permissions the commit brings, against HEAD's version. The
     // files under the directories `security.ci.paths` names are read with the staged ones, and every local callee
     // their `uses` name, by path: a caller's change can reach a reusable workflow or an action it calls. Reading
     // that context can fail, or stop at a depth, without turning the check of the staged files off: what it could
-    // not read is said. Like review.forbidden it holds for every message, and what it cannot read is said, never
-    // passed as clean.
+    // not read is said. Like review.forbidden it holds for every message, and what git cannot give is said, never
+    // passed as clean; a text the commit brings that the reading cannot take is refused, file by file (checks/ci.mjs).
+    // The staged list tells what the commit brings from what it leaves or deletes, so each failure is weighed by that.
     const ciRule = cfg.security.ci;
     const isCi = (/** @type {string} */ p) => matchAny(p, ciRule.paths) && !matchAny(p, ciRule.except);
     /** @type {{ errors: string[], warnings: string[] }} */
     let ci = { errors: [], warnings: [] };
     if (staged.some(isCi)) {
       try {
-        const shownNames = (/** @type {string[]} */ list) => list.slice(0, 3).map((p) => shown(masked(p), { name: true }).text).join(", ");
         // Where callers live: each glob's directory before its first wildcard; an action-file glob ("**/action.yml")
         // names callees, which are read by path; any other glob with no directory means the whole index.
         const dirs = [...new Set(ciRule.paths.flatMap((/** @type {string} */ g) => {
@@ -926,22 +983,23 @@ const COMMANDS = {
           if (dirs.length) callers = indexNames(cwd, { env: process.env, paths: dirs.includes("") ? [] : dirs });
         } catch (e) {
           if (!opts.hook) throw e;
-          err(t("cli.ciCallersUnread", { error: String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message).trim().split("\n")[0] }, cfg.language));
+          gateFailed(e, cfg.language, unchecked, "security.ci", "cli.ciCallersUnread", {}, false);
         }
         const all = [...new Set([...staged.filter(isCi), ...callers.paths.filter(isCi)])];
         const ciUnnamed = all.filter((p) => notUtf8.includes(p) || callers.notUtf8.includes(p));
-        // A staged name git cannot be asked for fails a hand run; a tracked one the commit leaves alone is said.
-        const stagedUnnamed = ciUnnamed.filter((p) => staged.includes(p));
-        const trackedUnnamed = ciUnnamed.filter((p) => !staged.includes(p));
+        // A name git cannot be asked for fails a hand run when the commit brings it; one it leaves alone or deletes is said.
+        const stagedUnnamed = ciUnnamed.filter(brings);
+        const trackedUnnamed = ciUnnamed.filter((p) => !brings(p));
         if (stagedUnnamed.length) {
           const said = t("cli.ciNamesUnread", { n: stagedUnnamed.length, paths: shownNames(stagedUnnamed) }, cfg.language);
           if (!opts.hook) throw new Error(said);
-          err(said);
+          unchecked.push(said);
         }
         if (trackedUnnamed.length) err(t("cli.ciTrackedUnread", { n: trackedUnnamed.length, paths: shownNames(trackedUnnamed) }, cfg.language));
-        const versions = stagedVersions(cwd, all.filter((p) => !ciUnnamed.includes(p)), { env: process.env });
+        const versions = gateRead(all.filter((p) => !ciUnnamed.includes(p)), "security.ci", "cli.ciFilesUnread");
         // Callees by path, a level a round, each new file parsed once; a candidate in neither the index nor HEAD is
-        // no file. Past CALLEE_ROUNDS levels, or when a read fails, what is left is said (ciSet names it missing).
+        // no file. Past CALLEE_ROUNDS levels, or when a read fails, what is left is said (ciSet names it missing):
+        // every CI file the commit brings is in `versions` already, so a callee asked for here is context.
         const tried = new Set(versions.keys());
         let fresh = new Map(versions);
         for (let round = 0; fresh.size && round < CALLEE_ROUNDS; round++) {
@@ -949,19 +1007,13 @@ const COMMANDS = {
           fresh = new Map();
           if (!want.length) break;
           for (const p of want) tried.add(p);
-          try {
-            for (const [p, v] of stagedVersions(cwd, want, { env: process.env })) if (v.staged || v.head || v.unread || v.headUnread) versions.set(p, v), fresh.set(p, v);
-          } catch (e) {
-            if (!opts.hook) throw e;
-            err(t("cli.ciCalleesUnread", { paths: shownNames(want), error: String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message).trim().split("\n")[0] }, cfg.language));
-            break;
-          }
+          // A candidate costs only itself: one that cannot be read is named, and the round reads on.
+          for (const [p, v] of gateRead(want, "security.ci", "cli.ciCalleesUnread")) if (v.staged || v.head || v.unread || v.headUnread) versions.set(p, v), fresh.set(p, v);
         }
         ci = ciMessages(versions, cfg.language);
       } catch (e) {
         if (!opts.hook) throw e;
-        const error = /** @type {Error & { stderr?: unknown }} */ (e);
-        err(t("cli.ciUnmeasured", { error: String(error.stderr || error.message).trim().split("\n")[0] }, cfg.language));
+        gateFailed(e, cfg.language, unchecked, "security.ci", "cli.ciUnmeasured", {}, staged.some((p) => isCi(p) && brings(p)));
       }
     }
     // Lock files and .npmrc (security.deps): what the commit brings, against HEAD's version. Like review.forbidden
@@ -986,28 +1038,27 @@ const COMMANDS = {
         stagedLocks = [...new Set([...stagedLocks, ...listed.filter((l) => lockPath(l, depsRule.paths) && pkgs.some((p) => above(l, p)))])];
       } catch (e) {
         if (!opts.hook) throw e;
-        err(t("cli.depsUnmeasured", { error: String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message).trim().split("\n")[0] }, cfg.language));
+        gateFailed(e, cfg.language, unchecked, "security.deps", "cli.depsUnmeasured", {}, false);
       }
     }
     const depsPaths = [...new Set([...stagedLocks, ...stagedLocks.map((l) => (dirOf(l) ? `${dirOf(l)}/package.json` : "package.json")), ...readNpmrc])];
-    const depsUnnamed = depsPaths.filter((p) => notUtf8.includes(p));
+    // A name git cannot be asked for that the commit deletes holds nothing to judge.
+    const depsUnnamed = depsPaths.filter((p) => notUtf8.includes(p) && brings(p));
     if (depsUnnamed.length) {
       // Shown as a report shows a name: a direction mark or a control character in it is escaped.
       const said = tShown("cli.depsNamesUnread", { n: depsUnnamed.length, paths: depsUnnamed.slice(0, 3) }, cfg.language);
       if (!opts.hook) throw new Error(said);
-      err(said);
+      unchecked.push(said);
     }
     const depsNamed = depsPaths.filter((p) => !notUtf8.includes(p));
     if (depsNamed.length) {
-      /** @type {ReturnType<typeof stagedVersions> | null} */
-      let versions = null;
-      try {
-        versions = stagedVersions(cwd, depsNamed, { env: process.env });
-      } catch (e) {
-        if (!opts.hook) throw e;
-        const error = /** @type {Error & { stderr?: unknown }} */ (e);
-        err(t("cli.depsUnmeasured", { error: String(error.stderr || error.message).trim().split("\n")[0] }, cfg.language));
-      }
+      /** gateRead, where a file not read stands as unread on both sides: never as no file, no package.json as no dependency. @param {string[]} paths */
+      const depsRead = (paths) => {
+        const read = gateRead(paths, "security.deps", "cli.depsFilesUnread");
+        for (const p of paths) if (!read.has(p)) read.set(p, { staged: null, head: null, unread: "failed", headUnread: "failed" });
+        return read;
+      };
+      const versions = depsRead(depsNamed);
       // The .npmrc beside a staged lock the commit leaves alone names the registry npm asks for an entry with no
       // resolved URL: read from the index, and only when such an entry asks for it.
       const beside = (/** @type {string} */ dir) => npmrcHeld(cwd, dir, process.env);
@@ -1015,19 +1066,18 @@ const COMMANDS = {
       // The package.json files a lock names in folders of their own (workspaces, links' targets), read from the
       // index in one go.
       const pkgRead = (/** @type {string[]} */ paths) => {
-        try {
-          const read = stagedVersions(cwd, paths, { env: process.env });
-          return new Map(paths.map((p) => {
-            const v = read.get(p);
-            return [p, { staged: pkgJson(v?.staged ?? null, v?.unread ? { key: v.unread } : undefined), head: pkgJson(v?.head ?? null, v?.headUnread ? { key: v.headUnread } : undefined) }];
-          }));
-        } catch (e) {
-          if (!opts.hook) throw e;
-          const unread = { unread: { key: "indexUnread", vars: { error: String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message).trim().split("\n")[0] } } };
-          return new Map(paths.map((p) => [p, { staged: unread, head: unread }]));
-        }
+        const read = depsRead(paths);
+        return new Map(paths.map((p) => {
+          const v = read.get(p);
+          return [p, { staged: pkgJson(v?.staged ?? null, v?.unread ? { key: v.unread } : undefined), head: pkgJson(v?.head ?? null, v?.headUnread ? { key: v.headUnread } : undefined) }];
+        }));
       };
-      if (versions) deps = await depsMessages(versions, depsRule, cfg.language, { beside, kinds, pkgRead });
+      try {
+        deps = await depsMessages(versions, depsRule, cfg.language, { beside, kinds, pkgRead });
+      } catch (e) {
+        if (!opts.hook) throw e;
+        gateFailed(e, cfg.language, unchecked, "security.deps", "cli.depsUnmeasured", {}, depsNamed.some(brings));
+      }
     }
     let res;
     try {
@@ -1037,18 +1087,20 @@ const COMMANDS = {
       res = checkCommitShape(message, { config: cfg, stagedPaths: staged, cleanup, cut, comment, foldTarget: fold.target, addedLines, secretsExcept: secrets.except, exempt, wideUnread });
     } catch (e) {
       // A git that fails, or a pattern in the config that does not compile, is no reason to lock commits either:
-      // the commit goes through, and the message says it was not checked.
+      // the commit goes through, and the message says it was not checked. That is the message's rule; a gate's own
+      // read is gateFailed's: said only for a fault of the machine, refused for what the commit's content can pick.
       if (!opts.hook) throw e;
-      const error = /** @type {Error & { stderr?: unknown }} */ (e);
-      if (typeof error.stderr === "string") err(t("cli.hookGitFailed", { error: error.stderr.trim().split("\n")[0] }, cfg.language));
+      const error = /** @type {Error & { stderr?: unknown, gate?: string }} */ (e);
+      if (error.gate) gateFailed(e, cfg.language, unchecked, error.gate, "cli.forbiddenUnmeasured");
+      else if (typeof error.stderr === "string") err(t("cli.hookGitFailed", { error: error.stderr.trim().split("\n")[0] }, cfg.language));
       else err(t("cli.hookConfigBroken", { error: error.message }, "en"));
       // What the files bring was read apart from the message: it still stands, the secrets they hold too.
-      for (const x of [...ci.errors, ...ci.warnings, ...deps.errors, ...deps.warnings, ...secrets.errors]) err(x);
-      return ci.errors.length || deps.errors.length || secrets.errors.length ? 1 : 0;
+      for (const x of [...unchecked, ...ci.errors, ...ci.warnings, ...deps.errors, ...deps.warnings, ...secrets.errors]) err(x);
+      return unchecked.length || ci.errors.length || deps.errors.length || secrets.errors.length ? 1 : 0;
     }
-    for (const e of [...ci.errors, ...deps.errors, ...secrets.errors, ...res.errors]) err(e);
+    for (const e of [...unchecked, ...ci.errors, ...deps.errors, ...secrets.errors, ...res.errors]) err(e);
     for (const w of [...(res.warnings ?? []), ...ci.warnings, ...deps.warnings]) err(w);
-    return res.ok && !ci.errors.length && !deps.errors.length && !secrets.errors.length ? 0 : 1;
+    return res.ok && !unchecked.length && !ci.errors.length && !deps.errors.length && !secrets.errors.length ? 0 : 1;
   },
 
   async deps(args) {
@@ -1121,10 +1173,10 @@ const COMMANDS = {
           const k = `${e.name}@${e.version} ${e.resolved ?? ""} ${e.integrity ?? ""}`;
           if (!seen.has(k)) seen.add(k), entries.push({ ...e, path });
         }
-        links.push(...lock.links.map((e) => ({ ...e, path })));
+        append(links, lock.links.map((e) => ({ ...e, path })));
         // Dependency specs npm may fetch from: judged by their source only, never counted as entries or asked of OSV;
         // a package.json it cannot read is unmeasured.
-        specs.push(...lock.specs.map((e) => ({ ...e, path })));
+        append(specs, lock.specs.map((e) => ({ ...e, path })));
         for (const u of lock.pkgUnread) unreadFiles.push({ path: pkgPathOf(path, u.folder), reason: u.reason });
       }
     }
@@ -1139,7 +1191,7 @@ const COMMANDS = {
         if (held && held.staged && lockText(held.staged) !== text) npmrcChanged.push(path);
       }
       const f = npmrcFindings(text, rule);
-      npmrcLines.push(...f.refuse.map((r) => ({ path, line: `${r.n}: ${r.line}`, kind: r.kind })), ...f.said.map((x) => ({ path, line: `${x.n}: ${x.line}`, reason: x.reason })));
+      append(npmrcLines, [...f.refuse.map((r) => ({ path, line: `${r.n}: ${r.line}`, kind: r.kind })), ...f.said.map((x) => ({ path, line: `${x.n}: ${x.line}`, reason: x.reason }))]);
     }
     // Where npm fetches each entry from, judged as the hook judges it (judgeLock): a source no list names, git, a
     // path out of the repository is a problem; an entry a listed registry proves is asked about as that registry's.
@@ -1177,11 +1229,11 @@ const COMMANDS = {
       for (const [e, j] of r.judged) judged.set(e, j);
       const at = (/** @type {import("../checks/deps.mjs").LockEntry} */ e) => ({ ...e, path });
       // What the judgment could not measure and no advisory query will name: links, and reads that failed.
-      unmeasuredHere.push(...r.unread.filter((u) => mine.includes(/** @type {any} */ (u.entry)) || ["indexUnread", "noResolvedUnread", "shrinkwrap"].includes(u.reason.key)).map((u) => ({ entry: at(u.entry), reason: u.reason })));
+      append(unmeasuredHere, r.unread.filter((u) => mine.includes(/** @type {any} */ (u.entry)) || ["indexUnread", "noResolvedUnread", "shrinkwrap"].includes(u.reason.key)).map((u) => ({ entry: at(u.entry), reason: u.reason })));
       // What npm installs under an entry that carries its own npm-shrinkwrap.json: that file's, unmeasured.
-      unmeasuredHere.push(...entries.filter((e) => e.path === path && e.shrinkwrap).map((e) => ({ entry: e, reason: { key: "shrinkwrap" } })));
-      mismatched.push(...r.refused.mismatch.map((x) => ({ entry: at(x.entry), reason: x.reason })));
-      refusedSources.push(...r.refused.unlisted.map((x) => ({ entry: at(x.entry), reason: x.reason, kind: /** @type {const} */ ("unlisted") })), ...r.refused.git.map((x) => ({ entry: at(x.entry), reason: x.reason, kind: /** @type {const} */ ("git") })));
+      append(unmeasuredHere, entries.filter((e) => e.path === path && e.shrinkwrap).map((e) => ({ entry: e, reason: { key: "shrinkwrap" } })));
+      append(mismatched, r.refused.mismatch.map((x) => ({ entry: at(x.entry), reason: x.reason })));
+      append(refusedSources, [...r.refused.unlisted.map((x) => ({ entry: at(x.entry), reason: x.reason, kind: /** @type {const} */ ("unlisted") })), ...r.refused.git.map((x) => ({ entry: at(x.entry), reason: x.reason, kind: /** @type {const} */ ("git") }))]);
     }
     const proven = entries.map((e) => {
       const j = judged.get(e);

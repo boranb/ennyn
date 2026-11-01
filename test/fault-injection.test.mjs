@@ -15,6 +15,9 @@
  * read whose failure would change the result needs a case that reaches it (a config value, a hook's
  * index, a fold target, a sparse checkout, a subdirectory).
  *
+ * A git that cannot start is the system's answer, so it comes from the preload, not from the fake git: the k-th
+ * spawn fails with an errno, for every k of the commit-msg hook's runs, and the two errnos a commit can pick refuse.
+ *
  * The same for files: test/fault-fs.mjs, loaded into every run, counts the file reads outside Ennyn's own
  * files and fails the k-th, as a file without permission (EACCES) and as a directory in its place (EISDIR),
  * for every k. The Claude Code hooks run here too, given their stdin; their JSON output is judged as the
@@ -457,8 +460,9 @@ test("fault matrix: every command in USAGE has a case", () => {
 
 /**
  * @typedef {{ code: number | null, signal: string | null, stdout: string, stderr: string, calls: number, reads: string[], hung: number }} Run
- * @typedef {{ at?: number, kind?: "fail" | "kill" | "hang", match?: string, noGit?: boolean, closed?: boolean, read?: { at: number, kind: "eacces" | "eisdir" } }} Fault
- *   `match`: with kind "hang", the call whose arguments hold it hangs instead of the at-th.
+ * @typedef {{ at?: number, kind?: "fail" | "kill" | "hang", match?: string, noGit?: boolean, closed?: boolean, read?: { at: number, kind: "eacces" | "eisdir" }, spawn?: { at: number, code: string } }} Fault
+ *   `match`: with kind "hang", the call whose arguments hold it hangs instead of the at-th. `spawn`: the at-th git
+ *   spawn fails with the errno `code` (test/fault-fs.mjs).
  * @param {Case} c @param {Fault} fault
  * @returns {Promise<Run>}
  */
@@ -487,6 +491,8 @@ function run(c, fault) {
     ENNYN_FS_FAULT_DIR: box,
     ENNYN_FS_FAULT_AT: String(fault.read?.at ?? 0),
     ENNYN_FS_FAULT: fault.read?.kind ?? "eacces",
+    ENNYN_SPAWN_FAULT_AT: String(fault.spawn?.at ?? 0),
+    ENNYN_SPAWN_FAULT: fault.spawn?.code ?? "",
     ...(fault.kind === "hang" ? { ENNYN_FAULT_GIT_LIMIT_MS: String(HANG_LIMIT_MS) } : {}),
     ...(fault.match ? { ENNYN_FAULT_MATCH: fault.match } : {}),
     ...(c.hook ? { CLAUDE_PROJECT_DIR: repo } : {}),
@@ -638,6 +644,28 @@ test("fault matrix: with any git call failing, killed or never ending, or no git
     .filter((r) => r.why)
     .map((r) => `${where(r.cell.c)} · ${r.cell.fault.noGit ? "no git" : r.cell.fault.closed ? "closed stdout" : `git call ${r.cell.fault.at} ${r.cell.fault.kind}`}: ${r.why}`);
   assert.deepEqual(bad, [], `${bad.length} of ${cells.length} cells`);
+});
+
+test("fault matrix: a git that cannot start, for any errno but the two a commit can pick, lets the commit through, saying so", async () => {
+  const width = Math.max(2, Math.min(8, availableParallelism()));
+  const hooks = CASES.filter((c) => c.args?.includes("--hook"));
+  const clean = await pool(hooks.map((c) => () => run(c, {})), width);
+  /** @type {{ c: Case, i: number, fault: Fault }[]} */
+  const cells = [];
+  for (const [i, c] of hooks.entries()) {
+    for (let at = 1; at <= clean[i].calls; at++) cells.push({ c, i, fault: { spawn: { at, code: "EPERM" } } });
+    for (const code of ["ENFILE", "EIO", "ETXTBSY", "ENOEXEC", "ENOSPC"]) for (const at of new Set([1, clean[i].calls])) cells.push({ c, i, fault: { spawn: { at, code } } });
+  }
+  const results = await pool(cells.map((cell) => () => run(cell.c, cell.fault)), width);
+  const bad = cells
+    .map((cell, k) => ({ cell, why: judge(clean[cell.i], results[k], true, cell.c.everyPass) }))
+    .filter((r) => r.why)
+    .map((r) => `${r.cell.c.args.join(" ")} · spawn ${r.cell.fault.spawn?.at} ${r.cell.fault.spawn?.code}: ${r.why}`);
+  assert.deepEqual(bad, [], `${bad.length} of ${cells.length} cells`);
+  // The control: E2BIG at the same calls refuses, so these faults reach the gates' reads.
+  const i = hooks.findIndex((c) => clean[hooks.indexOf(c)].calls > 0 && clean[hooks.indexOf(c)].code === 0);
+  const picked = await pool(Array.from({ length: clean[i].calls }, (_, k) => () => run(hooks[i], { spawn: { at: k + 1, code: "E2BIG" } })), width);
+  assert.ok(picked.some((r) => r.code === 1 && /so this commit is refused/.test(r.stderr)), "no call refused for E2BIG");
 });
 
 /** The reads a directory in a file's place fails; the rest fail only as EACCES. */

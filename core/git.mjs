@@ -91,11 +91,14 @@ export function diffGroups(paths, changes) {
   /** @type {string[]} */
   let group = [];
   let bytes = 0;
+  let names = 0;
   for (const p of paths) {
     const n = size(p);
-    if (group.length && (group.length === 500 || bytes + n > DIFF_GROUP)) groups.push(group), (group = []), (bytes = 0);
+    const name = Buffer.byteLength(p) + 1;
+    if (group.length && (group.length === 500 || bytes + n > DIFF_GROUP || names + name > ARG_BYTES)) groups.push(group), (group = []), (bytes = 0), (names = 0);
     group.push(p);
     bytes += n;
+    names += name;
   }
   if (group.length) groups.push(group);
   return groups;
@@ -159,6 +162,73 @@ function cleanEnv(env, keepIndex) {
   return out;
 }
 
+/** The two errnos a commit's content can pick: E2BIG, a name past what arguments hold; ENOBUFS, git stopped for writing past the buffer, SIGTERM and all. */
+const PICKED = new Set(["E2BIG", "ENOBUFS"]);
+
+/**
+ * Whether a failed read is a fault of the machine, which no commit's content picks, by its shape: any errno but those
+ * two, whichever the system answers (a commit picks none by name: a spawn's arguments are the only call that takes a
+ * name a commit chose, and no check opens a file), and git that ran and exited non-zero, or was killed or stopped at
+ * its limit. An argument Node refuses (`ERR_*`) and any throw of our own code are not.
+ * @param {unknown} e
+ */
+export function machineFault(e) {
+  const x = /** @type {{ code?: string, status?: number | null, signal?: string | null } | null} */ (e);
+  if (typeof x !== "object" || x === null || PICKED.has(String(x.code))) return false;
+  return /^E[A-Z0-9]+$/.test(String(x.code)) || Boolean(x.signal) || (typeof x.status === "number" && x.status !== 0);
+}
+
+/**
+ * The most bytes of names one git call is given: under the 128 KiB Linux leaves for arguments and environment together
+ * however small the stack (fs/exec.c, `bprm_stack_limits`: a quarter of the stack, never under 32 pages), with room for
+ * the environment.
+ */
+const ARG_BYTES = 64 * 1024;
+/** One argument this long or longer is refused on Linux, whatever the rest of the call holds. */
+const ARG_ONE = 128 * 1024;
+
+/**
+ * The most output of a read that lists names: past git()'s 64 MB, which 1.1 million names of 60 bytes fill. A limit,
+ * not an allocation: a list costs what it holds.
+ */
+export const NAMES_BUFFER = 256 * 1024 * 1024;
+
+/**
+ * `paths` as the calls git is given them in, in order: 500 a call, at most ARG_BYTES of names. A name past that goes
+ * alone: its call may still fail (E2BIG), and costs no other name. No path, no call.
+ * @param {string[]} paths
+ * @returns {string[][]}
+ */
+export function argBatches(paths) {
+  /** @type {string[][]} */
+  const out = [];
+  let bytes = 0;
+  for (const p of paths) {
+    const n = Buffer.byteLength(p) + 1;
+    const last = out.at(-1);
+    if (last && last.length < 500 && bytes + n <= ARG_BYTES) last.push(p), (bytes += n);
+    else out.push([p]), (bytes = n);
+  }
+  return out;
+}
+
+/**
+ * A name as git gave it, as a string that stands for those bytes alone: UTF-8 as it is, and in a name that is not
+ * UTF-8 each byte that fits no character as a lone surrogate (U+DC00 and the byte), which no UTF-8 name holds. Two
+ * names that read alike with U+FFFD stay two; `shown` prints such a byte as U+FFFD.
+ * @param {Buffer} bytes
+ */
+export function nameText(bytes) {
+  if (isUtf8(bytes)) return bytes.toString("utf8");
+  let out = "";
+  for (let at = 0; at < bytes.length; ) {
+    const n = [1, 2, 3, 4].find((k) => at + k <= bytes.length && isUtf8(bytes.subarray(at, at + k)));
+    if (n === undefined) out += String.fromCharCode(0xdc00 + bytes[at++]);
+    else (out += bytes.toString("utf8", at, at + n)), (at += n);
+  }
+  return out;
+}
+
 /**
  * @param {string[]} args
  * @param {{ cwd: string, env?: NodeJS.ProcessEnv, keepIndex?: boolean, walk?: boolean }} opts
@@ -174,10 +244,11 @@ export function git(args, opts) {
  * git() with stdout as git wrote it: bytes that are not UTF-8 (a file in another encoding, UTF-16) stay
  * as they are, where a string would hold U+FFFD for them. `input` goes to git's stdin.
  * @param {string[]} args
- * @param {{ cwd: string, env?: NodeJS.ProcessEnv, keepIndex?: boolean, input?: string | Buffer, walk?: boolean }} opts
+ * @param {{ cwd: string, env?: NodeJS.ProcessEnv, keepIndex?: boolean, input?: string | Buffer, walk?: boolean, buffer?: number }} opts
+ *   `buffer`: the most bytes of output (64 MB)
  * @returns {Buffer}
  */
-export function gitBytes(args, { cwd, env = process.env, keepIndex = false, input, walk = false }) {
+export function gitBytes(args, { cwd, env = process.env, keepIndex = false, input, walk = false, buffer = 64 * 1024 * 1024 }) {
   const limit = walk ? GIT_LIMITS.walk : GIT_LIMITS.call;
   try {
     // In Ennyn's process group: GIT_LIMITS says why.
@@ -185,7 +256,7 @@ export function gitBytes(args, { cwd, env = process.env, keepIndex = false, inpu
       cwd,
       env: cleanEnv(env, keepIndex),
       stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
-      maxBuffer: 64 * 1024 * 1024,
+      maxBuffer: buffer,
       timeout: limit,
       killSignal: "SIGKILL",
       ...(input === undefined ? {} : { input }),
@@ -201,7 +272,7 @@ export function gitBytes(args, { cwd, env = process.env, keepIndex = false, inpu
       // git may have exited, with a code that means something, while a process it started held the output.
       const stop = stopped(args, limit);
       Object.assign(e, { message: stop.message, stderr: stop.stderr, status: null });
-    } else if (e.code === "ENOBUFS") e.stderr = `git ${name}: its output was larger than 64 MB`;
+    } else if (e.code === "ENOBUFS") e.stderr = `git ${name}: its output was larger than ${buffer / 1024 / 1024} MB`;
     else if (!String(e.stderr ?? "").trim()) e.stderr = `git ${name}: ${e.signal ? `killed by ${e.signal}` : e.code === "ENOENT" ? NO_START : e.message}`;
     throw e;
   }
@@ -233,12 +304,12 @@ export function gitRun(args, { cwd, env = process.env, walk = false, within = In
 export function gitError(args, r) {
   const code = /** @type {NodeJS.ErrnoException | undefined} */ (r.error)?.code;
   const how = r.error ? (code === "ENOENT" ? NO_START : r.error.message) : r.signal ? `killed by ${r.signal}` : `exit ${r.status}`;
-  if (code === "ETIMEDOUT") return Object.assign(new Error(how), { stderr: how, status: null });
+  if (code === "ETIMEDOUT") return Object.assign(new Error(how), { stderr: how, status: null, code });
   const said = r.stderr.trim();
   const err = /** @type {Error & { stderr: string, status: number | null }} */ (new Error(`git ${args.join(" ")}: ${said.split("\n")[0] || how}`));
   err.stderr = said || `git ${commandName(args)}: ${how}`;
   err.status = r.status;
-  return err;
+  return Object.assign(err, code ? { code } : {}, r.signal ? { signal: r.signal } : {});
 }
 
 /**
@@ -421,31 +492,44 @@ export function stagedPaths(cwd, opts = {}) {
 }
 
 /**
- * The staged paths, read as bytes: `notUtf8` holds those whose names are not UTF-8, as `paths` spells them
- * (U+FFFD for each byte that is not). Such a name cannot be handed back to git as a pathspec, and it may
- * read the same as another staged name that is UTF-8.
+ * The staged paths, read as bytes, from one status read with no pathspec, so no name has to fit an argument. `notUtf8`
+ * holds those whose names are not UTF-8, as `paths` spells them (nameText: a string no UTF-8 name is); such a name
+ * cannot be handed back to git as a pathspec. `deleted`: the paths the commit deletes, in `paths` too. Every other
+ * path is what the commit adds or changes: the scope of a gate's failure (gateFailed in scripts/ennyn.mjs). Past
+ * NAMES_BUFFER a list of deletions cannot be told from one of changes, so it is asked again without them: `deletedUnread`,
+ * and what fills the buffer then is what the commit brings, which throws.
  * @param {string} cwd
  * @param {{ env?: NodeJS.ProcessEnv }} [opts]
- * @returns {{ paths: string[], notUtf8: string[] }}
+ * @returns {{ paths: string[], notUtf8: string[], deleted: Set<string>, deletedUnread: boolean }}
  */
 export function stagedNames(cwd, { env } = {}) {
   const index = env ? hookIndexFile(cwd, env) : null;
   // Both names of a rename (diff.renames would list only the new one): moving a file out is a change there too.
-  const out = gitBytes(["diff", "--cached", "--name-only", "--no-renames", "-z"], { cwd, env: stagedEnv(index), keepIndex: Boolean(index) });
+  const list = (/** @type {string[]} */ filter) => gitBytes(["diff", "--cached", "--name-status", "--no-renames", "-z", ...filter], { cwd, env: stagedEnv(index), keepIndex: Boolean(index), buffer: NAMES_BUFFER });
+  let out;
+  let deletedUnread = false;
+  try {
+    out = list([]);
+  } catch (e) {
+    if (/** @type {NodeJS.ErrnoException} */ (e).code !== "ENOBUFS") throw e;
+    out = list(["--diff-filter=d"]);
+    deletedUnread = true;
+  }
   /** @type {string[]} */
   const paths = [];
   /** @type {string[]} */
   const notUtf8 = [];
-  for (let at = 0; at < out.length; ) {
-    let end = out.indexOf(0, at);
-    if (end === -1) end = out.length;
-    const name = out.subarray(at, end);
-    at = end + 1;
-    if (!name.length) continue;
-    paths.push(name.toString("utf8"));
-    if (!isUtf8(name)) notUtf8.push(name.toString("utf8"));
+  /** @type {Set<string>} */
+  const deleted = new Set();
+  const records = splitNul(out);
+  // A status letter, then its path.
+  for (let i = 0; i + 1 < records.length; i += 2) {
+    const text = nameText(records[i + 1]);
+    paths.push(text);
+    if (!isUtf8(records[i + 1])) notUtf8.push(text);
+    if (records[i][0] === 0x44) deleted.add(text);
   }
-  return { paths, notUtf8 };
+  return { paths, notUtf8, deleted, deletedUnread };
 }
 
 /**
@@ -484,10 +568,10 @@ export function unquotePath(s) {
 function withParents(cwd, env, changes, paths, parents) {
   const out = new Map(changes);
   for (const parent of parents) {
-    for (let at = 0; at < paths.length; at += 500) {
+    for (const batch of argBatches(paths)) {
       let listed = "";
       try {
-        listed = gitBytes(["-c", "core.precomposeUnicode=false", "ls-tree", "-r", "-l", "-z", parent, "--", ...paths.slice(at, at + 500)], { cwd, env }).toString("utf8");
+        listed = gitBytes(["-c", "core.precomposeUnicode=false", "ls-tree", "-r", "-l", "-z", parent, "--", ...batch], { cwd, env }).toString("utf8");
       } catch {
         continue;
       }
@@ -507,13 +591,14 @@ function withParents(cwd, env, changes, paths, parents) {
  * The lines a commit adds to `paths` (the staged paths a review.forbidden rule names), numbered as in the new
  * file. Read from the index the hook was given (stagedPaths), with those paths as pathspecs, in the calls diffGroups
  * splits them into by their sizes (stagedChanges; in a merge, every parent's too): only the files a rule reads are
- * diffed, so a large file elsewhere
- * cannot fill git()'s buffer, and a call that fails or is stopped puts its paths, with why, into `unread` and the
- * others are still read (thrown when no `unread` map is given). A path is handed
- * back as git wrote it (core.precomposeUnicode off: macOS git would compose a decomposed name); a name that
- * is not UTF-8 cannot be (stagedNames), and every path asked must show in a header, else it throws and the
- * hook says it did not check. The diff is pinned against the user's config: no color, external diff or
- * textconv, the a/ and b/ prefixes (diff.noprefix and diff.mnemonicPrefix change them), a submodule as its
+ * diffed, so a large file elsewhere cannot fill git()'s buffer. A size is a ceiling, as the secret scan's budget is:
+ * a call past the buffer puts its paths, with why, into `unread`, and so does one that fails for the machine or is
+ * stopped; the others are still read. Any other failure throws for the caller to weigh, and with no `unread` map
+ * so does every failure. A path is handed back as git wrote it (core.precomposeUnicode off: macOS git would compose a
+ * decomposed name); a name that is not UTF-8 cannot be (stagedNames), and every path asked must show in a header,
+ * else it throws. The caller asks for what the commit adds or changes: a pathspec also names the files below it, so
+ * a name that was a directory at HEAD shows those too, deleted (addedLines). The diff is pinned against the user's
+ * config: no color, external diff or textconv, the a/ and b/ prefixes (diff.noprefix and diff.mnemonicPrefix change them), a submodule as its
  * commit line, no renames (a moved file is added in full, as its new name is staged), and every file as
  * text (--text: a NUL byte, a -diff or binary attribute and core.bigFileThreshold would otherwise hide its
  * lines). The diff is read as bytes: a line that holds a NUL or is not UTF-8 keeps them in `raw`. A file whose
@@ -546,7 +631,14 @@ export function stagedAddedLines(cwd, paths, { env, wideUnread = new Map(), unre
       env: readEnv,
       keepIndex: Boolean(index),
     });
-  const parents = mergeHeads(cwd);
+  // Unread with a hook's `unread` map: a parent is for the message only, as below.
+  /** @type {string[]} */
+  let parents = [];
+  try {
+    parents = mergeHeads(cwd);
+  } catch (e) {
+    if (!unread) throw e;
+  }
   // The sizes only shape the calls: unread, every file counts as small (500 a call), and a call that fails still
   // costs only its own files.
   /** @type {Map<string, StagedChange>} */
@@ -570,7 +662,9 @@ export function stagedAddedLines(cwd, paths, { env, wideUnread = new Map(), unre
     try {
       mine = addedLines(run([], batch), new Set(batch), { complete: true, blobs });
     } catch (e) {
-      if (!unread) throw e;
+      // A machine's fault or a diff past the buffer is a batch's alone to lose, and a file past DIFF_GROUP is a batch of
+      // its own; any other failure is the caller's to weigh (machineFault).
+      if (!unread || !(machineFault(e) || /** @type {NodeJS.ErrnoException} */ (e).code === "ENOBUFS")) throw e;
       const why = String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message).trim().split("\n")[0];
       for (const p of batch) unread.set(p, why);
       continue;
@@ -615,7 +709,7 @@ export function batchCheck(cwd, oids, { env } = {}) {
   let left = oids;
   while (left.length) {
     try {
-      lines.push(...gitBytes(["cat-file", "--batch-check"], { cwd, env, input: left.join("\n") + "\n" }).toString("utf8").split("\n").filter(Boolean));
+      for (const l of gitBytes(["cat-file", "--batch-check"], { cwd, env, input: left.join("\n") + "\n" }).toString("utf8").split("\n")) if (l) lines.push(l);
       return lines;
     } catch (err) {
       const e = /** @type {Error & { stdout?: Buffer | string, stderr?: string, status?: number | null }} */ (err);
@@ -623,7 +717,8 @@ export function batchCheck(cwd, oids, { env } = {}) {
       const said = String(e.stdout ?? "").split("\n").filter(Boolean);
       // Each line answers the next object asked; the one git died at is the one after them.
       if (e.status !== 128 || !lost || left[said.length] !== lost) throw err;
-      lines.push(...said, `${lost} missing`);
+      for (const l of said) lines.push(l);
+      lines.push(`${lost} missing`);
       left = left.slice(said.length + 1);
     }
   }
@@ -635,11 +730,13 @@ export const READ_BUDGET = 64 * 1024 * 1024;
 
 /**
  * The staged changes as one `diff --raw` lists them, with no pathspec (one walk of the index, whatever the
- * count): per path its status letter (A added, M, T, D deleted…), new mode, and old and new sizes from one
+ * count): per path its status letter (A added, M, T…; what the commit deletes brings nothing to read, and is left
+ * out), new mode, and old and new sizes from one
  * `cat-file --batch-check`, and both object ids (`oid`, `oldOid`). A submodule's commit is no object this repository
  * holds: its ids are "" and its sizes 0, on either side. `oldMissing` / `newMissing`: that side's object is not on
  * this machine (a partial clone; HOOK_READ_ENV fetches nothing), and `missing` either. Names read as bytes, as
- * stagedNames reads them, from the index the hook was given. A git that fails throws.
+ * stagedNames reads them, from the index the hook was given. A git that fails throws. Each path costs about 100 bytes
+ * here beyond its name, which NAMES_BUFFER holds about 1.6 million times at names of 60 bytes.
  * @param {string} cwd @param {{ env?: NodeJS.ProcessEnv }} [opts]
  * @returns {Map<string, StagedChange>}
  * @typedef {{ status: string, mode: string, oid: string, oldOid: string, oldSize: number, newSize: number, missing: boolean, oldMissing: boolean, newMissing: boolean }} StagedChange
@@ -647,7 +744,7 @@ export const READ_BUDGET = 64 * 1024 * 1024;
 export function stagedChanges(cwd, { env } = {}) {
   const index = env ? hookIndexFile(cwd, env) : null;
   const readEnv = stagedEnv(index);
-  const out = gitBytes(["-c", "core.precomposeUnicode=false", "diff", "--cached", "--raw", "-z", "--no-renames", "--no-abbrev"], { cwd, env: readEnv, keepIndex: Boolean(index) });
+  const out = gitBytes(["-c", "core.precomposeUnicode=false", "diff", "--cached", "--raw", "-z", "--no-renames", "--no-abbrev", "--diff-filter=d"], { cwd, env: readEnv, keepIndex: Boolean(index), buffer: NAMES_BUFFER });
   /** @type {{ path: string, status: string, mode: string, old: string, new: string }[]} */
   const entries = [];
   for (let at = 0; at < out.length; ) {
@@ -655,7 +752,7 @@ export function stagedChanges(cwd, { env } = {}) {
     if (meta === -1) break;
     const end = out.indexOf(0, meta + 1);
     const m = /^:(\d+) (\d+) ([0-9a-f]+) ([0-9a-f]+) ([A-Z])/.exec(out.toString("utf8", at, meta));
-    const path = out.toString("utf8", meta + 1, end === -1 ? out.length : end);
+    const path = nameText(out.subarray(meta + 1, end === -1 ? out.length : end));
     at = end === -1 ? out.length : end + 1;
     if (m) entries.push({ path, status: m[5], mode: m[2], old: m[1] === "160000" ? "" : m[3], new: m[2] === "160000" ? "" : m[4] });
   }
@@ -861,8 +958,8 @@ export function stagedBlobs(cwd, paths, { env, limit = WIDE_LIMIT, total = READ_
   /** @type {Map<string, string>} */
   const oids = new Map();
   const unique = [...new Set(paths)];
-  for (let at = 0; at < unique.length; at += 500) {
-    const out = gitBytes(["-c", "core.precomposeUnicode=false", "ls-files", "-s", "-z", "--", ...unique.slice(at, at + 500)], { cwd, env: readEnv, keepIndex: Boolean(index) }).toString("utf8");
+  for (const batch of argBatches(unique)) {
+    const out = gitBytes(["-c", "core.precomposeUnicode=false", "ls-files", "-s", "-z", "--", ...batch], { cwd, env: readEnv, keepIndex: Boolean(index) }).toString("utf8");
     for (const e of out.split("\0")) {
       const m = /^\d+ ([0-9a-f]+) 0\t([^]*)$/.exec(e);
       if (m) oids.set(m[2], m[1]);
@@ -1032,24 +1129,26 @@ export function mergeHeads(cwd) {
 
 /**
  * The names the index holds (the one a hook was given) under `paths` (literal pathspecs; a directory names what is
- * in it), read as bytes: `notUtf8` as in stagedNames.
+ * in it; no path: all of them), read as bytes: `notUtf8` as in stagedNames.
  * @param {string} cwd
  * @param {{ env?: NodeJS.ProcessEnv, paths: string[] }} opts
  * @returns {{ paths: string[], notUtf8: string[] }}
  */
 export function indexNames(cwd, { env, paths: under }) {
   const index = env ? hookIndexFile(cwd, env) : null;
-  const out = gitBytes(["-c", "core.precomposeUnicode=false", "ls-files", "-z", "--", ...under], { cwd, env: stagedEnv(index), keepIndex: Boolean(index) });
   /** @type {Set<string>} */
   const paths = new Set();
   /** @type {string[]} */
   const notUtf8 = [];
-  for (const name of splitNul(out)) {
-    const text = name.toString("utf8");
-    // An unmerged path is listed once per stage.
-    if (paths.has(text)) continue;
-    paths.add(text);
-    if (!isUtf8(name)) notUtf8.push(text);
+  for (const batch of under.length ? argBatches(under) : [[]]) {
+    const out = gitBytes(["-c", "core.precomposeUnicode=false", "ls-files", "-z", "--", ...batch], { cwd, env: stagedEnv(index), keepIndex: Boolean(index), buffer: NAMES_BUFFER });
+    for (const name of splitNul(out)) {
+      const text = nameText(name);
+      // An unmerged path is listed once per stage.
+      if (paths.has(text)) continue;
+      paths.add(text);
+      if (!isUtf8(name)) notUtf8.push(text);
+    }
   }
   return { paths: [...paths], notUtf8 };
 }
@@ -1080,8 +1179,8 @@ export function indexKinds(cwd, paths, { env } = {}) {
   const index = env ? hookIndexFile(cwd, env) : null;
   const opts = { cwd, env: stagedEnv(index), keepIndex: Boolean(index) };
   const list = [...asked];
-  for (let at = 0; at < list.length; at += 500) {
-    for (const record of splitNul(gitBytes(["-c", "core.precomposeUnicode=false", "ls-files", "-s", "-z", "--", ...list.slice(at, at + 500)], opts))) {
+  for (const batch of argBatches(list)) {
+    for (const record of splitNul(gitBytes(["-c", "core.precomposeUnicode=false", "ls-files", "-s", "-z", "--", ...batch], opts))) {
       const text = record.toString("utf8");
       const tab = text.indexOf("\t");
       const [mode, sha] = text.slice(0, tab).split(" ");
@@ -1170,14 +1269,16 @@ function splitNul(out) {
  * new; with --amend HEAD is the commit amended. Read as bytes, objects as they are (no replace refs),
  * `core.precomposeUnicode` off, 500 paths a listing and at most 3 × WIDE_LIMIT a cat-file call. What cannot be read is said per side, as a code: `unread` for
  * the index side (`symlink`, `submodule`, `large` past WIDE_LIMIT, `notBlob`, `unmerged`: a conflict not
- * resolved), `headUnread` for HEAD's (its `head` is then null). Names are handed to git as written: one that is
- * not UTF-8 cannot be (stagedNames), and the caller says so.
+ * resolved), `headUnread` for HEAD's (its `head` is then null); a listing of HEAD past git()'s buffer (a name that was
+ * a directory there) is `large` for its call's names. `failed`: no version was read (the caller's). Names are handed
+ * to git as written: one that is not UTF-8 cannot be (stagedNames), and the caller says so.
  * @param {string} cwd the repository's top
  * @param {string[]} paths
  * @param {{ env?: NodeJS.ProcessEnv }} [opts]
  * @returns {Map<string, StagedVersion>}
- * @typedef {{ staged: Buffer | null, head: Buffer | null, unread?: Unread, headUnread?: Unread }} StagedVersion
- * @typedef {"symlink" | "submodule" | "large" | "notBlob" | "unmerged"} Unread
+ * @typedef {{ staged: Buffer | null, head: Buffer | null, unread?: Unread, headUnread?: Unread, oid?: string, headOid?: string }} StagedVersion
+ *   `oid`, `headOid`: each side's object, also where its bytes are not read
+ * @typedef {"symlink" | "submodule" | "large" | "notBlob" | "unmerged" | "failed"} Unread
  */
 export function stagedVersions(cwd, paths, { env } = {}) {
   /** @type {Map<string, StagedVersion>} */
@@ -1205,18 +1306,28 @@ export function stagedVersions(cwd, paths, { env } = {}) {
       if (!item && unique.some((p) => path.startsWith(`${p}/`))) continue;
       if (tab === -1 || !m || !item) throw new Error(`git listed "${path}", which was not asked for, or a line that does not parse`);
       const [mode, oid, stage] = [m[1], m[2], m[3]];
+      item[side === "staged" ? "oid" : "headOid"] = oid;
       if (stage && stage !== "0") mark(item, side, "unmerged");
       else if (mode === "120000") mark(item, side, "symlink");
       else if (mode === "160000") mark(item, side, "submodule");
       else wanted.push({ path, side, oid });
     }
   };
-  for (let at = 0; at < unique.length; at += 500) {
-    const batch = unique.slice(at, at + 500);
+  for (const batch of argBatches(unique)) {
     // A decomposed name is asked for and listed as git wrote it (macOS git would compose it).
     const asIs = ["-c", "core.precomposeUnicode=false"];
     entries(gitBytes([...asIs, "ls-files", "-s", "-z", "--", ...batch], { cwd, env: readEnv, keepIndex: Boolean(index) }), /^(\d{6}) ([0-9a-f]{40,64}) (\d)$/, "staged");
-    if (head) entries(gitBytes([...asIs, "ls-tree", "-r", "-z", "--full-tree", head, "--", ...batch], { cwd, env: readEnv }), /^(\d{6}) (?:blob|commit) ([0-9a-f]{40,64})()$/, "head");
+    if (!head) continue;
+    let listed;
+    try {
+      listed = gitBytes([...asIs, "ls-tree", "-r", "-z", "--full-tree", head, "--", ...batch], { cwd, env: readEnv });
+    } catch (e) {
+      if (machineFault(e)) throw e;
+      // HEAD's version is context: with none, what the commit brings counts as new.
+      for (const path of batch) mark(/** @type {StagedVersion} */ (out.get(path)), "head", "large");
+      continue;
+    }
+    entries(listed, /^(\d{6}) (?:blob|commit) ([0-9a-f]{40,64})()$/, "head");
   }
   // An unmerged path has no one staged version.
   const read = wanted.filter((w) => !(w.side === "staged" && out.get(w.path)?.unread === "unmerged"));
@@ -1259,6 +1370,42 @@ export function stagedVersions(cwd, paths, { env } = {}) {
 }
 
 /**
+ * stagedVersions with a failure held to its name, so the caller can weigh each by what the commit does to it: one no
+ * git argument can hold is not asked for (`unaskable`), and a call that fails is made again name by name, so `failed`
+ * holds only the names that fail alone. A git stopped at its limit is not asked again: each name would cost a limit.
+ * @param {string} cwd @param {string[]} paths @param {{ env?: NodeJS.ProcessEnv }} [opts]
+ * @returns {{ versions: Map<string, StagedVersion>, unaskable: string[], failed: { path: string, error: unknown }[] }}
+ */
+export function stagedVersionsEach(cwd, paths, { env } = {}) {
+  const askable = (/** @type {string} */ p) => !p.includes("\0") && Buffer.byteLength(p) < ARG_ONE;
+  const unaskable = paths.filter((p) => !askable(p));
+  /** @type {Map<string, StagedVersion>} */
+  const versions = new Map();
+  /** @type {{ path: string, error: unknown }[]} */
+  const failed = [];
+  const batches = argBatches(paths.filter(askable));
+  for (const [k, batch] of batches.entries()) {
+    try {
+      for (const [p, v] of stagedVersions(cwd, batch, { env })) versions.set(p, v);
+      continue;
+    } catch (e) {
+      if (/** @type {NodeJS.ErrnoException} */ (e).code === "ETIMEDOUT") {
+        for (const path of batches.slice(k).flat()) failed.push({ path, error: e });
+        break;
+      }
+    }
+    for (const path of batch) {
+      try {
+        for (const [p, v] of stagedVersions(cwd, [path], { env })) versions.set(p, v);
+      } catch (error) {
+        failed.push({ path, error });
+      }
+    }
+  }
+  return { versions, unaskable, failed };
+}
+
+/**
  * The name in a `diff --git a/<p> b/<p>` line, with no renames both the same: quoted when git quoted it.
  * @param {string} rest the line after "diff --git "
  * @returns {string | null}
@@ -1275,7 +1422,8 @@ function headerPath(rest) {
 
 /**
  * The added lines of a `-U0` diff with a/ and b/ prefixes, per file. With `asked`, a header that names a path
- * not in it throws, and with `complete` so does a path in it that no header names: a misread diff is no
+ * not in it or below it throws (a pathspec also names the files below it: what a name held as a directory, which its
+ * new file deletes), and with `complete` so does a path in it that no header names: a misread diff is no
  * answer. A hunk header that does not parse throws. Given as bytes (git's own output), a line is split where
  * git splits it, at a newline byte, and keeps its bytes in `raw` when they are not plain UTF-8 text.
  * `blobs`, when given, gets each file's new object id from its `index` line (a `--full-index` diff).
@@ -1298,6 +1446,10 @@ export function addedLines(diff, asked, { complete = false, blobs } = {}) {
   /** The path of the header being read, for its `index` line. */
   let named = "";
   let n = 0;
+  const below = (/** @type {Set<string>} */ names, /** @type {string} */ path) => {
+    for (let at = path.indexOf("/"); at !== -1; at = path.indexOf("/", at + 1)) if (names.has(path.slice(0, at))) return true;
+    return false;
+  };
   for (let start = 0; start <= bytes.length; ) {
     let end = bytes.indexOf(0x0a, start);
     if (end === -1) end = bytes.length;
@@ -1322,7 +1474,7 @@ export function addedLines(diff, asked, { complete = false, blobs } = {}) {
       lines = null;
       header = true;
       const path = headerPath(raw.slice(11));
-      if (path === null || (asked && !asked.has(path))) throw new Error(`git diff named a path it was not asked for: ${JSON.stringify(raw.slice(11, 200))}`);
+      if (path === null || (asked && !asked.has(path) && !below(asked, path))) throw new Error(`git diff named a path it was not asked for: ${JSON.stringify(raw.slice(11, 200))}`);
       shown.add(path);
       named = path;
     } else if (header && raw.startsWith("index ")) {

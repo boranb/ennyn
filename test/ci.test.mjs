@@ -3,12 +3,13 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { MAX_TEXT, ciFindings, ciIntroduced, ciKind, ciMessages, ciSet, ciText, localPath, pinnedUses, stripComment, yamlRead } from "../checks/ci.mjs";
+import { MAX_TEXT, ciCallees, ciFindings, ciIntroduced, ciKind, ciMessages, ciSet, ciText, localPath, pinnedUses, stripComment, yamlRead } from "../checks/ci.mjs";
 import { git, stagedVersions } from "../core/git.mjs";
 import { loadConfig, ConfigError } from "../core/config.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
+import { TOKENS } from "./secret-shapes.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
 const SHA = "3d3c42e5aac5ba805825da76410c181273ba90b1";
@@ -207,7 +208,7 @@ test("ci hook: a commit that adds a uses by tag, a pull request checkout or a jo
   assert.match(r.check("--hook").stderr, /tools\/action\.yml: 1 new uses/);
 });
 
-test("ci hook: what HEAD already holds stays; a deleted file, an excepted one and a file the check cannot read pass, the last saying so", () => {
+test("ci hook: what HEAD already holds stays; a deleted file and an excepted one pass; text that is not UTF-8 and a symbolic link are refused", () => {
   const r = repo();
   // Committed past the hook: the old state the check leaves alone.
   r.stage({ [WF]: "on: push\njobs:\n  a:\n    steps:\n      - uses: a/b@v1\n" });
@@ -221,22 +222,24 @@ test("ci hook: what HEAD already holds stays; a deleted file, an excepted one an
   assert.equal(r.check("--hook").status, 0, "an excepted file is not read");
   const wide = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from("steps:\n  - uses: a/b@v1\n", "utf16le")]);
   r.stage({ [WF]: wide });
-  const said = r.check("--hook");
-  assert.equal(said.status, 0);
-  assert.match(said.stderr, /ci\.yml: not checked \(not UTF-8 text\)/);
-  git(["rm", "-q", "--cached", WF], { cwd: r.dir });
+  const refused = r.check("--hook");
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /ci\.yml: this commit brings a file the check cannot read \(not UTF-8 text\)/);
+  git(["rm", "-q", "-f", WF], { cwd: r.dir });
   symlinkSync("../../elsewhere.yml", join(r.dir, ".github", "workflows", "link.yml"));
   git(["add", "-A"], { cwd: r.dir });
-  assert.match(r.check("--hook").stderr, /link\.yml: not checked \(a symbolic link\)/);
+  const link = r.check("--hook");
+  assert.equal(link.status, 1);
+  assert.match(link.stderr, /link\.yml: this commit brings a file the check cannot read \(a symbolic link\)/);
 });
 
-test("ci hook: a staged CI file whose name is not UTF-8 is said by the hook, and fails commit-check run by hand", () => {
+test("ci hook: a staged CI file whose name is not UTF-8 is refused by the hook and fails commit-check run by hand", () => {
   const r = repo();
   const hash = spawnSync("git", ["hash-object", "-w", "--stdin"], { cwd: r.dir, input: "steps:\n  - uses: a/b@v1\n", encoding: "utf8" }).stdout.trim();
   const name = Buffer.from([...Buffer.from(".github/workflows/"), 0xff, ...Buffer.from(".yml")]);
   assert.equal(spawnSync("git", ["update-index", "--add", "--index-info"], { cwd: r.dir, input: Buffer.concat([Buffer.from(`100644 ${hash}\t`), name, Buffer.from("\n")]) }).status, 0);
   const hook = r.check("--hook");
-  assert.equal(hook.status, 0);
+  assert.equal(hook.status, 1);
   assert.match(hook.stderr, /security\.ci was not checked in 1 staged path\(s\) whose names are not UTF-8/);
   const hand = r.check();
   assert.equal(hand.status, 1);
@@ -267,10 +270,10 @@ test("ci hook: a merge that brings a uses by tag from the other side fails; the 
   assert.match(hook.stderr, /ci\.yml: 1 new uses/);
 });
 
-test("ci hook: a file past 16 MB is said, and a name the index holds decomposed is read as written", () => {
+test("ci hook: a file past 16 MB is refused, and a name the index holds decomposed is read as written", () => {
   const r = repo();
   r.stage({ [WF]: `steps:\n  - uses: a/b@v1\n${"#".repeat(16 * 1024 * 1024)}\n` });
-  assert.match(r.check("--hook").stderr, /ci\.yml: not checked \(past 16 MB\)/);
+  assert.match(r.check("--hook").stderr, /ci\.yml: this commit brings a file the check cannot read \(past 16 MB\)/);
   git(["rm", "-q", "--cached", WF], { cwd: r.dir });
   // An index entry named in NFD (as Linux git writes it) under macOS git's composing of what it is asked.
   git(["config", "core.precomposeUnicode", "true"], { cwd: r.dir });
@@ -406,7 +409,7 @@ test("ci round one: a workflow named action.yml is a workflow, messages escape w
   assert.ok(!/[\u0000-\u001f]/.test(out.errors[0]), JSON.stringify(out.errors[0]));
   assert.match(out.errors[0], /\\u001b\[2K\\nAll checks passed/);
   const tr = ciMessages(new Map([["a.yml", { staged: null, head: null, unread: /** @type {const} */ ("symlink") }]]), "tr");
-  assert.match(tr.warnings[0], /sembolik bağ/);
+  assert.match(tr.errors[0], /sembolik bağ/);
   // YAML the reading cannot follow is refused; a callee it does not hold is said.
   const forms = ciMessages(new Map([[".github/workflows/a.yml", { staged: Buffer.from("steps:\n  - ? uses\n    : a/b@v1\n"), head: null }]]), "en");
   assert.match(forms.errors.join("\n"), /a\.yml: YAML the check cannot follow.*line 2 \(an explicit key/);
@@ -872,4 +875,819 @@ test("ci round two of cycle 14: the leaf tests join every shell's continuation, 
   const checkout = (/** @type {string} */ path, /** @type {string} */ local) => ciFindings(`on: push\npermissions: {}\njobs:\n  a:\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          repository: o/r\n          path: ${path}\n      - uses: ./${local}\n`, "workflow").uses.at(-1)?.pinned;
   assert.equal(checkout("${{ github.workspace }}\\lib", "lib/act"), false);
   assert.equal(checkout("lib\\sub", "lib/sub/act"), false);
+});
+
+test("ci escapes: an escape that names no character is a refused form, wherever it stands, and the file reads on; every other escape reads as before", () => {
+  const BAD = ["\\x", "\\x4", "\\xZZ", "\\u", "\\u12", "\\uZZZZ", "\\U", "\\U0011", "\\UZZZZZZZZ", "\\U00110000", "\\UFFFFFFFF", "\\uD800", "\\uDBFF", "\\uDC00", "\\uDFFF", "\\U0000D800", "\\U0000DFFF", "\\uD83D\\uDE00", "\\U00110000\\x41"];
+  const WHAT = "an escape that names no character";
+  const after = "jobs:\n  a:\n    steps:\n      - uses: a/b@v1\n";
+  /** @type {[string, (e: string) => string, RegExp][]} */
+  const PLACES = [
+    ["a value", (e) => `on: push\nname: "${e}"\n`, /^an escape/],
+    ["a key", (e) => `on: push\n"${e}": 1\n`, /^an escape/],
+    ["a key with a mapping below", (e) => `on: push\n"${e}":\n  a: 1\n`, /^an escape/],
+    ["an item", (e) => `on: push\nx:\n  - "${e}"\n`, /^an escape/],
+    ["a value in a flow collection", (e) => `on: push\nx: ["${e}"]\n`, /^an escape/],
+    ["a key in a flow collection", (e) => `on: push\nx: {"${e}": 1}\n`, /^a flow collection this reading cannot follow \(an escape/],
+    ["a pair in a flow sequence", (e) => `on: push\nx: ["${e}": 1]\n`, /^a flow collection this reading cannot follow \(an escape/],
+    ["a quote over lines", (e) => `on: push\nname: "a\n  ${e}"\n`, /^an escape/],
+  ];
+  for (const e of BAD) {
+    for (const [name, make, what] of PLACES) {
+      const f = ciFindings(make(e) + after, "workflow");
+      assert.ok(f.unread.some((u) => what.test(u.what) && u.what.includes(WHAT)), `${e} in ${name}: ${JSON.stringify(f.unread.map((u) => u.what))}`);
+      assert.deepEqual(f.uses.map((u) => u.value), ["a/b@v1"], `${e} in ${name}: the lines after it are read`);
+    }
+    // Where a line is only looked at, to see whether it is a key: no throw, and the form around it is refused.
+    for (const text of [`on: push\nname: a\n  "${e}": 1\n`, `on: push\nname: "a\n"${e}": 1\n`, `on: [push,\n"${e}": 1\n`, `on: push\nname:\n  "${e}": 1\n`]) assert.ok(yamlRead(text).unread.length, JSON.stringify(text));
+    // Not a double-quoted scalar: no escape to read.
+    for (const text of [`on: push\nname: '${e}'\n`, `on: push\nname: ${e}\n`, `on: push\nname: |\n  "${e}"\n`, `on: push\n# "${e}"\n`]) assert.deepEqual(yamlRead(text).unread, [], JSON.stringify(text));
+  }
+  // A step whose quoted value holds one is no pinned step, a local path neither.
+  assert.deepEqual(usesOf(`steps:\n  - uses: "a/b@${SHA}\\U00110000"\n`), [[2, `a/b@${SHA}\\U00110000`, false]]);
+  assert.deepEqual(usesOf('steps:\n  - uses: "./x\\U00110000"\n'), [[2, "./x\\U00110000", false]]);
+  // What stands below a key that holds one is read as its own, and refused once.
+  const below = ciFindings('on: push\njobs:\n  "\\U00110000":\n    runs-on: x\n    steps:\n      - uses: a/b@v1\n', "workflow");
+  assert.deepEqual([below.unread.map((u) => u.n), below.uses.map((u) => u.value), below.unpermitted], [[3], ["a/b@v1"], [{ job: "\\U00110000", n: 3 }]]);
+  /** @type {[string, string][]} */
+  const GOOD = [["\\x41", "A"], ["\\xFF", "\u00ff"], ["\\u0041", "A"], ["\\uD7FF", "\ud7ff"], ["\\uE000", "\ue000"], ["\\uFFFF", "\uffff"], ["\\U00000041", "A"], ["\\U0000D7FF", "\ud7ff"], ["\\U0000E000", "\ue000"], ["\\U0001F600", "\u{1f600}"], ["\\U0010FFFF", "\u{10ffff}"], ["\\n", "\n"], ["\\t", "\t"], ["\\\\", "\\"], ['\\"', '"'], ["\\/", "/"], ["\\ ", " "], ["\\0", "\0"], ["\\N", "\u0085"], ["\\L", "\u2028"], ["\\P", "\u2029"], ["\\\\x4", "\\x4"], ["\\\\U00110000", "\\U00110000"]];
+  for (const [e, value] of GOOD) {
+    const r = yamlRead(`on: push\nname: "${e}"\n"k${e}": 1\n`);
+    assert.deepEqual(r.unread, [], e);
+    assert.deepEqual(r.entries.slice(1).map((x) => [x.key, x.value]), [["name", value], [`k${value}`, "1"]], e);
+  }
+});
+
+test("ci files: a decoy beside a refused workflow takes nothing from it: staged, by hand, at HEAD, as a callee and in doctor", async () => {
+  const PWN = `on: pull_request_target\njobs:\n  a:\n    runs-on: x\n    steps:\n      - uses: actions/checkout@v4\n        with:\n          ref: \${{ github.event.pull_request.head.sha }}\n`;
+  const three = [/pwn\.yml: 1 new uses/, /pwn\.yml: a pull_request_target workflow checks out/, /pwn\.yml: neither the workflow nor these jobs set permissions/];
+  const stands = (/** @type {{ status: number | null, stderr: string }} */ r) => {
+    assert.equal(r.status, 1, r.stderr);
+    for (const re of three) assert.match(r.stderr, re);
+    assert.doesNotMatch(r.stderr, /security\.ci was not checked/);
+  };
+  const r = repo();
+  r.stage({ ".github/workflows/pwn.yml": PWN });
+  stands(r.check("--hook"));
+  r.stage({ ".github/workflows/decoy.yml": 'on: push\npermissions: {}\nname: "\\U00110000"\n' });
+  const hook = r.check("--hook");
+  stands(hook);
+  assert.match(hook.stderr, /decoy\.yml: YAML the check cannot follow.*line 3 \(an escape that names no character/);
+  stands(r.check());
+  // The same decoy held at HEAD and read as context: nothing new in it, and the rest is judged.
+  assert.equal(r.commit("chore: past the hook", "--no-verify").status, 0);
+  r.stage({ ".github/workflows/pwn.yml": `${PWN}      - run: make\n` });
+  assert.equal(r.check("--hook").status, 0, "nothing the commit brings is new");
+  r.stage({ ".github/workflows/second.yml": PWN });
+  const second = r.check("--hook");
+  assert.equal(second.status, 1);
+  assert.match(second.stderr, /second\.yml: a pull_request_target workflow checks out/);
+  assert.doesNotMatch(second.stderr, /decoy\.yml/);
+  // Doctor reports on what the index holds, the decoy among it.
+  const d = await checkSetup({ cwd: r.dir, env: process.env });
+  assert.deepEqual(d.items.filter((i) => i.key.startsWith("doctor.ci")).map((i) => i.key), ["doctor.ciUnpinned", "doctor.ciPwn", "doctor.ciPermissions", "doctor.ciForms"]);
+  // A callee that holds one is read on: what it checks out still reaches its caller's file.
+  const c = repo();
+  c.stage({ ".github/workflows/pr.yml": "on: pull_request_target\npermissions: {}\njobs:\n  a:\n    runs-on: x\n    steps:\n      - uses: ./.github/actions/x\n", ".github/actions/x/action.yml": 'name: "\\x4"\nruns:\n  using: composite\n  steps:\n    - run: git fetch origin pull/1/head\n      shell: bash\n' });
+  const callee = c.check("--hook");
+  assert.equal(callee.status, 1);
+  assert.match(callee.stderr, /action\.yml: a pull_request_target workflow checks out.*reached from \.github\/workflows\/pr\.yml/);
+  assert.match(callee.stderr, /action\.yml: YAML the check cannot follow.*line 1/);
+});
+
+/** Runs `body` with `String.fromCodePoint` throwing for U+E000: `"\uE000"` then stands for a text no reading gets through. @param {() => void} body */
+function stopping(body) {
+  const real = String.fromCodePoint;
+  String.fromCodePoint = (/** @type {number[]} */ ...c) => {
+    if (c[0] === 0xe000) throw new RangeError("stopped here");
+    return real(...c);
+  };
+  try {
+    body();
+  } finally {
+    String.fromCodePoint = real;
+  }
+}
+const STOPS = 'on: push\nname: "\\uE000"\n';
+const PWN_TEXT = `on: pull_request_target\npermissions: {}\njobs:\n  a:\n    runs-on: x\n    steps:\n      - uses: actions/checkout@${SHA}\n        with:\n          ref: \${{ github.event.pull_request.head.sha }}\n`;
+
+test("ci files: a reading that throws is held to its file: named, refused when the commit brings the text, said when HEAD holds it, and the others stand", () => {
+  assert.equal(ciFindings(STOPS, "workflow").unread.length, 0, "with no fault the marker is an ordinary character");
+  const key = (/** @type {string} */ p) => Buffer.from(p);
+  stopping(() => {
+    assert.throws(() => ciFindings(STOPS, "workflow"), /stopped here/);
+    // ciSet: the file is one form, known by its whole text, and its callers name it.
+    const set = ciSet(new Map([["a.yml", STOPS], ["b.yml", PWN_TEXT]]));
+    assert.deepEqual(set.findings.get("a.yml")?.unread, [{ n: 1, what: "a file this reading stopped on (stopped here)", text: STOPS }]);
+    assert.equal(set.findings.get("a.yml")?.stopped, true);
+    assert.equal(set.findings.get("b.yml")?.pwn.length, 1);
+    const pr = "on: pull_request_target\npermissions: {}\njobs:\n  a:\n    runs-on: x\n    steps:\n      - uses: ./tools/x\n";
+    const reached = ciSet(new Map([[".github/workflows/p.yml", pr], ["tools/x/action.yml", STOPS]]));
+    assert.deepEqual(reached.missing, [{ path: ".github/workflows/p.yml", n: 7, callee: "tools/x" }]);
+    assert.equal(reached.findings.get("tools/x/action.yml")?.unread.length, 1, "one form, stopped alone and reached");
+    // Brought by the commit: refused, whatever HEAD held.
+    for (const head of [null, key("on: push\n")]) {
+      const out = ciMessages(new Map([[".github/workflows/a.yml", { staged: key(STOPS), head }], [".github/workflows/b.yml", { staged: key(PWN_TEXT), head: null }]]), "en");
+      assert.deepEqual(out.errors.map((e) => e.split(":")[0]), [".github/workflows/a.yml", ".github/workflows/b.yml"], JSON.stringify(out));
+      assert.match(out.errors[0], /YAML the check cannot follow.*line 1 \(a file this reading stopped on \(stopped here\)\)/);
+      assert.match(out.errors[1], /pull_request_target workflow checks out/);
+      assert.deepEqual(out.warnings, []);
+    }
+    // Held at HEAD: nothing new, and named.
+    const held = ciMessages(new Map([[".github/workflows/a.yml", { staged: key(STOPS), head: key(STOPS) }], [".github/workflows/b.yml", { staged: key(PWN_TEXT), head: null }]]), "en");
+    assert.equal(held.errors.length, 1);
+    assert.match(held.errors[0], /b\.yml: a pull_request_target/);
+    assert.deepEqual(held.warnings, [".github/workflows/a.yml: not checked (its reading stopped); its uses, triggers and permissions are not known"]);
+    assert.match(ciMessages(new Map([["a.yml", { staged: key(STOPS), head: key(STOPS) }]]), "tr").warnings[0], /okuma yarıda kaldı/);
+    // Known by its whole text: an edit of a file HEAD holds is new.
+    const edited = ciMessages(new Map([[".github/workflows/a.yml", { staged: key(`${STOPS}# more\n`), head: key(STOPS) }]]), "en");
+    assert.match(edited.errors[0], /a file this reading stopped on/);
+    // A HEAD version that stops is no version: everything staged is new.
+    const before = ciMessages(new Map([[".github/workflows/b.yml", { staged: key(PWN_TEXT), head: key(`${PWN_TEXT}"\\uE000": 1\n`) }]]), "en");
+    assert.equal(before.errors.length, 1);
+    assert.match(before.errors[0], /pull_request_target workflow checks out/);
+    // ciCallees: a file that stops calls nothing; the others' callees stand.
+    assert.deepEqual(ciCallees(new Map([["a.yml", { staged: key(STOPS), head: null }], [".github/workflows/p.yml", { staged: key(pr), head: key(STOPS) }]])), ["tools/x/action.yml", "tools/x/action.yaml"]);
+  });
+});
+
+test("ci hook: a reading that throws, in the real hook and in doctor: the other files' refusals stand and the file is named", () => {
+  const r = repo();
+  r.stage({ ".github/workflows/pwn.yml": PWN_TEXT.replace(`@${SHA}`, "@v4"), ".github/workflows/stops.yml": STOPS });
+  const fault = `data:text/javascript,const real=String.fromCodePoint;String.fromCodePoint=(...c)=>{if(c[0]===0xe000)throw new RangeError("stopped here");return real(...c)};`;
+  writeFileSync(join(r.dir, ".git", "MSG"), "chore: ci\n");
+  const hook = spawnSync(process.execPath, ["--import", fault, CLI, "commit-check", "--hook", ".git/MSG"], { cwd: r.dir, encoding: "utf8" });
+  assert.equal(hook.status, 1, hook.stderr);
+  assert.match(hook.stderr, /pwn\.yml: 1 new uses/);
+  assert.match(hook.stderr, /pwn\.yml: a pull_request_target workflow checks out/);
+  assert.match(hook.stderr, /stops\.yml: YAML the check cannot follow.*a file this reading stopped on \(stopped here\)/);
+  assert.doesNotMatch(hook.stderr, /was not checked/);
+  // Committed past the hook, and asked of doctor: the whole report, the file among the forms.
+  assert.equal(r.commit("chore: past the hook", "--no-verify").status, 0);
+  const doctor = spawnSync(process.execPath, ["--import", fault, CLI, "doctor"], { cwd: r.dir, encoding: "utf8" });
+  assert.doesNotMatch(doctor.stderr, /ennyn doctor: /);
+  assert.match(doctor.stdout, /CI files: .*stops\.yml.*hold YAML the check cannot follow/);
+  assert.match(doctor.stdout, /CI files: .*pwn\.yml.*check out the pull request's code/);
+});
+
+test("ci hook: text that is not UTF-8 is refused when the commit brings it, said when HEAD holds the same bytes, and stops nothing beside it", () => {
+  const latin = Buffer.from("on: pull_request_target\n# caf\xe9\njobs:\n  a:\n    steps:\n      - uses: a/b@v1\n", "latin1");
+  const key = /ci\.yml: this commit brings a file the check cannot read \(not UTF-8 text\)/;
+  const r = repo();
+  r.stage({ [WF]: latin, ".github/workflows/b.yml": PWN_TEXT });
+  const brought = r.check("--hook");
+  assert.equal(brought.status, 1);
+  assert.match(brought.stderr, key);
+  assert.match(brought.stderr, /b\.yml: a pull_request_target workflow checks out/);
+  assert.equal(r.check().status, 1, "by hand too");
+  assert.equal(r.commit("chore: past the hook", "--no-verify").status, 0);
+  r.stage({ ".github/workflows/c.yml": PINNED });
+  const held = r.check("--hook");
+  assert.equal(held.status, 0, held.stderr);
+  assert.match(held.stderr, /ci\.yml: not checked \(not UTF-8 text\)/);
+  // An edit of it brings it again; made UTF-8 it is read.
+  r.stage({ [WF]: Buffer.concat([latin, Buffer.from("# more\n")]) });
+  const edited = r.check("--hook");
+  assert.equal(edited.status, 1, "on its own, nothing else refused");
+  assert.match(edited.stderr, key);
+  r.stage({ [WF]: PINNED });
+  assert.equal(r.check("--hook").status, 0);
+  // A deleted file brings nothing.
+  assert.deepEqual(ciMessages(new Map([["a.yml", { staged: null, head: latin }]]), "en"), { errors: [], warnings: [] });
+});
+
+/** Staged with no file on disk, the name as given: [name, text][]. @param {string} dir @param {[string | Buffer, string | Buffer][]} entries */
+function stageNames(dir, entries) {
+  const lines = entries.map(([name, text]) => {
+    const oid = spawnSync("git", ["hash-object", "-w", "--stdin"], { cwd: dir, input: text, encoding: "utf8" }).stdout.trim();
+    return Buffer.concat([Buffer.from(`100644 ${oid}\t`), Buffer.from(name), Buffer.from([0])]);
+  });
+  const r = spawnSync("git", ["update-index", "--add", "-z", "--index-info"], { cwd: dir, input: Buffer.concat(lines), maxBuffer: 1 << 30 });
+  assert.equal(r.status, 0, String(r.stderr));
+}
+/** Past what one argument can hold, on macOS and on Linux. */
+const PAST_ARGV = "z".repeat(1100 * 1024);
+const REFUSED_LOCK = JSON.stringify({ name: "x", lockfileVersion: 3, packages: { "": { name: "x" }, "node_modules/a": { version: "1.0.0", resolved: "https://evil.example/a/-/a-1.0.0.tgz", integrity: "sha512-AAAA" } } });
+const BYTE_NAME = (/** @type {string} */ head, /** @type {string} */ tail) => Buffer.concat([Buffer.from(head), Buffer.from([0xff]), Buffer.from(tail)]);
+
+test("gate failure: a name past the argument limit refuses the commit, naming the gate, where the commit brings that gate's file; by hand it throws", () => {
+  const offline = { security: { deps: { online: false, advisories: "" } } };
+  /** @type {[string, string, Record<string, unknown>, RegExp][]} */
+  const GATES = [
+    ["security.ci", `${PAST_ARGV}/action.yml`, {}, /security\.ci was not checked, so this commit is refused/],
+    ["security.deps", `${PAST_ARGV}/package-lock.json`, offline, /security\.deps was not checked, so this commit is refused/],
+    ["review.forbidden", `${PAST_ARGV}.txt`, { review: { forbidden: [{ text: "NEEDLE", paths: ["**"] }] } }, /review\.forbidden was not checked, so this commit is refused/],
+  ];
+  for (const [gate, name, config, said] of GATES) {
+    const r = repo();
+    r.stage({ ".ennyn/config.json": JSON.stringify(config), "ok.txt": "x\n" });
+    stageNames(r.dir, [[name, "{}\n"]]);
+    const hook = r.check("--hook");
+    assert.equal(hook.status, 1, `${gate}: ${hook.stderr.slice(0, 300)}`);
+    assert.match(hook.stderr, said, gate);
+    assert.equal(r.check().status, 1, gate);
+  }
+  // A name no gate reads costs nothing.
+  const r = repo();
+  stageNames(r.dir, [[`${PAST_ARGV}.txt`, "x\n"]]);
+  const none = r.check("--hook");
+  assert.equal(none.status, 0, none.stderr.slice(0, 300));
+});
+
+test("gate failure: names that only add up past the limit are read in chunks: an honest large commit is judged, not refused", () => {
+  const r = repo();
+  r.stage({ ".github/workflows/pwn.yml": PWN_TEXT, ".ennyn/config.json": JSON.stringify({ review: { forbidden: [{ text: "NEEDLE", paths: ["**"] }] } }) });
+  const seg = "b".repeat(200);
+  stageNames(r.dir, Array.from({ length: 500 }, (_, i) => /** @type {[string, string]} */ ([`${i}/${Array(11).fill(seg).join("/")}/action.yml`, i === 499 ? "name: x\nNEEDLE: 1\n" : "name: x\n"])));
+  const hook = r.check("--hook");
+  assert.equal(hook.status, 1);
+  assert.match(hook.stderr, /pwn\.yml: a pull_request_target workflow checks out/);
+  assert.match(hook.stderr, /adds "NEEDLE"/);
+  assert.doesNotMatch(hook.stderr, /was not checked/);
+});
+
+test("gate failure: staged names past 64 MB are read, and the gates judge them", () => {
+  const r = repo();
+  // A package.json lists the whole index, which holds them too.
+  r.stage({ ".ennyn/config.json": JSON.stringify({ security: { deps: { online: false, advisories: "" } } }), ".github/workflows/pwn.yml": PWN_TEXT, "package.json": '{"name":"x"}\n', "package-lock.json": '{"name":"x","lockfileVersion":3,"packages":{"":{"name":"x"}}}\n' });
+  stageNames(r.dir, Array.from({ length: 1100 }, (_, i) => /** @type {[string, string]} */ ([`${String(i).padStart(5, "0")}${"y".repeat(61 * 1024)}`, "x\n"])));
+  const hook = r.check("--hook");
+  assert.equal(hook.status, 1, hook.stderr.slice(0, 300));
+  assert.match(hook.stderr, /pwn\.yml: a pull_request_target workflow checks out/);
+  assert.doesNotMatch(hook.stderr, /was not checked/);
+});
+
+test("ci callees: one candidate that cannot be read costs only itself: the round reads on, and it is named", () => {
+  const CALLEE = "runs:\n  using: composite\n  steps:\n    - run: git fetch origin pull/1/head\n      shell: bash\n";
+  const CALLER = "on: pull_request_target\npermissions: {}\njobs:\n  a:\n    runs-on: x\n    steps:\n      - uses: ./tools/x\n";
+  const neighbour = (/** @type {string} */ uses) => `on: push\npermissions: {}\njobs:\n  b:\n    runs-on: x\n    steps:\n      - uses: ${uses}\n`;
+  /** @type {[string, Record<string, string>][]} */
+  const CASES = [
+    ["a NUL in a neighbour", { ".github/workflows/p.yml": CALLER, ".github/workflows/d.yml": neighbour('"./a\\0b"') }],
+    ["a NUL in the same file", { ".github/workflows/p.yml": `${CALLER}      - uses: "./a\\0b"\n` }],
+    ["a value no argument holds", { ".github/workflows/p.yml": CALLER, ".github/workflows/d.yml": neighbour(`./${"a".repeat(900000)}`) }],
+  ];
+  for (const [name, files] of CASES) {
+    const r = repo();
+    r.stage({ "tools/x/action.yml": CALLEE });
+    assert.equal(r.commit("chore: held", "--no-verify").status, 0);
+    r.stage(files);
+    const hook = r.check("--hook");
+    assert.equal(hook.status, 1, name);
+    assert.match(hook.stderr, /tools\/x\/action\.yml: a pull_request_target workflow checks out.*reached from/, name);
+    assert.match(hook.stderr, /security\.ci could not read the local callees/, name);
+    assert.equal(r.check().status, 1, `${name}, by hand`);
+  }
+  // Alone, a candidate that names no file git could hold is named and refuses nothing.
+  const r = repo();
+  r.stage({ ".github/workflows/d.yml": neighbour('"./a\\0b"') });
+  const alone = r.check("--hook");
+  assert.equal(alone.status, 0, alone.stderr);
+  assert.match(alone.stderr, /security\.ci could not read the local callees/);
+});
+
+test("ci files: a symbolic link or a file past 16 MB the commit brings is refused, the same at HEAD is said, a submodule stays said", () => {
+  const big = `steps:\n  - uses: a/b@v1\n${"#".repeat(16 * 1024 * 1024)}\n`;
+  const new_ = /x\.yml: this commit brings a file the check cannot read \(/;
+  const link = repo();
+  mkdirSync(join(link.dir, ".github", "workflows"), { recursive: true });
+  symlinkSync("../../elsewhere.txt", join(link.dir, ".github", "workflows", "x.yml"));
+  link.stage({ "elsewhere.txt": "on: pull_request_target\n" });
+  const brought = link.check("--hook");
+  assert.equal(brought.status, 1, brought.stderr);
+  assert.match(brought.stderr, new_);
+  assert.match(brought.stderr, /a symbolic link/);
+  assert.equal(link.check().status, 1, "by hand too");
+  assert.equal(link.commit("chore: past the hook", "--no-verify").status, 0);
+  link.stage({ ".github/workflows/c.yml": PINNED });
+  const held = link.check("--hook");
+  assert.equal(held.status, 0, held.stderr);
+  assert.match(held.stderr, /x\.yml: not checked \(a symbolic link\)/);
+  // Another target is another file.
+  rmSync(join(link.dir, ".github", "workflows", "x.yml"));
+  symlinkSync("../../other.txt", join(link.dir, ".github", "workflows", "x.yml"));
+  link.stage({ "other.txt": "on: pull_request_target\n" });
+  assert.match(link.check("--hook").stderr, new_);
+  const large = repo();
+  large.stage({ ".github/workflows/x.yml": big });
+  const past = large.check("--hook");
+  assert.equal(past.status, 1);
+  assert.match(past.stderr, new_);
+  assert.match(past.stderr, /past 16 MB/);
+  assert.equal(large.check().status, 1, "by hand too");
+  assert.equal(large.commit("chore: past the hook", "--no-verify").status, 0);
+  large.stage({ ".github/workflows/c.yml": PINNED });
+  const stays = large.check("--hook");
+  assert.equal(stays.status, 0, stays.stderr);
+  assert.match(stays.stderr, /x\.yml: not checked \(past 16 MB\)/);
+  // A file made a link, with the same bytes as its old text: brought.
+  const made = repo();
+  made.stage({ ".github/workflows/x.yml": "../../y\n" });
+  assert.equal(made.commit("chore: a file", "--no-verify").status, 0);
+  rmSync(join(made.dir, ".github", "workflows", "x.yml"));
+  symlinkSync("../../y\n", join(made.dir, ".github", "workflows", "x.yml"));
+  git(["add", "-A"], { cwd: made.dir });
+  assert.equal(made.check("--hook").status, 1);
+  // A submodule's entry: said.
+  const sub = repo();
+  assert.equal(spawnSync("git", ["update-index", "--add", "-z", "--index-info"], { cwd: sub.dir, input: `160000 ${"b".repeat(40)}\t.github/workflows/s.yml\0` }).status, 0);
+  const said = sub.check("--hook");
+  assert.equal(said.status, 0, said.stderr);
+  assert.match(said.stderr, /s\.yml: not checked \(a submodule\)/);
+});
+
+test("names: a staged name that is not UTF-8 under a gate's paths is refused, and a valid name that reads the same is still judged", () => {
+  const needle = { review: { forbidden: [{ text: "NEEDLE", paths: ["**"] }] }, security: { deps: { online: false, advisories: "" } } };
+  /** @type {[string, Buffer, RegExp][]} */
+  const ALONE = [
+    ["security.ci", BYTE_NAME(".github/workflows/p", ".yml"), /security\.ci was not checked in 1 staged path\(s\) whose names are not UTF-8/],
+    ["security.deps", BYTE_NAME("p", "/package-lock.json"), /security\.deps was not checked in 1 staged path\(s\) whose names are not UTF-8/],
+    ["review.forbidden", BYTE_NAME("p", ".txt"), /review\.forbidden was not checked in 1 staged path\(s\) whose names are not UTF-8/],
+  ];
+  for (const [gate, name, said] of ALONE) {
+    const r = repo();
+    r.stage({ ".ennyn/config.json": JSON.stringify(gate === "review.forbidden" ? needle : { security: { deps: { online: false, advisories: "" } } }) });
+    stageNames(r.dir, [[name, "{}\n"]]);
+    const hook = r.check("--hook");
+    assert.equal(hook.status, 1, `${gate}: ${hook.stderr}`);
+    assert.match(hook.stderr, said, gate);
+  }
+  // A name outside every gate's paths: refused by none.
+  const none = repo();
+  stageNames(none.dir, [[BYTE_NAME("p", ".txt"), "x\n"]]);
+  assert.equal(none.check("--hook").status, 0);
+  // The valid name that spells U+FFFD itself, beside a name that reads the same: judged, in each gate.
+  const ci = repo();
+  ci.stage({ ".github/workflows/p\ufffd.yml": PWN_TEXT });
+  stageNames(ci.dir, [[BYTE_NAME(".github/workflows/p", ".yml"), "on: push\n"]]);
+  assert.match(ci.check("--hook").stderr, /p\ufffd\.yml: a pull_request_target workflow checks out/);
+  const deps = repo();
+  deps.stage({ ".ennyn/config.json": JSON.stringify(needle), "p\ufffd/package-lock.json": REFUSED_LOCK });
+  stageNames(deps.dir, [[BYTE_NAME("p", "/package-lock.json"), "{}\n"]]);
+  assert.match(deps.check("--hook").stderr, /p\ufffd\/package-lock\.json: 1 new entries come from a source/);
+  const forbidden = repo();
+  forbidden.stage({ ".ennyn/config.json": JSON.stringify(needle), "p\ufffd.txt": "NEEDLE\n" });
+  stageNames(forbidden.dir, [[BYTE_NAME("p", ".txt"), "x\n"]]);
+  assert.match(forbidden.check("--hook").stderr, /p\ufffd\.txt:1 adds "NEEDLE"/);
+  // The secret scan reads each by its own object.
+  const secrets = repo();
+  secrets.stage({ "p\ufffd.txt": `token = ${TOKENS.npm}\n` });
+  stageNames(secrets.dir, [[BYTE_NAME("p", ".txt"), "x\n"]]);
+  assert.match(secrets.check("--hook").stderr, /p\ufffd\.txt:1 \(npm-token/);
+});
+
+test("ci files: a callee whose reading stops only when reached is refused when the commit brings it, whichever mode reads it", () => {
+  const CALLER = "on: pull_request_target\npermissions: {}\njobs:\n  a:\n    runs-on: x\n    steps:\n      - uses: ./tools/x\n";
+  const CALLEE = "runs:\n  using: composite\n  steps:\n    - run: git fetch origin STOPHERE\n      shell: bash\n";
+  const stopsWhenReached = (/** @type {() => void} */ body) => {
+    const real = String.prototype.matchAll;
+    // Only the rules of a reached file ask this of a run's text.
+    String.prototype.matchAll = function (/** @type {any} */ re) {
+      if (this.includes("STOPHERE")) throw new RangeError("stopped here");
+      return real.call(this, re);
+    };
+    try {
+      body();
+    } finally {
+      String.prototype.matchAll = real;
+    }
+  };
+  stopsWhenReached(() => {
+    assert.deepEqual(ciFindings(CALLEE, "action").unread, [], "alone it reads");
+    const key = (/** @type {string} */ p) => Buffer.from(p);
+    const files = (/** @type {Buffer | null} */ head) => new Map([[".github/workflows/p.yml", { staged: key(CALLER), head: null }], ["tools/x/action.yml", { staged: key(CALLEE), head }]]);
+    const brought = ciMessages(files(null), "en");
+    assert.equal(brought.errors.length, 1, JSON.stringify(brought));
+    assert.match(brought.errors[0], /tools\/x\/action\.yml: YAML the check cannot follow.*a file this reading stopped on \(stopped here\)/);
+    assert.match(brought.warnings[0], /p\.yml: a pull_request_target workflow reaches tools\/x/);
+    const held = ciMessages(files(key(CALLEE)), "en");
+    assert.deepEqual(held.errors, [], JSON.stringify(held));
+    assert.ok(held.warnings.some((w) => /reaches tools\/x/.test(w)), JSON.stringify(held));
+    assert.ok(held.warnings.some((w) => /tools\/x\/action\.yml: not checked \(its reading stopped\)/.test(w)), JSON.stringify(held));
+  });
+});
+
+test("ci reader: a shell function's name of any length reads: no regular expression is built from a file's text", () => {
+  for (const n of [32, 40000, 500000]) {
+    const name = "a".repeat(n);
+    const text = `runs:\n  using: composite\n  steps:\n    - run: |\n        ${name}() {\n          git fetch "$1"\n        }\n        ${name} pull/1/head\n      shell: bash\n`;
+    assert.equal(ciFindings(text, "action", { targeted: true }).pwn.length, 1, String(n));
+    // Its definition alone is no call.
+    assert.equal(ciFindings(text.replace(`${name} pull/1/head`, "true"), "action", { targeted: true }).pwn.length, 0, String(n));
+    // On the line of its definition too, with white space in the parentheses.
+    const same = `runs:\n  using: composite\n  steps:\n    - run: |\n        ${name} ( ) { git fetch "$1"; }\n      shell: bash\n`;
+    assert.equal(ciFindings(same, "action", { targeted: true }).pwn.length, 0, String(n));
+  }
+  const line = (/** @type {string} */ text) => ciFindings(`runs:\n  using: composite\n  steps:\n    - run: |\n        f() {\n          git fetch "$1"\n        }\n        ${text}\n      shell: bash\n`, "action", { targeted: true }).pwn.length;
+  assert.equal(line("f pull/1/head"), 1, "a call");
+  assert.equal(line("f ( ) pull/1/head"), 0, "white space in the parentheses: its definition");
+  assert.equal(line("f pull/1/head; f()"), 0, "its definition further on: as the line was read before");
+});
+
+test("ci set and doctor: a file whose aliases multiply to 190,000 uses reads through: no list is spread into a call", async () => {
+  const many = (/** @type {string} */ use) => `a: &a\n${Array.from({ length: 1000 }, () => `  - uses: ${use}\n`).join("")}${Array.from({ length: 190 }, (_, i) => `b${i}: *a\n`).join("")}`;
+  const caller = "on: pull_request_target\npermissions: {}\njobs:\n  j:\n    runs-on: x\n    steps:\n      - uses: ./tools/big\n";
+  const set = ciSet(new Map([[".github/workflows/c.yml", caller], ["tools/big/action.yml", many("./y")]]));
+  assert.ok(set.missing.length > 100000, "every call a reached file makes is walked");
+  const r = repo();
+  r.stage({ ".github/workflows/big.yml": `on: push\npermissions: {}\n${many("a/b@v1")}`, ".github/workflows/pwn.yml": PWN_TEXT });
+  assert.equal(r.commit("chore: past the hook", "--no-verify").status, 0);
+  const d = await checkSetup({ cwd: r.dir, env: process.env });
+  assert.ok(d.items.some((i) => i.key === "doctor.ciUnpinned"));
+  assert.ok(d.items.some((i) => i.key === "doctor.ciPwn"));
+});
+
+test("gate failure: the secret scan keeps to the same rule: a name no argument holds cannot hide a key, and many names do not turn it off", () => {
+  const r = repo();
+  const key = `-----BEGIN RSA PRIVATE KEY-----`;
+  stageNames(r.dir, [[`${PAST_ARGV}.pem`, `${key}\n`]]);
+  const hook = r.check("--hook");
+  assert.equal(hook.status, 1, hook.stderr.slice(0, 300));
+  assert.match(hook.stderr, /security\.secrets was not checked, so this commit is refused/);
+  // Names that fit git's 64 MiB as a list and not with `diff --raw`'s hundred bytes a name: the token beside them is found.
+  const many = repo();
+  stageNames(many.dir, [...Array.from({ length: 1095 }, (_, i) => /** @type {[string, string]} */ ([`${String(i).padStart(5, "0")}${"n".repeat(61275)}`, "x\n"])), ["secret.txt", `token = ${TOKENS.npm}\n`]]);
+  const found = many.check("--hook");
+  assert.equal(found.status, 1, found.stderr.slice(0, 300));
+  assert.doesNotMatch(found.stderr, /was not checked/);
+  assert.match(found.stderr, /secret\.txt:1 \(npm-token/);
+});
+
+test("gate failure: a throw of the forbidden scan refuses a commit it reads, and a pattern the message check cannot compile still passes", () => {
+  const r = repo();
+  r.stage({ ".ennyn/config.json": JSON.stringify({ review: { forbidden: [{ text: "NEEDLE", paths: ["**"] }] } }), "a.txt": "é\n" });
+  const fault = `data:text/javascript,const real=String.prototype.normalize;String.prototype.normalize=function(f){if(String(this).includes("é"))throw new RangeError("stopped here");return real.call(this,f)};`;
+  writeFileSync(join(r.dir, ".git", "MSG"), "chore: ci\n");
+  const hook = spawnSync(process.execPath, ["--import", fault, CLI, "commit-check", "--hook", ".git/MSG"], { cwd: r.dir, encoding: "utf8" });
+  assert.equal(hook.status, 1, hook.stderr);
+  assert.match(hook.stderr, /review\.forbidden was not checked, so this commit is refused: .*\(stopped here\)/);
+  r.stage({ ".ennyn/config.json": JSON.stringify({ commitMsg: { skipSubjects: ["("] } }) });
+  assert.equal(r.check("--hook").status, 0);
+});
+
+test("gate failure: a throw of the deps check refuses a commit that brings a lock, naming the gate", () => {
+  const r = repo();
+  r.stage({ ".ennyn/config.json": JSON.stringify({ security: { deps: { online: false, advisories: "" } } }), "package-lock.json": REFUSED_LOCK });
+  // Stands for a throw of the check's own code: no input is known to make one.
+  const fault = `data:text/javascript,const real=Object.entries;Object.entries=function(o){if(o&&o["node_modules/a"])throw new RangeError("stopped here");return real(o)};`;
+  writeFileSync(join(r.dir, ".git", "MSG"), "chore: ci\n");
+  const hook = spawnSync(process.execPath, ["--import", fault, CLI, "commit-check", "--hook", ".git/MSG"], { cwd: r.dir, encoding: "utf8" });
+  assert.equal(hook.status, 1, hook.stderr);
+  assert.match(hook.stderr, /security\.deps was not checked, so this commit is refused: .*\(stopped here\)/);
+});
+
+/** The environment of a run with a git on PATH that does `script` first, then the real one. @param {string} script */
+function fakeGit(script) {
+  const bin = mkdtempSync(join(tmpdir(), "en-ci-git-"));
+  const real = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+  writeFileSync(join(bin, "git"), `#!/bin/sh\n${script}\nexec "${real}" "$@"\n`, { mode: 0o755 });
+  return { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}` };
+}
+
+test("ci callees: a batch that fails is read name by name: what fails alone is named, every other callee stands", () => {
+  const r = repo();
+  r.stage({ "tools/x/action.yml": "runs:\n  using: composite\n  steps:\n    - run: git fetch origin pull/1/head\n      shell: bash\n" });
+  assert.equal(r.commit("chore: held", "--no-verify").status, 0);
+  r.stage({ ".github/workflows/p.yml": "on: pull_request_target\npermissions: {}\njobs:\n  a:\n    runs-on: x\n    steps:\n      - uses: ./FAILME\n      - uses: ./tools/x\n" });
+  writeFileSync(join(r.dir, ".git", "MSG"), "chore: ci\n");
+  const env = fakeGit('case " $* " in *FAILME*) echo "fatal: injected" >&2; exit 128 ;; esac');
+  const hook = spawnSync(process.execPath, [CLI, "commit-check", "--hook", ".git/MSG"], { cwd: r.dir, encoding: "utf8", env });
+  assert.equal(hook.status, 1, hook.stderr);
+  assert.match(hook.stderr, /tools\/x\/action\.yml: a pull_request_target workflow checks out/);
+  assert.match(hook.stderr, /could not read the local callees FAILME\/action\.yml, FAILME\/action\.yaml \(fatal: injected\)/);
+});
+
+test("gate failure: a list of changes past even its larger buffer refuses the commit, naming the secret scan", () => {
+  const r = repo();
+  r.stage({ "a.txt": "x\n" });
+  writeFileSync(join(r.dir, ".git", "MSG"), "chore: ci\n");
+  const env = fakeGit(`case " $* " in *" --raw "*) head -c ${256 * 1024 * 1024 + 1024} /dev/zero; exit 0 ;; esac`);
+  const hook = spawnSync(process.execPath, [CLI, "commit-check", "--hook", ".git/MSG"], { cwd: r.dir, encoding: "utf8", env });
+  assert.equal(hook.status, 1, hook.stderr);
+  assert.match(hook.stderr, /security\.secrets was not checked, so this commit is refused/);
+  // A commit that only deletes brings nothing that read could lose.
+  const gone = repo();
+  gone.stage({ "a.txt": "x\n" });
+  assert.equal(gone.commit("chore: held", "--no-verify").status, 0);
+  git(["rm", "-q", "a.txt"], { cwd: gone.dir });
+  writeFileSync(join(gone.dir, ".git", "MSG"), "chore: ci\n");
+  const deleted = spawnSync(process.execPath, [CLI, "commit-check", "--hook", ".git/MSG"], { cwd: gone.dir, encoding: "utf8", env });
+  assert.equal(deleted.status, 0, deleted.stderr);
+  assert.match(deleted.stderr, /security\.secrets was not checked: the staged lines could not be read/);
+});
+
+test("gate failure: a diff past the buffer is a ceiling: its file is said, the commit goes on, the files beside it are judged", () => {
+  const r = repo();
+  r.stage({ ".ennyn/config.json": JSON.stringify({ review: { forbidden: [{ text: "NEEDLE", paths: ["**"] }] } }), "big.txt": Buffer.concat([Buffer.alloc(65 * 1024 * 1024, 0x61), Buffer.from("\nNEEDLE\n")]) });
+  const hook = r.check("--hook");
+  assert.equal(hook.status, 0, hook.stderr);
+  assert.match(hook.stderr, /review\.forbidden was not checked in 1 staged path\(s\) \(.*big\.txt.*\): git diff: its output was larger than 64 MB/);
+  r.stage({ "other.txt": "NEEDLE\n" });
+  const beside = r.check("--hook");
+  assert.equal(beside.status, 1, beside.stderr);
+  assert.match(beside.stderr, /other\.txt:1 adds "NEEDLE"/);
+  assert.match(beside.stderr, /review\.forbidden was not checked in 1 staged path\(s\) \(.*big\.txt/);
+});
+
+const OFFLINE = { security: { deps: { online: false, advisories: "" } } };
+const NEEDLE_RULE = { review: { forbidden: [{ text: "NEEDLE", paths: ["**"] }] } };
+/** Past the buffer of a read that holds names. */
+const PAST_NAMES = 256 * 1024 * 1024 + 1024;
+
+/** Takes names out of the index by stdin: a name past the limit cannot be given as an argument. @param {string} dir @param {(string | Buffer)[]} names */
+function unstageNames(dir, names) {
+  const r = spawnSync("git", ["update-index", "--force-remove", "-z", "--stdin"], { cwd: dir, input: Buffer.concat(names.flatMap((n) => [Buffer.from(n), Buffer.from([0])])), maxBuffer: 1 << 30 });
+  assert.equal(r.status, 0, String(r.stderr));
+}
+
+test("gate scope: a name past the argument limit HEAD holds locks nothing: its removal passes, a commit beside it passes, a commit that changes it is refused", () => {
+  /** @type {[string, string, Record<string, string>][]} */
+  const GATES = [
+    ["security.ci", `.github/workflows/${PAST_ARGV}.yml`, { ".github/workflows/c.yml": PINNED }],
+    ["security.deps", `${PAST_ARGV}/package-lock.json`, { "a/package.json": '{"name":"a","version":"1.0.1"}\n' }],
+    ["review.forbidden", `${PAST_ARGV}.txt`, { "a.txt": "x\n" }],
+  ];
+  for (const [gate, name, beside] of GATES) {
+    const seeded = () => {
+      const r = repo();
+      r.stage({ ".ennyn/config.json": JSON.stringify({ ...NEEDLE_RULE, ...OFFLINE }) });
+      stageNames(r.dir, [[name, "{}\n"]]);
+      assert.equal(r.commit("chore: held", "--no-verify").status, 0, gate);
+      return r;
+    };
+    const gone = seeded();
+    unstageNames(gone.dir, [name]);
+    const removed = gone.check("--hook");
+    assert.equal(removed.status, 0, `${gate}, removed: ${removed.stderr.slice(0, 300)}`);
+    // By hand every failure throws, and security.ci reads HEAD's version of what is deleted.
+    if (gate === "security.ci") assert.equal(gone.check().status, 1, "by hand");
+    const near = seeded();
+    put(near.dir, beside);
+    git(["add", "--", ...Object.keys(beside)], { cwd: near.dir });
+    const stays = near.check("--hook");
+    assert.equal(stays.status, 0, `${gate}, beside it: ${stays.stderr.slice(0, 300)}`);
+    const changed = seeded();
+    stageNames(changed.dir, [[name, "{ }\n"]]);
+    const brought = changed.check("--hook");
+    assert.equal(brought.status, 1, `${gate}, changed`);
+    assert.match(brought.stderr, new RegExp(`${gate.replace(".", "\\.")} was not checked, so this commit is refused`), gate);
+  }
+});
+
+test("gate scope: a workflow beside a tracked name past the limit is still judged, and that name is said", () => {
+  const r = repo();
+  stageNames(r.dir, [[`.github/workflows/${PAST_ARGV}.yml`, "on: push\n"]]);
+  assert.equal(r.commit("chore: held", "--no-verify").status, 0);
+  put(r.dir, { ".github/workflows/pwn.yml": PWN_TEXT });
+  git(["add", ".github/workflows/pwn.yml"], { cwd: r.dir });
+  const hook = r.check("--hook");
+  assert.equal(hook.status, 1);
+  assert.match(hook.stderr, /pwn\.yml: a pull_request_target workflow checks out/);
+  assert.match(hook.stderr, /security\.ci could not read .*no git argument can hold that name/);
+  assert.doesNotMatch(hook.stderr, /so this commit is refused/);
+});
+
+test("gate scope: a name that is not UTF-8 the commit deletes refuses nothing, in any gate", () => {
+  for (const [gate, name] of /** @type {[string, Buffer][]} */ ([
+    ["security.ci", BYTE_NAME(".github/workflows/p", ".yml")],
+    ["security.deps", BYTE_NAME("p", "/package-lock.json")],
+    ["review.forbidden", BYTE_NAME("p", ".txt")],
+  ])) {
+    const r = repo();
+    r.stage({ ".ennyn/config.json": JSON.stringify({ ...NEEDLE_RULE, ...OFFLINE }) });
+    stageNames(r.dir, [[name, "{}\n"]]);
+    assert.equal(r.commit("chore: held", "--no-verify").status, 0, gate);
+    unstageNames(r.dir, [name]);
+    const hook = r.check("--hook");
+    assert.equal(hook.status, 0, `${gate}: ${hook.stderr}`);
+    assert.doesNotMatch(hook.stderr, /so this commit is refused/, gate);
+  }
+});
+
+test("gate scope: a path that changes kind is read on its new side: no call is lost to what a name holds below it", () => {
+  const BIG = "line of text\n".repeat(170000);
+  const many = (/** @type {string} */ dir, /** @type {string} */ last) => Object.fromEntries(Array.from({ length: 600 }, (_, i) => [`${dir}/f${i}.js`, i === 599 ? last : `${i}\n`]));
+  /** @type {[string, (r: ReturnType<typeof repo>, last: string) => void][]} */
+  const CASES = [
+    ["a file past 1 MB becomes a directory", (r, last) => {
+      r.stage({ data: BIG, "k.txt": "k\n" });
+      assert.equal(r.commit("chore: held", "--no-verify").status, 0);
+      rmSync(join(r.dir, "data"));
+      r.stage({ "data/x.txt": last });
+    }],
+    ["a directory becomes a file past 1 MB", (r, last) => {
+      r.stage({ "data/x.txt": "x\n", "k.txt": "k\n" });
+      assert.equal(r.commit("chore: held", "--no-verify").status, 0);
+      rmSync(join(r.dir, "data"), { recursive: true });
+      r.stage({ data: BIG + last });
+    }],
+    ["a link becomes a directory of 600 files", (r, last) => {
+      symlinkSync("real", join(r.dir, "lib"));
+      r.stage({ "real/x.txt": "x\n" });
+      assert.equal(r.commit("chore: held", "--no-verify").status, 0);
+      rmSync(join(r.dir, "lib"));
+      r.stage(many("lib", last));
+    }],
+    ["a submodule becomes 600 files", (r, last) => {
+      r.stage({ "a.txt": "a\n" });
+      assert.equal(r.commit("chore: held", "--no-verify").status, 0);
+      git(["update-index", "--add", "--cacheinfo", `160000,${"b".repeat(40)},vendor/sub`], { cwd: r.dir });
+      assert.equal(r.commit("chore: sub", "--no-verify").status, 0);
+      git(["rm", "-q", "--cached", "vendor/sub"], { cwd: r.dir });
+      r.stage(many("vendor/sub", last));
+    }],
+    ["the other side of a merge makes a file a directory", (r, last) => {
+      r.stage({ data: BIG, "b.txt": "b\n" });
+      assert.equal(r.commit("chore: held", "--no-verify").status, 0);
+      git(["checkout", "-q", "-b", "other"], { cwd: r.dir });
+      rmSync(join(r.dir, "data"));
+      r.stage({ "data/x.txt": last });
+      assert.equal(r.commit("chore: other", "--no-verify").status, 0);
+      git(["checkout", "-q", "main"], { cwd: r.dir });
+      r.stage({ "b.txt": "b2\n" });
+      assert.equal(r.commit("chore: main", "--no-verify").status, 0);
+      git(["-c", "user.name=t", "-c", "user.email=t@t", "merge", "-q", "--no-commit", "--no-ff", "other"], { cwd: r.dir });
+    }],
+  ];
+  for (const [name, make] of CASES) {
+    for (const [last, exit] of /** @type {[string, number][]} */ ([["x\n", 0], ["NEEDLE\n", 1]])) {
+      const r = repo();
+      r.stage({ ".ennyn/config.json": JSON.stringify(NEEDLE_RULE) });
+      make(r, last);
+      const hook = r.check("--hook");
+      assert.equal(hook.status, exit, `${name}: ${hook.stderr.slice(0, 300)}`);
+      assert.doesNotMatch(hook.stderr, /was not checked/, name);
+      if (exit) assert.match(hook.stderr, /adds "NEEDLE"/, name);
+    }
+  }
+});
+
+test("gate scope: the index's listing is context: past its buffer it is said, and what the commit brings is still judged", () => {
+  const env = fakeGit(`case " $* " in *" ls-files -z "*) head -c ${PAST_NAMES} /dev/zero; exit 0 ;; esac`);
+  const hookOf = (/** @type {ReturnType<typeof repo>} */ r) => {
+    writeFileSync(join(r.dir, ".git", "MSG"), "chore: ci\n");
+    return spawnSync(process.execPath, [CLI, "commit-check", "--hook", ".git/MSG"], { cwd: r.dir, encoding: "utf8", env });
+  };
+  const clean = repo();
+  clean.stage({ [WF]: PINNED });
+  const said = hookOf(clean);
+  assert.equal(said.status, 0, said.stderr);
+  assert.match(said.stderr, /security\.ci could not read the workflows that may call the staged files/);
+  const pwn = repo();
+  pwn.stage({ ".github/workflows/pwn.yml": PWN_TEXT });
+  const refused = hookOf(pwn);
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /pwn\.yml: a pull_request_target workflow checks out/);
+  const lock = repo();
+  lock.stage({ ".ennyn/config.json": JSON.stringify(OFFLINE), "package.json": '{"name":"x"}\n', "package-lock.json": '{"name":"x","lockfileVersion":3,"packages":{"":{"name":"x"}}}\n' });
+  assert.equal(lock.commit("chore: held", "--no-verify").status, 0);
+  lock.stage({ "package.json": '{"name":"x","version":"1.0.1"}\n' });
+  const deps = hookOf(lock);
+  assert.equal(deps.status, 0, deps.stderr);
+  assert.match(deps.stderr, /security\.deps was not checked: the staged lock files could not be read/);
+});
+
+test("gate scope: a throw of our own code refuses a commit that brings that gate's file, and is said for one that only deletes it", () => {
+  // Only where the CI check decides what text it can read: the secret scan asks the same of each line. Spelled in two
+  // parts: a stack quotes this URL.
+  const fault = `data:text/javascript,const real=Buffer.prototype.includes;Buffer.prototype.includes=function(v,...a){if(v===0&&real.call(this,"STOPHERE")&&new Error().stack.includes("at ci"+"Text"))throw new RangeError("stopped here");return real.call(this,v,...a)};`;
+  const hookOf = (/** @type {ReturnType<typeof repo>} */ r) => {
+    writeFileSync(join(r.dir, ".git", "MSG"), "chore: ci\n");
+    return spawnSync(process.execPath, ["--import", fault, CLI, "commit-check", "--hook", ".git/MSG"], { cwd: r.dir, encoding: "utf8" });
+  };
+  const brought = repo();
+  brought.stage({ [WF]: `${PINNED}# STOPHERE\n` });
+  const refused = hookOf(brought);
+  assert.equal(refused.status, 1, refused.stderr);
+  assert.match(refused.stderr, /security\.ci was not checked, so this commit is refused: .*\(stopped here\)/);
+  const held = repo();
+  held.stage({ [WF]: `${PINNED}# STOPHERE\n` });
+  assert.equal(held.commit("chore: held", "--no-verify").status, 0);
+  git(["rm", "-q", WF], { cwd: held.dir });
+  const deleted = hookOf(held);
+  assert.equal(deleted.status, 0, deleted.stderr);
+  assert.match(deleted.stderr, /security\.ci was not checked: the staged CI files could not be read \(stopped here\)/);
+});
+
+test("gate scope: a list of changes past its buffer is asked again without deletions: deletions past it are said, a commit bringing past it is refused", () => {
+  const r = repo();
+  r.stage({ ".github/workflows/pwn.yml": PWN_TEXT });
+  writeFileSync(join(r.dir, ".git", "MSG"), "chore: ci\n");
+  const run = (/** @type {NodeJS.ProcessEnv} */ env) => spawnSync(process.execPath, [CLI, "commit-check", "--hook", ".git/MSG"], { cwd: r.dir, encoding: "utf8", env });
+  const deletions = fakeGit(`case " $* " in *" --diff-filter=d "*) ;; *" --name-status "*) head -c ${PAST_NAMES} /dev/zero; exit 0 ;; esac`);
+  const told = run(deletions);
+  assert.equal(told.status, 1, told.stderr);
+  assert.match(told.stderr, /pwn\.yml: a pull_request_target workflow checks out/, "what the commit brings is judged");
+  assert.match(told.stderr, /could not name what this commit deletes/);
+  assert.doesNotMatch(told.stderr, /every gate was not checked/);
+  const brought = run(fakeGit(`case " $* " in *" --name-status "*) head -c ${PAST_NAMES} /dev/zero; exit 0 ;; esac`));
+  assert.equal(brought.status, 1, brought.stderr);
+  assert.match(brought.stderr, /every gate was not checked, so this commit is refused/);
+});
+
+test("gate scope: HEAD's listing past its buffer leaves that name with no HEAD version: judged as new, never refused for the read", () => {
+  const r = repo();
+  r.stage({ [WF]: PINNED, ".github/workflows/old.yml": PINNED.replace(`@${SHA} # v7.0.1`, "@v7") });
+  assert.equal(r.commit("chore: held", "--no-verify").status, 0);
+  r.stage({ [WF]: `${PINNED}# edited\n`, ".github/workflows/old.yml": `${PINNED.replace(`@${SHA} # v7.0.1`, "@v7")}# edited\n` });
+  writeFileSync(join(r.dir, ".git", "MSG"), "chore: ci\n");
+  assert.equal(r.check("--hook").status, 0, "HEAD holds the tag");
+  const env = fakeGit(`case " $* " in *" ls-tree -r -z "*) head -c ${65 * 1024 * 1024} /dev/zero; exit 0 ;; esac`);
+  const hook = spawnSync(process.execPath, [CLI, "commit-check", "--hook", ".git/MSG"], { cwd: r.dir, encoding: "utf8", env });
+  assert.doesNotMatch(hook.stderr, /was not checked, so this commit is refused/, hook.stderr);
+  assert.match(hook.stderr, /old\.yml: 1 new uses/);
+  // A git that fails there is the machine's: said, and what HEAD holds is not read as new.
+  const fails = fakeGit('case " $* " in *" ls-tree -r -z "*) echo "fatal: injected" >&2; exit 128 ;; esac');
+  const machine = spawnSync(process.execPath, [CLI, "commit-check", "--hook", ".git/MSG"], { cwd: r.dir, encoding: "utf8", env: fails });
+  assert.equal(machine.status, 0, machine.stderr);
+  assert.match(machine.stderr, /security\.ci could not read .* \(fatal: injected\)/);
+  // The deps check says what it lost: every entry counts as new.
+  const lock = repo();
+  lock.stage({ ".ennyn/config.json": JSON.stringify(OFFLINE), "package.json": '{"name":"x"}\n', "package-lock.json": '{"name":"x","lockfileVersion":3,"packages":{"":{"name":"x"}}}\n' });
+  assert.equal(lock.commit("chore: held", "--no-verify").status, 0);
+  lock.stage({ "package-lock.json": '{"name":"x","version":"1.0.0","lockfileVersion":3,"packages":{"":{"name":"x"}}}\n' });
+  writeFileSync(join(lock.dir, ".git", "MSG"), "chore: ci\n");
+  const said = spawnSync(process.execPath, [CLI, "commit-check", "--hook", ".git/MSG"], { cwd: lock.dir, encoding: "utf8", env });
+  assert.equal(said.status, 0, said.stderr);
+  assert.match(said.stderr, /package-lock\.json was not checked: HEAD's version could not be read/);
+});
+
+test("gate scope: a MERGE_HEAD that holds no commit costs the message's note, never the gate", () => {
+  for (const [text, exit] of /** @type {[string, number][]} */ ([["x\n", 0], ["NEEDLE\n", 1]])) {
+    const r = repo();
+    r.stage({ ".ennyn/config.json": JSON.stringify(NEEDLE_RULE), "a.txt": text });
+    writeFileSync(join(r.dir, ".git", "MERGE_HEAD"), "not a commit\n");
+    const hook = r.check("--hook");
+    assert.equal(hook.status, exit, hook.stderr);
+    assert.doesNotMatch(hook.stderr, /review\.forbidden was not checked/);
+  }
+});
+
+test("gate failure: the refusal says what was not read, by name, and that it could be Ennyn's own fault; it offers no way around the gate", () => {
+  for (const [language, refused, ours] of [["en", /security\.ci was not checked, so this commit is refused: .*action\.yml/, /a bug in Ennyn/], ["tr", /security\.ci denetlenmedi, bu yüzden commit reddedildi: .*action\.yml/, /Ennyn'deki bir hata/]]) {
+    const r = repo();
+    r.stage({ ".ennyn/config.json": JSON.stringify({ language }) });
+    stageNames(r.dir, [[`${PAST_ARGV}/action.yml`, "{}\n"]]);
+    const hook = r.check("--hook");
+    assert.equal(hook.status, 1);
+    assert.match(hook.stderr, /** @type {RegExp} */ (refused));
+    assert.match(hook.stderr, /** @type {RegExp} */ (ours));
+    assert.doesNotMatch(hook.stderr, /except/);
+  }
+  const names = repo();
+  stageNames(names.dir, [[BYTE_NAME(".github/workflows/p", ".yml"), "{}\n"]]);
+  assert.match(names.check("--hook").stderr, /whose names are not UTF-8 .*so this commit is refused/);
+});
+
+test("gate scope: a read is weighed name by name: a machine's fault beside a failure the commit can pick hides no refusal", () => {
+  const r = repo();
+  r.stage({ ".github/workflows/a.yml": PINNED, ".github/workflows/b.yml": PINNED });
+  writeFileSync(join(r.dir, ".git", "MSG"), "chore: ci\n");
+  const env = fakeGit(`case " $* " in *" ls-files -s "*a.yml*) echo "fatal: injected" >&2; exit 128 ;; *" ls-files -s "*b.yml*) head -c ${65 * 1024 * 1024} /dev/zero; exit 0 ;; esac`);
+  const hook = spawnSync(process.execPath, [CLI, "commit-check", "--hook", ".git/MSG"], { cwd: r.dir, encoding: "utf8", env });
+  assert.equal(hook.status, 1, hook.stderr);
+  assert.match(hook.stderr, /security\.ci was not checked, so this commit is refused: .*b\.yml/);
+  assert.match(hook.stderr, /security\.ci could not read .*a\.yml.*\(fatal: injected\)/);
+});
+
+test("gate scope: a brought name and a tracked one past the limit in one read: the first refuses, the second is said", () => {
+  const r = repo();
+  stageNames(r.dir, [[`.github/workflows/z${PAST_ARGV}.yml`, "on: push\n"]]);
+  assert.equal(r.commit("chore: held", "--no-verify").status, 0);
+  stageNames(r.dir, [[`.github/workflows/a${PAST_ARGV}.yml`, "on: push\n"]]);
+  const hook = r.check("--hook");
+  assert.equal(hook.status, 1);
+  assert.match(hook.stderr, /security\.ci was not checked, so this commit is refused/);
+  assert.match(hook.stderr, /security\.ci could not read/);
+});
+
+test("gate scope: a package.json that cannot be read stands unread, never as no dependencies; an .npmrc the commit leaves alone is said", () => {
+  const lockOf = (/** @type {string} */ version) => JSON.stringify({ name: "x", version, lockfileVersion: 3, packages: { "": { name: "x", version, workspaces: ["w"] }, w: { name: "w", version: "1.0.0" }, "node_modules/w": { resolved: "w", link: true } } });
+  const r = repo();
+  r.stage({ ".ennyn/config.json": JSON.stringify(OFFLINE), "package.json": '{"name":"x","workspaces":["w"]}\n', "w/package.json": '{"name":"w","version":"1.0.0"}\n', "package-lock.json": lockOf("1.0.0") });
+  assert.equal(r.commit("chore: held", "--no-verify").status, 0);
+  r.stage({ "package-lock.json": lockOf("1.0.1") });
+  writeFileSync(join(r.dir, ".git", "MSG"), "chore: ci\n");
+  const env = fakeGit(`case " $* " in *" ls-files -s "*w/package.json*) echo "fatal: injected" >&2; exit 128 ;; esac`);
+  const hook = spawnSync(process.execPath, [CLI, "commit-check", "--hook", ".git/MSG"], { cwd: r.dir, encoding: "utf8", env });
+  assert.equal(hook.status, 0, hook.stderr);
+  assert.match(hook.stderr, /w\/package\.json \(git could not give it\)/);
+  const bare = repo();
+  bare.stage({ ".ennyn/config.json": JSON.stringify(OFFLINE), "package-lock.json": JSON.stringify({ name: "x", lockfileVersion: 3, packages: { "": { name: "x" }, "node_modules/bare": { version: "1.0.0", integrity: "sha512-AAAA" } } }) });
+  writeFileSync(join(bare.dir, ".git", "MSG"), "chore: ci\n");
+  const past = fakeGit(`case " $* " in *" ls-files -z -- . "*) head -c ${PAST_NAMES} /dev/zero; exit 0 ;; esac`);
+  const npmrc = spawnSync(process.execPath, [CLI, "commit-check", "--hook", ".git/MSG"], { cwd: bare.dir, encoding: "utf8", env: past });
+  assert.doesNotMatch(npmrc.stderr, /so this commit is refused/, npmrc.stderr);
+});
+
+test("gate scope: a throw of the deps check is said for a commit that adds and changes no file of it", () => {
+  const r = repo();
+  r.stage({ ".ennyn/config.json": JSON.stringify(OFFLINE), "package.json": '{"name":"x"}\n', "package-lock.json": REFUSED_LOCK });
+  assert.equal(r.commit("chore: held", "--no-verify").status, 0);
+  git(["rm", "-q", "package.json"], { cwd: r.dir });
+  const fault = `data:text/javascript,const real=Object.entries;Object.entries=function(o){if(o&&o["node_modules/a"])throw new RangeError("stopped here");return real(o)};`;
+  writeFileSync(join(r.dir, ".git", "MSG"), "chore: ci\n");
+  const hook = spawnSync(process.execPath, ["--import", fault, CLI, "commit-check", "--hook", ".git/MSG"], { cwd: r.dir, encoding: "utf8" });
+  assert.equal(hook.status, 0, hook.stderr);
+  assert.match(hook.stderr, /security\.deps was not checked: the staged lock files could not be read \(stopped here\)/);
 });

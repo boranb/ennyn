@@ -169,6 +169,30 @@ export const GATES = [
     test: "test/fault-injection.test.mjs",
     guards: [
       {
+        id: "fault-machine-fault",
+        why: "a fault of the machine weighed as the commit's content: the hook refuses every commit while git fails",
+        file: "core/git.mjs",
+        old: 'return /^E[A-Z0-9]+$/.test(String(x.code)) || Boolean(x.signal) || (typeof x.status === "number" && x.status !== 0);',
+        new: "return false;",
+        pattern: "fault matrix: with any git call failing",
+      },
+      {
+        id: "fault-machine-errno",
+        why: "the machine's faults kept as a list, so an errno off the list refuses every commit while the system gives it",
+        file: "core/git.mjs",
+        old: 'return /^E[A-Z0-9]+$/.test(String(x.code)) || Boolean(x.signal)',
+        new: 'return ["ENOENT", "EACCES", "EMFILE", "ENOMEM", "EAGAIN", "ETIMEDOUT"].includes(String(x.code)) || Boolean(x.signal)',
+        pattern: "fault matrix: a git that cannot start",
+      },
+      {
+        id: "fault-spawn-preload",
+        why: "a preload that fails no spawn",
+        file: "test/fault-fs.mjs",
+        old: '&& ++n === SPAWN_AT;',
+        new: '&& ++n === -1;',
+        pattern: "fault matrix: a git that cannot start",
+      },
+      {
         id: "fault-says",
         why: "a judge that takes 'could not be found' for honest",
         file: "test/fault-injection.test.mjs",
@@ -222,9 +246,9 @@ export const GATES = [
         pattern: "fault matrix control: a git call that never ends",
       },
       { id: "slow-diff-secrets", why: "a file whose diff was stopped left unread by the secret scan", file: "scripts/ennyn.mjs", old: "        for (const p of group) readWhole(p), shownPaths.add(p);\n", new: "        for (const p of group) shownPaths.add(p);\n", pattern: "fault matrix: a file git is slow to diff" },
-      { id: "slow-diff-held", why: "a secret HEAD already holds refused when its file is read whole", file: "scripts/ennyn.mjs", old: "      if (before) scan.hits.splice(", new: "      if (!before) scan.hits.splice(", pattern: "fault matrix: a file git is slow to diff" },
-      { id: "read-again-once", why: "a file read whole after its diff stopped keeps the hits the diff found, twice", file: "scripts/ennyn.mjs", old: "      scan.hits.splice(0, scan.hits.length, ...scan.hits.filter((h) => h.path !== p));\n", new: "", pattern: "fault matrix: a diff that stops after its output" },
-      { id: "slow-diff-forbidden", why: "a slow file that turns off review.forbidden for every file", file: "core/git.mjs", old: "      if (!unread) throw e;\n      const why", new: "      throw e;\n      const why", pattern: "fault matrix: a file git is slow to diff" },
+      { id: "slow-diff-held", why: "a secret HEAD already holds refused when its file is read whole", file: "scripts/ennyn.mjs", old: "      if (before) scan.hits = [", new: "      if (!before) scan.hits = [", pattern: "fault matrix: a file git is slow to diff" },
+      { id: "read-again-once", why: "a file read whole after its diff stopped keeps the hits the diff found, twice", file: "scripts/ennyn.mjs", old: "      scan.hits = scan.hits.filter((h) => h.path !== p);\n", new: "", pattern: "fault matrix: a diff that stops after its output" },
+      { id: "slow-diff-forbidden", why: "a slow file that turns off review.forbidden for every file", file: "core/git.mjs", old: "      if (!unread || !(machineFault(e) || /** @type {NodeJS.ErrnoException} */ (e).code === \"ENOBUFS\")) throw e;\n", new: "      throw e;\n", pattern: "fault matrix: a file git is slow to diff" },
       { id: "git-limit-walk", why: "a walk of the history held to the short limit", file: "metrics/szz.mjs", old: '`${fix}^`, "--", file], { cwd, walk: true });', new: '`${fix}^`, "--", file], { cwd });', pattern: "fault matrix: a call that walks" },
       {
         id: "git-limit-held",
@@ -252,8 +276,6 @@ export const GATES = [
       },
     ],
     others: {
-      "fault matrix: with any git call failing, killed or never ending, or no git at all, a command fails or says so; a closed pipe is no crash":
-        "the matrix itself, 10 s a run and minutes with its hung cells: its judge (fault-says, fault-json) and case lists (fault-cases, fault-hooks) are guarded, and the limits it relies on (git-limit-*) through the control; that its fixture holds the files a case reads is fault-fixture-probes",
       "fault matrix: with any file read failing (no permission, a directory in its place), a command fails or says so":
         "the matrix itself, 20 s a run: its judge, case lists and preload (fault-preload) are guarded; that its fixture holds the files a case reads is fault-fixture-probes",
     },
@@ -302,6 +324,10 @@ export const GATES = [
       { id: "verdicts-ci-github-env", why: "a ref written to $GITHUB_ENV not followed to a later step", file: "checks/ci.mjs", old: "          for (const name of envNames(text)) if (!tainted.has(name)) tainted.add(name), (grew = true);\n", new: "", pattern: "verdicts: every ci cell" },
       { id: "verdicts-ci-next-line", why: "a value on the line below its key read as a mapping's start, not refused", file: "checks/ci.mjs", old: "      if (next && indentOf(next) > col && !keyLine(", new: "      if (false && next && indentOf(next) > col && !keyLine(", pattern: "verdicts: every ci cell" },
       { id: "verdicts-ci-late-alias", why: "a node that holds an alias read again as it was, though GitHub replays the alias inside", file: "checks/ci.mjs", old: "    if (followed > f.followed) return anchorUnfollowed(f.anchor);\n", new: "", pattern: "verdicts: every ci cell" },
+      { id: "verdicts-ci-escape-halves", why: "half a surrogate pair read as a character, not refused", file: "checks/ci.mjs", old: "return c <= 0x10ffff && (c < 0xd800 || c > 0xdfff) ? String.fromCodePoint(c) : null;", new: "return c <= 0x10ffff ? String.fromCodePoint(c) : null;", pattern: "verdicts: every ci cell" },
+      { id: "verdicts-ci-escape-bad", why: "an escape that names no character left as written with no form refused", file: "checks/ci.mjs", old: "    bad ||= c === null;\n", new: "", pattern: "verdicts: every ci cell" },
+      { id: "verdicts-ci-not-utf8-brought", why: "text that is not UTF-8 let through by the commit that brings it: one byte takes a workflow out of the check", file: "checks/ci.mjs", old: "const refused = reason === \"notText\" || reason === \"symlink\" || reason === \"large\" ? brings(v) : false;", new: "const refused = false;", pattern: "verdicts: every ci cell" },
+      { id: "verdicts-ci-not-utf8-held", why: "bytes HEAD already holds refused, which locks commits that do not bring them", file: "checks/ci.mjs", old: "const refused = reason === \"notText\" || reason === \"symlink\" || reason === \"large\" ? brings(v) : false;", new: "const refused = reason === \"notText\" || reason === \"symlink\" || reason === \"large\";", pattern: "verdicts: every ci cell" },
       { id: "verdicts-ci-columns", why: "a key at a column its mapping does not use read as one of its keys", file: "checks/ci.mjs", old: "    if (inner === col) return true;", new: "    return true;", pattern: "verdicts: every ci cell" },
       { id: "verdicts-ci", why: "a YAML line break read at LF and CR only", file: "checks/ci.mjs", old: "const BREAK = /\\r\\n|[\\r\\n\\u0085\\u2028\\u2029]/;", new: "const BREAK = /\\r\\n|[\\r\\n]/;", pattern: "verdicts: every ci cell" },
       { id: "verdicts-deps", why: "install scripts in the lock let through", file: "checks/deps.mjs", old: "const scripts = fresh.filter((e) => e.scripts && !scriptsAllowed(proven(e), rule));", new: "const scripts = fresh.filter((e) => e.scripts && !scriptsAllowed(proven(e), rule) && false);", pattern: "verdicts: every deps cell" },

@@ -9,6 +9,10 @@
  * ENNYN_FS_FAULT_AT   the call to fail, from 1 (0: none)
  * ENNYN_FS_FAULT      eacces | eisdir
  *
+ * It also fails a git spawn with an errno, as the system gives one, before git runs: no fake git can stand for that.
+ * ENNYN_SPAWN_FAULT_AT  the git spawn to fail, from 1 (0: none)
+ * ENNYN_SPAWN_FAULT     the errno
+ *
  * It also lowers the git call limits for a run whose fake git never ends, so a cell waits seconds, not minutes:
  * ENNYN_FAULT_GIT_LIMIT_MS  the limit of any git call; a call that walks the history gets twice that. Only this
  * file reads the variable: Ennyn's own limits come from no environment or config.
@@ -84,6 +88,35 @@ if (DIR) {
     writeFileSync(join(DIR, "fs-count"), String(seen.length));
     writeFileSync(join(DIR, "fs-calls"), seen.join("\n"));
   });
+}
+
+const SPAWN_AT = Number(process.env.ENNYN_SPAWN_FAULT_AT ?? 0);
+if (SPAWN_AT > 0) {
+  const { default: cp } = await import("node:child_process");
+  const code = process.env.ENNYN_SPAWN_FAULT;
+  const { execFileSync, spawn, spawnSync } = cp;
+  let n = 0;
+  /** Whether this spawn is the one to fail. @param {string} file */
+  const fails = (file) => (file === "git" || file.endsWith("/git")) && ++n === SPAWN_AT;
+  /** As a spawn that fails throws. @param {string} file */
+  const failure = (file) => Object.assign(new Error(`spawnSync ${file} ${code}`), { code, errno: -1, syscall: `spawnSync ${file}`, path: file, status: null, signal: null, stdout: null, stderr: null });
+  const c = /** @type {any} */ (cp);
+  c.execFileSync = (/** @type {string} */ file, /** @type {any[]} */ ...rest) => {
+    if (fails(file)) throw failure(file);
+    return /** @type {any} */ (execFileSync)(file, ...rest);
+  };
+  c.spawnSync = (/** @type {string} */ file, /** @type {any[]} */ ...rest) => {
+    if (fails(file)) return { error: failure(file), status: null, signal: null, stdout: "", stderr: "", output: null, pid: 0 };
+    return /** @type {any} */ (spawnSync)(file, ...rest);
+  };
+  c.spawn = (/** @type {string} */ file, /** @type {string[]} */ args, /** @type {any} */ options) => {
+    if (!fails(file)) return spawn(file, args, options);
+    // A child that started no git, its error next, as a failed spawn reports it.
+    const child = spawn(process.execPath, ["-e", ""], options);
+    process.nextTick(() => child.emit("error", failure(file)));
+    return child;
+  };
+  syncBuiltinESMExports();
 }
 
 const GIT_LIMIT = Number(process.env.ENNYN_FAULT_GIT_LIMIT_MS ?? 0);

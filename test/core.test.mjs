@@ -3,11 +3,11 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, chmodSync, symlinkSync, linkSync, existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { basename, join, posix, win32 } from "node:path";
+import { basename, delimiter, join, posix, win32 } from "node:path";
 import { globToRegExp, literalGlob, matchAny } from "../core/glob.mjs";
 import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
-import { DIFF_GROUP, MISSING_OBJECT, batchCheck, diffGroups, git, headCommit, parseTrailers, repoPath, stagedAddedLines, stagedBlobs, stagedPaths, stagedVersions, unpushedCount } from "../core/git.mjs";
-import { t } from "../core/i18n.mjs";
+import { DIFF_GROUP, GIT_LIMITS, MISSING_OBJECT, addedLines, argBatches, batchCheck, diffGroups, git, gitMaybe, headCommit, indexNames, machineFault, nameText, parseTrailers, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedPaths, stagedVersions, stagedVersionsEach, unpushedCount } from "../core/git.mjs";
+import { shown, t } from "../core/i18n.mjs";
 import * as filesModule from "../core/files.mjs";
 import { readIfThere } from "../core/files.mjs";
 
@@ -646,4 +646,107 @@ test("core: where git dies at an object a partial clone lacks, the hook's reader
     if (saved.EN_LOST === undefined) delete process.env.EN_LOST;
     rmSync(box, { recursive: true, force: true });
   }
+});
+
+test("machineFault: by shape: git that exited, was killed or stopped and any errno are the machine's; the two errnos a commit can pick and any throw of ours are not", () => {
+  const dir = mkdtempSync(join(tmpdir(), "en-fault-"));
+  git(["init", "-q"], { cwd: dir });
+  /** @param {() => unknown} f */
+  const thrown = (f) => {
+    try {
+      f();
+    } catch (e) {
+      return e;
+    }
+    throw new Error("it did not throw");
+  };
+  assert.equal(machineFault(thrown(() => git(["rev-parse", "--verify", "no-such-rev"], { cwd: dir }))), true, "git exited non-zero");
+  assert.equal(machineFault(thrown(() => gitMaybe(["rev-parse", "--verify", "no-such-rev"], { cwd: dir, absent: [] }))), true, "git exited non-zero, through gitError");
+  assert.equal(machineFault(thrown(() => git(["status"], { cwd: join(dir, "not-there") }))), true, "ENOENT: no directory to run in");
+  assert.equal(machineFault(thrown(() => gitMaybe(["status"], { cwd: join(dir, "not-there"), absent: [] }))), true, "ENOENT, through gitError");
+  assert.equal(machineFault(thrown(() => git(["status", "a\0b"], { cwd: dir }))), false, "an argument Node refuses");
+  assert.equal(machineFault(thrown(() => git(["ls-files", "--", "z".repeat(1100 * 1024)], { cwd: dir }))), false, "E2BIG");
+  for (const code of ["ENOENT", "EACCES", "EMFILE", "ENOMEM", "EAGAIN", "ETIMEDOUT", "ENFILE", "EPERM", "EIO", "ETXTBSY", "ENOEXEC", "EPIPE", "ENOSPC", "EDQUOT", "EBUSY", "ELOOP", "ENAMETOOLONG", "EINTR"]) assert.equal(machineFault(Object.assign(new Error("x"), { code })), true, code);
+  for (const code of ["E2BIG", "ENOBUFS", "ERR_INVALID_ARG_VALUE", "ERR_CHILD_PROCESS_STDIO_MAXBUFFER", "EX", "E", "enoent", ""]) assert.equal(machineFault(Object.assign(new Error("x"), { code })), code === "EX", code);
+  assert.equal(machineFault(Object.assign(new Error("x"), { code: "E2BIG", status: 1, signal: "SIGTERM" })), false, "E2BIG stays the content's, whatever else it holds");
+  assert.equal(machineFault(Object.assign(new Error("killed"), { signal: "SIGKILL", status: null })), true);
+  assert.equal(machineFault(Object.assign(new Error("past the buffer"), { code: "ENOBUFS", signal: "SIGTERM" })), false, "git stopped because of what it wrote");
+  for (const e of [new Error("ours"), new RangeError("too much"), new SyntaxError("no"), Object.assign(new Error("x"), { status: 0 }), null, "text"]) assert.equal(machineFault(e), false, String(e));
+});
+
+test("argBatches: 500 names a call and under Linux's floor for arguments, a name past it alone; no name, no call", () => {
+  assert.deepEqual(argBatches([]), []);
+  assert.deepEqual(argBatches(Array.from({ length: 1001 }, (_, i) => String(i))).map((b) => b.length), [500, 500, 1]);
+  // 500 names of 200 bytes pass 64 KiB: a stack under 1 MiB leaves execve 128 KiB, the environment included.
+  assert.deepEqual(argBatches(Array.from({ length: 500 }, (_, i) => `${String(i).padStart(3, "0")}${"b".repeat(197)}`)).map((b) => b.length), [326, 174]);
+  assert.deepEqual(argBatches(["a".repeat(40000), "b".repeat(40000), "c".repeat(20000), "d"]).map((b) => b.length), [1, 3]);
+  assert.deepEqual(argBatches(["a", "z".repeat(1 << 20), "b"]).map((b) => b.length), [1, 1, 1]);
+  assert.deepEqual(argBatches(["\u00e9".repeat(20000), "\u00e9".repeat(20000)]).map((b) => b.length), [1, 1], "bytes, not characters");
+});
+
+test("stagedNames: what the commit deletes is told from what it brings, with no pathspec; indexNames with no path lists the index", () => {
+  const dir = mkdtempSync(join(tmpdir(), "en-names-"));
+  git(["init", "-q", "-b", "main"], { cwd: dir });
+  for (const [p, text] of [["gone", "g\n"], ["kept", "k\n"], ["data", "d\n"]]) writeFileSync(join(dir, p), text);
+  git(["add", "-A"], { cwd: dir });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "x"], { cwd: dir });
+  rmSync(join(dir, "gone"));
+  rmSync(join(dir, "data"));
+  mkdirSync(join(dir, "data"));
+  writeFileSync(join(dir, "data", "x"), "x\n");
+  writeFileSync(join(dir, "kept"), "k2\n");
+  writeFileSync(join(dir, "new"), "n\n");
+  git(["add", "-A"], { cwd: dir });
+  const read = stagedNames(dir);
+  assert.deepEqual([...read.paths].sort(), ["data", "data/x", "gone", "kept", "new"]);
+  assert.deepEqual([...read.deleted].sort(), ["data", "gone"]);
+  assert.equal(read.deletedUnread, false);
+  assert.deepEqual(stagedPaths(dir), read.paths);
+  assert.deepEqual([...stagedChanges(dir).keys()].sort(), ["data/x", "kept", "new"], "what the commit deletes brings nothing to read");
+  assert.deepEqual([...indexNames(dir, { paths: [] }).paths].sort(), ["data/x", "kept", "new"]);
+  assert.deepEqual(indexNames(dir, { paths: ["data"] }).paths, ["data/x"]);
+});
+
+test("addedLines: a deleted path below an asked name is that name's old directory, no misread diff; one outside what was asked still throws", () => {
+  const below = "diff --git a/data/x b/data/x\ndeleted file mode 100644\nindex 1234567..0000000\n--- a/data/x\n+++ /dev/null\n@@ -1 +0,0 @@\n-x\n";
+  const asked = "diff --git a/data b/data\nnew file mode 100644\nindex 0000000..1234567\n--- /dev/null\n+++ b/data\n@@ -0,0 +1 @@\n+d\n";
+  assert.deepEqual(addedLines(asked + below, new Set(["data"]), { complete: true }), new Map([["data", [{ line: 1, text: "d" }]]]));
+  assert.throws(() => addedLines(asked + below.replaceAll("data/x", "database"), new Set(["data"])), /not asked for/, "a name that only starts alike is not below it");
+  assert.throws(() => addedLines(asked + below, new Set(["data/y"])), /not asked for/);
+  assert.deepEqual(addedLines(below.replaceAll("data/x", "deep/data/x"), new Set(["deep/data"])), new Map(), "a name at any depth");
+});
+
+test("stagedVersionsEach: a git stopped at its limit is not asked again, by name or by the next call, and every name stands failed", () => {
+  const dir = mkdtempSync(join(tmpdir(), "en-each-"));
+  git(["init", "-q", "-b", "main"], { cwd: dir });
+  const bin = mkdtempSync(join(tmpdir(), "en-each-git-"));
+  const log = join(bin, "asked");
+  const real = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+  writeFileSync(join(bin, "git"), `#!/bin/sh\ncase " $* " in *" ls-files -s "*) echo x >> "${log}"; exec sleep 30 ;; esac\nexec "${real}" "$@"\n`, { mode: 0o755 });
+  const saved = { path: process.env.PATH, call: GIT_LIMITS.call };
+  process.env.PATH = `${bin}${delimiter}${process.env.PATH}`;
+  GIT_LIMITS.call = 3000;
+  try {
+    const { versions, failed } = stagedVersionsEach(dir, Array.from({ length: 600 }, (_, i) => `f${i}`), {});
+    assert.equal(versions.size, 0);
+    assert.equal(failed.length, 600);
+    assert.equal(/** @type {NodeJS.ErrnoException} */ (failed[599].error).code, "ETIMEDOUT");
+    assert.ok(readFileSync(log, "utf8").trim().split("\n").length <= 1, "one call stopped");
+  } finally {
+    process.env.PATH = saved.path;
+    GIT_LIMITS.call = saved.call;
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(bin, { recursive: true, force: true });
+  }
+});
+
+test("nameText: UTF-8 as it is; a name that is not keeps its bytes apart from any UTF-8 name, the valid letters in it readable", () => {
+  assert.equal(nameText(Buffer.from("caf\u00e9/\u{1f600}.js")), "caf\u00e9/\u{1f600}.js");
+  const bad = nameText(Buffer.from([0x70, 0xff, 0x2e, 0x79]));
+  assert.notEqual(bad, "p\ufffd.y");
+  assert.equal(bad.toWellFormed(), "p\ufffd.y");
+  assert.notEqual(nameText(Buffer.from([0xff])), nameText(Buffer.from([0xfe])));
+  assert.equal(nameText(Buffer.from([0xc3, 0xa9, 0xff])).toWellFormed(), "\u00e9\ufffd");
+  assert.equal(nameText(Buffer.from([0xe2, 0x82])).toWellFormed(), "\ufffd\ufffd", "a cut sequence, a byte at a time");
+  assert.equal(shown(nameText(Buffer.from([0x70, 0xff, 0x22])), { name: true }).text, '"p\ufffd\\""', "shown as U+FFFD, in quotes too");
 });

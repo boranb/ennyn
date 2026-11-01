@@ -7,7 +7,10 @@
  * workflow that sets no permissions gets the repository's default token, which may write.
  *
  * What is refused is what the commit adds: the staged CI files are compared with HEAD's, so what is already
- * there stays until it is touched, and `doctor` counts it. A file read as anything but UTF-8 text is said.
+ * there stays until it is touched, and `doctor` counts it. A file the commit brings that cannot be read is refused,
+ * so a text cannot take itself out of the check: one that is not UTF-8, a symbolic link or a file past 16 MB (the
+ * runner reads an action file through a link, and up to 10 MB), one whose reading throws. A failure stays with its
+ * file: every other file's findings stand, and a call into the file is said.
  *
  * The YAML is read without a parser, in one pass with no backtracking, and fails closed: GitHub's parser cannot run
  * at commit time, so this reading takes only the forms below, exactly, and refuses (`unread`) everything else.
@@ -18,7 +21,8 @@
  *     (`?`), no merge key (`<<`, which GitHub reads as a key named so)
  *   - scalars on their key's line or their dash's: plain (its lines below, indented past the key, folded in), quoted
  *     over lines (one joiner folds them; an escaped line break joins with no space), block scalars (`|`, `>`,
- *     chomped and folded as YAML does; none with an indentation indicator); no value on the line below its key
+ *     chomped and folded as YAML does; none with an indentation indicator); no value on the line below its key; an
+ *     escape that names no character (too few digits, past 10FFFF, half a surrogate pair) refused, the file read on
  *   - flow collections, nested, of scalars, pairs and aliases, with no tag or anchor in or on them and no `?`
  *   - anchors on a scalar, a key, or a mapping or sequence below its key or dash; each name defined once. An alias of
  *     a scalar or of a mapping or sequence that holds no alias; never of a block scalar or a node that holds one,
@@ -90,11 +94,29 @@ function closeAt(s, from, q) {
   return -1;
 }
 
-/** A double-quoted scalar's escapes. @param {string} s */
-const unescape = (s) =>
-  s.replace(/\\(x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|.)/g, (_, e) =>
-    /^[xuU]/.test(e) ? String.fromCodePoint(parseInt(e.slice(1), 16)) : ({ n: "\n", t: "\t", r: "\r", 0: "\0", " ": " ", "/": "/", N: "\u0085", L: "\u2028", P: "\u2029" })[/** @type {string} */ (e)] ?? e,
-  );
+/** What a form with an escape that names no character is refused as. */
+const BAD_ESCAPE = "an escape that names no character (too few digits, past 10FFFF, or half a surrogate pair)";
+
+/** The character a `\x`, `\u` or `\U` escape names; null for one that names none. @param {string} e */
+const escaped = (e) => {
+  const c = parseInt(e.slice(1), 16);
+  return c <= 0x10ffff && (c < 0xd800 || c > 0xdfff) ? String.fromCodePoint(c) : null;
+};
+
+/**
+ * A double-quoted scalar's escapes. One that names no character stays as written, and `bad` says so.
+ * @param {string} s
+ */
+const unescape = (s) => {
+  let bad = false;
+  const text = s.replace(/\\(x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|.)/g, (all, e) => {
+    if (!/^[xuU]/.test(e)) return ({ n: "\n", t: "\t", r: "\r", 0: "\0", " ": " ", "/": "/", N: "\u0085", L: "\u2028", P: "\u2029" })[/** @type {string} */ (e)] ?? e;
+    const c = escaped(e);
+    bad ||= c === null;
+    return c ?? all;
+  });
+  return { text, bad };
+};
 
 /** Whether a line ends in an odd run of backslashes: in a double-quoted scalar, an escaped line break. @param {string} s */
 const escapedBreak = (s) => {
@@ -182,7 +204,7 @@ const BLOCK = /^[|>][0-9+-]*$/;
  * The key at the start of a block line: a tag or an anchor in front dropped, a quoted key decoded, a plain key
  * read to the first colon followed by white space or the end. null when the line holds no key.
  * @param {string} rest
- * @returns {{ key: string, value: string, anchor?: string, tags: string[], alias?: string } | { explicit: true } | null}
+ * @returns {{ key: string, value: string, anchor?: string, tags: string[], alias?: string, bad?: boolean } | { explicit: true } | null}
  */
 function keyLine(rest) {
   const { rest: s, anchor, tags } = props(rest);
@@ -196,7 +218,8 @@ function keyLine(rest) {
     if (end === -1) return null;
     const after = trimStartW(s.slice(end + 1));
     if (!(after === ":" || /^:[ \t]/.test(after))) return null;
-    return { key: s[0] === '"' ? unescape(s.slice(1, end)) : s.slice(1, end).replace(/''/g, "'"), value: trimW(after.slice(1)), anchor, tags };
+    const q = s[0] === '"' ? unescape(s.slice(1, end)) : { text: s.slice(1, end).replace(/''/g, "'"), bad: false };
+    return { key: q.text, value: trimW(after.slice(1)), anchor, tags, bad: q.bad };
   }
   if (!s || /^[{}[\],&*!|>%@`#]/.test(s) || /^-([ \t]|$)/.test(s)) return null;
   for (let i = 0; i < s.length; i++) if (s[i] === ":" && (i + 1 === s.length || blank(s[i + 1]))) return { key: trimEndW(s.slice(0, i)), value: trimW(s.slice(i + 1)), anchor, tags };
@@ -205,9 +228,10 @@ function keyLine(rest) {
 
 /**
  * A scalar as YAML reads it: properties in front dropped (the anchor and the tags are given back), quotes taken off,
- * an alias named (`alias`: the caller follows it). `unread`: a quote with text after it.
+ * an alias named (`alias`: the caller follows it). `unread`: a quote with text after it; `bad`: an escape that names
+ * no character.
  * @param {string} raw
- * @returns {{ value: string, unread?: boolean, anchor?: string, tags: string[], alias?: string, quoted?: boolean }}
+ * @returns {{ value: string, unread?: boolean, anchor?: string, tags: string[], alias?: string, quoted?: boolean, bad?: boolean }}
  */
 function scalar(raw) {
   const { rest, anchor, tags } = props(trimW(raw));
@@ -217,7 +241,8 @@ function scalar(raw) {
   if (v[0] === '"' || v[0] === "'") {
     const end = closeAt(v, 1, v[0]);
     if (end !== v.length - 1) return { value: v, unread: true, anchor, tags };
-    return { value: v[0] === '"' ? unescape(v.slice(1, end)) : v.slice(1, end).replace(/''/g, "'"), anchor, tags, quoted: true };
+    const q = v[0] === '"' ? unescape(v.slice(1, end)) : { text: v.slice(1, end).replace(/''/g, "'"), bad: false };
+    return { value: q.text, anchor, tags, quoted: true, bad: q.bad };
   }
   return { value: v, anchor, tags };
 }
@@ -412,6 +437,7 @@ export function yamlRead(text) {
     const s = scalar(raw);
     if (!tagsOk(s.tags, n)) return;
     if (s.unread) refuse(n, "a quote with text after it");
+    if (s.bad) refuse(n, BAD_ESCAPE);
     if (s.alias !== undefined) {
       const v = scalarOf(s.alias, n);
       if (v !== undefined) return void entries.push({ n, path, key, value: v, item });
@@ -425,7 +451,7 @@ export function yamlRead(text) {
       define(s.anchor, n);
       anchorScalar(s.anchor, v);
     }
-    entries.push({ n, path, key, value: v, item, ...(s.unread ? { unread: true } : {}) });
+    entries.push({ n, path, key, value: v, item, ...(s.unread || s.bad ? { unread: true } : {}) });
   };
   /** A flow collection (`[…]`, `{…}`, nested) read into entries at `path`, in item `item`, on line `n`. */
   const flow = (/** @type {string} */ src, /** @type {string[]} */ path, /** @type {number} */ item, /** @type {number} */ n) => {
@@ -454,6 +480,7 @@ export function yamlRead(text) {
       const s = scalar(raw);
       if (s.alias === undefined) {
         if (s.value === "<<" && !s.quoted) throw new Error("a merge key (<<)");
+        if (s.bad) throw new Error(BAD_ESCAPE);
         return s.value;
       }
       const v = scalarOf(s.alias, n);
@@ -696,6 +723,7 @@ export function yamlRead(text) {
     }
     pop((f) => f.indent >= col);
     if (!sibling(col, n) || !tagsOk(k.tags, n)) continue;
+    if (k.bad) refuse(n, BAD_ESCAPE);
     // An anchor on a key names the key's text; an alias as a key is that text, or unreadable.
     if (k.anchor !== undefined) {
       define(k.anchor, n);
@@ -818,8 +846,9 @@ export function prExpression(text) {
 export const ciKind = (path) => (/^\.github\/workflows\/[^/]+$/.test(path) ? "workflow" : /(^|\/)action\.ya?ml$/.test(path) ? "action" : "workflow");
 
 /**
- * @typedef {{ uses: { n: number, at: number, job: string, value: string, pinned: boolean, from?: string }[], pwn: { n: number, at: number, what: string }[], unpermitted: { job: string, n: number }[], writeAll: { where: string, n: number }[], unread: { n: number, what: string, text?: string }[], targeted: boolean, callees: { n: number, path: string }[], loose: { job: string, n: number, at: number, dir: string, from: string }[] }} Findings
- *   `at`: the entry's place in the reading, the order steps run in (a line holds several in a flow collection)
+ * @typedef {{ uses: { n: number, at: number, job: string, value: string, pinned: boolean, from?: string }[], pwn: { n: number, at: number, what: string }[], unpermitted: { job: string, n: number }[], writeAll: { where: string, n: number }[], unread: { n: number, what: string, text?: string }[], targeted: boolean, callees: { n: number, path: string }[], loose: { job: string, n: number, at: number, dir: string, from: string }[], stopped?: boolean }} Findings
+ *   `at`: the entry's place in the reading, the order steps run in (a line holds several in a flow collection);
+ *   `stopped`: the reading threw (fileFindings)
  */
 
 /** git commands that bring code into the work tree or the index. */
@@ -1133,6 +1162,23 @@ export function clones(lines) {
 }
 
 /**
+ * Whether a text holds `name`, then `(` and `)`, white space around them: a function's definition. Read by hand: a
+ * name comes from the file, and a regular expression built from one past V8's size throws. Each search moves on.
+ * @param {string} text @param {string} name
+ */
+function defines(text, name) {
+  const space = (/** @type {number} */ at) => {
+    while (at < text.length && /\s/.test(text[at])) at++;
+    return at;
+  };
+  for (let at = text.indexOf(name); at !== -1; at = text.indexOf(name, at + 1)) {
+    const open = space(at + name.length);
+    if (text[open] === "(" && text[space(open + 1)] === ")") return true;
+  }
+  return false;
+}
+
+/**
  * The lines of a `run` block that fetch or check out the pull request's code, as `{ k, what }` (k: the block line
  * it starts on). Read line by line, a line ending in `\\` joined to the next, wherever the command stands in the
  * line (`if git checkout …`, `timeout 60 git fetch …`, `$(git …)`, `bash -c '…'`): `gh pr checkout`; `gh pr diff`
@@ -1155,7 +1201,7 @@ export function runFetches(lines, names) {
   const fetchers = fetchFunctions(all);
   for (const { k, text } of logicalLines(lines)) {
     // A call: a defined fetcher's name where a command starts, an argument after it, and not its definition.
-    const calls = fetchers.size > 0 && [...text.matchAll(/(?:^|[\s;&|(])([A-Za-z_][\w-]*)(?=[ \t]+\S)/g)].some((m) => fetchers.has(m[1]) && !new RegExp(`${m[1]}\\s*\\(\\s*\\)`).test(text));
+    const calls = fetchers.size > 0 && [...text.matchAll(/(?:^|[\s;&|(])([A-Za-z_][\w-]*)(?=[ \t]+\S)/g)].some((m) => fetchers.has(m[1]) && !defines(text, m[1]));
     if (calls && holdsRef(text, names)) out.push({ k, what: text.trim() });
     const has = (/** @type {string} */ w) => new RegExp(`(?:^|[^\\w-])${w}(?![\\w-])`).test(text);
     const git = has("git");
@@ -1285,16 +1331,33 @@ export function ciFindingsOf({ entries, unread }, kind, { targeted: forced = fal
 }
 
 /**
+ * ciFindings held to its file: a reading that throws gives the whole file as one form it cannot follow, known by its
+ * text, so a file's failure takes nothing from the others. The texts that reached this were each fixed where they
+ * threw (a malformed escape, a regular expression built from a long function name); no input is known to reach it now,
+ * and that was said of both before they were found: this stands between the next such text and the others' refusals.
+ * @param {string} text @param {"workflow" | "action"} kind @param {{ targeted?: boolean }} [opts]
+ * @returns {Findings}
+ */
+function fileFindings(text, kind, opts) {
+  try {
+    return ciFindings(text, kind, opts);
+  } catch (e) {
+    return { uses: [], pwn: [], unpermitted: [], writeAll: [], unread: [{ n: 1, what: `a file this reading stopped on (${/** @type {Error} */ (e).message})`, text }], targeted: false, callees: [], loose: [], stopped: true };
+  }
+}
+
+/**
  * The findings of a set of CI files read together: a pull_request_target workflow's local callees (reusable
  * workflows, local actions, and theirs, however deep) are read as reached by that trigger, and what they check
- * out counts in their own file, naming the caller. A callee the set does not hold is in `missing`.
+ * out counts in their own file, naming the caller. A callee the set does not hold, or whose reading stopped, is in
+ * `missing`.
  * @param {Map<string, string>} files path → text
  * @returns {{ findings: Map<string, Findings>, missing: { path: string, n: number, callee: string }[] }}
  */
 export function ciSet(files) {
   /** @type {Map<string, Findings>} */
   const findings = new Map();
-  for (const [path, text] of files) findings.set(path, ciFindings(text, ciKind(path)));
+  for (const [path, text] of files) findings.set(path, fileFindings(text, ciKind(path)));
   /** @type {{ path: string, n: number, callee: string }[]} */
   const missing = [];
   const resolve = (/** @type {string} */ p) => calleeFiles(p).find((c) => files.has(c));
@@ -1343,14 +1406,20 @@ export function ciSet(files) {
         }
         if (visited.has(path)) continue;
         visited.add(path);
-        const reached = ciFindings(/** @type {string} */ (files.get(path)), ciKind(path), { targeted: true });
+        const reached = fileFindings(/** @type {string} */ (files.get(path)), ciKind(path), { targeted: true });
         const own = /** @type {Findings} */ (findings.get(path));
+        if (reached.stopped) {
+          missing.push({ path: c.from, n: c.n, callee: c.path });
+          // A text's exit is not picked by the mode that reads it: stopped when reached is the form stopped alone is.
+          if (!own.stopped) own.unread.push(reached.unread[0]), (own.stopped = true);
+          continue;
+        }
         const had = new Set(own.pwn.map((x) => x.what));
         for (const p of reached.pwn) {
           const what = `${p.what} (reached from ${caller})`;
           if (!had.has(what)) own.pwn.push({ n: p.n, at: p.at, what }), had.add(what);
         }
-        next.push(...reached.callees.map((x) => ({ from: path, ...x })));
+        for (const x of reached.callees) next.push({ from: path, ...x });
       }
       wave = next;
     }
@@ -1381,7 +1450,7 @@ export function ciCallees(versions) {
     for (const bytes of [v.staged, v.head]) {
       const text = bytes ? ciText(bytes) : null;
       if (text === null) continue;
-      for (const c of ciFindings(text, ciKind(path)).callees) for (const p of calleeFiles(c.path)) out.add(p);
+      for (const c of fileFindings(text, ciKind(path)).callees) for (const p of calleeFiles(c.path)) out.add(p);
     }
   }
   return [...out];
@@ -1429,10 +1498,18 @@ export function ciIntroduced(now, before) {
 const show = (s) => shown(s).text;
 
 /**
+ * Whether the commit brings what the index holds under a name: its bytes, its object or its kind differ from HEAD's.
+ * @param {import("../core/git.mjs").StagedVersion} v
+ */
+const brings = (v) => (v.staged && v.head ? !v.staged.equals(v.head) : v.oid === undefined || v.oid !== v.headOid || v.unread !== v.headUnread);
+
+/**
  * The hook's errors and warnings for the CI files of a commit: one error per rule a file breaks, its first three
- * places, values shown escaped; a file that is not UTF-8 text, or cannot be read, is a warning that it was not
- * checked. `versions` (stagedVersions) holds every tracked CI file, so a caller's change reaches its callees.
- * @param {Map<string, { staged: Buffer | null, head: Buffer | null, unread?: string, headUnread?: string }>} versions
+ * places, values shown escaped; a file the runner may read and the check cannot (not UTF-8 text, a symbolic link, past
+ * 16 MB) is an error when the commit brings it, else a warning that it was not checked; a submodule, or a file git
+ * cannot give, is that warning. `versions` (stagedVersions) holds every tracked CI file, so a caller's change reaches
+ * its callees.
+ * @param {Map<string, import("../core/git.mjs").StagedVersion>} versions
  * @param {string} lang
  * @returns {{ errors: string[], warnings: string[] }}
  */
@@ -1448,9 +1525,14 @@ export function ciMessages(versions, lang) {
   const now = new Map();
   /** @type {Map<string, string>} */
   const before = new Map();
+  /** What the check cannot read: refused when the commit brings it, as a form it cannot follow is; left a warning, a byte or a link would take a file out of the check. @param {string} path @param {import("../core/git.mjs").StagedVersion} v @param {string} reason */
+  const unread = (path, v, reason) => {
+    const refused = reason === "notText" || reason === "symlink" || reason === "large" ? brings(v) : false;
+    (refused ? errors : warnings).push(t(refused ? "ci.unreadNew" : "ci.unread", { path: name(path), reason: t(`ci.reason.${reason}`, {}, lang) }, lang));
+  };
   for (const [path, v] of versions) {
     if (v.unread) {
-      warnings.push(t("ci.unread", { path: name(path), reason: t(`ci.reason.${v.unread}`, {}, lang) }, lang));
+      unread(path, v, v.unread);
       continue;
     }
     // Deleted: HEAD has it and the index does not. In neither, the name git was asked for is not the name it holds.
@@ -1459,7 +1541,7 @@ export function ciMessages(versions, lang) {
       continue;
     }
     const staged = v.staged ? ciText(v.staged) : null;
-    if (v.staged && staged === null) warnings.push(t("ci.unread", { path: name(path), reason: t("ci.reason.notText", {}, lang) }, lang));
+    if (v.staged && staged === null) unread(path, v, "notText");
     if (staged !== null) now.set(path, staged);
     // A HEAD version that cannot be read is no version (stagedVersions leaves it null): everything staged is new.
     const head = v.head ? ciText(v.head) : null;
@@ -1474,7 +1556,10 @@ export function ciMessages(versions, lang) {
     if (intro.pwn.length) errors.push(t("ci.pwn", { ...vars, where: places(intro.pwn, (p) => p.what.slice(0, 120)) }, lang));
     if (intro.unpermitted.length) errors.push(t("ci.permissions", { ...vars, where: places(intro.unpermitted, (j) => j.job) }, lang));
     if (intro.writeAll.length) errors.push(t("ci.writeAll", { ...vars, where: places(intro.writeAll, (w) => w.where || t("ci.top", {}, lang)) }, lang));
-    if (intro.unread.length) errors.push(t("ci.forms", { ...vars, where: places(intro.unread, (u) => u.what) }, lang));
+    // A text HEAD holds brings no form, whichever mode's reading stopped on it.
+    const forms = now.get(path) === before.get(path) ? [] : intro.unread;
+    if (forms.length) errors.push(t("ci.forms", { ...vars, where: places(forms, (u) => u.what) }, lang));
+    else if (found.stopped) warnings.push(t("ci.unread", { ...vars, reason: t("ci.reason.stopped", {}, lang) }, lang));
   }
   // Said whenever the set is read: a callee HEAD could not read either may hide what is added behind it.
   for (const m of a.missing) warnings.push(t("ci.calleeUnread", { path: name(m.path), n: m.n, callee: name(m.callee) }, lang));

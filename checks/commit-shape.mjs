@@ -215,7 +215,14 @@ export function checkCommitShape(message, opts) {
   const rules = opts.config.review.forbidden;
   const lang = opts.config.language;
   const wideUnread = opts.wideUnread ?? new Map();
-  const { hits, unread } = forbiddenScan(opts.addedLines, rules, opts.exempt, wideUnread);
+  let scan;
+  try {
+    scan = forbiddenScan(opts.addedLines, rules, opts.exempt, wideUnread);
+  } catch (e) {
+    // The scan's own failure, not the message's: the hook weighs it as a gate's (gateFailed).
+    throw Object.assign(/** @type {Error} */ (e), { gate: "review.forbidden" });
+  }
+  const { hits, unread } = scan;
   const banned = forbiddenErrors(hits, rules, lang);
   // What could not be compared is said, never counted as clean; the commit is not refused for it. Text files
   // are named; binary files are counted, so a text file is not lost among them.

@@ -105,7 +105,8 @@ export function clipped(s, max, keep = max - 3) {
  * @returns {{ text: string, quoted: boolean }}
  */
 export function shown(value, { name = false, inQuotes = false, platform = process.platform, max = SHOWN_MAX } = {}) {
-  const v = String(value);
+  // A byte of a name that is not UTF-8 is a lone surrogate (nameText); it reads as U+FFFD, as the terminal would show it.
+  const v = /** @type {any} */ (String(value)).toWellFormed();
   if (v.length > max) {
     const { head, tail } = ends(v, max);
     return { text: `${quoted(head)}…${quoted(tail)}`, quoted: true };
