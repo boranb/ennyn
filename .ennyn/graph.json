@@ -24,14 +24,14 @@
     },
     {
       "id": "second-project-cycles",
-      "title": "Run cycles on a second project from its own session and record the convergence numbers against the baseline",
+      "title": "Run cycles on a second project from its own session and record the convergence numbers against the baseline; the next run uses the shipped text alone, with no hand-written brief, and every line a person or an orchestrator has to add is recorded as a product defect: fresh-agent-per-task landed on 2026-10-31 (7fd12bb), after the trials of 2026-10-29, so the loop to be released has not run outside this repository",
       "status": "planned",
       "value": "high",
       "cost": "L",
       "cluster": "evidence",
       "needs": [],
       "gate": "user",
-      "source": "docs/evidence.md, Open questions; set up but not committed in the second project (2026-10-18); init committed and cycle 1 run 2026-10-29: real 14 · fix-introduced 10 · pre-existing 10 · gate-caught 3, new classes by round 13/8/0; findings are the nodes with that source; cycle 2: real 16 · fix-introduced 10 · pre-existing 12 · gate-caught 2, new classes by round 14/4/0; a task was left for cycle 3 at the context limit the cycle set itself (850K); cycle 3 (a new session): real 20 · fix-introduced 16 · pre-existing 17 · gate-caught 8, new classes by round 11/4/0; the first mechanization task ran (picked by hand), and its gate turned red on 6, 42 and 14 cases when past defects were put back; a third project (TypeScript, npm, CI) ran init and one cycle the same day: real 5 · fix-introduced 3 · pre-existing 9 · gate-caught 2, new classes by round 4/0; deps read 540 lock entries (53 known advisories, none refused, none unmeasured), the CI checks stopped no commit (a commit that only added permissions passed), mutate's --check with esbuild parsed .ts/.tsx (0 invalid)",
+      "source": "docs/evidence.md, Open questions; set up but not committed in the second project (2026-10-18); init committed and cycle 1 run 2026-10-29: real 14 · fix-introduced 10 · pre-existing 10 · gate-caught 3, new classes by round 13/8/0; findings are the nodes with that source; cycle 2: real 16 · fix-introduced 10 · pre-existing 12 · gate-caught 2, new classes by round 14/4/0; a task was left for cycle 3 at the context limit the cycle set itself (850K); cycle 3 (a new session): real 20 · fix-introduced 16 · pre-existing 17 · gate-caught 8, new classes by round 11/4/0; the first mechanization task ran (picked by hand), and its gate turned red on 6, 42 and 14 cases when past defects were put back; a third project (TypeScript, npm, CI) ran init and one cycle the same day: real 5 · fix-introduced 3 · pre-existing 9 · gate-caught 2, new classes by round 4/0; deps read 540 lock entries (53 known advisories, none refused, none unmeasured), the CI checks stopped no commit (a commit that only added permissions passed), mutate's --check with esbuild parsed .ts/.tsx (0 invalid); read 2026-11-01, see brief-rules-in-skill",
       "since": 0
     },
     {
@@ -78,7 +78,7 @@
     },
     {
       "id": "release-0-1-0",
-      "title": "Release v0.1.0: final read of both READMEs, CHANGELOG section, version in package.json, package-lock.json and plugin.json, tag; README and SECURITY.md name the one source to install from and what a genuine copy never holds (binaries, runtime dependencies, install scripts); docs/evidence.md's heading 'Gates stop recurrence, prose does not' is scoped to the origin project, with Ennyn's own table of proposal-born gates beside it",
+      "title": "Release v0.1.0: final read of both READMEs, CHANGELOG section, version in package.json, package-lock.json and plugin.json, tag; README and SECURITY.md name the one source to install from and what a genuine copy never holds (binaries, runtime dependencies, install scripts); docs/evidence.md's heading 'Gates stop recurrence, prose does not' is scoped to the origin project, with Ennyn's own table of proposal-born gates beside it; docs/related-work.md drops 'None is built yet' (findings-ledger is built), says which of the table's nodes are, and credits this review's ideas in its table, before publishing: Anthropic's post added its credit to Sapling's Mononoke only in an update of October 15; docs/related-work.md's spec-kit row names assess, bug and the workflow engine, and says its claim holds for core only: community extensions (spec-gates, vurnix, spec-kit-tdd) now run checks as code. The rest of the graph waits for after this release",
       "status": "planned",
       "value": "high",
       "cost": "S",
@@ -88,11 +88,36 @@
         "external-audit-before-release",
         "reread-after-compact",
         "task-gate-after-round-two",
-        "gate-loosening-guard",
-        "ci-gate-file-isolation"
+        "brief-rules-in-skill",
+        "readme-scope-glossary",
+        "history-author-address",
+        "destructive-ask-rules",
+        "push-spellings-hook",
+        "finding-triage",
+        "greenfield-detect",
+        "greenfield-first-commit",
+        "no-test-command-stop",
+        "greenfield-intake",
+        "walking-skeleton-first",
+        "cycle-worktree-teardown",
+        "cycle-leftover-report",
+        "secret-transcript-probe",
+        "secret-output-mask",
+        "history-secret-scan",
+        "smallest-change-row",
+        "one-decision-one-site",
+        "one-task-run",
+        "uninstall-path",
+        "node-verdict",
+        "secret-agent-setup",
+        "push-setting",
+        "cycle-journal",
+        "session-handover",
+        "fresh-session-run",
+        "lean-audit"
       ],
       "gate": "user",
-      "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release)",
+      "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release); read 2026-11-01: the post now opens 'Updated October 15 to include more detail on the projects that pioneered many of the techniques we use in Scion.', and The Pragmatic Engineer (2026-10-22) reports the attribution came after a public complaint; an audit of requests against the graph, 2026-11-01: five had no node in the release needs: a project started from nothing (a request, 2026-10-29: 15 nodes, 0 done), leftovers (a request, 2026-10-29: 14 nodes, 0 done), secrets in chat (a request, 2026-10-28: 12 nodes, 1 done), less code and no repetition (a request, a request, 2026-10-25), findings that can wait (a request, 2026-10-25). The smallest piece of each entered the needs. spec-gates' README: 'Spec Kit is a guidance layer'",
       "since": 0
     },
     {
@@ -317,14 +342,14 @@
     },
     {
       "id": "ci-first-run",
-      "title": "The CI workflow has never run on GitHub (the docker-based test job included): start it once by hand, or let the first public push run it",
+      "title": "The CI workflow has never run on GitHub (the docker-based test job included): start it once by hand, or let the first public push run it; correction, 2026-11-01: not by hand. No session dispatches this workflow while the repository is private: the first public push runs it",
       "status": "planned",
       "value": "medium",
       "cost": "S",
       "cluster": "gates",
       "needs": [],
       "gate": "user",
-      "source": "cycle 2026-10-23 (6), ci-free-quota and git-floor",
+      "source": "cycle 2026-10-23 (6), ci-free-quota and git-floor; user, 2026-11-01: a request. CI ran no job while private",
       "since": 6
     },
     {
@@ -340,13 +365,13 @@
     },
     {
       "id": "floor-run-record",
-      "title": "Nothing stops a push without a passing npm run test:linux at HEAD: record the commit it passed and have push-check say when HEAD has none; the record holds a digest of the tracked files outside docs and each container's node, git and npm versions, so push-check compares digests and a docs-only commit keeps the record",
+      "title": "Nothing stops a push without a passing npm run test:linux at HEAD: record the commit it passed and have push-check say when HEAD has none; the record holds a digest of the tracked files outside docs and each container's node, git and npm versions, so push-check compares digests and a docs-only commit keeps the record; and for any project: init and doctor list its checks (package scripts, CI jobs) with the gate or step that runs each, and name those nothing runs",
       "status": "planned",
       "value": "low",
       "cost": "M",
       "cluster": "gates",
       "needs": [],
-      "source": "review, cycle 2026-10-23 (6), ci-free-quota; review of agent-reach (MIT, 14c2134), 2026-10-28: release acceptance rows tied to a source digest, valid for 7 days, each waiver with a reason (scripts/check_release_acceptance.py)",
+      "source": "review, cycle 2026-10-23 (6), ci-free-quota; review of agent-reach (MIT, 14c2134), 2026-10-28: release acceptance rows tied to a source digest, valid for 7 days, each waiver with a reason (scripts/check_release_acceptance.py); a smoke test no gate runs can stay broken for many tasks with every gate green; smoke and e2e appear nowhere in skills/ or setup/ as of 2026-11-01",
       "since": 6
     },
     {
@@ -450,7 +475,7 @@
       "cluster": "gates",
       "mechanization": true,
       "sourceClass": "a fixed wall-clock limit in a test fails under load",
-      "source": "cycle 2026-10-24 (8), review round 1 of guards-under-load; measured in the T4 landing run; cycle 2026-10-25 (10): the secrets linear-time ratio failed two full runs at load 8-40 (fixed with CPU time, 1ccb39b); the other wall-clock reads remain; cycle 2026-10-26 (12): at load 50-274 single full runs failed on the fence-reader timing test, a verdicts secrets cell (the hook past 60 s), guards' inner runs, deps' OSV test (stalled 15 minutes) and mutate's runs that wait; each file passed alone, so no run of the cycle's last two landings was clean on the first try; cycle 2026-10-27 (13): at load 83-115 single full runs failed on mutate's runs that wait and its owner-stamp test (the parse check gave no answer), the fault matrix control (its fake git writes the pid it counts only after starting sleep, so a 1 s limit can stop it first: write a marker first), guards' baselines of fault-injection and verdicts, and two hook tests (exit null); each file passed alone; cycle 2026-10-28 (14): the Linux run measured waits shorter than their limits (730 ms against 1 s, 1785 and 1801 ms against 2 s) in the fault matrix control: the tests read Date.now(), which the VM's clock adjustment moves; every test that times a wait reads performance.now() since ce3d0d2; the fixed limits remain; cycle 2026-10-31 (15): setup.test.mjs:1038 failed once at load 40-67 (alone 78/78), and mutation.test.mjs:795 and :838 once at load 95; guards' input-shapes cell once at load 17-27 in the guards clone (alone 10/10); four parallel full suites took the machine to load 124; 2026-10-31 research on closing escaped classes: named in cycles 12 and 13, came back in cycles 8, 9, 10, 12, 13, 14 and 15, never flagged; 2026-10-31: test/input-shapes.test.mjs:493's cleanup failed once in npm test at load about 42 (ENOTEMPTY on a temporary repository's .git/objects/pack, so something was writing there during rmSync, cause not found), the file alone passed 8 of 8 three times; cycle 2026-11-01 (16): three whole suites at once took the machine to load 330 and swap to 11.8 of 13.3 GB; failures read as load: setup's imports-over-blank-lines, the fault matrix's never-ending git control, input-shapes in guards' baseline and mutation, each green alone; 2026-11-01: published work favours limits derived from past durations over hand-raised ones (SAP cut timeout flakes 80%, arXiv 2402.05223, one of two SAP studies, which disagree on load); cycle 16 measured: 10 of 23 whole suites red, 3 of them real, median 654 s against 444-490 s on a quiet machine",
+      "source": "cycle 2026-10-24 (8), review round 1 of guards-under-load; measured in the T4 landing run; cycle 2026-10-25 (10): the secrets linear-time ratio failed two full runs at load 8-40 (fixed with CPU time, 1ccb39b); the other wall-clock reads remain; cycle 2026-10-26 (12): at load 50-274 single full runs failed on the fence-reader timing test, a verdicts secrets cell (the hook past 60 s), guards' inner runs, deps' OSV test (stalled 15 minutes) and mutate's runs that wait; each file passed alone, so no run of the cycle's last two landings was clean on the first try; cycle 2026-10-27 (13): at load 83-115 single full runs failed on mutate's runs that wait and its owner-stamp test (the parse check gave no answer), the fault matrix control (its fake git writes the pid it counts only after starting sleep, so a 1 s limit can stop it first: write a marker first), guards' baselines of fault-injection and verdicts, and two hook tests (exit null); each file passed alone; cycle 2026-10-28 (14): the Linux run measured waits shorter than their limits (730 ms against 1 s, 1785 and 1801 ms against 2 s) in the fault matrix control: the tests read Date.now(), which the VM's clock adjustment moves; every test that times a wait reads performance.now() since ce3d0d2; the fixed limits remain; cycle 2026-10-31 (15): setup.test.mjs:1038 failed once at load 40-67 (alone 78/78), and mutation.test.mjs:795 and :838 once at load 95; guards' input-shapes cell once at load 17-27 in the guards clone (alone 10/10); four parallel full suites took the machine to load 124; 2026-10-31 research on closing escaped classes: named in cycles 12 and 13, came back in cycles 8, 9, 10, 12, 13, 14 and 15, never flagged; 2026-10-31: test/input-shapes.test.mjs:493's cleanup failed once in npm test at load about 42 (ENOTEMPTY on a temporary repository's .git/objects/pack, so something was writing there during rmSync, cause not found), the file alone passed 8 of 8 three times; cycle 2026-11-01 (16): three whole suites at once took the machine to load 330 and swap to 11.8 of 13.3 GB; failures read as load: setup's imports-over-blank-lines, the fault matrix's never-ending git control, input-shapes in guards' baseline and mutation, each green alone; 2026-11-01: published work favours limits derived from past durations over hand-raised ones (SAP cut timeout flakes 80%, arXiv 2402.05223, one of two SAP studies, which disagree on load); cycle 16 measured: 10 of 23 whole suites red, 3 of them real, median 654 s against 444-490 s on a quiet machine; cycle 2026-11-01 (17): the fault matrix's never-ending git control leaves this node. Its red was no fixed limit moved by CPU load: macOS holds the first run of a new file until a system check has read it (0.2-0.9 s alone, 17 s behind 60 others at load 11-18), and the fake's shell had not reached its first line at the 1 s limit, so the marker first named here for cycle 13 would not have helped. Fixed in 197121d: first run under no limit; a run lost to a slow start runs again and is judged. Not a bound load cannot move: with 90 or more start loops and the machine out of memory the control ends at its 45 s watchdog, and that reads as slow, not hung. Spinners up to load 332 never failed it; the short suite failed it 8 of 12 runs at load 12-50. Other tests here have not been checked for this: first-run-under-limit",
       "since": 8
     },
     {
@@ -980,18 +1005,7 @@
       "cost": "S",
       "cluster": "security",
       "title": "doctor says when the config switches a security check off: security.ci.paths [], security.deps.paths [], secrets.except naming every path, security.everyCycles 0, deps online false, advisories \"\"; security.deps.advisories or a registry's download API set to any origin other than the default, plain http included (the host gets the lock's names and versions; an empty answer reads as 0 advisories, exit 0)",
-      "source": "cycle 2026-10-25 (11), security audit (.ennyn/config.json row); cycle 14 security review probe deps-advisories-foreign-origin",
-      "since": 11
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "gate-loosening-guard",
-      "value": "high",
-      "cost": "M",
-      "cluster": "security",
-      "title": "21 refusal lines tell the agent which config key loosens the gate that refused it (security.secrets.except, security.deps.allowScripts, sources, registries, a forbidden rule's except) and nothing flags a commit that widens them or switches a check off: the commit-msg hook refuses such a commit unless the message carries a line saying the user approved it, the cycle skill says an agent never writes that line, and security refusals say loosening is the user's call; also security.deps.advisories and the security.deps.registries values; a local hook cannot tell the user from an agent, so the closing report also lists, for the user before the push, each bypass with its reason and each key this cycle loosened: the count alone is not enough",
-      "source": "cycle 2026-10-25 (11), a second session's review (context-mode, MIT, docs/adr/0003-routing-deny-reasons.md: refusal wording drives the agent's next step); .ennyn/config.json joined review.impactRequiredGlobs in this cycle's closing commit, which an agent can still satisfy; cycle 14 security review probe deps-advisories-foreign-origin; GitHub's Copilot runtime rewrite post (read 2026-10-31): an agent that had lost an SDK method met a failing schema check and 'The agent’s response was to apply the repo’s schema-break-ok automation label', found only when a person asked why; its lesson: 'Protect the oracle from the agent.'",
+      "source": "cycle 2026-10-25 (11), security audit (.ennyn/config.json row); cycle 14 security review probe deps-advisories-foreign-origin; cycle 2026-11-01 (17), security audit: an unstaged edit that switched a gate off drew no line from doctor; the hook now reads the commit's own config (59135da), so doctor is what is left",
       "since": 11
     },
     {
@@ -1089,8 +1103,8 @@
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "title": "No rule decides which review findings are fixed now and which become nodes; cycles 2-10 had 245 fix-introduced findings against 266 real escapes; a deferred finding becomes a node, and a gate line names the nodes it blocks until it is done (bmad-loop's deferred-work file); a fixer allowed to skip findings it could not fix safely regressed less (Imbue); a 🔴/🟠 finding cannot leave a round without one recorded outcome: fixed with a test, a node id, or refuted",
-      "source": "cycle 2026-10-25 (11), a second session's count of the closing handoffs; review of ScrapeGraphAI (MIT, 194055e), 2026-10-28: a review bot rated a broken telemetry opt-out High on pull request #1031, the change merged the same day, and the fix shipped about nine months later in v2.2.4",
+      "title": "No rule decides which review findings are fixed now and which become nodes; cycles 2-10 had 245 fix-introduced findings against 266 real escapes; a deferred finding becomes a node, and a gate line names the nodes it blocks until it is done (bmad-loop's deferred-work file); a fixer allowed to skip findings it could not fix safely regressed less (Imbue); a 🔴/🟠 finding cannot leave a round without one recorded outcome: fixed with a test, a node id, or refuted; each row says who produces the input its scenario needs (an attacker, normal use by a person or an agent, or only this project's own writer): a low finding whose input only the project's own writer makes is recorded as declined and not fixed, the row validator checks it, and review itself stays as it is, on gates, hooks and shared code above all. Read escapes against declined rows for a cycle before keeping it",
+      "source": "cycle 2026-10-25 (11), a second session's count of the closing handoffs; review of ScrapeGraphAI (MIT, 194055e), 2026-10-28: a review bot rated a broken telemetry opt-out High on pull request #1031, the change merged the same day, and the fix shipped about nine months later in v2.2.4; Anthropic's Scion post (read 2026-11-01): adversarial review 'can also be myopic', engineers had to 'steer Claude away from over-engineering parts of the system in response to hypothetical concerns', and one review was 'overly defensive about trusting another internal service'. Ledger at cycle 16: 186 reviewer rows with no duplicates, 175 fixed, 8 nodes, 3 refuted; 74 of the 81 low ones fixed; by one hand reading 23 of those 74 rest on a hand-made input no user or agent would produce, 21 of them in record and measurement code, 2 in the hook. One cycle, one reader's labels, low severity only; rows do not link a fix to what it opened",
       "since": 11
     },
     {
@@ -1108,11 +1122,11 @@
       "status": "planned",
       "needs": [],
       "id": "cycle-journal",
-      "title": "The cycle writes its state to the state dir as it goes (the HEAD it started at, the four tasks and their state, worktrees, the findings ledger's path, the review round), and the SessionStart hook gives one short line of it after compaction, so a compacted session resumes the cycle without guessing; first count from the session transcripts how often a cycle session compacts; the handoff records the HEAD it was written at, and the cycle start names the files it mentions that changed since; each reviewer round and each task result is written to a file in the state dir named by task and round, and the cycle checks the file is there before the next step",
+      "title": "The cycle writes its state to the state dir as it goes (the HEAD it started at, the four tasks and their state, worktrees, the findings ledger's path, the review round), and the SessionStart hook gives one short line of it after compaction, so a compacted session resumes the cycle without guessing; first count from the session transcripts how often a cycle session compacts; the handoff records the HEAD it was written at, and the cycle start names the files it mentions that changed since; each reviewer round and each task result is written to a file in the state dir named by task and round, and the cycle checks the file is there before the next step; session-handover and fresh-session-run read this state, so a new session starts from files and not from a summary; ennyn status prints it for a person: the cycle, tasks landed of tasks planned, each task's step and review round, elapsed time, what waits for the user, and release needs done of total. The percent is counted in steps, never in time, and there is no time estimate; --line gives one line for a status line, --json the rest. It reads files only, so it answers in chat and in a terminal, and ennyn run prints the same line",
       "value": "high",
       "cost": "M",
       "cluster": "cycle",
-      "source": "review of context-mode (MIT), 2026-10-25: a PreCompact hook builds a snapshot of at most 2 KB (files, tasks, decisions, errors, the last request) and SessionStart restores it after compaction; Ennyn re-injects only the conversation style after compaction, and the cycle's bypass count needs the HEAD noted at its start; review of Understand-Anything (MIT, 4e6d329), 2026-10-28: issue #433, the results of 13 batches lost to compaction before the one final write; value raised 2026-10-29: idle compaction is the common case here (6 of 7), and it fires on the first message after an idle hour, often mid-cycle while a long run is awaited; see precompact-boundary-defer",
+      "source": "review of context-mode (MIT), 2026-10-25: a PreCompact hook builds a snapshot of at most 2 KB (files, tasks, decisions, errors, the last request) and SessionStart restores it after compaction; Ennyn re-injects only the conversation style after compaction, and the cycle's bypass count needs the HEAD noted at its start; review of Understand-Anything (MIT, 4e6d329), 2026-10-28: issue #433, the results of 13 batches lost to compaction before the one final write; value raised 2026-10-29: idle compaction is the common case here (6 of 7), and it fires on the first message after an idle hour, often mid-cycle while a long run is awaited; see precompact-boundary-defer; sessions were restarted by hand after cycles; the user, 2026-11-01. A percent of time would mislead: in cycle 16 one task took 11.8 of the 13.1 hours. GSD's status line shows the current task, a progress bar from its state file and context use, and /gsd-progress answers 'Where am I? What's next?'. In spec-kit's 935 records, 12 ask for progress views",
       "since": 11
     },
     {
@@ -1219,11 +1233,11 @@
       "status": "planned",
       "needs": [],
       "id": "lean-audit",
-      "title": "The legacy audit also lists what the audited feature could lose: dead code, options no config sets, a hand-written reader the platform or git already gives, near-copies that must change together, each with its lines. A deletion lands in the same task only with the tests and the mutation pass green; a larger one becomes a node. Lean items are their own group: never counted as findings, never a reason for another review round; with the leftover tool init recorded (init-leftover-tool), the audit runs it on the audited feature's files only (knip, vulture --min-confidence, staticcheck U1000 or deadcode, cargo-machete) and lists commented-out code there; never an automatic removal of unused imports while other worktrees are open (claude-code#103573: removing 'unused' imports broke a pull request merged in parallel)",
+      "title": "The legacy audit also lists what the audited feature could lose: dead code, options no config sets, a hand-written reader the platform or git already gives, near-copies that must change together, each with its lines. A deletion lands in the same task only with the tests and the mutation pass green; a larger one becomes a node. Lean items are their own group: never counted as findings, never a reason for another review round; with the leftover tool init recorded (init-leftover-tool), the audit runs it on the audited feature's files only (knip, vulture --min-confidence, staticcheck U1000 or deadcode, cargo-machete) and lists commented-out code there; never an automatic removal of unused imports while other worktrees are open (claude-code#103573: removing 'unused' imports broke a pull request merged in parallel); first pass before v0.1.0, in a cycle's audit slot, because from 0.1.0 a removed config key breaks users (config-tombstones): remove planner.mechanizationSlots, which nothing reads; of the 45 keys no project has set, keep only those a user story or an escape hatch names, graph.valueScale and graph.costScale first; make the ledger's trigger and escapePoint optional, since only their length is checked and nothing reads them; keep the handoff to the commands, the last cycle and what is next, and move what the graph already holds to an archive file a cycle does not read. No rewrite of code for size",
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: /ponytail-audit ranks correct, safe, holds under load, tested, fast, lean, in that order, and gives the lines that could go; Ennyn's evidence: fixing review findings made more defects than first drafts missed (99 against 80), so a cut waits for green tests, not for a round",
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: /ponytail-audit ranks correct, safe, holds under load, tested, fast, lean, in that order, and gives the lines that could go; Ennyn's evidence: fixing review findings made more defects than first drafts missed (99 against 80), so a cut waits for green tests, not for a round; measured 2026-11-01: 87 config keys, 45 set by none of four projects' configs; trigger and escapePoint are filled on all 334 ledger rows, 37 KB, read by no code beyond their length check; the handoff grew from 9.8 KB to 47.9 KB in 13 days, 15 KB of it inter-cycle research the graph already holds, and a cycle reads it whole at its start. All 18 commands were run in the last 14 days. An earlier trial rewrote five modules with behaviour unchanged and saved 5.1% of tokens, so code size is not the target. DESIGN.md's growth, 30 KB to 179 KB, stays with docs-split, after the release",
       "since": 11
     },
     {
@@ -1309,11 +1323,11 @@
       "status": "planned",
       "needs": [],
       "id": "cycle-cost",
-      "title": "budget --record also records what the cycle cost: tokens (input, cache write, cache read, output), agent time and, where Claude Code wrote it, dollars, summed from this project's session transcripts since the previous record, numbers only, never text; unmeasured when no transcript is there; the cycle report gives the cost per task, per review round and per finding found in review; usage is summed once per message id: Claude Code writes one transcript line per content block and repeats the message's usage on each (this repository's last 8 sessions, version field 2.1.306: summing per line gave 1.78 to 2.61 times the per-id sum, every repeated id with the same usage); a call that timed out or returned no JSON is unmeasured, never 0 USD; an estimate is never added to a measured cost; the greenfield intake and the first cycle are recorded the same way: token and time cost is among the most-reacted complaints about spec-kit, superpowers and Kiro (spec-kit #1492: 'usage limits are typically reached in under an hour of active work.'); also hours from the cycle's start to its closing, and the count of defects found after a closing in what that cycle landed: these two numbers decide whether a cut in the loop stays",
+      "title": "budget --record also records what the cycle cost: tokens (input, cache write, cache read, output), agent time and, where Claude Code wrote it, dollars, summed from this project's session transcripts since the previous record, numbers only, never text; unmeasured when no transcript is there; the cycle report gives the cost per task, per review round and per finding found in review; usage is summed once per message id: Claude Code writes one transcript line per content block and repeats the message's usage on each (this repository's last 8 sessions, version field 2.1.306: summing per line gave 1.78 to 2.61 times the per-id sum, every repeated id with the same usage); a call that timed out or returned no JSON is unmeasured, never 0 USD; an estimate is never added to a measured cost; the greenfield intake and the first cycle are recorded the same way: token and time cost is among the most-reacted complaints about spec-kit, superpowers and Kiro (spec-kit #1492: 'usage limits are typically reached in under an hour of active work.'); also hours from the cycle's start to its closing, and the count of defects found after a closing in what that cycle landed: these two numbers decide whether a cut in the loop stays; it also counts cache tokens written after a gap longer than the cache lifetime, by agent kind. Cycle 18 runs with subagentPromptCacheTtl 1h and is compared with the number below",
       "value": "medium",
       "cost": "M",
       "cluster": "metrics",
-      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its band reads Claude Code session transcripts for cost, agent time and tokens per task, and leaves a cost empty rather than guess it (an unknown model, fast mode); Ennyn counts defects per cycle but not what a cycle or a review round costs; third-party cost scripts read 2026-10-29: a failed call recorded as a zero cost; one adds Hermes's estimated_cost_usd and Claude Code's total_cost_usd into one total, a missing estimate as 0",
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its band reads Claude Code session transcripts for cost, agent time and tokens per task, and leaves a cost empty rather than guess it (an unknown model, fast mode); Ennyn counts defects per cycle but not what a cycle or a review round costs; third-party cost scripts read 2026-10-29: a failed call recorded as a zero cost, and a missing estimate added in as 0; measured 2026-11-01 over 8 days: subagents wrote 242.8M cache tokens, 99.98% at the five-minute lifetime, 183.7M of them after a gap over five minutes (after a resume message 38%, a test run 35%, another shell command 27%); 171.0M of those gaps were under an hour. At list ratios a one-hour lifetime would save about 17% of subagent token cost; a subscription's weighting is unknown, and task-short-suite lowers the same number",
       "since": 11
     },
     {
@@ -1334,11 +1348,11 @@
       "status": "planned",
       "needs": [],
       "id": "uninstall-path",
-      "title": "ennyn uninstall-hook removes only a commit-msg hook Ennyn wrote (as install-hook reads it) and the state dir, and lists what stays for the user to decide: the config, graph, handoff, metrics log and the ask rules init wrote; init and install-hook record each file they write with its sha256, and uninstall removes only files still unchanged and lists the edited ones",
+      "title": "ennyn uninstall-hook removes only a commit-msg hook Ennyn wrote (as install-hook reads it) and the state dir, and lists what stays for the user to decide: the config, graph, handoff, metrics log and the ask rules init wrote; init and install-hook record each file they write with its sha256, and uninstall removes only files still unchanged and lists the edited ones; the README says how to update and how to remove Ennyn. Raised to a release need: a stranger's first question after trying a tool",
       "value": "low",
       "cost": "S",
       "cluster": "init",
-      "source": "review of i-have-adhd and ponytail (open-source agent skills, MIT), 2026-10-25: a write outside the repository needs an easy undo path; ponytail ships scripts/uninstall.js; Ennyn's hook says only 'delete this file to remove it'; review of agent-reach (MIT, 14c2134), 2026-10-28: agent_reach/runtime/state.py:106, 'Deletion permission comes from the ledger, never a familiar filename.'",
+      "source": "review of i-have-adhd and ponytail (open-source agent skills, MIT), 2026-10-25: a write outside the repository needs an easy undo path; ponytail ships scripts/uninstall.js; Ennyn's hook says only 'delete this file to remove it'; review of agent-reach (MIT, 14c2134), 2026-10-28: agent_reach/runtime/state.py:106, 'Deletion permission comes from the ledger, never a familiar filename.'; spec-kit discussion #168, 38 upvotes, on removing it: 'cleaning it up or replacing it is cumbersome and error-prone'",
       "since": 11
     },
     {
@@ -1654,7 +1668,7 @@
       "value": "high",
       "cost": "M",
       "cluster": "gates",
-      "source": "review of agents block-no-verify and tdd-guard docs/enforcement.md, 2026-10-27; related: ci-range-check, hook-amend-base; second-project trial, cycle 1, 2026-10-29, git 2.56.0: revert --no-edit, revert -e, cherry-pick and rebase run neither pre-commit nor commit-msg; merge --no-edit runs commit-msg",
+      "source": "review of agents block-no-verify and tdd-guard docs/enforcement.md, 2026-10-27; related: ci-range-check, hook-amend-base; second-project trial, cycle 1, 2026-10-29, git 2.56.0: revert --no-edit, revert -e, cherry-pick and rebase run neither pre-commit nor commit-msg; merge --no-edit runs commit-msg; cycle 2026-11-01 (17): gate-loosening-guard states the same limit: a tripwire and a record, not a boundary; ennyn bypass lists what passed around it",
       "since": 13
     },
     {
@@ -1705,11 +1719,11 @@
       "status": "planned",
       "needs": [],
       "id": "readme-scope-glossary",
-      "title": "README: 'When Ennyn does not fit' (Claude Code only for now, rework only as good as the fix label, Node 20 and git 2.34, config may change before 1.0), a short glossary (side copy, mechanization, legacy audit, work graph, convergence, gate), and how Ennyn differs from hookify, Mycelium, Compound Engineering and TDD Guard",
+      "title": "README: 'When Ennyn does not fit' (Claude Code only for now, rework only as good as the fix label, Node 20 and git 2.34, config may change before 1.0), a short glossary (side copy, mechanization, legacy audit, work graph, convergence, gate), and how Ennyn differs from hookify, Mycelium, Compound Engineering and TDD Guard; one line on what a cycle costs, taken from a measured cycle (cycle 16: 33.8 agent-hours; one session stopped mid-cycle on a usage limit), and a line saying the numbers come from one author's projects; a short table of the settings a person would change (language, commit style, push, how the agent runs, reviewers) and how to change each. No setting turns a gate off",
       "value": "medium",
       "cost": "S",
       "cluster": "distribution",
-      "source": "outside-eye review (undefined jargon); ripgrep 'Why shouldn't I use ripgrep?', anthropics/claude-code plugins READMEs, awesome-claude-code neighbours, 2026-10-27",
+      "source": "outside-eye review (undefined jargon); ripgrep 'Why shouldn't I use ripgrep?', anthropics/claude-code plugins READMEs, awesome-claude-code neighbours, 2026-10-27; Anthropic's Scion post (read 2026-11-01) on its own workload: 'our ability to spend tokens for internal use far exceeds what any other business would realistically want to spend'. Entered release-0-1-0's needs on the same review; spec-kit's users asked for project-level settings in 57 of 935 records read on 2026-11-01, mostly branch names (#407, #1382) and language (#1239)",
       "since": 13
     },
     {
@@ -1761,22 +1775,22 @@
       "status": "planned",
       "needs": [],
       "id": "statusline",
-      "title": "ennyn statusline: the budget and the last cycle's convergence numbers in Claude Code's status line; local, time-bounded, fail-open, added to settings.json only by the user",
+      "title": "ennyn statusline: the budget and the last cycle's convergence numbers in Claude Code's status line; local, time-bounded, fail-open, added to settings.json only by the user; after the release: init offers ennyn status --line as the project's statusLine (a plugin cannot ship one: its settings carry only agent and subagentStatusLine), and a band above the prompt through a mod for the VS Code panel, read from the journal. Measure first whether a status line shows in that panel, and that a mod's band works there as the docs say",
       "value": "low",
       "cost": "M",
       "cluster": "metrics",
-      "source": "ccusage docs/guide/statusline.md, 2026-10-27",
+      "source": "ccusage docs/guide/statusline.md, 2026-10-27; read 2026-11-01: plugins-reference on a plugin's settings; a mod's AbovePrompt and Pane render on the terminal, desktop, vscode and mobile surfaces. Not tried",
       "since": 13
     },
     {
       "status": "planned",
       "needs": [],
       "id": "fix-scope",
-      "title": "A round-one fix stays in the lines its finding names. If a fix changes a line outside the hunks the round's findings quote, the fix report names that line (which finding needs it and why); otherwise the round is not closed. Each finding's fix size (lines added and removed, files) is recorded, so fix-introduced findings can be read against fix size. Imbue 2026-04 (SWE-bench Pro, one review-and-fix pass): given the full review, a Sonnet fixer changed 46 lines on average and 343 at most; with a summary, 19 and 160. On one task the score fell from 16/17 to 8/17. A fixer prompt that allowed skipping a finding it could not fix safely removed the worst regressions. The evidence is thin (one regressed task of 15, mean score not significantly moved): measure on Ennyn's own rounds before the gate refuses anything",
+      "title": "A round-one fix stays in the lines its finding names. If a fix changes a line outside the hunks the round's findings quote, the fix report names that line (which finding needs it and why); otherwise the round is not closed. Each finding's fix size (lines added and removed, files) is recorded, so fix-introduced findings can be read against fix size. Imbue 2026-04 (SWE-bench Pro, one review-and-fix pass): given the full review, a Sonnet fixer changed 46 lines on average and 343 at most; with a summary, 19 and 160. On one task the score fell from 16/17 to 8/17. A fixer prompt that allowed skipping a finding it could not fix safely removed the worst regressions. The evidence is thin (one regressed task of 15, mean score not significantly moved): measure on Ennyn's own rounds before the gate refuses anything; the first write too: at landing the orchestrator lists the files a task changed that neither its brief nor its impact table names, and each is either justified in the report or removed. A change that works is no finding for a reviewer who asks only how it breaks",
       "value": "high",
       "cost": "M",
       "cluster": "method",
-      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn; one reported case: work forgotten in a reused worktree went into a later pull request, and only that pull request's review showed it. One anecdote: a fresh worktree per task already closes that exact path (cycle-worktree-teardown is still planned), so this node covers the wider case, nothing measured",
       "since": 13
     },
     {
@@ -1875,7 +1889,7 @@
       "value": "high",
       "cost": "M",
       "cluster": "security",
-      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn; cycle 14 security audit review round 1: env reaches the hook (settings-env-gate-config); measured 2026-10-28 with fixture repositories",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn; cycle 14 security audit review round 1: env reaches the hook (settings-env-gate-config); measured 2026-10-28 with fixture repositories; cycle 2026-11-01 (17), security audit: .claude/settings.json with statusLine, apiKeyHelper, disableAllHooks or defaultMode passes gate, plugin test and doctor; package keys no pin reads: workspaces, resolutions, packageManager, publishConfig, gypfile, a root binding.gyp; .npmrc's script-shell, node-options, userconfig: said on a commit, held by no test; plugin default folders no pin reads: workflows, themes, monitors/monitors.json",
       "since": 13
     },
     {
@@ -1897,7 +1911,7 @@
       "value": "high",
       "cost": "S",
       "cluster": "distribution",
-      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn; Codex's own code read 2026-10-28, the cut tails measured with tail -c; cycle 2026-11-01 (16): skills/cycle/SKILL.md stands at 7,969 bytes; skills/init/SKILL.md does not, and no test caps either at 8,000",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn; Codex's own code read 2026-10-28, the cut tails measured with tail -c; cycle 2026-11-01 (16): skills/cycle/SKILL.md stands at 7,969 bytes; skills/init/SKILL.md does not, and no test caps either at 8,000; cycle 2026-11-01 (17): skills/cycle/SKILL.md stands near 8,000 bytes after two tasks, and skills/init/SKILL.md at 8,191 of the test's 8,192",
       "since": 13
     },
     {
@@ -2427,11 +2441,11 @@
       "status": "planned",
       "needs": [],
       "id": "secret-agent-setup",
-      "title": "init-scan and doctor report the agent's secret setup, init proposing what is missing and writing it only on the user's approval: sandbox on with sandbox.credentials (deny unsets a variable for sandboxed commands, mask swaps in a placeholder the proxy replaces); permissions.disableBypassPermissionsMode; CLAUDE_CODE_SUBPROCESS_ENV_SCRUB; Read deny rules for .env*, ~/.ssh and ~/.aws; a ~/.claude inside a git work tree (transcripts are plaintext); literal secret values in .mcp.json. The half of agent-setup-risk about secrets",
+      "title": "init-scan and doctor report the agent's secret setup, init proposing what is missing and writing it only on the user's approval: sandbox on with sandbox.credentials (deny unsets a variable for sandboxed commands, mask swaps in a placeholder the proxy replaces); permissions.disableBypassPermissionsMode; CLAUDE_CODE_SUBPROCESS_ENV_SCRUB; Read deny rules for .env*, ~/.ssh and ~/.aws; a ~/.claude inside a git work tree (transcripts are plaintext); literal secret values in .mcp.json. The half of agent-setup-risk about secrets; init asks one question, and nothing changes unless it is taken: keep the agent as it is, or run without bypass: sandbox on with sandbox.failIfUnavailable, commands auto-allowed inside it, permissions.defaultMode acceptEdits, allowWrite for the folder that holds the cycle's worktrees, and the network hosts the project's commands need. It writes to the file the user picks (.claude/settings.local.json for one person, .claude/settings.json for a team); doctor names the mode and the cycle's plan repeats it. Whoever uses bypass keeps it. Before release, one task runs in this mode in a throwaway project, and the report lists what broke (docker, ports, worktrees outside the project)",
       "value": "medium",
       "cost": "M",
       "cluster": "security",
-      "source": "Claude Code docs: 'There is no built-in credential deny list' (sandboxing.md); 'To prevent `bypassPermissions` or `auto` mode from being used, set `permissions.disableBypassPermissionsMode`' (permissions.md); the scrub variable 'strip credentials from the environments of the subprocesses Claude Code starts' (env-vars.md); 'Transcripts and history are not encrypted at rest' (claude-directory.md). Nx s1ngularity, 2025-08: malware ran installed agent CLIs with permission-bypass flags to look for secrets (Wiz, GHSA-cxm3-wv7p-598c)",
+      "source": "Claude Code docs: 'There is no built-in credential deny list' (sandboxing.md); 'To prevent `bypassPermissions` or `auto` mode from being used, set `permissions.disableBypassPermissionsMode`' (permissions.md); the scrub variable 'strip credentials from the environments of the subprocesses Claude Code starts' (env-vars.md); 'Transcripts and history are not encrypted at rest' (claude-directory.md). Nx s1ngularity, 2025-08: malware ran installed agent CLIs with permission-bypass flags to look for secrets (Wiz, GHSA-cxm3-wv7p-598c); measured 2026-11-01: every session that ran Ennyn on a real project was in bypassPermissions (this repository 28, two trial projects 12 and 5), so no cycle has run in a mode a new user starts in. Claude Code docs: 'Auto-allow runs sandboxed commands without prompting'; a background subagent's prompts surface in the main session. The sandbox covers shell commands only; Read and Edit follow permission rules. This machine stays on bypass by decision",
       "since": 14
     },
     {
@@ -2896,11 +2910,11 @@
       "status": "planned",
       "needs": [],
       "id": "destructive-ask-rules",
-      "title": "init proposes ask rules for commands that destroy local work or data, next to the outward ones (setup/permissions.mjs lists only git push, npm publish, gh pr merge, gh repo sync and gh release): git clean, git reset --hard, git checkout --, git restore, git branch -D, git worktree remove, git stash drop and clear, docker system, volume, network and image prune, docker volume rm, docker compose down -v, dropdb, terraform destroy, prisma migrate reset and db push --force-reset, and the project's own reset or drop scripts the user names; and commands that install outside the project: npm install -g, pnpm add -g, pip install outside a virtualenv or with --user, brew install, cargo install, go install, a script piped to a shell. The init report says that these rules read command text and are no boundary: an option before the subcommand, a script or an interpreter gets past them, which is why deletion-target-hook exists",
+      "title": "init proposes ask rules for commands that destroy local work or data, next to the outward ones (setup/permissions.mjs lists only git push, npm publish, gh pr merge, gh repo sync and gh release): git clean, git reset --hard, git checkout --, git restore, git branch -D, git worktree remove, git stash drop and clear, docker system, volume, network and image prune, docker volume rm, docker compose down -v, dropdb, terraform destroy, prisma migrate reset and db push --force-reset, and the project's own reset or drop scripts the user names; and commands that install outside the project: npm install -g, pnpm add -g, pip install outside a virtualenv or with --user, brew install, cargo install, go install, a script piped to a shell. The init report says that these rules read command text and are no boundary: an option before the subcommand, a script or an interpreter gets past them, which is why deletion-target-hook exists; an ask rule on these commands stops an unattended cycle: subagents ran them 98 times in 8 days, so before writing, settle how the rule tells a task's worktree from the main checkout (deletion-target-hook) or offer it only to a project that runs no cycle. The outward list gains gh repo create, edit, delete, rename and archive, gh gist create, and gh api with an explicit write method: no subagent ran these in those 8 days. Leads cycle 18 with push-spellings-hook, by decision",
       "value": "high",
       "cost": "S",
       "cluster": "security",
-      "source": "Claude Code docs: a rule 'isn't a security boundary around the program'; #63644: Claude ran `docker compose down -v` without asking and destroyed database volumes; #45974: 'Claude ran `git clean -fd` to \"clean up\" the working directory'; #104331: git reset --hard deleted a gitignored .env holding API keys; #88857: a -C prefix bypassed deny Bash(git reset --hard *); read of setup/permissions.mjs and .claude/settings.json on 2026-10-29: no rule for any destructive command",
+      "source": "Claude Code docs: a rule 'isn't a security boundary around the program'; #63644: Claude ran `docker compose down -v` without asking and destroyed database volumes; #45974: 'Claude ran `git clean -fd` to \"clean up\" the working directory'; #104331: git reset --hard deleted a gitignored .env holding API keys; #88857: a -C prefix bypassed deny Bash(git reset --hard *); read of setup/permissions.mjs and .claude/settings.json on 2026-10-29: no rule for any destructive command; measured 2026-11-01 over 8 days of this project's transcripts, commands matched by regular expression, subagents only: git checkout -- 32, git worktree remove 19, git clean 18, git reset --hard 8, git restore 8, git branch -D 6, docker prune 5, git stash drop or clear 2; rm -rf 624 is outside this node's list. All 22 main sessions of those days ran in bypassPermissions with the sandbox off",
       "since": 15
     },
     {
@@ -3275,18 +3289,7 @@
       "value": "high",
       "cost": "S",
       "cluster": "method",
-      "source": "measured, cycle 16: planned for four slots, ran six tasks; the third slot became three nodes in sequence; task time set by two chains, so shortening one saved nothing. T4 and T3a held 349 minutes of chain, about 62 USD at list price and 104 findings on a parser no production code calls (parseConvergence, checked on main and all c16 branches). Rank correlation of lines to active hours by cycle 0.89, n=13",
-      "since": 16
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "task-short-suite",
-      "title": "During a task the author runs a short suite: the test files without guards, hook and fault-injection, unless the task touches what they read. The whole suite runs at landing only, where it stays. Each new test gets one run of its own control before it enters the suite",
-      "value": "high",
-      "cost": "S",
-      "cluster": "method",
-      "source": "measured, cycle 16: 19 of 23 whole suites were authors', 216 minutes; one guards test is 92-98% of each run's calendar time but removing it alone saves about 25%, because hook.test.mjs (388-486 s) and fault-injection.test.mjs (327-517 s) then set the limit; without the three a run takes 3.5-4.5 minutes, setup.test.mjs the longest (estimate); the three real failures of 10 red runs were the new test's own record or setup. Handoff's figures are stale: guards 443 s, fault-injection 379 s. The fault matrix stays at landing: in cycle 15 a brief that skipped it let a real defect reach main",
+      "source": "measured, cycle 16: planned for four slots, ran six tasks; the third slot became three nodes in sequence; task time set by two chains, so shortening one saved nothing. T4 and T3a held 349 minutes of chain, about 62 USD at list price and 104 findings on a parser no production code calls (parseConvergence, checked on main and all c16 branches). Rank correlation of lines to active hours by cycle 0.89, n=13; cycle 2026-11-01 (17), carried by hand: four nodes and the audit, 8 commits, and the two security nodes took the review rounds: T3 and T4 had three authors each",
       "since": 16
     },
     {
@@ -3299,7 +3302,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "source": "measured, cycle 16: three or more heavy jobs ran together for 29% of calendar time, load median 56 on 10 cores; the suite lock added at 16:48 ended the 24-minute runs but not the median (586 to 669 s), since mutation, gates and labs stayed outside it, and it made 32.6 minutes of queue. node --test limits files, not the processes they spawn",
+      "source": "measured, cycle 16: three or more heavy jobs ran together for 29% of calendar time, load median 56 on 10 cores; the suite lock added at 16:48 ended the 24-minute runs but not the median (586 to 669 s), since mutation, gates and labs stayed outside it, and it made 32.6 minutes of queue. node --test limits files, not the processes they spawn; cycle 2026-11-01 (17): one short suite sat about 50 minutes in the lock's queue with labs ahead of it, and a reviewer's probe that recursed in a hook reached 1738 processes against a per-user limit of 2666, so other tasks failed with EAGAIN: the limit should count processes too, and probes need a bound",
       "since": 16
     },
     {
@@ -3323,7 +3326,7 @@
       "value": "high",
       "cost": "S",
       "cluster": "method",
-      "source": "measured, cycle 16: the two longest items were T2's rewrite (191 minutes) and first design (149); T2's own lab showed 0 of 9 recorded compactions would be held as soon as the writing ended, and the design changed only after review. superpowers removed its plan reviewer after 5 trials over 5 versions showed the same quality at double the time, and lost a five-round limit to a compaction, running 18 rounds (its release notes, self-reported)",
+      "source": "measured, cycle 16: the two longest items were T2's rewrite (191 minutes) and first design (149); T2's own lab showed 0 of 9 recorded compactions would be held as soon as the writing ended, and the design changed only after review. superpowers removed its plan reviewer after 5 trials over 5 versions showed the same quality at double the time, and lost a five-round limit to a compaction, running 18 rounds (its release notes, self-reported); cycle 2026-11-01 (17), carried by hand in every brief: T1's measure took 2 minutes and held; T2's found the cause was no load at all, in about an hour, before a fix was written; T5 stopped at a critical (an unstaged config edit) and it became T4's scope; T5b stopped on a third test on git 2.39.5; T3b's stop table made the scope rule. None of them lost a design to a late review",
       "since": 16
     },
     {
@@ -3357,17 +3360,6 @@
       "cost": "S",
       "cluster": "method",
       "source": "code density lab, 2026-10-31, at bc40006; parseConvergence checked by hand on main and all c16 branches; T3c's use of formatConvergence gives the formatter a job, not the parser. Recount the 11 options after cycle 16 lands",
-      "since": 16
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "ci-gate-file-isolation",
-      "title": "One staged file that makes the workflow reader throw turns security.ci off for the whole commit, exit 0, over a workflow refused on three counts when it stands alone: unescape in checks/ci.mjs calls String.fromCodePoint on a code point past 10FFFF, and the hook's catch drops every file's refusals. Two defects: the throw, and the whole-commit catch. Each file is read alone, a file that cannot be read is named as unread, the other files' refusals stand; whether unread refuses the commit is this task's call against the rule that a crash blocks no commit; check security.secrets, security.deps and review.forbidden for the same whole-gate catch",
-      "value": "high",
-      "cost": "S",
-      "cluster": "security",
-      "source": "a density lab, 2026-11-01, reproduced on bc40006 by the orchestrator of cycle 16: a pull_request_target workflow alone exits 1 on three refusals, with a decoy holding \\U00110000 beside it exits 0 saying security.ci was not checked, by hand exits 1. It needs a staged file written for it and a local hook is no boundary (no-verify-gap), so this is the agent or poisoned-content case",
       "since": 16
     },
     {
@@ -3411,7 +3403,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "cycle",
-      "source": "cycle 2026-11-01 (16): three correction lists went to fresh agents, with the authors at 723K, 605K and 657K tokens, against the table; each took 254K to 411K tokens, and the two with no new security route landed on the first try. The orchestrator's decision, written in the cycle report",
+      "source": "cycle 2026-11-01 (16): three correction lists went to fresh agents, with the authors at 723K, 605K and 657K tokens, against the table; each took 254K to 411K tokens, and the two with no new security route landed on the first try. The orchestrator's decision, written in the cycle report; cycle 2026-11-01 (17): three more lists went to fresh agents (T4b, T4c, T3b at 576K, 561K, 712K; T5b at 579K): none failed by an author's slip, and each new author found its stop condition by itself",
       "since": 16
     },
     {
@@ -3604,17 +3596,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "hang-control-under-load",
-      "title": "The fault matrix's control for a git call that never ends fails under load, 12 of 13 calls reaching the hung git, and guards' baseline fails with it: the test's own control needs a bound that load cannot move",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "gates",
-      "source": "cycle 2026-11-01 (16): failed at load 25 to 100 in several whole suites, 11 of 11 alone",
-      "since": 16
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "fault-matrix-reads-output",
       "title": "The fault matrix passes a cell on any non-zero exit with stderr, whatever numbers it printed: a mutant that keeps numbers in the columns on a git failure and exits 1 passes all 43 convergence cells; test/findings.test.mjs kills it there, other commands have no such test",
       "value": "medium",
@@ -3646,6 +3627,551 @@
       "cluster": "gates",
       "source": "cycle 2026-11-01 (16): PID 4018 found by an author, stopped by hand; which run left it is not known, the cause is a reading",
       "since": 16
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "second-project-cycles",
+        "external-audit-before-release"
+      ],
+      "id": "history-author-address",
+      "title": "Before the repository becomes public, every commit's author and committer address becomes the account's GitHub noreply address; the name stays. It runs once, as the last history change, with no worktree and no peer session open: git filter-repo rewrites the headers and the hashes in commit messages, then one commit maps old hashes to new ones in .ennyn/ (508 mentions at 4b77282, in the ledger, graph, class registry, metrics log and handoff), with the map kept outside the repository; doctor, npm test and test:linux pass on the result. A force-push leaves the old commits on GitHub, so the rewritten history goes to a new repository under the same name, and the old one is renamed and stays private as the backup, each step with the user's approval on the day. New commits use the noreply address from then on, and plugin installs that point at old commits are redone",
+      "value": "high",
+      "cost": "M",
+      "cluster": "distribution",
+      "source": "user, 2026-11-01: a request. Measured then: the address is in commit headers only, in no file and no commit message at any point in history; 660 hash mentions in tracked files, 508 of them in .ennyn/, 151 in a test fixture; related: account-hardening, history-secret-scan",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "brief-rules-in-skill",
+      "title": "Four rules that cycle 16 gave its agents only in hand-written briefs reach the shipped text: a reviewer gets the task's node and asks whether its ask is met, all of it (finding-schema.md puts the ask in scope, SKILL.md step 7 hands over only the changed files, the impact table and the schema); prefer running to reading; a claim about another program is checked in that program; an author stays in the task and hands the rest back as a proposed node. SKILL.md is 7,969 bytes against Codex's 8,000 (codex-skill-bytes), so they go into task-brief.md, finding-schema.md and the reviewer agents. Each cycle's closing reads its hand-written briefs against the shipped text: a rule that did work there enters the skill, or is named as this project's own; the reviewer reports gaps against the ask in four kinds, missing, partial, contradicts and unrequested, and a completion claim is no evidence. The common brief also says: no git stash in a worktree, because the stash is shared across worktrees (the snapshot ref does this job), a test run keeps its exit status (set -o pipefail, or a log file read afterwards), and a command that passed is not run again on an unchanged tree",
+      "value": "high",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 16's briefs, kept outside the repository (common brief 6.3 KB, reviewer brief 2.7 KB), read 2026-11-01: a search of skills/ and agents/ for each of the four finds none; a report on Scion warns of published harnesses that fit only their maker, like a suit tailored for someone else; spec-kit's converge command: 'completion claims are not evidence'. Measured 2026-11-01 over 8 days: 64 state-changing git stash operations, no collision seen, 0 left; 1,963 of 2,867 test commands (68%) piped through a cutter with the exit status lost, 9 kept it, no escape traced to it; 55 of 2,519 timed test runs repeated a passing command on an unchanged tree, 3.1 of 42.5 hours, read roughly from transcripts",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "user-words-in-node",
+      "title": "A node that comes from the user's words keeps their sentence verbatim in source, in its own language, and the task brief carries it beside the node: a node's title is a rewrite and a brief holds the node, so what reaches the author and the reviewers is a rewording of the ask; a sentence that can be read two ways puts a [NEEDS CLARIFICATION: the question] marker in the node, and code refuses to pick a node that holds one; a cycle's closing reads the memory notes written during it",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "one reported case of a bug report passed through several agents: the error no longer looks like the one first reported. One anecdote, unmeasured here; no field holds the user's sentence today; spec-kit has the same marker and leaves it to the agent: no code in its src or scripts reads it. A sentence with a condition can be saved to memory without the condition. Here 4 of 20 memory index lines were stale on 2026-11-01",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "node-verdict",
+      "title": "A node can be refused: the graph gets a declined list, each entry with its one decisive reason, read by core, doctor and the closing report. A batch gives each proposed node a verdict: go, clarify with the question, or decline; weak or unknown evidence cannot be go. First use: the 99 open low-value nodes at a cycle's closing, the user reading the list",
+      "value": "high",
+      "cost": "M",
+      "cluster": "method",
+      "source": "measured 2026-11-01: open nodes 10 to 325 in 13 days, done 9 to 87, about 5 finished per cycle, so about 60 cycles of backlog; 193 open nodes came in the last four cycles; every done node is status done and no state means refused. spec-kit's assess extension: 'Killing ideas here is a success, not a failure'",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "one-task-run",
+      "title": "A run of one named node, with no slots: asked for one node or one fix, the cycle takes that task alone under the same protocol (impact table, tests, review, mutation, ledger row) and closes with the same report, no mechanization and no legacy audit. SKILL.md is 7,969 bytes against Codex's 8,000, so the text goes in a file beside it",
+      "value": "high",
+      "cost": "S",
+      "cluster": "method",
+      "source": "the skill offers only four tasks at once, and cycle 16 took 13.1 hours. spec-kit's users asked for the same and got bug and lean: #1174 (22 reactions): 'inefficient for very small tasks'; #619 (26) and #442 (52) on fixing after implementation; a comment on #75: 'for smaller changes, speckit is overkill'",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "push-spellings-hook",
+        "gate-loosening-guard"
+      ],
+      "id": "push-setting",
+      "title": "push.mode in the config: ask (the default) or after-closing. With after-closing the cycle pushes by itself at its end, only when the closing's checks and the project's slow suites passed on that exact commit: a plain push of the current branch, never a force, named in the report. init asks it in the same question as the no-bypass mode, writes no git push ask rule for after-closing, and doctor names the mode. Turning it on is a loosening: gate-loosening-guard's approval line covers the key, so an agent cannot grant itself the push, and push-spellings-hook reads the same key. A test proves the setting takes effect both ways",
+      "value": "high",
+      "cost": "M",
+      "cluster": "method",
+      "source": "the user, 2026-11-01: a request. Measured: push decisions are delegated (left to the session), each for one push. In spec-kit's 935 records read, none asks for automatic push (it is no step of that tool) and 5 are about automatic commits; it ships auto_commit off by default, and #5050 is open: 'auto_commit.default: true has no effect with the shipped config template', so a setting needs its own test",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "cycle-journal"
+      ],
+      "id": "session-handover",
+      "title": "A new context at the seams, and only there: a cycle's closing and the end of a one-task run, once the state is on disk and no agent is running. Never mid-cycle, where the hold on compaction stays, and no percentage trigger. The config's context.afterCycle is fresh (the default) or compact, which names /compact and what the summary must keep. No tool lets a session clear itself, so with fresh the closing takes the first of these that works: (1) the next cycle's plan goes to plan approval, and with showClearContextOnPlanAccept on, one key clears the context and starts from the plan; init writes that key to the project's settings, never the user's, because it becomes the menu's first option; (2) the closing names /clear, and the next word starts the work; (3) a new chat (the VS Code panel offers a subset of commands, and a new tab starts as source startup, not clear). After 2 and 3 the SessionStart hook gives one short state line (cycle, what landed, what is next, what waits for the user) from the journal and the handoff. Measure first: whether the model can enter plan mode at a closing, whether the option shows in the VS Code panel and under bypass, and whether claude --bg can start the successor and show in that panel. Tasks stay as they are: each already runs in a fresh agent",
+      "value": "high",
+      "cost": "S",
+      "cluster": "method",
+      "source": "the user, 2026-11-01: a request; sessions were restarted by hand after cycles. Claude Code docs read raw 2026-11-01: SessionStart hooks run with source clear and may add context; initialUserMessage works only with -p, so a hook cannot start the first turn in chat. spec-kit discussion #4655: 'i prefer to clear context and start new session during stages so safe my tokens'. Read raw the same day: the settings reference on showClearContextOnPlanAccept (default false): it 'approves the plan, clears the conversation context, and starts implementing from the plan alone'. Claude Code best practices: 'between unrelated tasks. It costs nothing'. Amp removed compaction for handoff: 'compaction, we found, encourages long, meandering threads'. GSD warns at 35% left and stops at 25%; no measurement backs those numbers, and on a 1M window they mean 650K and 750K. Measured here over 8 days: 21 main sessions, median context 290K, peak 910K; 8 with a median over 300K hold 52% of the turns",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "cycle-journal",
+        "secret-agent-setup",
+        "push-setting",
+        "one-task-run"
+      ],
+      "id": "fresh-session-run",
+      "title": "ennyn run --cycles N (or --each task) from the terminal: each cycle or task is one claude -p with the cycle skill, a new process and so a new context. --cycles is required, there is no open-ended loop; a budget cap goes to --max-budget-usd. It runs doctor first and stops at the first red: non-zero exit, a stopped task, a gate that needs the user, the plan's limit, the budget; it prints why and what is next, and keeps a log in the state dir. It spawns only the claude on PATH. It decides from the journal, never from the model's words, and a run with no new commit and no node change ends the loop. With compact it resumes by session id, never --continue. Pushes follow push.mode. A -p run cannot ask, so it needs a mode that does not prompt (the no-bypass mode or the user's own bypass), and it says so when it has neither. Measure first: a task with subagents completes in -p, an ask rule refuses rather than hangs, hooks and the plugin load without --bare, and what breaks if --bare becomes the default for -p. If this threatens the release date it moves to the next version, ahead of everything else there",
+      "value": "high",
+      "cost": "M",
+      "cluster": "method",
+      "source": "the user, 2026-11-01: a request. Claude Code docs read raw 2026-11-01: in -p, user-invoked skills work when the prompt holds /skill-name; --max-budget-usd stops a print-mode run; --bare 'will become the default for -p in a future release'. In spec-kit's 935 records: 11 ask for fresh context between steps, 27 on running out of context (#752, #50, #1401), 8 for a loop (#1490 and discussion #1723 on Ralph). docs/related-work.md leaves open-ended loops out, so this one is bounded. Read raw the same day: the original loop and a popular ralph repository (22k stars) start a new process per iteration, and that one ends on a phrase in the output; the official ralph-loop plugin loops 'inside your current session', so its context does not renew; another ralph repository (9.7k) has a circuit breaker, needs two signals to exit, and moved to --resume <session_id> after #151 on session hijacking",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "short-suite-reads-git",
+      "title": "test:short trusts git: index flags and filters hide an edit, a merge base can stand for a tree a reverted landing no longer holds, and main is known by its spelling; what it misses waits for landing",
+      "value": "low",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 2026-11-01 (17), T1 review: stated limits in test/short.mjs's head comment",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "guards-scoped-run",
+      "title": "In a task, run only the guards of the gates the branch touched: guards comes back on 14 of the last 30 commits, because features edit test/guards.mjs, and its mutant test takes 6 to 13 minutes",
+      "value": "high",
+      "cost": "M",
+      "cluster": "method",
+      "source": "cycle 2026-11-01 (17), T1: on 8 of the 12 code commits nothing is left out of test:short, mostly this rule",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "init-scan-short-script",
+      "title": "COMMAND_SCRIPT in setup/scan.mjs does not match test:short, so init-scan never proposes such a script",
+      "value": "low",
+      "cost": "S",
+      "cluster": "init",
+      "source": "cycle 2026-11-01 (17), T1",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "eval-socket-watch-load",
+      "title": "test/eval-selftest.test.mjs:523 relies on a fixed 300 ms wait",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-01 (17), T1: failed once at load 75-107, 17/17 alone",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "amend-cochange-warning",
+      "title": "On --amend the hook warns that a cochange document did not change, though the amended commit holds it",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-01 (17), T1",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "first-run-under-limit",
+      "title": "Tests that run a just-written file under a short limit are open to macOS's hold on a new file's first run: the fresh fakes in the fault matrix's other cases, .git/hooks fixtures; chmodSync has 143 sites under test/",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "cycle 2026-11-01 (17), T2's lab; test/fault-injection.test.mjs lines 804-830 meet it under a 2 s limit",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "first-run-check-cost",
+      "title": "How much suite time goes to the system check on a new file's first run, and whether a macOS setting exempts a terminal: a choice for the user, who weighs it against what the check gives",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "gate": "user",
+      "source": "cycle 2026-11-01 (17), T2's lab: 7 s behind 25 new files, 17 s behind 60; the setting is from memory, unverified",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "limit-wait-upper-bound",
+      "title": "A call that waits past its limit while saying the limit passes the hang control (mutant late-every-other): nothing bounds a wait from above",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-01 (17), T2 review",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "start-cost-under-memory-pressure",
+      "title": "With the machine out of memory a process start lost to a 1 s limit went from about 4% to 51-71% at the same loop count: read it by the fixture's seconds, and see which timing tests it moves",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-01 (17), T2 lab and review: swap alone did not do it, a clean run took 25.8 s at 8.0-8.5 GB",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "fault-control-followups",
+      "title": "The hang control: a stream that stalls after its mark fails as at base; a call that loses all five runs reads as a broken count; the table's ms 5 leaves the floor free up to the limit, ms 899 would pin it; the judge loop and the mark's place are guarded only at landing",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-01 (17), T2 review round 2, three low findings",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ci-yaml-escape-letters",
+      "title": "security.ci reads \\a \\b \\e \\f \\v \\_ and unknown escapes as their letter, so 39 hex digits plus \\a read as a pinned SHA; an escaped line break can build a valid escape out of a malformed one",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-01 (17), T3 and its review",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ci-callee-edge-untargeted",
+      "title": "An untargeted caller whose refusal comes only through an unread callee gets no line of its own",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-01 (17), T3",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ci-callee-reach-unread",
+      "title": "A pull_request_target caller the commit brings, reaching a HEAD action the check cannot read (a link, past 16 MB, a name past argv), is said by name, exit 0, where a readable callee refuses: a brought targeted caller whose reach lands on an unread callee could refuse",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-01 (17), T3 round 3, accepted as the cost of the scope rule: the read that failed is context",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ci-callee-through-link",
+      "title": "A caller reaching an action through a linked directory is named, exit 0: the runner follows the link and the gate cannot resolve the callee",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-01 (17), T3 review",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ci-callee-warnings-capped",
+      "title": "190,000 local uses print 8 MB of ci.calleeUnread lines: the lines want a cap",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-01 (17), T3 review",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "secret-scan-throw-in-stream",
+      "title": "A throw in SecretScanner.line inside the stream handler escapes every catch: the hook dies with a stack trace and no gate line. It refuses, so it is the safe side",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-01 (17), T3b's fault test, unchanged from before the cycle",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "oracle-keys-report",
+      "title": "metrics.fixSubject, excludeRe and testRe are read by no gate but set what the closing report measures: a change took rework from 0.33 to 0 at exit 0; ennyn bypass lists them as moved, never refused",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-01 (17), T4's table",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hook-file-loosening",
+      "title": "A commit that edits a tracked hook to drop commit-check switches every gate off with no config key moved",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-01 (17), T4's table, reasoned, not measured",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "cli-gate-keys-work-tree",
+      "title": "ennyn audit and ennyn deps read gate keys from the work tree: an unstaged, hidden edit gives no security audit scheduled or zero locks read, exit 0",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-01 (17), T4 security review",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "skip-subjects-real-commit",
+      "title": "Exempt subjects (Merge, Revert, fixup!, squash!, amend!) test what the commit is, and ennyn bypass counts them: a plain commit under such a subject skips the Impact rule silently",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-01 (17), security audit",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "moved-config-unnamed",
+      "title": "In a project with no config at the default place, ENNYN_CONFIG decides what is read and a commit cannot show it: unset, the defaults run, silently; a stated limit",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-01 (17), T4 review",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "index-after-tree",
+      "title": "An index changed after git built the tree, by GIT_EDITOR or prepare-commit-msg: no commit-msg hook can see that tree; ennyn bypass lists it as unapproved; a stated limit",
+      "value": "low",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-11-01 (17), T4 review",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "config-clean-filter",
+      "title": "A clean filter that leaves both versions of the config unreadable means nothing checked; a stated limit",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-01 (17), T4 review",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "config-regex-compiles",
+      "title": "A skipSubjects pattern that does not compile still loads, and later commits lose the message check; landing one needs an approval line",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-01 (17), T4b",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "forged-shallow-ancestry",
+      "title": "A hand-written .git/shallow makes an ancestor read as new, so a forged MERGE_HEAD relieves a key: it takes two forged files, ennyn bypass lists the merge with no approval line; a stated limit",
+      "value": "low",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-11-01 (17), T4c's stop measurement",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "install-hook-linked-config",
+      "title": "install-hook on a fresh clone with a committed .ennyn link exits 1 and writes no hook, and the next commit lands unchecked",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-01 (17), T4 security review",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "skill-size-codex-cap",
+      "title": "test/plugin.test.mjs holds 8 KiB, not Codex's 8,000 bytes: the skill was 12 bytes over after a rebase, and a test passed",
+      "value": "low",
+      "cost": "S",
+      "cluster": "distribution",
+      "source": "cycle 2026-11-01 (17), T4 review",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "config-pattern-bounds",
+      "title": "A committed pattern can hang every commit (it fails closed) and rework",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-01 (17), security audit",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "classes-proof-batch",
+      "title": "A registry of removals costs one git call per row, past 60 s",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-01 (17), security audit",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ci-path-forms-forge",
+      "title": "Measure what github.com does with a linked .github and a .YML name",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "gate": "user",
+      "source": "cycle 2026-11-01 (17), security audit",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "deps-npmrc-no-lock",
+      "title": "An .npmrc in a folder with no lock passes in silence",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-01 (17), security audit",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "planted-config-below-2-38",
+      "title": "Below git 2.38 a planted folder's other settings stay open: on 2.34.1 doctor's pathspec status runs a program through a tracked file at .claude/worktrees/x plus filter.x.clean or .process, and rework's blame through extensions.partialClone plus core.sshCommand or remote.origin.uploadpack, one blob missing",
+      "value": "low",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-11-01 (17), security audit and its review; the compaction hook's walking up is the likely design, a guess",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "skill-shell-form-record",
+      "title": "The pin test's patterns copied from the Claude Code binary are held to a recorded cell",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-01 (17), security audit",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "verdict-cell-dropped",
+      "title": "A refused cell deleted from a verdict file fails no test, under an exempt subject (test/verdicts.mjs:533)",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-01 (17), security audit review",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "impact-grep-binary-attr",
+      "title": "git grep -I in impact/table.mjs skips files a committed *.js -diff marks binary: row S1 went from 2 references to none",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-01 (17), T5b, measured",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "rework-binary-attr",
+      "title": "A committed *.js -diff or binary takes rework to 0 with no word: the rate should say what the diff left out as binary. --text is no fix: it read an 8 KB image as lines (0 to 0.5), and a 33 MB binary stopped rework with exit 1",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-01 (17), security audit and its review; tried and reverted",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "amend-own-tightening",
+      "title": "An amend that undoes the commit's own tightening is refused as loosening: the hook cannot be sure it is an amend, so the user's line is the way through; friction, no false pass; a stated limit",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-01 (17), T4 review",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hook-read-no-protocol",
+      "title": "The hook's readers get GIT_ALLOW_PROTOCOL=none, as the compaction hook does, so a git that ignores GIT_NO_LAZY_FETCH connects to nothing: the local 2.34.1 build fetched one blob in a partial clone",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-01 (17), T4d's stop lab: 1 connection down to 0 on that build; whether Ubuntu 22.04's 2.34.1 reads the variable is unmeasured",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "reviewer-probes-bounded",
+      "title": "A task-brief and review rule, and a cycle helper: a probe that commits from a hook stops at one level and every lab call has a limit",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 2026-11-01 (17): a reviewer's hook in a linked worktree committed in its sibling, which shares its hooks, recursed to 1738 processes and hit the per-user limit; the orchestrator stopped that process group",
+      "since": 17
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "changed-lines-uncovered",
+      "title": "Before the first mutation pass, a command lists the changed decision lines no test reaches, from NODE_V8_COVERAGE: in cycle 17, 36 of 39 rows of the recurring class were caught by mutation, one survivor at a time, in a run that takes minutes each",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "mechanization": true,
+      "sourceClass": "code-no-test-holds",
+      "source": "cycle 2026-11-01 (17): the most recurring class of the convergence block",
+      "since": 17
     }
   ],
   "done": [
@@ -4159,6 +4685,36 @@
     {
       "id": "findings-ledger",
       "title": ".ennyn/findings.jsonl and ennyn convergence --cycle N --from <start>: the block is computed from rows, a refused row reads ?, the orchestrator is the only writer; the commit hook is left to ledger-check-in-hook (58e260e)",
+      "status": "done",
+      "finished": "2026-11-01"
+    },
+    {
+      "id": "task-short-suite",
+      "title": "npm run test:short: test files without guards, hook and the fault matrix, each brought back with its reason when the branch changes a listed path; guards' accounting test runs in every short run; a read that fails runs everything and says so; the whole suite runs at landing (9978dd1)",
+      "status": "done",
+      "finished": "2026-11-01"
+    },
+    {
+      "id": "hang-control-under-load",
+      "title": "The fault matrix's never-ending git control failed because macOS holds a new file's first run until a system check has read it, not from CPU load: the fake's first run has no 1 s limit, a run lost to a slow start runs again and is judged by its words, its limit and its mark; the bound is not one load cannot move, and that is stated (197121d)",
+      "status": "done",
+      "finished": "2026-11-01"
+    },
+    {
+      "id": "security-audit-c17",
+      "title": "Security audit of the 43 paths ennyn audit lists, each with a trial (586 probes): the unstaged config route went to gate-loosening-guard; a folder a clone brought starts nothing from git 2.38, two routes stay on 2.34.1; a deleted .npmrc, a dropped ignore-scripts line and every value that turns scripts on are said; a blank Impact line no longer counts; a test holds what SECURITY.md claims of the repository (6ad26a1)",
+      "status": "done",
+      "finished": "2026-11-01"
+    },
+    {
+      "id": "ci-gate-file-isolation",
+      "title": "A file the workflow reader cannot take no longer turns security.ci off: every escape form reads as a refused form, each file is read alone; under the hook a failure refuses only when the read that failed is of what the commit adds or changes, a machine's fault is said by its shape, and a size is a ceiling held to its file, in security.ci, security.deps, review.forbidden and security.secrets (5555a5c)",
+      "status": "done",
+      "finished": "2026-11-01"
+    },
+    {
+      "id": "gate-loosening-guard",
+      "title": "Every gate in the commit-msg hook reads the commit's own config, never the work tree's; a commit that loosens a gate needs a User-Approved-Loosening line naming each key, which an agent writes only on the user's plain yes for that key; the hook first checks git is committing from this repository's top; 18 refusal lines say loosening is the user's call; ennyn bypass lists each bypass and each loosened key. A tripwire and a record, not a boundary (59135da)",
       "status": "done",
       "finished": "2026-11-01"
     }

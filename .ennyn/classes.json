@@ -111,7 +111,8 @@
         "new: could not measure read as a change",
         "new: check on the reader side only",
         "new: meaning lost on read",
-        "new: refused row dropped without a mark"
+        "new: refused row dropped without a mark",
+        "new: retry drops the failure it retried"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, failed reads held, the same mistake in logic recurs and writes are not covered. Named in cycle 4."
     },
@@ -149,7 +150,9 @@
         "new: two proofs checked apart",
         "new: message promises what no check does",
         "new: fixture holds what the test assumes absent",
-        "new: check runs only when someone asks"
+        "new: check runs only when someone asks",
+        "new: test excuses the case it names",
+        "new: a required record satisfied by its label alone"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, it holds inside the listed gates only. Named in cycle 5."
     },
@@ -163,6 +166,12 @@
           "file": "test/input-shapes.test.mjs",
           "action": "past-defects",
           "proof": "The commit-msg hook is fed every input shape it may not read, and must refuse it or say what went unread."
+        },
+        {
+          "commit": "5555a5ca49e0e49b78087994473b234e4ddae4bd",
+          "file": "core/git.mjs",
+          "action": "past-defects",
+          "proof": "Under the hook a failed read of what a commit adds or changes refuses, unless it is a machine's fault, in four gates; test/ci.test.mjs and the fault matrix."
         }
       ],
       "nodes": [
@@ -184,7 +193,10 @@
         "new: qualifier on a key ignored",
         "new: line ending shape not normalized",
         "new: one pass over a nested structure sees only the innermost pair",
-        "new: unrecognised record skipped so an older record answers"
+        "new: unrecognised record skipped so an older record answers",
+        "new: failure depends on the reading mode",
+        "new: one unread callee candidate ends the whole callee round",
+        "new: brought caller's reach through an unreadable HEAD callee is said not refused"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, reviewers found more shapes after it landed. Named in cycle 7."
     },
@@ -219,7 +231,9 @@
         "new: regex backtracking cost on crafted text",
         "new: open regex repeat exhausts the stack",
         "new: input value used as a size with no ceiling",
-        "new: no ceiling on the size of untrusted text"
+        "new: no ceiling on the size of untrusted text",
+        "new: committed names past the git buffer drop every gate",
+        "new: unbounded matching of a pattern from data"
       ],
       "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict and record no gate. These tests hold the surfaces they name, and the class came back on others in cycles 9, 10, 12 and 14. Named in cycle 7."
     },
@@ -245,7 +259,9 @@
         "new: exception wider than its reason",
         "new: skipping examples exposes older data as current",
         "new: quoted example rule drops a real record",
-        "new: narrowed reader loses a valid shape"
+        "new: narrowed reader loses a valid shape",
+        "new: a tightened rule refuses an honest input",
+        "new: a flag written for one case reads every case"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, it holds past probes only. Named in cycle 8."
     },
@@ -262,7 +278,9 @@
         "new: a write after the last review with no reader",
         "new: one route of a family closed while the sibling routes stay open",
         "new: weaker twin of an existing escaping rule",
-        "new: guard applied to one of two code paths that resolve the same input"
+        "new: guard applied to one of two code paths that resolve the same input",
+        "new: report text outside the catalog",
+        "new: failure line outside the said pattern"
       ],
       "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict; no gate, both nodes are open. Named in cycle 8 as one-site escape or twin fix."
     },
@@ -330,7 +348,10 @@
         "reference-markdown",
         "ci-yaml-differential"
       ],
-      "judged": "Research of 2026-10-31, about 30% either way: each gate unproven, the code it guards has barely changed, so no recurrence is no success. Partial for the family is this reconstruction's word. Named in cycle 10."
+      "judged": "Research of 2026-10-31, about 30% either way: each gate unproven, the code it guards has barely changed, so no recurrence is no success. Partial for the family is this reconstruction's word. Named in cycle 10.",
+      "linked": [
+        "new: unread file said where the runner still reads it"
+      ]
     },
     {
       "id": "timing-test-under-load",
@@ -371,7 +392,8 @@
         "new: two rules answer one state differently",
         "new: text and its check drift",
         "new: second statement of one rule differs",
-        "new: twin definitions disagree"
+        "new: twin definitions disagree",
+        "new: loosening by removal goes unseen beside loosening by value"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: no gate, it recurred in all four tasks of cycle 15. Named in cycle 14, first seen in cycle 8. Counting cycle 12's two readers of one decision here is this reconstruction's merge."
     },
@@ -417,7 +439,10 @@
         "new: survivor of a mutation pass",
         "new: boundary of a rule left unpinned",
         "new: boundary test misses the boundary",
-        "new: growth test measures one shape of size"
+        "new: growth test measures one shape of size",
+        "new: a decision line no test reaches",
+        "new: branch with no case",
+        "new: test gap on an accepted spelling"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -452,7 +477,8 @@
         "new: reconstruction attributed to its source",
         "new: merge of two names left unrecorded",
         "new: claim written down before it was measured",
-        "new: absolute promise wider than the code"
+        "new: absolute promise wider than the code",
+        "new: report line reads as a defect"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet."
     },
@@ -527,7 +553,11 @@
         "new: heuristic list refuses a legitimate case",
         "new: list of spellings stands for a kind",
         "new: normalised match merges short names",
-        "new: check asks the step and not where it ends"
+        "new: check asks the step and not where it ends",
+        "new: last of several results read as the whole",
+        "new: honest failure read as content",
+        "new: lossy name decoding collides two staged names",
+        "new: gate scoped to a file beside another"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate.",
       "gates": [
@@ -550,7 +580,10 @@
         "new: a boundary check that reads one of two values the input's config can move",
         "new: a fallback that takes the value the check is meant to doubt",
         "new: selector taken from the data it selects",
-        "new: default scope read from the data being measured"
+        "new: default scope read from the data being measured",
+        "new: committed name picks a git-exec failure the gate catch swallows",
+        "new: tool runs a program a cloned folder's config names",
+        "new: exemption decided by text the author writes"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -596,7 +629,16 @@
         "new: test pinned to data that changes by routine",
         "new: fake failure spelled as an answer",
         "new: test assumes an output shape it did not read",
-        "new: a test pinned the accident a path failed on, not the rule that stops it"
+        "new: a test pinned the accident a path failed on, not the rule that stops it",
+        "new: new test's own record or setup",
+        "new: a guard mutant left pointing at text a fix rewrote",
+        "new: an injected fault wider than the code it stands for",
+        "new: test helper removed with its other use",
+        "new: wording a test pins rewritten",
+        "new: test precondition moved by the change",
+        "new: a guard's anchor matches more than one place",
+        "new: a test leans on the looseness a fix removes",
+        "new: a test names a helper its file does not import"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -623,7 +665,8 @@
         "new: a guard against a danger the input cannot pose",
         "new: dead branch in new code",
         "new: guard kept for a cause not measured on that code",
-        "new: dead branch left in a rule"
+        "new: dead branch left in a rule",
+        "new: dead check"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -668,6 +711,35 @@
         "new: list element holds several output lines"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate. Its own entry: a singleton that fits nothing else."
+    },
+    {
+      "id": "gate-locks-its-repair",
+      "says": "A refusal holds for what a change takes away or leaves alone as for what it brings, so the change that would repair the refused state is refused too.",
+      "state": "open",
+      "linked": [
+        "new: refuse-on-content locks the repair of an already-tracked bad name"
+      ],
+      "judged": "the orchestrator of cycle 17, reading the rows"
+    },
+    {
+      "id": "gate-reads-unjudged-settings",
+      "says": "A gate takes its own settings from a place the change it judges does not hold, so editing that place switches the gate off and the change shows nothing.",
+      "state": "partial",
+      "gates": [
+        {
+          "commit": "59135da0ca49eb5dc8dd6e55da475979797bcf10",
+          "file": "checks/loosening.mjs",
+          "action": "past-defects",
+          "proof": "The hook reads every gate key from the commit's own config, and a commit that loosens one needs the user's line; test/loosening.test.mjs."
+        }
+      ],
+      "nodes": [
+        "cli-gate-keys-work-tree"
+      ],
+      "linked": [
+        "new: gate settings read from a place the gated change does not hold"
+      ],
+      "judged": "the orchestrator of cycle 17, reading the rows"
     }
   ]
 }
