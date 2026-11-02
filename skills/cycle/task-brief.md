@@ -15,9 +15,9 @@ One common brief for the cycle, one short brief per task, read first, in one tur
 | **Gate** | the check that exercises this change end to end, in one line, by command: a browser check for a UI change, the project's harness for a money path, a test file otherwise; for an audit, the audited feature's own check; for a security audit, the suites of the gates it touches, named in the brief; for a mechanization task, in words, what it will build, until its report names the command. `none` and why for a task with nothing to run. It runs beside the test that proves a fix, never instead |
 | **Files** | what to read first, what to search instead |
 | **Paths** | the CLI and this skill's folder, written out: an agent's shell has no `${CLAUDE_PLUGIN_ROOT}`, and a skill read from disk holds it unfilled (Claude Code 2.1.310) |
-| **Protocol** | section 2 of `SKILL.md` **without step 7**: the agent starts no reviewers, leaves `Review-Rounds:` out, commits on its branch, reports and stops. After every fix round, before it amends, it runs the brief's gate |
+| **Protocol** | section 2 of `SKILL.md` **without step 7**: the agent starts no reviewers, leaves `Review-Rounds:` out, commits on its branch, reports and stops. After every fix round, before it amends, it runs the brief's gate. After a compaction, before its next edit, it re-reads the files the task changed (`git diff --name-only --merge-base <base branch>` and `git status --short --untracked-files=all`, in its worktree) and its impact table |
 | **Commands** | the handoff's commands, as each runs in a worktree (no installed dependencies). **Name the project's slow gate suites.** The agent runs a new test alone first, its control seen failing once, then the handoff's fast test command on the final tree, with any slow gate the task touches; a fast command with no slow list is run as it is. A task that adds a slow test says so in its report, and the orchestrator adds it wherever the project lists slow gates. The whole test command, with any slow gate it does not hold, runs at landing, before the main branch moves: a brief that said "do not run the full suite", with no such run before landing, let a real defect reach the main branch. A handoff that names no command short of the whole suite: the whole test command, and say so |
-| **Place** | worktree, branch, snapshot name, the rows file in the kept folder (the orchestrator alone appends to `paths.findings`, at the close). Not to touch: the main checkout, the graph, the handoff. No push, no landing |
+| **Place** | worktree, branch, the base branch (the branch it rebases onto and lands on), snapshot name, the rows file in the kept folder (the orchestrator alone appends to `paths.findings`, at the close). Not to touch: the main checkout, the graph, the handoff. No push, no landing |
 | **Traps** | the handoff's traps this work can hit; the report's language |
 | **Report** | its last message, in order: changes · impact table · commit · the gate's command and result · for each fix, what exercises it: the gate, a test that failed first, or `none` and why (a comment, a case only another git or platform reaches); the orchestrator reads this when no review follows · checks run, with results · not measured · proposed nodes · handoff text · doubts |
 
@@ -81,7 +81,7 @@ A state this table does not name is the orchestrator's decision, written in the 
 | Part | Content |
 |---|---|
 | **Node** | the task as it stands, and the failure count |
-| **Place** | worktree, new branch, new snapshot name, the impact table's path |
+| **Place** | worktree, new branch, the base branch, new snapshot name, the impact table's path |
 | **What was tried** | each attempt in one line, and the old branch that holds the code |
 | **What failed and why** | the failing command and its result; the cause, marked measured or guessed |
 | **Open findings** | each one whole, with the path of its probe or harness |

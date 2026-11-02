@@ -104,6 +104,7 @@ export const GATES = [
       { id: "hooks-every-session", why: "the version record written only where a config is", file: "adapters/claude-code/hooks/plugin-root.mjs", old: "  if (!root || !data) return;", new: "  if (!root || !data || !process.env.ENNYN_CONFIG) return;", pattern: "hooks: in a project without an Ennyn config" },
       { id: "hooks-git-filter", why: "the side-copy and style hooks asking git in every project", file: "adapters/claude-code/project.mjs", old: "  if (!mayHold(projectDir, rel)) return null;\n", new: "", pattern: "hooks: in a project without an Ennyn config" },
       { id: "hooks-record-reads-config", why: "the version record reading the config", file: "adapters/claude-code/hooks/plugin-root.mjs", old: "  const root = process.env.CLAUDE_PLUGIN_ROOT;", new: "  if (process.env.ENNYN_CONFIG) (await import(\"node:fs\")).readFileSync(process.env.ENNYN_CONFIG);\n  const root = process.env.CLAUDE_PLUGIN_ROOT;", pattern: "hooks: the version record reads nothing of the project" },
+      { id: "hooks-style-compact", why: "a re-read line wired to no compaction", file: "hooks/hooks.json", old: '"matcher": "startup|resume|clear|compact"', new: '"matcher": "startup|resume|clear"', pattern: "hooks.json: SessionStart `compact` reaches the style hook" },
       { id: "hooks-compact-triggers", why: "the compaction hook wired for one trigger, or past its own time", file: "hooks/hooks.json", old: '"matcher": "auto|manual"', new: '"matcher": "auto"', pattern: "hooks.json: the PreCompact hook gets both triggers" },
       { id: "hooks-pretooluse-matcher", why: "a push hook that leaves Monitor out: the record shows a spelled push running past it", file: "hooks/hooks.json", old: '"matcher": "Bash|Monitor|PowerShell"', new: '"matcher": "Bash|PowerShell"', pattern: "hooks.json: the PreToolUse matcher" },
       { id: "hooks-gate-judge", why: "runs that never reach a side copy, so silence proves nothing", file: "test/plugin.test.mjs", old: 'file: join(box, "side", "src", "a.js")', new: 'file: join(box, "proj", "src", "a.js")', pattern: "hooks: in a project without an Ennyn config" },
@@ -130,11 +131,17 @@ export const GATES = [
     guards: [
       { id: "style-suffix", why: "Turkish terse that trims suffixes", file: "styles/terse.tr.md", old: "- Ekleri kırpma: olumsuzluk", new: "- Ekleri kırp: olumsuzluk", pattern: "styles: every style but normal" },
       { id: "style-never", why: "a style without the never-shorten list", file: "styles/focused.en.md", old: "Never shorten: numbers", new: "Shorten: numbers", pattern: "styles: every style but normal" },
+      { id: "style-reread-brief", why: "a task brief with no re-read after a compaction", file: "skills/cycle/task-brief.md", old: "After a compaction, before its next edit, it re-reads the files the task changed", new: "After a compaction it goes on", pattern: "brief: a task agent re-reads" },
+      { id: "style-reread-line", why: "a re-read line that leaves new files out", file: "i18n/tr.json", old: " ve `git status --short --untracked-files=all` listeler.", new: " listeler.", pattern: "brief: a task agent re-reads" },
+      { id: "style-reread-docs-summary", why: "a document that says the summary lists a task's files, where it lists those changed since the last commit", file: "DESIGN.md", old: "the PreCompact summary request already lists the files changed since the last commit.", new: "the PreCompact summary request already lists its changed files.", pattern: "docs: the re-read line's limits" },
+      { id: "style-reread-docs-security", why: "a sentence that splits SECURITY.md's session-start list", file: "SECURITY.md", old: ", and the version the session runs is recorded", new: ". And the version the session runs is recorded", pattern: "docs: the re-read line's limits" },
+      { id: "style-reread-start", why: "a brief that names no base branch for the diff after a compaction", file: "skills/cycle/task-brief.md", old: "| **Place** | worktree, branch, the base branch (the branch it rebases onto and lands on), ", new: "| **Place** | worktree, branch, ", pattern: "brief: a task agent re-reads" },
     ],
     others: {
       "config: conversation.style and commitMsg.style take only their listed values": "a unit of core/config.mjs on configs it builds; it reads no file of the repository",
       "commit style terse: no prose in the body; structured lines, trailers, Merge and the allow marker pass": "a unit of commit-check on messages it writes",
       "hook: injects the style in the config language; nothing for normal or no config; a broken one is said; exit 0 always": "runs the SessionStart hook on temporary projects, as the CLI tests run the CLI",
+      "hook: after a compaction, the re-read line in the config language, after the style; no other source; `compaction.defer: false` turns it off": "runs the SessionStart hook on temporary projects, as the CLI tests run the CLI",
     },
   },
   {

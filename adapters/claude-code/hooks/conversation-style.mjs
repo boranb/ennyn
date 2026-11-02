@@ -6,6 +6,14 @@
  * "normal", or no config (../project.mjs): nothing is injected. A config that does not load (broken, or there but unreadable)
  * injects nothing either, and says so to the user (systemMessage): the session runs without its style.
  *
+ * After a compaction it also gives one fixed line, after the style: if a task is in progress, re-read the files it
+ * changed and its impact table before the next edit. Claude Code 2.1.310 runs this hook for a subagent's compaction
+ * too, and its text reaches that agent, but the input is the main thread's: its `cwd` is the session's folder, not a
+ * task's worktree, so the line names no file and says how to list them. Where that folder is the agent's own (the main
+ * thread, an agent run with `isolation: "worktree"`), the PreCompact hook's summary request already lists the files
+ * changed since the last commit. `compaction.defer: false` turns the line off, with the rest of Ennyn's compaction
+ * handling.
+ *
  * Exit 0 on every path, including malformed input; never 2.
  */
 
@@ -41,8 +49,10 @@ async function main() {
   // Not a project Ennyn works in (../project.mjs).
   if (!config) return;
   const rules = styleRules(config.conversation.style, config.language);
-  if (!rules) return;
-  process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: rules } }));
+  const reread = input?.source === "compact" && config.compaction.defer ? t("compact.reread", {}, config.language) : null;
+  const context = rules && reread ? `${rules.trimEnd()}\n\n${reread}` : rules ?? reread;
+  if (!context) return;
+  process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: context } }));
 }
 
 // Claude Code stopped reading: end without a stack trace, as a process ended by SIGPIPE.

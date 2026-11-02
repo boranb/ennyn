@@ -497,6 +497,12 @@ test("hooks.json: the PreCompact hook gets both triggers, and its own limits end
   assert.ok(GIT_MS * GIT_CALLS + SETTLE_MS < entry.hooks[0].timeout * 1000, `${entry.hooks[0].timeout} s`);
 });
 
+test("hooks.json: SessionStart `compact` reaches the style hook, which gives the re-read line after a compaction", () => {
+  const groups = JSON.parse(read("hooks/hooks.json")).hooks.SessionStart.filter((/** @type {any} */ g) => g.hooks.some((/** @type {any} */ h) => h.command === 'node "${CLAUDE_PLUGIN_ROOT}/adapters/claude-code/hooks/conversation-style.mjs"'));
+  assert.equal(groups.length, 1);
+  assert.ok(groups[0].matcher.split("|").includes("compact"), groups[0].matcher);
+});
+
 test("hooks.json: the PreToolUse matcher names the tools that run a command, the record's three, by a quoted command that resolves to the hook", () => {
   const [entry] = JSON.parse(read("hooks/hooks.json")).hooks.PreToolUse;
   assert.deepEqual(entry.matcher.split("|").sort(), ["Bash", "Monitor", "PowerShell"]);

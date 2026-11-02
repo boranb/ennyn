@@ -1,12 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, writeFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConfig, ConfigError, CONVERSATION_STYLES } from "../core/config.mjs";
 import { styleRules } from "../core/style.mjs";
+import { t } from "../core/i18n.mjs";
 import { checkCommitShape } from "../checks/commit-shape.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -84,4 +85,69 @@ test("hook: injects the style in the config language; nothing for normal or no c
   const bad = runHook({ conversation: { style: "terse" } }, "not json");
   assert.equal(bad.status, 0);
   assert.match(JSON.parse(bad.stdout).hookSpecificOutput.additionalContext, /^Conversation style: terse/);
+});
+
+test("hook: after a compaction, the re-read line in the config language, after the style; no other source; `compaction.defer: false` turns it off", () => {
+  // The input Claude Code 2.1.310 sent at a compaction against a stand-in model, the main thread's and a subagent's
+  // alike: the main thread's session, transcript and folder, so the line can name no file of a task's worktree.
+  const input = (/** @type {unknown} */ source) => JSON.stringify({ session_id: "s", transcript_path: "/p/s.jsonl", cwd: "/p", prompt_id: "q", hook_event_name: "SessionStart", source, model: "claude-opus-5-5" });
+  /** @param {any} config @param {unknown} source */
+  const context = (config, source) => {
+    const r = runHook(config, input(source));
+    assert.equal(r.status, 0);
+    return r.stdout === "" ? null : JSON.parse(r.stdout).hookSpecificOutput.additionalContext;
+  };
+  const [en, tr, terse] = [t("compact.reread", {}, "en"), t("compact.reread", {}, "tr"), /** @type {string} */ (styleRules("terse", "en"))];
+  assert.equal(context({}, "compact"), en);
+  assert.equal(context({ language: "tr" }, "compact"), tr);
+  assert.equal(context({ conversation: { style: "terse" } }, "compact"), `${terse.trimEnd()}\n\n${en}`);
+  for (const source of ["startup", "resume", "clear", undefined, "Compact"]) {
+    assert.equal(context({}, source), null, String(source));
+    assert.equal(context({ conversation: { style: "terse" } }, source), terse, String(source));
+  }
+  // The compaction switch: the style alone.
+  assert.equal(context({ compaction: { defer: false } }, "compact"), null);
+  assert.equal(context({ compaction: { defer: false }, conversation: { style: "terse" } }, "compact"), terse);
+  // No config: nothing. A config that does not load: no language and no switch, so the system message alone.
+  assert.deepEqual([runHook(null, input("compact")).status, runHook(null, input("compact")).stdout], [0, ""]);
+  const broken = runHook(/** @type {any} */ ("{ broken"), input("compact"));
+  assert.deepEqual(Object.keys(JSON.parse(broken.stdout)), ["systemMessage"]);
+  // One line each, no file name: where to look, by command, and the impact table. The diff runs from the merge base
+  // with the branch the task lands on, which a rebase onto it keeps right (a start commit goes stale at the first
+  // rebase and then lists other tasks' files), and the status lists each untracked file, whatever
+  // `status.showUntrackedFiles` says.
+  for (const line of [en, tr]) {
+    assert.doesNotMatch(line, /[\n\r]/);
+    assert.match(line, /`git diff --name-only --merge-base <[^>]+>` \([^)]+\) .* `git status --short --untracked-files=all`/);
+    assert.doesNotMatch(line, /<start>|start commit|başlangıç commit/);
+  }
+  assert.match(en, /impact table/);
+  assert.match(en, /`git diff --name-only --merge-base <base branch>` \(the branch it rebases onto and lands on\)/);
+  assert.match(tr, /etki tablosu/);
+  assert.match(tr, /`git diff --name-only --merge-base <taban dal>` \(görevin üzerine rebase edildiği ve indiği dal\)/);
+});
+
+test("brief: a task agent re-reads its changed files and impact table after a compaction, by the commands the hook's line names", () => {
+  // The rule stands in the brief too, for an agent whose hook is off or was never installed.
+  const brief = readFileSync(join(ROOT, "skills", "cycle", "task-brief.md"), "utf8");
+  assert.match(brief, /After a compaction, before its next edit, it re-reads the files the task changed \(`git diff --name-only --merge-base <base branch>` and `git status --short --untracked-files=all`, in its worktree\) and its impact table/);
+  // The brief names that branch, the first brief and the one a restart gets; no start commit, which a rebase leaves behind.
+  assert.match(brief, /\| \*\*Place\*\* \| worktree, branch, the base branch \(the branch it rebases onto and lands on\), /);
+  assert.match(brief, /\| \*\*Place\*\* \| worktree, new branch, the base branch, /);
+  assert.doesNotMatch(brief, /start commit/);
+  for (const lang of ["en", "tr"]) for (const command of ["git diff --name-only --merge-base <", "git status --short --untracked-files=all"]) assert.ok(t("compact.reread", {}, lang).includes(command), `${lang}: ${command}`);
+});
+
+test("docs: the re-read line's limits are said as they are: the summary names files changed since the last commit, and the session-start list stays one list", () => {
+  // Where the hook's folder is the agent's own, the PreCompact request names what git shows changed since the last
+  // commit: not a task's files committed before it.
+  for (const path of ["DESIGN.md", "CHANGELOG.md", "adapters/claude-code/hooks/conversation-style.mjs"]) {
+    const text = readFileSync(join(ROOT, path), "utf8").replace(/\n \* /g, " ");
+    assert.match(text, /already lists the files changed since the last commit/, path);
+    assert.doesNotMatch(text, /already lists its changed files/, path);
+  }
+  // SECURITY.md's hooks line: what runs at session start is one list, up to the env file, with no sentence inside it.
+  const security = readFileSync(join(ROOT, "SECURITY.md"), "utf8");
+  assert.match(security, /at session start, (?:(?!\. )[^;])*the version the session runs is recorded(?:(?!\. )[^;])*\(`\$CLAUDE_ENV_FILE`\)/);
+  assert.match(security, /\(`\$CLAUDE_ENV_FILE`\)[.;] [^\n]*`git status` and `git diff` in its worktree/);
 });
