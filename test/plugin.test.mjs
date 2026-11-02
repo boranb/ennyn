@@ -206,6 +206,35 @@ test("plugin: a brief names the task's gate, and a fix no review reads passes it
   assert.match(read("skills/cycle/report-formats.md"), /^`\*\*Task N done:\*\*.* \| Gate: \[result · last round clean · none and why\] \| /m);
 });
 
+test("plugin: rules the cycle's hand-written briefs carried are in the shipped text: the reviewer's ask, the author's working rules, the closing's read of its briefs", () => {
+  // Cycles 16 to 19 gave these only in briefs kept outside the repository; a project running Ennyn gets the shipped text alone.
+  // Each rule is pinned as its whole line: a label pin let 9 of 10 hedges through in review (cycle 19). A rule contradicted
+  // in other words in another file is past any pin here; review reads for that.
+  const holds = (/** @type {string} */ file, /** @type {string} */ line) => assert.ok(read(file).split("\n").includes(line), `${file}: ${line}`);
+  holds("skills/cycle/SKILL.md", "1. **Graph:** update every node whose status changed; every new or leftover item, and each brief rule [`### Briefs`](report-formats.md) sends to a node, becomes a node, at the end of the list, dated (`graph.fields.since`).");
+  holds("skills/cycle/SKILL.md", "7. **Review** with the reviewers that match the change: `review.agents` when set, else Ennyn's (correctness, security, data correctness). Give them the task's node, the changed files, the impact table and [finding-schema.md](finding-schema.md). **At most two rounds**; a third only as its Rounds say. For security work the path table replaces the round limit: list every way to reach the protected state first.");
+  holds("agents/code-reviewer.md", 'You review a change you did not write. You ask two questions: **how does this break?** and **is the ask of the task\'s node met, all of it?** You report defects and gaps against the ask; you do not propose refactors, style changes or "nice to have" items.');
+  holds("agents/code-reviewer.md", "- the task's node from the work graph: its ask is the requirement you check,");
+  holds("agents/code-reviewer.md", "3. **Then the ask.** Read the task's node and set each part of its ask against the change: a part not met, and a change the ask does not hold, is a finding of its kind (the finding schema's Scope).");
+  holds("skills/cycle/finding-schema.md", "**Scope:** correctness (wrong result, crash, data leak, bypassed gate) and requirements: is the ask of the task's node met, all of it? The ask is the node plus the protocol's own steps (the sweep, the documents the change affects, a small fix of the task's own), so those are never unrequested. A requirement finding names its kind in its title: `missing` (not done), `partial` (done in part), `contradicts` (done against the ask) or `unrequested` (done, not asked). A completion claim, in the author's report or the commit message, is no evidence. Style, naming and refactoring suggestions are out of scope.");
+  holds("skills/cycle/finding-schema.md", "**Prefer running to reading:** a test, a command or a harness through the real program over a code path read. A claim about what another program does (git, a shell, npm, Claude Code) is checked in that program, with its version, never from memory.");
+  const schema = read("skills/cycle/finding-schema.md");
+  assert.ok(schema.indexOf("**Prefer running to reading:**") < schema.indexOf("## Fields"), "the reviewer reads it before the fields");
+  const rules = "| **Rules** | prefer running to reading; a claim about what another program does (git, a shell, npm, Claude Code) is checked in that program, with its version, never from memory. Stay in the task: what is small and the task's own is fixed, the rest goes back as a proposed node (id, one-line title, source). No `git stash` in a worktree: the stash is shared across worktrees. The snapshot ref below keeps a copy; to look at the base, read it from git (`git show <start>:<path>`) or a throwaway worktree. A test run keeps its exit status (`set -o pipefail`, or a log file read afterwards). A command that passed is not run again on an unchanged tree |";
+  holds("skills/cycle/task-brief.md", rules);
+  const brief = read("skills/cycle/task-brief.md");
+  assert.ok(brief.indexOf(rules) < brief.indexOf("## What the orchestrator keeps"), "the rules are a part of the brief");
+  // The closing writes its report from the template in the fence: a line below the fence is not in the report.
+  const close = read("skills/cycle/report-formats.md").split("## End of cycle")[1] ?? "";
+  const template = /```md\n([\s\S]*?)\n```/.exec(close)?.[1] ?? "";
+  assert.ok(template.split("\n").includes("### Briefs          → each rule the cycle's hand-written briefs gave that did work, read against the skill's text: the file that holds it, the node that brings it in, or the project's own (its paths, its machine, its own ceilings); none when no brief was written"), template);
+  // Each rule once in the skill and the agents: the author's brief and the reviewer's schema are two readers, so running and the other program are said in both.
+  const shipped = [...skills.flatMap(({ name }) => readdirSync(join(ROOT, "skills", name)).map((f) => `skills/${name}/${f}`)), ...agents.map((a) => a.path)].map(read).join("\n").toLowerCase();
+  const count = (/** @type {string} */ s) => shipped.split(s.toLowerCase()).length - 1;
+  for (const once of ["`git stash` in a worktree", "pipefail", "unchanged tree", "completion claim", "`unrequested`", "hand-written briefs"]) assert.equal(count(once), 1, once);
+  for (const twice of ["prefer running to reading", "checked in that program"]) assert.equal(count(twice), 2, twice);
+});
+
 /** The tree as test/guards.test.mjs cloneOfTree reads it: what git lists, tracked or not, that is there. @param {string} root @param {string} folder */
 const treeFiles = (root, folder) =>
   git(["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", folder], { cwd: root })

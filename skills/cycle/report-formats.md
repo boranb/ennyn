@@ -30,6 +30,7 @@ Write reports in the project's `language`.
 ### Audit           → feature or security audit / why chosen / result / lean items / next candidate
 ### Convergence     → format below
 ### Stopped         → none, or each stopped task's line
+### Briefs          → each rule the cycle's hand-written briefs gave that did work, read against the skill's text: the file that holds it, the node that brings it in, or the project's own (its paths, its machine, its own ceilings); none when no brief was written
 ### Remaining risks → none, or each risk with its permanent home
 ### Push            → N commits waiting; approval asked
 ```

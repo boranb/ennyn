@@ -2,7 +2,9 @@
 
 Shared output contract for every reviewer. Include this file in the reviewer's prompt.
 
-**Scope:** correctness (wrong result, crash, data leak, bypassed gate) and requirements (the task's ask not met). Style, naming and refactoring suggestions are out of scope.
+**Scope:** correctness (wrong result, crash, data leak, bypassed gate) and requirements: is the ask of the task's node met, all of it? The ask is the node plus the protocol's own steps (the sweep, the documents the change affects, a small fix of the task's own), so those are never unrequested. A requirement finding names its kind in its title: `missing` (not done), `partial` (done in part), `contradicts` (done against the ask) or `unrequested` (done, not asked). A completion claim, in the author's report or the commit message, is no evidence. Style, naming and refactoring suggestions are out of scope.
+
+**Prefer running to reading:** a test, a command or a harness through the real program over a code path read. A claim about what another program does (git, a shell, npm, Claude Code) is checked in that program, with its version, never from memory.
 
 ## Fields (a finding missing a field does not count)
 

@@ -29,7 +29,7 @@ The orchestrator (the session running the cycle) keeps the plan, step 7's verdic
 4. **Implement**, matching existing patterns.
 5. **Test:** a new test alone first, its control seen failing once; then the handoff's fast test, lint and typecheck.
 6. **Mutation pass** on the changed files with the handoff's mutation tool; with none (or "not applicable"), hand-pick mutants of the changed lines and run them with `ennyn.mjs mutate <list.json> --command "<fast test>"`, adding `--check "<parse command> {file}"` for files other than JavaScript and JSON. It edits files in place: while a reviewer reads the tree, run it in a separate worktree. Record the first-run result (`killed/total`); write a test for each survivor or justify it as equivalent.
-7. **Review** with the reviewer agents that match the change: those in `review.agents` when set, otherwise Ennyn's (correctness, security, data correctness). Give them the changed files, the impact table and [finding-schema.md](finding-schema.md). **At most two rounds**; a third needs an independent signal (test, mutation run, real measurement) showing a new class. For security work the round limit is replaced by the path table: list every way to reach the protected state first.
+7. **Review** with the reviewers that match the change: `review.agents` when set, else Ennyn's (correctness, security, data correctness). Give them the task's node, the changed files, the impact table and [finding-schema.md](finding-schema.md). **At most two rounds**; a third only as its Rounds say. For security work the path table replaces the round limit: list every way to reach the protected state first.
 8. **A fix is a new write.** If a fix changes a row of the impact table, update the table and give round two the delta.
 9. **Record findings** as you write them: [ledger-row.md](ledger-row.md), class and source per [finding-schema.md](finding-schema.md).
 10. **Sweep** the same pattern project-wide; update the documents the change affects.
@@ -39,7 +39,7 @@ Never report an unrun test, command or check as done; write `not applicable` ins
 
 ## 3. End of cycle
 
-1. **Graph:** update every node whose status changed; every new or leftover item becomes a node, at the end of the list, dated (`graph.fields.since`).
+1. **Graph:** update every node whose status changed; every new or leftover item, and each brief rule [`### Briefs`](report-formats.md) sends to a node, becomes a node, at the end of the list, dated (`graph.fields.since`).
 2. **Handoff** (`paths.handoff`): what was done, what is next, open risks — each risk with a permanent home (a document that does not rotate). Its commands stay for the next cycle.
 3. **Convergence:** first append each kept rows file to `paths.findings`. Each `new:` class joins the registry or links to an entry, per [report-formats.md](report-formats.md). Run `ennyn.mjs convergence --cycle <N> --from <HEAD noted at the start>`; paste what it prints, unchanged. The most recurring class becomes a graph node with `mechanization: true` and its class id; if none, write why.
    Show the user what `ennyn.mjs bypass --from <that HEAD>` lists: each bypass with its reason, each key loosened with its line. One that recurs is a gate to fix, not a habit.
