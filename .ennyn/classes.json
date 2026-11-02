@@ -27,7 +27,8 @@
         "new: stated reason outlived by a method change",
         "new: ordered protocol not reconciled with a split of who runs which step",
         "new: reader missed in a sweep",
-        "new: documentation says fallback while the code takes the first"
+        "new: documentation says fallback while the code takes the first",
+        "new: count in fixed text"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: not stopped, no catch since it landed. Named in cycle 1. Counting the doc twin of cycle 4 here is this reconstruction's merge."
     },
@@ -75,7 +76,9 @@
       "linked": [
         "new: test reads the working tree where the repository was meant",
         "new: test reads the index where the working tree was meant",
-        "new: recorder rule not held by a new recorder"
+        "new: recorder rule not held by a new recorder",
+        "new: test setup not hermetic",
+        "new: test depends on one machine's layout"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, it came back as tests that lean on the machine's identity, found at the Linux run. Named in cycle 3."
     },
@@ -112,7 +115,8 @@
         "new: check on the reader side only",
         "new: meaning lost on read",
         "new: refused row dropped without a mark",
-        "new: retry drops the failure it retried"
+        "new: retry drops the failure it retried",
+        "new: unmeasured read as clean"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, failed reads held, the same mistake in logic recurs and writes are not covered. Named in cycle 4."
     },
@@ -152,7 +156,8 @@
         "new: fixture holds what the test assumes absent",
         "new: check runs only when someone asks",
         "new: test excuses the case it names",
-        "new: a required record satisfied by its label alone"
+        "new: a required record satisfied by its label alone",
+        "new: refusal text names a way around"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, it holds inside the listed gates only. Named in cycle 5."
     },
@@ -233,7 +238,8 @@
         "new: input value used as a size with no ceiling",
         "new: no ceiling on the size of untrusted text",
         "new: committed names past the git buffer drop every gate",
-        "new: unbounded matching of a pattern from data"
+        "new: unbounded matching of a pattern from data",
+        "new: square time on hostile text"
       ],
       "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict and record no gate. These tests hold the surfaces they name, and the class came back on others in cycles 9, 10, 12 and 14. Named in cycle 7."
     },
@@ -261,7 +267,8 @@
         "new: quoted example rule drops a real record",
         "new: narrowed reader loses a valid shape",
         "new: a tightened rule refuses an honest input",
-        "new: a flag written for one case reads every case"
+        "new: a flag written for one case reads every case",
+        "new: refactor lost a case"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, it holds past probes only. Named in cycle 8."
     },
@@ -350,7 +357,10 @@
       ],
       "judged": "Research of 2026-10-31, about 30% either way: each gate unproven, the code it guards has barely changed, so no recurrence is no success. Partial for the family is this reconstruction's word. Named in cycle 10.",
       "linked": [
-        "new: unread file said where the runner still reads it"
+        "new: unread file said where the runner still reads it",
+        "new: heuristic position rule too wide",
+        "new: shell expansion not modelled",
+        "new: program runs its words"
       ]
     },
     {
@@ -442,7 +452,9 @@
         "new: growth test measures one shape of size",
         "new: a decision line no test reaches",
         "new: branch with no case",
-        "new: test gap on an accepted spelling"
+        "new: test gap on an accepted spelling",
+        "new: scope gate untested",
+        "new: corpus gap"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -638,7 +650,13 @@
         "new: test precondition moved by the change",
         "new: a guard's anchor matches more than one place",
         "new: a test leans on the looseness a fix removes",
-        "new: a test names a helper its file does not import"
+        "new: a test names a helper its file does not import",
+        "new: oracle reached a different program",
+        "new: oracle measured one implementation",
+        "new: oracle over-claimed",
+        "new: control did not isolate the case",
+        "new: test expectation wrong",
+        "new: test fixture unlike the state it stands for"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -666,7 +684,9 @@
         "new: dead branch in new code",
         "new: guard kept for a cause not measured on that code",
         "new: dead branch left in a rule",
-        "new: dead check"
+        "new: dead check",
+        "new: dead code",
+        "new: leftover placeholder in a test cell"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -740,6 +760,17 @@
         "new: gate settings read from a place the gated change does not hold"
       ],
       "judged": "the orchestrator of cycle 17, reading the rows"
+    },
+    {
+      "id": "limit-does-not-bound",
+      "says": "A limit put on a run does not bound it: a real run has none, it lives in a process that dies first, or it counts what the run does not spend, so a hang outlives the check instead of failing it.",
+      "state": "open",
+      "linked": [
+        "new: limit dies with the process that keeps it",
+        "new: limit assumed to bound what it does not",
+        "new: real run with no limit hangs instead of failing"
+      ],
+      "judged": "the orchestrator of cycle 18, reading the rows"
     }
   ]
 }

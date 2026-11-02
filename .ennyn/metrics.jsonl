@@ -14,3 +14,4 @@
 {"kind":"budget","date":"2026-10-31","commit":"4fde05dd232fcffaf9e6af69b6a1eb6b5d219bc1","always":1901,"onDemand":0,"repeatedLines":0}
 {"kind":"budget","date":"2026-11-01","commit":"04ba192573a83a71e33ee1aaf8cdc7ad8192e4ba","always":1901,"onDemand":0,"repeatedLines":0}
 {"kind":"budget","date":"2026-11-01","commit":"59135da0ca49eb5dc8dd6e55da475979797bcf10","always":1899,"onDemand":0,"repeatedLines":0,"securityAudit":true,"covers":["42521713df8ad0ab","4b46e11e2585470b"]}
+{"kind":"budget","date":"2026-11-02","commit":"06a7bd86c7647fc9a5266ce5eb64cba174c8b9e8","always":1899,"onDemand":0,"repeatedLines":0}
