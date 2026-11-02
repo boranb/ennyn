@@ -22,6 +22,7 @@ import { ConfigPicked, ConfigUnread, LOOSENING_LINE, commitConfig, looseningErro
 import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
 import { REWORK_DAYS, reworkRate } from "../metrics/szz.mjs";
 import { bypassUses } from "../metrics/bypass.mjs";
+import { leftovers, recordStart } from "../metrics/leftovers.mjs";
 import { gateLogPath, readAttempts, recordAttempt, summarizeAttempts, KINDS } from "../metrics/gate-log.mjs";
 import { costWeight, graphProblems, loadGraph, pickMechanization, pickOldest, readyNodes, scoreNode, splitAt, splitFirst, GraphError } from "../plan/mechanization.mjs";
 import { LINK_RULE, SUBMODULE_RULE, auditAnswer, cycleRecords, markCovers, readLog, securityDue, sensitivePaths } from "../plan/audit.mjs";
@@ -59,6 +60,9 @@ Commands:
   bypass [--from <rev>] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--json]
                                                     commits that used the commit-shape bypass marker, with their reasons, and each key a
                                                     commit loosened, with its approval line; exit 1 when a commit could not be compared
+  leftovers [--start] [--json]                      what the cycle left in the work tree: --start records HEAD, the untracked files and the changes as a
+                                                    cycle begins, one record per work tree; after it, untracked files that appeared and changes not committed
+                                                    (staged, intent to add, changed), each part found, clean or unmeasured; it removes nothing; exit 1 unless both are clean
   mutate <list.json> --command <cmd> [--check <cmd>] [--timeout <s>] [--json]
                                                     run hand-picked mutants one at a time against the tests; one that does not parse is never killed;
                                                     give --check's {file} unquoted: Ennyn quotes it
@@ -82,6 +86,9 @@ const AUDIT_NAMES = 50;
 /** How many ready nodes `core` lists by score, then every one that ties with the last of them, up to the second number; the rest are counted. */
 const CORE_LIST = 5;
 const CORE_LIST_MAX = 10;
+
+/** How many items of each part `leftovers` lists; the rest are counted. */
+const LEFTOVERS_SHOWN = 50;
 
 /** How many levels of local callees the commit-msg hook reads, one git round each; past it they are said unread. */
 const CALLEE_ROUNDS = 20;
@@ -1360,6 +1367,38 @@ const COMMANDS = {
       for (const line of l.lines) out(tShown("bypass.looseLine", { line }, lang));
       if (l.unapproved.length) out(tShown("bypass.looseMissing", { keys: l.unapproved.join(", ") }, lang));
     }
+    return code;
+  },
+
+  leftovers(args) {
+    const { opts, help } = parseArgs(args, { flags: ["start", "json"] });
+    if (help) return (out(USAGE), 0);
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    const lang = cfg.language;
+    if (opts.start) {
+      const r = recordStart({ cwd, config: cfg });
+      if (opts.json) return (out(jsonShown(r)), 0);
+      out(tShown("leftovers.started", { path: r.path, head: r.head.slice(0, 10), n: r.untracked, m: r.changed }, lang));
+      if (r.replaced) out(tShown("leftovers.replaced", { head: r.replaced.head.slice(0, 10), at: r.replaced.at }, lang));
+      return 0;
+    }
+    const res = leftovers({ cwd, config: cfg });
+    const { untracked, uncommitted } = res;
+    const code = untracked.state === "clean" && uncommitted.state === "clean" ? 0 : 1;
+    const why = untracked.why ? t(untracked.why.key, untracked.why.vars, lang) : "";
+    if (opts.json) return (out(jsonShown({ ...res, untracked: { ...untracked, why: why || undefined } })), code);
+    if (res.start) out(t("leftovers.since", { head: res.start.head.slice(0, 10), at: res.start.at }, lang));
+    /** @param {string[]} lines */
+    const list = (lines) => {
+      for (const line of lines.slice(0, LEFTOVERS_SHOWN)) out(line);
+      if (lines.length > LEFTOVERS_SHOWN) out(t("leftovers.more", { n: lines.length - LEFTOVERS_SHOWN }, lang));
+    };
+    out(tShown(`leftovers.untracked.${untracked.state}`, { n: untracked.items.length, why }, lang));
+    const kind = (/** @type {{ path: string, committed?: true }} */ i) => (i.path.endsWith("/") ? "Folder" : "") + (i.committed ? "Swept" : "");
+    list(untracked.items.map((i) => tShown(`leftovers.item${kind(i)}`, { path: i.path, n: i.files }, lang)));
+    out(t(`leftovers.uncommitted.${uncommitted.state}`, { n: uncommitted.items.length }, lang));
+    list(uncommitted.items.map((c) => tShown(c.from === undefined ? "leftovers.itemChange" : "leftovers.itemMoved", { code: { shown: c.code }, path: c.path, from: c.from ?? "" }, lang)));
     return code;
   },
 

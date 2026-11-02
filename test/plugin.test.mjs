@@ -173,6 +173,15 @@ test("plugin: every SKILL.md stays under 8 KB (DESIGN.md: skills are read whole,
   for (const { path } of skills) assert.ok(statSync(join(ROOT, path)).size < 8 * 1024, `${path}: ${statSync(join(ROOT, path)).size} bytes`);
 });
 
+test("plugin: the closing runs ennyn.mjs leftovers after its commit, and the handoff's leftover command, unmeasured when none is named", () => {
+  // Before step 6's commit the closing's own graph, handoff and ledger are changes not committed (cycle 18's closing commit holds all of them).
+  const line = String(read("skills/cycle/SKILL.md").split("\n").find((l) => l.startsWith("5. **Security checks:**")));
+  for (const part of ["after step 6's commit `ennyn.mjs leftovers`", "and the handoff's leftover command (none: unmeasured)"]) assert.ok(line.includes(part), part);
+  assert.match(read("skills/cycle/SKILL.md"), /`ennyn\.mjs leftovers --start` notes HEAD/);
+  // An answer that comes after the closing's commit has a commit to land in, and the budget is recorded again.
+  assert.ok(read("skills/cycle/report-formats.md").includes("goes into one follow-up commit with the graph and a fresh `ennyn.mjs budget --record`, before the push"));
+});
+
 test("plugin: the approval line of a loosening is the user's: the cycle skill says so, and the design lists every key a gate reads", () => {
   assert.ok(read("skills/cycle/SKILL.md").includes(`ask the user; \`${LOOSENING_LINE} <key>\` only on their plain yes for that key`));
   assert.ok(read("skills/cycle/SKILL.md").includes("a task agent stops and reports the keys"));

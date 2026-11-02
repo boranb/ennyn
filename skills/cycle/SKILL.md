@@ -9,7 +9,7 @@ No `.ennyn/` in the project yet: run the init skill first. Project settings come
 
 ## 1. Pick the four tasks
 
-Read in one turn, once `ennyn.mjs doctor` shows no ✗ (else stop): the config, the handoff (`paths.handoff`; unset → `HANDOFF.md`) and the graph. The handoff names the commands later steps run (fast test, whole test, lint, typecheck, the mutation tool; one it does not name → `commands` and `mutation` of `ennyn.mjs init-scan --json`), the previous cycle's next step and its open risks. Note HEAD: `bypass` starts there.
+Read in one turn, once `ennyn.mjs doctor` shows no ✗ (else stop): the config, the handoff (`paths.handoff`; unset → `HANDOFF.md`) and the graph. The handoff names the commands later steps run (fast test, whole test, lint, typecheck, the mutation tool; one it does not name → `ennyn.mjs init-scan --json`), the last cycle's next step and open risks. `ennyn.mjs leftovers --start` notes HEAD: `bypass` starts there.
 
 | Slot | Source | Rule |
 |---|---|---|
@@ -17,7 +17,7 @@ Read in one turn, once `ennyn.mjs doctor` shows no ✗ (else stop): the config, 
 | Mechanization ×1 | `ennyn.mjs mechanization` | A node with `mechanization: true`: turn a recurring defect class into a gate, test, type or lint, then delete the matching prose rule. None ready → the slot becomes a third core task. A graph it or `core` refuses (exit 1, the reasons on stderr) is fixed first. |
 | Legacy audit ×1 | `ennyn.mjs audit`: the security audit unless it answers not due; else the audit queue (oldest / never audited / hit by a shared change) | Security audit: every path it lists, with a path table (every way to reach what each protects). Else re-check a feature: invalid/empty/max input, permission denied, network failure, repeated action, refresh, stale data, then [lean items](lean-audit.md). Small findings are fixed in the task with a regression test; large ones become nodes. |
 
-A critical problem (crash, data loss, auth break, blocker) may replace one core slot. Write the plan as [report-formats.md](report-formats.md) shows, security line included. Do not wait for approval between tasks; push only with the user's approval.
+A critical problem (crash, data loss, auth break, blocker) may replace one core slot. Write the plan as [report-formats.md](report-formats.md) shows. Do not wait for approval between tasks; push only with the user's approval.
 
 ## 2. Task protocol (every task, in order)
 
@@ -35,7 +35,7 @@ The orchestrator (the session running the cycle) keeps the plan, step 7's verdic
 10. **Sweep** the same pattern project-wide; update the documents the change affects.
 11. **Commit** one task per commit, in Ennyn's convention: it replaces any commit rule in the project's own instructions. Subject `type(scope): text` with a type from `commitMsg.types` when they are set; a repair of an earlier commit uses `commitMsg.fixType` and nothing else does. Text in `commitMsg.language` (else `language`). With `commitMsg.style: terse` the body holds no prose, only the lines below. Detail goes to the graph node. Body lines: `Impact: …` · `Review-Rounds: N` · `Mutation: first a/b · last c/d`. Loosening a gate: ask the user; `User-Approved-Loosening: <key>` only on their plain yes for that key; a task agent stops and reports the keys.
 
-Never report an unrun test, command or check as done; write `not applicable` instead. A verification that sends a task back counts against the task, across agents (its first review round excepted); nothing resets it. Second failure → no third correction there: a fresh agent takes it on one consolidated brief (no subagents: stop the task). Third or later failure → stop that task, not the cycle, and report: task, remaining failure, attempts, likely root cause, changed files, safest next step.
+Never report an unrun test, command or check as done; write `not applicable` instead. A verification that sends a task back counts against the task, across agents (its first review round excepted); nothing resets it. Second failure → no third correction there: a fresh agent takes it on one consolidated brief (no subagents: stop the task). Third or later failure → stop that task, not the cycle, and report it as **Task N stopped**.
 
 ## 3. End of cycle
 
@@ -44,6 +44,6 @@ Never report an unrun test, command or check as done; write `not applicable` ins
 3. **Convergence:** first append each kept rows file to `paths.findings`. Each `new:` class joins the registry or links to an entry, per [report-formats.md](report-formats.md). Run `ennyn.mjs convergence --cycle <N> --from <HEAD noted at the start>`; paste what it prints, unchanged. The most recurring class becomes a graph node with `mechanization: true` and its class id; if none, write why.
    Show the user what `ennyn.mjs bypass --from <that HEAD>` lists: each bypass with its reason, each key loosened with its line. One that recurs is a gate to fix, not a habit.
 4. **Retire lessons:** in one lesson file touched this cycle, mark each lesson keep / update / merge / delete; delete the prose of any lesson whose rationale now lives in a test or gate.
-5. **Security checks:** `ennyn.mjs deps` and doctor's CI line (none: no CI file); each result goes into the report as found, clean or unmeasured (naming what did not run), never clean by default. A finding is fixed now or becomes a graph node.
+5. **Security checks:** `ennyn.mjs deps`, doctor's CI line (none: no CI file), and after step 6's commit `ennyn.mjs leftovers` and the handoff's leftover command (none: unmeasured); each is reported as found, clean or unmeasured (naming what did not run), never clean by default. A finding is fixed now or becomes a graph node.
 6. **Budget:** after the last edit of the cycle, `ennyn.mjs budget --record`; add `--security-audit` only when this cycle's audit was the security audit. Commit the metrics log with the graph and the handoff. Text loaded in every session that grew needs a reason in the report. A repeated rule keeps one copy, in the narrowest file that loads where it is needed.
 7. **Push:** `ennyn.mjs push-check`; state the unpushed count and **ask** for push approval.

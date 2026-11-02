@@ -24,7 +24,7 @@ Write reports in the project's `language`.
 ```md
 ## Cycle complete
 ### Done            → results 1-4
-### Checks          → commit gate / build / viewport checks [result or not applicable] · security: `ennyn.mjs deps` and doctor's CI line [found / clean / unmeasured: what did not run] · bypasses and loosened keys, for the user before the push (`ennyn.mjs bypass --from <cycle start>`, pasted: each use with its reason, each key with its approval line or none; exit 1 is unmeasured, never none) · instruction budget: N KB every session (± since the last record), repeated rule lines
+### Checks          → commit gate / build / viewport checks [result or not applicable] · security: `ennyn.mjs deps` and doctor's CI line [found / clean / unmeasured: what did not run] · leftovers, after the closing's commit: `ennyn.mjs leftovers` (untracked files that appeared, changes not committed) and the handoff's leftover command (none named: unmeasured); each item a question for the user, never deleted [found: the items and the answers / clean / unmeasured: what did not run] · bypasses and loosened keys, for the user before the push (`ennyn.mjs bypass --from <cycle start>`, pasted: each use with its reason, each key with its approval line or none; exit 1 is unmeasured, never none) · instruction budget: N KB every session (± since the last record), repeated rule lines
 ### Commits         → subjects
 ### Documents       → documents updated
 ### Audit           → feature or security audit / why chosen / result / lean items / next candidate
@@ -34,6 +34,8 @@ Write reports in the project's `language`.
 ### Remaining risks → none, or each risk with its permanent home
 ### Push            → N commits waiting; approval asked
 ```
+
+**Leftovers answered after the closing's commit:** what the user's answer brings (a node, a fix, a line in the handoff) goes into one follow-up commit with the graph and a fresh `ennyn.mjs budget --record`, before the push.
 
 **Convergence** — run `ennyn.mjs convergence --cycle <N> --from <cycle start>` and paste what it prints, unchanged: it counts the rows of `paths.findings` ([ledger-row.md](ledger-row.md)) of cycle N and no other, as this file says, in the project's language; its last line says what it counted, and under the block it says what it could not place and why. It exits 1 when a count reads `?`, when a name resolves to no entry, and when a start given is refused, even with every count exact. No repository, a bare one or no git stops it with no block. `Proposal:` is yours to add:
 

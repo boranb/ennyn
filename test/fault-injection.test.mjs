@@ -368,6 +368,22 @@ const CASES = [
   { args: ["rework"], cwd: "src", first: true },
   { args: ["bypass"], noReads: true },
   { args: ["bypass", "--from", FIRST, "--json"], noReads: true },
+  // No start recorded: the untracked part is unmeasured, the changes not committed are read; then a record is written,
+  // and read back by the closing.
+  { args: ["leftovers"] },
+  { args: ["leftovers", "--json"] },
+  { args: ["leftovers", "--start"], writes: true },
+  {
+    args: ["leftovers"],
+    setup: (repo) => {
+      const r = spawnSync(process.execPath, [CLI, "leftovers", "--start", "--json"], { cwd: repo, encoding: "utf8" });
+      if (r.status !== 0) throw new Error(`leftovers --start: ${r.stderr}`);
+      // The record's time is the setup's, which differs from run to run: one time for all.
+      const record = String(JSON.parse(r.stdout).path);
+      writeFileSync(record, JSON.stringify({ ...JSON.parse(readFileSync(record, "utf8")), at: "2026-01-01T00:00:00.000Z" }));
+      writeFileSync(join(repo, "stray.txt"), "\n");
+    },
+  },
   { args: ["mechanization"] },
   { args: ["mechanization"], cwd: "src", first: true },
   { args: ["classes"] },
