@@ -250,7 +250,7 @@ test("cli: gate-record then gate-stats, in the project language, with --json", (
   assert.match(future.stdout, /^Kapı denemesi kaydedildi \(düştü\): .*; süresi ölçülmedi: /);
   const stats = run(r.dir, "gate-stats");
   assert.equal(stats.code, 0, stats.stderr);
-  assert.match(stats.stdout, /^Kapı: 3 deneme, 1 geçti, 2 düştü \(67%\); 1 mesaj kapıdan önce reddedildi\.$/m);
+  assert.match(stats.stdout, /^Kapı: 3 deneme, 1 geçti, 2 düştü \(%67\); 1 mesaj kapıdan önce reddedildi\.$/m);
   assert.match(stats.stdout, /^1 denemenin süresi ölçülmedi /m);
   assert.match(stats.stdout, /^Düşen adımlar: lint 1\.$/m);
   const json = JSON.parse(run(r.dir, "gate-stats", "--json").stdout);
@@ -455,4 +455,98 @@ test("gate-log audit (after review): a start no date can hold, every escape sequ
     assert.match(String(name), /…#[0-9a-f]{8}$/);
   }
   assert.equal(cleanName(long("alpha")), a, "the same name cuts the same way");
+});
+
+test("gate-log audit (cycle 19): a passing merge lists what it brings to its first parent, as its failed attempt does from the index", () => {
+  const r = repo();
+  r.commit({ "a.txt": "a\n" }, "root");
+  const id = ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"];
+  git(["checkout", "-q", "-b", "side"], { cwd: r.dir });
+  r.commit({ "side.txt": "s\n" }, "side");
+  git(["checkout", "-q", "main"], { cwd: r.dir });
+  r.commit({ "main.txt": "m\n" }, "main");
+  git([...id, "merge", "-q", "--no-commit", "--no-ff", "side"], { cwd: r.dir });
+  const config = cfgFor(r.dir);
+  const failed = recordAttempt({ cwd: r.dir, config, start: T, end: T + 60, exit: 1 });
+  git([...id, "commit", "-q", "--no-edit"], { cwd: r.dir });
+  const passed = recordAttempt({ cwd: r.dir, config, start: T, end: T + 120, exit: 0, commit: "HEAD" });
+  assert.deepEqual([failed.entry.files, passed.entry.files], [["side.txt"], ["side.txt"]]);
+});
+
+test("gate-log audit (cycle 19): a name that is not UTF-8 is spelled the same in a failed and a passing attempt", () => {
+  const r = repo();
+  r.commit({ "a.txt": "a\n" }, "root");
+  // caf + byte E9 (Latin-1 e acute) + .txt, put in the index by plumbing: some file systems refuse such a name.
+  const blob = git(["hash-object", "-w", "--stdin"], { cwd: r.dir, input: "x\n" });
+  git(["update-index", "--add", "--index-info"], { cwd: r.dir, input: Buffer.concat([Buffer.from(`100644 ${blob}\tcaf`), Buffer.from([0xe9]), Buffer.from(".txt\n")]) });
+  const config = cfgFor(r.dir);
+  const failed = recordAttempt({ cwd: r.dir, config, start: T, end: T + 60, exit: 1 });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "latin"], { cwd: r.dir });
+  const passed = recordAttempt({ cwd: r.dir, config, start: T, end: T + 120, exit: 0, commit: "HEAD" });
+  assert.deepEqual([failed.entry.files, passed.entry.files], [["caf\udce9.txt"], ["caf\udce9.txt"]]);
+  assert.deepEqual(readAttempts(passed.path).attempts.map((a) => a.files), [["caf\udce9.txt"], ["caf\udce9.txt"]], "read back as written");
+});
+
+test("gate-log audit (cycle 19): outside a repository nothing is recorded or summed, and the refusal says so in its own words", () => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "pl-gate-none-")));
+  assert.throws(() => recordAttempt({ cwd: dir, config: cfgFor(dir), start: T, end: T + 60, exit: 1 }), { name: "RangeError", message: "no git repository here" });
+  const start = String(Math.floor(Date.now() / 1000) - 60);
+  for (const args of [["--exit", "1"], ["--exit", "5", "--kind", "message"], ["--exit", "0", "--commit", "HEAD"]]) {
+    const res = run(dir, "gate-record", "--start", start, ...args);
+    assert.deepEqual([res.code, res.stderr], [1, "Gate attempt not recorded: no git repository here\n"], args.join(" "));
+  }
+  // Not "nothing recorded" of a log no repository can hold: the same words, from the same check.
+  for (const args of [[], ["--json"]]) {
+    const res = run(dir, "gate-stats", ...args);
+    assert.deepEqual([res.code, res.stdout, res.stderr], [1, "", "ennyn gate-stats: no git repository here\n"], args.join(" "));
+  }
+  assert.deepEqual(readdirSync(dir), [], "no .git made");
+});
+
+test("cli audit (cycle 19): a log with no attempt says nothing was recorded, unless a range was asked", () => {
+  const r = repo();
+  const path = gateLogPath(r.dir, ".git/ennyn");
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, "\n");
+  assert.match(run(r.dir, "gate-stats").stdout, /^No gate attempts recorded yet \(/);
+  for (const range of [["--since", "2026-01-01"], ["--until", "2026-01-01"]]) {
+    assert.equal(run(r.dir, "gate-stats", ...range).stdout, "No gate attempts in this range.\n", range[0]);
+  }
+});
+
+test("cli audit (cycle 19, review): a log whose every line was skipped says that alone, in each language, when no range was asked", () => {
+  for (const [language, said] of [["en", /^2 lines in .* are not gate attempts and were skipped\.\n$/], ["tr", /^.* içindeki 2 satır kapı denemesi değil, atlandı\.\n$/]]) {
+    const r = repo({ language });
+    const path = gateLogPath(r.dir, ".git/ennyn");
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, `not json\n${JSON.stringify({ v: 2, kind: "full" })}\n`);
+    const res = run(r.dir, "gate-stats");
+    assert.equal(res.code, 0, res.stderr);
+    assert.match(res.stdout, said, language);
+  }
+});
+
+test("cli audit (cycle 19): a start past 2^53 is said as given, not as the nearest double", () => {
+  const r = repo();
+  r.commit({ "a.txt": "a\n" }, "first");
+  // date +%s%N in a wrapper: 19 digits, past the integers a double holds exactly.
+  const cli = run(r.dir, "gate-record", "--start", "1793639580123456789", "--exit", "1");
+  assert.equal(cli.code, 0, cli.stderr);
+  assert.match(cli.stdout, /: start 1793639580123456789 is before 2000/);
+});
+
+test("gate-log audit (cycle 19, review): a passing merge lists as many names as its failed attempt can, past git()'s 64 MB", () => {
+  const r = repo();
+  r.commit({ "a.txt": "a\n" }, "root");
+  const id = ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"];
+  const tree = (/** @type {string} */ input) => git(["mktree"], { cwd: r.dir, input });
+  const blob = git(["hash-object", "-w", "--stdin"], { cwd: r.dir, input: "x\n" });
+  // 14,000 files under 20 directories of 255-byte names: some 72 MB of names from 22 trees.
+  let deep = tree(Array.from({ length: 14_000 }, (_, i) => `100644 blob ${blob}\tf${i}\n`).join(""));
+  for (let d = 0; d < 20; d++) deep = tree(`040000 tree ${deep}\t${String(d).padStart(255, "d")}\n`);
+  const top = tree(`100644 blob ${git(["rev-parse", "HEAD:a.txt"], { cwd: r.dir })}\ta.txt\n040000 tree ${deep}\tdeep\n`);
+  const side = git([...id, "commit-tree", top, "-p", "HEAD", "-m", "side"], { cwd: r.dir });
+  git(["update-ref", "refs/heads/main", git([...id, "commit-tree", top, "-p", "HEAD", "-p", side, "-m", "merge"], { cwd: r.dir })], { cwd: r.dir });
+  const { entry } = recordAttempt({ cwd: r.dir, config: cfgFor(r.dir), start: T, end: T + 60, exit: 0, commit: "HEAD" });
+  assert.deepEqual([entry.result, entry.files.length, entry.files[0].length > 5000], ["pass", 14_000, true]);
 });

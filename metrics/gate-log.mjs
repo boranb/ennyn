@@ -14,10 +14,10 @@
 import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { readRegular, writeState } from "../core/files.mjs";
-import { git, gitMaybe, resolveStateDir, stagedPaths, stateRoot } from "../core/git.mjs";
+import { NAMES_BUFFER, commonDir, gitBytes, gitMaybe, nameText, resolveStateDir, stagedPaths, stateRoot } from "../core/git.mjs";
 import { parseBound } from "./szz.mjs";
 
-export const GATE_LOG_FILE = "gate-attempts.jsonl";
+const GATE_LOG_FILE = "gate-attempts.jsonl";
 /** `full`: the commit ran the gate. `message`: the message was rejected before the gate started. */
 export const KINDS = /** @type {const} */ (["full", "message"]);
 
@@ -32,22 +32,28 @@ export const KINDS = /** @type {const} */ (["full", "message"]);
  */
 
 /**
+ * Throws a RangeError outside a repository: no log belongs there, and none is read from a path no repository holds.
  * @param {string} projectDir
  * @param {string} stateDir config `paths.stateDir`
  */
 export function gateLogPath(projectDir, stateDir) {
+  if (commonDir(projectDir) === null) throw new RangeError("no git repository here");
   return join(resolveStateDir(projectDir, stateDir), GATE_LOG_FILE);
 }
 
 /**
- * Paths a commit changed (the root commit included).
+ * Paths a commit changed (the root commit included; a merge against its first parent, as its failed attempt's index
+ * reads), each spelled as stagedPaths spells it: a name that is not UTF-8 keeps its bytes.
  * @param {string} cwd
  * @param {string} rev
  * @returns {string[]}
  */
-export function commitPaths(cwd, rev) {
-  // "--" ends the revision: a file named like it would stop git on an ambiguous argument.
-  return git(["diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-z", rev, "--"], { cwd }).split("\0").filter(Boolean);
+function commitPaths(cwd, rev) {
+  // "--" ends the revision: a file named like it would stop git on an ambiguous argument. Without a merge mode
+  // diff-tree prints nothing for a merge. As many names as the failed side reads (stagedNames). latin1 maps each byte
+  // to one character and back.
+  const out = gitBytes(["diff-tree", "--root", "--diff-merges=first-parent", "--no-commit-id", "--name-only", "-r", "-z", rev, "--"], { cwd, buffer: NAMES_BUFFER });
+  return out.toString("latin1").split("\0").filter(Boolean).map((name) => nameText(Buffer.from(name, "latin1")));
 }
 
 /** @param {number} sec */
@@ -112,6 +118,8 @@ export function recordAttempt({ cwd, config, start, end = Math.floor(Date.now() 
   if (!(/** @type {readonly string[]} */ (KINDS)).includes(kind)) throw new RangeError(`kind must be ${KINDS.join(" | ")}, got ${kind}`);
   if (kind === "message" && (exit === 0 || commit)) throw new RangeError("a message attempt is a rejection: non-zero exit and no commit");
   if (commit && exit !== 0) throw new RangeError("a commit was given but the exit code is not 0");
+  // First: outside a repository git reads `diff --cached` as `diff --no-index`, and stops on that mode's usage text.
+  const path = gateLogPath(cwd, config.paths.stateDir);
   const hash = commit ? gitMaybe(["rev-parse", "--verify", "--quiet", `${commit}^{commit}`], { cwd, absent: [1] }) : null;
   if (commit && !hash) throw new RangeError(`not a commit: ${commit}`);
   const seconds = measuredSeconds(start, end);
@@ -132,7 +140,6 @@ export function recordAttempt({ cwd, config, start, end = Math.floor(Date.now() 
     runner: cleanName(runner),
     ...(seconds === null ? { startGiven: start } : {}),
   };
-  const path = gateLogPath(cwd, config.paths.stateDir);
   // One write call per line: two sessions committing at once append whole lines. A torn last line is closed
   // first, so it stays one skipped line instead of swallowing this attempt. No link a commit holds is followed.
   writeState(stateRoot(cwd, path), path, JSON.stringify(entry) + "\n", "append");

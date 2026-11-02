@@ -1512,7 +1512,8 @@ const COMMANDS = {
       return 1;
     }
     const result = t(`gate.result.${res.entry.result}`, {}, cfg.language);
-    if (res.entry.seconds === null) out(t("gate.recordedUntimed", { result, path: res.path, start }, cfg.language));
+    // The digits given: past 2^53 the number read is a neighbour of the one written.
+    if (res.entry.seconds === null) out(t("gate.recordedUntimed", { result, path: res.path, start: String(opts.start) }, cfg.language));
     else out(t("gate.recorded", { result, path: res.path }, cfg.language));
     return 0;
   },
@@ -1572,8 +1573,13 @@ const COMMANDS = {
     if (opts.json) return (out(jsonShown({ path, exists: log.exists, skipped: log.skipped, ...sum })), 0);
     if (!log.exists) return (out(t("gate.none", { path }, lang)), 0);
     if (log.skipped) out(t("gate.skipped", { n: log.skipped, path }, lang));
-    if (!sum.attempts) return (out(t("gate.emptyWindow", {}, lang)), 0);
-    const pct = sum.failRate === null ? "—" : `${(sum.failRate * 100).toFixed(0)}%`;
+    // A log with no attempt in it, read with no range, is no range found empty; one whose every line was skipped said so.
+    if (!sum.attempts) {
+      if (since || until) out(t("gate.emptyWindow", {}, lang));
+      else if (!log.skipped) out(t("gate.none", { path }, lang));
+      return 0;
+    }
+    const pct = percent(sum.failRate, lang);
     out(t("gate.summary", { full: sum.full, passed: sum.passed, failed: sum.failed, pct, message: sum.message }, lang));
     if (sum.pass.n) out(t("gate.passTime", { median: minutes(sum.pass.median), p90: minutes(sum.pass.p90) }, lang));
     if (sum.fail.n) out(t("gate.failTime", { median: minutes(sum.fail.median), p90: minutes(sum.fail.p90), wasted: minutes(sum.wastedSeconds) }, lang));
