@@ -34,6 +34,7 @@ import { CYCLE_MAX, complete, cycleReport, reportLines } from "../metrics/findin
 import { RecordError, installHook, sessionOf } from "../setup/hook.mjs";
 import { instructionBudget, readBudgets, recordBudget, previousBudget, replacedAt } from "../setup/budget.mjs";
 import { journalPath, MAX_TIMEOUT_MS, MutationError, parseMutants, restoreJournal, runMutants, summarizeMutants } from "../metrics/mutation.mjs";
+import { markedWorktrees, removeWorktree, verdict } from "../plan/worktrees.mjs";
 
 export const USAGE = `Usage: ennyn <command> [options]
 
@@ -68,6 +69,9 @@ Commands:
                                                     give --check's {file} unquoted: Ennyn quotes it
   mutate --restore [--force]                        put back a file that a mutate run killed outright left mutated
   push-check                                        warn when too many commits are unpushed
+  worktrees [--remove] [<path>...]                  the worktrees the cycle marked (a lock whose reason is ennyn:<cycle>), each with whether
+                                                    removing it loses nothing, or why not; --remove removes those that pass, checked again first,
+                                                    never with --force; paths: only those. Exit 1 when one could not be checked or removed
   gate-record --start <epoch-s> --exit <code> [--kind full|message] [--commit <rev>] [--step <name>] [--runner <name>]
                                                     record one commit-gate attempt (called by the commit wrapper)
   gate-stats [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--json]
@@ -1527,6 +1531,56 @@ const COMMANDS = {
     else if (n > max) out(t("push.warn", { n, max }, cfg.language));
     else out(t("push.ok", { n, max }, cfg.language));
     return 0;
+  },
+
+  worktrees(args) {
+    const { opts, positional, help } = parseArgs(args, { flags: ["remove"], positional: Infinity });
+    if (help) return (out(USAGE), 0);
+    const cwd = projectDir();
+    const lang = config(cwd).language;
+    const say = (/** @type {string} */ key, /** @type {import("../core/i18n.mjs").Vars} */ vars = {}) => out(tShown(key, vars, lang));
+    // As the disk spells it (case, links): a path that is not there stays as given; one that cannot be resolved stops the command.
+    const real = (/** @type {string} */ p) => {
+      try {
+        return realpathSync.native(p);
+      } catch (e) {
+        if (/** @type {NodeJS.ErrnoException} */ (e).code === "ENOENT") return p;
+        throw e;
+      }
+    };
+    const found = markedWorktrees(cwd);
+    let failed = found.unread.length;
+    for (const u of found.unread) say("worktrees.markUnread", { id: [u.id], error: u.error });
+    let chosen = found.marked;
+    if (positional.length) {
+      const asked = positional.map((p) => real(resolve(p)));
+      const at = (/** @type {typeof chosen[number]} */ w) => (w.path === null ? null : real(w.path));
+      chosen = chosen.filter((w) => asked.includes(String(at(w))));
+      for (const [i, p] of asked.entries()) {
+        if (chosen.some((w) => at(w) === p)) continue;
+        say("worktrees.notMarked", { path: [positional[i]] });
+        failed++;
+      }
+    } else if (!found.marked.length && !found.unread.length) say("worktrees.none");
+    const top = realpathSync.native(cwd);
+    for (const w of chosen) {
+      const vars = { path: [w.path ?? w.id], mark: w.mark };
+      const done = opts.remove ? removeWorktree(top, w) : { verdict: verdict(top, w) };
+      if ("removed" in done && done.removed) say("worktrees.removed", vars);
+      else if ("error" in done) {
+        const entry = tShown(`worktrees.entry.${done.entry}`, {}, lang);
+        say("worktrees.failed", { ...vars, error: done.error, entry: { shown: entry }, folder: { shown: tShown(`worktrees.folder.${done.folder}`, {}, lang) } });
+        failed++;
+      } else if ("verdict" in done) {
+        const v = done.verdict;
+        if (v.go) say("worktrees.canGo", vars);
+        else if ("unmeasured" in v) say("worktrees.unmeasured", { ...vars, error: v.unmeasured }), failed++;
+        else say("worktrees.kept", { ...vars, why: { shown: tShown(`worktrees.why.${v.why}`, v.vars ?? {}, lang) } });
+      }
+    }
+    if (found.others && !positional.length) say("worktrees.others", { n: found.others });
+    if (failed) err(t("worktrees.incomplete", { n: failed }, lang));
+    return failed ? 1 : 0;
   },
 
   "gate-record"(args) {

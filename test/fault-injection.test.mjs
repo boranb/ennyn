@@ -282,6 +282,19 @@ function stageSecret(repo) {
 }
 
 /**
+ * The cycle's worktrees, in the run's copy under its ignored .claude/worktrees/, so its path names them: one that can
+ * go, one kept for an untracked file, one without the mark. A read or a git call that fails must keep a worktree.
+ * @param {string} repo
+ */
+function worktrees(repo) {
+  const at = (/** @type {string} */ name) => join(repo, ".claude", "worktrees", name);
+  for (const [name, mark] of [["go", true], ["kept", true], ["plain", false]]) {
+    git(["worktree", "add", "-q", "--detach", ...(mark ? ["--lock", "--reason", "ennyn:1"] : []), at(String(name))], { cwd: repo });
+  }
+  writeFileSync(join(at("kept"), "new.txt"), "n\n");
+}
+
+/**
  * @typedef {{ args: string[], noReads?: boolean, cwd?: string, writes?: boolean, setup?: (repo: string) => void, env?: Record<string, string>, first?: boolean, outside?: boolean, hook?: string, input?: (repo: string) => unknown, everyPass?: RegExp }} Case
  *   `cwd` is relative to the repository; a case that writes, or has a setup, runs in a copy of its own.
  *   `env` values are paths relative to the repository. `first`: only the first git call is faulted (the
@@ -403,6 +416,8 @@ const CASES = [
   { args: ["mutate", ".git/mutants.json", "--command", `${NODE} .git/check.mjs`], writes: true },
   { args: ["mutate", "--restore"], writes: true },
   { args: ["push-check"] },
+  { args: ["worktrees"], setup: (repo) => worktrees(repo) },
+  { args: ["worktrees", "--remove"], writes: true, setup: (repo) => worktrees(repo) },
   { args: ["gate-record", "--start", START, "--exit", "0", "--commit", "HEAD"], writes: true },
   { args: ["gate-record", "--start", START, "--exit", "1"], writes: true },
   { args: ["gate-stats"] },

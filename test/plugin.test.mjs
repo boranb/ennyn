@@ -312,6 +312,30 @@ test("plugin: the snapshot script in task-brief.md keeps an unfinished tree in a
   assert.equal(refs(), kept, "and the last snapshot stands");
 });
 
+test("plugin: the cycle's worktrees: the closing removes the marked ones before the push, and the brief's squash commits in Claude Code's shell", () => {
+  const push = String(read("skills/cycle/SKILL.md").split("## 3. End of cycle")[1]?.split("\n").find((l) => l.startsWith("7. **Push:**")));
+  assert.ok(push.indexOf("`ennyn.mjs worktrees --remove`") > 0 && push.indexOf("`ennyn.mjs worktrees --remove`") < push.indexOf("`ennyn.mjs push-check`"), push);
+  // Claude Code's shell sets GIT_EDITOR=true: a commit that waits for its message aborts there (cycle 19).
+  const squash = /`(git reset --soft \$\(git merge-base HEAD <base branch>\) && git commit[^`]*)`/.exec(read("skills/cycle/task-brief.md"))?.[1];
+  assert.ok(squash, "the squash is in the brief");
+  const repo = mkdtempSync(join(tmpdir(), "pl-squash-"));
+  const who = ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"];
+  git(["init", "-q", "-b", "main"], { cwd: repo });
+  for (const [i, msg] of ["base", "one", "two"].entries()) {
+    if (i === 1) git(["checkout", "-q", "-b", "task"], { cwd: repo });
+    writeFileSync(join(repo, `${msg}.txt`), `${msg}\n`);
+    git(["add", "-A"], { cwd: repo });
+    git([...who, "commit", "-q", "-m", msg], { cwd: repo });
+  }
+  const tree = git(["rev-parse", "HEAD^{tree}"], { cwd: repo });
+  const env = { ...process.env, GIT_EDITOR: "true", GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "commit.gpgsign", GIT_CONFIG_VALUE_0: "false" };
+  const run = spawnSync("sh", ["-c", squash.replace("<base branch>", "main").replace("<subject>", "feat: one and two")], { cwd: repo, encoding: "utf8", env });
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(git(["rev-list", "--count", "main..HEAD"], { cwd: repo }), "1");
+  assert.equal(git(["rev-parse", "HEAD^{tree}"], { cwd: repo }), tree);
+  assert.equal(git(["log", "-1", "--format=%s"], { cwd: repo }), "feat: one and two");
+});
+
 test("plugin: the fix label /ennyn:init writes reads every form the commit gate admits as the fix type", () => {
   const line = String(read("skills/init/SKILL.md").split("\n").find((l) => l.startsWith("- `metrics.fixSubject`:")));
   const templates = [...line.matchAll(/`([^`]*<fixType>[^`]*)`/g)].map((m) => m[1]);

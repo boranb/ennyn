@@ -52,6 +52,7 @@ It does not get the author's reasoning. It works in a **folder of its own**, on 
   git update-ref "refs/snapshot/$name" "$commit"
   ```
 
+- **Every worktree the cycle makes carries its mark**, a task's and a mutation run's alike: `git worktree add --lock --reason ennyn:<cycle> …`. Each goes once its agent or run has stopped (what a running process writes after the check goes with the folder): a mutation run's right after the run, while its HEAD is its branch's tip (left to the close after the task amends, only a reflog holds that commit and it is kept as `detached`), a task's when it lands or stops, with `ennyn.mjs worktrees --remove <its path>`; at the close, before the push, `ennyn.mjs worktrees --remove` sweeps the rest. A worktree goes only when removing it loses nothing; the report names each one kept and why (a task that did not land keeps its own: its branch is not merged). Squash onto the base branch with `git reset --soft $(git merge-base HEAD <base branch>) && git commit -m "<subject>"`: a squash by `rebase -i` leaves its in-between commits in that worktree's reflog alone, and keeps it. One without the mark is never touched.
 - **Shell steps chain with `&&`** after a `cd`, never `;`: after a failed `cd` the next step runs in the wrong tree.
 - **Scenario trees are real copies** (`git archive`, a `cp` of plain files), never links into a checkout.
 

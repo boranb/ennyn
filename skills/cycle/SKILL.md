@@ -21,16 +21,16 @@ A critical problem (crash, data loss, auth break, blocker) may replace one core 
 
 ## 2. Task protocol (every task, in order)
 
-The orchestrator (the session running the cycle) keeps the plan, step 7's verdicts and the landing. Each task runs in a fresh agent on a written brief, not a fork of that session; the agent skips step 7 and stops at its commit. Briefs, task states, a host with no subagents: [task-brief.md](task-brief.md).
+The orchestrator (the session running the cycle) keeps the plan, step 7's verdicts and the landing. Each task runs in a fresh agent on a written brief, not a fork of that session; the agent skips step 7 and stops at its commit. Briefs, task states, worktrees, a host with no subagents: [task-brief.md](task-brief.md).
 
 1. **Read** only the relevant files; independent reads go in the **same turn**.
-2. **Design brief** for UI work — [design-brief.md](design-brief.md).
-3. **Impact table** before the first edit when the change touches a shared decision, predicate, gate or accept/reject rule: `ennyn.mjs impact --symbol <name> --files <paths>`, then complete the five rows it asks. Each row is answered by a command's output, never by recall. For heuristic rules, dictionaries and thresholds: build an accept **and** reject corpus and a failing test first. Details: [impact-table.md](impact-table.md).
+2. **Design brief** for UI work: [design-brief.md](design-brief.md).
+3. **Impact table** before the first edit when the change touches a shared decision, predicate, gate or accept/reject rule: `ennyn.mjs impact --symbol <name> --files <paths>`, then answer its five rows. Each row is answered by a command's output, never by recall. For heuristic rules, dictionaries and thresholds: build an accept **and** reject corpus and a failing test first. Details: [impact-table.md](impact-table.md).
 4. **Implement**, matching existing patterns.
 5. **Test:** a new test alone first, its control seen failing once; then the handoff's fast test, lint and typecheck.
 6. **Mutation pass** on the changed files with the handoff's mutation tool; with none (or "not applicable"), hand-pick mutants of the changed lines and run them with `ennyn.mjs mutate <list.json> --command "<fast test>"`, adding `--check "<parse command> {file}"` for files other than JavaScript and JSON. It edits files in place: while a reviewer reads the tree, run it in a separate worktree. Record the first-run result (`killed/total`); write a test for each survivor or justify it as equivalent.
 7. **Review** with the reviewers that match the change: `review.agents` when set, else Ennyn's (correctness, security, data correctness). Give them the task's node, the changed files, the impact table and [finding-schema.md](finding-schema.md). **At most two rounds**; a third only as its Rounds say. For security work the path table replaces the round limit: list every way to reach the protected state first.
-8. **A fix is a new write.** If a fix changes a row of the impact table, update the table and give round two the delta.
+8. **A fix is a new write.** If a fix changes a row of the impact table, update it and give round two the delta.
 9. **Record findings** as you write them: [ledger-row.md](ledger-row.md), class and source per [finding-schema.md](finding-schema.md).
 10. **Sweep** the same pattern project-wide; update the documents the change affects.
 11. **Commit** one task per commit, in Ennyn's convention: it replaces any commit rule in the project's own instructions. Subject `type(scope): text` with a type from `commitMsg.types` when they are set; a repair of an earlier commit uses `commitMsg.fixType` and nothing else does. Text in `commitMsg.language` (else `language`). With `commitMsg.style: terse` the body holds no prose, only the lines below. Detail goes to the graph node. Body lines: `Impact: …` · `Review-Rounds: N` · `Mutation: first a/b · last c/d`. Loosening a gate: ask the user; `User-Approved-Loosening: <key>` only on their plain yes for that key; a task agent stops and reports the keys.
@@ -40,10 +40,10 @@ Never report an unrun test, command or check as done; write `not applicable` ins
 ## 3. End of cycle
 
 1. **Graph:** update every node whose status changed; every new or leftover item, and each brief rule [`### Briefs`](report-formats.md) sends to a node, becomes a node, at the end of the list, dated (`graph.fields.since`).
-2. **Handoff** (`paths.handoff`): what was done, what is next, open risks — each risk with a permanent home (a document that does not rotate). Its commands stay for the next cycle.
+2. **Handoff** (`paths.handoff`): what was done, what is next, open risks, each with a permanent home (a file that never rotates). Its commands stay for the next cycle.
 3. **Convergence:** first append each kept rows file to `paths.findings`. Each `new:` class joins the registry or links to an entry, per [report-formats.md](report-formats.md). Run `ennyn.mjs convergence --cycle <N> --from <HEAD noted at the start>`; paste what it prints, unchanged. The most recurring class becomes a graph node with `mechanization: true` and its class id; if none, write why.
    Show the user what `ennyn.mjs bypass --from <that HEAD>` lists: each bypass with its reason, each key loosened with its line. One that recurs is a gate to fix, not a habit.
 4. **Retire lessons:** in one lesson file touched this cycle, mark each lesson keep / update / merge / delete; delete the prose of any lesson whose rationale now lives in a test or gate.
 5. **Security checks:** `ennyn.mjs deps`, doctor's CI line (none: no CI file), and after step 6's commit `ennyn.mjs leftovers` and the handoff's leftover command (none: unmeasured); each is reported as found, clean or unmeasured (naming what did not run), never clean by default. A finding is fixed now or becomes a graph node.
-6. **Budget:** after the last edit of the cycle, `ennyn.mjs budget --record`; add `--security-audit` only when this cycle's audit was the security audit. Commit the metrics log with the graph and the handoff. Text loaded in every session that grew needs a reason in the report. A repeated rule keeps one copy, in the narrowest file that loads where it is needed.
-7. **Push:** `ennyn.mjs push-check`; state the unpushed count and **ask** for push approval.
+6. **Budget:** after the cycle's last edit, `ennyn.mjs budget --record`; add `--security-audit` only when this cycle's audit was the security audit. Commit the metrics log with the graph and the handoff. Text loaded in every session that grew needs a reason in the report. A repeated rule keeps one copy, in the narrowest file that loads where it is needed.
+7. **Push:** `ennyn.mjs worktrees --remove`; `ennyn.mjs push-check`; state the unpushed count, **ask** for push approval.
