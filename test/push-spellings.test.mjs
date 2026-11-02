@@ -534,7 +534,7 @@ const REFUSED = [
   "echo git push |& sh",
   "command eval 'git push'",
   "git.exe -C . push",
-  // A hash inside an expansion is no comment; an apostrophe in a double-quoted expansion is no quote.
+  // A hash inside an expansion is no comment; to zsh, an apostrophe in a double-quoted expansion is no quote.
   "echo ${x:- # }; git -C . push",
   "echo ${x:-a #b}; git -C . push",
   'echo "${x:-\'}"; git -C . push; echo "\'"',
@@ -818,7 +818,10 @@ test("push reader: a real shell and a real git agree: what is refused reaches a 
       if (at) writeFileSync(join(bin, name), `#!/bin/sh\nexec ${at} "$@"\n`, { mode: 0o755 });
     }
     // Claude Code runs the user's shell, and shells differ here: zsh does not split ${IFS}, macOS's bash 3.2 cannot read
-    // an apostrophe in a here-document inside $(…). A command reaches a push when any shell on this machine takes it there.
+    // an apostrophe in a here-document inside $(…), only zsh reads an apostrophe in "${x:-…}" as a letter, and bash
+    // 5.2.15 ends a here-document inside $(…) at a line that only begins with its word, then stops on a syntax error. A
+    // command reaches a push when any shell on this machine takes it there: with no zsh (Linux), a shape only zsh or an
+    // older bash takes there is not run.
     const shells = ["bash", "zsh"].filter((name) => existsSync(join(bin, name)));
     const hasZsh = shells.includes("zsh");
     const reached = (/** @type {string} */ command) =>
@@ -837,7 +840,7 @@ test("push reader: a real shell and a real git agree: what is refused reaches a 
       });
     let ran = 0;
     for (const c of REFUSED) {
-      if (NOT_RUN.test(c) || (!hasZsh && /^(zsh|git\$\{IFS|\.? ?sh =\(|\. =\(|case x \{|echo x?\(+a|echo <->)/.test(c))) continue;
+      if (NOT_RUN.test(c) || (!hasZsh && /^(zsh|git\$\{IFS|\.? ?sh =\(|\. =\(|case x \{|echo x?\(+a|echo <->|echo "\$\{[xX]:-[^$}]*')|\nEOFs /.test(c))) continue;
       assert.equal(reached(c), true, `refused, but no shell reaches a push: ${JSON.stringify(c)}`);
       ran++;
     }
