@@ -157,7 +157,8 @@
         "new: check runs only when someone asks",
         "new: test excuses the case it names",
         "new: a required record satisfied by its label alone",
-        "new: refusal text names a way around"
+        "new: refusal text names a way around",
+        "new: gate test added with no guard"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, it holds inside the listed gates only. Named in cycle 5."
     },
@@ -201,7 +202,8 @@
         "new: unrecognised record skipped so an older record answers",
         "new: failure depends on the reading mode",
         "new: one unread callee candidate ends the whole callee round",
-        "new: brought caller's reach through an unreadable HEAD callee is said not refused"
+        "new: brought caller's reach through an unreadable HEAD callee is said not refused",
+        "new: a name re-encoded on its way to another program"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, reviewers found more shapes after it landed. Named in cycle 7."
     },
@@ -287,7 +289,8 @@
         "new: weaker twin of an existing escaping rule",
         "new: guard applied to one of two code paths that resolve the same input",
         "new: report text outside the catalog",
-        "new: failure line outside the said pattern"
+        "new: failure line outside the said pattern",
+        "new: guard dropped when work moves from hook to agent"
       ],
       "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict; no gate, both nodes are open. Named in cycle 8 as one-site escape or twin fix."
     },
@@ -315,7 +318,8 @@
         "new: rule shaped by this repository shipped to every project",
         "new: a duplicate check reads only the entries that passed every other check",
         "new: a check excludes its own strongest case",
-        "new: liveness check refuses history"
+        "new: liveness check refuses history",
+        "new: a write its own reader refuses"
       ],
       "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict; nothing has recounted it since. Named in cycle 9."
     },
@@ -490,7 +494,8 @@
         "new: merge of two names left unrecorded",
         "new: claim written down before it was measured",
         "new: absolute promise wider than the code",
-        "new: report line reads as a defect"
+        "new: report line reads as a defect",
+        "new: narrowing applied past the case it was measured on"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet."
     },
@@ -569,7 +574,8 @@
         "new: last of several results read as the whole",
         "new: honest failure read as content",
         "new: lossy name decoding collides two staged names",
-        "new: gate scoped to a file beside another"
+        "new: gate scoped to a file beside another",
+        "new: one event recorded twice counted twice"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate.",
       "gates": [
@@ -728,7 +734,8 @@
       "says": "A list whose elements stand for one unit each is given a block of several, so whatever counts, joins or escapes by element reads it wrong.",
       "state": "open",
       "linked": [
-        "new: list element holds several output lines"
+        "new: list element holds several output lines",
+        "new: inserted sentence splits a list so its later items attach to the wrong subject"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate. Its own entry: a singleton that fits nothing else."
     },
