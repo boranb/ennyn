@@ -309,6 +309,15 @@ const CASES = [
   { args: ["init-scan", "--json"] },
   // The origin's URL is part of the report.
   { args: ["init-scan"], setup: (repo) => git(["remote", "set-url", "origin", "https://github.com/acme/demo.git"], { cwd: repo }) },
+  // Nothing on disk and an empty index on a branch with no commit: whether the project is new is read from the log of every ref.
+  {
+    args: ["init-scan"],
+    setup: (repo) => {
+      git(["checkout", "-q", "--orphan", "fresh"], { cwd: repo });
+      git(["rm", "-r", "-q", "--cached", "."], { cwd: repo });
+      git(["clean", "-f", "-d", "-x", "-q"], { cwd: repo });
+    },
+  },
   { args: ["doctor"] },
   // The project directory comes from git; from a subdirectory a fallback reads no config.
   { args: ["doctor"], cwd: "src", first: true },

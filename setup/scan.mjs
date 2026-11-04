@@ -10,9 +10,10 @@
  * production path.
  */
 
-import { readdirSync, realpathSync, statSync } from "node:fs";
+import { lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { gone, present, readIfThere } from "../core/files.mjs";
-import { join, relative, resolve, posix, sep } from "node:path";
+import { dirname, join, relative, resolve, posix, sep } from "node:path";
+import { homedir } from "node:os";
 import { git, gitError, gitMaybe, gitRun, headCommit, headFile, rawChange, repoPath } from "../core/git.mjs";
 import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
 import { literalGlob } from "../core/glob.mjs";
@@ -487,7 +488,7 @@ function countRules(cwd) {
 
 /**
  * What was not measured, and why: a catalog key (`scan.why.<reason>`), so a report reads in its language.
- * @typedef {{ path?: string, reason: string, name?: string }} Unmeasured
+ * @typedef {{ path?: string, reason: string, name?: string, n?: number }} Unmeasured
  */
 
 /** Files a test or lint command is read from, and those a mutation tool is. */
@@ -1010,10 +1011,247 @@ export function agentSetup(cwd, files, { tracked = false } = {}) {
   };
 }
 
+/** Commits read to tell a new project, which has a handful: one past them is a history not read whole (unmeasured). */
+export const NEW_HISTORY = 100;
+/** Entries the walk of .claude/ and .ennyn/ reads: past them it stops, and says so (unmeasured). */
+export const NEW_ENTRIES = 1000;
 /**
- * @param {{ cwd: string, env?: NodeJS.ProcessEnv }} opts
+ * Folders the walk for a repository below reads to NEW_DEPTH folders down, files not counted: past them it stops,
+ * and says so. Measured: npm's own node_modules (153 packages) as a project's, 412 folders (WSL) and 436 (Windows,
+ * 141 ms); the ennyn checkout with its node_modules, 332 to 364; a Python venv, 6. A node_modules of some 3,500
+ * packages fits.
  */
-export function scanProject({ cwd, env = process.env }) {
+export const NEW_FOLDERS = 10000;
+/** Folders down the scan looks for a repository below a folder outside every repository: `git init` there would take it in. */
+export const NEW_DEPTH = 3;
+// A README or a licence: the stem in any case, then, as written, a version (COPYING3), upper-case words after "-" with
+// dotted numbers (LICENSE-MIT, LICENSE-APACHE-2.0), a language before the extension (README.tr.md, README.zh_CN.md),
+// and a text extension in any case. A source file named after its subject (readme_generator.py, README.sh, LICENSE.PY,
+// README-GEN.JS) is none of these; an upper-case word after "." (LICENSE.MIT) may be an extension, so it is not either.
+const NEW_STEM = /^(readme|licen[cs]e|copying|unlicense)/i;
+const NEW_STEM_VARIANT = /^[0-9]*(?:-[A-Z0-9]+|\.[0-9]+)*(?:[-_.][a-z]{2}(?:[-_][A-Za-z]{2,4})?(?=\.))?/;
+const NEW_TEXT = /^(?:\.(?:md|markdown|txt|text|rst|adoc|asciidoc|org|textile|rdoc|pod))?$/i;
+// .gitignore, GNU's licence files of that shape, and the agent instruction files the scan reads at the top, by the
+// exact name their agent asks for.
+const NEW_NAMES = new Set([".gitignore", "COPYING.LESSER", "COPYING.LIB", ...[...ALWAYS_FILES, ...OTHER_FILES].filter((f) => !f.includes("/"))]);
+// In .claude/: Claude Code's settings and its Markdown (instructions, rules, commands, agents, skills); a hook or a
+// skill's script is code. At the top of .ennyn/: Ennyn's data (config, graph, handoff, logs); a graph module is code.
+const NEW_CLAUDE = /^\.claude\/(?:settings(?:\.local)?\.json|(?:[^/]+\/)*[^/]+\.md)$/;
+const NEW_ENNYN = /^\.ennyn\/[^/]+\.(?:json|jsonl|md)$/;
+/** The folders whose files the rule reads one by one. */
+const NEW_DIRS = [".claude", ".ennyn"];
+
+/**
+ * Whether a new project may hold a path (repository-relative, "/"-separated, as git stores it): at the top a README,
+ * a licence, .gitignore or an agent instruction file; in .claude/ its settings and Markdown; at the top of .ennyn/
+ * its JSON and Markdown. Every other name is not new, a dependency manifest (package.json, go.mod, a .csproj) and a
+ * source folder or file among them: unsure is not new, so no list of manifests is needed, and none can miss one.
+ * @param {string} path
+ */
+export function newProjectPath(path) {
+  if (path.includes("/")) return NEW_CLAUDE.test(path) || NEW_ENNYN.test(path);
+  const stem = NEW_STEM.exec(path);
+  if (stem === null) return NEW_NAMES.has(path);
+  const rest = path.slice(stem[0].length);
+  return NEW_TEXT.test(rest.slice(/** @type {RegExpExecArray} */ (NEW_STEM_VARIANT.exec(rest))[0].length)) || NEW_NAMES.has(path);
+}
+
+/**
+ * How a path is named among what is not new: whole in .claude/ or .ennyn/, else its first part, with a slash when it
+ * is a folder.
+ * @param {string} path
+ */
+const foundName = (path) => (NEW_DIRS.some((d) => path.startsWith(`${d}/`)) || !path.includes("/") ? path : `${path.slice(0, path.indexOf("/"))}/`);
+
+/**
+ * The paths the last `limit` commits of every ref change (`--all` but notes, whose trees name objects, not files:
+ * each branch, tag and remote branch, a detached HEAD, and every stash entry, older ones from the stash's reflog; a
+ * merge against its first parent, so what only the merge brought counts; a submodule's path counts too), and how many
+ * commits were read. Every field ends at a NUL, as recentCommits reads them. A git that fails throws.
+ * @param {string} cwd @param {number} limit
+ */
+function historyPaths(cwd, limit) {
+  const stash = gitMaybe(["rev-parse", "--verify", "-q", "refs/stash"], { cwd, absent: [1] });
+  const stashes = stash ? git(["log", "-g", "--format=%H", `-n${limit}`, "refs/stash"], { cwd }).split("\n").filter(Boolean) : [];
+  const args = ["log", "-z", "--exclude=refs/notes/*", "--all", ...stashes, "--diff-merges=first-parent", "--no-renames", "--ignore-submodules=none", `-n${limit}`, "--raw", "--format=%H"];
+  const fields = git(args, { cwd }).split("\0");
+  /** @type {Set<string>} */
+  const paths = new Set();
+  let commits = 0;
+  for (let i = 0; i + 1 < fields.length; commits++) {
+    if (!/^[0-9a-f]{40,64}$/.test(fields[i])) throw new Error(`git log printed a field that is no commit: ${JSON.stringify(fields[i].slice(0, 80))}`);
+    for (i++; i + 1 < fields.length && rawChange(fields[i]); i += 2) paths.add(fields[i + 1]);
+  }
+  return { commits, paths };
+}
+
+/**
+ * The first folder above `dir` that holds a `.git` of any kind (a folder, a file, a link), up to the root: past
+ * GIT_CEILING_DIRECTORIES and filesystem boundaries, where git stops looking, and whether git can read it or not.
+ * `ceiling` is a folder the walk does not look at or above, as git's ceilings: the tests' temporary folder, which
+ * test/hostile.mjs puts inside a repository. A look that fails throws.
+ * @param {string} dir a real path @param {string} [ceiling]
+ */
+function gitAbove(dir, ceiling) {
+  for (let d = dirname(dir); d !== ceiling; d = dirname(d)) {
+    if (present(join(d, ".git"), lstatSync)) return d;
+    if (dirname(d) === d) return null;
+  }
+  return null;
+}
+
+/**
+ * The folders below `dir` (which holds no `.git` itself: newProject looks first), breadth first in name order to
+ * NEW_DEPTH folders down, for the first that holds a `.git` of any kind: `{ path }` ("/"-separated, with its
+ * slash), `{ cut: true }` once NEW_FOLDERS folders are met without one (files are not counted: it looks for folders
+ * and a `.git`), `{ path, code }` for a folder it cannot list (no permission, an ACL), null when there is none. Links
+ * are not followed; a folder gone while it walks holds nothing.
+ * @param {string} dir
+ * @returns {{ path: string, code?: string } | { cut: true } | null}
+ */
+function gitBelow(dir) {
+  let folders = 0;
+  /** @type {[string, number][]} */
+  let level = [["", 0]];
+  while (level.length) {
+    /** @type {[string, number][]} */
+    const next = [];
+    for (const [rel, depth] of level) {
+      let entries;
+      try {
+        entries = readdirSync(join(dir, rel), { withFileTypes: true });
+      } catch (err) {
+        if (gone(err)) continue;
+        return { path: rel, code: String(/** @type {NodeJS.ErrnoException} */ (err).code ?? "error") };
+      }
+      for (const e of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+        if (e.name === ".git") return { path: rel };
+        if (!e.isDirectory()) continue;
+        if (++folders > NEW_FOLDERS) return { cut: true };
+        if (depth < NEW_DEPTH) next.push([`${rel}${e.name}/`, depth + 1]);
+      }
+    }
+    level = next;
+  }
+  return null;
+}
+
+/**
+ * Why `git init` is not proposed in `dir`, a folder outside every repository: a filesystem or drive root (as given or
+ * as its real path: a `subst` drive's root is a folder's real path), the home folder, a repository below it, or more
+ * entries below than were read; null when none holds.
+ * @param {string} dir a real path @param {string} given the path the scan was given
+ * @returns {Unmeasured | null}
+ */
+function gitInitBlock(dir, given) {
+  if (dirname(dir) === dir || dirname(given) === given) return { reason: "root" };
+  let home = null;
+  try {
+    home = realpathSync.native(homedir());
+  } catch (err) {
+    if (!gone(err)) throw err;
+  }
+  if (dir === home) return { reason: "home" };
+  const below = gitBelow(dir);
+  if (below === null) return null;
+  if ("cut" in below) return { n: NEW_FOLDERS, reason: "belowCap" };
+  return below.code ? { name: below.code, path: below.path, reason: "belowUnread" } : { path: below.path, reason: "below" };
+}
+
+/**
+ * Whether the project is new (graph node greenfield-detect): every name at the top of the folder but `.git` (each
+ * file of .claude/ and .ennyn/, read to NEW_ENTRIES entries), every tracked path and every path the last NEW_HISTORY
+ * commits of any ref changed is one newProjectPath allows; no commit at all is new too. The history is read only when
+ * the folder and the index hold nothing else. A command started in a folder below the work tree's top that the tree
+ * tracks nothing in, or in a folder outside every repository git reads below a folder holding a `.git` (`within`: the
+ * top, or that folder), is in another project's tree: not new, no `git init`, nothing of that tree read as its own.
+ * Outside a repository `gitInit` proposes one, unless (`noGitInit`, its reason) a `.git` here git does not read
+ * (`gitUnread`), GIT_DIR set in the environment the user's `git init` runs in (`gitEnv`), a filesystem or drive root,
+ * the home folder, a repository below (`below`) or more entries below than were read (`belowCap`). What could not be
+ * measured is never new (`unmeasured`): a history past NEW_HISTORY commits or cut (a shallow clone), the agent folders
+ * past NEW_ENTRIES entries (`walkCap`), `gitUnread`, `gitEnv`. `found` names what is not new, ten of them, `more` the
+ * rest. A git or a listing that fails throws. On a disk that folds case a repository folder spelled `.GIT` is named in
+ * `found`: not new, in the safe direction, with that name as the reason.
+ * @param {string} cwd the project's top: the work tree's, or the folder outside a repository
+ * @param {{ repo: boolean, files: string[], from: string, env?: NodeJS.ProcessEnv, ceiling?: string }} opts `files`: the
+ *   tracked paths; `from`: where the command started; `env`: the one the user's commands run in; `ceiling`: gitAbove's
+ */
+export function newProject(cwd, { repo, files, from, env = process.env, ceiling }) {
+  /** @type {Unmeasured[]} */
+  const unmeasured = [];
+  /** @type {Unmeasured | null} */
+  let noGitInit = null;
+  /** @type {string | null} */
+  let within = null;
+  /** @type {Set<string>} */
+  const found = new Set();
+  const verdict = () => {
+    const list = [...found].sort();
+    const result = { new: !list.length && !unmeasured.length && !within, found: list.slice(0, MAX_LISTED), more: Math.max(0, list.length - MAX_LISTED) };
+    return { result: { ...result, gitInit: !repo && !within && !noGitInit, noGitInit, within }, unmeasured };
+  };
+  const real = realpathSync.native(cwd);
+  if (repo) {
+    const prefix = repoPath("--show-prefix", { cwd: from }) ?? "";
+    if (prefix && !files.some((f) => f.startsWith(prefix))) return (within = cwd), verdict();
+  } else {
+    const unread = (/** @type {Unmeasured} */ u) => (unmeasured.push(u), (noGitInit = u), verdict());
+    if (env.GIT_DIR) return unread({ name: "GIT_DIR", reason: "gitEnv" });
+    if (present(join(cwd, ".git"), lstatSync)) return unread({ path: ".git", reason: "gitUnread" });
+    within = gitAbove(real, ceiling);
+    if (within) return verdict();
+  }
+  let walked = 0;
+  /**
+   * Each file of an agent folder, to NEW_ENTRIES entries; false once past them. A folder it cannot list is said, with
+   * its errno, and the walk goes on (one gone while it walks holds nothing).
+   * @param {string} rel @returns {boolean}
+   */
+  const walk = (rel) => {
+    let entries;
+    try {
+      entries = readdirSync(join(cwd, rel), { withFileTypes: true });
+    } catch (err) {
+      if (!gone(err)) unmeasured.push({ name: String(/** @type {NodeJS.ErrnoException} */ (err).code ?? "error"), path: rel, reason: "walkUnread" });
+      return true;
+    }
+    for (const e of entries) {
+      if (++walked > NEW_ENTRIES) return false;
+      const path = `${rel}/${e.name}`;
+      if (e.isDirectory() && e.name !== ".git") {
+        if (!walk(path)) return false;
+      } else if (e.isDirectory() || !newProjectPath(path)) found.add(e.isDirectory() ? `${path}/` : path);
+    }
+    return true;
+  };
+  /** @type {string[]} */
+  const agentDirs = [];
+  for (const e of readdirSync(cwd, { withFileTypes: true })) {
+    if (e.name === ".git") continue;
+    if (e.isDirectory() && NEW_DIRS.includes(e.name)) agentDirs.push(e.name);
+    else if (e.isDirectory() || !newProjectPath(e.name)) found.add(e.isDirectory() ? `${e.name}/` : e.name);
+  }
+  for (const f of files) if (!newProjectPath(f)) found.add(foundName(f));
+  // The agent folders are walked only while nothing else decides: what they hold could not change the verdict then.
+  for (const d of found.size ? [] : agentDirs) if (walked <= NEW_ENTRIES && !walk(d)) unmeasured.push({ reason: "walkCap", n: NEW_ENTRIES });
+  if (repo && !found.size && !unmeasured.length) {
+    const history = historyPaths(cwd, NEW_HISTORY + 1);
+    for (const p of history.paths) if (!newProjectPath(p)) found.add(foundName(p));
+    if (!found.size && history.commits > NEW_HISTORY) unmeasured.push({ reason: "historyCap", n: NEW_HISTORY });
+    else if (!found.size && git(["rev-parse", "--is-shallow-repository"], { cwd }) === "true") unmeasured.push({ reason: "shallow" });
+  }
+  if (!repo) noGitInit = gitInitBlock(real, resolve(cwd));
+  // A walk below that stopped or could not list a folder is a measurement that did not finish: said as such.
+  if (noGitInit && (noGitInit.reason === "belowCap" || noGitInit.reason === "belowUnread")) unmeasured.push(noGitInit);
+  return verdict();
+}
+
+/**
+ * @param {{ cwd: string, env?: NodeJS.ProcessEnv, from?: string, ceiling?: string }} opts `from`: the folder the command started
+ *   in, at or below `cwd` (the project's top); a work tree that tracks nothing there is no project of its own (newProject).
+ *   `ceiling`: a folder the walk up for a `.git` does not look at or above (tests); the CLI gives none
+ */
+export function scanProject({ cwd, env = process.env, from = cwd, ceiling }) {
   /** @type {any} */
   let config = DEFAULTS;
   /** @type {string | null} */
@@ -1036,6 +1274,7 @@ export function scanProject({ cwd, env = process.env }) {
   const repo = repoPath("--git-dir", { cwd }) !== null;
   const files = repo ? trackedFiles(cwd) : [];
   const commits = repo ? recentCommits(cwd) : [];
+  const fresh = newProject(cwd, { repo, files, from, env, ceiling });
   const graphPath = resolve(cwd, config.paths.graph);
   const handoffPath = resolve(cwd, config.paths.handoff);
   const setup = agentSetup(cwd, files);
@@ -1055,8 +1294,10 @@ export function scanProject({ cwd, env = process.env }) {
   /** @type {Record<string, Unmeasured[]>} */
   const unmeasured = { ...declared.unmeasured };
   if (!repo) unmeasured.bans = [{ reason: "noRepo" }];
+  if (fresh.unmeasured.length) unmeasured.newProject = fresh.unmeasured;
   return {
     repository: repo,
+    newProject: fresh.result,
     config: { path: configPath, loaded, problems: problems.map((p) => bounded(p, PROBLEM_MAX)) },
     metrics: { excludeRe: patterns.excludeRe, testRe: patterns.testRe },
     graph: { path: graphPath, exists: present(graphPath), exports: config.graph.exports },

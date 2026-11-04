@@ -468,6 +468,15 @@ test("plugin: Claude Code keeps the repository's ask rules as one file: the reco
   }
 });
 
+test("plugin: /ennyn:init asks for the fast test on every path: the interview never skips it, and the new-project path asks it alone of question 3", () => {
+  assert.ok(read("skills/init/SKILL.md").includes("Skip a question the survey has nothing for, but never the fast test."), "the interview");
+  const step = String(read("skills/init/new-project.md").split("\n").find((l) => l.startsWith("3. **New**")));
+  assert.ok(step.includes("From 3 ask only for the fast test"), step);
+  assert.ok(step.includes('written to `commands.fastTest` (`{ "none": "<why>" }` for none)'), step);
+  // A new project's survey is empty: a rule that skips question 3 whole would leave doctor's ✗ for the agent to fill unasked.
+  assert.doesNotMatch(step, /Skip 3\b/, step);
+});
+
 test("plugin: /ennyn:init offers what destroys or installs apart, writes none unasked, and its report says what these rules cannot do", () => {
   const gates = read("skills/init/gates.md");
   assert.ok(read("skills/init/SKILL.md").includes("`agentSetup.offered`"), "the skill sends init to the list");

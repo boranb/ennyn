@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync, symlinkSync, chmodSync, rmSync, utimesSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, writeFileSync, mkdirSync, symlinkSync, chmodSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, delimiter, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -309,6 +309,557 @@ test("scan: outside a repository and with a broken config it reports, it does no
   assert.equal(bad.config.loaded, true, "the config loaded; only one pattern was replaced");
   put(dir, { ".ennyn/config.json": "null" });
   assert.match(scanProject({ cwd: dir, env: {} }).config.problems.join(), /must hold a JSON object/);
+});
+
+/** git's identity for a corpus commit, and nothing a user's setup could add. */
+const WHO = ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"];
+/** A directory holding `files`, in no repository. @param {Record<string, string>} [files] @param {string} [at] */
+function folder(files = {}, at = tmpdir()) {
+  const dir = mkdtempSync(join(at, "en-new-"));
+  put(dir, files);
+  return dir;
+}
+/** Everything in `dir` committed. @param {string} dir @param {string} [message] */
+function commitAll(dir, message = "c") {
+  git(["add", "-A"], { cwd: dir });
+  git([...WHO, "commit", "-q", "--allow-empty", "-m", message], { cwd: dir });
+}
+/** A folder made with its parents. @param {string} path */
+function made(path) {
+  mkdirSync(path, { recursive: true });
+  return path;
+}
+/** A repository whose one commit holds `files`. @param {Record<string, string>} files @param {string} [dir] */
+function committed(files, dir = folder()) {
+  put(dir, files);
+  git(["init", "-q", "-b", "main"], { cwd: dir });
+  commitAll(dir);
+  return dir;
+}
+/**
+ * A repository of `n` commits that each rewrite README.md, written by git fast-import, nothing checked out: the
+ * oldest also adds `first`, the next removes them.
+ * @param {number} n @param {string[]} [first]
+ */
+function history(n, first = []) {
+  const dir = folder();
+  git(["init", "-q", "-b", "main"], { cwd: dir });
+  const data = (/** @type {string} */ s) => `data ${Buffer.byteLength(s)}\n${s}\n`;
+  const extra = (/** @type {number} */ i) => (i === 0 ? first.map((p) => `M 100644 inline ${p}\n${data("x\n")}`).join("") : i === 1 ? first.map((p) => `D ${p}\n`).join("") : "");
+  const stream = many(n, (i) => `commit refs/heads/main\ncommitter t <t@t> ${1700000000 + i} +0000\n${data(`c${i}`)}M 100644 inline README.md\n${data(`${i}\n`)}${extra(i)}\n`).join("");
+  git(["fast-import", "--quiet"], { cwd: dir, input: stream });
+  return dir;
+}
+/**
+ * test/hostile.mjs puts the temporary folder inside a repository, as a user's may be: the scan's walk up for a `.git`
+ * stops below it here, so a folder in it can be outside every repository. The test of the walk itself passes none.
+ */
+const CEIL = realpathSync.native(tmpdir());
+/**
+ * The scan's new-project verdict with what it left unmeasured.
+ * @param {string} dir @param {string} [from] @param {{ ceiling?: string | null, env?: Record<string, string> }} [opts] `ceiling` null: none
+ */
+const newVerdict = (dir, from, { ceiling = CEIL, env = {} } = {}) => {
+  const res = scanProject({ cwd: dir, env, ...(from === undefined ? {} : { from }), ...(ceiling === null ? {} : { ceiling }) });
+  return { ...res.newProject, unmeasured: res.unmeasured.newProject ?? [] };
+};
+const NEW = { new: true, found: [], more: 0, gitInit: false, noGitInit: null, within: null, unmeasured: [] };
+/** Not new, for what was found. @param {string[]} found @param {number} [more] */
+const notNew = (found, more = 0) => ({ new: false, found, more, gitInit: false, noGitInit: null, within: null, unmeasured: [] });
+/** The folder above `dir` that holds a `.git`, found by a walk of the test's own; null: none up to the root. @param {string} dir */
+function gitAboveHere(dir) {
+  for (let d = dirname(realpathSync.native(dir)); ; d = dirname(d)) {
+    if (existsSync(join(d, ".git"))) return d;
+    if (dirname(d) === d) return null;
+  }
+}
+
+test("new project: a README, a licence, .gitignore, agent instruction files, .claude/ settings and Markdown and .ennyn/ data are all a new project holds; any other name is not new (corpus, accept and reject)", async () => {
+  const { newProjectPath } = await import("../setup/scan.mjs");
+  // What `gh repo create --add-readme --license --gitignore` and a first agent session leave, in the spellings projects use.
+  const yes = [
+    "README", "README.md", "readme.md", "Readme.rst", "README.markdown", "readme.txt", "README.tr.md", "README_zh.md", "README-ja.md", "README.zh-CN.md", "README.MD", "README.TXT",
+    "README.zh_CN.md", "README_zh-CN.md", "README.pt-BR.md", "README.zh-Hans.md", "README.adoc", "README.org", "README.textile", "README.rdoc", "README.pod",
+    "LICENSE", "LICENSE.txt", "LICENSE-MIT", "LICENSE-APACHE", "LICENSE-APACHE-2.0", "LICENSE-APACHE-2.0.txt", "LICENSE-2.0.txt", "LICENSE-THIRD-PARTY", "LICENSE-MIT.txt", "LICENCE", "licence.md",
+    "COPYING", "COPYING3", "COPYING.LESSER", "COPYING.LIB", "UNLICENSE", "UNLICENSE.txt",
+    ".gitignore", "CLAUDE.md", "CLAUDE.local.md", "AGENTS.md", "GEMINI.md", ".cursorrules", "CONTRIBUTING.md",
+    ".claude/settings.json", ".claude/settings.local.json", ".claude/CLAUDE.md", ".claude/rules/a.md", ".claude/skills/x/SKILL.md", ".claude/agents/a.md", ".claude/commands/x/go.md",
+    ".ennyn/config.json", ".ennyn/graph.json", ".ennyn/handoff.md", ".ennyn/metrics.jsonl",
+  ];
+  // Manifests and scaffolds of each ecosystem, source and test folders, and names a new project may hold but the rule cannot tell from work: unsure is not new.
+  const no = [
+    "package.json", "package-lock.json", "pyproject.toml", "requirements.txt", "setup.py", "go.mod", "Cargo.toml", "Gemfile", "pom.xml", "build.gradle.kts", "App.csproj", "CMakeLists.txt", "Makefile", "Dockerfile", ".python-version",
+    "main.py", "index.js", "index.html", "src/main.rs", "lib/a.rb", "app/page.tsx", "docs/README.md", "test/a.test.js", "node_modules/a/index.js",
+    ".github/workflows/ci.yml", ".github/copilot-instructions.md", ".vscode/settings.json", ".idea/workspace.xml", ".gitattributes", ".gitmodules", ".editorconfig", ".env", ".mcp.json", ".DS_Store", "notes.txt", "CHANGELOG.md",
+    // An agent file in another case is no name the agent asks for; a stem that runs on, and an allowed name used as a folder.
+    "claude.md", "Claude.md", "agents.md", "READMEFIRST", "THIRD_PARTY_LICENSE.txt", "MY-README.md", "LICENSES/MIT.txt", "readme/x.md", "README.md/x", ".claude", ".ennyn", "x/.gitignore", "x/CLAUDE.md", ".claudex/a", "a/.claude/b",
+    // Source files named after their subject (review round 1): the stem with a word or an extension that is no text.
+    "readme_generator.py", "license_check.go", "copying.c", "README.sh", "README.js", "LICENSE-checker.js", "readme.py", "README.txt.bak", "README.tr.html", "LICENSE.mit.js",
+    // The same in upper case (review round 2), and a variant before a code extension.
+    "README.SH", "README.BAT", "LICENSE.PY", "LICENSE-CHECK.PY", "README-GEN.JS", "COPYING.C", "README-2.JS", "LICENSE-MIT.PY",
+    // Names a licence or README may have that the rule cannot tell from code by shape: unsure is not new.
+    "LICENSE.MIT", "LICENSE.mit", "LICENSE.apache2", "README.mdx", "README.html", "COPYING3.LIB", "README_CN.md",
+    // Code and data inside the agent folders: a hook, a skill's script, a manifest, a repository, an agent worktree's code, a graph module.
+    ".claude/hooks/format.py", ".claude/skills/deploy/scripts/run.sh", ".claude/package.json", ".claude/.git", ".claude/worktrees/x/src/a.js", ".claude/.md", ".claude/settings.json.bak",
+    ".ennyn/graph.mjs", ".ennyn/x/y.json", ".ennyn/.git",
+  ];
+  for (const p of yes) assert.equal(newProjectPath(p), true, `new: ${p}`);
+  for (const p of no) assert.equal(newProjectPath(p), false, `not new: ${p}`);
+});
+
+test("new project: init-scan reads the disk, the index and the last commits of every ref; outside a repository it proposes git init (corpus)", () => {
+  // Accept: nothing yet, or only what a new repository and a first agent session hold.
+  assert.deepEqual(newVerdict(folder()), { ...NEW, gitInit: true });
+  const empty = folder();
+  git(["init", "-q"], { cwd: empty });
+  assert.deepEqual(newVerdict(empty), NEW, "an empty git init");
+  const made = committed({ "README.md": "# x\n", LICENSE: "MIT\n", ".gitignore": "node_modules/\n", "CLAUDE.md": "rules\n" });
+  assert.deepEqual(newVerdict(made), NEW, "README, LICENSE, .gitignore, CLAUDE.md committed");
+  const clone = join(folder(), "clone");
+  git(["clone", "-q", made, clone], { cwd: made });
+  assert.deepEqual(newVerdict(clone), NEW, "a clone: the remote's refs hold the same");
+  const session = folder({ ".claude/settings.local.json": "{}", ".claude/agents/a.md": "a", "readme.md": "x", "LICENSE-MIT": "x", "COPYING.LESSER": "x", "AGENTS.md": "x", "GEMINI.md": "x", ".cursorrules": "x", "CONTRIBUTING.md": "x", "CLAUDE.local.md": "x", ".ennyn/config.json": "{}" });
+  assert.deepEqual(newVerdict(session), { ...NEW, gitInit: true }, "every allowed name, in no repository");
+  const again = committed({ "README.md": "# x\n", ".ennyn/graph.json": "{}", ".claude/rules/a.md": "a\n" });
+  put(again, { "README.md": "# y\n" });
+  commitAll(again);
+  assert.deepEqual(newVerdict(again), NEW, "a README rewritten, init's own files committed");
+
+  // Reject: a manifest, a source folder or a source file, now or only in the past, on any ref.
+  assert.deepEqual(newVerdict(committed({ "README.md": "# x\n", "package.json": "{}" })), notNew(["package.json"]));
+  assert.deepEqual(newVerdict(committed({ "src/main.py": "print(1)\n" })), notNew(["src/"]));
+  assert.deepEqual(newVerdict(folder({ "main.py": "print(1)\n" })), { ...notNew(["main.py"]), gitInit: true }, "a source file at the top, in no repository");
+  const gone = committed({ "README.md": "# x\n", "src/a.js": "x\n" });
+  rmSync(join(gone, "src"), { recursive: true });
+  commitAll(gone);
+  assert.deepEqual(newVerdict(gone), notNew(["src/"]), "a folder only the history holds");
+  const orphan = committed({ "src/a.js": "x\n" });
+  git(["checkout", "-q", "--orphan", "fresh"], { cwd: orphan });
+  git(["rm", "-r", "-q", "--cached", "."], { cwd: orphan });
+  rmSync(join(orphan, "src"), { recursive: true });
+  put(orphan, { "README.md": "# x\n" });
+  commitAll(orphan);
+  assert.deepEqual(newVerdict(orphan), notNew(["src/"]), "another branch holds code");
+  // A merge's own change, read against its first parent: here only the merge ever held x.js.
+  const merged = committed({ "README.md": "# x\n" });
+  git(["checkout", "-q", "-b", "side"], { cwd: merged });
+  put(merged, { LICENSE: "MIT\n" });
+  commitAll(merged);
+  git(["checkout", "-q", "main"], { cwd: merged });
+  git([...WHO, "merge", "-q", "--no-ff", "--no-commit", "side"], { cwd: merged });
+  put(merged, { "x.js": "x\n" });
+  commitAll(merged, "merge");
+  git(["rm", "-q", "--cached", "x.js"], { cwd: merged });
+  rmSync(join(merged, "x.js"));
+  assert.deepEqual(newVerdict(merged), notNew(["x.js"]), "a file only a merge brought");
+  const ignored = committed({ "README.md": "# x\n", ".gitignore": "node_modules/\n" });
+  put(ignored, { "node_modules/a/index.js": "x\n" });
+  assert.deepEqual(newVerdict(ignored), notNew(["node_modules/"]), "an ignored folder is still there");
+  const staged = committed({ "README.md": "# x\n" });
+  put(staged, { "app.js": "x\n" });
+  git(["add", "app.js"], { cwd: staged });
+  rmSync(join(staged, "app.js"));
+  assert.deepEqual(newVerdict(staged), notNew(["app.js"]), "staged, then gone from the disk: the index holds it");
+  // Named in order, whichever reader found each: the disk's z.txt before the index's app.js.
+  put(staged, { "z.txt": "x\n" });
+  assert.deepEqual(newVerdict(staged), notNew(["app.js", "z.txt"]));
+  // Once the folder or the index decides, the history is not read: its names are not listed.
+  const decided = committed({ "package.json": "{}", "old.js": "x\n" });
+  rmSync(join(decided, "old.js"));
+  commitAll(decided);
+  assert.deepEqual(newVerdict(decided), notNew(["package.json"]));
+  // Unsure is not new; a folder is named with its slash, an allowed name that is a folder is a folder.
+  const unsure = folder({ ".github/workflows/ci.yml": "on: push\n", ".vscode/settings.json": "{}", ".DS_Store": "", ".gitattributes": "* text\n", "notes.txt": "x", "claude.md": "x" });
+  assert.deepEqual(newVerdict(unsure), { ...notNew([".DS_Store", ".gitattributes", ".github/", ".vscode/", "claude.md", "notes.txt"]), gitInit: true });
+  const shapes = folder();
+  mkdirSync(join(shapes, "README.md"));
+  mkdirSync(join(shapes, "src"));
+  assert.deepEqual(newVerdict(shapes), { ...notNew(["README.md/", "src/"]), gitInit: true }, "an empty src/ is a source folder");
+  const many12 = folder(Object.fromEntries(many(12, (i) => [`${String.fromCharCode(97 + i)}.txt`, "x"])));
+  assert.deepEqual(newVerdict(many12), { ...notNew(many(10, (i) => `${String.fromCharCode(97 + i)}.txt`), 2), gitInit: true }, "ten named, the rest counted");
+});
+
+test("new project: a folder inside another work tree that tracks nothing in it is no project of its own: no git init, the outer history not read as its own", () => {
+  const outer = committed({ "package.json": "{}", "src/index.js": "x\n" });
+  mkdirSync(join(outer, "new"));
+  assert.deepEqual(newVerdict(outer, join(outer, "new")), { ...notNew([]), within: outer });
+  put(outer, { "new/notes.md": "x\n" });
+  assert.deepEqual(newVerdict(outer, join(outer, "new")), { ...notNew([]), within: outer }, "an untracked file there: still nothing tracked");
+  // Started in a folder the tree tracks, or at its top: the tree is the project, read as it is.
+  assert.deepEqual(newVerdict(outer, join(outer, "src")), notNew(["new/", "package.json", "src/"]));
+  assert.deepEqual(newVerdict(outer), notNew(["new/", "package.json", "src/"]));
+  // The CLI passes the folder the command started in.
+  const scan = spawnSync(process.execPath, [CLI, "init-scan", "--json"], { cwd: join(outer, "new"), encoding: "utf8" });
+  assert.equal(scan.status, 0, scan.stderr);
+  assert.deepEqual(JSON.parse(scan.stdout).newProject, { new: false, found: [], more: 0, gitInit: false, noGitInit: null, within: realpathSync.native(outer) });
+});
+
+test("new project: a .git above that git does not read, or does not look for, is another work tree: not new, no git init (review round 1)", () => {
+  const within = (/** @type {string} */ dir) => ({ ...notNew([]), within: realpathSync.native(dir) });
+  const code = { "package.json": "{}", "src/a.js": "x\n" };
+  // A HEAD git cannot read (outer-garbage-head-*): at its top unmeasured, in a folder below it, at any depth, inside it.
+  const garbage = committed(code);
+  writeFileSync(join(garbage, ".git", "HEAD"), "garbage\n");
+  mkdirSync(join(garbage, "new"));
+  mkdirSync(join(garbage, "src", "deeper", "new"), { recursive: true });
+  const unread = { ...notNew([]), noGitInit: { path: ".git", reason: "gitUnread" }, unmeasured: [{ path: ".git", reason: "gitUnread" }] };
+  assert.deepEqual(newVerdict(garbage), unread);
+  assert.deepEqual(newVerdict(join(garbage, "new")), within(garbage));
+  assert.deepEqual(newVerdict(join(garbage, "src", "deeper", "new")), within(garbage));
+  // A linked worktree whose main repository moved (broken-linked-worktree-*).
+  const main = committed(code);
+  const linked = join(dirname(main), `${main.split(/[\\/]/).pop()}-w`);
+  git(["worktree", "add", "-q", linked, "-b", "w"], { cwd: main });
+  renameSync(main, `${main}-moved`);
+  mkdirSync(join(linked, "new"));
+  assert.deepEqual(newVerdict(linked), unread);
+  assert.deepEqual(newVerdict(join(linked, "new")), within(linked));
+  // An empty .git folder, a .git file that points nowhere (empty-git-dir-*, dangling-gitfile-*).
+  for (const [what, make] of /** @type {[string, (dir: string) => void][]} */ ([
+    ["an empty .git folder", (dir) => mkdirSync(join(dir, ".git"))],
+    ["a .git file that points nowhere", (dir) => writeFileSync(join(dir, ".git"), "gitdir: /nonexistent/x\n")],
+  ])) {
+    const dir = folder(code);
+    make(dir);
+    mkdirSync(join(dir, "new"));
+    assert.deepEqual(newVerdict(dir), unread, what);
+    assert.deepEqual(newVerdict(join(dir, "new")), within(dir), what);
+  }
+  // A .git file git cannot parse stops the scan (garbage-gitfile).
+  const parse = folder(code);
+  writeFileSync(join(parse, ".git"), "garbage\n");
+  mkdirSync(join(parse, "new"));
+  for (const start of [parse, join(parse, "new")]) assert.throws(() => scanProject({ cwd: start, env: {}, ceiling: CEIL }), /invalid gitfile format/);
+  // A sound tree above GIT_CEILING_DIRECTORIES (ceiling-above-healthy-tree): git does not look, the walk does.
+  const sound = committed(code);
+  mkdirSync(join(sound, "new"));
+  const run = spawnSync(process.execPath, [CLI, "init-scan", "--json"], { cwd: join(sound, "new"), encoding: "utf8", env: { ...process.env, GIT_CEILING_DIRECTORIES: sound } });
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(JSON.parse(run.stdout).repository, false, "git did not look above the ceiling");
+  assert.deepEqual(JSON.parse(run.stdout).newProject, { new: false, found: [], more: 0, gitInit: false, noGitInit: null, within: realpathSync.native(sound) });
+  // With no ceiling given the walk goes to the root: the temporary folder test/hostile.mjs puts in a repository is in one.
+  const plain = folder();
+  const above = gitAboveHere(plain);
+  assert.deepEqual(newVerdict(plain, undefined, { ceiling: null }), above ? within(above) : { ...NEW, gitInit: true });
+});
+
+test("new project: no git init over a repository below, at a filesystem root or in the home folder; past the entries looked at, none (review round 1)", async () => {
+  const { NEW_DEPTH, NEW_ENTRIES } = await import("../setup/scan.mjs");
+  // A folder holding repositories (folder-holding-repositories): not new, and git init would take them in.
+  const holder = folder();
+  committed({ "package.json": "{}" }, made(join(holder, "a")));
+  git(["init", "-q"], { cwd: made(join(holder, "b")) });
+  assert.deepEqual(newVerdict(holder), { ...notNew(["a/", "b/"]), noGitInit: { path: "a/", reason: "below" } });
+  // As deep as NEW_DEPTH folders down, and no deeper.
+  const deep = (/** @type {number} */ n) => {
+    const dir = folder();
+    const at = join(dir, ...many(n, (i) => `d${i}`));
+    mkdirSync(join(at, ".git"), { recursive: true });
+    return dir;
+  };
+  assert.deepEqual(newVerdict(deep(NEW_DEPTH)), { ...notNew(["d0/"]), noGitInit: { path: `${many(NEW_DEPTH, (i) => `d${i}`).join("/")}/`, reason: "below" } });
+  assert.deepEqual(newVerdict(deep(NEW_DEPTH + 1)), { ...notNew(["d0/"]), gitInit: true });
+  // Files are not what it looks for (review round 2): a thousand files below, or a node_modules, still get git init.
+  const sources = folder({ "pyproject.toml": "", ...Object.fromEntries(many(NEW_ENTRIES + 200, (i) => [`src/m${i}.py`, ""])) });
+  assert.deepEqual(newVerdict(sources), { ...notNew(["pyproject.toml", "src/"]), gitInit: true });
+  const installed = folder({ "package.json": "{}", "src/i.js": "", ...Object.fromEntries(many(60 * 20, (i) => [`node_modules/p${i % 60}/f${i}.js`, ""])) });
+  assert.deepEqual(newVerdict(installed), { ...notNew(["node_modules/", "package.json", "src/"]), gitInit: true });
+  // The home folder holds the user's files and often a repository's: no git init there.
+  const home = realpathSync.native(process.env.HOME ?? "");
+  const atHome = newVerdict(home);
+  assert.deepEqual([atHome.gitInit, atHome.noGitInit], [false, { reason: "home" }]);
+});
+
+test("new project: .claude/ holds settings and Markdown, .ennyn/ Ennyn's data; code in either is not new, and past the entries read it is unmeasured (review round 1)", async () => {
+  const { NEW_ENTRIES } = await import("../setup/scan.mjs");
+  // A Claude Code setup project (claude-folder-holds-code): hooks and skill scripts are code, committed or only on disk.
+  const setup = committed({ "README.md": "# team agent setup\n", ".claude/hooks/format.py": "print(1)\n", ".claude/skills/deploy/scripts/run.sh": "echo\n", ".claude/settings.json": "{}", ".claude/commands/deploy.md": "deploy\n" });
+  for (let i = 0; i < 3; i++) {
+    put(setup, { ".claude/hooks/format.py": `print(${i})\n` });
+    commitAll(setup, `feat(hooks): step ${i}`);
+  }
+  assert.deepEqual(newVerdict(setup), notNew([".claude/hooks/format.py", ".claude/skills/deploy/scripts/run.sh"]));
+  const onDisk = folder({ ".claude/settings.local.json": "{}", ".claude/hooks/x.sh": "echo\n", ".ennyn/config.json": "{}", ".ennyn/graph.mjs": "export const nodes = [];\n" });
+  assert.deepEqual(newVerdict(onDisk), { ...notNew([".claude/hooks/x.sh", ".ennyn/graph.mjs"]), gitInit: true });
+  // A repository inside the agent folder is not new either.
+  const nested = folder({ ".claude/skills/x/SKILL.md": "x\n" });
+  git(["init", "-q"], { cwd: join(nested, ".claude", "skills", "x") });
+  assert.deepEqual(newVerdict(nested), { ...notNew([".claude/skills/x/.git/"]), noGitInit: { path: ".claude/skills/x/", reason: "below" } });
+  // Past NEW_ENTRIES entries in them, the rest is not read: unmeasured, never new; as many as that are all read.
+  const rules = (/** @type {number} */ n) => Object.fromEntries(many(n, (i) => [`.claude/r${i}.md`, ""]));
+  const whole = newVerdict(folder(rules(NEW_ENTRIES)));
+  assert.deepEqual([whole.new, whole.found, whole.unmeasured], [true, [], []]);
+  const cut = newVerdict(folder({ ...rules(NEW_ENTRIES + 1), ".ennyn/config.json": "{}" }));
+  assert.deepEqual([cut.new, cut.found, cut.unmeasured], [false, [], [{ reason: "walkCap", n: NEW_ENTRIES }]], "said once for both folders");
+  // What was not read is the reason: the history is not read past it, so a shallow one adds nothing.
+  const shallow = committed({ "README.md": "# x\n" });
+  put(shallow, rules(NEW_ENTRIES + 1));
+  writeFileSync(join(shallow, ".git", "shallow"), `${git(["rev-parse", "HEAD"], { cwd: shallow })}\n`);
+  assert.deepEqual(newVerdict(shallow), { ...notNew([]), unmeasured: [{ reason: "walkCap", n: NEW_ENTRIES }] });
+  // Once a name outside them decides, the agent folders are not walked: code there would not change the verdict.
+  const decided = folder({ "main.py": "print(1)\n", ".claude/hooks/x.sh": "echo\n" });
+  assert.deepEqual(newVerdict(decided), { ...notNew(["main.py"]), gitInit: true });
+});
+
+test("new project: an unreadable folder below is said, the scan goes on; the walk below counts folders, not files; links are not followed (review round 2)", async (t) => {
+  const { NEW_FOLDERS } = await import("../setup/scan.mjs");
+  // As many folders below as are read: all read; one more, and a repository there is not ruled out.
+  // Beside test/hostile.mjs's repository, so the CLI can walk below; the scan's own walk up stops at once.
+  const outside = (/** @type {Record<string, string>} */ files = {}) => folder(files, process.env.ENNYN_HOSTILE_HOME ?? tmpdir());
+  const here = (/** @type {string} */ dir) => newVerdict(dir, undefined, { ceiling: dirname(realpathSync.native(dir)) });
+  const spread = (/** @type {number} */ n) => {
+    const dir = outside();
+    for (let i = 0; i < n - 1; i++) mkdirSync(join(dir, "w", `d${i}`), { recursive: true });
+    return dir;
+  };
+  assert.deepEqual(here(spread(NEW_FOLDERS)), { ...notNew(["w/"]), gitInit: true });
+  const capped = spread(NEW_FOLDERS + 1);
+  const cap = { n: NEW_FOLDERS, reason: "belowCap" };
+  assert.deepEqual(here(capped), { ...notNew(["w/"]), noGitInit: cap, unmeasured: [cap] });
+  // As many files as that, in one folder, are not what it counts (non-git-big-subfolder): git init.
+  const files = folder(Object.fromEntries(many(NEW_FOLDERS + 1, (i) => [`big/f${i}`, ""])));
+  assert.deepEqual(newVerdict(files), { ...notNew(["big/"]), gitInit: true });
+  // The CLI names what decides first, and says what it could not rule out.
+  const text = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: capped, encoding: "utf8" });
+  assert.equal(text.status, 0, text.stderr);
+  const above = gitAboveHere(capped);
+  if (above === null) {
+    assert.match(text.stdout, /^New project: no; outside the names a new project holds: w\/\.$/m);
+    assert.match(text.stdout, new RegExp(`^Git: no repository here; no git init proposed: more than ${NEW_FOLDERS} folders below, so a repository there is not ruled out\\.$`, "m"));
+  } else assert.ok(text.stdout.includes(`this folder lies inside ${above}`), text.stdout);
+  // Links are not followed (symlink-loops-below, claude-link-loop-and-md-link): a link is a name.
+  const loops = folder({ "sub/a.txt": "x" });
+  symlinkSync("..", join(loops, "sub", "up"));
+  symlinkSync(".", join(loops, "self"));
+  assert.deepEqual(newVerdict(loops), { ...notNew(["self", "sub/"]), gitInit: true });
+  const agentLinks = folder({ "README.md": "# x\n", ".claude/settings.json": "{}" });
+  symlinkSync("..", join(agentLinks, ".claude", "up"));
+  symlinkSync("../README.md", join(agentLinks, ".claude", "x.md"));
+  assert.deepEqual(newVerdict(agentLinks), { ...notNew([".claude/up"]), gitInit: true });
+  // A folder that cannot be listed (unreadable-folder-*): said with its path and why, no git init, the rest stands.
+  if (process.getuid?.() === 0) return t.skip("root lists any folder");
+  /** @param {string} dir @param {string} rel */
+  const shut = (dir, rel) => {
+    mkdirSync(join(dir, rel), { recursive: true });
+    chmodSync(join(dir, rel), 0o000);
+    t.after(() => chmodSync(join(dir, rel), 0o755));
+    return dir;
+  };
+  const unread = (/** @type {string} */ path, /** @type {string} */ reason) => ({ name: "EACCES", path, reason });
+  const db = shut(outside({ "package.json": "{}", "src/i.js": "" }), "data/db");
+  assert.deepEqual(here(db), { ...notNew(["data/", "package.json", "src/"]), noGitInit: unread("data/db/", "belowUnread"), unmeasured: [unread("data/db/", "belowUnread")] });
+  const deep3 = shut(folder(), "x/y/z");
+  assert.deepEqual(newVerdict(deep3), { ...notNew(["x/"]), noGitInit: unread("x/y/z/", "belowUnread"), unmeasured: [unread("x/y/z/", "belowUnread")] });
+  assert.deepEqual(newVerdict(shut(folder(), "x/y/z/w")), { ...notNew(["x/"]), gitInit: true }, "deeper than the walk looks");
+  const inRepo = committed({ "package.json": "{}" });
+  shut(inRepo, "data/db");
+  assert.deepEqual(newVerdict(inRepo), notNew(["data/", "package.json"]), "in a repository nothing below is walked");
+  // In an agent folder the verdict cannot be told: unmeasured, never new.
+  const agent = shut(folder({ "README.md": "# x\n", ".claude/settings.json": "{}" }), ".claude/hooks");
+  assert.deepEqual(newVerdict(agent), { ...notNew([]), noGitInit: unread(".claude/hooks/", "belowUnread"), unmeasured: [unread(".claude/hooks", "walkUnread"), unread(".claude/hooks/", "belowUnread")] });
+  // The CLI says it, and exits 0 with the report.
+  const cli = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: db, encoding: "utf8" });
+  assert.equal(cli.status, 0, cli.stderr);
+  if (gitAboveHere(db) === null) {
+    assert.match(cli.stdout, /^New project: no; outside the names a new project holds: data\/, package\.json, src\/\.$/m);
+    assert.match(cli.stdout, /^Git: no repository here; no git init proposed: data\/db\/ could not be read \(EACCES\), so a repository there is not ruled out\.$/m);
+  }
+});
+
+test("new project: the stash reflog and nested notes read as git reads them; names below reach no terminal raw (review round 2)", () => {
+  // A stash whose reflog is gone or holds a garbage line, a stash ref with no reflog (stash-reflog-*, stash-ref-without-reflog).
+  const stashOf = () => {
+    const dir = committed({ "README.md": "# x\n" });
+    put(dir, { "README.md": "# y\n" });
+    git([...WHO, "stash", "push", "-q"], { cwd: dir });
+    return dir;
+  };
+  const noLog = stashOf();
+  rmSync(join(noLog, ".git", "logs", "refs", "stash"));
+  assert.deepEqual(newVerdict(noLog), NEW, "the stash reflog removed");
+  const garbage = stashOf();
+  writeFileSync(join(garbage, ".git", "logs", "refs", "stash"), "garbage line\n", { flag: "a" });
+  assert.deepEqual(newVerdict(garbage), NEW, "a garbage line in the stash reflog");
+  const bare = committed({ "README.md": "# x\n" });
+  git(["update-ref", "refs/stash", "HEAD"], { cwd: bare });
+  assert.deepEqual(newVerdict(bare), NEW, "a stash ref with no reflog");
+  // Notes under nested refs (nested-notes-ref).
+  const noted = committed({ "README.md": "# x\n" });
+  git([...WHO, "notes", "--ref", "plain", "add", "-m", "n", "HEAD"], { cwd: noted });
+  git([...WHO, "notes", "--ref", "review/deep", "add", "-m", "n", "HEAD"], { cwd: noted });
+  assert.deepEqual(newVerdict(noted), NEW);
+  // A name with control characters in .claude/ and on the path of a repository below (escape-claude-path, escape-below-path).
+  const where = process.env.ENNYN_HOSTILE_HOME ?? tmpdir();
+  const oddAgent = folder({ "README.md": "# x\n", ".claude/h\u001b[33m.py": "x" }, where);
+  const oddBelow = folder({}, where);
+  git(["init", "-q"], { cwd: made(join(oddBelow, "b\u001b[32mx")) });
+  for (const [dir, says] of /** @type {[string, RegExp][]} */ ([[oddAgent, /claude\/h|lies inside/], [oddBelow, /below holds a repository|lies inside/]])) {
+    for (const args of [[], ["--json"]]) {
+      const r = spawnSync(process.execPath, [CLI, "init-scan", ...args], { cwd: dir, encoding: "utf8" });
+      assert.equal(r.status, 0, r.stderr);
+      assert.ok(!r.stdout.includes("\u001b"), `${args}: ${r.stdout}`);
+      if (!args.length) assert.match(r.stdout, says);
+    }
+  }
+});
+
+test("new project: could not measure is never new: a shallow history, one past the commits read, a .git git does not read, GIT_DIR in the environment", async () => {
+  const { NEW_HISTORY } = await import("../setup/scan.mjs");
+  const shallow = committed({ "README.md": "# x\n" });
+  writeFileSync(join(shallow, ".git", "shallow"), `${git(["rev-parse", "HEAD"], { cwd: shallow })}\n`);
+  assert.deepEqual(newVerdict(shallow), { ...notNew([]), unmeasured: [{ reason: "shallow" }] });
+  // What the shallow history holds still decides.
+  const cut = committed({ "README.md": "# x\n", "src/a.js": "x\n" });
+  git(["rm", "-r", "-q", "--cached", "src"], { cwd: cut });
+  rmSync(join(cut, "src"), { recursive: true });
+  writeFileSync(join(cut, ".git", "shallow"), `${git(["rev-parse", "HEAD"], { cwd: cut })}\n`);
+  assert.deepEqual(newVerdict(cut), notNew(["src/"]));
+  assert.deepEqual(newVerdict(history(NEW_HISTORY)), NEW, "as many commits as are read: all read");
+  assert.deepEqual(newVerdict(history(NEW_HISTORY + 1)), { ...notNew([]), unmeasured: [{ reason: "historyCap", n: NEW_HISTORY }] });
+  assert.deepEqual(newVerdict(history(NEW_HISTORY + 1, ["x.js"])), notNew(["x.js"]), "the oldest commit read still counts");
+  // A HEAD git cannot read: git says no repository, and git init would go over one.
+  const broken = folder();
+  git(["init", "-q"], { cwd: broken });
+  writeFileSync(join(broken, ".git", "HEAD"), "garbage\n");
+  assert.deepEqual(newVerdict(broken), { ...notNew([]), noGitInit: { path: ".git", reason: "gitUnread" }, unmeasured: [{ path: ".git", reason: "gitUnread" }] });
+  // GIT_DIR exported in the shell that runs git init (git-dir-exported): git init writes there, the folder stays empty.
+  const other = committed({ "README.md": "# x\n" });
+  const gitDir = { ...notNew([]), noGitInit: { name: "GIT_DIR", reason: "gitEnv" }, unmeasured: [{ name: "GIT_DIR", reason: "gitEnv" }] };
+  assert.deepEqual(newVerdict(folder(), undefined, { env: { GIT_DIR: join(other, ".git") } }), gitDir);
+  // GIT_WORK_TREE alone (git-work-tree-exported): git init refuses it (git 2.34.1), so nothing is written elsewhere.
+  assert.deepEqual(newVerdict(folder(), undefined, { env: { GIT_WORK_TREE: other } }), { ...NEW, gitInit: true });
+});
+
+test("new project: the review's other probes (round 1): repositories git reads, names, the history of every ref, a user's config, what reaches the terminal", () => {
+  const code = { "package.json": "{}", "src/a.js": "x\n" };
+  const cli = (/** @type {string} */ cwd, /** @type {string[]} */ args = ["--json"], /** @type {Record<string, string>} */ env = {}) =>
+    spawnSync(process.execPath, [CLI, "init-scan", ...args], { cwd, encoding: "utf8", env: { ...process.env, ...env } });
+  // Inside .git, inside a bare repository (inside-dot-git, inside-bare): no work tree, the scan fails.
+  const repo = committed(code);
+  mkdirSync(join(repo, ".git", "newproj"));
+  for (const at of [join(repo, ".git"), join(repo, ".git", "refs"), join(repo, ".git", "newproj")]) assert.equal(cli(at).status, 1, at);
+  const bare = join(folder(), "b.git");
+  git(["init", "-q", "--bare", bare], { cwd: dirname(bare) });
+  mkdirSync(join(bare, "newproj"));
+  for (const at of [bare, join(bare, "newproj")]) assert.equal(cli(at).status, 1, at);
+  // A submodule is a repository of its own (submodule-*); one not initialized is a folder its tree tracks nothing in.
+  const lib = committed({ "README.md": "# x\n", "lib.c": "int x;\n" });
+  const sup = committed({ "README.md": "# x\n" });
+  git([...WHO, "-c", "protocol.file.allow=always", "submodule", "add", "-q", lib, "sub"], { cwd: sup });
+  commitAll(sup, "sub");
+  const sub = join(sup, "sub");
+  assert.deepEqual(newVerdict(sub), notNew(["lib.c"]));
+  mkdirSync(join(sub, "new"));
+  assert.deepEqual(newVerdict(sub, join(sub, "new")), { ...notNew([]), within: sub });
+  const supClone = join(folder(), "clone");
+  git(["clone", "-q", sup, supClone], { cwd: sup });
+  assert.deepEqual(newVerdict(supClone, join(supClone, "sub")), { ...notNew([]), within: supClone });
+  // A linked worktree (linked-worktree-subfolder); a .git file naming another repository's git dir (gitfile-to-other-repo).
+  const linked = join(dirname(repo), `${repo.split(/[\\/]/).pop()}-w`);
+  git(["worktree", "add", "-q", linked, "-b", "w"], { cwd: repo });
+  mkdirSync(join(linked, "new"));
+  assert.deepEqual(newVerdict(linked, join(linked, "new")), { ...notNew([]), within: linked });
+  assert.deepEqual(newVerdict(linked), notNew(["new/", "package.json", "src/"]));
+  const pointer = folder({ "README.md": "# x\n", ".git": `gitdir: ${join(repo, ".git")}\n` });
+  assert.deepEqual(newVerdict(pointer), notNew(["package.json", "src/"]));
+  // .git spelled .GIT (upper-case-git-dir-*): on a disk that tells case apart it is no repository, a folder of that name;
+  // where the disk folds case git reads it, and the listing still names it (a stated limit, in the safe direction).
+  const upper = committed({ "README.md": "# x\n" });
+  renameSync(join(upper, ".git"), join(upper, ".GIT"));
+  const folds = existsSync(join(upper, ".git"));
+  assert.deepEqual(newVerdict(upper), { ...notNew([".GIT/"]), gitInit: !folds });
+  // Source files named after their subject (stem-source-*).
+  assert.deepEqual(newVerdict(committed({ "readme_generator.py": "import os\n", "README.md": "r\n", LICENSE: "MIT\n" })), notNew(["readme_generator.py"]));
+  const stems = folder({ "license_check.go": "package main\n", "copying.c": "int main(){}\n", "README.sh": "#!/bin/sh\n", "LICENSE-checker.js": "x\n" });
+  assert.deepEqual(newVerdict(stems), { ...notNew(["LICENSE-checker.js", "README.sh", "copying.c", "license_check.go"]), gitInit: true });
+  // Notes are no project files (git-note-on-new-project); code only in an older stash entry is (code-only-in-older-stash).
+  const noted = committed({ "README.md": "# x\n" });
+  git([...WHO, "notes", "add", "-m", "note", "HEAD"], { cwd: noted });
+  assert.deepEqual(newVerdict(noted), NEW);
+  const stashed = committed({ "README.md": "# x\n" });
+  put(stashed, { "src/a.js": "x\n" });
+  git([...WHO, "stash", "push", "-q", "-u"], { cwd: stashed });
+  put(stashed, { "README.md": "# y\n" });
+  git([...WHO, "stash", "push", "-q"], { cwd: stashed });
+  assert.deepEqual(newVerdict(stashed), notNew(["src/"]));
+  // A tag on a tree (tag-on-a-tree) names no commit.
+  const tagged = committed({ "README.md": "# x\n" });
+  git(["tag", "treetag", git(["rev-parse", "HEAD^{tree}"], { cwd: tagged })], { cwd: tagged });
+  assert.deepEqual(newVerdict(tagged), NEW);
+  // A user's config that colours and decorates the log, cuts the root's diff and makes paths relative (history-held-src-user-config).
+  const held = committed({ "README.md": "# x\n", "src/a.js": "x\n" });
+  rmSync(join(held, "src"), { recursive: true });
+  commitAll(held);
+  const config = join(folder(), "gitconfig");
+  writeFileSync(config, "[safe]\n\tdirectory = *\n[color]\n\tui = always\n[log]\n\tdecorate = full\n\tshowRoot = false\n[diff]\n\trelative = true\n");
+  const coloured = cli(held, ["--json"], { GIT_CONFIG_GLOBAL: config });
+  assert.equal(coloured.status, 0, coloured.stderr);
+  assert.deepEqual(JSON.parse(coloured.stdout).newProject.found, ["src/"]);
+  // A README-only history may hold a convention (readme-only-typed-history): new, and its types are the survey's.
+  const typed = committed({ "README.md": "0\n" });
+  for (let i = 1; i <= 6; i++) {
+    put(typed, { "README.md": `${i}\n` });
+    commitAll(typed, `docs: readme ${i}`);
+  }
+  const typedScan = scanProject({ cwd: typed, env: {}, ceiling: CEIL });
+  assert.deepEqual([typedScan.newProject.new, typedScan.commitStyle.types[0]], [true, { type: "docs", n: 6 }]);
+  // Names holding control characters reach no terminal raw (control-bytes-in-*).
+  const odd = folder({ "a\u001b[31mRED": "x", "c\nnl": "x" });
+  for (const args of [[], ["--json"]]) assert.ok(!cli(odd, args).stdout.includes("\u001b"), `names, ${args}`);
+  const oddOuter = committed({ "package.json": "{}" }, made(join(folder(), "o\u001b[31mx")));
+  mkdirSync(join(oddOuter, "new"));
+  for (const args of [[], ["--json"]]) {
+    const r = cli(join(oddOuter, "new"), args);
+    assert.equal(r.status, 0, r.stderr);
+    assert.ok(!r.stdout.includes("\u001b") && /within|inside/.test(r.stdout), `within path, ${args}`);
+  }
+  // A branch that names a missing commit (broken-branch-ref): the history cannot be read, the scan fails.
+  const missing = committed({ "README.md": "# x\n" });
+  writeFileSync(join(missing, ".git", "refs", "heads", "broken"), `${"1".repeat(40)}\n`);
+  assert.throws(() => scanProject({ cwd: missing, env: {}, ceiling: CEIL }), /bad object/);
+  // Measured on Windows only (git 2.47.1), not run here: drive-root (no git init at a root), upper-case-git-dir-windows,
+  // mixed-case-git-outer-windows, start-folder-other-case-windows, empty-folder. orphan-checkout-of-real-history is
+  // the orphan case of the corpus test on a history of its own.
+});
+
+test("cli: init-scan says whether the project is new, what is not, what went unmeasured, and when it proposes git init", async () => {
+  const { NEW_HISTORY } = await import("../setup/scan.mjs");
+  const run = (/** @type {string} */ cwd) => {
+    const r = spawnSync(process.execPath, [CLI, "init-scan"], { cwd, encoding: "utf8" });
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout;
+  };
+  // A folder outside every repository: under test/hostile.mjs's root, beside the repository it puts the temporary folder in.
+  const outside = folder({}, process.env.ENNYN_HOSTILE_HOME ?? tmpdir());
+  const plainAbove = gitAboveHere(outside);
+  const plain = run(outside);
+  if (plainAbove === null) {
+    assert.match(plain, /^New project: yes; nothing here or in the history but a README, a licence, \.gitignore, agent instruction files, \.claude\/ and \.ennyn\/\.$/m);
+    assert.match(plain, /^Git: no repository here or above; \/ennyn:init proposes git init\.$/m);
+  } else assert.ok(plain.includes(`this folder lies inside ${plainAbove}`), plain);
+  // In the temporary folder, which test/hostile.mjs puts inside a repository git is told not to look for.
+  const inTmp = folder();
+  const tmpAbove = gitAboveHere(inTmp);
+  assert.ok(tmpAbove, "test/hostile.mjs puts the temporary folder in a repository");
+  const hidden = run(inTmp);
+  assert.ok(hidden.includes(`New project: no; this folder lies inside ${tmpAbove}, which holds a .git git does not read from here: no git init here, and nothing there is read as this project's.`), hidden);
+  assert.doesNotMatch(hidden, /^Git:/m);
+  const pkg = run(committed({ "package.json": "{}" }));
+  assert.match(pkg, /^New project: no; outside the names a new project holds: package\.json\.$/m);
+  assert.doesNotMatch(pkg, /^Git:/m, "a repository: no git init");
+  assert.match(run(folder(Object.fromEntries(many(12, (i) => [`${String.fromCharCode(97 + i)}.txt`, "x"])), process.env.ENNYN_HOSTILE_HOME ?? tmpdir())), /^New project: no; outside the names a new project holds: a\.txt, b\.txt, .*, j\.txt and 2 more\.$/m);
+  const holder = folder({}, process.env.ENNYN_HOSTILE_HOME ?? tmpdir());
+  git(["init", "-q"], { cwd: made(join(holder, "a")) });
+  if (gitAboveHere(holder) === null) assert.match(run(holder), /^Git: no repository here; no git init proposed: a\/ below holds a repository, which git init here would take in\.$/m);
+  const outer = committed({ "package.json": "{}" });
+  mkdirSync(join(outer, "new"));
+  const nested = run(join(outer, "new"));
+  assert.ok(nested.includes(`New project: no; this folder lies inside the work tree ${realpathSync.native(outer)}, which tracks nothing in it: no git init here, and that tree's history is not this project's.`), nested);
+  assert.doesNotMatch(nested, /^Git:/m);
+  const shallow = committed({ "README.md": "# x\n" });
+  writeFileSync(join(shallow, ".git", "shallow"), `${git(["rev-parse", "HEAD"], { cwd: shallow })}\n`);
+  assert.match(run(shallow), /^New project: unmeasured: a shallow clone, whose history is cut; read as not new\.$/m);
+  assert.ok(run(history(NEW_HISTORY + 1)).includes(`New project: unmeasured: more than ${NEW_HISTORY} commits, so the history was not read whole; read as not new.\n`));
 });
 
 /** @param {Record<string, unknown>} config @param {unknown} graph */

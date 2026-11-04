@@ -517,7 +517,8 @@ const COMMANDS = {
     const { opts, help } = parseArgs(args, { flags: ["json"] });
     if (help) return (out(USAGE), 0);
     const cwd = projectDir();
-    const res = scanProject({ cwd });
+    // Where the command started: a folder below the top that the work tree tracks nothing in is no project of its own.
+    const res = scanProject({ cwd, from: process.cwd() });
     if (opts.json) return (out(jsonShown(res)), 0);
     // A broken config is part of the report, not a reason to stop.
     let lang = "en";
@@ -533,12 +534,20 @@ const COMMANDS = {
     const name = (name) => shown(name, { name: true }).text;
     /** A proposal for the config: escaped, never cut. @param {string} s */
     const whole = (s) => ({ shown: shown(s, { max: Infinity }).text });
-    /** What was not measured and why, in the project's language. @param {{ path?: string, reason: string, name?: string }[]} list */
-    const why = (list) => ({ shown: list.map((u) => tShown(`scan.why.${u.reason}`, { path: [u.path ?? ""], name: u.name ?? "" }, lang)).join("; ") });
+    /** What was not measured and why, in the project's language. @param {{ path?: string, reason: string, name?: string, n?: number }[]} list */
+    const why = (list) => ({ shown: list.map((u) => tShown(`scan.why.${u.reason}`, { path: [u.path ?? ""], name: u.name ?? "", n: u.n ?? 0 }, lang)).join("; ") });
     if (!res.config.path) say("scan.configNone");
     else if (res.config.problems.length) say("scan.configProblems", { path: [res.config.path], problems: res.config.problems.join("; ") });
     else say("scan.configOk", { path: [res.config.path] });
     say(res.graph.exists ? "scan.graphOk" : "scan.graphNone", { path: [res.graph.path] });
+    // Whether /ennyn:init takes the new-project path, and, outside a repository, its git init.
+    const fresh = res.newProject;
+    if (fresh.within) say(res.repository ? "scan.newWithin" : "scan.newWithinUnread", { path: [fresh.within] });
+    else if (fresh.found.length) say(fresh.more ? "scan.newNoMore" : "scan.newNo", { list: { shown: fresh.found.map(name).join(", ") }, n: fresh.more });
+    else if (res.unmeasured.newProject) say("scan.newUnmeasured", { reason: why(res.unmeasured.newProject) });
+    else say("scan.newYes");
+    if (fresh.gitInit) say("scan.gitInit");
+    else if (fresh.noGitInit) say("scan.noGitInit", { reason: why([fresh.noGitInit]) });
     if (!res.repository) say("scan.noRepo");
     else {
       const fx = res.fixSubject;
