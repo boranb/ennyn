@@ -8,7 +8,7 @@
 
 import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { CONFIG_PATH, loadConfig, ConfigError } from "../core/config.mjs";
 import { HOOK_INDEX_ENV, HOOK_READ_ENV, MISSING_OBJECT, NAMES_BUFFER, READ_BUDGET, blobBytes, diffGroups, git, headCommit, hookElsewhere, indexEntries, indexKinds, indexNames, machineFault, mergeHeads, projectRoot, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, stagedVersionsEach, stateRoot, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
 import { ends, jsonShown, shown, t, tShown, unshownEscaped } from "../core/i18n.mjs";
@@ -35,6 +35,7 @@ import { RecordError, installHook, sessionOf } from "../setup/hook.mjs";
 import { instructionBudget, readBudgets, recordBudget, previousBudget, replacedAt } from "../setup/budget.mjs";
 import { journalPath, MAX_TIMEOUT_MS, MutationError, parseMutants, restoreJournal, runMutants, summarizeMutants } from "../metrics/mutation.mjs";
 import { markedWorktrees, removeWorktree, verdict } from "../plan/worktrees.mjs";
+import { READ_LINE_MAX, ALIASES, TranscriptError, agentUsage, claudeConfigDir, namedFolder, newestSession, projectFolder, projectsDir } from "../adapters/claude-code/agent-usage.mjs";
 
 export const USAGE = `Usage: ennyn <command> [options]
 
@@ -76,6 +77,10 @@ Commands:
                                                     record one commit-gate attempt (called by the commit wrapper)
   gate-stats [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--json]
                                                     commit-gate wait, failures and time spent in failed attempts
+  agents [--session <id or path>] [--json]          per subagent of a Claude Code session (default: this repository's newest), read only: the model
+                                                    asked for and the models that ran, calls, output tokens, tokens written to and read from cache,
+                                                    the context at its last call;
+                                                    a mismatch where a model was asked; exit 1 when the session cannot be found or read
 
 Options:
   -h, --help                                        show this help
@@ -83,6 +88,9 @@ Options:
 Config: .ennyn/config.json in the repository root (override with ENNYN_CONFIG).`;
 
 class UsageError extends Error {}
+
+/** A session id `agents --session` takes as an id; anything with a path separator or `.jsonl` is a path. */
+const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
 /** Past this many files a risky source of `audit` is listed by directory, each with its count: every file's directory is named. */
 const AUDIT_NAMES = 50;
@@ -1661,6 +1669,66 @@ const COMMANDS = {
     if (complete(report)) return 0;
     err(t("findings.unmeasured", {}, cfg.language));
     return 1;
+  },
+  agents(args) {
+    const { opts, help } = parseArgs(args, { options: ["session"], flags: ["json"] });
+    if (help) return (out(USAGE), 0);
+    const given = opts.session === undefined ? null : strOpt(opts.session);
+    if (opts.session !== undefined && given === null) throw new UsageError("--session needs a session id or a transcript's path");
+    const asPath = given !== null && (given.includes("/") || given.includes("\\") || given.endsWith(".jsonl"));
+    if (given !== null && !asPath && !SESSION_ID.test(given)) throw new UsageError("--session takes a session id (letters, digits, - and _) or a transcript's path");
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    const lang = cfg.language;
+    let transcript;
+    try {
+      let real = cwd;
+      try {
+        real = realpathSync(cwd);
+      } catch {
+        // The spelling git gave is the one tried.
+      }
+      const tops = [...new Set([cwd, real])];
+      if (asPath) transcript = resolve(process.cwd(), /** @type {string} */ (given));
+      else {
+        const folder = projectFolder(projectsDir(), tops, namedFolder());
+        if (folder === null) return (err(t("agents.noFolder", {}, lang)), 1);
+        transcript = given === null ? newestSession(folder) : join(folder, `${given}.jsonl`);
+        if (transcript === null) return (err(t("agents.noFolder", {}, lang)), 1);
+      }
+      const read = (/** @type {string} */ path) => readIfThere(path);
+      const report = agentUsage({ transcript, tops, configDir: claudeConfigDir(), read });
+      if (!report.there) return (err(tShown("agents.noSession", { session: basename(transcript, ".jsonl") }, lang)), 1);
+      const compared = report.agents.filter((a) => a.mismatch !== null);
+      const mismatched = compared.filter((a) => a.mismatch);
+      if (opts.json) return (out(jsonShown({ session: report.session, agents: report.agents.map(({ first, ...a }) => a), mismatches: mismatched.length, skipped: report.skipped, unreadRecords: report.unreadMeta })), 0);
+      out(tShown(report.agents.length ? "agents.header" : "agents.none", { session: report.session, n: report.agents.length }, lang));
+      for (const a of report.agents) {
+        const ran = Object.entries(a.ran).map(([m, n]) => `${m} ×${n}`).join(", ") || t("agents.ranNone", {}, lang);
+        const asked = a.from === "file" ? t("agents.askedFile", { model: a.asked }, lang) : a.asked;
+        const parts = [a.id, a.type ?? "?", t("agents.asked", { asked }, lang), t("agents.ran", { ran }, lang), t("agents.tokens", { output: a.output, write: a.cacheWrite, read: a.cacheRead }, lang)];
+        parts.push(a.lastContext === null ? t("agents.lastContextUnmeasured", {}, lang) : t("agents.lastContext", { n: a.lastContext }, lang));
+        if (a.usageMissing) parts.push(t("agents.usageMissing", { n: a.usageMissing, calls: a.calls }, lang));
+        if (a.mismatch) parts.push(t("agents.mismatchMark", {}, lang));
+        out(shown(parts.join(" · ")).text);
+      }
+      if (report.agents.length) {
+        if (mismatched.length) {
+          out(t("agents.mismatch", { n: mismatched.length, of: compared.length, list: mismatched.map((a) => a.id).join(", ") }, lang));
+          // An alias may be mapped to any id by the environment, which no transcript records.
+          if (mismatched.some((a) => ALIASES.includes(a.asked.toLowerCase().replace(/\[[^\]]*\]$/, "")))) out(t("agents.aliasRemap", {}, lang));
+        } else if (compared.length) out(t("agents.match", { n: compared.length }, lang));
+        const rest = report.agents.length - compared.length;
+        if (rest) out(t("agents.notCompared", { n: rest }, lang));
+        out(t("agents.legend", {}, lang));
+      }
+      if (report.skipped) out(t("agents.skipped", { n: report.skipped, max: READ_LINE_MAX / 1024 / 1024 }, lang));
+      if (report.unreadMeta) out(t("agents.unreadRecords", { n: report.unreadMeta }, lang));
+      return 0;
+    } catch (e) {
+      if (e instanceof TranscriptError) return (err(`ennyn agents: ${e.message}`), 1);
+      throw e;
+    }
   },
   "gate-stats"(args) {
     const { opts, help } = parseArgs(args, { options: ["since", "until"], flags: ["json"] });

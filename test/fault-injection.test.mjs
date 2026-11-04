@@ -295,6 +295,26 @@ function worktrees(repo) {
 }
 
 /**
+ * A Claude Code session of the run's copy, in a config folder inside its git dir (CLAUDE_CONFIG_DIR): two subagents,
+ * one asked sonnet and ran opus, one of the project's agent file (`checker`, which names no model). Every read of it
+ * that fails must stop the command, saying so.
+ * @param {string} repo
+ */
+function agentsSession(repo) {
+  const folder = join(repo, ".git", "claude", "projects", realpathSync(repo).replace(/[^a-zA-Z0-9]/g, "-"));
+  const said = (/** @type {string} */ id, /** @type {unknown[]} */ content) => JSON.stringify({ type: "assistant", message: { id, model: "claude-opus-5-5", usage: { output_tokens: 2, cache_creation_input_tokens: 3, cache_read_input_tokens: 4 }, content } });
+  const call = (/** @type {string} */ id, /** @type {Record<string, string>} */ input) => ({ type: "tool_use", id, name: "Agent", input });
+  put(folder, {
+    // The session ran at the copy's top: the project's agent file is read.
+    "s1.jsonl": `${JSON.stringify({ type: "user", cwd: realpathSync(repo) })}\n${said("p1", [call("t1", { subagent_type: "general-purpose", model: "sonnet" }), call("t2", { subagent_type: "checker" })])}\n`,
+    "s1/subagents/agent-a1.meta.json": JSON.stringify({ agentType: "general-purpose", isBuiltIn: true, toolUseId: "t1" }),
+    "s1/subagents/agent-a1.jsonl": `${said("m1", [])}\n`,
+    "s1/subagents/agent-a2.meta.json": JSON.stringify({ agentType: "checker", isBuiltIn: false, toolUseId: "t2" }),
+    "s1/subagents/agent-a2.jsonl": `${said("m2", [])}\n`,
+  });
+}
+
+/**
  * @typedef {{ args: string[], noReads?: boolean, cwd?: string, writes?: boolean, setup?: (repo: string) => void, env?: Record<string, string>, first?: boolean, outside?: boolean, hook?: string, input?: (repo: string) => unknown, everyPass?: RegExp }} Case
  *   `cwd` is relative to the repository; a case that writes, or has a setup, runs in a copy of its own.
  *   `env` values are paths relative to the repository. `first`: only the first git call is faulted (the
@@ -431,6 +451,8 @@ const CASES = [
   { args: ["gate-record", "--start", START, "--exit", "1"], writes: true },
   { args: ["gate-stats"] },
   { args: ["gate-stats", "--json"] },
+  { args: ["agents"], setup: agentsSession, env: { CLAUDE_CONFIG_DIR: ".git/claude" } },
+  { args: ["agents", "--json"], setup: agentsSession, env: { CLAUDE_CONFIG_DIR: ".git/claude" } },
   // The Claude Code hooks: a side copy (a linked worktree) reading a file a path-scoped rule covers, the
   // conversation style at session start, and the reset after compaction.
   {

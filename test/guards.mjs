@@ -752,6 +752,7 @@ export const NOT_GATES = {
   "test/findings.test.mjs": CLI_ONLY,
   "test/cli.test.mjs": CLI_ONLY,
   "test/worktrees.test.mjs": CLI_ONLY,
+  "test/agents.test.mjs": CLI_ONLY,
   "test/deps.test.mjs": { reason: "runs the CLI on temporary repositories against recorded registry and OSV answers", allow: '"scripts", "ennyn\\.mjs"|"__fixtures__", "deps"' },
   "test/forbidden.test.mjs": CLI_ONLY,
   "test/loosening.test.mjs": CLI_ONLY,
