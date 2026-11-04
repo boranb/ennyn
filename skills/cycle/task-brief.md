@@ -70,7 +70,7 @@ The orchestrator writes each task's state and count to a file in that folder at 
 
 | State | What happens |
 |---|---|
-| **Sent back** | First failure: the agent corrects and amends. Second: restart. Third or later: stopped. The count is the task's, and nothing resets it |
+| **Sent back** | First failure: the agent corrects and amends (or a fresh agent does, see below). Second: restart. Third or later: stopped. The count is the task's, and nothing resets it |
 | **Last round fixed** | The orchestrator reruns the task's gate on the amended commit, before `Review-Rounds:` goes in. Red in that rerun is a failed verification, and it counts |
 | **Restart** | Once per task. The agent stops; a fresh agent on a new branch takes the consolidated brief; the old branch stays. The reviewers keep their context, and a reviewer or the orchestrator runs what they left. A new design is a first write nobody has read: it gets one narrow review, with the failures as step 7's signal |
 | **Landing** | One task at a time: rebase, the handoff's whole test command and every slow gate it does not hold (no single whole command: each test command), whatever the agent ran, then the main branch moves. A clean rebase is no change: it does not recheck meaning, and the suite is the net. A red suite counts; a conflict goes to the agent uncounted. What either changes goes to the reviewers as a delta: that failure or conflict is step 7's signal, and `Third-round:` names it |
@@ -79,6 +79,8 @@ The orchestrator writes each task's state and count to a file in that folder at 
 | **Stopped** | That task ends, the others go on. It does not land; its branch and files stay. Its node gets a `gate`, so the next cycle does not pick it alone. The report gives it a line ([report-formats.md](report-formats.md)) and the handoff names it. Only the user sends it round again |
 
 A state this table does not name is the orchestrator's decision, written in the cycle report, never a silent wait.
+
+**A correction sent to a fresh agent.** The count is the rule: the first failure goes to the agent that wrote the task. No size is a rule. In Ennyn's own cycles 16 to 19, eight same-agent corrections at 258K to 540K tokens of context held on that try; eight lists went fresh at 561K to 723K, four held and four failed the next verification, none by a slip the list named. Both groups were picked by size, so nothing shows where a same-agent correction starts to fail. When the author's context is large and the list is short and decided, the orchestrator may still send it fresh, past a size it names itself: a judgment, written in the cycle report with the author's size and the reason. It reads the size as the last assistant `usage` of the author's transcript (`input_tokens` + `cache_read_input_tokens` + `cache_creation_input_tokens`, in `subagents/agent-<id>.jsonl` under the session's transcript folder); `ennyn agents` prints it per agent, in its "last call's context" column. The fresh agent takes the consolidated brief below, but for this case its Place row is the same worktree and branch, and the list is applied on the existing commit (amend, one commit): "start from the base" is the restart's freedom, not this one's. It is not the restart: the count does not move, and the second failure still restarts the task (four of the eight went on to one).
 
 **The consolidated brief** replaces the task's brief; the common brief stays.
 
