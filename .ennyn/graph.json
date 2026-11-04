@@ -4605,6 +4605,17 @@
       "cluster": "security",
       "source": "cycle 2026-11-04 (20) closing on Windows: the environment holds NODE_TLS_REJECT_UNAUTHORIZED=0, ennyn deps printed Node's warning and a clean count; rerun in WSL with TLS verified (NODE_EXTRA_CA_CERTS) it gave the same count",
       "since": 20
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "budget-record-follow-up",
+      "title": "The closing's follow-up commit takes a fresh budget record (report-formats.md, leftovers answered), and every budget record counts as a cycle for security.everyCycles, so the follow-up moves the next security audit one cycle early (measured: 'due in 2 cycles' became 'due in 1'); a record at a follow-up should carry the cycle's mark or replace the closing's",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "plan",
+      "source": "cycle 2026-11-04 (20) closing: ennyn audit with and without the follow-up's record; the record was left out of the follow-up commit",
+      "since": 20
     }
   ],
   "done": [
