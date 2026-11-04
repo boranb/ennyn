@@ -145,7 +145,8 @@ function linkedTo(top, mine) {
 function matchWorktree(top, file, project) {
   // The project's own answer must come: without it nothing can be told. Another repository that git
   // refuses to open (exit 128: a newer format, a refused owner) is no worktree of a project it opens; a git
-  // that did not start or was killed is no answer at all.
+  // that did not start or was killed is no answer at all. "No repository" at a top that holds a .git is git
+  // not opening it too (a worktree's own git dir pruned or without HEAD, on every git).
   const mine = commonDir(project);
   if (!mine) return null;
   let theirs;
@@ -153,9 +154,10 @@ function matchWorktree(top, file, project) {
     theirs = commonDir(top);
   } catch (e) {
     if (/** @type {{ status?: number | null }} */ (e).status !== 128) throw e;
-    // git will not open it; its .git file still says whose worktree it is.
-    return linkedTo(top, mine) ? { root: top, relPath: toSlash(relative(top, file)) } : null;
+    theirs = null;
   }
+  // git will not open it; its .git file still says whose worktree it is.
+  if (theirs === null) return linkedTo(top, mine) ? { root: top, relPath: toSlash(relative(top, file)) } : null;
   return theirs === mine ? { root: top, relPath: toSlash(relative(top, file)) } : null;
 }
 

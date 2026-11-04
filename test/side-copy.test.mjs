@@ -582,6 +582,31 @@ test("map-path audit: a copy git will not open is mapped by its .git file only w
   assert.equal(mapSideCopyPath(copy("modules/sub"), { projectDir: proj }), null, "a submodule is another repository");
 });
 
+test("map-path: a worktree of the project whose own git dir is gone or broken is mapped by its .git file, on every git (review round 1)", () => {
+  const proj = realpathSync(mkdtempSync(join(tmpdir(), "en-sc-pruned-")));
+  git(["init", "-q", "-b", "main"], { cwd: proj });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "root"], { cwd: proj });
+  const other = realpathSync(mkdtempSync(join(tmpdir(), "en-sc-other-")));
+  git(["init", "-q", "-b", "main"], { cwd: other });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "root"], { cwd: other });
+  // A worktree whose git dir under <common>/worktrees/ is taken away (`gone`) or loses its HEAD; git 2.34 and 2.39
+  // call either "not a git repository", 2.56 "gitfile does not point to a valid repository": git opens neither.
+  const worktree = (/** @type {string} */ repo, /** @type {string} */ dir, /** @type {"gone" | "noHead"} */ how) => {
+    git(["worktree", "add", "-q", "--detach", dir], { cwd: repo });
+    const admin = join(repo, ".git", "worktrees", basename(dir));
+    if (how === "gone") rmSync(admin, { recursive: true });
+    else rmSync(join(admin, "HEAD"));
+    mkdirSync(join(dir, "src"));
+    writeFileSync(join(dir, "src", "x.js"), "x\n");
+    return join(dir, "src", "x.js");
+  };
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "en-sc-wt-")));
+  assert.equal(mapSideCopyPath(worktree(proj, join(base, "pruned"), "gone"), { projectDir: proj })?.relPath, "src/x.js", "its git dir pruned");
+  assert.equal(mapSideCopyPath(worktree(proj, join(base, "headless"), "noHead"), { projectDir: proj })?.relPath, "src/x.js", "its git dir without HEAD");
+  assert.equal(mapSideCopyPath(worktree(proj, join(proj, ".claude", "worktrees", "in"), "gone"), { projectDir: proj })?.relPath, "src/x.js", "inside the project, pruned");
+  assert.equal(mapSideCopyPath(worktree(other, join(base, "theirs"), "gone"), { projectDir: proj }), null, "another repository's worktree");
+});
+
 test("hook (j): Turkish output when the project language is tr", () => {
   const r = runHook(readInput("s-j", join(worktree, "src/lib/engine/x.ts")), {
     CLAUDE_PROJECT_DIR: project,

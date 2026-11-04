@@ -350,6 +350,11 @@ test("git audit: headCommit is null with no commit or no repository, and throws 
   const outside = mkdtempSync(join(tmpdir(), "pl-head-out-"));
   assert.equal(headCommit(outside), null);
   assert.equal(repoPath("--show-toplevel", { cwd: outside }), null);
+  // A .git file that points to no repository: git 2.34 and 2.39 say "not a git repository: <target>", 2.56 "gitfile
+  // does not point to a valid repository". The same folder, so the same answer on every git.
+  const dangling = mkdtempSync(join(tmpdir(), "pl-head-gitfile-"));
+  writeFileSync(join(dangling, ".git"), `gitdir: ${join(dangling, "nowhere")}\n`);
+  for (const flag of ["--git-dir", "--show-toplevel"]) assert.equal(repoPath(flag, { cwd: dangling }), null, flag);
   const dir = mkdtempSync(join(tmpdir(), "pl-head-"));
   git(["init", "-q", "-b", "main"], { cwd: dir });
   assert.equal(headCommit(dir), null, "no commit yet");

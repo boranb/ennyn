@@ -342,7 +342,9 @@ export function repoPath(flag, { cwd, env = process.env }) {
   const args = ["rev-parse", flag];
   const r = gitRun(args, { cwd, env: { ...env, LC_ALL: "C", LANGUAGE: "C" } });
   if (!r.error && r.status === 0) return r.stdout.replace(/\n$/, "");
-  if (!r.error && r.status === 128 && /^fatal: not a git repository/m.test(r.stderr)) return null;
+  // A .git file that points to no repository is "not a git repository: <target>" to git 2.34 and 2.39, "gitfile does
+  // not point to a valid repository" to 2.56: the same folder, so the same answer.
+  if (!r.error && r.status === 128 && /^fatal: (not a git repository|gitfile does not point to a valid repository)/m.test(r.stderr)) return null;
   throw gitError(args, r);
 }
 
