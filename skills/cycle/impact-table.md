@@ -20,6 +20,22 @@ Skip when the diff can be told in one sentence and is local (text, style, a sing
 
 A row that cannot be answered says `unmeasured: <reason>`; an empty row is never "clean".
 
+## The smallest-change row
+
+Every core task answers it before its first edit, also when the five rows are skipped, in the file its impact table goes to. One line per new piece (a file, function, option, command or dependency), its cells in this order:
+
+| Piece | Asked by | Already here | Done by | New code |
+|---|---|---|---|---|
+| its name | the line of the task (its node, its brief or a protocol step) that asks for it, quoted | `git grep -w` of its names and verbs, and what that found | the platform, git or an installed dependency, by running it (`--help`, a probe) with its version; or none | only what the three cells before it leave |
+
+A piece no line asks for is left out and named in one line, `Left out: <piece>, …`; a change that adds no piece writes `No new piece`. **Never cut**, even when no line asks for it: validation of anything read from outside the process (stdin, files, arguments, pasted data), data-loss handling, security, accessibility, anything the task asks for.
+
+A never-cut piece no line asks for still gets its line, with `never cut: <kind>` in its Asked by cell.
+
+Before the commit, set the row against the full diff (`git diff --merge-base <base branch>` for tracked files, `git status --short --untracked-files=all` for new ones): a piece added while writing, a function or option in a file the row already names too, gets its line, and a piece the `Left out` line names is either out of the diff or moved from that line into the row with the line that asks for it.
+
+**Why:** an agent skill that asks this before writing (ponytail, MIT) cut delivered code by 30% on the 18 of its author's 38 tasks whose code was run, with the hidden checks' pass rate flat (87/90 against 86/90); the other 20 were judged by a model only. An independent run of an older version wrote 53% fewer statements, and its robustness fell from 96.7 to 82.5 on stdin scripts whose task did not mention bad input: hence the never-cut list.
+
 ## Heuristic rules, dictionaries, thresholds
 
 1. Corpus first, with expected answers, containing both **accept** and **reject** cases (over-restrictive rules are written three times as often as over-permissive ones — Wang et al., MSR 2020).

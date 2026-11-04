@@ -173,6 +173,50 @@ test("plugin: every SKILL.md stays under 8 KB (DESIGN.md: skills are read whole,
   for (const { path } of skills) assert.ok(statSync(join(ROOT, path)).size < 8 * 1024, `${path}: ${statSync(join(ROOT, path)).size} bytes`);
 });
 
+test("plugin: a core task answers the smallest-change row before its first edit, five rows or none, in its impact table's file; what it never cuts is said once, in text read on demand", () => {
+  // A review of an agent skill's ladder (2026-10-25): what the task asks for, what the repository, the platform or a dependency
+  // already does, only then new code; an independent run's robustness fell on input its tasks did not mention, so the never-cut
+  // list stands beside the row. Pinned as whole lines, as the hand-written briefs' rules are.
+  const holds = (/** @type {string} */ file, /** @type {string} */ line) => assert.ok(read(file).split("\n").includes(line), `${file}: ${line}`);
+  // It reaches the agent by section 2 of the skill, which every brief's Protocol row names, and by the brief's own rows,
+  // a restart's consolidated brief among them.
+  holds("skills/cycle/SKILL.md", "3. **[Impact table](impact-table.md)** before the first edit: a core task's smallest-change row, always; the five rows when the change touches a shared decision, predicate, gate or accept/reject rule: `ennyn.mjs impact --symbol <name> --files <paths>`. Each row is answered by a command's output, never by recall. Heuristic rules, dictionaries, thresholds: an accept **and** reject corpus and a failing test first.");
+  holds("skills/cycle/task-brief.md", "| **Task** | the node, its slot, where its evidence is, what to deliver, the commit type |");
+  holds("skills/cycle/task-brief.md", "| **Impact table** | its path, or `not needed` and why; a core task gets a path either way: its smallest-change row is answered there before the first edit, with the five rows or without them, and set against the diff before the commit. The agent writes what it learns there |");
+  holds("skills/cycle/task-brief.md", "| **Node** | the task as it stands, its slot, and the failure count |");
+  // The plan the brief is written from gives a core task's path too.
+  assert.match(read("skills/cycle/report-formats.md"), /^1-2\. \[core tasks: [^\n]* — impact table: \[path, for the smallest-change row; the five rows required\/not needed \+ why\] — /m);
+  const file = "skills/cycle/impact-table.md";
+  holds(file, "Every core task answers it before its first edit, also when the five rows are skipped, in the file its impact table goes to. One line per new piece (a file, function, option, command or dependency), its cells in this order:");
+  holds(file, "| Piece | Asked by | Already here | Done by | New code |");
+  holds(file, "| its name | the line of the task (its node, its brief or a protocol step) that asks for it, quoted | `git grep -w` of its names and verbs, and what that found | the platform, git or an installed dependency, by running it (`--help`, a probe) with its version; or none | only what the three cells before it leave |");
+  const kept = "validation of anything read from outside the process (stdin, files, arguments, pasted data), data-loss handling, security, accessibility, anything the task asks for.";
+  holds(file, `A piece no line asks for is left out and named in one line, \`Left out: <piece>, …\`; a change that adds no piece writes \`No new piece\`. **Never cut**, even when no line asks for it: ${kept}`);
+  holds(file, "A never-cut piece no line asks for still gets its line, with `never cut: <kind>` in its Asked by cell.");
+  // Answered before writing, it is read again against what the commit holds, by the author before the commit and by the reviewer
+  // after: the full diff, since a piece may be a function inside a file the row already names, which a list of files never shows.
+  holds(file, "Before the commit, set the row against the full diff (`git diff --merge-base <base branch>` for tracked files, `git status --short --untracked-files=all` for new ones): a piece added while writing, a function or option in a file the row already names too, gets its line, and a piece the `Left out` line names is either out of the diff or moved from that line into the row with the line that asks for it.");
+  // The reviewer reads the finding schema, not this file: its sentence holds a core task's row alone, and names the never-cut kinds
+  // itself, so a check no line asks for is the row's gap, never a piece to cut (cycle 20, round two).
+  const review = "When the table holds a core task's smallest-change row, set it against the full diff: each new piece the diff holds, a function or option inside a file too, is in the row with the line of the task that asks for it; validation of anything read from outside the process, data-loss handling, security and accessibility need no asking line (`never cut`). A piece the row lacks, or its `Left out` line names, is a finding; for a never-cut piece the finding is the row's gap, never the piece.";
+  holds("skills/cycle/finding-schema.md", review);
+  for (const kind of ["validation of anything read from outside the process", "data-loss handling", "security", "accessibility"]) assert.ok(kept.includes(kind) && review.includes(kind), kind);
+  const text = read(file);
+  assert.ok(text.indexOf("## The smallest-change row") > text.indexOf("## The five rows") && text.indexOf("## The smallest-change row") < text.indexOf("## Heuristic rules"), "the row stands with the five rows");
+  // Read on demand: the never-cut list whole once in the skills and agents, and no text a session loads before a skill runs names the row.
+  const shipped = [...skills.flatMap(({ name }) => readdirSync(join(ROOT, "skills", name)).map((f) => `skills/${name}/${f}`)), ...agents.map((a) => a.path)];
+  assert.deepEqual(shipped.filter((f) => read(f).includes(kept)), [file]);
+  assert.equal(read(file).split(kept).length, 2, "said once");
+  const styles = filesBelow("styles");
+  assert.ok(styles.length > 0, "the styles are read");
+  for (const f of styles) assert.ok(!/smallest-change/i.test(read(f)), f);
+  const description = (/** @type {string} */ path) => frontMatter(read(path))?.get("description") ?? "";
+  for (const { path } of [...agents, ...skills]) {
+    assert.notEqual(description(path), "", `${path}: the description is read`);
+    assert.ok(!/smallest-change/i.test(description(path)), path);
+  }
+});
+
 test("plugin: the closing runs ennyn.mjs leftovers after its commit, and the handoff's leftover command, unmeasured when none is named", () => {
   // Before step 6's commit the closing's own graph, handoff and ledger are changes not committed (cycle 18's closing commit holds all of them).
   const line = String(read("skills/cycle/SKILL.md").split("\n").find((l) => l.startsWith("5. **Security checks:**")));

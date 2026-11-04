@@ -27,7 +27,7 @@ The orchestrator (the session running the cycle) keeps the plan, step 7's verdic
 
 1. **Read** only the relevant files; independent reads go in the **same turn**.
 2. **Design brief** for UI work: [design-brief.md](design-brief.md).
-3. **Impact table** before the first edit when the change touches a shared decision, predicate, gate or accept/reject rule: `ennyn.mjs impact --symbol <name> --files <paths>`, then answer its five rows. Each row is answered by a command's output, never by recall. For heuristic rules, dictionaries and thresholds: build an accept **and** reject corpus and a failing test first. Details: [impact-table.md](impact-table.md).
+3. **[Impact table](impact-table.md)** before the first edit: a core task's smallest-change row, always; the five rows when the change touches a shared decision, predicate, gate or accept/reject rule: `ennyn.mjs impact --symbol <name> --files <paths>`. Each row is answered by a command's output, never by recall. Heuristic rules, dictionaries, thresholds: an accept **and** reject corpus and a failing test first.
 4. **Implement**, matching existing patterns.
 5. **Test:** a new test alone first, its control seen failing once; then the handoff's fast test, lint and typecheck.
 6. **Mutation pass** on the changed files with the handoff's mutation tool; with none (or "not applicable"), hand-pick mutants of the changed lines and run them with `ennyn.mjs mutate <list.json> --command "<fast test>"`, adding `--check "<parse command> {file}"` for files other than JavaScript and JSON. It edits files in place: while a reviewer reads the tree, run it in a separate worktree. Record the first-run result (`killed/total`); write a test for each survivor or justify it as equivalent.

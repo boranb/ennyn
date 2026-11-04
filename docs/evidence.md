@@ -52,6 +52,21 @@ Twelve studies: six on the origin project, six on outside sources.
 
 → Five-row impact table before the first edit, each row answered by a command (`ennyn impact`, `skills/cycle/impact-table.md`); for heuristic rules, an accept and reject corpus and a failing test come first.
 
+## Code the task did not ask for
+
+From outside sources read on 2026-10-25; Ennyn has not measured this on its own tasks.
+
+- ponytail, an open-source agent skill (MIT), asks a ladder before code is written: does it need to exist, is it already in this codebase, does the platform do it, does an installed dependency, can it be one line, and only then the minimum.
+- In its author's own run the ladder cut delivered code by 53% over 38 tasks. The code of 18 of them was run: there the cut was 30%, and the hidden checks' pass rate stayed flat (87/90 against 86/90). The other 20 were judged by a model only.
+- An independent run of an older version wrote 53% fewer statements, and robustness fell from 96.7 to 82.5 on stdin scripts whose task did not mention bad input.
+- Its rung "already in this codebase" came from duplicated code (its issue 217).
+- Two of its figures, 98.9% and 94.4%, come from a file its author marked superseded: the plugin's hook fired in every arm, the baseline's too. They are not used here, and the never-cut list rests on the independent run.
+- Ennyn's own source grew from 5,593 lines at cycle 5 to 12,680 at cycle 11.
+
+**Limits.** One author's run, partly judged by a model, and one independent run of an older version. Both count code size and a pass rate, not defects or later rework, and the robustness drop was measured on one kind of program. The row is asked in prose; whether it changes what Ennyn's tasks write is not yet measured.
+
+→ Before its first edit, a core task answers a smallest-change row: the line of the task that asks for each new piece, what the repository already has (`git grep -w`), what the platform, git or an installed dependency does, and only then new code. Validation of input from outside the process, data-loss handling, security, accessibility and anything the task asks for are never cut (`skills/cycle/impact-table.md`).
+
 ## Gates stop recurrence, prose does not
 
 | Defect family | Mechanism | Written rule | Result |

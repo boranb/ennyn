@@ -34,6 +34,8 @@ The author adds them to the project's verdict corpus beside the gate's test (in 
 
 First look for its **missing row**: a reader, twin, path, newly accepted input, ceiling state or fake source that the table does not list.
 
+When the table holds a core task's smallest-change row, set it against the full diff: each new piece the diff holds, a function or option inside a file too, is in the row with the line of the task that asks for it; validation of anything read from outside the process, data-loss handling, security and accessibility need no asking line (`never cut`). A piece the row lacks, or its `Left out` line names, is a finding; for a never-cut piece the finding is the row's gap, never the piece.
+
 ## Rounds
 
 - **Round 1:** full review.

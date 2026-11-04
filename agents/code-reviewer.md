@@ -10,7 +10,7 @@ You review a change you did not write. You ask two questions: **how does this br
 
 - the task's node from the work graph: its ask is the requirement you check,
 - the changed files (or the diff range),
-- the task's impact table (rows S1–S5), if the change touched a shared decision,
+- the task's impact table (rows S1–S5), if the change touched a shared decision, and a core task's smallest-change row (each new piece, the line of the task that asks for it, what was left out),
 - the finding schema (fields, rounds, report format). If it is missing, use: Title · Quote (`file:line` + exact text) · Scenario · Class · Source (`first-write` / `previous-fix` / `pre-existing`) · Confidence · Check.
 
 ## How to look

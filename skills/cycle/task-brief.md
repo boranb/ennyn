@@ -10,8 +10,8 @@ One common brief for the cycle, one short brief per task, read first, in one tur
 
 | Part | Content |
 |---|---|
-| **Task** | the node, where its evidence is, what to deliver, the commit type |
-| **Impact table** | its path, or `not needed` and why; the agent writes what it learns there |
+| **Task** | the node, its slot, where its evidence is, what to deliver, the commit type |
+| **Impact table** | its path, or `not needed` and why; a core task gets a path either way: its smallest-change row is answered there before the first edit, with the five rows or without them, and set against the diff before the commit. The agent writes what it learns there |
 | **Gate** | the check that exercises this change end to end, in one line, by command: a browser check for a UI change, the project's harness for a money path, a test file otherwise; for an audit, the audited feature's own check; for a security audit, the suites of the gates it touches, named in the brief; for a mechanization task, in words, what it will build, until its report names the command. `none` and why for a task with nothing to run. It runs beside the test that proves a fix, never instead |
 | **Files** | what to read first, what to search instead |
 | **Paths** | the CLI and this skill's folder, written out: an agent's shell has no `${CLAUDE_PLUGIN_ROOT}`, and a skill read from disk holds it unfilled (Claude Code 2.1.310) |
@@ -82,7 +82,7 @@ A state this table does not name is the orchestrator's decision, written in the 
 
 | Part | Content |
 |---|---|
-| **Node** | the task as it stands, and the failure count |
+| **Node** | the task as it stands, its slot, and the failure count |
 | **Place** | worktree, new branch, the base branch, new snapshot name, the impact table's path |
 | **What was tried** | each attempt in one line, and the old branch that holds the code |
 | **What failed and why** | the failing command and its result; the cause, marked measured or guessed |
