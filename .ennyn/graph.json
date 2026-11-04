@@ -467,7 +467,7 @@
       "cluster": "gates",
       "mechanization": true,
       "sourceClass": "a fixed wall-clock limit in a test fails under load",
-      "source": "cycle 2026-10-24 (8), review round 1 of guards-under-load; measured in the T4 landing run; cycle 2026-10-25 (10): the secrets linear-time ratio failed two full runs at load 8-40 (fixed with CPU time, 1ccb39b); the other wall-clock reads remain; cycle 2026-10-26 (12): at load 50-274 single full runs failed on the fence-reader timing test, a verdicts secrets cell (the hook past 60 s), guards' inner runs, deps' OSV test (stalled 15 minutes) and mutate's runs that wait; each file passed alone, so no run of the cycle's last two landings was clean on the first try; cycle 2026-10-27 (13): at load 83-115 single full runs failed on mutate's runs that wait and its owner-stamp test (the parse check gave no answer), the fault matrix control (its fake git writes the pid it counts only after starting sleep, so a 1 s limit can stop it first: write a marker first), guards' baselines of fault-injection and verdicts, and two hook tests (exit null); each file passed alone; cycle 2026-10-28 (14): the Linux run measured waits shorter than their limits (730 ms against 1 s, 1785 and 1801 ms against 2 s) in the fault matrix control: the tests read Date.now(), which the VM's clock adjustment moves; every test that times a wait reads performance.now() since ce3d0d2; the fixed limits remain; cycle 2026-10-31 (15): setup.test.mjs:1038 failed once at load 40-67 (alone 78/78), and mutation.test.mjs:795 and :838 once at load 95; guards' input-shapes cell once at load 17-27 in the guards clone (alone 10/10); four parallel full suites took the machine to load 124; 2026-10-31 research on closing escaped classes: named in cycles 12 and 13, came back in cycles 8, 9, 10, 12, 13, 14 and 15, never flagged; 2026-10-31: test/input-shapes.test.mjs:493's cleanup failed once in npm test at load about 42 (ENOTEMPTY on a temporary repository's .git/objects/pack, so something was writing there during rmSync, cause not found), the file alone passed 8 of 8 three times; cycle 2026-11-01 (16): three whole suites at once took the machine to load 330 and swap to 11.8 of 13.3 GB; failures read as load: setup's imports-over-blank-lines, the fault matrix's never-ending git control, input-shapes in guards' baseline and mutation, each green alone; 2026-11-01: published work favours limits derived from past durations over hand-raised ones (SAP cut timeout flakes 80%, arXiv 2402.05223, one of two SAP studies, which disagree on load); cycle 16 measured: 10 of 23 whole suites red, 3 of them real, median 654 s against 444-490 s on a quiet machine; cycle 2026-11-01 (17): the fault matrix's never-ending git control leaves this node. Its red was no fixed limit moved by CPU load: macOS holds the first run of a new file until a system check has read it (0.2-0.9 s alone, 17 s behind 60 others at load 11-18), and the fake's shell had not reached its first line at the 1 s limit, so the marker first named here for cycle 13 would not have helped. Fixed in 197121d: first run under no limit; a run lost to a slow start runs again and is judged. Not a bound load cannot move: with 90 or more start loops and the machine out of memory the control ends at its 45 s watchdog, and that reads as slow, not hung. Spinners up to load 332 never failed it; the short suite failed it 8 of 12 runs at load 12-50. Other tests here have not been checked for this: first-run-under-limit; cycle 2026-11-02 (18): 'a diff that stops after its output' failed on 'the streamed diff was held' at load 150 and again in guards' clone at 190, 12/12 alone; test/mutation.test.mjs lost four to mutate's own 1.5 s limit at load 102, 76/76 alone at load 143; a landing suite can go red on these; cycle 2026-11-02 (19): setup's linear-time test failed in T5's landing suite at load ~100 (alone 88/88 at load 124) and in T1's short suite at ~114; a fault-matrix cell (budget --record, eacces statSync) failed once at load 25-55, alone 1/1",
+      "source": "cycle 2026-10-24 (8), review round 1 of guards-under-load; measured in the T4 landing run; cycle 2026-10-25 (10): the secrets linear-time ratio failed two full runs at load 8-40 (fixed with CPU time, 1ccb39b); the other wall-clock reads remain; cycle 2026-10-26 (12): at load 50-274 single full runs failed on the fence-reader timing test, a verdicts secrets cell (the hook past 60 s), guards' inner runs, deps' OSV test (stalled 15 minutes) and mutate's runs that wait; each file passed alone, so no run of the cycle's last two landings was clean on the first try; cycle 2026-10-27 (13): at load 83-115 single full runs failed on mutate's runs that wait and its owner-stamp test (the parse check gave no answer), the fault matrix control (its fake git writes the pid it counts only after starting sleep, so a 1 s limit can stop it first: write a marker first), guards' baselines of fault-injection and verdicts, and two hook tests (exit null); each file passed alone; cycle 2026-10-28 (14): the Linux run measured waits shorter than their limits (730 ms against 1 s, 1785 and 1801 ms against 2 s) in the fault matrix control: the tests read Date.now(), which the VM's clock adjustment moves; every test that times a wait reads performance.now() since ce3d0d2; the fixed limits remain; cycle 2026-10-31 (15): setup.test.mjs:1038 failed once at load 40-67 (alone 78/78), and mutation.test.mjs:795 and :838 once at load 95; guards' input-shapes cell once at load 17-27 in the guards clone (alone 10/10); four parallel full suites took the machine to load 124; 2026-10-31 research on closing escaped classes: named in cycles 12 and 13, came back in cycles 8, 9, 10, 12, 13, 14 and 15, never flagged; 2026-10-31: test/input-shapes.test.mjs:493's cleanup failed once in npm test at load about 42 (ENOTEMPTY on a temporary repository's .git/objects/pack, so something was writing there during rmSync, cause not found), the file alone passed 8 of 8 three times; cycle 2026-11-01 (16): three whole suites at once took the machine to load 330 and swap to 11.8 of 13.3 GB; failures read as load: setup's imports-over-blank-lines, the fault matrix's never-ending git control, input-shapes in guards' baseline and mutation, each green alone; 2026-11-01: published work favours limits derived from past durations over hand-raised ones (SAP cut timeout flakes 80%, arXiv 2402.05223, one of two SAP studies, which disagree on load); cycle 16 measured: 10 of 23 whole suites red, 3 of them real, median 654 s against 444-490 s on a quiet machine; cycle 2026-11-01 (17): the fault matrix's never-ending git control leaves this node. Its red was no fixed limit moved by CPU load: macOS holds the first run of a new file until a system check has read it (0.2-0.9 s alone, 17 s behind 60 others at load 11-18), and the fake's shell had not reached its first line at the 1 s limit, so the marker first named here for cycle 13 would not have helped. Fixed in 197121d: first run under no limit; a run lost to a slow start runs again and is judged. Not a bound load cannot move: with 90 or more start loops and the machine out of memory the control ends at its 45 s watchdog, and that reads as slow, not hung. Spinners up to load 332 never failed it; the short suite failed it 8 of 12 runs at load 12-50. Other tests here have not been checked for this: first-run-under-limit; cycle 2026-11-02 (18): 'a diff that stops after its output' failed on 'the streamed diff was held' at load 150 and again in guards' clone at 190, 12/12 alone; test/mutation.test.mjs lost four to mutate's own 1.5 s limit at load 102, 76/76 alone at load 143; a landing suite can go red on these; cycle 2026-11-02 (19): setup's linear-time test failed in T5's landing suite at load ~100 (alone 88/88 at load 124) and in T1's short suite at ~114; a fault-matrix cell (budget --record, eacces statSync) failed once at load 25-55, alone 1/1; cycle 2026-11-04 (20) in WSL: at T1's landing four subtests of mutate: runs that wait failed (baseline 11 s against the 1.5 s timeout; one parse check gave no answer), the file alone 76/76; the hook-oracle-limit guard survived twice under load and was killed alone; a compaction corpus cell timed out at 2 s",
       "since": 8
     },
     {
@@ -1180,17 +1180,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "smallest-change-row",
-      "title": "Before writing, every core task answers a smallest-change row by command: the line of the task that asks for each new piece (a piece no line asks for is left out and named in one line), what the repository already has for it (`git grep -w` of its names and verbs), the platform, git or an installed dependency that does it, and only then new code. Never cut: validation of anything read from outside the process (stdin, files, arguments, pasted data), data-loss handling, security, accessibility, anything the task asks for. The row lives in impact-table.md, read on demand, not in text every session loads",
-      "value": "high",
-      "cost": "S",
-      "cluster": "method",
-      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: its ladder (does it need to exist? already in this codebase? the platform? an installed dependency? one line? the minimum) cut delivered code 53% over 38 tasks in the author's own run, 30% on the 18 tasks whose code was run, where the hidden-check pass rate was flat (87/90 against 86/90), the rest judged by a model only; an independent run of an older version got 53% fewer statements with robustness 96.7 to 82.5 on stdin scripts where bad input was not mentioned; its rung 'already in this codebase' came from duplicated code (its issue 217); the 98.9% and 94.4% figures come from a file the author marked SUPERSEDED, where the plugin's hook fired on every arm, so the never-cut list now rests on the independent run; Ennyn's source grew from 5,593 lines (cycle 5) to 12,680 (cycle 11)",
-      "since": 11
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "duplicate-code",
       "title": "Copies a commit adds get a warning from the commit-msg hook that names where the other copy is: a top-level definition (function, class, exported constant) whose name, ignoring case, `_` and `-`, another tracked source file already defines, and a block of N or more meaningful lines (whitespace collapsed; blank, comment and brace lines skipped) that another tracked source file already holds. The same check runs over the cycle's whole range at its end, since rebase and cherry-pick run no commit-msg hook and parallel tasks cannot see each other's helpers; doctor counts the copies the tree holds. A helper rewritten under another name with other text is not found, and the warning says so",
       "value": "medium",
@@ -1267,7 +1256,9 @@
     },
     {
       "status": "planned",
-      "needs": ["plugin-eval"],
+      "needs": [
+        "plugin-eval"
+      ],
       "id": "eval-first-cases",
       "title": "First eval cases, each with a passing and a failing reference: a bug reported on one caller of a shared function, counted fixed only when the shared function is (does the impact table's S1/S2 do what ponytail's root-cause rule did?); a multi-turn scenario in one resumed session (the style holds across a topic switch and after compaction, a push is asked before it runs, a third 'still broken' turn stops patching); the session's own tests run against mutants of the code it wrote (ennyn mutate), counting what they catch; an arm with the smallest-change row, judged on the lines it delivers and on the hidden safety checks, so a lean rule that drops a guard shows; the terse style is run beside normal on the same cases, so a correctness drop shows before it is offered; claude plugin eval's free tool_order grader checks the protocol's order (tests, mutate, commit); the default arm uses only free graders",
       "value": "high",
@@ -1382,7 +1373,9 @@
     },
     {
       "status": "planned",
-      "needs": ["reference-markdown"],
+      "needs": [
+        "reference-markdown"
+      ],
       "id": "fence-reader-containers",
       "title": "The fence reader reads no containers: a fence indented four spaces or more outside a list item opens a block, a block in a list item does not end with the item, fences in block quotes are read as text (test/reference/markdown.json at d572b9b: 27 extra and 16 differing places, the most differing of any node; front matter is markdown-hidden-text)",
       "value": "medium",
@@ -1410,7 +1403,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "gates",
-      "source": "cycle 2026-10-26 (12), budget audit: read in the 2.1.310 binary",
+      "source": "cycle 2026-10-26 (12), budget audit: read in the 2.1.310 binary; cycle 2026-11-04 (20) task one-task-run: budget counts listings under .claude/skills|agents|commands only, so this plugin's root skills/ reads as 0 listings (budget --json)",
       "since": 12
     },
     {
@@ -1443,7 +1436,7 @@
       "value": "medium",
       "cost": "M",
       "cluster": "distribution",
-      "source": "cycle 2026-10-26 (12), hook-follows-plugin-update and the budget audit: every Windows claim this cycle is unverified",
+      "source": "cycle 2026-10-26 (12), hook-follows-plugin-update and the budget audit: every Windows claim this cycle is unverified; cycle 2026-11-04 (20), on Windows 10 (Git for Windows 2.47.1, Node 22.23.4, Claude Code 2.1.317): the suite run natively took 41 min and 269 of 1262 tests failed (CRLF checkout, fixtures Windows cannot hold: symlinks, FIFOs, chmod, /bin/sh, names with quotes or tabs; and some unexplained compaction and hook-oracle verdicts); in WSL Ubuntu 22.04 as a non-root user with a Linux PATH 1340/1340; the push hook and the commit-msg hook were measured live on Windows (security audit c20); NTFS alternate data streams in a tracked file read as nothing to lose for worktrees (c20-t5-auth-r0-06); a .GIT folder is the repository but init-scan lists it as a name (c20-t1-code-r1-07); worktrees-filemode",
       "since": 12
     },
     {
@@ -1483,7 +1476,9 @@
     },
     {
       "status": "planned",
-      "needs": ["eval-git-macos"],
+      "needs": [
+        "eval-git-macos"
+      ],
       "id": "eval-trailer-after-run",
       "title": "trailer-not-committed read by git after the run: no hook runs in an eval run (GIT_CONFIG_COUNT forces core.hooksPath=/dev/null and hook.*.enabled=false, and a case cannot undo it: execution.env takes only EVAL_* keys), so plugin-eval's runner opens the run directory the eval tool kept (--keep-temp; home/ is sealed mode 000 and the run's cwd is under it) and reads each new commit's trailers with git interpret-trailers --parse; the eval tool's graders cannot (file_exists sees only new paths, a regex grader one file's text)",
       "value": "medium",
@@ -1549,7 +1544,9 @@
     },
     {
       "status": "planned",
-      "needs": ["secret-held-today"],
+      "needs": [
+        "secret-held-today"
+      ],
       "id": "history-secret-scan",
       "title": "Once more right before the repository becomes public: every blob and path in history through test/hygiene's findings() and secretHits() (a public repository serves every commit; test/hygiene reads only the tree and commit messages); 2026-10-27 baseline: 876 blobs, 156 paths, 0 names or home paths, 0 secret shapes, controls caught a known token and a home path",
       "value": "high",
@@ -1609,7 +1606,9 @@
     },
     {
       "status": "planned",
-      "needs": ["release-0-1-0"],
+      "needs": [
+        "release-0-1-0"
+      ],
       "id": "launch-writeup",
       "title": "At the release: the 21-cycle study as an article (fixing review findings introduced 99 defects, first drafts missed 80; the origin project stays unnamed), then launch posts, and pull requests to two community lists of Claude Code plugins; GitHub topics and the social preview image set before; awesome-claude-code takes a descriptive description (10–500 characters, not promotional, not addressed to the reader), submitted by a person through the web form, category Agent Orchestration > SDLC",
       "value": "medium",
@@ -1649,7 +1648,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "source": "superpowers skills/writing-skills/references/discovery.md, 2026-10-27",
+      "source": "superpowers skills/writing-skills/references/discovery.md, 2026-10-27; cycle 2026-11-04 (20) task one-task-run: Claude Code 2.1.97 cuts a listed description at 250 characters (MAX_LISTING_DESC_CHARS), the docs say 1,536; the clause added for a one-task run invoked the skill in 1 of 4 prompts in a lab (2.1.97, claude-opus-4-6), row c20-t4-code-r2-03",
       "since": 13
     },
     {
@@ -2468,7 +2467,12 @@
     },
     {
       "status": "planned",
-      "needs": ["cycle-cost", "reviewer-seeded-recall", "task-short-suite", "heavy-job-limit"],
+      "needs": [
+        "cycle-cost",
+        "reviewer-seeded-recall",
+        "task-short-suite",
+        "heavy-job-limit"
+      ],
       "id": "effort-escalation",
       "title": "Measure whether a task's author and reviewers can run at low or medium effort and re-run at high only when a mechanical check fails (tests, ennyn mutate, finding-quote-check), with the failures passed back: the same tasks run both ways, compared by tasks passing their gates, escaped defects and cost; only then does the cycle skill name an effort per step. Anthropic's figures for Opus 5.5 on 478 SWE-bench Pro problems: everything at high 95.3% solved at $0.29 per task, low with failures re-run at high about 97% at about $0.17; its condition is 'You can check outputs (tests, a verifier)', and its re-run points 'are worked out task by task from the fixed-setting runs, not run separately'",
       "value": "medium",
@@ -2655,18 +2659,9 @@
     },
     {
       "status": "planned",
-      "needs": [],
-      "id": "greenfield-detect",
-      "title": "init-scan says whether the directory is a new project, by a fixed rule: no commit, or only commits whose files are a README, a licence, .gitignore, agent instruction files and .ennyn/; no dependency manifest and no source directory. Outside a repository init proposes git init, never inside another work tree. /ennyn:init then takes the greenfield path; today an empty repository and a directory with no repository both give exit 0 with every field empty, and init asks the existing-project questions",
-      "value": "high",
-      "cost": "S",
-      "cluster": "init",
-      "source": "greenfield research 2026-10-29: measured on an empty git init and on a plain directory, init-scan --json exit 0 both, commands [] and roadmap []; Conductor's setup skill: 'Classify as Greenfield ONLY if:' (no manifests, no source directories); GSD Core new-project: 'never nest `.git` inside an existing worktree'; superpowers #2242, maintainer: 'so a greenfield Task 1 really has no path today'",
-      "since": 15
-    },
-    {
-      "status": "planned",
-      "needs": ["greenfield-detect"],
+      "needs": [
+        "greenfield-detect"
+      ],
       "id": "greenfield-intake",
       "title": "The greenfield path of /ennyn:init asks once, at most five questions, each with a proposed default: what it is in one line; who uses it and where it runs; the stack with a one-line reason and the alternatives; data and auth; the quality tooling (test runner, lint and format, typecheck, end-to-end), asked before any code exists. A one-file script gets one question. Answers go once into the config and a short product note, each marked the user's choice or Ennyn's default, and are not asked again; a stack the user names is never swapped. An empty answer, or one the host filled after a timeout, is no answer: ask again in plain text and write nothing without an explicit yes. No PRD, architecture or epic documents. The text lives in its own file read only on this path (skills/init/SKILL.md is 8,167 bytes, past Codex's 8,000: codex-skill-bytes)",
       "value": "high",
@@ -2677,7 +2672,9 @@
     },
     {
       "status": "planned",
-      "needs": ["greenfield-intake"],
+      "needs": [
+        "greenfield-intake"
+      ],
       "id": "greenfield-stack-versions",
       "title": "In the greenfield path, stack and scaffold versions come from the registry and OSV at the time of choice, never from the model's memory: each is the newest release older than security.deps.cooldownDays with no advisory; the scaffold generator runs pinned (create-x@<version>), never @latest, and a deprecated starter is refused (Create React App since 2025-02-14). The choice goes into the product note as a short table: decision, reason, alternatives, what not to use",
       "value": "high",
@@ -2699,7 +2696,9 @@
     },
     {
       "status": "planned",
-      "needs": ["greenfield-detect"],
+      "needs": [
+        "greenfield-detect"
+      ],
       "id": "greenfield-first-commit",
       "title": "In a new project the first commit comes before any scaffold or install: .gitignore (env files, keys, build output), the package manager's settings (npm: ignore-scripts or allowScripts and min-release-age; pnpm: minimumReleaseAge and strictDepBuilds; uv: exclude-newer), .ennyn/config.json, the ask rules and the commit-msg hook (install-hook works in a repository with no commit, measured). A commit hook sees a lock file only after its install scripts ran, so only settings written before the first install reach that moment",
       "value": "high",
@@ -2710,24 +2709,16 @@
     },
     {
       "status": "planned",
-      "needs": ["greenfield-intake", "greenfield-first-commit"],
+      "needs": [
+        "greenfield-intake",
+        "greenfield-first-commit"
+      ],
       "id": "walking-skeleton-first",
       "title": "The greenfield graph's first node is a walking skeleton: the thinnest end-to-end path of one real behaviour through every part the project has, permanent code with a test, at most about five steps. Done is checked by commands, not by the report: the fast test, lint and typecheck commands exit 0 (a typecheck is required for a dynamically typed language); one assertion broken on purpose makes the test command fail, so the runner provably runs; the lock file is committed; the hook is installed; the commands are written where the cycle reads them, so its test and mutation steps have something to run. skills/init/graph.md gets the rule for the nodes after it: vertical slices ('after this node, can a user do something new?'), no layer-only node such as a database schema, tests inside each node and never a final test node",
       "value": "high",
       "cost": "M",
       "cluster": "init",
       "source": "Crystal Clear (2004, page captured 2008): 'A walking skeleton, on the other hand, is permanent code, built with production coding habits, regression tests, and is intended to grow with the system.'; GSD Core planner: 'If Skeleton has more than ~5 tasks, you are not skeletonizing.'; GSD #2826: 'nothing works until the final wiring phase'; spec-kit tasks template: 'Tests are OPTIONAL - only include them if explicitly requested in the feature specification.'; the loop's author: 'I must stress the importance of wiring in a static analyser/type checker'; BMAD v7 slice rules: 'Tests go in every story; the only test story is the closing end-to-end suite.'",
-      "since": 15
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "no-test-command-stop",
-      "title": "The fast test command gets a config key that init writes and the cycle reads (today it lives only in the handoff's prose); doctor fails when it is unset and init-scan found none, and the cycle stops there with the reason. A project with no tests says so in the key (none, with a reason), which doctor shows as a warning. Measured 2026-10-29: in an empty repository doctor's only ✗ is the missing graph, so a cycle would reach its test and mutation steps with nothing to run",
-      "value": "high",
-      "cost": "S",
-      "cluster": "gates",
-      "source": "measured 2026-10-29 in an empty git init: doctor 'problems: 1' (work graph not found), init-scan commands []; Claude Code best practices: 'If it has nothing to run that tells it whether the work actually *is* done, \"looks done\" is all it has to go on.'",
       "since": 15
     },
     {
@@ -2765,7 +2756,9 @@
     },
     {
       "status": "planned",
-      "needs": ["walking-skeleton-first"],
+      "needs": [
+        "walking-skeleton-first"
+      ],
       "id": "greenfield-ci",
       "title": "The walking skeleton's CI workflow and a dependabot.yml (a cooldown for the package ecosystem and for github-actions) pass Ennyn's own CI check on the first commit: actions by SHA or the lock file, top-level permissions contents: read, persist-credentials: false, install from the lock (npm ci, --frozen-lockfile, uv sync --locked)",
       "value": "medium",
@@ -2809,7 +2802,11 @@
     },
     {
       "status": "planned",
-      "needs": ["greenfield-intake", "walking-skeleton-first", "no-test-command-stop"],
+      "needs": [
+        "greenfield-intake",
+        "walking-skeleton-first",
+        "no-test-command-stop"
+      ],
       "id": "greenfield-trial",
       "title": "A greenfield trial: a small real project started from an empty directory with /ennyn:init and run for three cycles, recorded in docs/evidence.md with the intake's questions and time, the skeleton's commands and checks, and the first cycles' numbers",
       "value": "high",
@@ -2832,7 +2829,9 @@
     },
     {
       "status": "planned",
-      "needs": ["resource-ledger"],
+      "needs": [
+        "resource-ledger"
+      ],
       "id": "cleanup-command",
       "title": "ennyn cleanup removes only what the record names and whose identity checks again at removal: it prints the plan first (each item with what its removal destroys: size, file count, untracked or ignored files, commits on no other ref) and a digest, and --apply <digest> runs exactly that plan, by argv, never a shell string, so no variable, glob or substitution widens a target; a mismatch marks the record orphaned and deletes nothing. Without asking: recorded processes (TERM to the group, KILL after a grace period, then the recorded ports checked free), recorded containers, the session temp root, clean worktrees, branches git branch -d accepts. Item by item on the user's yes: volumes, databases, worktrees holding untracked or ignored files, unmerged branches, observed records. Never: anything not recorded, a prune, a kill by name, home, the repository root and its parents, .git, stashes, tags, ignored files the record does not name (.env). It runs at task end and at cycle end before push-check, never in a SessionEnd hook",
       "value": "high",
@@ -2931,7 +2930,9 @@
     },
     {
       "status": "planned",
-      "needs": ["run-leftover-diff"],
+      "needs": [
+        "run-leftover-diff"
+      ],
       "id": "test-suite-leaves-nothing",
       "title": "init, and the legacy audit when it audits the test setup, runs the project's fast test command once inside run-leftover-diff with TMPDIR pointed at a temp root the cycle owns, and reports what the suite leaves behind: a test database a crashed or --keepdb run kept, SQLite files, containers when the reaper is off, temp folders, worker processes, coverage output that is not ignored. A suite that leaves something becomes a graph node, as Ennyn's own did: test/hermetic.mjs removes each test file's temp root at exit since the suite filled a disk",
       "value": "high",
@@ -2952,7 +2953,7 @@
       "cluster": "gates",
       "mechanization": true,
       "sourceClass": "a reading of text stands in for running the program it answers for",
-      "source": "cycle 2026-10-31 (15) convergence: the class recurred in tasks 2 and 3, about 30 times, all caught by reviewers or by the author's differential run: a word search for exit, a marker comment taken for the block's position, a made-up path, the folders on disk today, a regex over shell lines (wholeTree: 69 of 88 labelled lines wrongly named). Each ended by asking the real program (scratch repository) or by a rule that needs no reading (exact text). Patching the reader failed three rounds; a harness of real commits found 132 false ✓ a review had not, and 82 per git at the third reader, against 0 after the exact-print rule. Harnesses kept outside the repository, to be rewritten as a test; cycle 2026-11-02 (18): reader-drifts-from-program recurred most, 49 rows, 42 of them the push reader: three authors and a hand corpus missed what a reviewer found by carving the real parser out of the binary and generating from the reader's own acceptance, 6 million texts in minutes. That is this node's method, and it decided the design",
+      "source": "cycle 2026-10-31 (15) convergence: the class recurred in tasks 2 and 3, about 30 times, all caught by reviewers or by the author's differential run: a word search for exit, a marker comment taken for the block's position, a made-up path, the folders on disk today, a regex over shell lines (wholeTree: 69 of 88 labelled lines wrongly named). Each ended by asking the real program (scratch repository) or by a rule that needs no reading (exact text). Patching the reader failed three rounds; a harness of real commits found 132 false ✓ a review had not, and 82 per git at the third reader, against 0 after the exact-print rule. Harnesses kept outside the repository, to be rewritten as a test; cycle 2026-11-02 (18): reader-drifts-from-program recurred most, 49 rows, 42 of them the push reader: three authors and a hand corpus missed what a reviewer found by carving the real parser out of the binary and generating from the reader's own acceptance, 6 million texts in minutes. That is this node's method, and it decided the design; cycle 2026-11-04 (20) convergence: reader-drifts-from-program recurred most again, 20 rows (review 11, measurement 7), nearly all the push reader against Git Bash 5.2, pwsh 7.4, Windows PowerShell 5.1, cmd, WSL bash 5.1 and dash, and ssh's far side; each fix round opened or missed a shape a real run found (a .bat taken for an inert builtin, a second reading applied where no second shell runs); what held was the reviewers' differential runs: real programs pushing to a local bare remote, 1,905 session commands replayed through each reader version, 3,420 ssh cells against bash -c",
       "since": 15
     },
     {
@@ -3204,7 +3205,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "source": "measured, cycle 16: three or more heavy jobs ran together for 29% of calendar time, load median 56 on 10 cores; the suite lock added at 16:48 ended the 24-minute runs but not the median (586 to 669 s), since mutation, gates and labs stayed outside it, and it made 32.6 minutes of queue. node --test limits files, not the processes they spawn; cycle 2026-11-01 (17): one short suite sat about 50 minutes in the lock's queue with labs ahead of it, and a reviewer's probe that recursed in a hook reached 1738 processes against a per-user limit of 2666, so other tasks failed with EAGAIN: the limit should count processes too, and probes need a bound; cycle 2026-11-02 (18): T2's short suite waited about 2 hours on the cycle's lock at load up to 241: a mkdir lock keeps no order, and a short suite with guards back runs as long as a whole one; a reviewer's parallel mutant trees reached load 177 before it was told to run them in turn; cycle 2026-11-02 (19): the mkdir lock kept no order: T3's short suite waited 94 minutes and T4's 42 while later arrivals took it; four short suites queued behind one with guards back, load up to 154",
+      "source": "measured, cycle 16: three or more heavy jobs ran together for 29% of calendar time, load median 56 on 10 cores; the suite lock added at 16:48 ended the 24-minute runs but not the median (586 to 669 s), since mutation, gates and labs stayed outside it, and it made 32.6 minutes of queue. node --test limits files, not the processes they spawn; cycle 2026-11-01 (17): one short suite sat about 50 minutes in the lock's queue with labs ahead of it, and a reviewer's probe that recursed in a hook reached 1738 processes against a per-user limit of 2666, so other tasks failed with EAGAIN: the limit should count processes too, and probes need a bound; cycle 2026-11-02 (18): T2's short suite waited about 2 hours on the cycle's lock at load up to 241: a mkdir lock keeps no order, and a short suite with guards back runs as long as a whole one; a reviewer's parallel mutant trees reached load 177 before it was told to run them in turn; cycle 2026-11-02 (19): the mkdir lock kept no order: T3's short suite waited 94 minutes and T4's 42 while later arrivals took it; four short suites queued behind one with guards back, load up to 154; cycle 2026-11-04 (20) on Windows with WSL: two suite slots by flock; a locked suite waited over 30 minutes behind two others",
       "since": 16
     },
     {
@@ -3564,17 +3565,6 @@
       "cost": "M",
       "cluster": "method",
       "source": "measured 2026-11-01: open nodes 10 to 325 in 13 days, done 9 to 87, about 5 finished per cycle, so about 60 cycles of backlog; 193 open nodes came in the last four cycles; every done node is status done and no state means refused. spec-kit's assess extension: 'Killing ideas here is a success, not a failure'",
-      "since": 17
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "one-task-run",
-      "title": "A run of one named node, with no slots: asked for one node or one fix, the cycle takes that task alone under the same protocol (impact table, tests, review, mutation, ledger row) and closes with the same report, no mechanization and no legacy audit. SKILL.md is 7,969 bytes against Codex's 8,000, so the text goes in a file beside it",
-      "value": "high",
-      "cost": "S",
-      "cluster": "method",
-      "source": "the skill offers only four tasks at once, and cycle 16 took 13.1 hours. spec-kit's users asked for the same and got bug and lean: #1174 (22 reactions): 'inefficient for very small tasks'; #619 (26) and #442 (52) on fixing after implementation; a comment on #75: 'for smaller changes, speckit is overkill'",
       "since": 17
     },
     {
@@ -4395,6 +4385,226 @@
       "sourceClass": "stand-in-for-the-fact",
       "source": "cycle 2026-11-02 (19): the most recurring class of the convergence block",
       "since": 19
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "worktrees-filemode",
+      "title": "ennyn worktrees compares the executable bit where core.fileMode is false (plan/worktrees.mjs:351: the mode on disk against HEAD's 100755), so on Windows every marked worktree is kept, a fresh clean one too, and --remove removes none; read the mode as git does under core.fileMode=false, and measure it on Git for Windows",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "distribution",
+      "source": "cycle 2026-11-04 (20), the orchestrator on Windows 10 with Git for Windows 2.47.1: all marked worktrees kept 'with another mode on disk than in HEAD' (adapters/claude-code/hooks/conversation-style.mjs is 100755), row c20-orch-r0-01",
+      "since": 20
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hook-older-config-keys",
+      "title": "A commit hook that runs an older Ennyn (the plugin's recorded root) cannot load a config key it does not know and reads the whole config as loosened (checks/loosening.mjs:389), so a commit that brings a new key with the code reading it is refused for loosening; say it is a version skew, or judge the commit's config with the commit's own reader",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-04 (20) task no-test-command-stop: commands.fastTest refused by the hook at 7a89647's CLI; the code landed first and the config line followed (be8ecb2), row c20-t2-author-r0-03",
+      "since": 20
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "cycle-open-guard",
+      "title": "The cycle's start sees an open cycle mechanically and stops, saying so: a start record leftovers --start would replace that no closing followed, or a worktree mark numbered past the handoff's last cycle; one-task.md's open-cycle rule reads marks only, so it misses a cycle before its first worktree and after its last removal, and a cycle never closed blocks every one-task run with no way out named",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 2026-11-04 (20) task one-task-run, review rounds 1-2 (open-cycle.sh, open-cycle-r2.sh measured in WSL), rows c20-t4-code-r2-01, c20-t4-code-r2-02, c20-t4-author-r1-02",
+      "since": 20
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "smallest-change-row-other-slots",
+      "title": "Whether a mechanization task, a legacy audit and a one-task run's task answer the smallest-change row: step 3 binds it to a core task, and a one-task run has no slot",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 2026-11-04 (20) task smallest-change-row and its landing review",
+      "since": 20
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "impact-row-skeleton",
+      "title": "ennyn impact prints the smallest-change row's header and the git grep -w of the names it is given, so the row's 'already here' cell starts from a command's output",
+      "value": "low",
+      "cost": "S",
+      "cluster": "impact",
+      "source": "cycle 2026-11-04 (20) task smallest-change-row, a piece left out",
+      "since": 20
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "greenfield-walk-cost",
+      "title": "init-scan's walk below a folder outside every repository reads up to 10,000 folders with no time limit and says nothing of the cost: at the cap 0.5 s on ext4, 4-7 s on NTFS, 29-50 s from WSL on /mnt/c; bound it by time too, a time out read as unmeasured",
+      "value": "low",
+      "cost": "S",
+      "cluster": "init",
+      "source": "cycle 2026-11-04 (20) task greenfield-detect, landing review (probe-r3.sh, mktree.mjs), row c20-t1-code-r3-01",
+      "since": 20
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "greenfield-litter-names",
+      "title": "Names a new folder often holds make it read as not new: .DS_Store, .vscode/, .idea/, .gitattributes, .mcp.json, .github/copilot-instructions.md; take the exact names, by evidence, in the safe direction",
+      "value": "low",
+      "cost": "S",
+      "cluster": "init",
+      "source": "cycle 2026-11-04 (20) task greenfield-detect, impact table S3 reject list",
+      "since": 20
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "greenfield-handoff-name",
+      "title": "init writes HANDOFF.md at the top by default, which a later init-scan reads as not new; let the configured paths.handoff count as the project's own",
+      "value": "low",
+      "cost": "S",
+      "cluster": "init",
+      "source": "cycle 2026-11-04 (20) task greenfield-detect, impact S3/S4",
+      "since": 20
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "nested-folder-other-commands",
+      "title": "In a folder another work tree tracks nothing of, init-scan says within, but install-hook, doctor, budget and the other commands act on the outer tree through projectDir (21 calls in scripts/ennyn.mjs, setup/hook.mjs:507); they should say so too",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "init",
+      "source": "cycle 2026-11-04 (20) task greenfield-detect",
+      "since": 20
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "doctor-fast-test-declared",
+      "title": "doctor checks that commands.fastTest names something the project declares (a package.json script, a Makefile target, a script file), not only that it is set and can fail",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-04 (20) task no-test-command-stop, not measured",
+      "since": 20
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "fault-fs-realpath",
+      "title": "The fault matrix's fs wrapper leaves realpathSync.native unwrapped (test/fault-fs.mjs:83, Object.assign(wrapped, real)), so no realpath read of doctor's or init-scan's paths is ever failed there",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-04 (20) task no-test-command-stop, review round 1 evidence gap",
+      "since": 20
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "init-scan-test-short",
+      "title": "init-scan's COMMAND_SCRIPT does not list a test:short-style name, so Ennyn's own fast test (npm run test:short) is not among the commands doctor and init name",
+      "value": "low",
+      "cost": "S",
+      "cluster": "init",
+      "source": "cycle 2026-11-04 (20) task no-test-command-stop, Ennyn's own doctor output",
+      "since": 20
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "bare-folder-floor",
+      "title": "Below git 2.38 three commands still run a program a planted bare-looking folder's config names (a clone can bring the folder): init-scan through log --raw, doctor through status -- .claude/worktrees/ or a filter, rework through a promisor fetch for a missing blob, tree or commit; refuse a start inside a git dir as leftovers now does, or check the folder before the first git call; the floor (Ubuntu 22.04's 2.34.1) is exposed",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-11-04 (20) security audit, review round 1 (bare-routes.sh, bare-routes2.sh, trace-calls.sh on 2.34.1; ten other commands ran nothing), SECURITY.md names the three",
+      "since": 20
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "worktrees-own-ref-objects",
+      "title": "ennyn worktrees reads a worktree whose own ref (refs/worktree, its HEAD reflog) holds only a blob, a tree or a tag of one as losing nothing, since rev-list skips what is no commit, and --remove deletes that ref; keep such a worktree",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-04 (20) security audit, WSL git 2.34.1 probe, row c20-t5-sec-r0-05",
+      "since": 20
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "pretooluse-record-powershell",
+      "title": "Record whether Claude Code's PowerShell(git push *) ask rule reads a compound command in the PowerShell tool, as test/reference/pretooluse.mjs records the Bash rule",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-04 (20) security audit, not measured: it would prompt the user",
+      "since": 20
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "push-hook-windows-wrappers",
+      "title": "Measure the Windows programs that start another one in a new window or console (wt, conhost, start from cmd and Git Bash) for a push, and add those that push to the reader",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-04 (20) security audit, not run: they open windows",
+      "since": 20
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ssh-end-to-end",
+      "title": "Measure the push reader's ssh reading against a real sshd (OpenSSH on Linux and on Windows): the joined command, options after the host, RemoteCommand, a fed script, a login shell that is not POSIX (cmd.exe on a Windows server reads pu^sh as push)",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-04 (20) security audit restart: no sshd on this machine; the far side was measured with bash -c; review round 4 evidence gap (a Windows ssh server's cmd.exe)",
+      "since": 20
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "push-reader-remote-exec",
+      "title": "Programs that hand text to a shell elsewhere are stated limits of the push reader: docker exec, kubectl exec, vagrant ssh -c, gh codespace ssh, sudo -s/-i (its escaping not measured); read them as text runners or measure and state each",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-04 (20) security audit restart, path table delta F2",
+      "since": 20
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "landing-meaning-conflict",
+      "title": "A landing rebase looks for a meaning conflict with the tasks landed before it, not only a text conflict: where two tasks answer one question in different files (init's SKILL.md asks the fast test on every path, a new-project.md skipped question 3), git merges both cleanly and the later text silently overrides the earlier; the landing hands the reviewer the landed tasks that touch the same question, and a task brief names its sibling tasks' files",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 2026-11-04 (20): tasks no-test-command-stop and greenfield-detect; the first task's reviewer named the conflict and the orchestrator carried the sentence to the second at its rebase, by hand",
+      "since": 20
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "deps-tls-off-said",
+      "title": "ennyn deps and the commit hook's registry reads say when NODE_TLS_REJECT_UNAUTHORIZED=0 is set (Node only warns on stderr): every answer from the registry, the downloads API and OSV is then unverified, so a clean result is said as unmeasured for its source",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-04 (20) closing on Windows: the environment holds NODE_TLS_REJECT_UNAUTHORIZED=0, ennyn deps printed Node's warning and a clean count; rerun in WSL with TLS verified (NODE_EXTRA_CA_CERTS) it gave the same count",
+      "since": 20
     }
   ],
   "done": [
@@ -4994,6 +5204,30 @@
       "title": "ennyn leftovers --start records HEAD, untracked files and changes per work tree; after the closing commit it lists untracked files that appeared, start-untracked files a commit swept in, and changes not committed, each part found, clean or unmeasured, deleting nothing; the handoff's leftover command runs beside it. The heuristic parts (files and dependencies nothing names) were cut after review: they were wrong both ways on ordinary projects (5ab94d0)",
       "status": "done",
       "finished": "2026-11-03"
+    },
+    {
+      "id": "one-task-run",
+      "title": "A run of one named node or fix (skills/cycle/one-task.md): the same protocol in a fresh agent on the common and task briefs, the same closing and report, no slots, mechanization task or audit; it does not start while a cycle is open (this session runs one, or a mark numbered past the handoff's last cycle); it takes the next cycle number, so convergence counts its rows; the skill's description names it (5763226)",
+      "status": "done",
+      "finished": "2026-11-04"
+    },
+    {
+      "id": "smallest-change-row",
+      "title": "Before its first edit a core task answers a smallest-change row in its impact table's file (skills/cycle/impact-table.md, read on demand): for each new piece the line of the task that asks for it, what the repository has (git grep -w), what the platform, git or a dependency does, then new code; a never-cut piece needs no asking line; the row is set against the full diff before the commit and a reviewer reads it against the diff (fa36fd9)",
+      "status": "done",
+      "finished": "2026-11-04"
+    },
+    {
+      "id": "no-test-command-stop",
+      "title": "commands.fastTest names the cycle's fast test, or { none: <why> }: init asks it on every path, the cycle reads it before the handoff, doctor fails with the key unset and no test command declared (lint or typecheck alone count for none) and on a command that cannot fail, and warns on commands that may run tests or a declaring file it could not read; under none no new test, fast test or mutation pass, lint and typecheck still run (43f8202; Ennyn's own line be8ecb2)",
+      "status": "done",
+      "finished": "2026-11-04"
+    },
+    {
+      "id": "greenfield-detect",
+      "title": "init-scan says whether the folder is a new project (newProject): nothing at the top, in the index or in the last 100 commits of any ref and stash entry but a README, a licence, .gitignore, agent instruction files and the instruction files of .claude/ and .ennyn/; outside a repository it proposes git init unless a .git above of any kind, a repository below (10,000 folders), a drive or file-system root, the home folder or GIT_DIR rules it out, and an unreadable folder is said; /ennyn:init takes skills/init/new-project.md there, which asks the fast test too (fabc7a6)",
+      "status": "done",
+      "finished": "2026-11-04"
     }
   ]
 }

@@ -54,7 +54,8 @@
         "new: a parser of a format its producer calls unstable",
         "new: directory listing that misses a nested layout of the producer",
         "new: list of switches narrower than the program it models",
-        "new: revision argument with no end-of-options separator"
+        "new: revision argument with no end-of-options separator",
+        "new: platform setting ignored by a byte-for-byte verdict"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, the stored-message scope held and other git readers did not. Named in cycle 2."
     },
@@ -116,7 +117,8 @@
         "new: meaning lost on read",
         "new: refused row dropped without a mark",
         "new: retry drops the failure it retried",
-        "new: unmeasured read as clean"
+        "new: unmeasured read as clean",
+        "new: a failed read moves a verdict's level and its count"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, failed reads held, the same mistake in logic recurs and writes are not covered. Named in cycle 4."
     },
@@ -203,7 +205,8 @@
         "new: failure depends on the reading mode",
         "new: one unread callee candidate ends the whole callee round",
         "new: brought caller's reach through an unreadable HEAD callee is said not refused",
-        "new: a name re-encoded on its way to another program"
+        "new: a name re-encoded on its way to another program",
+        "new: platform data a byte comparison does not see"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, reviewers found more shapes after it landed. Named in cycle 7."
     },
@@ -319,7 +322,9 @@
         "new: a duplicate check reads only the entries that passed every other check",
         "new: a check excludes its own strongest case",
         "new: liveness check refuses history",
-        "new: a write its own reader refuses"
+        "new: a write its own reader refuses",
+        "new: an exemption reaches past its cause",
+        "new: another reading's failure counted in this one"
       ],
       "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict; nothing has recounted it since. Named in cycle 9."
     },
@@ -631,7 +636,8 @@
         "new: untrusted value formatted before its type is known",
         "new: missing type guard at an untyped boundary",
         "new: writer prints what its reader refuses",
-        "new: holes in a list skipped by its iterator"
+        "new: holes in a list skipped by its iterator",
+        "new: a reason that shows nothing counts as one"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -778,6 +784,36 @@
         "new: real run with no limit hangs instead of failing"
       ],
       "judged": "the orchestrator of cycle 18, reading the rows"
+    },
+    {
+      "id": "name-declared-twice",
+      "says": "A name is added in a scope that already declares it, so the file fails to load or one binding quietly takes the place of the other.",
+      "state": "open",
+      "linked": [
+        "new: a module-level name added where the module already declares it"
+      ],
+      "judged": "the orchestrator of cycle 20, reading the rows"
+    },
+    {
+      "id": "new-kind-old-branch",
+      "says": "A value of a new kind reaches code whose branches were written for the kinds before it, and an older branch takes it and decides wrong.",
+      "state": "open",
+      "linked": [
+        "new: a new value kind meets an older branch for its kind"
+      ],
+      "judged": "the orchestrator of cycle 20, reading the rows"
+    },
+    {
+      "id": "version-skew-read-as-change",
+      "says": "A reader older than what it judges cannot load a newer field and reports the whole as changed or loosened, where it should say the versions differ.",
+      "state": "open",
+      "nodes": [
+        "hook-older-config-keys"
+      ],
+      "linked": [
+        "new: version skew read as loosening"
+      ],
+      "judged": "the orchestrator of cycle 20, reading the rows"
     }
   ]
 }
