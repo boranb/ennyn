@@ -106,7 +106,11 @@
         "push-setting",
         "cycle-journal",
         "session-handover",
-        "fresh-session-run"
+        "fresh-session-run",
+        "model-per-role",
+        "escalate-on-gate-failure",
+        "agent-usage-report",
+        "correction-goes-fresh-by-context"
       ],
       "gate": "user",
       "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release); read 2026-11-01: the post now opens 'Updated October 15 to include more detail on the projects that pioneered many of the techniques we use in Scion.', and The Pragmatic Engineer (2026-10-22) reports the attribution came after a public complaint; an audit of requests against the graph, 2026-11-01: five had no node in the release needs: a project started from nothing (a request, 2026-10-29: 15 nodes, 0 done), leftovers (a request, 2026-10-29: 14 nodes, 0 done), secrets in chat (a request, 2026-10-28: 12 nodes, 1 done), less code and no repetition (a request, a request, 2026-10-25), findings that can wait (a request, 2026-10-25). The smallest piece of each entered the needs. spec-gates' README: 'Spec Kit is a guidance layer'",
@@ -4616,6 +4620,41 @@
       "cluster": "plan",
       "source": "cycle 2026-11-04 (20) closing: ennyn audit with and without the follow-up's record; the record was left out of the follow-up commit",
       "since": 20
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "model-per-role",
+      "title": "Ennyn's agents name a model by role: the reviewer agents keep the session's model (model: inherit); a new scout agent (model: haiku) gathers files and facts for an author or reviewer and returns quotes, and a summarizer (model: haiku) reads a long log or suite output and returns the failures; task-brief.md says a brief names the author's model: the session's for code, gates and security, sonnet for method text and docs. No config key: Claude Code's own order (the call's model, the agent's frontmatter, CLAUDE_CODE_SUBAGENT_MODEL, the session) is the override",
+      "value": "high",
+      "cost": "M",
+      "cluster": "method",
+      "source": "research 2026-11-04 on splitting models by role (vendor docs, tools, papers, read raw; kept outside the repository with quotes and hashes): vendors agree on a strong model for ambiguous multi-step work and a cheaper one for narrow repeatable work; verification, review and debugging steps need the strong model (72% of such SWE-bench steps in the one per-step study); Anthropic measured caching as the larger lever and delegation saving money only in two cases; up-front routers fail on SWE tasks, a gate after a cheap attempt works; cycle 19 measured here: authors 76% of cache reads (440.6M), orchestrator 82.0M, reviewers 54.7M, all on one model",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "model-per-role"
+      ],
+      "id": "escalate-on-gate-failure",
+      "title": "A task that starts on a cheaper model and fails a verification restarts on the session's model: a fresh agent on a consolidated brief with verified facts only, never the cheaper model's reasoning; a reviewer never runs below the session's model",
+      "value": "high",
+      "cost": "S",
+      "cluster": "method",
+      "source": "research 2026-11-04 on splitting models by role (vendor docs, tools, papers, read raw; kept outside the repository with quotes and hashes): vendors agree on a strong model for ambiguous multi-step work and a cheaper one for narrow repeatable work; verification, review and debugging steps need the strong model (72% of such SWE-bench steps in the one per-step study); Anthropic measured caching as the larger lever and delegation saving money only in two cases; up-front routers fail on SWE tasks, a gate after a cheap attempt works; cycle 19 measured here: authors 76% of cache reads (440.6M), orchestrator 82.0M, reviewers 54.7M, all on one model",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "agent-usage-report",
+      "title": "ennyn agents reads the session's subagent transcripts, read only, and prints per agent the model asked for and the model that ran, calls, tokens written and read from cache; the closing report pastes it and says a mismatch, since a split can be skipped silently (claude-code#100082: 1,149 of 1,371 subagents ran on the parent model)",
+      "value": "high",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "research 2026-11-04 on splitting models by role (vendor docs, tools, papers, read raw; kept outside the repository with quotes and hashes): vendors agree on a strong model for ambiguous multi-step work and a cheaper one for narrow repeatable work; verification, review and debugging steps need the strong model (72% of such SWE-bench steps in the one per-step study); Anthropic measured caching as the larger lever and delegation saving money only in two cases; up-front routers fail on SWE tasks, a gate after a cheap attempt works; cycle 19 measured here: authors 76% of cache reads (440.6M), orchestrator 82.0M, reviewers 54.7M, all on one model",
+      "since": 21
     }
   ],
   "done": [
