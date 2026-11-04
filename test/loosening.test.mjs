@@ -1020,7 +1020,7 @@ test("a secret in a config that does not load stays out of what the hook prints"
 });
 
 test("loosening: no key is judged by a prefix: one in neither list counts, under any section", () => {
-  for (const key of ["metrics.newKey", "paths.newKey", "graph.newKey", "impact.newKey", "planner.newKey", "sideCopy.newKey", "compaction.newKey", "conversation.newKey"]) assert.equal(gateKeyKind(key), "any", key);
+  for (const key of ["metrics.newKey", "paths.newKey", "graph.newKey", "impact.newKey", "planner.newKey", "sideCopy.newKey", "compaction.newKey", "conversation.newKey", "commands.newKey"]) assert.equal(gateKeyKind(key), "any", key);
 });
 
 test("the approval check stands outside the skip list: under a subject the shape check skips, a plain commit that loosens is refused without the line", () => {

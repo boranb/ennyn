@@ -264,6 +264,14 @@ test("commands: entry points and fast variants only; mutation from a stryker scr
   put(dash, { "package.json": JSON.stringify({ scripts: { "--prefix=/elsewhere": "stryker run" } }) });
   assert.equal(projectCommands(dash).mutation, null);
   assert.deepEqual(projectCommands(dash).unmeasured.mutation, [{ path: "package.json", reason: "scriptName", name: "--prefix=/elsewhere" }]);
+  // The name is the mutation tool's question: package.json was read whole, and what it declares as commands is known.
+  assert.equal(projectCommands(dash).unmeasured.commands, undefined);
+  // A folder linked out of the repository is named for what it holds: .cargo/mutants.toml's tool is unmeasured, not none.
+  const cargoAway = mkdtempSync(join(tmpdir(), "en-cmd-cargo-"));
+  writeFileSync(join(cargoAway, "mutants.toml"), "");
+  const cargo = mkdtempSync(join(tmpdir(), "en-cmd-cargo-link-"));
+  symlinkSync(cargoAway, join(cargo, ".cargo"));
+  assert.deepEqual([projectCommands(cargo).mutation, projectCommands(cargo).unmeasured.mutation], [null, [{ path: ".cargo", reason: "outside" }]]);
   // A script name the shell would read as more than one word is quoted: `mutate; touch x` is one name.
   const shell = mkdtempSync(join(tmpdir(), "en-cmd-shell-"));
   put(shell, { "package.json": JSON.stringify({ scripts: { "mutate; touch x": "stryker run" } }) });
@@ -324,9 +332,10 @@ test("doctor: a valid setup passes and counts ready nodes", async () => {
     ],
     done: [{ id: "d", status: "done" }],
   };
-  const r = setup({ language: "tr" }, graph);
+  const r = setup({ language: "tr", commands: { fastTest: "npm test" } }, graph);
   const res = await checkSetup({ cwd: r.dir, env: {} });
   assert.equal(res.ok, true, keys(res).join("\n"));
+  assert.ok(keys(res).includes("ok doctor.fastTest"));
   assert.equal(res.language, "tr");
   const ready = res.items.find((i) => i.key === "doctor.ready");
   assert.deepEqual(ready?.vars, { core: 1, mech: 1 });
@@ -393,8 +402,166 @@ test("doctor: a missing graph and a broken config fail; a fix-label majority war
   assert.ok(keys(await checkSetup({ cwd: r.dir, env: {} })).includes("warn doctor.fixMajority"));
 });
 
+test("doctor: the fast test: set ✓, none with its reason !, unset with commands declared !, a declaring file not read ! saying unmeasured, nothing declared ✗", async () => {
+  const graph = { nodes: [{ id: "a" }] };
+  const fast = async (/** @type {string} */ dir) => {
+    const res = await checkSetup({ cwd: dir, env: {} });
+    const items = res.items.filter((i) => i.key.startsWith("doctor.fastTest"));
+    assert.equal(items.length, 1, keys(res).join("\n"));
+    return { ok: res.ok, fails: keys(res).filter((k) => k.startsWith("fail")), ...items[0] };
+  };
+  const set = await fast(setup({ commands: { fastTest: "npm run test:short" } }, graph).dir);
+  assert.deepEqual(set, { ok: true, fails: [], level: "ok", key: "doctor.fastTest", vars: { command: "npm run test:short" } });
+  assert.equal(tShown(set.key, set.vars, "en"), "fast test: npm run test:short");
+  const none = await fast(setup({ commands: { fastTest: { none: "a documentation site" } } }, graph).dir);
+  assert.deepEqual(none, { ok: true, fails: [], level: "warn", key: "doctor.fastTestNone", vars: { reason: "a documentation site" } });
+  // Unset: what init-scan finds decides. Something declared is named, and the cycle still has a command to run.
+  const declared = setup({}, graph);
+  put(declared.dir, { "package.json": JSON.stringify({ scripts: { test: "node --test", lint: "x" } }) });
+  const some = await fast(declared.dir);
+  assert.deepEqual(some, { ok: true, fails: [], level: "warn", key: "doctor.fastTestUnset", vars: { list: ["npm test"] } });
+  // Nothing declared: the cycle would reach its test and mutation steps with nothing to run.
+  const empty = await fast(setup({}, graph).dir);
+  assert.deepEqual(empty, { ok: false, fails: ["fail doctor.fastTestMissing"], level: "fail", key: "doctor.fastTestMissing", vars: { others: "" } });
+  assert.match(t(empty.key, empty.vars, "en"), /^fast test: commands\.fastTest is unset and the project declares no test command: init-scan looks .*\{ "none": "<why>" \}$/);
+  // With no config at all, as in a repository init has not reached: the graph and the fast test, two ✗.
+  const bare = repo();
+  bare.commit("feat: start", { "README.md": "# x\n" });
+  assert.deepEqual(keys(await checkSetup({ cwd: bare.dir, env: {} })).filter((k) => k.startsWith("fail")), ["fail doctor.graphBad", "fail doctor.fastTestMissing"]);
+  // A declaring file that could not be read is no "declares none": the warning for the unset key says it is unmeasured,
+  // which and why. A ? in its place would take a warning off the count a fault moves (the fault matrix).
+  const broken = setup({}, graph);
+  put(broken.dir, { "package.json": "{ broken" });
+  const unread = await fast(broken.dir);
+  assert.deepEqual([unread.ok, unread.level, unread.key], [true, "warn", "doctor.fastTestUnread"]);
+  assert.equal(tShown(unread.key, unread.vars, "en"), "fast test: commands.fastTest is unset, and what the project declares is unmeasured: package.json: not valid JSON");
+  const away = mkdtempSync(join(tmpdir(), "en-fast-away-"));
+  writeFileSync(join(away, "package.json"), JSON.stringify({ scripts: { test: "x" } }));
+  const linked = setup({}, graph);
+  symlinkSync(join(away, "package.json"), join(linked.dir, "package.json"));
+  const out = await fast(linked.dir);
+  assert.match(tShown(out.key, out.vars, "en"), /unmeasured: package\.json: leads out of the repository$/);
+  // One that is there and cannot be read at all: the same, with the error.
+  const dir = setup({}, graph);
+  mkdirSync(join(dir.dir, "package.json"));
+  const failed = await fast(dir.dir);
+  assert.deepEqual([failed.ok, failed.level, failed.key], [true, "warn", "doctor.fastTestUnread"]);
+  assert.match(String(failed.vars.why), /package\.json could not be read: EISDIR/);
+  // What another file declares still counts: a warning naming it, never ✗.
+  put(broken.dir, { Makefile: "test:\n\ttrue\n" });
+  assert.deepEqual(await fast(broken.dir), { ok: true, fails: [], level: "warn", key: "doctor.fastTestUnset", vars: { list: ["make test"] } });
+  // Each line in Turkish too, not the English fallback.
+  for (const it of [set, none, some, empty, unread]) assert.notEqual(tShown(it.key, it.vars, "tr"), tShown(it.key, it.vars, "en"), it.key);
+});
+
+test("doctor: the fast test is a test command: lint or typecheck alone declares none, a check or gate script may run the tests, a command that cannot fail is ✗, and another reading's failure is not this one's", async () => {
+  const graph = { nodes: [{ id: "a" }] };
+  /** @param {Record<string, unknown>} config @param {Record<string, string>} files */
+  const fast = async (config, files = {}, /** @type {(dir: string) => void} */ more = () => {}) => {
+    const r = setup(config, graph);
+    put(r.dir, files);
+    more(r.dir);
+    const res = await checkSetup({ cwd: r.dir, env: {} });
+    const items = res.items.filter((i) => i.key.startsWith("doctor.fastTest"));
+    assert.equal(items.length, 1, keys(res).join("\n"));
+    return { ...items[0], text: tShown(items[0].key, items[0].vars, "en") };
+  };
+  // Only lint or typecheck: ✗, naming them as what does not count, so the user is not told to make lint the fast test.
+  // The line does not say they are all the project declares: the scan lists entry points only (test:e2e is not one).
+  for (const [files, others] of /** @type {[Record<string, string>, string][]} */ ([
+    [{ "package.json": JSON.stringify({ scripts: { lint: "eslint ." } }) }, "npm run lint"],
+    [{ "package.json": JSON.stringify({ scripts: { typecheck: "tsc", build: "tsc" } }) }, "npm run typecheck"],
+    [{ Makefile: "lint:\n\ttrue\n" }, "make lint"],
+    [{ "package.json": JSON.stringify({ scripts: { "type-check": "x", "lint:fast": "x" } }) }, "npm run lint:fast, npm run type-check"],
+    [{ "package.json": JSON.stringify({ scripts: { "test:e2e": "playwright test", lint: "eslint ." } }) }, "npm run lint"],
+  ])) {
+    const got = await fast({}, files);
+    assert.deepEqual([got.level, got.key], ["fail", "doctor.fastTestMissing"], JSON.stringify(files));
+    assert.ok(got.text.includes(`(lint and typecheck do not count: ${others})`), got.text);
+    assert.doesNotMatch(got.text, /what it declares|runs no tests/, got.text);
+  }
+  // A check, verify or validate script, make check (the GNU and autotools test target) or a gate script may run the
+  // tests: a warning naming them, never ✗ saying they run none.
+  for (const [files, maybe] of /** @type {[Record<string, string>, string[]][]} */ ([
+    [{ Makefile: "check:\n\t./run-tests\n" }, ["make check"]],
+    [{ "scripts/ci.sh": "npm ci && npm test\n" }, ["./scripts/ci.sh"]],
+    [{ "scripts/validate.sh": "pytest\n" }, ["./scripts/validate.sh"]],
+    [{ "package.json": JSON.stringify({ scripts: { check: "vitest run" } }) }, ["npm run check"]],
+    [{ "package.json": JSON.stringify({ scripts: { verify: "jest", lint: "x" } }) }, ["npm run verify"]],
+    [{ "package.json": JSON.stringify({ scripts: { "validate:fast": "x", "check:ci": "x", typecheck: "x" } }) }, ["npm run check:ci", "npm run validate:fast"]],
+    [{ "scripts/check.sh": "x", "scripts/ci.sh": "x", "scripts/validate.sh": "x" }, ["./scripts/validate.sh", "./scripts/check.sh", "./scripts/ci.sh"]],
+  ])) {
+    const got = await fast({}, files);
+    assert.deepEqual([got.level, got.key, got.vars], ["warn", "doctor.fastTestMaybe", { list: maybe }], JSON.stringify(files));
+    assert.match(got.text, /may run the tests: set it to the one that runs them/, got.text);
+  }
+  // One that may run them is named before a file not read: a candidate to set, and both are warnings.
+  const maybeUnread = await fast({}, { "package.json": "{ broken", "scripts/ci.sh": "npm test\n" });
+  assert.deepEqual([maybeUnread.level, maybeUnread.key, maybeUnread.vars], ["warn", "doctor.fastTestMaybe", { list: ["./scripts/ci.sh"] }]);
+  // No verdict rests on the scan's cut at eight: a test command past it is still found, a check or gate script too.
+  const cut = await fast({}, { "package.json": JSON.stringify({ scripts: { check: "x", "check:ci": "x", "check:fast": "x", "check:quick": "x", "check:unit": "x", lint: "x", "lint:ci": "x", "lint:fast": "x", test: "jest" } }) });
+  assert.deepEqual([cut.level, cut.key, cut.vars], ["warn", "doctor.fastTestUnset", { list: ["npm test"] }]);
+  const go = await fast({}, { "package.json": JSON.stringify({ scripts: { check: "x", lint: "x", typecheck: "x" } }), Makefile: "check:\n\tx\nlint:\n\tx\n", "scripts/validate.sh": "x", "scripts/check.sh": "x", "scripts/ci.sh": "x", "go.mod": "module x\n" });
+  assert.deepEqual([go.level, go.key, go.vars], ["warn", "doctor.fastTestUnset", { list: ["go test ./..."] }]);
+  const lints = Object.fromEntries(["lint", "lint:ci", "lint:fast", "lint:quick", "lint:unit", "typecheck", "typecheck:ci", "typecheck:fast", "type-check"].map((k) => [k, "x"]));
+  const lateCheck = await fast({}, { "package.json": JSON.stringify({ scripts: { ...lints, verify: "jest" } }) });
+  assert.deepEqual([lateCheck.level, lateCheck.key, lateCheck.vars], ["warn", "doctor.fastTestMaybe", { list: ["npm run verify"] }]);
+  // Each form of a test command the scan lists is one: the warning names the tests, not the lint beside them.
+  for (const [files, tests] of /** @type {[Record<string, string>, string[]][]} */ ([
+    [{ "package.json": JSON.stringify({ scripts: { test: "x", lint: "x", typecheck: "x" } }) }, ["npm test"]],
+    [{ "package.json": JSON.stringify({ scripts: { "test:unit": "x", "test:fast": "x", "test:quick": "x", "test:ci": "x", lint: "x" } }) }, ["npm run test:ci", "npm run test:fast", "npm run test:quick", "npm run test:unit"]],
+    [{ Makefile: "lint:\n\ttrue\ntest:\n\ttrue\n" }, ["make test"]],
+    [{ "scripts/test.sh": "#!/bin/sh\n", "scripts/check.sh": "#!/bin/sh\n" }, ["./scripts/test.sh"]],
+    [{ "pyproject.toml": "[tool.pytest.ini_options]\n" }, ["pytest"]],
+    [{ "go.mod": "module x\n" }, ["go test ./..."]],
+    [{ "Cargo.toml": "[package]\n" }, ["cargo test"]],
+  ])) {
+    const got = await fast({}, files);
+    assert.deepEqual([got.level, got.key, got.vars], ["warn", "doctor.fastTestUnset", { list: tests }], JSON.stringify(files));
+  }
+  // A declaring folder that leads out of the repository is unmeasured, as a declaring file that does: not "declares none".
+  const away = mkdtempSync(join(tmpdir(), "en-fast-scripts-"));
+  writeFileSync(join(away, "test.sh"), "#!/bin/sh\n");
+  const linkedOut = await fast({}, {}, (dir) => symlinkSync(away, join(dir, "scripts")));
+  assert.deepEqual([linkedOut.level, linkedOut.key], ["warn", "doctor.fastTestUnread"]);
+  assert.match(linkedOut.text, /unmeasured: scripts: leads out of the repository$/);
+  const fileOut = await fast({}, { "scripts/.keep": "" }, (dir) => symlinkSync(join(away, "test.sh"), join(dir, "scripts", "test.sh")));
+  assert.deepEqual([fileOut.level, fileOut.key], ["warn", "doctor.fastTestUnread"]);
+  assert.match(fileOut.text, /unmeasured: scripts\/test\.sh: leads out of the repository$/);
+  // A mutation script's name npm cannot run is the mutation tool's question: package.json was read whole, and declares no test.
+  const dash = await fast({}, { "package.json": JSON.stringify({ scripts: { "-mut": "stryker run" } }) });
+  assert.deepEqual([dash.level, dash.key], ["fail", "doctor.fastTestMissing"]);
+  // A command that exits 0 whatever runs makes every test and mutant pass: ✗. Read by shape, in the safe direction.
+  // As dash and bash 5.2 read the status: a trailing ; ends nothing, a redirect is the echo's own, a background job
+  // before the last command or at the end gives 0.
+  for (const command of ["true", ":", "exit 0", "echo no tests", "echo", "/bin/true", "/usr/bin/true", "true --anything", "npm test || true", "npm test || :", "npm test; true", "npm test; echo done", "npm test || echo failed", "npm test ; exit 0", "npm test; echo 'done'", "npm test; echo $?", "echo $(npm test)", "make test || echo \"see log\" >&2", "npm test || echo failed 2>&1", "npm test || true;", "true;", "true ; ", "npm test & echo done", "npm test &", "npm test & true"]) {
+    const got = await fast({ commands: { fastTest: command } });
+    assert.deepEqual([got.level, got.key], ["fail", "doctor.fastTestNoop"], command);
+    assert.match(got.text, /exits 0 whatever runs/, command);
+  }
+  // Not judged, or not a no-op: set changes what a status means; a redirect of the test's own output keeps its status.
+  for (const command of ["npm test", "npm test && true", "true && npm test", "echo start && npm test", "echo start | npm test", "exit 1", "npm test;", "npm test || exit", "pytest -k \"a; true\"", "npm test -- --grep 'x; echo y'", "pytest -k \"a || echo b\"", "npm run build && npm test", "dotnet test --filter Category=Fast", ".\\scripts\\test.ps1", "truecheck", "echoes", "npm test && echo ok", "npm test; exit $?", "set -e; npm test; echo done", "set -eu; npm test; true", "npm test 2>&1", "npm test > log 2>&1", "npm test &> log", "npm run serve & npm test", "env true"]) {
+    const got = await fast({ commands: { fastTest: command } });
+    assert.deepEqual([got.level, got.key], ["ok", "doctor.fastTest"], command);
+  }
+});
+
+test("doctor: a declaring folder git or the disk will not open is unmeasured, not \"declares none\"", async (t) => {
+  if (process.getuid?.() === 0) return t.skip("root reads any file");
+  const r = setup({}, { nodes: [{ id: "a" }] });
+  put(r.dir, { "scripts/test.sh": "#!/bin/sh\n" });
+  chmodSync(join(r.dir, "scripts"), 0o000);
+  try {
+    const items = (await checkSetup({ cwd: r.dir, env: {} })).items.filter((i) => i.key.startsWith("doctor.fastTest"));
+    assert.deepEqual(items.map((i) => [i.level, i.key]), [["warn", "doctor.fastTestUnread"]]);
+    assert.match(String(items[0].vars.why), /EACCES/);
+  } finally {
+    chmodSync(join(r.dir, "scripts"), 0o755);
+  }
+});
+
 test("doctor: a null node or a module graph that does not load is a ✗ line, not a crash", async () => {
-  const nullNode = setup({}, { nodes: [{ id: "a" }, null] });
+  const nullNode = setup({ commands: { fastTest: "npm test" } }, { nodes: [{ id: "a" }, null] });
   const res = await checkSetup({ cwd: nullNode.dir, env: {} });
   assert.deepEqual(keys(res).filter((k) => k.startsWith("fail")), ["fail doctor.graphBad"]);
   assert.match(String(res.items.find((i) => i.key === "doctor.graphBad")?.vars.error), /"nodes"\[1\] is not an object/);
@@ -423,7 +590,7 @@ test("git floor: versions as git words them parse, and compare part by part", ()
 });
 
 test("doctor: a git older than the floor fails, one that says no version warns, the floor itself passes", () => {
-  const r = setup({}, { nodes: [{ id: "a" }] });
+  const r = setup({ commands: { fastTest: "npm test" } }, { nodes: [{ id: "a" }] });
   // A git that answers --version with the given text and runs the real git for everything else.
   const realGit = join(git(["--exec-path"], { cwd: r.dir }), "git");
   const doctor = (/** @type {string} */ said) => {
@@ -446,7 +613,7 @@ test("doctor: a git older than the floor fails, one that says no version warns, 
 });
 
 test("cli: init-scan --json is the scan; doctor prints marks and exits 1 on a problem", () => {
-  const r = setup({}, { nodes: [{ id: "a" }, { id: "a" }] });
+  const r = setup({ commands: { fastTest: "npm test" } }, { nodes: [{ id: "a" }, { id: "a" }] });
   const run = (/** @type {string[]} */ ...args) => spawnSync(process.execPath, [CLI, ...args], { cwd: r.dir, encoding: "utf8" });
   const scan = run("init-scan", "--json");
   assert.equal(scan.status, 0, scan.stderr);
@@ -1294,7 +1461,7 @@ test("doctor: a cochange rule whose documents are all the files its paths name c
 });
 
 test("scan audit (after review): a directory git lists (a submodule) is no unreadable file; one unreadable check leaves doctor's other lines", (t) => {
-  const r = setup({ commitMsg: { types: ["feat", "fix"] } }, { nodes: [{ id: "a" }] });
+  const r = setup({ commitMsg: { types: ["feat", "fix"] }, commands: { fastTest: "npm test" } }, { nodes: [{ id: "a" }] });
   // A gitlink named like a roadmap file, changed often enough to be a churn path, with its directory checked out.
   mkdirSync(join(r.dir, "todo"));
   for (let i = 0; i < 4; i++) {

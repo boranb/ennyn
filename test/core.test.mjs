@@ -481,6 +481,85 @@ test("config: impact.referenceTimeout is whole seconds from 1 to 3600", () => {
   for (const bad of [0, 0.5, 3601, -5]) assert.throws(at(bad), ConfigError, String(bad));
 });
 
+test("config: commands.fastTest is a command, or none with its reason; no typo reads as none", () => {
+  const load = (/** @type {unknown} */ fastTest) => {
+    const dir = mkdtempSync(join(tmpdir(), "en-fasttest-"));
+    mkdirSync(join(dir, ".ennyn"));
+    writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ language: "xx", commands: { fastTest: fastTest } }));
+    try {
+      return loadConfig({ cwd: dir, env: {} }).commands.fastTest;
+    } catch (e) {
+      if (!(e instanceof ConfigError)) throw e;
+      // Said beside the rest of what is wrong: "language" is the other problem.
+      assert.ok(e.problems.some((p) => p.startsWith('"language"')), e.message);
+      return e.problems.filter((p) => !p.startsWith('"language"'));
+    }
+  };
+  assert.equal(loadConfig({ cwd: mkdtempSync(join(tmpdir(), "en-fasttest-")), env: {} }).commands.fastTest, null, "unset by default");
+  const accept = (/** @type {unknown} */ v) => {
+    const dir = mkdtempSync(join(tmpdir(), "en-fasttest-"));
+    mkdirSync(join(dir, ".ennyn"));
+    writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ commands: { fastTest: v } }));
+    assert.deepEqual(loadConfig({ cwd: dir, env: {} }).commands.fastTest, v, JSON.stringify(v));
+  };
+  for (const ok of [null, "npm run test:short", "npm test -- --grep 'none'", "./none", "none-of-these.sh", { none: "a documentation site: nothing runs" }]) accept(ok);
+  // The review's cells (cycle 20): commands as shells and other systems write them load; what a reader sees is doctor's.
+  for (const ok of ["npm run build && npm test", "dotnet test --filter Category=Fast", ".\\scripts\\test.ps1", "pytest -k 'not slow' \"tests/unit\"", "npm\ttest", "'none'", "null", "npm test\u001b[31mRED", "npm test rm -rf x", { none: "1" }]) accept(ok);
+  /** @type {[unknown, RegExp][]} */
+  const reject = [
+    ["", /^"commands\.fastTest" must be a command on one line, or \{ "none": "<why the project has no tests>" \}$/],
+    ["   ", /must be a command on one line/],
+    ["npm test\nrm -rf x", /must be a command on one line/],
+    ["npm test\u0000", /must be a command on one line/],
+    ["none", /^"commands\.fastTest": "none" names no command; a project with no tests writes \{ "none": "<why>" \}$/],
+    [" None ", /" None " names no command/],
+    ["NONE", /"NONE" names no command/],
+    [" none ", /names no command/],
+    ["npm test\r", /must be a command on one line/],
+    ["npm test\n", /must be a command on one line/],
+    [{}, /^"commands\.fastTest\.none" must say, on one line, why the project has no tests$/],
+    [{ none: "" }, /"commands\.fastTest\.none" must say/],
+    [{ none: "  " }, /"commands\.fastTest\.none" must say/],
+    [{ none: 1 }, /"commands\.fastTest\.none" must say/],
+    [{ none: "no\ntests" }, /"commands\.fastTest\.none" must say/],
+    [{ none: true }, /"commands\.fastTest\.none" must say/],
+    // A reason that shows nothing is no reason: it needs a letter or a digit, as the Impact line does.
+    [{ none: "​" }, /"commands\.fastTest\.none" must say/],
+    [{ none: " - " }, /"commands\.fastTest\.none" must say/],
+    [{ none: null }, /"commands\.fastTest\.none" must say/],
+    [{ none: { why: "x" } }, /"commands\.fastTest\.none" must say/],
+    [3, /^"commands\.fastTest" must be string \| object, got number$/],
+    [true, /must be string \| object, got boolean/],
+    [[], /must be string \| object, got array/],
+    [["npm test"], /must be string \| object, got array/],
+  ];
+  for (const [bad, re] of reject) {
+    const got = load(bad);
+    assert.ok(Array.isArray(got) && got.length === 1 && re.test(got[0]), `${JSON.stringify(bad)}: ${JSON.stringify(got)}`);
+  }
+  // A misspelt key in the object is no "none": the key is unknown, and the reason is missing.
+  assert.deepEqual(load({ nnoe: "no tests yet" }), ['"commands.fastTest": unknown key "nnoe"', '"commands.fastTest.none" must say, on one line, why the project has no tests']);
+  assert.deepEqual(load({ none: "no tests yet", command: "npm test" }), ['"commands.fastTest": unknown key "command"']);
+  assert.deepEqual(load({ None: "x" }), ['"commands.fastTest": unknown key "None"', '"commands.fastTest.none" must say, on one line, why the project has no tests']);
+  assert.deepEqual(load({ none: "x", $comment: "y" }), ['"commands.fastTest": unknown key "$comment"']);
+  // The parent key: an object, and only the keys it has.
+  for (const [commands, re] of /** @type {[unknown, RegExp][]} */ ([[null, /^"commands" must be object, got null$/], ["npm test", /^"commands" must be object, got string$/], [{ lint: "eslint" }, /^unknown key "commands\.lint"$/]])) {
+    const d = mkdtempSync(join(tmpdir(), "en-fasttest-"));
+    mkdirSync(join(d, ".ennyn"));
+    writeFileSync(join(d, ".ennyn", "config.json"), JSON.stringify({ commands }));
+    assert.throws(() => loadConfig({ cwd: d, env: {} }), (e) => e instanceof ConfigError && e.problems.length === 1 && re.test(e.problems[0]), JSON.stringify(commands));
+  }
+  assert.deepEqual(load({ fastTest: "npm test" }), ['"commands.fastTest": unknown key "fastTest"', '"commands.fastTest.none" must say, on one line, why the project has no tests'], "nested where the command goes");
+  // An override replaces what the file set, as for any key that defaults to null: a command over none, none over a command.
+  const dir = mkdtempSync(join(tmpdir(), "en-fasttest-"));
+  mkdirSync(join(dir, ".ennyn"));
+  writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ commands: { fastTest: { none: "x" } } }));
+  assert.equal(loadConfig({ cwd: dir, env: {}, override: { commands: { fastTest: "npm test" } } }).commands.fastTest, "npm test");
+  writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ commands: { fastTest: "npm test" } }));
+  assert.deepEqual(loadConfig({ cwd: dir, env: {}, override: { commands: { fastTest: { none: "y" } } } }).commands.fastTest, { none: "y" });
+  assert.throws(() => loadConfig({ cwd: dir, env: {}, override: { commands: { fastTest: { nnoe: "y" } } } }), /unknown key "nnoe"/);
+});
+
 test("shown: a name holding a comma a list could part at is quoted; a value in a message's quotes holding a quote too; a long value keeps its start and end", async () => {
   const { shown, tShown, SHOWN_MAX } = await import("../core/i18n.mjs");
   const NBSP = String.fromCharCode(0xa0), FULL = String.fromCharCode(0xff0c), IDEO = String.fromCharCode(0x3001);

@@ -10,7 +10,7 @@
 
 import { loadConfig, ConfigError } from "../core/config.mjs";
 import { loadGraph, readyNodes, readyMechanization, graphProblems, GraphError } from "../plan/mechanization.mjs";
-import { MIN_HISTORY, indexMatches, recentCommits, productionSubjects, projectFiles, remotesByHost } from "./scan.mjs";
+import { MAYBE_TEST_COMMAND, MIN_HISTORY, TEST_COMMAND, indexMatches, recentCommits, productionSubjects, projectCommands, projectFiles, remotesByHost } from "./scan.mjs";
 import { askRules, capped, ghApplies, outwardCommands, GH_COMMANDS, SETTINGS, SETTINGS_LIMIT } from "./permissions.mjs";
 import { ORPHANED, PLUGIN_RECORD, hookStatus, idleReason, replacedRoot, sessionOf, versionNote } from "./hook.mjs";
 import { instructionBudget, readBudgets } from "./budget.mjs";
@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 import { present, readRegular } from "../core/files.mjs";
 import { commonDir, git, gitBytes, repoPath, gitVersion, parseVersion, versionAtLeast, stagedVersions, headCommit, headFile, HOOK_READ_ENV, GIT_FLOOR } from "../core/git.mjs";
 import { ciSet, ciText } from "../checks/ci.mjs";
-import { t } from "../core/i18n.mjs";
+import { t, tShown } from "../core/i18n.mjs";
 import { literalGlob, matchAny } from "../core/glob.mjs";
 import { secretsOff } from "../checks/secrets.mjs";
 import { checkProofs, loadClasses, registryLine } from "../metrics/classes.mjs";
@@ -102,6 +102,60 @@ function ciReport(cwd, tracked, config, add) {
   // The caller was read; what its callee checks out was not.
   for (const m of missing) add("unmeasured", "doctor.ciCalleeMissing", { path: [m.path], callee: [m.callee || "./"] });
   if (!unpinned.length && !pwn.size && !unpermitted.length && !writeAll.size && !forms.size && !unread.size && !missing.length) add("ok", "doctor.ciClean", { files: files.length });
+}
+
+/**
+ * A command that exits 0 whatever runs, so every test and mutant passes, read as dash and bash 5.2 give its status: the
+ * status of the last command of the list. A trailing `;` ends nothing; one trailing `&` puts the last command in the
+ * background, which gives 0; after the last `;`, `&` or `||`, `true` or `:` (with any words), `exit 0` or an echo,
+ * its redirects (`>&2`, `2>&1`) its own, with no pipe or `&&`. Read by shape, in the safe direction: a command that
+ * holds `set` is not judged (`set -e` stops the list at a failure), and a last part with an odd count of either quote
+ * lies inside one and is no command; `&>` is a redirect to bash and a background job to dash (`sh`, which `mutate`
+ * runs), so it is not judged either (measured in dash 0.5.11 and bash 5.1.16). A pipe to tee, a program that exits 0
+ * (`env true`) and a script that does are not seen.
+ */
+const NO_OP = /^(?:(?:(?:\/usr)?\/bin\/)?true|:|echo)(?:\s(?:(?!&&)[^|])*)?$|^exit\s+0$/;
+/** A list separator: `;`, `||` and `&`, but not the `&` of `&&` or of a redirect (`>&2`, `2>&1`, `&>`). */
+const SEPARATOR = /;|\|\||(?<![&<>])&(?![&>])/;
+/** @param {string} command */
+function cannotFail(command) {
+  if (/\bset\s/.test(command)) return false;
+  const text = command.replace(/[\s;]+$/, "");
+  if (/(?<![&<>])&$/.test(text)) return true;
+  const last = String(text.split(SEPARATOR).at(-1)).trim();
+  const balanced = [/"/g, /'/g].every((q) => (last.match(q) ?? []).length % 2 === 0);
+  return balanced && NO_OP.test(last);
+}
+
+/**
+ * The fast test the cycle runs (`commands.fastTest`): a command that cannot fail is a ✗, as no fast test would be. Unset
+ * is a warning naming the test commands the project declares (TEST_COMMAND; the cycle takes the handoff's meanwhile),
+ * else those that may run the tests (MAYBE_TEST_COMMAND: a check script or a gate script is no proof of none), else
+ * saying what could not be read: a declaring file not read is unmeasured, never "declares none". A ✗ only when the
+ * reading proves no command that runs or may run tests, lint and typecheck alone, since a cycle would reach its test
+ * and mutation steps with nothing to run. A project with no tests, said with its reason, warns.
+ * @param {string} cwd @param {any} config
+ * @param {(level: DoctorItem["level"], key: string, vars?: DoctorItem["vars"]) => void} add
+ */
+function fastTestReport(cwd, config, add) {
+  const fast = config.commands.fastTest;
+  if (typeof fast === "string") return cannotFail(fast) ? add("fail", "doctor.fastTestNoop", { command: fast }) : add("ok", "doctor.fastTest", { command: fast });
+  if (fast !== null) return add("warn", "doctor.fastTestNone", { reason: fast.none });
+  /** @type {ReturnType<typeof projectCommands>} */
+  let declared;
+  try {
+    declared = projectCommands(cwd);
+  } catch (e) {
+    return add("warn", "doctor.fastTestUnread", { why: oneLine(e) });
+  }
+  const unread = declared.unmeasured.commands ?? [];
+  const lang = config.language;
+  const tests = declared.commands.filter((c) => TEST_COMMAND.test(c));
+  const maybe = declared.commands.filter((c) => MAYBE_TEST_COMMAND.test(c));
+  if (tests.length) add("warn", "doctor.fastTestUnset", { list: tests });
+  else if (maybe.length) add("warn", "doctor.fastTestMaybe", { list: maybe });
+  else if (unread.length) add("warn", "doctor.fastTestUnread", { why: { shown: unread.map((u) => tShown(`scan.why.${u.reason}`, { path: [u.path ?? ""], name: u.name ?? "" }, lang)).join("; ") } });
+  else add("fail", "doctor.fastTestMissing", { others: declared.commands.length ? { shown: tShown("doctor.fastTestOthers", { list: declared.commands }, lang) } : "" });
 }
 
 /**
@@ -405,6 +459,7 @@ export async function checkSetup({ cwd, env = process.env, self = OWN_ROOT }) {
   } catch (e) {
     add("fail", "doctor.handoffBad", { error: /** @type {Error} */ (e).message });
   }
+  fastTestReport(cwd, config, add);
 
   // One line on the class registry; none there yet is fine. A file refused or unreadable fails: nothing can read it.
   try {

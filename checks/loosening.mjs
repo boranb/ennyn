@@ -100,6 +100,8 @@ const NO_GATE = new Set([
   "graph.openGateValue",
   "graph.doneStatus",
   "planner.splitAbove",
+  // Read by doctor and the cycle skill, never by the hook: what the cycle runs, not what a commit may hold.
+  "commands.fastTest",
   "commitMsg.language",
   "commitMsg.fixType",
   "review.agents",

@@ -46,6 +46,9 @@ export const DEFAULTS = Object.freeze({
   // A core pick whose cost weighs more than this is split first (core says so); null: the middle of the cost words'
   // weights (plan/mechanization.mjs). Set it when costs are numbers such as hours.
   planner: { splitAbove: null },
+  // The command the cycle runs as its fast test, from the project's top; null: unset (doctor fails when the project
+  // declares no test command either). A project with no tests says why: { "none": "<why>" }.
+  commands: { fastTest: null },
   commitMsg: {
     // Language of commit text; null follows `language` (reports and conversation).
     language: null,
@@ -201,6 +204,7 @@ const NULLABLE = new Map([
   ["impact.referenceCommand", ["string"]],
   ["impact.ceilingRegistry", ["string"]],
   ["planner.splitAbove", ["number"]],
+  ["commands.fastTest", ["string", "object"]],
 ]);
 
 // Keys that name a file or directory Ennyn reads or writes, resolved against the project directory.
@@ -301,6 +305,13 @@ function merge(base, over, prefix, problems) {
     }
     const bk = kind(base[k]);
     const vk = kind(v);
+    // A key that defaults to null takes any of its kinds over another, whole: an override's command replaces a file's none.
+    if (bk === "null" || NULLABLE.has(path)) {
+      const ok = NULLABLE.get(path) ?? [];
+      if (vk !== "null" && !ok.includes(vk)) problems.push(`"${path}" must be ${ok.join(" | ") || "null"}, got ${vk}`);
+      else out[k] = v;
+      continue;
+    }
     const kinds = REPLACED_MAPS.get(path);
     if (bk === "object" && vk === "object" && kinds) {
       // Replaced, and still checked: each value is of a kind the default's values are.
@@ -310,12 +321,6 @@ function merge(base, over, prefix, problems) {
     }
     if (bk === "object" && vk === "object") {
       out[k] = merge(/** @type {any} */ (base[k]), /** @type {any} */ (v), path, problems);
-      continue;
-    }
-    if (bk === "null") {
-      const ok = NULLABLE.get(path) ?? [];
-      if (vk !== "null" && !ok.includes(vk)) problems.push(`"${path}" must be ${ok.join(" | ") || "null"}, got ${vk}`);
-      else out[k] = v;
       continue;
     }
     if (bk !== vk) {
@@ -433,6 +438,17 @@ export function configFrom(text, { cwd, configPath, override }) {
     if (rule.except !== undefined && !isGlobs(rule.except)) problems.push(`${at}.except must be a list of globs`);
     if (rule.note !== undefined && typeof rule.note !== "string") problems.push(`${at}.note must be a string`);
   });
+  // The fast test: a command on one line, or { "none": "<why>" }. "none" as a command would run a program of that
+  // name, and a misspelt key in the object would leave no reason: both are refused, so no typo reads as "no tests".
+  const fast = /** @type {any} */ (cfg).commands.fastTest;
+  if (typeof fast === "string") {
+    if (fast.trim() === "" || /[\r\n\0]/.test(fast)) problems.push(`"commands.fastTest" must be a command on one line, or { "none": "<why the project has no tests>" }`);
+    else if (/^none$/i.test(fast.trim())) problems.push(`"commands.fastTest": ${JSON.stringify(fast)} names no command; a project with no tests writes { "none": "<why>" }`);
+  } else if (fast !== null) {
+    for (const k of Object.keys(fast)) if (k !== "none") problems.push(`"commands.fastTest": unknown key "${k}"`);
+    // A reason that shows nothing (a zero-width space, a dash) is none: it holds a letter or a digit, as the Impact line does.
+    if (typeof fast.none !== "string" || !/[\p{L}\p{N}]/u.test(fast.none) || /[\r\n\0]/.test(fast.none)) problems.push(`"commands.fastTest.none" must say, on one line, why the project has no tests`);
+  }
   const split = /** @type {any} */ (cfg).planner.splitAbove;
   if (split !== null && !(Number.isFinite(split) && split > 0)) problems.push(`"planner.splitAbove" must be a number above 0, or null`);
   const every = /** @type {any} */ (cfg).security.everyCycles;

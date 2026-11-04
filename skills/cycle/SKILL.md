@@ -5,18 +5,18 @@ description: Run one development cycle of four tasks picked from the project's w
 
 # Cycle — four tasks, measured
 
-No `.ennyn/` in the project yet: run the init skill first. Project settings come from `.ennyn/config.json` (`language` sets the language of every report and commit message you write). Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/ennyn.mjs" --help` for the helper commands used below.
+No `.ennyn/` in the project yet: run the init skill first. Project settings come from `.ennyn/config.json` (`language` sets the language of every report and commit message you write). `node "${CLAUDE_PLUGIN_ROOT}/scripts/ennyn.mjs" --help` lists the helper commands used below.
 
 A node or fix asked for alone: [one-task.md](one-task.md).
 
 ## 1. Pick the four tasks
 
-Read in one turn, once `ennyn.mjs doctor` shows no ✗ (else stop): the config, the handoff (`paths.handoff`; unset → `HANDOFF.md`) and the graph. The handoff names the commands later steps run (fast test, whole test, lint, typecheck, the mutation tool; one it does not name → `ennyn.mjs init-scan --json`), the last cycle's next step and open risks. `ennyn.mjs leftovers --start` notes HEAD: `bypass` starts there.
+Read in one turn, once `ennyn.mjs doctor` shows no ✗ (else stop, saying why): the config, the handoff (`paths.handoff`; unset → `HANDOFF.md`) and the graph. The handoff names the commands later steps run (fast test, whole test, lint, typecheck, the mutation tool; `commands.fastTest` comes first; one neither names → `ennyn.mjs init-scan --json`), the last cycle's next step and open risks. `ennyn.mjs leftovers --start` notes HEAD: `bypass` starts there.
 
 | Slot | Source | Rule |
 |---|---|---|
 | Core ×2 | `ennyn.mjs core` | One takes its oldest pick; when it says split, first write its first step as a node it `needs`, rerun, take the step. The other is one it lists by score; prefer nodes sharing a `cluster`. Verifiable, user-visible value. |
-| Mechanization ×1 | `ennyn.mjs mechanization` | A node with `mechanization: true`: turn a recurring defect class into a gate, test, type or lint, then delete the matching prose rule. None ready → the slot becomes a third core task. A graph it or `core` refuses (exit 1, the reasons on stderr) is fixed first. |
+| Mechanization ×1 | `ennyn.mjs mechanization` | A node with `mechanization: true`: turn a recurring defect class into a gate, test, type or lint, then delete the matching prose rule. None ready → the slot becomes a third core task. A graph it or `core` refuses (exit 1, reasons on stderr) is fixed first. |
 | Legacy audit ×1 | `ennyn.mjs audit`: the security audit unless it answers not due; else the audit queue (oldest / never audited / hit by a shared change) | Security audit: every path it lists, with a path table (every way to reach what each protects). Else re-check a feature: invalid/empty/max input, permission denied, network failure, repeated action, refresh, stale data, then [lean items](lean-audit.md). Small findings are fixed in the task with a regression test; large ones become nodes. |
 
 A critical problem (crash, data loss, auth break, blocker) may replace one core slot. Write the plan as [report-formats.md](report-formats.md) shows. Do not wait for approval between tasks; push only with the user's approval.
@@ -29,8 +29,8 @@ The orchestrator (the session running the cycle) keeps the plan, step 7's verdic
 2. **Design brief** for UI work: [design-brief.md](design-brief.md).
 3. **[Impact table](impact-table.md)** before the first edit: a core task's smallest-change row, always; the five rows when the change touches a shared decision, predicate, gate or accept/reject rule: `ennyn.mjs impact --symbol <name> --files <paths>`. Each row is answered by a command's output, never by recall. Heuristic rules, dictionaries, thresholds: an accept **and** reject corpus and a failing test first.
 4. **Implement**, matching existing patterns.
-5. **Test:** a new test alone first, its control seen failing once; then the handoff's fast test, lint and typecheck.
-6. **Mutation pass** on the changed files with the handoff's mutation tool; with none (or "not applicable"), hand-pick mutants of the changed lines and run them with `ennyn.mjs mutate <list.json> --command "<fast test>"`, adding `--check "<parse command> {file}"` for files other than JavaScript and JSON. It edits files in place: while a reviewer reads the tree, run it in a separate worktree. Record the first-run result (`killed/total`); write a test for each survivor or justify it as equivalent.
+5. **Test:** a new test alone first, its control seen failing once; then the fast test (`none`: no new test, fast test or step 6; say why), lint and typecheck.
+6. **Mutation pass** on the changed files with the handoff's mutation tool; with none (or "not applicable"), hand-pick mutants of the changed lines and run them with `ennyn.mjs mutate <list.json> --command "<fast test>"`, adding `--check "<parse command> {file}"` for files other than JavaScript and JSON. Record the first-run result (`killed/total`); write a test for each survivor or justify it as equivalent.
 7. **Review** with the reviewers that match the change: `review.agents` when set, else Ennyn's (correctness, security, data correctness). Give them the task's node, the changed files, the impact table and [finding-schema.md](finding-schema.md). **At most two rounds**; a third only as its Rounds say. For security work the path table replaces the round limit: list every way to reach the protected state first.
 8. **A fix is a new write.** If a fix changes a row of the impact table, update it and give round two the delta.
 9. **Record findings** as you write them: [ledger-row.md](ledger-row.md), class and source per [finding-schema.md](finding-schema.md).
