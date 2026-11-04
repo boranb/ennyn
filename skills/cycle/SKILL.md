@@ -1,11 +1,13 @@
 ---
 name: cycle
-description: Run one development cycle of four tasks picked from the project's work graph — two core tasks, one mechanization task (turns a recurring defect class into a gate), one legacy audit — each with an impact table before writing, a mutation pass, bounded adversarial review, and a convergence report at the end. Use when asked to "run a cycle", "phase run", "advance the roadmap", or to work through the backlog autonomously.
+description: Run one development cycle of four tasks picked from the project's work graph — two core tasks, one mechanization task, one legacy audit — each with an impact table before writing, a mutation pass, bounded adversarial review, and a convergence report at the end. Use when asked to "run a cycle", "phase run", "advance the roadmap", to work through the backlog autonomously, or to run one named node or fix alone.
 ---
 
 # Cycle — four tasks, measured
 
 No `.ennyn/` in the project yet: run the init skill first. Project settings come from `.ennyn/config.json` (`language` sets the language of every report and commit message you write). Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/ennyn.mjs" --help` for the helper commands used below.
+
+A node or fix asked for alone: [one-task.md](one-task.md).
 
 ## 1. Pick the four tasks
 
@@ -21,7 +23,7 @@ A critical problem (crash, data loss, auth break, blocker) may replace one core 
 
 ## 2. Task protocol (every task, in order)
 
-The orchestrator (the session running the cycle) keeps the plan, step 7's verdicts and the landing. Each task runs in a fresh agent on a written brief, not a fork of that session; the agent skips step 7 and stops at its commit. Briefs, task states, worktrees, a host with no subagents: [task-brief.md](task-brief.md).
+The orchestrator (the session running the cycle) keeps the plan, step 7's verdicts and the landing. Each task runs in a fresh agent on a written brief, not a fork of that session. Briefs, task states, worktrees, no subagents: [task-brief.md](task-brief.md).
 
 1. **Read** only the relevant files; independent reads go in the **same turn**.
 2. **Design brief** for UI work: [design-brief.md](design-brief.md).

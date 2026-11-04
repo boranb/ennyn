@@ -244,6 +244,54 @@ test("plugin: rules the cycle's hand-written briefs carried are in the shipped t
   for (const twice of ["prefer running to reading", "checked in that program"]) assert.equal(count(twice), 2, twice);
 });
 
+test("plugin: a run of one named node or fix: SKILL.md points to one-task.md, which keeps section 2 and section 3 whole and leaves out section 1's slots", () => {
+  // SKILL.md stands at Codex's 8,000-byte cut, so the run's text is a file beside it. Each rule is pinned as its whole line.
+  const skill = read("skills/cycle/SKILL.md");
+  const lines = read("skills/cycle/one-task.md").split("\n");
+  assert.ok(skill.split("\n").includes("A node or fix asked for alone: [one-task.md](one-task.md)."), "the pointer");
+  for (const line of [
+    "**When:** the request, or the skill's arguments, name one graph node or describe one fix. Claude Code adds the arguments to the skill's text as a last line `ARGUMENTS: …`, so a runner in a terminal names the node it runs: the skill's command, then the node's id. Nothing named, or a cycle asked for: section 1 of `SKILL.md`.",
+    "**A cycle open** on this clone, started and not closed (this session runs it, or `ennyn.mjs worktrees` lists a worktree marked with a number past the handoff's last cycle): the run does not start, and says so. In that cycle's session a fix in words becomes a node at its closing (section 3, step 1); from another session nothing is written.",
+    "**Start** as section 1 does: `ennyn.mjs doctor` shows no ✗ (else stop); the config, the handoff and the graph are read in one turn; `ennyn.mjs leftovers --start` notes HEAD.",
+    "**A node named:** an open node of the graph. Done, or no such id: stop and say so; never take a near id for it. Not ready (a `needs` not done, a closed gate): say why, and go on only on the user's plain yes.",
+    "**A fix in words:** an open node that already asks for it is the task; else write it first as a node at the end of the list, dated (`graph.fields.since`), its source the user's words and the date. The reviewers check the change against a node's ask, and the rows and the closing name it.",
+    "**Nobody to ask** (a runner in a terminal): where this file asks, the run stops and says why.",
+    "**The task** runs in a fresh agent on a common brief and a task brief, as a task of a cycle does, in a marked worktree ([task-brief.md](task-brief.md)); on a restart the consolidated brief replaces the task brief and the common brief stays. The session is the orchestrator: the plan, step 7, the verdicts, the failure count, the landing. The session that reruns a verdict's numbers and lands the commit is not the one that wrote it, and a restart takes a fresh agent anyway. A host with no subagents: as task-brief.md says.",
+    "**Protocol:** section 2 of `SKILL.md`, every step, split between the agent and the session as in a cycle.",
+    "**Its number:** the run is a cycle of one task. It takes the next number after the handoff's last cycle, and the next cycle follows it. That number is every row's `cycle`, the rows' ids (`c<N>-t1-…`), the worktree mark (`ennyn:<N>`) and `ennyn.mjs convergence --cycle <N>`, so the command counts this run's rows and no other's. Under the last cycle's number, the counts of a closed cycle would change.",
+    "**A fix's defect** is one row of round 0: its code is older than the run's start, so `pre-existing`, with `bornIn` ([report-formats.md](report-formats.md)), and `caughtBy` what reproduced it. A node that asks for something new has no such row.",
+    "**Plan,** two lines: `**One task:** [node id, value and cost; for a fix, the node written for it] — impact table: [required/not needed + why] — checks: [tests, mutation, reviewers]`, then the cycle plan's `**Security:**` line as [report-formats.md](report-formats.md) writes it.",
+    "**Closing:** section 3 of `SKILL.md`, every step: graph, handoff, convergence, retire lessons, security checks, budget, push. The handoff names the run (cycle N, one task, its node) and keeps the next step for the next cycle.",
+    "**Left out:** section 1's slots (core, mechanization, legacy audit), the picks that fill them, and the cycle plan's `**Discovery:**` and `**Tasks:**` lines.",
+    "**Budget:** `ennyn.mjs budget --record` without `--security-audit`: the run has no audit slot. The record counts as a cycle toward `security.everyCycles`, so work done brings the security audit nearer; when `ennyn.mjs audit` says it is due, the report says the next cycle of four holds it.",
+    "**Report:** as [report-formats.md](report-formats.md) gives a cycle's: `**Task 1 done:**` or `**Task 1 stopped:**`, then `## Cycle complete` with `### Done` holding result 1 and `### Audit` reading `none: one task`, with the security audit's answer when it is due.",
+  ]) assert.ok(lines.includes(line), line);
+  // A run started while a cycle is open would take its number and replace its start record: the check comes before `--start`.
+  assert.ok(lines.indexOf("**A cycle open** on this clone, started and not closed (this session runs it, or `ennyn.mjs worktrees` lists a worktree marked with a number past the handoff's last cycle): the run does not start, and says so. In that cycle's session a fix in words becomes a node at its closing (section 3, step 1); from another session nothing is written.") < lines.findIndex((l) => l.startsWith("**Start**")), "the open-cycle check comes first");
+  // Two briefs, as a cycle's task: a restart replaces the task brief, so the run's Paths, Protocol, Commands and Rules stay.
+  assert.ok(read("skills/cycle/task-brief.md").split("\n").includes("**The consolidated brief** replaces the task's brief; the common brief stays."));
+  // Asked in words, a model picks a skill by its listing: the description names the run.
+  assert.match(frontMatter(skill)?.get("description") ?? "", /, or to run one named node or fix alone\.$/);
+  // Read from SKILL.md, not copied: a step section 3 gains, or a slot section 1 gains, fails here until the run decides it.
+  const closing = lines.find((l) => l.startsWith("**Closing:**")) ?? "";
+  const steps = [...(skill.split("## 3. End of cycle")[1] ?? "").matchAll(/^\d+\. \*\*([^*:]+):?\*\*/gm)].map((m) => m[1].toLowerCase());
+  assert.ok(steps.length >= 7, steps.join(", "));
+  for (const step of steps) assert.ok(closing.includes(step), `the closing leaves out ${step}: ${closing}`);
+  const left = lines.find((l) => l.startsWith("**Left out:**")) ?? "";
+  const slots = [...(skill.split("## 1.")[1]?.split("## 2.")[0] ?? "").matchAll(/^\| ([^|]+?) ×\d+ \|/gm)].map((m) => m[1].toLowerCase());
+  assert.ok(slots.length >= 3, slots.join(", "));
+  for (const slot of slots) assert.ok(left.includes(slot), `the run keeps ${slot}: ${left}`);
+  // Each line of the cycle plan's template is kept in the run's plan or left out by name: a security line is never dropped unsaid.
+  const plan = lines.find((l) => l.startsWith("**Plan,**")) ?? "";
+  const template = /## Cycle plan\n+```md\n([\s\S]*?)\n```/.exec(read("skills/cycle/report-formats.md"))?.[1] ?? "";
+  const labels = [...template.matchAll(/^\*\*([^*]+):\*\*/gm)].map((m) => `**${m[1]}:**`);
+  assert.ok(labels.length >= 3, labels.join(", "));
+  for (const label of labels) assert.ok(plan.includes(label) !== left.includes(label), `${label} is kept or left out, once: ${plan} | ${left}`);
+  // The node reaches the skill as its arguments, appended as `ARGUMENTS: …` only when no placeholder takes them; a `$1`
+  // in the text would take the argument in its place (Claude Code 2.1.97's cli.js, and the skills docs read 2026-11-04).
+  for (const { path } of skills) assert.doesNotMatch(read(path), /\$(?:ARGUMENTS|\d)/, path);
+});
+
 /** The tree as test/guards.test.mjs cloneOfTree reads it: what git lists, tracked or not, that is there. @param {string} root @param {string} folder */
 const treeFiles = (root, folder) =>
   git(["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", folder], { cwd: root })
