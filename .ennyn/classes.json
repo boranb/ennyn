@@ -118,7 +118,8 @@
         "new: refused row dropped without a mark",
         "new: retry drops the failure it retried",
         "new: unmeasured read as clean",
-        "new: a failed read moves a verdict's level and its count"
+        "new: a failed read moves a verdict's level and its count",
+        "new: plugin's own agent listing outside the session budget"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, failed reads held, the same mistake in logic recurs and writes are not covered. Named in cycle 4."
     },
@@ -206,7 +207,8 @@
         "new: one unread callee candidate ends the whole callee round",
         "new: brought caller's reach through an unreadable HEAD callee is said not refused",
         "new: a name re-encoded on its way to another program",
-        "new: platform data a byte comparison does not see"
+        "new: platform data a byte comparison does not see",
+        "new: text check lets half a character through"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, reviewers found more shapes after it landed. Named in cycle 7."
     },
@@ -273,7 +275,9 @@
         "new: narrowed reader loses a valid shape",
         "new: a tightened rule refuses an honest input",
         "new: a flag written for one case reads every case",
-        "new: refactor lost a case"
+        "new: refactor lost a case",
+        "new: inserted branch captures the else",
+        "new: inserted branch rebinds a dangling else"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, it holds past probes only. Named in cycle 8."
     },
@@ -500,7 +504,10 @@
         "new: claim written down before it was measured",
         "new: absolute promise wider than the code",
         "new: report line reads as a defect",
-        "new: narrowing applied past the case it was measured on"
+        "new: narrowing applied past the case it was measured on",
+        "new: count in prose disagrees with the table",
+        "new: evidence table overstates its source",
+        "new: text names a tool for a number it does not print"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet."
     },
@@ -580,7 +587,8 @@
         "new: honest failure read as content",
         "new: lossy name decoding collides two staged names",
         "new: gate scoped to a file beside another",
-        "new: one event recorded twice counted twice"
+        "new: one event recorded twice counted twice",
+        "new: definition read from the wrong project"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate.",
       "gates": [
@@ -741,7 +749,8 @@
       "state": "open",
       "linked": [
         "new: list element holds several output lines",
-        "new: inserted sentence splits a list so its later items attach to the wrong subject"
+        "new: inserted sentence splits a list so its later items attach to the wrong subject",
+        "new: copied record counted twice"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate. Its own entry: a singleton that fits nothing else."
     },
@@ -811,7 +820,8 @@
         "hook-older-config-keys"
       ],
       "linked": [
-        "new: version skew read as loosening"
+        "new: version skew read as loosening",
+        "new: older record format read as unknown"
       ],
       "judged": "the orchestrator of cycle 20, reading the rows"
     }

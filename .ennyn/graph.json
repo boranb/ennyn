@@ -107,10 +107,8 @@
         "cycle-journal",
         "session-handover",
         "fresh-session-run",
-        "model-per-role",
         "escalate-on-gate-failure",
-        "agent-usage-report",
-        "correction-goes-fresh-by-context"
+        "impact-scoped-tests"
       ],
       "gate": "user",
       "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release); read 2026-11-01: the post now opens 'Updated October 15 to include more detail on the projects that pioneered many of the techniques we use in Scion.', and The Pragmatic Engineer (2026-10-22) reports the attribution came after a public complaint; an audit of requests against the graph, 2026-11-01: five had no node in the release needs: a project started from nothing (a request, 2026-10-29: 15 nodes, 0 done), leftovers (a request, 2026-10-29: 14 nodes, 0 done), secrets in chat (a request, 2026-10-28: 12 nodes, 1 done), less code and no repetition (a request, a request, 2026-10-25), findings that can wait (a request, 2026-10-25). The smallest piece of each entered the needs. spec-gates' README: 'Spec Kit is a guidance layer'",
@@ -471,7 +469,7 @@
       "cluster": "gates",
       "mechanization": true,
       "sourceClass": "a fixed wall-clock limit in a test fails under load",
-      "source": "cycle 2026-10-24 (8), review round 1 of guards-under-load; measured in the T4 landing run; cycle 2026-10-25 (10): the secrets linear-time ratio failed two full runs at load 8-40 (fixed with CPU time, 1ccb39b); the other wall-clock reads remain; cycle 2026-10-26 (12): at load 50-274 single full runs failed on the fence-reader timing test, a verdicts secrets cell (the hook past 60 s), guards' inner runs, deps' OSV test (stalled 15 minutes) and mutate's runs that wait; each file passed alone, so no run of the cycle's last two landings was clean on the first try; cycle 2026-10-27 (13): at load 83-115 single full runs failed on mutate's runs that wait and its owner-stamp test (the parse check gave no answer), the fault matrix control (its fake git writes the pid it counts only after starting sleep, so a 1 s limit can stop it first: write a marker first), guards' baselines of fault-injection and verdicts, and two hook tests (exit null); each file passed alone; cycle 2026-10-28 (14): the Linux run measured waits shorter than their limits (730 ms against 1 s, 1785 and 1801 ms against 2 s) in the fault matrix control: the tests read Date.now(), which the VM's clock adjustment moves; every test that times a wait reads performance.now() since ce3d0d2; the fixed limits remain; cycle 2026-10-31 (15): setup.test.mjs:1038 failed once at load 40-67 (alone 78/78), and mutation.test.mjs:795 and :838 once at load 95; guards' input-shapes cell once at load 17-27 in the guards clone (alone 10/10); four parallel full suites took the machine to load 124; 2026-10-31 research on closing escaped classes: named in cycles 12 and 13, came back in cycles 8, 9, 10, 12, 13, 14 and 15, never flagged; 2026-10-31: test/input-shapes.test.mjs:493's cleanup failed once in npm test at load about 42 (ENOTEMPTY on a temporary repository's .git/objects/pack, so something was writing there during rmSync, cause not found), the file alone passed 8 of 8 three times; cycle 2026-11-01 (16): three whole suites at once took the machine to load 330 and swap to 11.8 of 13.3 GB; failures read as load: setup's imports-over-blank-lines, the fault matrix's never-ending git control, input-shapes in guards' baseline and mutation, each green alone; 2026-11-01: published work favours limits derived from past durations over hand-raised ones (SAP cut timeout flakes 80%, arXiv 2402.05223, one of two SAP studies, which disagree on load); cycle 16 measured: 10 of 23 whole suites red, 3 of them real, median 654 s against 444-490 s on a quiet machine; cycle 2026-11-01 (17): the fault matrix's never-ending git control leaves this node. Its red was no fixed limit moved by CPU load: macOS holds the first run of a new file until a system check has read it (0.2-0.9 s alone, 17 s behind 60 others at load 11-18), and the fake's shell had not reached its first line at the 1 s limit, so the marker first named here for cycle 13 would not have helped. Fixed in 197121d: first run under no limit; a run lost to a slow start runs again and is judged. Not a bound load cannot move: with 90 or more start loops and the machine out of memory the control ends at its 45 s watchdog, and that reads as slow, not hung. Spinners up to load 332 never failed it; the short suite failed it 8 of 12 runs at load 12-50. Other tests here have not been checked for this: first-run-under-limit; cycle 2026-11-02 (18): 'a diff that stops after its output' failed on 'the streamed diff was held' at load 150 and again in guards' clone at 190, 12/12 alone; test/mutation.test.mjs lost four to mutate's own 1.5 s limit at load 102, 76/76 alone at load 143; a landing suite can go red on these; cycle 2026-11-02 (19): setup's linear-time test failed in T5's landing suite at load ~100 (alone 88/88 at load 124) and in T1's short suite at ~114; a fault-matrix cell (budget --record, eacces statSync) failed once at load 25-55, alone 1/1; cycle 2026-11-04 (20) in WSL: at T1's landing four subtests of mutate: runs that wait failed (baseline 11 s against the 1.5 s timeout; one parse check gave no answer), the file alone 76/76; the hook-oracle-limit guard survived twice under load and was killed alone; a compaction corpus cell timed out at 2 s",
+      "source": "cycle 2026-10-24 (8), review round 1 of guards-under-load; measured in the T4 landing run; cycle 2026-10-25 (10): the secrets linear-time ratio failed two full runs at load 8-40 (fixed with CPU time, 1ccb39b); the other wall-clock reads remain; cycle 2026-10-26 (12): at load 50-274 single full runs failed on the fence-reader timing test, a verdicts secrets cell (the hook past 60 s), guards' inner runs, deps' OSV test (stalled 15 minutes) and mutate's runs that wait; each file passed alone, so no run of the cycle's last two landings was clean on the first try; cycle 2026-10-27 (13): at load 83-115 single full runs failed on mutate's runs that wait and its owner-stamp test (the parse check gave no answer), the fault matrix control (its fake git writes the pid it counts only after starting sleep, so a 1 s limit can stop it first: write a marker first), guards' baselines of fault-injection and verdicts, and two hook tests (exit null); each file passed alone; cycle 2026-10-28 (14): the Linux run measured waits shorter than their limits (730 ms against 1 s, 1785 and 1801 ms against 2 s) in the fault matrix control: the tests read Date.now(), which the VM's clock adjustment moves; every test that times a wait reads performance.now() since ce3d0d2; the fixed limits remain; cycle 2026-10-31 (15): setup.test.mjs:1038 failed once at load 40-67 (alone 78/78), and mutation.test.mjs:795 and :838 once at load 95; guards' input-shapes cell once at load 17-27 in the guards clone (alone 10/10); four parallel full suites took the machine to load 124; 2026-10-31 research on closing escaped classes: named in cycles 12 and 13, came back in cycles 8, 9, 10, 12, 13, 14 and 15, never flagged; 2026-10-31: test/input-shapes.test.mjs:493's cleanup failed once in npm test at load about 42 (ENOTEMPTY on a temporary repository's .git/objects/pack, so something was writing there during rmSync, cause not found), the file alone passed 8 of 8 three times; cycle 2026-11-01 (16): three whole suites at once took the machine to load 330 and swap to 11.8 of 13.3 GB; failures read as load: setup's imports-over-blank-lines, the fault matrix's never-ending git control, input-shapes in guards' baseline and mutation, each green alone; 2026-11-01: published work favours limits derived from past durations over hand-raised ones (SAP cut timeout flakes 80%, arXiv 2402.05223, one of two SAP studies, which disagree on load); cycle 16 measured: 10 of 23 whole suites red, 3 of them real, median 654 s against 444-490 s on a quiet machine; cycle 2026-11-01 (17): the fault matrix's never-ending git control leaves this node. Its red was no fixed limit moved by CPU load: macOS holds the first run of a new file until a system check has read it (0.2-0.9 s alone, 17 s behind 60 others at load 11-18), and the fake's shell had not reached its first line at the 1 s limit, so the marker first named here for cycle 13 would not have helped. Fixed in 197121d: first run under no limit; a run lost to a slow start runs again and is judged. Not a bound load cannot move: with 90 or more start loops and the machine out of memory the control ends at its 45 s watchdog, and that reads as slow, not hung. Spinners up to load 332 never failed it; the short suite failed it 8 of 12 runs at load 12-50. Other tests here have not been checked for this: first-run-under-limit; cycle 2026-11-02 (18): 'a diff that stops after its output' failed on 'the streamed diff was held' at load 150 and again in guards' clone at 190, 12/12 alone; test/mutation.test.mjs lost four to mutate's own 1.5 s limit at load 102, 76/76 alone at load 143; a landing suite can go red on these; cycle 2026-11-02 (19): setup's linear-time test failed in T5's landing suite at load ~100 (alone 88/88 at load 124) and in T1's short suite at ~114; a fault-matrix cell (budget --record, eacces statSync) failed once at load 25-55, alone 1/1; cycle 2026-11-04 (20) in WSL: at T1's landing four subtests of mutate: runs that wait failed (baseline 11 s against the 1.5 s timeout; one parse check gave no answer), the file alone 76/76; the hook-oracle-limit guard survived twice under load and was killed alone; a compaction corpus cell timed out at 2 s; cycle 2026-11-04 (21): the cycle-20 test:linux on node 20.0.0, git 2.34.1 at load 85: metrics.test.mjs:748 (four times the run took 14.6 times as long) and secrets.test.mjs:221 (sixteen times the line took 64.8 times as long), 1360/1362, the run stopped as untrustworthy",
       "since": 8
     },
     {
@@ -1088,8 +1086,8 @@
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "title": "No rule decides which review findings are fixed now and which become nodes; cycles 2-10 had 245 fix-introduced findings against 266 real escapes; a deferred finding becomes a node, and a gate line names the nodes it blocks until it is done (bmad-loop's deferred-work file); a fixer allowed to skip findings it could not fix safely regressed less (Imbue); a 🔴/🟠 finding cannot leave a round without one recorded outcome: fixed with a test, a node id, or refuted; each row says who produces the input its scenario needs (an attacker, normal use by a person or an agent, or only this project's own writer): a low finding whose input only the project's own writer makes is recorded as declined and not fixed, the row validator checks it, and review itself stays as it is, on gates, hooks and shared code above all. Read escapes against declined rows for a cycle before keeping it",
-      "source": "cycle 2026-10-25 (11), a second session's count of the closing handoffs; review of ScrapeGraphAI (MIT, 194055e), 2026-10-28: a review bot rated a broken telemetry opt-out High on pull request #1031, the change merged the same day, and the fix shipped about nine months later in v2.2.4; Anthropic's Scion post (read 2026-11-01): adversarial review 'can also be myopic', engineers had to 'steer Claude away from over-engineering parts of the system in response to hypothetical concerns', and one review was 'overly defensive about trusting another internal service'. Ledger at cycle 16: 186 reviewer rows with no duplicates, 175 fixed, 8 nodes, 3 refuted; 74 of the 81 low ones fixed; by one hand reading 23 of those 74 rest on a hand-made input no user or agent would produce, 21 of them in record and measurement code, 2 in the hook. One cycle, one reader's labels, low severity only; rows do not link a fix to what it opened",
+      "title": "No rule decides which review findings are fixed now and which become nodes; cycles 2-10 had 245 fix-introduced findings against 266 real escapes; a deferred finding becomes a node, and a gate line names the nodes it blocks until it is done (bmad-loop's deferred-work file); a fixer allowed to skip findings it could not fix safely regressed less (Imbue); a 🔴/🟠 finding cannot leave a round without one recorded outcome: fixed with a test, a node id, or refuted; each row says who produces the input its scenario needs (an attacker, normal use by a person or an agent, or only this project's own writer): a low finding whose input only the project's own writer makes is recorded as declined and not fixed, the row validator checks it, and review itself stays as it is, on gates, hooks and shared code above all. Read escapes against declined rows for a cycle before keeping it. Also, the user, 2026-11-04: a request; a low finding outside a gate or shared code becomes a node and is not fixed in the cycle; the mutation pass runs only on gate or decision code, never on a text-only task; a landing runs the short suite and the slow gates the task touches, the whole suite runs once at the closing before the push, and the release runs the full platform matrix; the impact table's five rows only when shared code changes; a proposed node enters the graph only as a real defect or the user's ask; one heavy job at a time",
+      "source": "cycle 2026-10-25 (11), a second session's count of the closing handoffs; review of ScrapeGraphAI (MIT, 194055e), 2026-10-28: a review bot rated a broken telemetry opt-out High on pull request #1031, the change merged the same day, and the fix shipped about nine months later in v2.2.4; Anthropic's Scion post (read 2026-11-01): adversarial review 'can also be myopic', engineers had to 'steer Claude away from over-engineering parts of the system in response to hypothetical concerns', and one review was 'overly defensive about trusting another internal service'. Ledger at cycle 16: 186 reviewer rows with no duplicates, 175 fixed, 8 nodes, 3 refuted; 74 of the 81 low ones fixed; by one hand reading 23 of those 74 rest on a hand-made input no user or agent would produce, 21 of them in record and measurement code, 2 in the hook. One cycle, one reader's labels, low severity only; rows do not link a fix to what it opened; cycle 2026-11-04 (21): the user, after the cycle-20 Linux run overlapped the cycle (load 85): a request, also for the projects Ennyn develops; measured earlier: 176 of 183 low findings fixed in cycle 16, fixing took 12.24 h against 11.18 h of first writing, 67 of 327 findings born from fixes, 0 high from 42 mutation passes; cycle 21 applied it by hand from 23:45 (T3, T4 landed on the short suite)",
       "since": 11
     },
     {
@@ -1837,10 +1835,10 @@
       "needs": [],
       "id": "impact-scoped-tests",
       "title": "During a task the agent runs only the tests the impact table's files reach, using a file-to-test map recorded from real runs with NODE_V8_COVERAGE, which child processes inherit; any change outside .mjs runs everything, because coverage does not see files read with readFileSync; the last failed and the new tests always run. The full suite runs only at the commit gate. Measure wall clock per task and failed gate attempts against cycles 12-13",
-      "value": "medium",
+      "value": "high",
       "cost": "M",
       "cluster": "method",
-      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn; Bun's rewrite post (read 2026-10-31): parallel agents were told 'No cargo either. No slow commands at all.'; GitHub's Copilot rewrite prompt: 'Don't bother running full test suites; that'll be handled in CI.'; Ennyn's cycle 16: one whole suite about 10 minutes, three at once took the machine to load 330; measured 2026-10-31 on test/verdicts.test.mjs, one run on a loaded machine: an import walk found 11 source files, recorded coverage 24, 13 of them reached only at run time, scripts/ennyn.mjs among them; 49 s plain, 48 s recorded, 253 MB of disk; 24 of 31 test files import core/git.mjs, so a change there saves nothing. Needs task-short-suite first: that is the cheaper cut",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn; Bun's rewrite post (read 2026-10-31): parallel agents were told 'No cargo either. No slow commands at all.'; GitHub's Copilot rewrite prompt: 'Don't bother running full test suites; that'll be handled in CI.'; Ennyn's cycle 16: one whole suite about 10 minutes, three at once took the machine to load 330; measured 2026-10-31 on test/verdicts.test.mjs, one run on a loaded machine: an import walk found 11 source files, recorded coverage 24, 13 of them reached only at run time, scripts/ennyn.mjs among them; 49 s plain, 48 s recorded, 253 MB of disk; 24 of 31 test files import core/git.mjs, so a change there saves nothing. Needs task-short-suite first: that is the cheaper cut; cycle 2026-11-04 (21): a request: tests look at what a change touches instead of running the whole app; measured: test:short runs all 43 test files but the slow ones, and 32 of 43 start the CLI, which loads every module, so a static import map would pick nearly all; joins the release needs for cycle 22, its stop measurement first: on cycle 21's commits, how many test files the map picks and whether it misses a failure the whole suite saw",
       "since": 13
     },
     {
@@ -3209,7 +3207,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "source": "measured, cycle 16: three or more heavy jobs ran together for 29% of calendar time, load median 56 on 10 cores; the suite lock added at 16:48 ended the 24-minute runs but not the median (586 to 669 s), since mutation, gates and labs stayed outside it, and it made 32.6 minutes of queue. node --test limits files, not the processes they spawn; cycle 2026-11-01 (17): one short suite sat about 50 minutes in the lock's queue with labs ahead of it, and a reviewer's probe that recursed in a hook reached 1738 processes against a per-user limit of 2666, so other tasks failed with EAGAIN: the limit should count processes too, and probes need a bound; cycle 2026-11-02 (18): T2's short suite waited about 2 hours on the cycle's lock at load up to 241: a mkdir lock keeps no order, and a short suite with guards back runs as long as a whole one; a reviewer's parallel mutant trees reached load 177 before it was told to run them in turn; cycle 2026-11-02 (19): the mkdir lock kept no order: T3's short suite waited 94 minutes and T4's 42 while later arrivals took it; four short suites queued behind one with guards back, load up to 154; cycle 2026-11-04 (20) on Windows with WSL: two suite slots by flock; a locked suite waited over 30 minutes behind two others",
+      "source": "measured, cycle 16: three or more heavy jobs ran together for 29% of calendar time, load median 56 on 10 cores; the suite lock added at 16:48 ended the 24-minute runs but not the median (586 to 669 s), since mutation, gates and labs stayed outside it, and it made 32.6 minutes of queue. node --test limits files, not the processes they spawn; cycle 2026-11-01 (17): one short suite sat about 50 minutes in the lock's queue with labs ahead of it, and a reviewer's probe that recursed in a hook reached 1738 processes against a per-user limit of 2666, so other tasks failed with EAGAIN: the limit should count processes too, and probes need a bound; cycle 2026-11-02 (18): T2's short suite waited about 2 hours on the cycle's lock at load up to 241: a mkdir lock keeps no order, and a short suite with guards back runs as long as a whole one; a reviewer's parallel mutant trees reached load 177 before it was told to run them in turn; cycle 2026-11-02 (19): the mkdir lock kept no order: T3's short suite waited 94 minutes and T4's 42 while later arrivals took it; four short suites queued behind one with guards back, load up to 154; cycle 2026-11-04 (20) on Windows with WSL: two suite slots by flock; a locked suite waited over 30 minutes behind two others; cycle 2026-11-04 (21): a request: one heavy job at a time; the cycle-20 test:linux in the 2-CPU VM ran beside cycle 21 outside the suite lock, load 85, its first image took 1 h 41 min against about 38 and two timing ratios went red; stopped on request",
       "since": 16
     },
     {
@@ -3300,17 +3298,6 @@
       "cost": "S",
       "cluster": "evidence",
       "source": "cycle 2026-11-01 (16), fresh-agent-per-task",
-      "since": 16
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "correction-goes-fresh-by-context",
-      "title": "A short decided correction list goes to a fresh agent when the author's context is large, though the failure count says the same agent corrects: skills/cycle/task-brief.md names a size, or says the count is the only rule",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "cycle",
-      "source": "cycle 2026-11-01 (16): three correction lists went to fresh agents, with the authors at 723K, 605K and 657K tokens, against the table; each took 254K to 411K tokens, and the two with no new security route landed on the first try. The orchestrator's decision, written in the cycle report; cycle 2026-11-01 (17): three more lists went to fresh agents (T4b, T4c, T3b at 576K, 561K, 712K; T5b at 579K): none failed by an author's slip, and each new author found its stop condition by itself; cycle 2026-11-02 (18): three lists went to fresh agents at 564K, 526K and 566K (T1b, T2b, T2c), each with a consolidated brief; T1b found a route its list did not name; cycle 2026-11-02 (19): T3's round-two list went to a fresh agent (T3b) at 636K with a consolidated brief, and a third, narrow fix to another (T3c) after the second failed verification",
       "since": 16
     },
     {
@@ -4623,17 +4610,6 @@
     },
     {
       "status": "planned",
-      "needs": [],
-      "id": "model-per-role",
-      "title": "Ennyn's agents name a model by role: the reviewer agents keep the session's model (model: inherit); a new scout agent (model: haiku) gathers files and facts for an author or reviewer and returns quotes, and a summarizer (model: haiku) reads a long log or suite output and returns the failures; task-brief.md says a brief names the author's model: the session's for code, gates and security, sonnet for method text and docs. No config key: Claude Code's own order (the call's model, the agent's frontmatter, CLAUDE_CODE_SUBAGENT_MODEL, the session) is the override",
-      "value": "high",
-      "cost": "M",
-      "cluster": "method",
-      "source": "research 2026-11-04 on splitting models by role (vendor docs, tools, papers, read raw; kept outside the repository with quotes and hashes): vendors agree on a strong model for ambiguous multi-step work and a cheaper one for narrow repeatable work; verification, review and debugging steps need the strong model (72% of such SWE-bench steps in the one per-step study); Anthropic measured caching as the larger lever and delegation saving money only in two cases; up-front routers fail on SWE tasks, a gate after a cheap attempt works; cycle 19 measured here: authors 76% of cache reads (440.6M), orchestrator 82.0M, reviewers 54.7M, all on one model",
-      "since": 21
-    },
-    {
-      "status": "planned",
       "needs": [
         "model-per-role"
       ],
@@ -4642,18 +4618,75 @@
       "value": "high",
       "cost": "S",
       "cluster": "method",
-      "source": "research 2026-11-04 on splitting models by role (vendor docs, tools, papers, read raw; kept outside the repository with quotes and hashes): vendors agree on a strong model for ambiguous multi-step work and a cheaper one for narrow repeatable work; verification, review and debugging steps need the strong model (72% of such SWE-bench steps in the one per-step study); Anthropic measured caching as the larger lever and delegation saving money only in two cases; up-front routers fail on SWE tasks, a gate after a cheap attempt works; cycle 19 measured here: authors 76% of cache reads (440.6M), orchestrator 82.0M, reviewers 54.7M, all on one model",
+      "source": "research 2026-11-04 on splitting models by role (vendor docs, tools, papers, read raw; kept outside the repository with quotes and hashes): vendors agree on a strong model for ambiguous multi-step work and a cheaper one for narrow repeatable work; verification, review and debugging steps need the strong model (72% of such SWE-bench steps in the one per-step study); Anthropic measured caching as the larger lever and delegation saving money only in two cases; up-front routers fail on SWE tasks, a gate after a cheap attempt works; cycle 19 measured here: authors 76% of cache reads (440.6M), orchestrator 82.0M, reviewers 54.7M, all on one model; cycle 2026-11-04 (21): moved to cycle 22 with finding-triage (left to the session), to end the cycle sooner; model-per-role, which it needs, landed",
       "since": 21
     },
     {
       "status": "planned",
       "needs": [],
-      "id": "agent-usage-report",
-      "title": "ennyn agents reads the session's subagent transcripts, read only, and prints per agent the model asked for and the model that ran, calls, tokens written and read from cache; the closing report pastes it and says a mismatch, since a split can be skipped silently (claude-code#100082: 1,149 of 1,371 subagents ran on the parent model)",
-      "value": "high",
+      "id": "hook-elsewhere-git-256",
+      "title": "hookElsewhere (core/git.mjs) knows only the old 'not a git repository' message: with git 2.56 a GIT_DIR naming a dangling gitfile says 'untold' where the floor gits say 'elsewhere'; both exit 1",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-04 (21), T6's sweep, probed with 2.56.0 and 2.34.1",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "linkedto-any-line",
+      "title": "side-copy's linkedTo reads a gitdir: line on any line of a .git file, while git rejects a file whose first line is not one: a junk first line maps the folder to the project's rules",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-04 (21), T6 review round 2, older than the change",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "budget-plugin-agent-listing",
+      "title": "ennyn budget counts only the project's .claude/agents listings, not the plugin's own agents, which Claude Code lists in every session: the scout and summarizer added 268 bytes it did not see",
+      "value": "medium",
       "cost": "S",
       "cluster": "metrics",
-      "source": "research 2026-11-04 on splitting models by role (vendor docs, tools, papers, read raw; kept outside the repository with quotes and hashes): vendors agree on a strong model for ambiguous multi-step work and a cheaper one for narrow repeatable work; verification, review and debugging steps need the strong model (72% of such SWE-bench steps in the one per-step study); Anthropic measured caching as the larger lever and delegation saving money only in two cases; up-front routers fail on SWE tasks, a gate after a cheap attempt works; cycle 19 measured here: authors 76% of cache reads (440.6M), orchestrator 82.0M, reviewers 54.7M, all on one model",
+      "source": "cycle 2026-11-04 (21), model-per-role review round 1, measured against the stand-in model (46,883 to 47,152 bytes after the cut)",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "findings-classes-near-copies",
+      "title": "metrics/findings.mjs and metrics/classes.mjs hold near-copies that have drifted: the path check accepts test\\\\x.mjs and a trailing space in the registry, the ledger refuses both; also oneLine/gitSaid, the two chain walkers, LONE_HALF/LONE_SURROGATE in mutation.mjs",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-04 (21), legacy audit of the findings ledger and class registry, lean items, measured with parseClasses",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "agent-usage-asked-limits",
+      "title": "ennyn agents' limits: nothing asked prints default and is never compared (built-ins and CLAUDE_CODE_SUBAGENT_MODEL[_FORCE] are not in the transcript); plugin agents' files are not read; run from a worktree on a main-checkout session, nothing-asked agents print unknown; a secret-shaped model field passes the shape check",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-04 (21), agent-usage-report's stop measurement and both review rounds",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "cited-number-check",
+      "title": "A number that skill text, docs/evidence.md or a commit body gives as evidence names where it was read (a kept file and line, or the command), and a test reads that source and finds the number: in cycle 21 three of four claim-outruns-evidence rows were a count or a tool's output stated other than its source said",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "mechanization": true,
+      "sourceClass": "claim-outruns-evidence",
+      "source": "cycle 2026-11-04 (21): the most recurring class of the convergence block",
       "since": 21
     }
   ],
@@ -5278,6 +5311,24 @@
       "title": "init-scan says whether the folder is a new project (newProject): nothing at the top, in the index or in the last 100 commits of any ref and stash entry but a README, a licence, .gitignore, agent instruction files and the instruction files of .claude/ and .ennyn/; outside a repository it proposes git init unless a .git above of any kind, a repository below (10,000 folders), a drive or file-system root, the home folder or GIT_DIR rules it out, and an unreadable folder is said; /ennyn:init takes skills/init/new-project.md there, which asks the fast test too (fabc7a6)",
       "status": "done",
       "finished": "2026-11-04"
+    },
+    {
+      "id": "model-per-role",
+      "title": "Ennyn's agents name a model by role: the three reviewers say model: inherit, a scout and a summarizer run on haiku with Read, Grep and Glob only; task-brief.md's Model row says the brief names the author's model (the session's for code, gates and security, sonnet for method text and docs), a reviewer's Agent call passes no model and CLAUDE_CODE_SUBAGENT_MODEL_FORCE stays unset; measured on 2.1.310: the call's model, then the frontmatter, then the env variable, then the session's, and inherit ignores the variable (e2fdf53)",
+      "status": "done",
+      "finished": "2026-11-05"
+    },
+    {
+      "id": "agent-usage-report",
+      "title": "ennyn agents [--session] [--json] reads a session's subagent transcripts read only and prints per agent the model asked for (the Agent call, then the record, then an agent file of this project), the models that ran, calls, tokens and the last call's context, and names each mismatch; nothing asked prints default and is never compared; a fork's copied parent lines are not counted; no transcript text or path is printed (2fe5642)",
+      "status": "done",
+      "finished": "2026-11-05"
+    },
+    {
+      "id": "correction-goes-fresh-by-context",
+      "title": "task-brief.md says the count is the rule: no size is; sixteen corrections in cycles 16-19 did not separate by context size; the orchestrator may send a short decided list to a fresh agent past a size it names as a judgment in the report, read from ennyn agents' last-call context, on the same worktree and branch, not as the restart (29514d4)",
+      "status": "done",
+      "finished": "2026-11-05"
     }
   ]
 }

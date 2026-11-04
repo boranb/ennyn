@@ -15,8 +15,9 @@ A development loop for coding agents, shipped as a Claude Code plugin and a zero
 
 ## Tests
 
-- `npm test` and `npm run typecheck` both pass before main moves.
-- Before a push, `npm run test:linux` passes: the suite on Linux at the Node and git floors and on newer Node majors (needs docker). CI starts no job while the repository is private.
+- Before main moves: `npm run test:short` (it brings back the slow files a branch touches) and `npm run typecheck`. Before a push: `npm test` once, on the tree that is pushed.
+- Before a push, the test files the push adds or changes pass on Linux in a `node:22` container; a change that touches platform or git-version behaviour also runs them on the Node 20 and git 2.34 floor image. The full `npm run test:linux` (needs docker) runs before a release, after the cycle's closing on an idle machine, never beside other heavy work. CI starts no job while the repository is private.
+- One heavy job at a time: a whole suite, a mutation run or a Linux image.
 - Tests are hermetic: temporary directories only, never a path outside the repository.
 
 ## Release
