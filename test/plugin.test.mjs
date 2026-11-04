@@ -137,7 +137,15 @@ test("plugin: what SECURITY.md says of this repository's own files holds: no run
   for (const text of ["ignore-scripts=true\nignore-scripts=false\n", "[x]\nignore-scripts=true\n", "ignore-scripts=true\n[x]\n", "ignore-scripts=false\n", "; ignore-scripts=true\n", "ignore-scripts[]=true\n", "IGNORE-SCRIPTS=true\n", ""]) assert.ok(!scriptsKeptOff(text), text);
   assert.ok(scriptsKeptOff(read(".npmrc")), ".npmrc keeps install scripts off");
   // A plugin agent's hooks, mcpServers and permissionMode are ignored (2.1.310, read from the binary); its tools are not.
-  for (const a of agents) assert.equal(frontMatter(read(a.path))?.get("tools"), "Read, Grep, Glob, Bash", a.path);
+  // The model of each agent is named (2.1.310 honours a plugin agent's `model`): reviewers the session's, the two helpers haiku and without a shell.
+  const helpers = ["scout", "summarizer"];
+  for (const a of agents) {
+    const fm = frontMatter(read(a.path));
+    const helper = helpers.includes(a.name);
+    assert.equal(fm?.get("tools"), helper ? "Read, Grep, Glob" : "Read, Grep, Glob, Bash", a.path);
+    assert.equal(fm?.get("model"), helper ? "haiku" : "inherit", a.path);
+  }
+  assert.equal(agents.filter((a) => helpers.includes(a.name)).length, helpers.length, "the helper agents exist");
   // The positive control: what a loader runs, and the `!` these skills write as a word, which it does not.
   assert.equal(shellForms("x\n!`id`\n").length, 1);
   assert.equal(shellForms("x !`id`").length, 1);
