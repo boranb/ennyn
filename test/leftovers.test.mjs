@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -252,4 +252,90 @@ test("cli: leftovers --start records, the closing lists each part as found, clea
   const unborn = cli(empty, "leftovers", "--start");
   assert.deepEqual([unborn.status, /HEAD names no commit/.test(unborn.stderr)], [1, true], unborn.stderr);
   assert.ok(existsSync(join(r.dir, "stray.txt")));
+});
+
+test("leftovers: started inside a bare-looking folder a clone brought in, it reads nothing there: its config's clean filter does not run", () => {
+  // The folder, as plain files of a commit: HEAD, objects, refs, an index git must compare by content (read-tree writes
+  // no stat data), and a config naming its own work tree inside it, or itself, and a clean filter that leaves a mark.
+  // Below git 2.38 git takes it for a repository; from 2.38 safe.bareRepository, which Ennyn's git calls set, refuses it
+  // first. Either way nothing runs, but only below 2.38 (the floor, 2.34.1) does this test hold topOf's own refusal.
+  const box = mkdtempSync(join(tmpdir(), "en-leftovers-bare-"));
+  const mark = join(box, "mark");
+  const src = join(box, "src");
+  mkdirSync(src);
+  git(["init", "-q", "-b", "main"], { cwd: src });
+  writeFileSync(join(src, ".gitattributes"), "f filter=x\n");
+  writeFileSync(join(src, "f"), "hello\n");
+  git(["add", "."], { cwd: src });
+  git([...ID, "commit", "-q", "-m", "one"], { cwd: src });
+  const outer = join(box, "outer");
+  mkdirSync(outer);
+  /** A bare-looking folder whose config names `worktree`, relative to it, as its work tree. @param {string} name @param {string} worktree */
+  const folder = (name, worktree) => {
+    const evil = join(outer, name);
+    git(["clone", "-q", "--bare", src, evil], { cwd: box });
+    git(["--git-dir", evil, "config", "filter.x.clean", `sh -c 'echo clean >> "${mark}"; cat'`], { cwd: box });
+    mkdirSync(join(evil, worktree), { recursive: true });
+    mkdirSync(join(evil, "refs", "heads"), { recursive: true });
+    writeFileSync(join(evil, "refs", "heads", "main"), `${git(["--git-dir", evil, "rev-parse", "HEAD"], { cwd: box })}\n`);
+    for (const f of ["f", ".gitattributes"]) writeFileSync(join(evil, worktree, f), readFileSync(join(src, f)));
+    git(["--git-dir", evil, "--work-tree", join(evil, worktree), "read-tree", "HEAD"], { cwd: box });
+    git(["--git-dir", evil, "config", "core.bare", "false"], { cwd: box });
+    git(["--git-dir", evil, "config", "core.worktree", worktree], { cwd: box });
+  };
+  folder("evil", "w");
+  folder("self", ".");
+  folder("dotdot", "w/../w/.");
+  // Its work tree the clone's top: git then finds the clone's own repository from there, which names no filter.
+  folder("up", "..");
+  // A committed link to a folder: the path the command starts in is not the one git reads.
+  symlinkSync("evil", join(outer, "lnk"));
+  git(["init", "-q", "-b", "main"], { cwd: outer });
+  git(["add", "-A"], { cwd: outer });
+  git([...ID, "commit", "-q", "-m", "brings the folders"], { cwd: outer });
+  const clone = join(box, "clone");
+  git(["clone", "-q", outer, clone], { cwd: box });
+  try {
+    // The folders are live: git with no setting of Ennyn's, started there, runs the filter.
+    for (const at of ["evil/w", "self", "dotdot/w"]) {
+      spawnSync("git", ["status", "--porcelain"], { cwd: join(clone, at), encoding: "utf8" });
+      assert.equal(existsSync(mark), true, `git status in ${at} ran no filter: the folder is not read as a repository`);
+      rmSync(mark);
+    }
+    for (const at of ["evil/w", "evil", "self", "dotdot/w", "dotdot", "lnk/w"].map((p) => join(clone, p))) {
+      for (const args of [["leftovers", "--start"], ["leftovers"]]) {
+        const r = cli(at, ...args);
+        assert.notEqual(r.status, 0, `${args.join(" ")} in ${at}: ${r.stdout}`);
+        assert.equal(existsSync(mark), false, `${args.join(" ")} in ${at} ran the folder's clean filter`);
+      }
+    }
+    for (const name of ["evil", "self", "dotdot"]) assert.equal(existsSync(join(clone, name, "ennyn")), false, `nothing is written in ${name}`);
+    // A work tree outside the folder reads the clone's own repository, whose config names no program: it records there.
+    const up = cli(join(clone, "up"), "leftovers", "--start");
+    assert.equal(existsSync(mark), false, "leftovers --start with the work tree outside the folder ran its filter");
+    assert.equal(existsSync(join(clone, "up", "ennyn")), false, "nothing is written in the folder");
+    assert.ok(up.status === 0 || /safe\.bareRepository|bare repository/.test(up.stderr), up.stderr);
+    // GIT_DIR naming the folder, from the clone's top: the variable is dropped and the clone's own repository is read.
+    const named = spawnSync(process.execPath, [CLI, "leftovers", "--start"], { cwd: clone, encoding: "utf8", env: { ...process.env, GIT_DIR: join(clone, "evil") } });
+    assert.equal(named.status, 0, named.stderr);
+    assert.equal(existsSync(mark), false, "GIT_DIR naming the folder ran its filter");
+    // A linked worktree beside the clone: its git dir is in the clone's, its top is not.
+    git(["worktree", "add", "-q", join(box, "linked")], { cwd: clone });
+    const linked = cli(join(box, "linked"), "leftovers", "--start");
+    assert.equal(linked.status, 0, linked.stderr);
+    // A git dir kept apart whose path begins the work tree's, a folder apart: no folder lies in the other.
+    const top = join(box, "ab");
+    git(["init", "-q", "-b", "main", "--separate-git-dir", join(box, "a"), top], { cwd: box });
+    git([...ID, "commit", "-q", "--allow-empty", "-m", "x"], { cwd: top });
+    const apart = cli(top, "leftovers", "--start");
+    assert.equal(apart.status, 0, apart.stderr);
+    // A git dir kept inside the work tree: the work tree is not in it.
+    const tree = join(box, "tree");
+    git(["init", "-q", "-b", "main", "--separate-git-dir", join(tree, ".meta"), tree], { cwd: box });
+    git([...ID, "commit", "-q", "--allow-empty", "-m", "x"], { cwd: tree });
+    const inside = cli(tree, "leftovers", "--start");
+    assert.equal(inside.status, 0, inside.stderr);
+  } finally {
+    rmSync(box, { recursive: true, force: true });
+  }
 });

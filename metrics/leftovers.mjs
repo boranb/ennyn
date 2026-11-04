@@ -15,7 +15,8 @@
  * swept the work tree (`git add -A`) took it in, and the run after the closing's commit would read clean.
  */
 
-import { basename, join, resolve } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, join, resolve, sep } from "node:path";
 import { READ_LIMIT, readRegular, removeState, writeState } from "../core/files.mjs";
 import { git, gitBytes, gitMaybe, nameText, repoPath, resolveStateDir, stateRoot } from "../core/git.mjs";
 
@@ -87,12 +88,16 @@ export function workTreeStatus(top, env, mode = "all") {
 const changeKey = (c) => `${c.code} ${c.path}`;
 
 /**
- * The work tree's top; outside one, throws.
+ * The work tree's top; outside one, throws. So does a top that lies in its own git dir: that is a bare-looking folder a
+ * clone brought in, whose config names its work tree inside it. git 2.38 and later refuse such a folder; a lower git,
+ * the floor 2.34.1 too, reads it, and `git status` there runs the clean filter its config names (measured).
  * @param {string} cwd @param {NodeJS.ProcessEnv} env
  */
 function topOf(cwd, env) {
   const top = repoPath("--show-toplevel", { cwd, env });
   if (!top) throw new Error("not in a git repository");
+  const [dir, at] = [/** @type {string} */ (repoPath("--absolute-git-dir", { cwd: top, env })), top].map((p) => realpathSync.native(p));
+  if (at === dir || at.startsWith(dir.endsWith(sep) ? dir : `${dir}${sep}`)) throw new Error(`the work tree ${top} lies in its own git dir ${dir}: a folder a clone brought in that git below 2.38 reads as a repository, whose config can name programs; nothing was read`);
   return top;
 }
 

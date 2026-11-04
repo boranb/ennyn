@@ -229,6 +229,37 @@ const LEFT = [
   "ls -la $G/git $G/git-receive-pack",
   'cat "$M/gp/git" "$M/gp/git-receive-pack"',
   'ln -s /opt/tools/git/bin/git "$W/git"',
+  // A backslash in a word git takes after its verb, or in an option with no push word anywhere (round 2's daily cells).
+  'git -C "C:\\work\\repo" status',
+  'git commit -m "fix\\npush"',
+  'cat <<< "C:\\x\\push"',
+  'git commit -m "line1`nline2"',
+  // A word reads one way where no second shell reads it again: a quoted Windows path or a spaced value in git's options,
+  // a quoted argument that starts with git, beside a push word (cycle 20's security review, round 3: refused at 3570503).
+  'git -C "C:\\work\\repo" commit -m "feat: push hook reads wsl"',
+  'git -C "C:\\work\\repo" stash push -m wip',
+  'git -C "C:\\work\\repo" log --oneline --grep push',
+  'git -C "x y" log --grep=push',
+  'git --git-dir="C:\\x\\.git" log --grep push',
+  'git -c user.name="A B" commit -m "push the fix"',
+  'gh pr create --title "git push: refuse odd spellings" --body "Fixes the hook"',
+  'gh issue create --title "git push fails on wsl" --label bug',
+  'node x.js "git push" "a b"',
+  // A backslash inside git's name, its verb or an option, run directly: no push in Git Bash 5.2, pwsh 7.4, Windows
+  // PowerShell 5.1, cmd, bash 5.1 or dash (cycle 20, measured again in round 3); a second shell is read where there is one.
+  '"g\\it" push origin main',
+  'git -C . "pu\\sh" origin main',
+  "git -C . 'pu\\\nsh' origin main",
+  'git "\\-C" . push origin main',
+  'git "\\--no-pager" push origin main',
+  // ssh's command that pushes nothing, read as the other machine's shell reads it.
+  'ssh host "echo git push"',
+  "ssh host 'git log -1 --grep push'",
+  "ssh host 'cd x && git stash push -m wip'",
+  "ssh host 'git commit -qm \"push it\" && bash x.sh'",
+  'ssh -p 22 host "echo git push"',
+  "cat x.txt | ssh host",
+  "ssh -N -L 8080:localhost:80 host",
 ];
 
 /** Commands that reach a push outside the shape left alone: refused. */
@@ -545,10 +576,40 @@ const REFUSED = [
   "cat <<${X}\nhello\n${X}\ngit -C . push",
   // A backtick body is unescaped before it is read.
   "echo `echo \\`git -C . push\\``",
+  // A quote anywhere, a grep after the push (round 2's daily cell).
+  'git push origin main 2>&1 | grep -E "\\brejected\\b"',
 ];
 
 /** Refused and no push: the price of not following, accepted and pinned. */
 const OVER_STOPS = [
+  // A program named like one that only reads, by its folder: a planted one runs its words (WINDOWS), this one prints them.
+  "/bin/echo git push origin main",
+  // A push word in what Start-Process joins into a command line.
+  'Start-Process -NoNewWindow -Wait git "stash push -m wip"',
+  // A push argument to a shell that is no git push.
+  'powershell -NoProfile -Command "docker push img"',
+  'powershell.exe -c "git stash push -m wip"',
+  // wsl takes one quoted word for a program's name (exit 127, measured), and ssh is another machine: what its second
+  // shell makes of a backslash, a quote or a space in git's name, its options or its verb (round 2: the remote half,
+  // bash 5.1 -c, pushed for the escaped options).
+  'wsl -d Ubuntu -u ennyn "cd /srv/work && git push origin main"',
+  'ssh host git "pu\\sh" origin main',
+  'ssh host git "\\-C" /srv/work push origin main',
+  'ssh host git "\\--no-pager" push origin main',
+  'ssh host git "\\-c" alias.p=push p origin main',
+  'ssh host "g\\it" "\\-C" /srv/work push origin main',
+  "ssh host git \\\\-C /srv/work push origin main",
+  "ssh host git 'pu\"s\"h' origin main",
+  'ssh host git "push origin" main',
+  'ssh host " git" push origin main',
+  // A push word in text a shell runs (wsl, script -c): no git push.
+  "wsl docker push img",
+  "wsl git stash push -m wip",
+  'script -q -c "npm run push" /dev/null',
+  // A launcher-shaped name before run that is no launcher.
+  "timeout 600 docker run ubuntu run push",
+  "debian run ./deploy.sh push",
+  "alpine run push",
   '"$DOCKER" push x',
   "$(command -v docker) push x",
   "timeout 5 echo git -C . push",
@@ -702,6 +763,9 @@ test("push reader: on hostile text just under the ceiling its time grows with th
     "a long option": (n) => `sh -${fill("c", n)}!`,
     "shells fed by pipes": (n) => `${fill("a b | sh | ", n)}c`,
     "aliases set in a nested read": (n) => `${fill("eval GIT_CONFIG_KEY_0=alias.x\n", n)}git -C . push`,
+    "ssh commands read there": (n) => fill("ssh -P 1 h 'a;git' x;", n),
+    "one ssh command read there": (n) => `ssh h ${fill("'a;git' \"$(x)\" ", n)}`,
+    "an ssh in ssh's command": (n) => `${fill("ssh h ", n)}x`,
   };
   const spent = (/** @type {string} */ text) => {
     const start = process.cpuUsage();
@@ -719,7 +783,7 @@ test("push reader: on hostile text just under the ceiling its time grows with th
 });
 
 test("push reader: after a wrapper any word stands where a program's name stands, and only there does a name decide", () => {
-  for (const wrapper of ["env", "command", "builtin", "exec", "nohup", "nice", "ionice", "time", "timeout", "gtimeout", "sudo", "doas", "stdbuf", "caffeinate", "setsid", "busybox", "toybox", "chroot", "script", "noglob", "nocorrect"]) {
+  for (const wrapper of ["env", "command", "builtin", "exec", "nohup", "nice", "ionice", "time", "timeout", "gtimeout", "sudo", "doas", "stdbuf", "caffeinate", "setsid", "busybox", "toybox", "chroot", "noglob", "nocorrect"]) {
     assert.notEqual(pushSpelling(`${wrapper} sh -c 'git -C . push'`), null, wrapper);
     assert.notEqual(pushSpelling(`${wrapper} $(echo git) push`), null, wrapper);
     assert.notEqual(pushSpelling(`${wrapper.toUpperCase()} sh -c 'git -C . push'`), null, wrapper);
@@ -731,6 +795,168 @@ test("push reader: after a wrapper any word stands where a program's name stands
   // A dashed program's name folds case as git's does.
   assert.notEqual(pushSpelling("GIT-PUSH origin"), null);
   assert.notEqual(pushSpelling("git-push origin"), null);
+});
+
+/**
+ * Windows' spellings, each measured to push there (Windows 10, Git for Windows 2.47.1 and its bash 5.2.37, pwsh 7.4.22,
+ * Windows PowerShell 5.1, WSL Ubuntu 22.04 with git 2.34.1; cycle 20's security audit): a shell named with `.exe` or
+ * Windows PowerShell's own name, git or a shell by its Windows path, quoted, a .cmd shim, and wsl and runuser before a
+ * shell. No Linux run has these programs, so the reader is asked alone; an unquoted Windows path is a limit.
+ */
+const WINDOWS = [
+  'powershell -NoProfile -Command "git push origin main"',
+  'powershell.exe -c "git push origin main"',
+  'PowerShell -NoProfile -Command "git push origin main"',
+  'pwsh.exe -NoProfile -c "git push origin main"',
+  'bash.exe -c "git push origin main"',
+  "sh.exe -c 'git push origin main'",
+  '"C:\\Program Files\\Git\\cmd\\git.exe" push origin main',
+  "'C:\\Program Files\\Git\\cmd\\git.exe' push origin main",
+  '& "C:\\Program Files\\Git\\cmd\\git.exe" push origin main',
+  '"C:\\Program Files\\Git\\bin\\bash.exe" -c "git push origin main"',
+  'wsl.exe -d Ubuntu -u ennyn -- bash -c "cd /srv/work && git push origin main"',
+  "wsl -d Ubuntu -u ennyn -e sh -c 'cd /srv/work && git push origin main'",
+  'wsl.exe -d Ubuntu -u root -- runuser -u ennyn -- bash -c "cd /srv/work && git push origin main"',
+  // A .cmd shim that runs git (measured with one written for the lab, Git Bash and pwsh).
+  "C:/tools/shim/git.cmd push origin main",
+  "& 'C:/tools/shim/git.cmd' push origin main",
+  // A batch file named like a builtin that only reads, which runs its arguments (`@%*`): no builtin is a .bat or a .cmd
+  // (cycle 20's security review, round 2: pushed from Git Bash, pwsh and Windows PowerShell 5.1).
+  "./test.bat git push origin main",
+  "./echo.bat git push origin main",
+  "./test.cmd git push origin main",
+  ".\\test.bat git push origin main",
+  // With no folder, one found on PATH (Git Bash, round 3).
+  "echo.bat git push origin main",
+  // A string Start-Process joins into git's command line, which git splits again (pwsh 7.4 and Windows PowerShell 5.1
+  // pushed, round 1), by its aliases too (`saps` in pwsh 7.4.22, `start` in 5.1 pushed, round 3).
+  'Start-Process -NoNewWindow -Wait git "push origin main"',
+  'saps -NoNewWindow -Wait git "push origin main"',
+  'start -NoNewWindow -Wait git "push origin main"',
+  // cmd reads a caret as an escape (pushed from pwsh 7.4.22, round 3).
+  "cmd /c git pu^sh origin main",
+  // A program named like one that only reads, planted in the work tree with its folder, which runs its words (round 3:
+  // ./echo.exe from Git Bash, the review; ./echo, a script, from Git Bash and WSL bash).
+  "./echo.exe git push origin main",
+  '& ".\\echo.exe" git push origin main',
+  "./echo git push origin main",
+  "./grep.exe git push origin main",
+  "C:/repo/tools/test.exe git push origin main",
+];
+
+/**
+ * Text given to a shell by a program the reader once took for one that runs its words, or did not know: each pushed
+ * (cycle 20's security review, round 1: WSL Ubuntu 22.04 with git 2.34.1, bash 5.1, util-linux 2.37.2, as root where
+ * runuser and the launcher run; from Git Bash 5.2 and pwsh 7.4 through wsl.exe and ubuntu.exe), and a word whose
+ * backslash a second shell takes: `wsl` with no `--exec` and a launcher's `run` join their words into a line.
+ */
+const SECOND_SHELL = [
+  'runuser ennyn -c "cd /srv/work && git push origin main"',
+  'runuser -l ennyn -c "cd /srv/work && git push origin main"',
+  'runuser - ennyn -c "git push origin main"',
+  'wsl.exe -d Ubuntu -u root -- runuser ennyn -c "cd /srv/work && git push origin main"',
+  'su ennyn -c "cd /srv/work && git push origin main"',
+  'script -qc "git push origin main" /dev/null',
+  'ubuntu.exe run "cd /srv/work && git push origin main"',
+  'ubuntu.exe run cd /srv/work "&&" "g\\it" push origin main',
+  "ubuntu.exe run git -C /srv/work push origin main",
+  'wsl -d Ubuntu -u ennyn --cd /srv/work "g\\it" push origin main',
+  'wsl -d Ubuntu -u ennyn --cd /srv/work git "p\\ush" origin main',
+  'wsl -d Ubuntu -u ennyn --cd /srv/work git "pu\\sh" origin main',
+  "wsl -d Ubuntu -u ennyn --cd /srv/work git 'p\\ush' origin main",
+  "wsl -d Ubuntu -u ennyn --cd /srv/work git p\\\\ush origin main",
+  "wsl -d Ubuntu -u ennyn --cd /srv/work git 'pu\\\nsh' origin main",
+  // The launcher takes text after -c too, though its help names run alone (round 2: pushed as root, no window).
+  'ubuntu.exe -c "cd /srv/work && git push origin main"',
+  'ubuntu.exe -c cd /srv/work "&&" git push origin main',
+  // util-linux script's other spellings of -c.
+  'script --command="git push origin main" /dev/null',
+  'script -qec "git push origin main" /dev/null',
+];
+
+/**
+ * ssh joins its command words with one space and the other machine's shell reads the line (`man ssh`, OpenSSH 8.9p1), so
+ * a `git` and a `push` in different words, or past a `;` or a `&&` inside one, meet there (cycle 20's security review,
+ * round 3: the remote half of each pushed in bash 5.1 -c; ssh end to end not run). Where the command starts is read past
+ * ssh's options, before the destination and after it, each letter's value measured with `ssh -G` in OpenSSH 8.9p1, 9.5p1
+ * and 9.9p1. ssh's own words run here (`ProxyCommand` through a shell, measured), and with no command the login shell
+ * there reads what ssh is fed (the remote half measured).
+ */
+const SSH = [
+  'ssh host "git push" origin main',
+  'ssh host "cd /srv/work && git" push origin main',
+  'ssh host "true;git" push origin main',
+  'ssh host git "status;git" push origin main',
+  "ssh host 'git push origin main'",
+  "ssh host 'cd r && git push'",
+  "ssh host 'sh -c \"git push origin main\"'",
+  'ssh -p 22 host "true;git" push origin main',
+  'ssh host -p 22 "true;git" push origin main',
+  'ssh -tt -o BatchMode=yes -i key host "true;git" push origin main',
+  'ssh -p22 host "true;git" push origin main',
+  'ssh -tlme host "true;git" push origin main',
+  'ssh -- host "true;git" push origin main',
+  'ssh host -- "true;git" push origin main',
+  // Past `--` an option's shape is the command's first word.
+  'ssh host -- -p "true;git" push origin main',
+  // -P takes a value in Windows' OpenSSH 9.5p1 and Git's 9.9p1, and none in 8.9p1: both readings are read.
+  'ssh -P tag host "true;git" push origin main',
+  'ssh -P host "true;git" push origin main',
+  "ssh -P tag host sh -c \"'git push origin main'\"",
+  'timeout 5 ssh host "true;git" push origin main',
+  '"C:\\Windows\\System32\\OpenSSH\\ssh.exe" host "true;git" push origin main',
+  'ssh host git "\\-C" /srv/work push origin main',
+  // A word's expansion there, one that holds the whole command, and a built word where ssh's options stand.
+  'ssh host "$G" push origin main',
+  'ssh host "$(echo git push origin main)"',
+  "ssh $OPTS host 'sh -c \"git push\"'",
+  // ssh's own words: ProxyCommand runs here through a shell (pushed, OpenSSH 8.9p1).
+  "ssh -o ProxyCommand='git push origin main' host true",
+  // What ssh is fed reaches the login shell there, or the command it runs.
+  "echo 'git push origin main' | ssh host",
+  "echo 'git push origin main' | ssh host sh",
+  "ssh host sh <<EOF\ngit push origin main\nEOF",
+];
+
+test("push reader: runuser, script -c, wsl and a WSL launcher's run give text to a shell: each is refused", () => {
+  for (const c of SECOND_SHELL) assert.notEqual(pushSpelling(c), null, JSON.stringify(c));
+  // Any launcher by its name, the one installed here measured: the store gives each distribution a launcher of its own.
+  for (const c of ['ubuntu2204.exe run "git push origin main"', 'debian run "git push origin main"', 'Ubuntu.EXE RUN "git push origin main"']) assert.notEqual(pushSpelling(c), null, c);
+  // Where nothing pushes, nothing is refused: the runner's own words, another program's run.
+  for (const c of ["runuser -u ennyn -- git status", "script -q /dev/null npm test", "wsl -e git log -1", "ubuntu.exe run git status", "npm run push", "ubuntu.exe config --default-user root", "ubuntu.exe config --default-user push"]) assert.equal(pushSpelling(c), null, c);
+});
+
+test("push reader: ssh's command words are joined and read as the other machine's shell reads them: each push there is refused", () => {
+  for (const c of SSH) assert.notEqual(pushSpelling(c), null, JSON.stringify(c));
+  // Each letter that takes a value takes the next word, and each other letter none (`ssh -G`, OpenSSH 8.9p1).
+  for (const letter of "BbcDEeFIiJLlmOopQRSWw") assert.equal(pushSpelling(`ssh -${letter} v host "echo git push"`), null, letter);
+  for (const letter of "46AaCfGgKkMNnqsTtVvXxYy") assert.notEqual(pushSpelling(`ssh -${letter} host "true;git" push origin main`), null, letter);
+  // An ssh in what ssh runs there is a program that runs text: refused with a push word, not read again, so the time
+  // stays linear.
+  assert.notEqual(pushSpelling("ssh a 'ssh b \"true;git\" push origin main'"), null);
+  assert.notEqual(pushSpelling("ssh a 'ssh b \"echo git push\"'"), null);
+  assert.equal(pushSpelling("ssh a 'ssh b ls'"), null);
+  // What does not close there is judged by the push word, one an expansion here holds too, and by an alias the session sets.
+  assert.notEqual(pushSpelling("ssh host \"git push 'open\""), null);
+  assert.notEqual(pushSpelling("ssh host \"$(echo git push)\" \"'\""), null);
+  assert.equal(pushSpelling('ssh host "echo \'open"'), null);
+  // A push word an expansion here holds, past the command's name there, is an argument, as it would be here.
+  assert.equal(pushSpelling('ssh host ls "$(git log -1 --format=%s --grep push)"'), null);
+  assert.notEqual(pushSpelling("ssh host \"git save 'open\"", { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "alias.save", GIT_CONFIG_VALUE_0: "push" }), null);
+});
+
+test("push reader: a program's name is read past its folder, `/` or `\\`, and the extension Windows runs it by: each Windows spelling measured to push is refused", () => {
+  for (const c of WINDOWS) assert.notEqual(pushSpelling(c), null, JSON.stringify(c));
+  // runuser at the head, as root runs it in a Linux shell (the one above ran inside wsl).
+  assert.notEqual(pushSpelling('runuser -u ennyn -- bash -c "cd /srv/work && git push origin main"'), null);
+  // In double quotes a backslash stays unless it escapes `$`, a backtick, `"`, `\` or a line feed, as a shell keeps it, so
+  // `"\git"` names git in a folder, and `"g\it"` a program `it` in the folder `g` (LEFT).
+  assert.notEqual(pushSpelling('"\\git" -C . push'), null);
+  // What it does escape there is the character alone, and the refusal names the word as the shell passes it.
+  assert.equal(pushSpelling('git -C "a\\"b\\$c\\`d\\\\e" push'), 'git -C a"b$c`d\\e push');
+  // An .exe is the program's own name, for one that only reads too.
+  assert.equal(pushSpelling("echo.exe git push"), null);
+  assert.notEqual(pushSpelling("GIT-PUSH.EXE origin"), null);
 });
 
 test("push reader: the accept corpus is left alone", () => {
@@ -873,8 +1099,9 @@ const LIMITS = [
   "awk 'BEGIN { system(\"git -C . push\") }'",
   "man -P 'git -C . push #' ls",
   "gh api repos/x/y/git/refs -f ref=refs/heads/x",
-  // Another machine, in one quoted word.
-  "ssh host 'cd r && git push'",
+  // A container or another machine, reached by a program other than ssh (not run here).
+  "docker exec c sh -c 'git push origin main'",
+  "vagrant ssh -c 'git push origin main'",
   // A command held in a variable, and a shell that evaluates text later.
   'P="git -C . push"; $P',
   'P="git -C . push"; eval "$P"',
@@ -902,10 +1129,19 @@ const LIMITS = [
   "git ls-remote --upload-pack='git -C . push; :' .",
   "git archive --remote=. --exec='git -C . push; :' HEAD",
   "git difftool -y -x 'git -C . push #' HEAD~1 HEAD",
+  "GIT_SSH_COMMAND='git -C . push #' git fetch ssh://x/y",
+  // Pushed (WSL bash 5.1 and Git Bash 5.2, round 3); refused at 3570503 only by the rule that read every option twice.
   "git -c core.sshCommand='git -C . push #' fetch ssh://x/y",
-  // PowerShell's own spellings, read as shell text: these are no shell words.
+  // PowerShell's own spellings, read as shell text: these are no shell words. A Windows path written unquoted is
+  // escapes to a POSIX shell and a path to PowerShell, which pushes (measured, pwsh 7.4.22).
   'iex "git -C . push"',
   'Invoke-Expression "git -C . push"',
+  "C:\\PROGRA~1\\Git\\cmd\\git.exe push origin main",
+  // Each pushed in pwsh 7.4 or Windows PowerShell 5.1 (cycle 20's security review): a call on an expression.
+  "& (Get-Command git).Source push origin main",
+  "& (gcm git) push origin main",
+  // A WSL launcher whose name no pattern holds (wsldl names are the user's): not measured here.
+  'Manjaro.exe run "git push origin main"',
 ];
 
 test("push reader: the stated limits are limits: each is left, and the header and SECURITY.md name it", () => {

@@ -29,19 +29,33 @@
  *   `git stash push`, `adb push`). A word list here only ever leaves: a program no list holds is judged by its words.
  * - Text that runs text is not followed: a shell, `eval`, `source`, `xargs`, `env -S`, `find -exec`, a built word where a
  *   program's name stands, a substitution in an unquoted here-document, a built word at git's verb place: with a push word
- *   in any text it can reach, refused. Its options are not read, so `bash -euo pipefail -c` hides nothing. A program's name
- *   stands at the head and, after a wrapper (WRAPS), at any word.
+ *   in any text it can reach, refused. Its options are not read, so `bash -euo pipefail -c` hides nothing. `runuser` and
+ *   util-linux `script` (`-c`), `wsl` with no `--exec`, a WSL launcher's `run` or `-c` (`ubuntu.exe run …`) and
+ *   `Start-Process` (`start`, `saps`) give text to a shell or a command line too, and the push word is looked for with
+ *   cmd's caret out. A program's name stands at the head and, after a wrapper (WRAPS), at any word, and is read past its
+ *   folder, a `/` or a `\` (a quoted Windows path), without the extension Windows runs it by:
+ *   `"C:\Program Files\Git\cmd\git.exe" push` is git and `powershell.exe -c` a shell (measured on Windows).
+ * - A word is read once, as the shell passes it: `"g\it"` names a program `it` in a folder, `git -C "C:\x" log` holds a
+ *   path. A second reading is made where a second shell reads the words: ssh joins its command words with one space and
+ *   the other machine's shell reads the line, so that line is read here as a shell's text, `;`, `&&`, quotes and
+ *   backslashes as there (`ssh host "true;git" push`, `ssh host git "\-C" dir push`). ssh's options are read past (each
+ *   letter's value as OpenSSH 8.9p1, 9.5p1 and 9.9p1 take it), its own words run here (`-o ProxyCommand=…`, a push word
+ *   there refuses), and with no command the shell there reads what ssh is fed. An expansion here is a built word there
+ *   (`ssh host "$(echo git push)"`), and an ssh inside that line runs text.
+ * - A name that only reads (INERT) has no folder and no extension off but `.exe`: `./echo` may be a program the work tree
+ *   brought, and a `.bat` or a `.cmd` is no builtin.
  * - Every word named git is looked at, not the first, and an option before the verb that TAKES_VALUE and PLAIN_OPTION do
  *   not know is taken to hide the verb.
  * - Text that does not close, or past what can be read (over CEILING, deeper than the stack), is judged by the push word.
  *
  * What it refuses that is no push, accepted: `"$DOCKER" push x`, `timeout 5 echo git -C . push`, `ssh host git push`,
- * `ls git push`, a function that forwards to git with a push word anywhere in the text, an argument `push` to a script
- * run by a shell. One push word anywhere arms what is fed text and a built word at git's verb place, an unrelated
- * command's included (`git log --grep push; ls | xargs echo`). A shift outside `$((…))` reads as a here-document, and what
- * then does not close is judged by the word (`((x = 1 << 2))`). A `#` right after `)` is read as text, since zsh's glob
- * `(a)#` is one word, so a real comment there is read too (`(echo a)# git push`). What it refuses that is a push the rule
- * would ask about: every push in a text outside the plain language, however simple the rest of it is.
+ * `/bin/echo git push`, `ls git push`, a function that forwards to git with a push word anywhere in the text, an argument
+ * `push` to a script run by a shell, `Start-Process git "stash push"`. One push word anywhere arms what is fed text and a
+ * built word at git's verb place, an unrelated command's included (`git log --grep push; ls | xargs echo`). A shift
+ * outside `$((…))` reads as a here-document, and what then does not close is judged by the word (`((x = 1 << 2))`). A
+ * `#` right after `)` is read as text, since zsh's glob `(a)#` is one word, so a real comment there is read too
+ * (`(echo a)# git push`). What it refuses that is a push the rule would ask about: every push in a text outside the plain
+ * language, however simple the rest of it is.
  *
  * Stated limits, not chased:
  * - text whose shell grammar the reader does not read, so it sees no push at all: the left-alone line is consulted only for
@@ -51,7 +65,8 @@
  *   and a comment;
  * - Claude Code's 50 ms parser deadline on a loaded machine: unmeasured under load, for a left text as for any other;
  * - a script the agent writes and runs, an interpreter (`python -c`, `node -e`), any other program that runs text it is
- *   given (`awk`, `make`, `man -P`), an MCP tool, `gh api`, a command sent to another machine in one quoted word;
+ *   given (`awk`, `make`, `man -P`), an MCP tool, `gh api`, a command a container or another machine runs, sent by a
+ *   program other than ssh (`docker exec`, `vagrant ssh -c`), and what an ssh config file runs (`RemoteCommand`);
  * - text fed to a group, a function or a shell later in the session (`exec 0<<<…`): a feed reaches the next simple command;
  * - a command held whole in a variable, a head and a verb in two, and a shell that evaluates text later (an array
  *   subscript, `PS4`, zsh's `(e)`);
@@ -61,7 +76,10 @@
  *   an alias in a config file or one whose name holds a space;
  * - a git option or setting that runs a command (`--upload-pack`, `--exec`, `-x`, `core.sshCommand`, `core.pager`,
  *   `GIT_EDITOR`);
- * - PowerShell's own spellings (`iex`, its backtick escape): a PowerShell command is read as shell text;
+ * - PowerShell's own spellings (`iex`, its backtick escape, a Windows path written unquoted, which a POSIX shell reads
+ *   as escapes, a call on an expression, `& (Get-Command git).Source push`): a PowerShell command is read as shell text;
+ * - a program that runs another one and no list here holds (`conhost`, `wt`, `winpty`), and a WSL launcher whose
+ *   name no pattern holds (`Manjaro.exe run`: wsldl names are the user's);
  * - a Skill's shell block, for which no hook fires, `disableAllHooks`, and `NODE_OPTIONS` or `PATH` in a settings `env`,
  *   which run the repository's code in the hook's place;
  * - a config an earlier call moved away, and a hook that crashes, is killed or times out: Claude Code runs the call.
@@ -71,8 +89,11 @@
 const GAP = "\u0000";
 /** A whole push word: `push-spellings.mjs` and `feat/git-push-hook` are none, `/opt/git-core/git-push` is one. */
 const PUSH_WORD = /(?<![\w./-])(push|send-pack|http-push)(?![\w./?*[-])|(?<![\w.-])git-(push|send-pack|http-push)(?![\w./?*[-])/;
-/** What a shell removes on its way to a word, and what it fills in: looked through apart, since what it fills in may hold the push. */
-const QUOTES = /\\\n|[\\"'\u0000{},]/g;
+/**
+ * What a shell removes on its way to a word, cmd's caret too, and what it fills in: looked through apart, since what it
+ * fills in may hold the push.
+ */
+const QUOTES = /\\\n|[\\"'\u0000{},^]/g;
 const FILLED = /\$\{\w*\}|\$\([^()]*\)|`[^`]*`/g;
 /** A simple command left alone, read from the source: git push and literal words, then redirects to literal places. */
 const PLAIN = /^git push( [\w@%+=:,./~^-]+)*( \d?>>? ?[\w./-]+| 2>&1)* *$/;
@@ -85,15 +106,30 @@ const OPENS = /^(if|for|while|until|case|select|function)$/;
 const CLOSES = /^(fi|done|esac)$/;
 /** Past this the text is not read: the largest real command in the replay is 53,646 bytes. */
 const CEILING = 65536;
-/** Programs that run text they are given. A shell's options are not read: none of them hides what it runs. */
-const RUNS = /^((ba|z|da|k|c|tc|fi|a|rba)?sh|eval|source|xargs|parallel|watch|trap|alias|su|flock|pwsh|cmd(\.exe)?)$/i;
+/**
+ * Programs that run text they are given, by the names nameOf reads. A shell's options are not read: none of them hides
+ * what it runs. `runuser` and util-linux `script` take a shell's text after `-c`, as `su` does, `wsl` with no `--exec`
+ * gives the rest of its line to a Linux shell as text, which reads its quotes and backslashes again, and `Start-Process`
+ * (`start`, `saps`) joins its words into a command line the program splits again.
+ */
+const RUNS = /^((ba|z|da|k|c|tc|fi|a|rba)?sh|eval|source|xargs|parallel|watch|trap|alias|su|runuser|script|wsl|flock|pwsh|powershell|cmd|start-process|start|saps)$/i;
+/**
+ * ssh's option letters whose value is the rest of the word or the next word, the same in OpenSSH 8.9p1, 9.5p1 and 9.9p1
+ * (`ssh -G -<letter> a b` names b as the host); `-P` is one in 9.5p1 and 9.9p1, not in 8.9p1.
+ */
+const SSH_VALUE = "BbcDEeFIiJLlmOopQRSWw";
 /** Programs that run the rest of their words: after one, any word may stand where a program's name stands. */
-const WRAPS = /^(env|command|builtin|exec|nohup|nice|ionice|time|timeout|gtimeout|sudo|doas|stdbuf|caffeinate|setsid|busybox|toybox|chroot|script|noglob|nocorrect)$/i;
+const WRAPS = /^(env|command|builtin|exec|nohup|nice|ionice|time|timeout|gtimeout|sudo|doas|stdbuf|caffeinate|setsid|busybox|toybox|chroot|noglob|nocorrect)$/i;
+/**
+ * A WSL distribution's own launcher (`ubuntu.exe`, `ubuntu2204.exe`, `debian.exe` …): its `run` gives the rest of the
+ * line to the distribution's shell as text (`ubuntu.exe help`, measured), so with a `run` after it, it runs text.
+ */
+const LAUNCHER = /^(ubuntu[\d.]*|debian|kali(-linux)?|opensuse[\w.-]*|sles[\w.-]*|suse[\w.-]*|fedora[\w.-]*|alpine[\w.-]*|arch(linux)?|oraclelinux[\w.-]*|almalinux[\w.-]*|rockylinux[\w.-]*|centos[\w.-]*|pengwin)$/i;
 /** find's way to run a command, and env's way to split one word into a command. */
 const SPLITS = /^-(exec|ok)(dir)?$|^-\w*S|^--split-string/;
 /** git's verbs that send commits, in the dashed name each has as a program. */
 const DASHED = /^git-(push|send-pack|http-push)$/i;
-const GIT = /^=?git(\.exe)?$/i;
+const GIT = /^=?git$/i;
 /** git's verbs that take a command or a push of their own. */
 const RUNS_VERB = /^(subtree|submodule|rebase|bisect)$/;
 /** A command's first word that is shell grammar. */
@@ -163,7 +199,8 @@ function parse(src, seen) {
     const c = src[i];
     const d = src[i + 1] ?? "";
     if (c === "\\") {
-      word.text += d === "\n" ? "" : d;
+      // In double quotes it stays unless it escapes `$`, a backtick, `"`, `\` or a line feed: a Windows path's.
+      word.text += d === "\n" ? "" : quoted && !"$`\"\\".includes(d) ? c + d : d;
       word.literal &&= d === "\n";
       i += 2;
     } else if (c === "`") {
@@ -295,26 +332,105 @@ function parse(src, seen) {
   return i > src.length + 1;
 }
 
-/** @param {Word} w */
-const nameOf = (w) => w.text.split(GAP).join("").replace(/^.*\//s, "");
+/**
+ * Whether a text was read whole into `seen`: no longer than CEILING, closed, and no deeper than the stack.
+ * @param {string} text @param {Seen} seen
+ */
+const readWhole = (text, seen) => {
+  try {
+    return text.length <= CEILING && !parse(text, seen);
+  } catch (e) {
+    if (!(e instanceof RangeError)) throw e;
+    return false;
+  }
+};
+
+/** The extensions Windows runs a program by; a builtin has none of them but `.exe` (Git for Windows' echo.exe). */
+const RUN_BY = /\.(exe|cmd|bat|com)$/i;
+const EXE = /\.exe$/i;
+
+/**
+ * A program's name, from the word as the shell passes it: past its folder, a POSIX path's or a Windows path's, and without
+ * the extension `ext`. One reading: a second shell's is read where one reads the words (ssh), or not at all (RUNS).
+ * @param {Word} w @param {RegExp} [ext]
+ */
+const nameOf = (w, ext = RUN_BY) => w.text.split(GAP).join("").replace(/^.*[/\\]/s, "").replace(ext, "");
+
+/** Whether the word's name, any extension off, passes `re`. @param {Word | undefined} w @param {RegExp} re */
+const named = (w, re) => (w ? re.test(nameOf(w)) : false);
+
+/**
+ * Where ssh's command starts among the words after its name: past its options, the destination, and options again unless
+ * `--` ended them (OpenSSH reads options after the destination too). `takes`: the letters whose value is the rest of the
+ * word or, at its end, the next word.
+ * @param {Word[]} words @param {string} takes
+ */
+const sshCommand = (words, takes) => {
+  let host = false;
+  let ended = false;
+  for (let k = 0; k < words.length; k++) {
+    const t = words[k].text;
+    if (!ended && t === "--") ended = true;
+    else if (!ended && /^-./s.test(t)) {
+      if ([...t.slice(1)].findIndex((c) => takes.includes(c)) === t.length - 2) k++;
+    } else if (host) return k;
+    else host = true;
+  }
+  return words.length;
+};
+
+/**
+ * Whether what ssh hands to the other machine reaches a push. OpenSSH joins the command words with one space and that
+ * machine's shell reads the line (`man ssh`), so the joined text is read here as a shell's: `ssh host "true;git" push`
+ * and `ssh host "cd x && git" push` are pushes there. ssh's own words run here: `-o ProxyCommand=…` goes to a shell. With
+ * no command, the login shell there reads what ssh is fed; with one, that command is fed.
+ * @param {Word[]} words those after ssh's name @param {Cmd} cmd @param {Seen} seen
+ */
+function remote(words, cmd, seen) {
+  // `-P` takes a value in OpenSSH 9.5p1 and 9.9p1, none in 8.9p1: both are read.
+  for (const start of new Set([sshCommand(words, SSH_VALUE), sshCommand(words, `${SSH_VALUE}P`)])) {
+    // A built word among ssh's own may be options and a destination both: where the command starts is not known.
+    if (words.slice(0, start).some((w) => holdsPush(w.text) || (w.built && cmd.push))) return true;
+    if (start === words.length) {
+      if (cmd.fed && seen.pushes > 0) return true;
+      continue;
+    }
+    // What a word's expansion holds is not known there either: it stands as one, and a push word only an expansion here
+    // holds (`ssh host "$(echo git push)"`) counts there.
+    const text = words.slice(start).map((w) => w.text.split(GAP).join("${E}")).join(" ");
+    const filled = cmd.push && !holdsPush(text);
+    /** @type {Seen} */
+    const inner = { cmds: [], pushes: seen.pushes, aliases: new Set(seen.aliases) };
+    if (!readWhole(text, inner)) {
+      if (cmd.push || inner.aliases.size) return true;
+    } else if (inner.cmds.some((c) => judge({ ...c, fed: c.fed || cmd.fed, push: c.push || filled }, inner, true))) return true;
+  }
+  return false;
+}
 
 /**
  * Whether a simple command reaches a push, a plain one apart.
- * @param {Cmd} cmd @param {Seen} seen @returns {boolean}
+ * @param {Cmd} cmd @param {Seen} seen @param {boolean} [there] read as ssh's command: an ssh in it is not read again
+ * @returns {boolean}
  */
-function judge(cmd, seen) {
+function judge(cmd, seen, there = false) {
   const first = cmd.words.findIndex((w) => !ASSIGNMENT.test(w.text) && !KEYWORD.test(w.text));
-  // A name with an expansion glued to it is no name this list knows.
-  if (first < 0 || (INERT.test(nameOf(cmd.words[first])) && !cmd.words[first].text.includes(GAP))) return false;
+  // A name with an expansion glued to it is no name this list knows, nor is one with a folder: a program planted in the
+  // work tree (`./echo.exe`, `./echo`) runs its words. Only `.exe` comes off: `./test.bat` is a batch file.
+  if (first < 0 || (INERT.test(nameOf(cmd.words[first], EXE)) && !/[/\\\u0000]/.test(cmd.words[first].text))) return false;
   const words = cmd.words.slice(first);
   const live = seen.pushes > 0;
   const reach = cmd.push || (cmd.fed && live);
-  // What stands where a program's name stands.
-  const heads = WRAPS.test(nameOf(words[0])) ? words : words.slice(0, 1);
-  if (heads.some((w) => (cmd.push && w.built && !ASSIGNMENT.test(w.text)) || DASHED.test(nameOf(w)) || (reach && (RUNS.test(nameOf(w)) || nameOf(w) === ".")))) return true;
-  if (cmd.push && heads.some((w) => /^(env|find)$/i.test(nameOf(w))) && words.some((w) => SPLITS.test(w.text))) return true;
+  // What stands where a program's name stands, by its place in `words`.
+  const at = named(words[0], WRAPS) ? words.map((_, k) => k) : [0];
+  const heads = at.map((k) => words[k]);
+  if (heads.some((w) => (cmd.push && w.built && !ASSIGNMENT.test(w.text)) || named(w, DASHED) || (reach && (named(w, RUNS) || named(w, /^\.$/))))) return true;
+  if (reach && at.some((k) => named(words[k], LAUNCHER) && /^(run|-c)$/i.test(words[k + 1]?.text ?? ""))) return true;
+  const ssh = at.find((k) => named(words[k], /^ssh$/i));
+  if (ssh !== undefined && (there ? reach : remote(words.slice(ssh + 1), cmd, seen))) return true;
+  if (cmd.push && heads.some((w) => named(w, /^(env|find)$/i)) && words.some((w) => SPLITS.test(w.text))) return true;
   for (let k = 0; k < words.length; k++) {
-    if (!GIT.test(nameOf(words[k]))) continue;
+    if (!named(words[k], GIT)) continue;
     let v = k + 1;
     let hidden = false;
     for (; words[v]?.text.startsWith("-") && !hidden; v++) {
@@ -337,13 +453,7 @@ function judge(cmd, seen) {
 export function pushSpelling(command, env = {}) {
   /** @type {Seen} */
   const seen = { cmds: [], pushes: 0, aliases: pushAliases(env) };
-  let unread = true;
-  try {
-    if (command.length <= CEILING) unread = parse(command, seen);
-  } catch (e) {
-    if (!(e instanceof RangeError)) throw e;
-  }
-  if (unread) return holdsPush(command) || seen.aliases.size ? command.slice(0, 200) : null;
+  if (!readWhole(command, seen)) return holdsPush(command) || seen.aliases.size ? command.slice(0, 200) : null;
   const left = command.length < RULE_READS && NOTHING_TO_MISREAD.test(command);
   const hit = seen.cmds.find((c) => !(left && c.plain) && judge(c, seen));
   return hit ? hit.words.map((w) => w.text.split(GAP).join("$…")).join(" ") : null;
