@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { ConfigError, loadConfig } from "../core/config.mjs";
 import { readRegular } from "../core/files.mjs";
 import { git } from "../core/git.mjs";
-import { ACTIONS, CLASSES_LIMIT, CLASS_LIST_MAX, CLASS_STATES, NAME_MAX, PROBLEMS_SHOWN, TEXT_MAX, checkProofs, classProblems, currentClass, emptyRegistry, foldName, isKnown, loadClasses, parseClasses, saysOf, stateCounts, valueProblem } from "../metrics/classes.mjs";
+import { ACTIONS, CLASSES_LIMIT, CLASS_LIST_MAX, CLASS_STATES, NAME_MAX, PROBLEMS_SHOWN, TEXT_MAX, checkProofs, classProblems, currentClass, emptyRegistry, foldName, loadClasses, parseClasses, stateCounts, valueProblem } from "../metrics/classes.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
 const COMMIT = "a".repeat(40);
@@ -40,6 +40,7 @@ const ACCEPT = [
   ["says at the limit", doc(cls({ says: "x".repeat(TEXT_MAX) }))],
   ["says in Turkish", doc(cls({ says: "Ölçülemeyen bir durum sonuç diye okunuyor." }))],
   ["a zero width joiner, which is text in some scripts", doc(cls({ says: "a\u200db" }))],
+  ["a character outside the basic plane, two halves written as escapes", doc(cls({ says: "a\ud83d\ude00", linked: ["new: a\ud83d\ude00"] }))],
   ["an open class with a written rule", doc(cls({ gates: [gate({ file: "CLAUDE.md", action: "written-rule" })] }))],
   ["a partial class with a gate on a document", doc(cls({ state: "partial", gates: [gate({ file: "docs/x.md", action: "advice" })] }))],
   ["closed-gate at the lowest action that closes", doc(cls({ state: "closed-gate", gates: [gate({ action: "past-defects" })] }))],
@@ -172,6 +173,8 @@ const REJECT = [
   ["a hash in a list", doc(cls({ gates: [gate({ commit: [COMMIT] })] })), /\.commit must be a full commit hash/],
   ["a count past what a number holds exactly", doc(cls({ counts: { source: "a.jsonl", cycles: { 1: Number.MAX_SAFE_INTEGER + 1 } } })), /must be a whole number/],
   ["a control byte in a node", doc(cls({ nodes: ["a\u0007b"] })), /\.nodes must be a list/],
+  ["half a character in a sentence, written as an escape", doc(cls({ says: "a\ud800" })), /\.says must be one plain line/],
+  ["half a character in a linked name", doc(cls({ linked: ["new: a\udc00"] })), /\.linked\[0\]/],
   // Superseded.
   ["superseded by nothing", doc(cls({ state: "superseded" })), /\.by must name the entry/],
   ["a pointer on a live entry", doc(cls({ by: "other" }), other), /\.by belongs only to a superseded entry/],
@@ -246,7 +249,7 @@ test("classes: an entry that holds a problem stays out of the index, and the siz
   const reg = parseClasses(doc(cls(), cls({ id: "bad id" }), cls({ id: "two", state: "nope" })));
   assert.equal(reg.size, 3);
   assert.deepEqual(reg.entries.map((e) => e.id), ["one"]);
-  assert.equal(isKnown(reg, "two"), false);
+  assert.equal(reg.byId.has("two"), false);
 });
 
 test("classes: all the problems of a file are said at once, as the config says them", () => {
@@ -318,15 +321,12 @@ const REG = parseClasses(
   ),
 );
 
-test("classes: is an id known, and what does it say", () => {
+test("classes: the index holds what each id says, and no name of Object.prototype is an id", () => {
   assert.deepEqual(REG.problems, []);
-  assert.equal(isKnown(REG, "live"), true);
-  assert.equal(isKnown(REG, "gone"), true);
-  for (const id of ["nobody", "constructor", "toString", "__proto__", "new: old name", "", 1, null, undefined]) assert.equal(isKnown(REG, /** @type {any} */ (id)), false, String(id));
-  assert.equal(saysOf(REG, "live"), "It says this.");
-  assert.equal(saysOf(REG, "gone"), "It said that.");
-  assert.equal(saysOf(REG, "nobody"), null);
-  assert.equal(saysOf(REG, "constructor"), null);
+  assert.equal(REG.byId.get("live")?.says, "It says this.");
+  assert.equal(REG.byId.get("gone")?.says, "It said that.");
+  for (const id of ["live", "gone"]) assert.equal(valueProblem(REG, id), null, id);
+  for (const id of ["nobody", "constructor", "toString", "__proto__", ""]) assert.match(String(valueProblem(REG, id)), /unknown class/, id);
 });
 
 test("classes: a class value is a known id or a new: name, and nothing else", () => {
@@ -469,7 +469,7 @@ test("classes: with no registry a new: name is valid and no id is known", () => 
   const reg = emptyRegistry();
   assert.equal(valueProblem(reg, "new: x"), null);
   assert.match(String(valueProblem(reg, "one")), /unknown class/);
-  assert.equal(isKnown(reg, "one"), false);
+  assert.equal(reg.byId.has("one"), false);
   assert.deepEqual(stateCounts(reg), []);
 });
 

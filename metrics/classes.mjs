@@ -66,6 +66,8 @@ const ID_MAX = 64;
 const QUOTED_MAX = 60;
 const NEW = "new: ";
 
+/** Half of a surrogate pair standing alone: in a `u` pattern a pair is one character, never \p{Cs}. */
+const LONE_HALF = /\p{Cs}/u;
 const ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export const HASH = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const CYCLE = /^[1-9][0-9]*$/;
@@ -100,8 +102,12 @@ export function quoted(v) {
   if (typeof v === "number" || typeof v === "boolean" || v === null) return JSON.stringify(v);
   return Array.isArray(v) ? "a list" : typeof v === "object" ? "an object" : "nothing";
 }
-/** One plain line. @param {unknown} v @param {number} [max] @returns {v is string} */
-export const plain = (v, max = TEXT_MAX) => typeof v === "string" && v.length <= max && v.trim() !== "" && !UNSHOWN.test(v);
+/**
+ * One plain line. Half a character, which JSON writes as an escape in valid UTF-8, prints as U+FFFD as a byte that is
+ * no UTF-8 would: two names that differ only there would read as one.
+ * @param {unknown} v @param {number} [max] @returns {v is string}
+ */
+export const plain = (v, max = TEXT_MAX) => typeof v === "string" && v.length <= max && v.trim() !== "" && !UNSHOWN.test(v) && !LONE_HALF.test(v);
 /** @param {unknown} v @returns {v is string} */
 export const isId = (v) => typeof v === "string" && v.length <= ID_MAX && ID.test(v);
 /** The name of a `new:` value, or null. @param {unknown} v */
@@ -290,12 +296,6 @@ export function loadClasses({ cwd, config }) {
   if (!isUtf8(bytes)) return { path, there: true, ...emptyRegistry(), problems: ["the file is not valid UTF-8"] };
   return { path, there: true, ...parseClasses(bytes.toString("utf8"), { path }) };
 }
-
-/** Whether a class id is in the registry. @param {Registry} reg @param {unknown} id */
-export const isKnown = (reg, id) => reg.byId.has(/** @type {string} */ (id));
-
-/** What a class says, as data; null for an id the registry does not hold. @param {Registry} reg @param {unknown} id */
-export const saysOf = (reg, id) => reg.byId.get(/** @type {string} */ (id))?.says ?? null;
 
 /**
  * What is wrong with a class value of a finding, or null when it is valid: a known id, a superseded one too (a close

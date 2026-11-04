@@ -441,6 +441,16 @@ test("findings ledger: bytes that are no UTF-8 are refused, as the registry refu
   assert.equal(ledgerLine(led).level, "fail");
 });
 
+test("findings ledger: half a character, written as a JSON escape, is refused as bytes that are no UTF-8 are, and a whole one passes", () => {
+  // Valid UTF-8 text, so the file check lets it by; decoded, each half prints as one replacement character.
+  const text = lines(row({ class: ["new: a\ud800"] }), second({ class: ["new: a\udbff"] }), row({ id: "c16-t1-code-r1-03", fingerprint: "b\udc00" }));
+  const led = parsed(text);
+  assert.equal(led.refusedCount, 3);
+  assert.deepEqual(led.rows, []);
+  // A pair is one character, and an emoji in a name is a name.
+  assert.equal(parsed(lines(row({ class: ["new: a\ud83d\ude00"], fingerprint: "b\ud83d\ude00" }))).refusedCount, 0);
+});
+
 test("config: paths.findings has a default and may move, and meets the rule of the metrics log", () => {
   assert.equal(config(project()).paths.findings, ".ennyn/findings.jsonl");
   const refused = (/** @type {Record<string, unknown>} */ paths, /** @type {RegExp} */ why) => {
