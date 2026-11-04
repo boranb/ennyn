@@ -1,6 +1,7 @@
 {
   "language": "tr",
   "paths": { "handoff": ".ennyn/handoff.md" },
+  "commands": { "fastTest": "npm run test:short" },
   "commitMsg": {
     "language": "en",
     "types": ["feat", "fix", "docs", "test", "refactor", "chore"],
