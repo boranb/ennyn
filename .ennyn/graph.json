@@ -4707,11 +4707,11 @@
       "status": "planned",
       "needs": [],
       "id": "kill-own-pid-only",
-      "title": "Task and review agents stop only a process they started, by its PID or process group: the brief and the three reviewers say so, and a PreToolUse hook (beside deletion-target-hook) refuses a kill chosen by filter, title or image name (taskkill /FI or /IM, Stop-Process -Name, pkill, killall, kill of a substitution); a reviewer ran taskkill //F //FI \"WINDOWTITLE eq *\", which matches every window on the desktop, to stop its own hung process",
+      "title": "Task and review agents stop only a process they started, by its PID or process group: the brief and the three reviewers say so, and a PreToolUse hook (beside deletion-target-hook) refuses a kill chosen by filter, title or image name (taskkill /FI or /IM, Stop-Process -Name, pkill, killall, kill of a substitution, a PID read from a port lookup such as netstat -ano or Get-NetTCPConnection); a reviewer ran taskkill //F //FI \"WINDOWTITLE eq *\", which matches every window on the desktop, to stop its own hung process",
       "value": "high",
       "cost": "S",
       "cluster": "security",
-      "source": "a report from another project's cycle run on Windows, 2026-11-05: a code-reviewer ran the filter; other desktop applications were open afterwards, what closed is unknown; skills/cycle/task-brief.md and agents/*.md hold no process rule (grep for kill, PID, process); related: resource-ledger, cleanup-command, deletion-target-hook",
+      "source": "a report from another project's cycle run on Windows, 2026-11-05: a code-reviewer ran the filter; other desktop applications were open afterwards, what closed is unknown; skills/cycle/task-brief.md and agents/*.md hold no process rule (grep for kill, PID, process); related: resource-ledger, cleanup-command, deletion-target-hook; observed on Windows, 2026-11-05: a cleanup that stopped every process listening on a port while its comment said only ours, and a port check (netstat | grep -q under pipefail) that answered free when it was not",
       "since": 21
     },
     {
@@ -4747,6 +4747,144 @@
       "cost": "M",
       "cluster": "plan",
       "source": "a report from another project's cycle run on Windows, 2026-11-05: .venv and node_modules linked into worktrees with New-Item -ItemType Junction; --remove rightly refused, first for the junction, then for __pycache__; by hand: [System.IO.Directory]::Delete(path, $false), git clean -fdX, then --remove; the main copy's .venv file count was the same before and after; this machine, 2026-11-05: a WSL worktree had no node_modules and typecheck failed until one was linked; deletion: the most careful of the four",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "plugin-update-path",
+      "title": "A change to Ennyn reaches an installed copy without a reinstall, and a reinstall keeps commits checked: claude plugin update answers 'already at the latest version (0.0.1)' while the version stays 0.0.1, so the user uninstalls and reinstalls; the uninstall deletes the plugin record the commit-msg hook reads, and until a session starts again every commit passes unchecked. Measure what update compares (version, commit), keep or rewrite the record across a reinstall, and doctor says when the record is missing and how to restore it",
+      "value": "high",
+      "cost": "S",
+      "cluster": "distribution",
+      "source": "observed 2026-11-05: two reinstalls in one session, the record rewritten by running the plugin-root hook by hand; related: uninstall-path, hook-older-config-keys",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "findings-close-command",
+      "title": "ennyn findings close takes the cycle's kept rows files and does the closing's ledger work as one command: checks each row, sets outcome and commit, appends without duplicates, links new: classes to the registry, and writes LF; skills/cycle/SKILL.md's 'append each kept rows file' names no command, so each orchestrator writes its own closing scripts",
+      "value": "high",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "observed 2026-11-05: five closing scripts across two cycles (one with 82 lines of outcome and commit values typed per row id), a reviewer's rows file with a count line that had to be left out, and a ledger of 110 CRLF rows and 112 LF rows; this repository's cycle 20 closing on Windows also wrote four graph scripts by hand; related: ledger-check-in-hook",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "cycle-wake-lock",
+      "title": "The cycle keeps the machine awake while its agents run and lets go at the closing or when it stops: SetThreadExecutionState on Windows, caffeinate on macOS, systemd-inhibit on Linux, one process recorded so a later session can stop it; task-brief.md names sleep only as a way agents get lost",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "observed 2026-11-05: both cycles wrote their own 10-hour wake script; this repository's cycle 20 on Windows ran a 14-hour SetThreadExecutionState loop by hand, and the handoff tells the next orchestrator to do the same",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "worktree-dependency-links"
+      ],
+      "id": "worktrees-unmarked",
+      "title": "ennyn worktrees --unmarked lists linked worktrees that carry no ennyn:<cycle> lock mark (made by an earlier version or by hand): whether the branch is merged, what each holds that a removal would lose, which hold links to the main copy, and offers to mark them; today they are invisible to the command and are left on disk or removed by hand",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "plan",
+      "source": "observed 2026-11-05: one cycle's four worktrees, with dependency junctions inside, still on disk after the next cycle",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hook-cancel-said",
+      "title": "A hook that Claude Code cancels at its time limit says nothing, and the rules it should have given are not given: the side-copy PostToolUse hook was cancelled (hook_cancelled) for a Read and a Write under load, the calls took 25 and 41 s; the hook gets a short limit of its own that ends it before Claude Code does, and the next hook run or doctor names the last cancellation",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "hooks",
+      "source": "observed 2026-11-05: two subagents, 2026-11-04; related: hook-stdin-bound",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "landing-command-key",
+      "title": "A config key for the project's whole landing gate (commands.landing: the command, its expected time, what it does under load) that the cycle runs and times, beside commands.fastTest; an orchestrator otherwise writes its own landing script with the project's steps, and its limits drift from the project's",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "observed 2026-11-05: a landing script repeating the project's 9 checks without the project's own 3600 s test limit, the suite taking 3.5 h under parallel agents, and setup scripts per worktree; related: heavy-job-limit, init-handoff-slow-suites",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "win-kill-waits-exit",
+      "title": "On Windows a stopped process is waited for: taskkill /T /F returns when it has asked, not when the process has exited, and metrics/mutation.mjs (killGroup) and core/git.mjs (stopWhenSilent) go on at once; mutate restores the file and the next mutant writes while the old test tree may still hold it; wait until the PID is gone, with a limit, and say so when it is not",
+      "value": "high",
+      "cost": "S",
+      "cluster": "distribution",
+      "source": "observed on Windows, 2026-11-05: 367 taskkill SUCCESS lines and a lesson 'terminating is not exiting' (a delete after taskkill hit files the process still held); measured in this repository: metrics/mutation.mjs:182 and core/git.mjs:141 do not wait; related: mutate-kills-its-tree, windows-verdict",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "win-rename-retry",
+      "title": "On Windows a rename or delete of a state file retries on EPERM, EBUSY and EACCES with a short backoff before it fails: an antivirus or endpoint agent, an editor or a test still holding the file makes the single renameSync in core/files.mjs fail once; mutate's restore reads the file back to confirm",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "distribution",
+      "source": "observed on Windows, 2026-11-05: 'being used by another process' 154 times across about 8 sessions; measured: core/files.mjs:319 renames once",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "windows-verdict"
+      ],
+      "id": "win-temp-path-spelling",
+      "title": "Briefs and commands on Windows name temporary paths in Windows form (the scratchpad's full path, or cygpath -m): Git Bash's /tmp is another folder than a native tool's, and with MSYS_NO_PATHCONV a tool's /tmp becomes C:\\tmp; windows-verdict's hook measurements include converted and unconverted path arguments",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "distribution",
+      "source": "observed on Windows, 2026-11-05: 7 node ENOENT failures on a C:\\tmp path after Bash wrote to /tmp",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "win-python-utf8",
+      "title": "On Windows the test and mutation commands Ennyn runs get PYTHONUTF8=1, and doctor notes that python -I ignores PYTHONIOENCODING (only -X utf8 works): a cp1254 or cp1252 console turns a test's Turkish or other non-ASCII output into a UnicodeEncodeError, a failure that is not the change's",
+      "value": "low",
+      "cost": "S",
+      "cluster": "distribution",
+      "source": "observed on Windows, 2026-11-05: 16 UnicodeEncodeError tracebacks from cp1254.py in 6 sessions",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "line-ending-flip-said",
+      "title": "The commit-msg hook names a staged file whose whole change disappears under --ignore-cr-at-eol (a line-ending flip, not an edit), and the diff-reading gates (impact, mutation lines, smallest-change row) read past changes that are only CR",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "observed on Windows, 2026-11-05: 'LF will be replaced by CRLF' in 24 sessions and agents checking CR by hand; another project's ledger holds mixed line endings; related: windows-run",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "cycle-journal"
+      ],
+      "id": "session-node-lease",
+      "title": "Two sessions on one repository cannot take the same node or rewrite the graph or handoff at once: a cycle or one-task run takes a lease per node id in the state dir (holder session, start, HEAD), another session sees it and stops or picks another node, and the closing gives it back; cycle-open-guard and shared-list-slots see only one session's cycle",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "plan",
+      "source": "observed on Windows, 2026-11-05: sessions on one repository sending each other conflict warnings (141 matches in 16 sessions) after one removed what another relied on; related: parallel-task-merge",
       "since": 21
     }
   ],
