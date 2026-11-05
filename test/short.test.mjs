@@ -8,13 +8,14 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { appendFileSync, chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { registerHooks } from "node:module";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { git } from "../core/git.mjs";
 import { matchAny } from "../core/glob.mjs";
 import { testNames } from "./declarations.mjs";
-import { ACCOUNTING, SLOW, choose, decide, reasons, testFiles, whatChanged } from "./short.mjs";
+import { ACCOUNTING, READS, SLOW, choose, codeHash, decide, reasons, testFiles, whatChanged } from "./short.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const GUARDS = "test/guards.test.mjs";
@@ -322,6 +323,7 @@ test("short: what comes back is run and said with its reason, what stays out is 
   assert.deepEqual(files, ["test/a.test.mjs", FAULT]);
   assert.match(says[0], /^short suite, 2 of 4 test files \(changed on work since main at [0-9a-f]{7}: 2\)$/);
   assert.deepEqual(says.slice(1), [
+    "read list: not used, core/config.mjs is code",
     `added ${FAULT}: core/config.mjs: the code that most often changed with the matrix`,
     `left out ${GUARDS}: none of its listed paths changed, and it runs at the closing; its accounting test runs now`,
     `left out ${HOOK}: none of its listed paths changed, and it runs at the closing`,
@@ -397,6 +399,7 @@ test("short: --list says the same and runs nothing; anything else it does not kn
   assert.equal(list.status, 0, list.stderr);
   assert.deepEqual(list.stdout.trimEnd().split("\n"), [
     `short suite, 2 of 3 test files (changed on work since main at ${git(["rev-parse", "HEAD"], { cwd: dir }).slice(0, 7)}: 0)`,
+    "read list: not used, test/reads.json is missing; node test/short.mjs --record writes it",
     `left out ${HOOK}: none of its listed paths changed, and it runs at the closing`,
     "test/a.test.mjs",
     "test/b.test.mjs",
@@ -405,7 +408,7 @@ test("short: --list says the same and runs nothing; anything else it does not kn
   for (const args of [["--lits"], ["--list", "x"], ["test/a.test.mjs"]]) {
     const wrong = run(script, dir, args);
     assert.equal(wrong.status, 2, args.join(" "));
-    assert.match(wrong.stderr, /^usage: node test\/short\.mjs \[--list\]/);
+    assert.match(wrong.stderr, /^usage: node test\/short\.mjs \[--list \| --record\]/);
     assert.equal(wrong.stdout, "");
   }
 });
@@ -527,4 +530,265 @@ test("short: npm run test:short runs the script and npm test still runs every te
   const { scripts } = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
   assert.equal(scripts["test:short"], "node test/short.mjs");
   assert.equal(scripts.test, "node --test --import ./test/hermetic.mjs test/*.test.mjs");
+});
+
+/** The accounting test's stand-in, which says it ran. */
+const ACCOUNTING_STANDIN = `import { test } from "node:test";\ntest("guards: every test that reads this repository has guards; a stand-in", () => { console.log("ACCOUNTING RAN"); });\n`;
+
+/**
+ * A copy with a read list recorded on its code: a.test.mjs read notes/a.md, b.test.mjs listed notes/sub, c.test.mjs
+ * saw a read it could not name, d.test.mjs read nothing of notes.
+ */
+function listed() {
+  const dir = copy({
+    "test/a.test.mjs": file("a ran"),
+    "test/b.test.mjs": file("b ran"),
+    "test/c.test.mjs": file("c ran"),
+    "test/d.test.mjs": file("d ran"),
+    [GUARDS]: ACCOUNTING_STANDIN,
+    "notes/a.md": "a\n",
+    "notes/none.md": "read by no test\n",
+  });
+  const seen = (/** @type {Partial<{ reads: string[], dirs: string[], unseen: string[] }>} */ s) => ({ reads: [], dirs: [], unseen: [], ...s });
+  const tests = {
+    "test/a.test.mjs": seen({ reads: ["notes/a.md", "test/a.test.mjs"] }),
+    "test/b.test.mjs": seen({ dirs: ["notes/sub"] }),
+    "test/c.test.mjs": seen({ unseen: ["spawnSync git: git in the repository"] }),
+    "test/d.test.mjs": seen({ reads: ["test/d.test.mjs"] }),
+  };
+  writeFileSync(join(dir, READS), JSON.stringify({ version: 1, code: codeHash(dir), tests }));
+  commit(dir, "the read list");
+  git(["branch", "-q", "-f", "main", "work"], { cwd: dir });
+  return { dir, tests };
+}
+
+test("short: with a fresh read list a branch that changes no code runs the short-suite files that read what changed, and guards' accounting test; a change nobody read runs none", () => {
+  const { dir } = listed();
+  const script = join(dir, "test", "short.mjs");
+  const short = ["test/a.test.mjs", "test/b.test.mjs", "test/c.test.mjs", "test/d.test.mjs"];
+
+  put(dir, { "notes/a.md": "changed\n" });
+  const text = decide(dir);
+  assert.deepEqual(text.files, ["test/a.test.mjs", "test/c.test.mjs"]);
+  assert.equal(text.accounting, true);
+  assert.equal(text.says[0], `short suite, 2 of 6 test files (changed on work since main at ${git(["rev-parse", "HEAD"], { cwd: dir }).slice(0, 7)}: 1)`);
+  assert.equal(text.says[1], "read list: used, no code changed: 2 of 4 short-suite files read what changed");
+  assert.ok(text.says.includes("kept test/a.test.mjs: reads notes/a.md"), text.says.join("\n"));
+  assert.ok(text.says.includes("kept test/c.test.mjs: its recording saw a read it could not name (spawnSync git: git in the repository)"));
+  for (const f of ["test/b.test.mjs", "test/d.test.mjs"]) assert.ok(text.says.includes(`left out ${f}: its recording read none of what changed`), f);
+  const ran = run(script, dir);
+  assert.equal(ran.status, 0, ran.stdout + ran.stderr);
+  assert.match(ran.stdout, /a ran/);
+  assert.match(ran.stdout, /c ran/);
+  assert.doesNotMatch(ran.stdout, /[bd] ran/);
+  assert.match(ran.stdout, /ACCOUNTING RAN/);
+
+  // A file new under a listed folder; one beside it whose name only starts the same is not under it.
+  put(dir, { "notes/a.md": "a\n", "notes/sub/new.md": "new\n" });
+  assert.deepEqual(decide(dir).files, ["test/b.test.mjs", "test/c.test.mjs"]);
+  rmSync(join(dir, "notes", "sub"), { recursive: true });
+  put(dir, { "notes/subway.md": "new\n" });
+  assert.deepEqual(decide(dir).files, ["test/c.test.mjs"]);
+  rmSync(join(dir, "notes", "subway.md"));
+
+  // A slow file a text change brings back runs whole, as before: the list does not narrow it.
+  put(dir, { "skills/cycle/SKILL.md": "a guarded line gone\n" });
+  const back = decide(dir);
+  assert.deepEqual(back.files, ["test/c.test.mjs", GUARDS]);
+  assert.equal(back.accounting, false);
+  rmSync(join(dir, "skills"), { recursive: true });
+
+  // Nobody read it: only what could not be named runs, and with no file at all node --test is not started bare.
+  put(dir, { "notes/none.md": "changed\n" });
+  assert.deepEqual(decide(dir).files, ["test/c.test.mjs"]);
+  const tests = JSON.parse(readFileSync(join(dir, READS), "utf8"));
+  tests.tests["test/c.test.mjs"].unseen = [];
+  writeFileSync(join(dir, READS), JSON.stringify(tests));
+  const none = decide(dir);
+  assert.deepEqual(none.files, []);
+  assert.equal(none.says[1], "read list: used, no code changed: 0 of 4 short-suite files read what changed");
+  // A listing of the whole tree reads every file.
+  tests.tests["test/d.test.mjs"].dirs = [""];
+  writeFileSync(join(dir, READS), JSON.stringify(tests));
+  assert.deepEqual(decide(dir).files, ["test/d.test.mjs"]);
+  tests.tests["test/d.test.mjs"].dirs = [];
+  writeFileSync(join(dir, READS), JSON.stringify(tests));
+  const bare = run(script, dir);
+  assert.equal(bare.status, 0, bare.stdout + bare.stderr);
+  assert.doesNotMatch(bare.stdout, /[abcd] ran/, "no test file ran");
+  assert.match(bare.stdout, /ACCOUNTING RAN/);
+  assert.deepEqual(bare.stdout.trimEnd().split("\n").slice(-2), ["guards' accounting test: passed", "test:short passed"]);
+  assert.deepEqual(short.filter((f) => none.says.includes(`left out ${f}: its recording read none of what changed`)), short);
+});
+
+test("short: a code change, or a read list missing, unreadable, of another shape, of other test files or of other code, runs the short set as before and says why", () => {
+  const { dir, tests } = listed();
+  const short = ["test/a.test.mjs", "test/b.test.mjs", "test/c.test.mjs", "test/d.test.mjs"];
+  const original = readFileSync(join(dir, READS), "utf8");
+  /** @param {RegExp} why */
+  const asBefore = (why) => {
+    const { files, says } = decide(dir);
+    assert.deepEqual(files.filter((f) => f !== GUARDS), short, says.join("\n"));
+    assert.match(says[1], why);
+    assert.ok(!says.some((l) => /^(kept|left out) test\/[a-d]\./.test(l)), says.join("\n"));
+  };
+  put(dir, { "notes/a.md": "changed\n" });
+  for (const code of ["core/glob.mjs", "tool/new.cjs", "web/app.js", "package.json", "sub/package.json"]) {
+    put(dir, { [code]: `${existsSync(join(dir, code)) ? readFileSync(join(dir, code), "utf8") : ""}// changed\n` });
+    asBefore(new RegExp(`^read list: not used, ${code.replace(/\./g, "\\.")} is code$`));
+    git(["checkout", "-q", "--", "."], { cwd: dir });
+    git(["clean", "-qfd", "--", "tool", "web", "sub", "package.json"], { cwd: dir });
+    put(dir, { "notes/a.md": "changed\n" });
+  }
+  rmSync(join(dir, READS));
+  asBefore(/^read list: not used, test\/reads\.json is missing; node test\/short\.mjs --record writes it$/);
+  mkdirSync(join(dir, READS));
+  asBefore(/^read list: not used, test\/reads\.json could not be read \(/);
+  rmSync(join(dir, READS), { recursive: true });
+  /** @type {[unknown, RegExp][]} */
+  const wrong = [
+    ["{", /is not JSON$/],
+    [null, /does not have the shape --record writes$/],
+    [{ version: 2, code: "x", tests }, /does not have the shape/],
+    [{ version: 1, tests }, /does not have the shape/],
+    [{ version: 1, code: "x", tests: [] }, /does not have the shape/],
+    [{ version: 1, code: "x", tests: { ...tests, "test/a.test.mjs": { reads: "notes/a.md", dirs: [], unseen: [] } } }, /does not have the shape/],
+    [{ version: 1, code: "x", tests: { ...tests, "test/a.test.mjs": { reads: [1], dirs: [], unseen: [] } } }, /does not have the shape/],
+    [{ ...JSON.parse(original), tests: { ...tests, "test/e.test.mjs": tests["test/d.test.mjs"] } }, /was recorded on other test files; node test\/short\.mjs --record$/],
+    [{ ...JSON.parse(original), tests: { "test/a.test.mjs": tests["test/a.test.mjs"] } }, /was recorded on other test files/],
+    [{ ...JSON.parse(original), code: "0".repeat(64) }, /was recorded on other code; node test\/short\.mjs --record$/],
+  ];
+  for (const [list, why] of wrong) {
+    writeFileSync(join(dir, READS), typeof list === "string" ? list : JSON.stringify(list));
+    asBefore(why);
+  }
+  writeFileSync(join(dir, READS), original);
+  assert.deepEqual(decide(dir).files, ["test/a.test.mjs", "test/c.test.mjs"], "the list as written is used");
+
+  // Code changed since the recording, committed on the branch: the hash says so even when the list came along.
+  put(dir, { "core/glob.mjs": `${readFileSync(join(dir, "core/glob.mjs"), "utf8")}// changed\n` });
+  commit(dir, "code");
+  git(["branch", "-q", "-f", "main", "work"], { cwd: dir });
+  asBefore(/was recorded on other code/);
+});
+
+test("short: --record writes what each short-suite file read, in the node children it starts too, and what it could not see; a failed run writes nothing", () => {
+  const top = 'const top = join(dirname(fileURLToPath(import.meta.url)), "..");\n';
+  const head = 'import { test } from "node:test";\nimport { existsSync, readFileSync, realpathSync, statSync, symlinkSync, watch, writeFileSync, mkdtempSync } from "node:fs";\nimport { spawnSync } from "node:child_process";\nimport { tmpdir } from "node:os";\nimport { dirname, join, relative } from "node:path";\nimport { fileURLToPath } from "node:url";\n' + top;
+  /** @param {string} body */
+  const t = (body) => `${head}test("x", () => {\n${body}\n});\n`;
+  const ok = 'if (r.status !== 0) throw new Error(String(r.stderr));';
+  const dir = copy({
+    // A file read, a CLI started by path, and node started by name from a script that drops NODE_OPTIONS, as a commit hook does.
+    "test/a.test.mjs": t(
+      [
+        'readFileSync(join(top, "notes", "a.md"));',
+        // A folder statted and one not there yet: what comes to lie below either changes the answer.
+        'statSync(join(top, "tool")); existsSync(join(top, "commands")); realpathSync(top);',
+        'let r = spawnSync(process.execPath, [join(top, "tool", "cli.mjs")], { cwd: tmpdir(), encoding: "utf8" });',
+        ok,
+        'const hook = join(mkdtempSync(join(tmpdir(), "en-hook-")), "hook");',
+        'writeFileSync(hook, `unset NODE_OPTIONS\\nexec node ${JSON.stringify(join(top, "tool", "hook.mjs"))}\\n`);',
+        'r = spawnSync("sh", [hook], { cwd: tmpdir(), encoding: "utf8" });',
+        ok,
+      ].join("\n"),
+    ),
+    // git in the tree: --git-dir alone leaves the work tree here.
+    "test/b.test.mjs": t('const r = spawnSync("git", ["--git-dir", join(tmpdir(), "none"), "--version"], { cwd: top, encoding: "utf8" });\n' + ok),
+    // node without the preload, a child without the run's folder, and one whose PATH finds another node first.
+    "test/c.test.mjs": t(
+      [
+        'let r = spawnSync(process.execPath, ["-e", "0"], { env: { ...process.env, NODE_OPTIONS: "" }, encoding: "utf8" });',
+        ok,
+        'r = spawnSync("sh", ["-c", "true"], { cwd: tmpdir(), env: { ...process.env, ENNYN_READS: "" }, encoding: "utf8" });',
+        ok,
+        'r = spawnSync("sh", ["-c", "true"], { cwd: tmpdir(), env: { ...process.env, PATH: `${dirname(process.execPath)}:${process.env.PATH}` }, encoding: "utf8" });',
+        ok,
+      ].join("\n"),
+    ),
+    // git started here that works elsewhere.
+    "test/d.test.mjs": t(
+      [
+        "if (process.env.SHORT_FAIL) throw new Error('fails');",
+        'const away = mkdtempSync(join(tmpdir(), "en-away-"));',
+        'let r = spawnSync("git", ["-C", away, "--version"], { cwd: top, encoding: "utf8" });',
+        ok,
+        'r = spawnSync("git", ["--git-dir", join(away, ".git"), "--work-tree", away, "--version"], { cwd: top, encoding: "utf8" });',
+        ok,
+        // Where the shell and npm say a run started is no input.
+        'r = spawnSync("sh", ["-c", "true"], { cwd: away, env: { ...process.env, PWD: top, OLDPWD: top, INIT_CWD: top, npm_package_json: join(top, "package.json") }, encoding: "utf8" });',
+        ok,
+      ].join("\n"),
+    ),
+    // A program that is not node, outside the tree, handed a file of it by an environment value or a relative path.
+    "test/e.test.mjs": t('const r = spawnSync("sh", ["-c", \'cat "$F" >/dev/null\'], { cwd: tmpdir(), env: { ...process.env, F: join(top, "notes", "a.md") }, encoding: "utf8" });\n' + ok),
+    "test/f.test.mjs": t('const here = realpathSync(tmpdir());\nconst r = spawnSync("sh", ["-c", `cat ${relative(here, join(top, "notes", "a.md"))} >/dev/null`], { cwd: here, encoding: "utf8" });\n' + ok),
+    // A read through a link from outside the tree, realpathSync.native, fs.watch.
+    "test/g.test.mjs": t(
+      [
+        'const link = join(mkdtempSync(join(tmpdir(), "en-link-")), "link");',
+        'symlinkSync(join(top, "notes", "link.md"), link);',
+        "readFileSync(link);",
+        'realpathSync.native(join(top, "notes", "native.md"));',
+        'watch(join(top, "notes", "watch.md")).close();',
+      ].join("\n"),
+    ),
+    "notes/link.md": "link\n",
+    "notes/native.md": "native\n",
+    "notes/watch.md": "watch\n",
+    "tool/cli.mjs": 'import "./lib.mjs";\nimport { readFileSync } from "node:fs";\nreadFileSync(new URL("../notes/cli.md", import.meta.url));\n',
+    "tool/lib.mjs": "export const lib = 1;\n",
+    "tool/hook.mjs": 'import { readFileSync } from "node:fs";\nreadFileSync(new URL("../notes/hook.md", import.meta.url));\n',
+    "notes/a.md": "a\n",
+    "notes/cli.md": "cli\n",
+    "notes/hook.md": "hook\n",
+  });
+  copyFileSync(join(ROOT, "test", "reads.mjs"), join(dir, "test", "reads.mjs"));
+  const script = join(dir, "test", "short.mjs");
+  const done = run(script, dir, ["--record"]);
+  if (typeof registerHooks !== "function") {
+    assert.equal(done.status, 2);
+    assert.match(done.stderr, /--record needs module\.registerHooks \(Node 22\.15 or later\)/);
+    assert.ok(!existsSync(join(dir, READS)));
+    return;
+  }
+  assert.equal(done.status, 0, done.stdout + done.stderr);
+  assert.match(done.stdout, /^test\/reads\.json: 7 test files recorded$/m);
+  const list = JSON.parse(readFileSync(join(dir, READS), "utf8"));
+  assert.deepEqual(Object.keys(list), ["version", "code", "tests"]);
+  assert.equal(list.version, 1);
+  assert.equal(list.code, codeHash(dir));
+  assert.deepEqual(Object.keys(list.tests), ["test/a.test.mjs", "test/b.test.mjs", "test/c.test.mjs", "test/d.test.mjs", "test/e.test.mjs", "test/f.test.mjs", "test/g.test.mjs"]);
+  assert.deepEqual(list.tests["test/e.test.mjs"].unseen, ["spawnSync sh: sh handed a path in the repository"]);
+  assert.deepEqual(list.tests["test/f.test.mjs"].unseen, ["spawnSync sh: sh handed a path in the repository"]);
+  const g = list.tests["test/g.test.mjs"];
+  for (const p of ["notes/link.md", "notes/native.md", "notes/watch.md"]) assert.ok(g.reads.includes(p), `g: ${p} in ${g.reads}`);
+  assert.deepEqual(g.unseen, []);
+  const a = list.tests["test/a.test.mjs"];
+  for (const p of ["notes/a.md", "notes/cli.md", "notes/hook.md", "tool/cli.mjs", "tool/lib.mjs", "tool/hook.mjs", "test/a.test.mjs", "test/hermetic.mjs"]) assert.ok(a.reads.includes(p), `a: ${p} in ${a.reads}`);
+  assert.deepEqual(a.unseen, []);
+  assert.deepEqual(a.dirs, ["commands", "tool"], "a folder and a missing path as listings, and never the top");
+  assert.ok(!a.reads.includes("commands") && !a.reads.includes(""), a.reads.join(" "));
+  assert.deepEqual(list.tests["test/b.test.mjs"].unseen, ["spawnSync git: git in the repository"]);
+  assert.deepEqual(list.tests["test/c.test.mjs"].unseen, ["spawnSync node: node without the preload", "spawnSync sh: a PATH whose first node is another", "spawnSync sh: no ENNYN_READS"]);
+  const d = list.tests["test/d.test.mjs"];
+  assert.deepEqual(d.unseen, []);
+  assert.ok(!d.reads.some((/** @type {string} */ p) => p.startsWith("notes/") || p.startsWith("tool/")), d.reads.join(" "));
+  assert.ok(!JSON.stringify(list).includes(tmpdir()) && !JSON.stringify(list).includes(dir), "no path outside the tree");
+
+  // The list it wrote is used, and a failing recording leaves it as it was.
+  commit(dir, "the read list");
+  git(["branch", "-q", "-f", "main", "work"], { cwd: dir });
+  put(dir, { "notes/hook.md": "changed\n" });
+  assert.deepEqual(decide(dir).files, ["test/a.test.mjs", "test/b.test.mjs", "test/c.test.mjs", "test/e.test.mjs", "test/f.test.mjs"]);
+  put(dir, { "notes/hook.md": "hook\n", "commands/x.md": "new\n" });
+  assert.deepEqual(decide(dir).files, ["test/a.test.mjs", "test/b.test.mjs", "test/c.test.mjs", "test/e.test.mjs", "test/f.test.mjs"], "a file new below a path that was missing");
+  rmSync(join(dir, "commands"), { recursive: true });
+  const before = readFileSync(join(dir, READS), "utf8");
+  writeFileSync(join(dir, READS), "kept\n");
+  const failed = run(script, dir, ["--record"], { SHORT_FAIL: "1" });
+  assert.equal(failed.status, 1);
+  assert.match(failed.stderr, /the recording run failed, exit 1; test\/reads\.json is not written/);
+  assert.equal(readFileSync(join(dir, READS), "utf8"), "kept\n");
+  writeFileSync(join(dir, READS), before);
 });

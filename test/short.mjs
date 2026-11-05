@@ -18,13 +18,22 @@
  * landing leaves below the merge base, or a main known only by another spelling reads as no change, and what it
  * misses waits for landing.
  *
+ * A branch that changes no code (CODE) narrows the short set further, by the read list (READS): each short-suite
+ * file runs only when its recording read a file the branch changed, or saw a read it could not name. The list is
+ * recorded by `--record`, which runs the short suite's files with test/reads.mjs preloaded, and it holds a hash of
+ * every code file it was recorded on: any code change, or a list that is missing, unreadable or recorded on other
+ * code, runs the short set as above and says why. A file that changes what a test reads only through code is code.
+ *
  * Node 20.0.0's `node --test` takes no pattern that leaves files out, so the file list is built here;
  * test/short.test.mjs keeps it true.
  */
 
 import { spawnSync } from "node:child_process";
-import { readdirSync, realpathSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { createHash } from "node:crypto";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { registerHooks } from "node:module";
+import { tmpdir } from "node:os";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readIfThere } from "../core/files.mjs";
 import { git, gitMaybe } from "../core/git.mjs";
@@ -36,6 +45,11 @@ const MAIN = "main";
 const GUARDS = "test/guards.test.mjs";
 /** The guards file's test that needs no mutant: every repository reader listed, every test of a gate decided, each guard's `old` once. */
 export const ACCOUNTING = "^guards: every test that reads this repository has guards";
+
+/** The read list, from the top of the tree. */
+export const READS = "test/reads.json";
+/** A change to code changes what tests read, so the read list says nothing about it. @param {string} path */
+export const isCode = (path) => /\.(?:mjs|cjs|js)$/.test(path) || /(?:^|\/)package\.json$/.test(path);
 
 /** Loaded into every test file: a change there moves all of them. */
 const EVERY_FILE = { paths: ["test/hermetic.mjs", "test/hostile.mjs"], why: "loaded into every test file" };
@@ -149,19 +163,95 @@ export function reasons({ paths, added }, read, gates = GATES) {
  * @param {(file: string) => string | null} read
  * @returns {{ files: string[], accounting: boolean, says: string[] }}
  */
-export function choose(all, changed, read) {
+export function choose(all, changed, read, list = { why: `${READS} was not read` }) {
   const back = reasons(changed, read);
   const left = all.filter((f) => back.get(f)?.length === 0);
-  const files = all.filter((f) => !left.includes(f));
+  const short = all.filter((f) => !left.includes(f));
+  const code = changed.paths.find(isCode);
+  /** @type {string} */
+  let mode;
+  /** @type {string[]} */
+  let narrowed = [];
+  let files = short;
+  if (code !== undefined) mode = `not used, ${code} is code`;
+  else if ("why" in list) mode = `not used, ${list.why}`;
+  else {
+    /** @type {Map<string, string>} */
+    const kept = new Map();
+    for (const file of short) {
+      const seen = list.tests[file];
+      if (file in SLOW) kept.set(file, "");
+      else if (seen.unseen.length) kept.set(file, `its recording saw a read it could not name (${seen.unseen[0]})`);
+      else {
+        const hit = changed.paths.find((p) => seen.reads.includes(p) || seen.dirs.some((d) => d === "" || p === d || p.startsWith(`${d}/`)));
+        if (hit !== undefined) kept.set(file, `reads ${hit}`);
+      }
+    }
+    files = short.filter((f) => kept.has(f));
+    mode = `used, no code changed: ${files.length} of ${short.length} short-suite files read what changed`;
+    narrowed = [
+      ...files.flatMap((f) => (kept.get(f) ? [`kept ${f}: ${kept.get(f)}`] : [])),
+      ...short.filter((f) => !kept.has(f)).map((f) => `left out ${f}: its recording read none of what changed`),
+    ];
+  }
   return {
     files,
     accounting: left.includes(GUARDS),
     says: [
       `short suite, ${files.length} of ${all.length} test files (changed on ${changed.branch} since ${MAIN} at ${changed.base.slice(0, 7)}: ${changed.paths.length})`,
+      `read list: ${mode}`,
       ...files.flatMap((file) => (back.get(file) ?? []).map((why) => `added ${file}: ${why}`)),
+      ...narrowed,
       ...left.map((file) => `left out ${file}: none of its listed paths changed, and it runs at the closing${file === GUARDS ? "; its accounting test runs now" : ""}`),
     ],
   };
+}
+
+/**
+ * A hash of every code file in the tree, tracked or new (by the repository's own .gitignore files), paths and bytes.
+ * @param {string} root @param {NodeJS.ProcessEnv} [env]
+ */
+export function codeHash(root, env = process.env) {
+  const names = git(["ls-files", "--cached", "--others", "--exclude-per-directory", ".gitignore", "-z"], { cwd: root, env, walk: true }).split("\0").filter(Boolean);
+  const hash = createHash("sha256");
+  for (const name of [...new Set(names)].filter(isCode).sort()) {
+    if (!existsSync(join(root, name))) continue;
+    hash.update(`${name}\0`).update(readFileSync(join(root, name))).update("\0");
+  }
+  return hash.digest("hex");
+}
+
+/** @typedef {{ reads: string[], dirs: string[], unseen: string[] }} Seen */
+
+/**
+ * The read list, when it holds every short-suite file of this tree and was recorded on this tree's code; else why not.
+ * @param {string} root @param {string[]} all @param {NodeJS.ProcessEnv} [env]
+ * @returns {{ tests: Record<string, Seen> } | { why: string }}
+ */
+export function readList(root, all, env = process.env) {
+  let text;
+  try {
+    text = readIfThere(join(root, READS));
+  } catch (err) {
+    return { why: `${READS} could not be read (${/** @type {Error} */ (err).message})` };
+  }
+  if (text === null) return { why: `${READS} is missing; node test/short.mjs --record writes it` };
+  /** @type {any} */
+  let list;
+  try {
+    list = JSON.parse(text);
+  } catch {
+    return { why: `${READS} is not JSON` };
+  }
+  const strings = (/** @type {unknown} */ v) => Array.isArray(v) && v.every((x) => typeof x === "string");
+  const shaped =
+    list !== null && typeof list === "object" && list.version === 1 && typeof list.code === "string" && list.tests !== null && typeof list.tests === "object" && !Array.isArray(list.tests) &&
+    Object.values(list.tests).every((t) => t !== null && typeof t === "object" && strings(t.reads) && strings(t.dirs) && strings(t.unseen));
+  if (!shaped) return { why: `${READS} does not have the shape --record writes` };
+  const short = all.filter((f) => !(f in SLOW));
+  if (JSON.stringify(Object.keys(list.tests).sort()) !== JSON.stringify(short)) return { why: `${READS} was recorded on other test files; node test/short.mjs --record` };
+  if (list.code !== codeHash(root, env)) return { why: `${READS} was recorded on other code; node test/short.mjs --record` };
+  return { tests: list.tests };
 }
 
 /**
@@ -175,18 +265,78 @@ export function decide(root, env = process.env) {
   const everything = (why) => ({ files: all, accounting: false, says: [`whole suite, ${all.length} test files: ${why}`] });
   const changed = whatChanged(root, env);
   if ("unread" in changed) return everything(changed.unread);
+  let list;
   try {
-    return choose(all, changed, (file) => readIfThere(join(root, file)));
+    list = changed.paths.some(isCode) ? undefined : readList(root, all, env);
+  } catch (err) {
+    list = { why: `the code could not be read (${/** @type {Error} */ (err).message})` };
+  }
+  try {
+    return choose(all, changed, (file) => readIfThere(join(root, file)), list);
   } catch (err) {
     return everything(`a guarded file could not be read (${/** @type {Error} */ (err).message})`);
   }
 }
 
+/**
+ * Records the read list: the short suite's files run once with test/reads.mjs preloaded, from a folder outside the
+ * tree, in every node process they start (NODE_OPTIONS, and a `node` first on PATH for a child that drops it). A run
+ * that fails, or a file with no record, writes nothing.
+ * @param {string} root @returns {number}
+ */
+export function record(root) {
+  if (typeof registerHooks !== "function") {
+    console.error(`--record needs module.registerHooks (Node 22.15 or later); this is node ${process.version}`);
+    return 2;
+  }
+  const short = testFiles(root).filter((f) => !(f in SLOW));
+  const dir = mkdtempSync(join(tmpdir(), "en-reads-"));
+  try {
+    const self = join(dir, "reads.mjs");
+    writeFileSync(join(dir, "root"), `${realpathSync(root)}\n`);
+    copyFileSync(join(root, "test", "reads.mjs"), self);
+    mkdirSync(join(dir, "bin"));
+    writeFileSync(join(dir, "bin", "node"), `#!/bin/sh\nexec '${process.execPath.replace(/'/g, "'\\''")}' --import '${self.replace(/'/g, "'\\''")}' "$@"\n`);
+    chmodSync(join(dir, "bin", "node"), 0o755);
+    const env = { ...process.env, ENNYN_READS: dir, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${self}`.trim(), PATH: `${join(dir, "bin")}${delimiter}${process.env.PATH ?? ""}` };
+    delete env.ENNYN_READS_TEST;
+    const run = spawnSync(process.execPath, ["--test", "--import", "./test/hermetic.mjs", ...short], { cwd: root, env, stdio: "inherit" });
+    if (run.status !== 0) {
+      console.error(`the recording run ${run.status === null ? `did not finish (${run.error?.message ?? run.signal})` : `failed, exit ${run.status}`}; ${READS} is not written`);
+      return 1;
+    }
+    /** @type {Record<string, { reads: Set<string>, dirs: Set<string>, unseen: Set<string> }>} */
+    const by = {};
+    for (const name of readdirSync(dir).filter((f) => f.startsWith("p-"))) {
+      const [head, ...lines] = readFileSync(join(dir, name), "utf8").split("\n").filter(Boolean);
+      const test = head?.startsWith("test\t") ? head.slice(5) : "";
+      const seen = (by[test] ??= { reads: new Set(), dirs: new Set(), unseen: new Set() });
+      for (const line of lines) {
+        const [kind, what] = [line.slice(0, line.indexOf("\t")), line.slice(line.indexOf("\t") + 1)];
+        (kind === "r" ? seen.reads : kind === "d" ? seen.dirs : seen.unseen).add(what);
+      }
+    }
+    const none = short.filter((f) => !by[f]);
+    if (none.length) {
+      console.error(`no record of ${none.join(", ")}; ${READS} is not written`);
+      return 1;
+    }
+    const sorted = (/** @type {Set<string>} */ set) => [...set].sort();
+    const tests = Object.fromEntries(short.map((f) => [f, { reads: sorted(by[f].reads), dirs: sorted(by[f].dirs), unseen: sorted(by[f].unseen) }]));
+    writeFileSync(join(root, READS), `${JSON.stringify({ version: 1, code: codeHash(root), tests }, null, 1)}\n`);
+    console.log(`${READS}: ${short.length} test files recorded`);
+    return 0;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 /** @param {string[]} argv @returns {number} */
 function main(argv) {
+  if (argv.length === 1 && argv[0] === "--record") return record(ROOT);
   const list = argv[0] === "--list";
   if (argv.length > (list ? 1 : 0)) {
-    console.error("usage: node test/short.mjs [--list]");
+    console.error("usage: node test/short.mjs [--list | --record]");
     return 2;
   }
   const { files, accounting, says } = decide(ROOT);
@@ -196,7 +346,8 @@ function main(argv) {
     console.log(files.join("\n"));
     return 0;
   }
-  const runs = [{ name: "test files", args: files }, ...(accounting ? [{ name: "guards' accounting test", args: [`--test-name-pattern=${ACCOUNTING}`, GUARDS] }] : [])];
+  // node --test with no file runs every test file it finds.
+  const runs = [...(files.length ? [{ name: "test files", args: files }] : []), ...(accounting ? [{ name: "guards' accounting test", args: [`--test-name-pattern=${ACCOUNTING}`, GUARDS] }] : [])];
   const ended = runs.map(({ name, args }) => ({ name, ...spawnSync(process.execPath, ["--test", "--import", "./test/hermetic.mjs", ...args], { cwd: ROOT, stdio: "inherit" }) }));
   // Again at the end: the run's output pushes the first copy out of a reader's tail.
   say();
