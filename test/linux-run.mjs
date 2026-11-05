@@ -4,7 +4,7 @@
  * own git, which must be GIT_FLOOR, and the Node at the floor of package.json's engines; the newer majors are
  * their official images. A run passes only with a summary of no failed and no skipped tests, the versions it
  * names, exit 0, and as many tests as the other runs: a floor nobody runs, or one that skips what only it
- * can show, cannot pass. Needs docker. It runs before each push (CI starts no job while the repository is private), and the CI
+ * can show, cannot pass. Needs docker. It runs before a release (CI starts no job while the repository is private), and the CI
  * workflow runs this same script. test/engines.test.mjs ties it to package.json, the workflow and the READMEs.
  */
 

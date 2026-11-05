@@ -84,6 +84,16 @@ const ACCEPT = [
   ["a task at the limit", lines(row({ task: "t".repeat(120) }))],
   ["a gate at the limit", lines(row({ caughtBy: `gate:${"a".repeat(115)}` }))],
   ["an outcome node at the limit", lines(row({ outcome: `node:${"n".repeat(115)}` }))],
+  ["a low finding only this project's own writer's input reaches, declined", lines(row({ severity: "low", input: "writer", outcome: "declined" }))],
+  ["a declined duplicate of a declined row", lines(row({ severity: "low", input: "writer", outcome: "declined", dupOf: "c16-t1-code-r1-02" }), second({ severity: "low", input: "writer", outcome: "declined" }))],
+  ["a refuted duplicate of a declined row", lines(row({ outcome: "refuted", dupOf: "c16-t1-code-r1-02" }), second({ severity: "low", input: "writer", outcome: "declined" }))],
+  ["a low finding only the writer's input reaches, refuted", lines(row({ severity: "low", input: "writer", outcome: "refuted" }))],
+  ...["fixed", "fixed-test"].map((/** @type {string} */ outcome) => /** @type {[string, string]} */ ([`a low writer-only finding a fix removed anyway, ${outcome}`, lines(row({ severity: "low", input: "writer", outcome }))])),
+  ["a one-task fix of an old low writer-only defect", lines(row({ round: 0, severity: "low", source: "pre-existing", bornIn: HASH, input: "writer", outcome: "fixed-test", commit: "abcdef1" }))],
+  ...["fixed-test", "refuted"].map((/** @type {string} */ outcome) => /** @type {[string, string]} */ ([`a low writer-only duplicate of a fixed high finding, ${outcome}: it takes its root's outcome`, lines(row({ severity: "low", input: "writer", outcome, dupOf: "c16-t1-code-r1-02" }), second({ input: "attacker", outcome: "fixed-test" }))])),
+  ["a medium finding only the writer's input reaches, fixed", lines(row({ severity: "medium", input: "writer", outcome: "fixed" }))],
+  ["a low finding normal use reaches, a node", lines(row({ severity: "low", input: "use", outcome: "node:x" }))],
+  ...["attacker", "use", "writer"].map((/** @type {string} */ input) => /** @type {[string, string]} */ ([`input ${input} on a fixed row`, lines(row({ input, outcome: "fixed-test" }))])),
   ["a file at the limit", lines(row({ file: "f".repeat(300) }))],
   ["a fingerprint at the limit", lines(row({ fingerprint: "f".repeat(FINGERPRINT_MAX) }))],
   ["a trigger at the limit", lines(row({ trigger: "t".repeat(NOTE_MAX) }))],
@@ -168,6 +178,21 @@ const REJECT = [
   ["an outcome node of two words", lines(row({ outcome: "node:a b" })), /outcome must be/],
   ["an outcome node holding a direction mark", lines(row({ outcome: "node:a\u202eb" })), /outcome must be/],
   ["an outcome node past the limit", lines(row({ outcome: `node:${"n".repeat(116)}` })), /outcome must be/],
+  ...["critical", "high", "medium"].map((/** @type {string} */ severity) => /** @type {[string, string, RegExp]} */ ([`a declined ${severity} finding`, lines(row({ severity, input: "writer", outcome: "declined" })), /declined belongs only to a low row/])),
+  ...["attacker", "use"].map((/** @type {string} */ input) => /** @type {[string, string, RegExp]} */ ([`a declined low finding whose input ${input} gives`, lines(row({ severity: "low", input, outcome: "declined" })), /a declined row's input is writer/])),
+  ["a declined low finding that says no input", lines(row({ severity: "low", outcome: "declined" })), /a declined row's input is writer/],
+  ["a declined high finding an attacker reaches says both", lines(row({ input: "attacker", outcome: "declined" })), /declined belongs only to a low row.*\n.*a declined row's input is writer/],
+  ["an input of no list", lines(row({ input: "user" })), /input must be one of attacker, use, writer/],
+  ["the medium refusal names what a medium finding may be", lines(row({ severity: "medium", input: "writer", outcome: "declined" })), /a medium one fixed, a node or refuted/],
+  ...["open", "node:x"].map((/** @type {string} */ outcome) => /** @type {[string, string, RegExp]} */ ([`a low writer-only finding that says ${outcome}`, lines(row({ severity: "low", input: "writer", outcome })), /a low row whose input is writer is declined, refuted or fixed/])),
+  ["a low writer-only duplicate of a fixed high finding, declined: the chain must end at a declined row", lines(row({ severity: "low", input: "writer", outcome: "declined", dupOf: "c16-t1-code-r1-02" }), second({ input: "attacker", outcome: "fixed-test" })), /line 1 .*a declined row's dupOf ends at a row that is not declined/],
+  ...["fixed-test", "open", "fixed"].map((/** @type {string} */ outcome) => /** @type {[string, string, RegExp]} */ ([`a high finding that says ${outcome}, a duplicate of a declined row`, lines(row({ input: "attacker", outcome, dupOf: "c16-t1-code-r1-02" }), second({ severity: "low", input: "writer", outcome: "declined" })), /line 1 .*dupOf ends at a declined row while this row is neither declined nor refuted/])),
+  ["a chain through a row to a declined one", lines(row({ input: "use", outcome: "open", dupOf: "c16-t1-code-r1-03" }), second({ severity: "low", input: "writer", outcome: "declined" }), row({ id: "c16-t1-code-r1-03", severity: "low", input: "writer", outcome: "declined", dupOf: "c16-t1-code-r1-02" })), /line 1 .*dupOf ends at a declined row while/],
+  ...["fixed", "open", "node:x"].map((/** @type {string} */ outcome) => /** @type {[string, string, RegExp]} */ ([`a declined row, a duplicate of one that says ${outcome}`, lines(row({ severity: "low", input: "writer", outcome: "declined", dupOf: "c16-t1-code-r1-02" }), second({ input: "use", outcome })), /line 1 .*a declined row's dupOf ends at a row that is not declined/])),
+  ["a declined row found again in a later cycle, named by dupOf", lines(row({ cycle: 17, severity: "low", input: "writer", outcome: "declined", dupOf: "c16-t1-code-r1-02" }), second({ severity: "low", input: "writer", outcome: "declined" })), /line 1 .*dupOf ends at a declined row of another cycle/],
+  ["a refuted row of a later cycle naming a declined one", lines(row({ cycle: 17, outcome: "refuted", dupOf: "c16-t1-code-r1-02" }), second({ severity: "low", input: "writer", outcome: "declined" })), /dupOf ends at a declined row of another cycle/],
+  ["an input of no text", lines(row({ input: 3 })), /input must be/],
+  ["a null input", lines(row({ input: null })), /input must be/],
   ["a commit too short", lines(row({ commit: "abc" })), /commit must be/],
   ["a commit of six", lines(row({ commit: "abcdef" })), /commit must be/],
   ["a commit in capitals", lines(row({ commit: "ABCDEF0" })), /commit must be/],
@@ -567,6 +592,54 @@ test("convergence table: lines 3 to 6, in order", () => {
   assert.deepEqual(six(report(r.dir, [row()], r.start)), columns({ foundInReview: 1 }));
   assert.deepEqual(six(report(r.dir, [row({ caughtBy: "measurement" })], r.start)), columns());
   assert.deepEqual(six(report(r.dir, [row({ caughtBy: "author-reading" })], r.start)), columns());
+});
+
+test("convergence table: a declined row is no refuted one: the defect is real, it counts in its column, and its id is said under the block", () => {
+  const r = linear();
+  r.put({ ".ennyn/classes.json": REGISTRY });
+  const declined = (/** @type {Record<string, unknown>} */ over) => row({ severity: "low", input: "writer", outcome: "declined", class: ["other-class"], ...over });
+  const rows = [
+    declined({}),
+    declined({ id: "c16-d-2", round: 2, source: "previous-fix", fingerprint: "b" }),
+    declined({ id: "c16-d-3", caughtBy: "gate:mutation", fingerprint: "c" }),
+    declined({ id: "c16-d-4", source: "pre-existing", bornIn: r.earlier, fingerprint: "d" }),
+    // Line 1 still comes first: a declined duplicate counts nowhere, and is not said.
+    declined({ id: "c16-d-5", dupOf: "c16-t1-code-r1-01", fingerprint: "e" }),
+  ];
+  const rep = report(r.dir, rows, r.start);
+  assert.deepEqual(six(rep), columns({ foundInReview: 1, fixIntroduced: 1, gateCaught: 1, escapedOld: 1 }));
+  assert.deepEqual(rep.counts.perRound, [1, 0, 0]);
+  assert.deepEqual(rep.recurring.top, [{ id: "other-class", times: 4, layers: [["review", 3], ["gate:mutation", 1]] }]);
+  assert.deepEqual(rep.declined, ["c16-t1-code-r1-01", "c16-d-2", "c16-d-3", "c16-d-4"]);
+  const got = run(r.dir, rows, ["--from", r.start]);
+  assert.equal(got.status, 0, got.stdout);
+  assert.match(got.stdout, /^! declined, not fixed: 4: c16-t1-code-r1-01, c16-d-2, c16-d-3, c16-d-4$/m);
+  // The same rows fixed: the same block, and nothing said.
+  const fixed = run(r.dir, rows.map((one) => ({ ...one, input: "use", outcome: "fixed-test" })), ["--from", r.start]);
+  assert.equal(fixed.stdout.split("\n").slice(0, 3).join("\n"), got.stdout.split("\n").slice(0, 3).join("\n"));
+  assert.doesNotMatch(fixed.stdout, /declined/);
+  // A declined row of another cycle is not this cycle's to say, unless a row of this cycle holds its fingerprint: then
+  // the defect was found again, as a new row read by its age, and the earlier row is named.
+  assert.doesNotMatch(run(r.dir, [row({ class: ["other-class"] }), declined({ id: "c15-d-1", cycle: 15, fingerprint: "elsewhere" })], ["--from", r.start]).stdout, /declined/);
+  const again = [old(r.earlier, { class: ["other-class"], input: "use", outcome: "fixed-test" }), declined({ id: "c15-d-1", cycle: 15 }), declined({ id: "c17-d-1", cycle: 17 }), declined({ id: "c15-d-2", cycle: 15, fingerprint: "elsewhere" }), row({ id: "c15-f-1", cycle: 15, class: ["other-class"], input: "use", outcome: "fixed-test" })];
+  const found = run(r.dir, again, ["--from", r.start]);
+  assert.match(found.stdout, /^! declined in an earlier cycle, its fingerprint found again: 1: c15-d-1$/m);
+  assert.doesNotMatch(found.stdout, /declined, not fixed/);
+  const refound = report(r.dir, again, r.start);
+  assert.deepEqual(refound.refound, ["c15-d-1"]);
+  // A fixed row of an earlier cycle with the same fingerprint was not declined: nothing to read an escape against.
+  assert.deepEqual(six(refound), columns({ escapedOld: 1 }));
+  // Folded as the registry folds a name: case, a width form, runs of space.
+  const spelled = [again[0], declined({ id: "c15-d-1", cycle: 15, fingerprint: "  A ＴＨＩＮＧ read\u00a0as   another " })];
+  assert.deepEqual(report(r.dir, spelled, r.start).refound, ["c15-d-1"]);
+  // Both sides are folded: this cycle's row may be the one spelled otherwise.
+  const respelled = [{ ...again[0], fingerprint: "A Thing  Read As Another" }, declined({ id: "c15-d-1", cycle: 15 })];
+  assert.deepEqual(report(r.dir, respelled, r.start).refound, ["c15-d-1"]);
+  // A declined duplicate is the same defect, not a second one.
+  const twice = [again[0], declined({ id: "c15-d-1", cycle: 15 }), declined({ id: "c15-d-3", cycle: 15, dupOf: "c15-d-1" })];
+  assert.deepEqual(report(r.dir, twice, r.start).refound, ["c15-d-1"]);
+  // A refuted row of this cycle is no find.
+  assert.deepEqual(report(r.dir, [{ ...again[0], outcome: "refuted" }, ...again.slice(1)], r.start).refound, []);
 });
 
 test("convergence table: a test that HEAD does not track is no gate, and the row reads as the lines below say", () => {

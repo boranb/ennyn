@@ -4,7 +4,8 @@
  *   Findings: found in review N · fix-introduced N · pre-existing N · gate-caught N · escaped past commit new N · escaped past commit old N
  *   New classes per round: round 1 → N · round 2 → N · round 3+ → N
  *
- * What each column counts is defined in skills/cycle/report-formats.md; how to
+ * What each column counts is defined in skills/cycle/report-formats.md (a declined
+ * row, a real defect left unfixed, counts in its column as a fixed one does); how to
  * compare a report with the old columns is in docs/evidence.md. This module reads
  * and writes the block, and decides nothing about a finding.
  *

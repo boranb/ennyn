@@ -9,9 +9,11 @@
  * writer's words; it holds no quoted text.
  *
  * What is checked, row by row: every field there (`trigger` and `escapePoint` may be left out: nothing reads them, and
- * a row that holds one is held to its bound), of its type, in its closed set, no other field; `class` through
- * metrics/classes.mjs; `id` unique; `dupOf` names a row, and a chain ends; a `pre-existing` row names a file, and a
- * line needs one. A row that fails is refused and every count reads `?`, whichever cycle it says: it may have said
+ * a row that holds one is held to its bound; `input` may be left out too, since rows of closed cycles have none),
+ * of its type, in its closed set, no other field; `class` through metrics/classes.mjs; `id` unique; `dupOf` names a
+ * row, and a chain ends; a `pre-existing` row names a file, and a line needs one; a `declined` row is `low` and its
+ * `input` is `writer`, and a `low` row whose `input` is `writer` is never `open` or a node: declined by default,
+ * refuted, or fixed when a fix landed anyway. Rows of closed cycles hold no `input`, so none of them meets either rule. A row that fails is refused and every count reads `?`, whichever cycle it says: it may have said
  * its cycle wrongly. Never a smaller number. So does a class registry that cannot be read or holds a problem: a class
  * cannot be checked, a linked name not resolved. A file that is no UTF-8 is refused whole, as the registry is: two
  * names that differ only in such bytes would read as one. All this runs when doctor or the command runs, not on a
@@ -19,6 +21,11 @@
  *
  * A row whose `dupOf` chain ends at a refuted row and is not refuted itself is refused: table line 1 would drop
  * both, and the defect from every column. One of the two is wrong, and only a person can say which.
+ *
+ * A declined row is no refuted one: the defect is real, left unfixed on purpose. Line 1 does not drop it, so it
+ * counts in its column, its round and the recurring class as a fixed row does, and the report lists the cycle's
+ * declined rows under the block, and the declined rows of earlier cycles that a row of this one shares a fingerprint
+ * with: a defect found again is a new row, read by its age, and an escape is read against them before the rule is kept.
  *
  * The cycle is asked for, never read from the rows: a count does not pick its own scope from the data it counts,
  * so one mistyped row cannot turn the report to another cycle. The block's last line says what was counted, and a
@@ -70,7 +77,9 @@ export const SEVERITIES = ["critical", "high", "medium", "low"];
 export const SOURCES = ["first-write", "previous-fix", "pre-existing"];
 /** What finds a defect without being a gate; report-formats.md: any other value is `test:<file>` or `gate:<name>`. */
 export const NOT_GATES = ["review", "measurement", "author-reading"];
-export const OUTCOMES = ["fixed-test", "fixed", "refuted", "open"];
+export const OUTCOMES = ["fixed-test", "fixed", "refuted", "declined", "open"];
+/** Who produces the input a finding's scenario needs: an attacker, normal use (a person or an agent), or only this project's own writer. */
+export const INPUTS = ["attacker", "use", "writer"];
 
 /** The columns a row with no age could fall in. */
 const AGE_COLUMNS = /** @type {const} */ (["preExisting", "gateCaught", "escapedNew", "escapedOld"]);
@@ -109,12 +118,12 @@ const RULES = {
   line: [(v) => v === null || (Number.isSafeInteger(v) && /** @type {number} */ (v) >= 1), "null or a line number"],
 };
 /** The fields a row may leave out, with what they must be when it holds them. @type {typeof RULES} */
-const OPTIONAL = { trigger: text(NOTE_MAX), escapePoint: text(NOTE_MAX) };
+const OPTIONAL = { trigger: text(NOTE_MAX), escapePoint: text(NOTE_MAX), input: oneOf(INPUTS) };
 /** Every field of a row, in the order ledger-row.md lists them. */
-export const FIELDS = ["cycle", "task", "round", "id", "severity", "class", "source", "caughtBy", "dupOf", "fingerprint", "trigger", "escapePoint", "outcome", "commit", "bornIn", "file", "line"];
+export const FIELDS = ["cycle", "task", "round", "id", "severity", "class", "source", "caughtBy", "dupOf", "fingerprint", "trigger", "escapePoint", "input", "outcome", "commit", "bornIn", "file", "line"];
 
 /**
- * @typedef {{ cycle: number, task: string, round: number, id: string, severity: string, class: string[], source: string, caughtBy: string, dupOf: string | null, fingerprint: string, trigger?: string, escapePoint?: string, outcome: string, commit: string | null, bornIn: string | null, file: string, line: number | null }} Row
+ * @typedef {{ cycle: number, task: string, round: number, id: string, severity: string, class: string[], source: string, caughtBy: string, dupOf: string | null, fingerprint: string, trigger?: string, escapePoint?: string, input?: string, outcome: string, commit: string | null, bornIn: string | null, file: string, line: number | null }} Row
  * @typedef {{ raw: Record<string, unknown>, at: string, problems: string[] }} Entry a row as it is read, valid or not
  * @typedef {{ at: string, problems: string[] }} Refused
  * @typedef {{ rows: Row[], refused: Refused[], refusedCount: number, stopped: boolean, same: string[][], total: number }} Parsed
@@ -124,10 +133,12 @@ export const FIELDS = ["cycle", "task", "round", "id", "severity", "class", "sou
  * @typedef {{ key: string, vars?: Record<string, string | number | string[]> }} Reason a catalog key below findings.why, as a report gives it
  * @typedef {{ key: string, vars: Record<string, string | number | string[]>, ids: string[] }} Unplaced what could not be placed, and why
  * @typedef {{ id: string, times: number, layers: [string, number][] }} Recurring
- * @typedef {{ path: string, cycle: number, rows: number, counted: number, counts: import("./convergence.mjs").Convergence, recurring: { exact: boolean, top: Recurring[] }, unplaced: Unplaced[], refused: Refused[], refusedCount: number, stopped: boolean, same: string[][], higher: string[], untracked: string[] }} CycleReport
+ * @typedef {{ path: string, cycle: number, rows: number, counted: number, counts: import("./convergence.mjs").Convergence, recurring: { exact: boolean, top: Recurring[] }, unplaced: Unplaced[], refused: Refused[], refusedCount: number, stopped: boolean, same: string[][], higher: string[], untracked: string[], declined: string[], refound: string[] }} CycleReport
  *   `rows`: the ledger's, `counted`: the cycle's. `top` is empty unless `exact`. `same`: the ledger's groups that hold
  *   a counted row. `higher`:
  *   ids of rows of a cycle above the one asked for. `untracked`: ids of rows whose test HEAD does not track.
+ *   `declined`: ids of the cycle's declined rows line 1 leaves. `refound`: ids of declined rows of earlier cycles,
+ *   with no dupOf, whose fingerprint, folded, a row of this cycle that line 1 leaves holds: a lower bound.
  */
 
 /**
@@ -147,6 +158,14 @@ function rowProblems(raw, reg) {
   if (!Object.hasOwn(raw, "class")) problems.push("no class");
   else if (reg) problems.push(...classProblems(reg, raw.class));
   if (raw.source !== "pre-existing" && typeof raw.bornIn === "string") problems.push("bornIn belongs only to a pre-existing row");
+  if (raw.outcome === "declined") {
+    // finding-schema.md, Outcome: only a low finding whose input this project's own writer alone makes is left unfixed.
+    if (raw.severity !== "low") problems.push("declined belongs only to a low row: a critical or high finding is fixed with a test, a node or refuted, a medium one fixed, a node or refuted");
+    if (raw.input !== "writer") problems.push("a declined row's input is writer: only a finding whose input this project's own writer alone makes is declined");
+  } else if (raw.severity === "low" && raw.input === "writer" && (raw.outcome === "open" || (typeof raw.outcome === "string" && raw.outcome.startsWith("node:")))) {
+    // Declined by default; a fix that landed anyway is recorded as what happened.
+    problems.push("a low row whose input is writer is declined, refuted or fixed: it is never left open, and it becomes no node");
+  }
   if (raw.file === null) {
     // With no file there is no line to blame, so a null bornIn would have no repair.
     if (raw.source === "pre-existing") problems.push("a pre-existing row names a file: the one the fix belongs in");
@@ -157,7 +176,8 @@ function rowProblems(raw, reg) {
 
 /**
  * Every `dupOf`: it names a row, and its chain, read to its end, ends at one that is not refuted unless this row is.
- * One pass, each row walked once.
+ * A chain that ends at a declined row holds only declined or refuted rows of that row's cycle, and a declined row's
+ * chain ends at a declined one. One pass, each row walked once.
  * @param {Entry[]} entries @param {Map<string, Entry>} byId
  */
 function chainProblems(entries, byId) {
@@ -183,6 +203,12 @@ function chainProblems(entries, byId) {
     for (const walked of here) ends.set(walked, end);
     if (end === null) entry.problems.push("dupOf leads in a circle: a chain must end");
     else if (end.raw.outcome === "refuted" && entry.raw.outcome !== "refuted") entry.problems.push("dupOf ends at a refuted row while this row is not refuted: the defect would count nowhere, so one of the two is wrong");
+    else if (end.raw.outcome === "declined") {
+      // The defect would read as declined, left unfixed, whatever this row says of it.
+      if (entry.raw.outcome !== "declined" && entry.raw.outcome !== "refuted") entry.problems.push("dupOf ends at a declined row while this row is neither declined nor refuted: the defect would read as left unfixed");
+      // A later cycle's find is a new row, read by its age: a dupOf would count it nowhere.
+      if (end.raw.cycle !== entry.raw.cycle) entry.problems.push("dupOf ends at a declined row of another cycle: a defect found again is a new row of its own cycle");
+    } else if (entry.raw.outcome === "declined") entry.problems.push("a declined row's dupOf ends at a row that is not declined: the two outcomes clash");
   }
 }
 
@@ -501,7 +527,7 @@ export function cycleReport({ cwd, config, ledger, from, cycle }) {
   // A start given and wrong is said, whether or not a row needs it.
   if (start.why !== null) note(start.why);
   /** @type {CycleReport} */
-  const report = { path: ledger ?? config.paths.findings, cycle, rows: 0, counted: 0, counts: unknownCounts(), recurring: { exact: false, top: [] }, unplaced: [], refused: [], refusedCount: 0, stopped: false, same: [], higher: [], untracked: [] };
+  const report = { path: ledger ?? config.paths.findings, cycle, rows: 0, counted: 0, counts: unknownCounts(), recurring: { exact: false, top: [] }, unplaced: [], refused: [], refusedCount: 0, stopped: false, same: [], higher: [], untracked: [], declined: [], refound: [] };
   const done = () => ({ ...report, unplaced: [...unplaced.values()] });
   /** @type {ReturnType<typeof loadLedger>} */
   let led;
@@ -564,6 +590,9 @@ export function cycleReport({ cwd, config, ledger, from, cycle }) {
   }
   for (const column of lost) counts[column] = null;
   const live = rows.filter((r) => r.dupOf === null && r.outcome !== "refuted");
+  report.declined = live.filter((r) => r.outcome === "declined").map((r) => r.id);
+  const prints = new Set(live.map((r) => foldPrint(r.fingerprint)));
+  report.refound = led.rows.filter((r) => r.cycle < cycle && r.dupOf === null && r.outcome === "declined" && prints.has(foldPrint(r.fingerprint))).map((r) => r.id);
   const { top, names } = recurring(live, led.reg);
   if (names.length) {
     const { list, more } = listed(names);
@@ -573,6 +602,13 @@ export function cycleReport({ cwd, config, ledger, from, cycle }) {
   report.recurring = names.length ? { exact: false, top: [] } : { exact: true, top };
   return done();
 }
+
+/**
+ * A fingerprint as `refound` compares it: NFKC, lower case, each run of white space one space, as the class registry
+ * folds a name. A re-find in new words is not matched: the list is a lower bound.
+ * @param {string} print
+ */
+const foldPrint = (print) => print.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
 
 /** A list cut short, each item on its own for tShown, and what says how many it left out. @param {string[]} items */
 const listed = (items) => ({ list: items.slice(0, LISTED_MAX), more: items.length > LISTED_MAX ? ` (+${items.length - LISTED_MAX})` : "" });
@@ -606,6 +642,8 @@ export function reportLines(report, config) {
   if (report.refusedCount > report.refused.length) out.push(`✗ ${tShown("findings.refusedMore", { n: report.refusedCount - report.refused.length }, lang)}`);
   if (report.higher.length) out.push(`! ${ids("findings.higher", report.higher, { cycle: report.cycle })}`);
   if (report.untracked.length) out.push(`! ${ids("findings.untracked", report.untracked)}`);
+  if (report.declined.length) out.push(`! ${ids("findings.declined", report.declined)}`);
+  if (report.refound.length) out.push(`! ${ids("findings.refound", report.refound)}`);
   for (const group of report.same.slice(0, SAME_SHOWN)) out.push(`! ${ids("findings.same", group)}`);
   if (report.same.length > SAME_SHOWN) out.push(`! ${tShown("findings.sameMore", { n: report.same.length - SAME_SHOWN }, lang)}`);
   return out;

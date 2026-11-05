@@ -12,7 +12,7 @@ Shared output contract for every reviewer. Include this file in the reviewer's p
 |---|---|
 | Title | `🔴/🟠/🟡/⚪ <short name>` |
 | Quote | `file:line` and the exact text of that line — a claim that cannot quote a line is not a finding |
-| Scenario | which input or state breaks it; expected ↔ actual |
+| Scenario | which input or state breaks it, and who produces that input: an attacker, normal use (a person or an agent), or only this project's own writer (the row's `input`); expected ↔ actual |
 | Class | registry id (`ennyn.mjs classes` lists them) or `new: <short name>`, several if they fit — assign it while writing |
 | Source | `first-write`: in the task's own change, not yet landed · `previous-fix`: in a fix made for a finding of the same task, not yet landed · `pre-existing`: already on the default branch when found, whoever wrote it, this cycle's tasks included; it also gives `bornIn`, the commit that last wrote the quoted line ([report-formats.md](report-formats.md)) |
 | Confidence | `high` · `medium` · `low`; low-confidence findings are counted, not listed |
@@ -41,7 +41,16 @@ When the table holds a core task's smallest-change row, set it against the full 
 - **Round 1:** full review.
 - **Round 2:** only the diff of round-one fixes and the impact-table delta; the same reviewer continues (its context and corpus are kept). Question: "what did this fix open?"
 - **Round 3+:** only when an independent signal (test, mutation run, real-system measurement) shows a new class; the reason goes into the commit body.
-- **Left after round 2:** a critical or high finding is still fixed; a failing-then-passing test proves the fix, not another round. If no test can prove it, stop and ask the user.
+- **Left after round 2:** a critical or high finding still gets its outcome (below); a failing-then-passing test proves a fix, not another round. If no test can prove it, stop and ask the user.
+
+## Outcome
+
+Review stays as it is: a reviewer reports every finding it can quote, on gates, hooks and shared code above all. What becomes of each is the orchestrator's (the author's, for round 0), and each finding leaves its round with one outcome, the row's `outcome` ([ledger-row.md](ledger-row.md)):
+
+- **🔴/🟠:** fixed with a test (`fixed-test`), a node (`node:<id>`), or `refuted`. Never `fixed` without a test, never `open` past its round.
+- **⚪ whose input only this project's own writer produces:** `declined` (or `refuted`), not fixed and no node: the defect is real, and the convergence report lists it; a fix that landed anyway (a fix the user asked for, another finding's fix) is recorded as what happened, `fixed` or `fixed-test`. The validator refuses `declined` on any other row, and `open` or a node on such a row.
+- **Any other ⚪ outside a gate (code that accepts or refuses) and outside shared code (read in two or more places):** `node:<id>`, not fixed in the cycle.
+- **The rest:** fixed in the task, with a regression test where one can prove it; a fix larger than the task: a node.
 
 ## Report
 

@@ -11,7 +11,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CLASS_LIST_MAX, parseClasses } from "../metrics/classes.mjs";
-import { CYCLE_MAX, FIELDS, FINGERPRINT_MAX, NOTE_MAX, NOT_GATES, OUTCOMES, SEVERITIES, SOURCES, parseFindings } from "../metrics/findings.mjs";
+import { CYCLE_MAX, FIELDS, FINGERPRINT_MAX, INPUTS, NOTE_MAX, NOT_GATES, OUTCOMES, SEVERITIES, SOURCES, parseFindings } from "../metrics/findings.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (/** @type {string} */ path) => readFileSync(join(ROOT, path), "utf8");
@@ -37,6 +37,7 @@ test("findings format: the closed sets are the validator's", () => {
   assert.deepEqual(spans("source").filter((s) => !s.includes(".md")), SOURCES);
   assert.deepEqual(spans("outcome").filter((s) => !s.includes(":")).sort(), [...OUTCOMES].sort());
   assert.ok(spans("outcome").includes("node:<graph id>"));
+  assert.deepEqual(spans("input").slice(0, INPUTS.length), INPUTS);
   assert.deepEqual(spans("caughtBy").slice(0, 5), [...NOT_GATES, "test:<file>", "gate:<name>"]);
 });
 

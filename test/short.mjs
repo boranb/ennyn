@@ -1,8 +1,9 @@
 /**
  * `npm run test:short`: the suite an author runs during a task. Every test file runs but the slow ones SLOW names,
  * and a slow file comes back when the branch changed one of its listed paths, against the main branch, committed or
- * not. The whole suite (`npm test`) is not replaced: it runs at landing, before the main branch moves, slow files
- * included. A path list here decides how early a slow file's failure is seen, never whether it runs.
+ * not. The whole suite (`npm test`) is not replaced: it runs once at a cycle's closing, before the push, slow files
+ * included; a landing runs this and the slow files the task touches. A path list here decides how early a slow
+ * file's failure is seen, never whether it runs.
  *
  * The lists are narrow on purpose. The import closure of scripts/ennyn.mjs is nearly the whole tree, and a list that
  * matches every code change would make this the whole suite. Each one names what its file guards. With guards left
@@ -158,7 +159,7 @@ export function choose(all, changed, read) {
     says: [
       `short suite, ${files.length} of ${all.length} test files (changed on ${changed.branch} since ${MAIN} at ${changed.base.slice(0, 7)}: ${changed.paths.length})`,
       ...files.flatMap((file) => (back.get(file) ?? []).map((why) => `added ${file}: ${why}`)),
-      ...left.map((file) => `left out ${file}: none of its listed paths changed, and it runs at landing${file === GUARDS ? "; its accounting test runs now" : ""}`),
+      ...left.map((file) => `left out ${file}: none of its listed paths changed, and it runs at the closing${file === GUARDS ? "; its accounting test runs now" : ""}`),
     ],
   };
 }

@@ -323,8 +323,8 @@ test("short: what comes back is run and said with its reason, what stays out is 
   assert.match(says[0], /^short suite, 2 of 4 test files \(changed on work since main at [0-9a-f]{7}: 2\)$/);
   assert.deepEqual(says.slice(1), [
     `added ${FAULT}: core/config.mjs: the code that most often changed with the matrix`,
-    `left out ${GUARDS}: none of its listed paths changed, and it runs at landing; its accounting test runs now`,
-    `left out ${HOOK}: none of its listed paths changed, and it runs at landing`,
+    `left out ${GUARDS}: none of its listed paths changed, and it runs at the closing; its accounting test runs now`,
+    `left out ${HOOK}: none of its listed paths changed, and it runs at the closing`,
   ]);
 });
 
@@ -353,7 +353,7 @@ function run(script, cwd, args = [], more = {}) {
 test("short: the script runs what it chose, says so before and after the run, and exits as the run did", () => {
   const dir = copy({ "test/a.test.mjs": file("the fast file ran") });
   const script = join(dir, "test", "short.mjs");
-  const left = `left out ${HOOK}: none of its listed paths changed, and it runs at landing`;
+  const left = `left out ${HOOK}: none of its listed paths changed, and it runs at the closing`;
   // From anywhere: the run starts at the top of the tree it found itself in.
   const good = run(script, tmpdir());
   assert.equal(good.status, 0, good.stdout + good.stderr);
@@ -397,7 +397,7 @@ test("short: --list says the same and runs nothing; anything else it does not kn
   assert.equal(list.status, 0, list.stderr);
   assert.deepEqual(list.stdout.trimEnd().split("\n"), [
     `short suite, 2 of 3 test files (changed on work since main at ${git(["rev-parse", "HEAD"], { cwd: dir }).slice(0, 7)}: 0)`,
-    `left out ${HOOK}: none of its listed paths changed, and it runs at landing`,
+    `left out ${HOOK}: none of its listed paths changed, and it runs at the closing`,
     "test/a.test.mjs",
     "test/b.test.mjs",
   ]);
@@ -478,7 +478,7 @@ test("short: with guards left out its accounting test still runs, on its own; it
   assert.equal(left.status, 0, left.stdout + left.stderr);
   assert.match(left.stdout, /ACCOUNTING RAN/);
   assert.match(left.stdout, /the fast file ran/);
-  assert.match(left.stdout, new RegExp(`left out ${GUARDS}: none of its listed paths changed, and it runs at landing; its accounting test runs now`));
+  assert.match(left.stdout, new RegExp(`left out ${GUARDS}: none of its listed paths changed, and it runs at the closing; its accounting test runs now`));
 
   // On the list, not in the run: --list runs nothing and names only what the first run takes.
   const listed = run(script, dir, ["--list"]);
@@ -507,13 +507,17 @@ test("short: with guards left out its accounting test still runs, on its own; it
   assert.equal(back.stdout.split("ACCOUNTING RAN").length - 1, 1);
 });
 
-test("short: the method names the whole test command, runs it at landing, and answers a fast command with no slow list and a new slow test", () => {
+test("short: the method names the whole test command, runs it once at the closing and the fast one at landing, and answers a fast command with no slow list and a new slow test", () => {
   const read = (/** @type {string} */ f) => readFileSync(join(ROOT, f), "utf8");
   const brief = read("skills/cycle/task-brief.md");
   assert.match(read("skills/cycle/SKILL.md"), /\(fast test, whole test, lint, typecheck, the mutation tool;/);
   assert.match(read("skills/init/SKILL.md"), /fast test, whole test \(holds every slow gate\), lint and typecheck/);
-  assert.match(brief, /\| \*\*Landing\*\* \| One task at a time: rebase, the handoff's whole test command and every slow gate it does not hold \(no single whole command: each test command\), whatever the agent ran, then the main branch moves\./);
-  assert.match(brief, /The whole test command, with any slow gate it does not hold, runs at landing, before the main branch moves/);
+  assert.match(brief, /\| \*\*Landing\*\* \| One task at a time: rebase, the fast test command and every slow gate the task touches \(no command short of the whole suite: the whole test command\), whatever the agent ran, then the main branch moves; the whole test command waits for the closing \(section 3 of `SKILL\.md`\)\./);
+  assert.match(brief, /The landing runs the fast test command and the slow gates the task touches \(the \*\*Landing\*\* row below\), before the main branch moves/);
+  assert.match(brief, /One heavy job at a time on the machine: a whole suite, a mutation run, a platform image\./);
+  assert.match(read("skills/cycle/SKILL.md"), /7\. \*\*Push:\*\* `ennyn\.mjs worktrees --remove`; the whole test command, once \(red: task-brief\.md's Landing row\);/);
+  assert.match(brief, /Red there stops the push: a timing failure is rerun alone first; a real one is traced to the landing commit that brought it and fixed in a new `fix:` commit, written and reviewed as a first write, or the push waits\. The whole run repeats on the fixed tree, and what follows the last edit is done again: the `fix:` commit's rows appended first, convergence run again \(a new block\), the graph, the budget record, leftovers, and `bypass` over the new commit\. A red closing run is a landed task's defect: it counts against no task \(\*\*Landed\*\*\), its `fix:` commit is written by a fresh agent on the session's model and reviewed as a first write, and no escalation applies\./);
+  assert.match(brief, /A platform or release matrix the handoff names runs before a release, never at the closing\./);
   assert.match(brief, /a fast command with no slow list is run as it is/);
   assert.match(brief, /A task that adds a slow test says so in its report, and the orchestrator adds it wherever the project lists slow gates\./);
   assert.doesNotMatch(brief, /in the same commit/, "a task does not touch the handoff");

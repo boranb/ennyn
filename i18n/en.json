@@ -682,6 +682,8 @@
   "findings.counted": "cycle {cycle}: {counted} of {rows} rows",
   "findings.higher": "rows of a cycle above {cycle}: {n}: {ids}{more}",
   "findings.untracked": "test not tracked at HEAD, read as no gate: rows {n}: {ids}{more}",
+  "findings.declined": "declined, not fixed: {n}: {ids}{more}",
+  "findings.refound": "declined in an earlier cycle, its fingerprint found again: {n}: {ids}{more}",
   "findings.sameMore": "{n} more with the same fingerprint",
   "findings.why.startRefused": "no age: {error}",
   "worktrees.canGo": "can go: {path} ({mark})",

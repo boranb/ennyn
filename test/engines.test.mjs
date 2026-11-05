@@ -26,12 +26,12 @@ const read = (/** @type {string} */ p) => readFileSync(join(ROOT, p), "utf8");
  * setup-node, continue-on-error, a trigger filtered to no branch, a step that runs something else, a comment a
  * reader takes for the end of the job), so the test owns the text: a change to the workflow is made here too,
  * on purpose. Its one condition is on purpose: both jobs are skipped in a private repository unless started
- * by hand, so CI spends no metered minutes on what the Linux run before each push already ran.
+ * by hand, so CI spends no metered minutes on what the Linux run before a release already ran.
  */
 const WORKFLOW = `# The suite on Linux at the floors (git, and the Node of package.json's engines) and on newer Node majors:
-# \`npm run test:linux\`, the script that also runs before each push. test/engines.test.mjs holds this text whole.
+# \`npm run test:linux\`, the script that also runs before a release. test/engines.test.mjs holds this text whole.
 # In a private repository a push or pull request starts no job: a private repository's runs draw on
-# metered Actions minutes, and the same script runs before each push (.claude/CLAUDE.md). Started by hand it
+# metered Actions minutes, and the same script runs before a release (.claude/CLAUDE.md). Started by hand it
 # runs anyway. Once the repository is public, every push and pull request runs it, at no cost.
 # Each action is named by its full commit SHA (a tag can be moved to other code), the token only reads,
 # checkout leaves no credential in .git/config, and npm ci runs no install script.
