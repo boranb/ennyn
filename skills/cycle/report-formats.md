@@ -15,16 +15,16 @@ Write reports in the project's `language`.
 
 ## End of task
 
-`**Task N done:** [result] | Impact: [summary or not needed — why] | Review-Rounds: [N] | Mutation: [first a/b · last c/d] | Gate: [result · last round clean · none and why] | Checks: [passed] | Commit: [subject or "no commit" + why]`
+`**Task N done:** [result] | Impact: [summary or not needed — why] | Review-Rounds: [N] | Mutation: [first a/b · last c/d] | Gate: [result · last round clean · none and why] | Checks: [passed] | Escalated: [none, or agent ids with the model asked and the model that ran, before and after] | Commit: [subject or "no commit" + why]`
 
-`**Task N stopped:** [remaining failure, or what could not run] | Failed: [count] · agents: [N] | Root cause: [likely] | Changed: [files] | Kept: [branch, brief] | Next: [safest step]`
+`**Task N stopped:** [remaining failure, or what could not run] | Failed: [count] · agents: [N] | Escalated: [as above] | Root cause: [likely] | Changed: [files] | Kept: [branch, brief] | Next: [safest step]`
 
 ## End of cycle
 
 ```md
 ## Cycle complete
 ### Done            → results 1-4
-### Checks          → commit gate / build / viewport checks [result or not applicable] · security: `ennyn.mjs deps` and doctor's CI line [found / clean / unmeasured: what did not run] · leftovers, after the closing's commit: `ennyn.mjs leftovers` (untracked files that appeared, changes not committed) and the handoff's leftover command (none named: unmeasured); each item a question for the user, never deleted [found: the items and the answers / clean / unmeasured: what did not run] · bypasses and loosened keys, for the user before the push (`ennyn.mjs bypass --from <cycle start>`, pasted: each use with its reason, each key with its approval line or none; exit 1 is unmeasured, never none) · subagent models, on Claude Code: `ennyn.mjs agents`, pasted (per agent the model asked for, the models that ran, calls, tokens and the context at its last call); each mismatch said, since a split by role can be skipped without a word [mismatch: the agents / none / unmeasured: exit 1, or agents whose ask is unknown] · instruction budget: N KB every session (± since the last record), repeated rule lines
+### Checks          → commit gate / build / viewport checks [result or not applicable] · security: `ennyn.mjs deps` and doctor's CI line [found / clean / unmeasured: what did not run] · leftovers, after the closing's commit: `ennyn.mjs leftovers` (untracked files that appeared, changes not committed) and the handoff's leftover command (none named: unmeasured); each item a question for the user, never deleted [found: the items and the answers / clean / unmeasured: what did not run] · bypasses and loosened keys, for the user before the push (`ennyn.mjs bypass --from <cycle start>`, pasted: each use with its reason, each key with its approval line or none; exit 1 is unmeasured, never none) · subagent models, on Claude Code: `ennyn.mjs agents`, pasted (per agent the model asked for, the models that ran, calls, tokens and the context at its last call); each task that escalated read against its agents (the cheaper author, then the fresh one on the session's model), each mismatch said, since a split by role can be skipped without a word [mismatch: the agents / none / unmeasured: exit 1, or agents whose ask is unknown] · reviewers off the session's model: each `review.agents` file whose `model:` names a model other than `inherit`, and each with no `model:`, which takes `CLAUDE_CODE_SUBAGENT_MODEL` when it is set; `ennyn agents` shows no mismatch when such a file's ask equals what ran [the reviewers and their models / none / not applicable: `review.agents` empty] · instruction budget: N KB every session (± since the last record), repeated rule lines
 ### Commits         → subjects
 ### Documents       → documents updated
 ### Audit           → feature or security audit / why chosen / result / lean items / next candidate
