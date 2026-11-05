@@ -490,6 +490,43 @@ test("plugin: /ennyn:init asks for the fast test on every path: the interview ne
   assert.doesNotMatch(step, /Skip 3\b/, step);
 });
 
+test("plugin: /ennyn:init makes a new project's first commit before any install: what it holds and what npm cannot do", () => {
+  const step = read("skills/init/new-project.md").split("4. **The first commit**")[1];
+  assert.ok(step, "the step");
+  assert.ok(read("skills/init/new-project.md").split("\n").find((l) => l.startsWith("3. **New**"))?.includes("then step 4"), "step 3 leads to it");
+  // Secrets and keys as DESIGN.md's MACHINE_GLOBS name them, Claude Code's local settings, and build output; measured with git check-ignore.
+  for (const line of [".env", ".env.*", "!.env.example", ".netrc", "*.pem", "*.key", "id_rsa*", "id_ed25519*", "id_ecdsa*", "node_modules/", "dist/", "build/", ".claude/settings.local.json"]) assert.ok(step.includes(`\`${line}\``), line);
+  for (const words of [
+    "before any scaffold or install",
+    "`.npmrc` with `ignore-scripts=true`",
+    "`security.deps.cooldownDays`",
+    "`ennyn install-hook --plugin-data \"${CLAUDE_PLUGIN_DATA}\"` before the commit",
+    "`.claude/settings.json` with the ask rules",
+    "`.ennyn/config.json`",
+    // With no repository the files are still written; only the commit and the hook wait.
+    "With no repository",
+    "wait for a `git init`",
+  ]) assert.ok(step.includes(words), words);
+});
+
+test("plugin: /ennyn:init's first commit sets npm's release age by the installed version, and the scripts guard where npm reads it", () => {
+  const step = read("skills/init/new-project.md").split("4. **The first commit**")[1];
+  // npm 11.10.0 first defines min-release-age, but up to 11.14.1 a git dependency's prepare or a `before` in the user's
+  // config fails the install with it; 11.15.0 is the first where both pass (measured on the packed versions).
+  for (const words of ["Read `npm -v`", "from 11.15.0", "`min-release-age=<days>` with the days of `security.deps.cooldownDays`", "Below 11.15.0", "the only age check", "`before`", "git dependency"]) assert.ok(step.includes(words), words);
+  assert.doesNotMatch(step, /from 11\.10\.0(?:, the first npm that defines it,)? add/, "11.10.0 to 11.14.1 fail an install with the key");
+  // npm 10 and 11.0.0 take an unknown key silently, 11.9.0 warns: no single word for every version below.
+  assert.doesNotMatch(step, /takes it without a word/, "npm 11.9.0 warns");
+  // npm finds its prefix by walking up to a package.json or node_modules/: a stray one above leaves the root's .npmrc unread.
+  for (const words of ["the root included", "`npm prefix` prints that folder", "`pwd -P`", "install nothing until the user decides"]) assert.ok(step.includes(words), words);
+  assert.doesNotMatch(step, /no release-age key and no `allowScripts`/, "npm 11.21 and 12 define allow-scripts");
+  assert.doesNotMatch(step, /allow-scripts=/, "ignore-scripts already blocks every script");
+  // A scaffold into a subfolder has its own package.json: the root .npmrc is not read there.
+  for (const words of ["copy `.npmrc` there", "`npm config get ignore-scripts` prints `true`", "still hold their lines"]) assert.ok(step.includes(words), words);
+  // pnpm's keys as its 12.16.1 package names them; uv's stay unmeasured.
+  for (const words of ["pnpm 12.16.1", "`minimumReleaseAge`", "`allowBuilds`", "`strictDepBuilds`", "`exclude-newer`", "not measured", "only on the user's yes"]) assert.ok(step.includes(words), words);
+});
+
 test("plugin: /ennyn:init offers what destroys or installs apart, writes none unasked, and its report says what these rules cannot do", () => {
   const gates = read("skills/init/gates.md");
   assert.ok(read("skills/init/SKILL.md").includes("`agentSetup.offered`"), "the skill sends init to the list");
