@@ -537,6 +537,8 @@ export async function checkSetup({ cwd, env = process.env, self = OWN_ROOT }) {
       else if (idle === "unrecorded") add("warn", "doctor.hookPluginUnrecorded", { path: [hook.path], data: [String(hook.data)] });
       else if (idle === "stale") add("warn", "doctor.hookPluginStale", { path: [hook.path], data: [String(hook.data)], root: [String(hook.recorded)] });
       else if (idle === "foreign") add("warn", "doctor.hookRecordForeign", { path: [hook.path], record: [join(String(hook.data), PLUGIN_RECORD)] });
+      // No record, and the hook checks with the plugin session's version: in this session only.
+      else if (hook.fromSession) add("warn", "doctor.hookPluginSession", { path: [hook.block ?? hook.path], data: [String(hook.data)] });
       else if (replaced !== null) add("warn", "doctor.hookReplaced", { path: [hook.path], root: [replaced] });
       else if (selfReplaced && hook.state === "ennyn") add("warn", "doctor.hookSelfReplaced", { path: [hook.path], own: [self] });
       else if (version === "pinned") add("warn", "doctor.hookPinned", { path: [hook.path], cli: [String(hook.cli)] });

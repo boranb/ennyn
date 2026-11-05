@@ -1480,10 +1480,45 @@ const BLOCK_ROWS = [
   { id: "shebang-e-secret", hook: (block, shell) => `#!${shell} -e\n${block}`, secret: true, expect: "refused", says: /adds what reads as a secret/ },
   // A work tree whose path a case pattern would read: the top is compared as text.
   ...["r*", "r[a-z]", "r'q", "r$v"].map((name) => ({ id: `glob-top ${name}`, name, env: (/** @type {Box} */ b) => ({ PATH: `${join(b.repo, "tools")}:${NODE_DIR}:${SYSTEM}` }), files: () => ({ "tools/node": PLANTED }), secret: true, expect: /** @type {const} */ ("refused"), says: /adds what reads as a secret/ })),
+  // No record (an install again deletes it): the plugin session's version checks the commit when it is an installed one.
+  { id: "session-root-no-record", every: true, env: (b) => ({ ENNYN_PLUGIN_DATA: b.data, ENNYN_PLUGIN_ROOT: sessionVersion(b) }), make: (b) => rmSync(join(b.data, "root")), expect: "refused", says: /checked with the version this Claude Code session runs\.\n.*\nran session/s },
+  { id: "session-var-from-environment", env: () => ({ session: "1", line: "/nowhere", root: "/nowhere" }), secret: true, expect: "refused", says: /adds what reads as a secret/ },
+  { id: "session-root-uninstalled", env: (b) => ({ ENNYN_PLUGIN_DATA: b.data, ENNYN_PLUGIN_ROOT: sessionVersion(b) }), make: (b) => { rmSync(join(b.data, "root")); writeFileSync(join(sessionVersion(b), ".orphaned_at"), "1\n"); }, expect: "said", says: /so the commit message is not checked/, not: /ran session/ },
+  { id: "session-root-no-data-var", env: (b) => ({ ENNYN_PLUGIN_ROOT: sessionVersion(b) }), make: (b) => rmSync(join(b.data, "root")), expect: "said", says: /so the commit message is not checked/, not: /ran session/ },
+  { id: "session-root-outside-cache", env: (b) => ({ ENNYN_PLUGIN_DATA: b.data, ENNYN_PLUGIN_ROOT: sessionVersion(b, b.stand) }), make: (b) => rmSync(join(b.data, "root")), expect: "said", says: /so the commit message is not checked/, not: /ran session/ },
+  { id: "session-root-dotdot", env: (b) => ({ ENNYN_PLUGIN_DATA: b.data, ENNYN_PLUGIN_ROOT: `${dirname(dirname(b.data))}/cache/../../../../stand` }), make: (b) => { rmSync(join(b.data, "root")); sessionVersion(b, b.stand); }, expect: "said", not: /ran session/ },
+  { id: "session-root-cache-linked-into-tree", env: (b) => ({ ENNYN_PLUGIN_DATA: b.data, ENNYN_PLUGIN_ROOT: join(dirname(dirname(b.data)), "cache", "test", "ennyn", "1") }), files: () => ({ "test/ennyn/1/scripts/ennyn.mjs": PLANTED_CLI }), make: (b) => { rmSync(join(b.data, "root")); symlinkSync(b.repo, join(dirname(dirname(b.data)), "cache")); }, secret: true, expect: "refused", says: /inside this work tree/ },
+  // The fold of a backslash is the shell's own: no program on PATH, and every byte kept.
+  { id: "session-root-no-tr-on-path", env: (b) => ({ PATH: NODE_DIR, ENNYN_PLUGIN_DATA: b.data, ENNYN_PLUGIN_ROOT: sessionVersion(b) }), make: (b) => rmSync(join(b.data, "root")), expect: "refused", says: /ran session/ },
+  { id: "session-root-trailing-newline", env: (b) => ({ ENNYN_PLUGIN_DATA: b.data, ENNYN_PLUGIN_ROOT: `${sessionVersion(b)}\n` }), make: (b) => rmSync(join(b.data, "root")), expect: "said", not: /ran session/ },
+  // Exactly <cache>/<marketplace>/<plugin>/<version>, the two names those of the data directory (<plugin>-<marketplace>).
+  { id: "session-root-other-marketplace", env: (b) => ({ ENNYN_PLUGIN_DATA: b.data, ENNYN_PLUGIN_ROOT: sessionVersion(b, join(dirname(dirname(b.data)), "cache", "other", "ennyn", "0.0.1")) }), make: (b) => rmSync(join(b.data, "root")), expect: "said", not: /ran session/ },
+  { id: "session-root-shallower", env: (b) => ({ ENNYN_PLUGIN_DATA: b.data, ENNYN_PLUGIN_ROOT: sessionVersion(b, join(dirname(dirname(b.data)), "cache", "test", "0.0.1")) }), make: (b) => rmSync(join(b.data, "root")), expect: "said", not: /ran session/ },
+  { id: "session-root-deeper", env: (b) => ({ ENNYN_PLUGIN_DATA: b.data, ENNYN_PLUGIN_ROOT: sessionVersion(b, join(dirname(dirname(b.data)), "cache", "x", "test", "ennyn", "0.0.1")) }), make: (b) => rmSync(join(b.data, "root")), expect: "said", not: /ran session/ },
+  // Windows spellings: plugin-root names the root with backslashes (resolve), Claude Code the data directory with slashes.
+  { id: "session-root-backslashes", env: (b) => ({ ENNYN_PLUGIN_DATA: b.data, ENNYN_PLUGIN_ROOT: sessionVersion(b).replace(/\//g, "\\") }), make: (b) => rmSync(join(b.data, "root")), expect: "refused", says: /ran session/ },
+  { id: "session-root-dotdot-backslashes", env: (b) => ({ ENNYN_PLUGIN_DATA: b.data, ENNYN_PLUGIN_ROOT: `${join(dirname(dirname(b.data)), "cache", "test", "ennyn")}\\..` }), make: (b) => { rmSync(join(b.data, "root")); sessionVersion(b, join(dirname(dirname(b.data)), "cache", "test")); mkdirSync(join(dirname(dirname(b.data)), "cache", "test", "ennyn")); }, expect: "said", not: /ran session/ },
+  { id: "session-root-empty-version", env: (b) => ({ ENNYN_PLUGIN_DATA: b.data, ENNYN_PLUGIN_ROOT: `${sessionVersion(b, join(dirname(dirname(b.data)), "cache", "test", "ennyn"))}/` }), make: (b) => rmSync(join(b.data, "root")), expect: "said", not: /ran session/ },
+  ...[["C:\\d\\plugins\\data\\ennyn-test", "C:\\d\\plugins\\cache\\test\\ennyn\\1"], ["C:/d/plugins/data/ennyn-test", "C:\\d\\plugins\\cache\\test\\ennyn\\1"], ["C:\\d\\plugins\\data\\ennyn-test", "C:/d/plugins/cache/test/ennyn/1"]].map(([data, root], i) => ({
+    id: `session-root-windows-${i}`,
+    env: (/** @type {Box} */ b) => ({ PATH: `${b.stand}:${NODE_DIR}:${SYSTEM}`, ENNYN_PLUGIN_DATA: data, ENNYN_PLUGIN_ROOT: root }),
+    // A drive path is relative here: the version found under the work tree, so a fallback that fires reaches the tree's refusal.
+    files: () => ({ "C:/d/plugins/cache/test/ennyn/1/scripts/ennyn.mjs": PLANTED_CLI }),
+    secret: true,
+    expect: /** @type {const} */ ("refused"),
+    says: /inside this work tree/,
+  })),
   // A clean commit through a good record, and the same with a secret.
   { id: "clean", every: true, expect: "pass" },
   { id: "secret", every: true, secret: true, expect: "refused", says: /adds what reads as a secret/ },
 ];
+
+/** A stand-in plugin version under the cache beside the box's data directory (or under `at`), whose CLI says it ran and refuses. @param {Box} b @param {string} [at] */
+function sessionVersion(b, at = join(dirname(dirname(b.data)), "cache", "test", "ennyn", "0.0.1")) {
+  mkdirSync(join(at, "scripts"), { recursive: true });
+  writeFileSync(join(at, "scripts", "ennyn.mjs"), 'process.stderr.write("ran session\\n");\nprocess.exit(1);\n');
+  return at;
+}
 
 /** The shells of an `every` row beyond SHELLS, each once. */
 const MORE_SHELLS = ["/bin/bash", "/bin/ksh", "/bin/zsh"].filter((s) => existsSync(s) && !SHELLS.some((k) => realpathSync(k) === realpathSync(s)));
@@ -1990,6 +2025,13 @@ test("doctor says what the commit does, the block's reading in the block's order
   rmSync(tools, { recursive: true });
   // A data directory in the tree: refused when it is there, and when it is not there nothing is recorded.
   await both({ ENNYN_PLUGIN_DATA: join(dir, "absent") }, "doctor.hookBlockUnrecorded", 0, /no plugin version is recorded/);
+  // No record, in a session whose version is installed beside the data directory: that version checks the commit.
+  const sessionRoot = join(base, "plugins", "cache", "x", "ennyn", "1");
+  mkdirSync(join(sessionRoot, "scripts"), { recursive: true });
+  writeFileSync(join(sessionRoot, "scripts", "ennyn.mjs"), 'process.stderr.write("ran session\\n");\nprocess.exit(1);\n');
+  await both({ ENNYN_PLUGIN_DATA: join(base, "plugins", "data", "ennyn-x"), ENNYN_PLUGIN_ROOT: sessionRoot }, "doctor.hookPluginSession", 1, /ran session/);
+  const written = installCli(dir, outside({ HOME: home, ENNYN_PLUGIN_DATA: join(base, "plugins", "data", "ennyn-x"), ENNYN_PLUGIN_ROOT: sessionRoot }));
+  assert.deepEqual([written.status, /it now names the version this session runs/.test(written.stdout), readFileSync(join(base, "plugins", "data", "ennyn-x", "root"), "utf8")], [0, true, `${sessionRoot}\n`], written.stdout + written.stderr);
   mkdirSync(join(dir, ".pd"));
   await both({ ENNYN_PLUGIN_DATA: join(dir, ".pd") }, "doctor.hookBlockNoData", 1, /inside this work tree/);
   // Spelled through a link and "..": where the kernel lands, not where the text does.
@@ -2381,4 +2423,164 @@ test("a hand-written call in the local hook, with no plugin in sight: install-ho
   // A copy in the work tree: this machine chose the path, as for Ennyn's own hook there.
   writeFileSync(hook, `#!/bin/sh\n${printedLine(join(realpathSync(dir), "tools", "scripts", "ennyn.mjs"))}\n`);
   assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookOk"]);
+});
+
+test("hook follows the plugin: with the record gone, a session of an installed version checks with it; an uninstalled one, another plugin's or one outside the cache lets the commit through", async () => {
+  // Measured on Claude Code 2.1.310: an uninstall deletes the data directory and marks the version `.orphaned_at`; an
+  // install at the same version reuses that directory and clears the mark; no install makes the record, a session does.
+  const dir = repo();
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "en-plugin-")));
+  const v = pluginVersion(base, "0.0.1");
+  const data = join(base, "data", "ennyn-mkt");
+  installHook({ cwd: dir, cliPath: cliOf(v), pluginData: data });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "--no-verify", "-m", "feat: base"], { cwd: dir });
+  rmSync(data, { recursive: true });
+  const session = sessionEnv(data, v);
+  const checked = commitIn(dir, "feat: reinstalled", { "a.txt": String(Math.random()) }, outside(session));
+  assert.equal(checked.status, 1, checked.stderr);
+  assert.match(checked.stderr, /ran 0\.0\.1/);
+  assert.match(checked.stderr, /no plugin version is recorded in .*so this commit is checked with the version this Claude Code session runs/);
+  const st = hookStatus(dir, session);
+  assert.deepEqual([idleReason(st), st.cli, st.fromSession], [null, cliOf(v), true]);
+  // A `tr` the repository holds, first on PATH, never runs: the hook folds a backslash by itself.
+  const ran = join(base, "tr-ran");
+  writeFileSync(join(dir, "tr"), `#!/bin/sh\ntouch ${JSON.stringify(ran)}\ncat\n`, { mode: 0o755 });
+  const planted = commitIn(dir, "feat: planted", { "a.txt": String(Math.random()) }, outside({ ...session, PATH: `.:${dirname(process.execPath)}:/usr/bin:/bin` }));
+  assert.deepEqual([planted.status, /ran 0\.0\.1/.test(planted.stderr), existsSync(ran)], [1, true, false], planted.stderr);
+  rmSync(join(dir, "tr"), { force: true });
+  assert.deepEqual(await hookKeys(dir, session), ["doctor.hookPluginSession"]);
+  // Outside a session, or in another plugin's: through, saying so, as before.
+  // A trailing newline is a byte of the path: no data directory and no version of this plugin.
+  for (const env of [outside({}), outside(sessionEnv(join(base, "data", "other"), v)), outside({ ENNYN_PLUGIN_DATA: data }), outside(sessionEnv(`${data}\n`, v)), outside(sessionEnv(data, `${v}\n`))]) {
+    const passed = commitIn(dir, "untyped", { "a.txt": String(Math.random()) }, env);
+    assert.deepEqual([passed.status, /so the commit message is not checked/.test(passed.stderr)], [0, true], passed.stderr);
+  }
+  assert.deepEqual([idleReason(hookStatus(dir, {})), hookStatus(dir, {}).fromSession], ["unrecorded", false]);
+  assert.equal(idleReason(hookStatus(dir, sessionEnv(join(base, "data", "other"), v))), "unrecorded");
+  assert.deepEqual([sessionEnv(`${data}\n`, v), sessionEnv(data, `${v}\n`)].map((e) => idleReason(hookStatus(dir, e))), ["unrecorded", "unrecorded"]);
+  // A root the session names that is no installed version of this plugin: through, never run.
+  const elsewhere = pluginVersion(join(base, "x"), "0.0.1");
+  // As text: join would take the ".." out.
+  const dotted = `${base}/cache/../x/cache/mkt/ennyn/0.0.1`;
+  const otherMarket = join(base, "cache", "other", "ennyn", "0.0.1");
+  mkdirSync(join(otherMarket, "scripts"), { recursive: true });
+  writeFileSync(join(otherMarket, "scripts", "ennyn.mjs"), "process.exit(1);\n");
+  const shallow = join(base, "cache", "mkt", "0.0.1");
+  mkdirSync(join(shallow, "scripts"), { recursive: true });
+  writeFileSync(join(shallow, "scripts", "ennyn.mjs"), "process.exit(1);\n");
+  // Where ennyn\.. and a trailing slash would land: a CLI there, so only the path's shape keeps it from running.
+  for (const at of [join(base, "cache", "mkt"), join(base, "cache", "mkt", "ennyn")]) {
+    mkdirSync(join(at, "scripts"), { recursive: true });
+    writeFileSync(join(at, "scripts", "ennyn.mjs"), "process.exit(1);\n");
+  }
+  for (const root of [elsewhere, dotted, "cache/mkt/ennyn/0.0.1", join(base, "cache", "mkt", "ennyn", "none"), otherMarket, shallow, `${join(base, "cache", "mkt", "ennyn")}\\..`, `${join(base, "cache", "mkt", "ennyn")}/`]) {
+    const passed = commitIn(dir, "untyped", { "a.txt": String(Math.random()) }, outside(sessionEnv(data, root)));
+    assert.deepEqual([passed.status, /ran /.test(passed.stderr), /not checked/.test(passed.stderr)], [0, false, true], `${root}: ${passed.stderr}`);
+    assert.equal(idleReason(hookStatus(dir, sessionEnv(data, root))), "unrecorded", root);
+  }
+  // The root spelled with backslashes, as plugin-root writes it on Windows: the same version.
+  assert.equal(hookStatus(dir, sessionEnv(data, v.replace(/\//g, "\\"))).fromSession, true);
+  // install-hook in the session writes the record again, so a commit outside it is checked too.
+  // From another copy than the session's version install-hook is refused (followsRecord), and writes nothing.
+  const again = installCli(dir, outside(session));
+  assert.deepEqual([again.status, /now names/.test(again.stdout), existsSync(join(data, "root"))], [1, false, false], again.stdout);
+  // Run as the session's version, it writes the record.
+  assert.equal(withEnv(session, () => installHook({ cwd: dir, cliPath: cliOf(v), session: { data, root: v } })).result, "updated");
+  assert.deepEqual([record(data), hookStatus(dir, {}).fromSession], [`${v}\n`, false]);
+  assert.match(commitIn(dir, "feat: outside", { "a.txt": String(Math.random()) }, outside({})).stderr, /ran 0\.0\.1/);
+  rmSync(data, { recursive: true });
+  // Uninstalled: the version marked replaced. Never a lock on the user's commits.
+  writeFileSync(join(v, ".orphaned_at"), "1\n");
+  const gone = commitIn(dir, "untyped", { "a.txt": String(Math.random()) }, outside(session));
+  assert.deepEqual([gone.status, /ran /.test(gone.stderr)], [0, false], gone.stderr);
+  assert.deepEqual(await hookKeys(dir, session), ["doctor.hookPluginUnrecorded"]);
+  // Installed again: install-hook from the session puts the record back.
+  rmSync(join(v, ".orphaned_at"));
+  assert.equal(installHook({ cwd: dir, cliPath: cliOf(v), pluginData: data }).result, "updated");
+  assert.deepEqual([record(data), hookStatus(dir, session).fromSession], [`${v}\n`, false]);
+});
+
+/** `fn` with `vars` in this process's environment, put back after. @template T @param {Record<string, string>} vars @param {() => T} fn */
+function withEnv(vars, fn) {
+  const before = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, vars);
+  try {
+    return fn();
+  } finally {
+    for (const [k, v] of Object.entries(before)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+  }
+}
+
+test("hook follows the plugin: install-hook writes the record from the session only on a run that goes through, and never a version folder linked out of the cache", () => {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), "en-plugin-")));
+  const v = pluginVersion(base, "0.0.1");
+  const data = join(base, "data", "ennyn-mkt");
+  const session = sessionEnv(data, v);
+  /** A repository whose Ennyn hook reads `at` (no record there), in its own hooks or under a global core.hooksPath. @param {string} at @param {string} [hooks] */
+  const hooked = (at, hooks) => {
+    const dir = repo();
+    if (hooks) {
+      mkdirSync(hooks, { recursive: true });
+      git(["config", "core.hooksPath", hooks], { cwd: dir });
+    }
+    const path = hookStatus(dir).path;
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, hookScript("", at), { mode: 0o755 });
+    return dir;
+  };
+  const dir = hooked(data);
+  assert.equal(hookStatus(dir, session).fromSession, true);
+  // Refused runs write nothing: another copy than the session's (followsRecord), a version Claude Code has replaced.
+  assert.equal(withEnv(session, () => installHook({ cwd: dir, cliPath: CLI })).result, "followsRecord");
+  const old = pluginVersion(join(base, "old"), "0.0.1");
+  writeFileSync(join(old, ".orphaned_at"), "1\n");
+  assert.equal(withEnv(session, () => installHook({ cwd: dir, cliPath: cliOf(old) })).result, "replacedCopy");
+  assert.equal(existsSync(join(data, "root")), false);
+  // A data directory in the work tree, with the session's version beside it there: refused, and nothing in the tree.
+  const inner = repo();
+  const innerData = join(realpathSync(inner), "plugins", "data", "ennyn-mkt");
+  const innerVersion = join(realpathSync(inner), "plugins", "cache", "mkt", "ennyn", "0.0.1");
+  mkdirSync(join(innerVersion, "scripts"), { recursive: true });
+  writeFileSync(join(innerVersion, "scripts", "ennyn.mjs"), "process.exit(1);\n");
+  const innerPath = hookStatus(inner).path;
+  mkdirSync(dirname(innerPath), { recursive: true });
+  writeFileSync(innerPath, hookScript("", innerData), { mode: 0o755 });
+  const innerSession = sessionEnv(innerData, innerVersion);
+  assert.equal(hookStatus(inner, innerSession).fromSession, true);
+  assert.equal(withEnv(innerSession, () => installHook({ cwd: inner, cliPath: CLI, pluginData: innerData })).result, "dataInRepository");
+  assert.equal(existsSync(join(innerData, "root")), false);
+  // A run that records a version of its own (another copy, given the data directory) keeps it: the session does not write over it.
+  const v2 = pluginVersion(base, "0.0.3");
+  assert.deepEqual([withEnv(session, () => installHook({ cwd: dir, cliPath: cliOf(v2), pluginData: data })).restored, record(data)], [false, `${v2}\n`]);
+  rmSync(join(data, "root"));
+  // A run that goes through (Ennyn's script under a global core.hooksPath: wired) writes it.
+  const global = hooked(data, join(base, "global-hooks"));
+  const wired = withEnv(session, () => installHook({ cwd: global, cliPath: CLI }));
+  assert.deepEqual([wired.result, wired.restored, record(data)], ["wired", true, `${v}\n`]);
+  // The version folder a link out of the cache: the text is a version of this plugin, the folder is not; refused, unwritten.
+  rmSync(join(data, "root"));
+  const outsideVersion = join(base, "outside");
+  mkdirSync(join(outsideVersion, "scripts"), { recursive: true });
+  writeFileSync(join(outsideVersion, "scripts", "ennyn.mjs"), "process.exit(1);\n");
+  const linked = join(base, "cache", "mkt", "ennyn", "0.0.2");
+  symlinkSync(outsideVersion, linked);
+  const linkSession = sessionEnv(data, linked);
+  assert.equal(hookStatus(global, linkSession).fromSession, true);
+  assert.throws(() => withEnv(linkSession, () => installHook({ cwd: global, cliPath: CLI })), (e) => e instanceof hookModule.RecordError && e.reason === "link");
+  assert.equal(existsSync(join(data, "root")), false);
+  // The cache itself through a link: the same folder once both are resolved, so it is written.
+  const realCache = join(base, "real-cache");
+  mkdirSync(join(realCache, "mkt", "ennyn", "0.0.1", "scripts"), { recursive: true });
+  writeFileSync(join(realCache, "mkt", "ennyn", "0.0.1", "scripts", "ennyn.mjs"), "process.exit(1);\n");
+  const linkedBase = join(base, "lb");
+  mkdirSync(join(linkedBase, "data"), { recursive: true });
+  symlinkSync(realCache, join(linkedBase, "cache"));
+  const lbData = join(linkedBase, "data", "ennyn-mkt");
+  const lbRoot = join(linkedBase, "cache", "mkt", "ennyn", "0.0.1");
+  const lbGlobal = hooked(lbData, join(base, "lb-hooks"));
+  assert.equal(withEnv(sessionEnv(lbData, lbRoot), () => installHook({ cwd: lbGlobal, cliPath: CLI })).restored, true);
+  assert.equal(record(lbData), `${lbRoot}\n`);
 });

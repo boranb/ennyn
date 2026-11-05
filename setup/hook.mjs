@@ -110,6 +110,33 @@ export function readRecord(data) {
 }
 
 /**
+ * The version a plugin hook runs when no record is in `data`, as recordSteps takes it: the root the plugin session
+ * names (`ENNYN_PLUGIN_ROOT`) when the session's data directory is `data` as text (both read with a backslash as a
+ * slash), and the root is an installed version of this plugin: exactly `<cache>/<marketplace>/<plugin>/<version>`
+ * beside `data`'s parent, with `<plugin>-<marketplace>` the data directory's own name (measured on Claude Code
+ * 2.1.310: `<config>/plugins/data/<plugin>-<marketplace>` and `<config>/plugins/cache/<marketplace>/<plugin>/<version>`,
+ * each name with what is not a letter, digit, `_` or `-` made `-`), no part empty, `.` or `..`, and one rootProblem
+ * takes (an uninstall marks the version replaced; an install again at that version clears the mark). Measured on 2.1.310: an uninstall deletes the data directory, and an install again makes no record
+ * until a session starts. null for anything else: the hook lets the commit through, as with no session.
+ * @param {string} data @param {NodeJS.ProcessEnv | Record<string, string | undefined>} env
+ */
+export function sessionRoot(data, env) {
+  const given = env[SESSION_ROOT];
+  if (!given || slashed(env[SESSION_DATA] ?? "") !== slashed(data)) return null;
+  const root = slashed(given);
+  const at = slashed(data);
+  const parts = root.split("/");
+  const [market, plugin, version] = parts.slice(-3);
+  // As the shell's `${at%/*/*}` and `${at##*/}`: the last two parts off, and the last part, as text.
+  if (parts.slice(0, -3).join("/") !== `${at.replace(/\/[^/]*\/[^/]*$/, "")}/cache` || `${plugin}-${market}` !== at.slice(at.lastIndexOf("/") + 1)) return null;
+  if ([market, plugin, version].some((p) => p === "" || p === "." || p === "..")) return null;
+  return rootProblem(root) === null ? root : null;
+}
+
+/** A backslash read as a slash: Claude Code names the data directory with slashes on Windows, and plugin-root the root with backslashes (resolve). @param {string} s */
+const slashed = (s) => s.replace(/\\/g, "/");
+
+/**
  * The line a commit-msg hook runs; quoted for the shell, so a path with spaces, quotes or $ survives.
  * `--hook`: a config that does not load lets the commit through with a warning instead of locking it.
  * With the plugin's data directory, the line reads the version from its record: a record that names no
@@ -161,6 +188,7 @@ ${NODE}${recordSteps(`  ${absolute}) root=$line ;;\n`, {
     foreign: `Delete it, then run install-hook from the plugin again (/ennyn:init); or ${remove}.`,
     stale: `Run install-hook from the plugin again (/ennyn:init; any Claude Code session with the plugin also records its version); if the plugin is uninstalled, ${remove}.`,
     line: " ($line)",
+    session: "To record it again, run ennyn install-hook from the plugin in this session (/ennyn:init), or start a new Claude Code session: until then a commit made outside this session is not checked.",
   })}`;
 }
 
@@ -175,28 +203,69 @@ fi
  * A plugin hook's steps from the record (`$record`, in `$data`) to commit-check, hookScript's and hookBlock's
  * alike: nothing there lets the commit through (exit 0), a link or anything but a regular file, a first line
  * with a control character or that `absolute` (case arms that set `root`) does not take, or a version whose CLI
- * is gone refuses it (exit 1). `say`: why no record may be there (`gone`), the step each message names (put
- * between single quotes: no `'` in them), and how the refusal shows the line it read (`line`). `gate`: the last
- * step before the CLI runs.
- * @param {string} absolute @param {{ gone: string, none: string, foreign: string, stale: string, line: string }} say @param {string} [gate]
+ * is gone refuses it (exit 1). With no record, a plugin session of this data directory checks the commit with the
+ * version it runs (sessionRoot: an install again deletes the record, and only a session start writes it), when that
+ * is an installed version of this plugin; any other leaves the commit through. `say`: why no record may be there
+ * (`gone`), the step each message names (put between single quotes: no `'` in them), and how the refusal shows the
+ * line it read (`line`). `gate`: the last step before the CLI runs.
+ * @param {string} absolute @param {{ gone: string, none: string, foreign: string, stale: string, line: string, session: string }} say @param {string} [gate]
  */
 function recordSteps(absolute, say, gate = "") {
-  return `if [ ! -e "$record" ] && [ ! -L "$record" ]; then
-  printf '%s\\n' "ennyn: no plugin version is recorded in $data (${say.gone}), so the commit message is not checked." '${say.none}' >&2
-  exit 0
-fi
-if [ -L "$record" ] || [ ! -f "$record" ]; then
+  const none = `printf '%s\\n' "ennyn: no plugin version is recorded in $data (${say.gone}), so the commit message is not checked." '${say.none}' >&2
+    exit 0`;
+  return `line=
+session=
+if [ ! -e "$record" ] && [ ! -L "$record" ]; then
+  # A backslash read as a slash, for a Windows spelling of either path: by the shell alone, every byte kept,
+  # and no program found on PATH, which the repository can choose.
+  slashed() {
+    slashed_in=$1
+    slashed=
+    while :; do
+      case $slashed_in in
+        *\\\\*) slashed=$slashed\${slashed_in%%\\\\*}/ ; slashed_in=\${slashed_in#*\\\\} ;;
+        *) break ;;
+      esac
+    done
+    slashed=$slashed$slashed_in
+  }
+  slashed "\${${SESSION_DATA}:-}"
+  given=$slashed
+  slashed "$data"
+  at=$slashed
+  if [ -z "\${${SESSION_ROOT}:-}" ] || [ "$given" != "$at" ]; then
+    ${none}
+  fi
+  slashed "$${SESSION_ROOT}"
+  line=$slashed
+  session=1
+elif [ -L "$record" ] || [ ! -f "$record" ]; then
   printf '%s\\n' "ennyn: $record is no record Ennyn wrote (a link, or not a regular file), so this commit is refused." '${say.foreign}' >&2
   exit 1
+else
+  { IFS= read -r line < "$record"; } 2>/dev/null
 fi
-line=
-{ IFS= read -r line < "$record"; } 2>/dev/null
 root=
 case $line in
   *[[:cntrl:]]*) ;;
 ${absolute}esac
 cli="$root/scripts/ennyn.mjs"
-if [ -z "$root" ] || [ ! -f "$cli" ]; then
+if [ -n "$session" ]; then
+  version=\${root##*/}
+  up=\${root%/*}
+  plugin=\${up##*/}
+  up=\${up%/*}
+  market=\${up##*/}
+  up=\${up%/*}
+  [ "$up" = "\${at%/*/*}/cache" ] && [ "$plugin-$market" = "\${at##*/}" ] || root=
+  case /$market/$plugin/$version/ in
+    *//*|*/./*|*/../*) root= ;;
+  esac
+  if [ -z "$root" ] || [ ! -f "$cli" ] || [ -e "$root/${ORPHANED}" ] || [ -L "$root/${ORPHANED}" ]; then
+    ${none}
+  fi
+  printf '%s\\n' "ennyn: no plugin version is recorded in $data (an install again deletes it), so this commit is checked with the version this Claude Code session runs." '${say.session}' >&2
+elif [ -z "$root" ] || [ ! -f "$cli" ]; then
   printf '%s\\n' "ennyn: the plugin version recorded in $record${say.line} is no absolute path to a version that is there, so this commit is refused." '${say.stale}' >&2
   exit 1
 fi
@@ -300,6 +369,7 @@ ${recordSteps(
     foreign: `Delete it, then start a Claude Code session with the plugin, which records its version; or ${remove}.`,
     stale: `Start a Claude Code session with the plugin, which records the version it runs; if the plugin is uninstalled, ${remove}.`,
     line: "",
+    session: "To record it again, run ennyn install-hook from the plugin in this session (/ennyn:init), or start a new Claude Code session: until then a commit made outside this session is not checked.",
   },
   `real=$(physical "$root/scripts")
 case $real/ in
@@ -401,7 +471,7 @@ export const namesCheck = (text) => NAMES.test(text);
 
 /** Why a plugin version cannot be recorded; `reason` names the check that refused it. */
 export class RecordError extends Error {
-  /** @param {"relative" | "control" | "replaced" | "noCli" | "foreign"} reason @param {string} message */
+  /** @param {"relative" | "control" | "replaced" | "noCli" | "foreign" | "link"} reason @param {string} message */
   constructor(reason, message) {
     super(message);
     this.name = "RecordError";
@@ -474,7 +544,7 @@ const readOrNull = (path) => readIfThere(path);
 /**
  * @param {string} cwd
  * @param {NodeJS.ProcessEnv | Record<string, string | undefined>} [env] what the hook's block reads its data directory from
- * @returns {{ path: string, hooksPath: string | null, hooksKind: "repo" | "husky" | "global" | null, state: "none" | "ennyn" | "wired" | "other", there: boolean, runs: boolean, cli: string | null, data: string | null, recorded: string | null, problem: ReturnType<typeof readRecord>["problem"] | "inRepository" | "noData" | "noNode", unread: string | null, late: string | null, block: string | null }}
+ * @returns {{ path: string, hooksPath: string | null, hooksKind: "repo" | "husky" | "global" | null, state: "none" | "ennyn" | "wired" | "other", there: boolean, runs: boolean, cli: string | null, data: string | null, recorded: string | null, problem: ReturnType<typeof readRecord>["problem"] | "inRepository" | "noData" | "noNode", fromSession: boolean, unread: string | null, late: string | null, block: string | null }}
  *   "ennyn": a hook holding HOOK_MARKER, in the repository's own hooks directory or one outside the repository: what is
  *   there took a write on this machine, which can do anything. Ennyn writes into no tracked directory and no husky's, so
  *   there the marker is any other text. "wired": a hook Ennyn did not write that names commit-check (a project's own
@@ -486,7 +556,8 @@ const readOrNull = (path) => readIfThere(path);
  *   hint). cli: the CLI an Ennyn hook names, null for any other hook (one written from a copy of Ennyn that
  *   has moved since lets every commit through unchecked; doctor looks for it); for a hook installed from the
  *   plugin, the CLI its record names when the hook would run it. data: the plugin's data directory such a
- *   hook reads its record from, null for any other hook; recorded and problem: readRecord's answer for it.
+ *   hook reads its record from, null for any other hook; recorded and problem: readRecord's answer for it, or with
+ *   no record there, the plugin session's version the hook runs instead (`fromSession`: sessionRoot, in `env`).
  *   unread: the file that names commit-check (husky's: the one its stub runs) when it is not what install-hook printed,
  *   first, for a hook of this kind (printedCheck; the line counts neither under husky nor, in a hooks directory of the
  *   repository, naming one of its work trees); null otherwise. late: the file git runs, when the index holds anything in husky's stub directory;
@@ -536,11 +607,15 @@ export function hookStatus(cwd, env = process.env) {
   const late = counts && hooksKind === "husky" && stubsTracked(dir) ? path : null;
   const read = printed?.id ? blockRecord(printed.id, cwd, env) : null;
   const data = state === "ennyn" ? quoted(/** @type {string} */ (text), "data") : (read?.data ?? null);
-  const record = read?.record ?? (data !== null ? readRecord(data) : null);
+  const kept = read?.record ?? (data !== null ? readRecord(data) : null);
+  // No record: the plugin session's version, where the hook would take it (sessionRoot).
+  const session = read === null && data !== null && kept?.problem === "none" ? sessionRoot(data, env) : null;
+  const record = session !== null ? { root: session, problem: null } : kept;
+  const fromSession = session !== null || read?.fromSession === true;
   // The CLI the hook runs: one its record names only when the hook would run it (a replaced version still runs).
   const runnable = record !== null && (record.problem === null || record.problem === "replaced");
   const cli = record !== null ? (runnable ? cliOf(/** @type {string} */ (record.root)) : null) : state === "ennyn" ? hookCli(/** @type {string} */ (text)) : null;
-  return { path, hooksPath, hooksKind, state, there: text !== null, runs: !off && executable(path), cli, data, recorded: record?.root ?? null, problem: record?.problem ?? null, unread, late, block: read !== null ? /** @type {{ at: string }} */ (own).at : null };
+  return { path, hooksPath, hooksKind, state, there: text !== null, runs: !off && executable(path), cli, data, recorded: record?.root ?? null, problem: record?.problem ?? null, fromSession, unread, late, block: read !== null ? /** @type {{ at: string }} */ (own).at : null };
 }
 
 /**
@@ -604,7 +679,8 @@ function blockNode(cwd, env) {
  * commit passes), or readRecord's answer, with a version it runs in the work tree, or a CLI that is a link, as
  * `inRepository`, which it refuses: a replaced version too, which only a hook of Ennyn's own still runs.
  * @param {string} id @param {string} cwd @param {NodeJS.ProcessEnv | Record<string, string | undefined>} env
- * @returns {{ data: string | null, record: { root: string | null, problem: ReturnType<typeof readRecord>["problem"] | "inRepository" | "noData" | "noNode" } }}
+ * With no record, the session's version when sessionRoot gives one (`fromSession`).
+ * @returns {{ data: string | null, fromSession?: boolean, record: { root: string | null, problem: ReturnType<typeof readRecord>["problem"] | "inRepository" | "noData" | "noNode" } }}
  */
 function blockRecord(id, cwd, env) {
   if (!blockNode(cwd, env)) return { data: null, record: { root: null, problem: "noNode" } };
@@ -614,9 +690,12 @@ function blockRecord(id, cwd, env) {
   const there = isDir(data);
   if (there && (inRepository(cwd, data) || !searchable(data))) return noData;
   // The record through the directory's real path: `link/..` is what the kernel finds, as the block's cd -P reads it.
-  const record = readRecord(there ? realpathSync.native(data) : data);
+  const kept = readRecord(there ? realpathSync.native(data) : data);
+  const session = kept.problem === "none" ? sessionRoot(data, env) : null;
+  /** @type {{ root: string | null, problem: ReturnType<typeof readRecord>["problem"] }} */
+  const record = session !== null ? { root: session, problem: null } : kept;
   const runs = record.root !== null && (record.problem === null || record.problem === "replaced");
-  return { data, record: runs && (lstatOrNull(cliOf(/** @type {string} */ (record.root)))?.isSymbolicLink() || inRepository(cwd, cliOf(/** @type {string} */ (record.root)))) ? { root: record.root, problem: "inRepository" } : record };
+  return { data, fromSession: session !== null, record: runs && (lstatOrNull(cliOf(/** @type {string} */ (record.root)))?.isSymbolicLink() || inRepository(cwd, cliOf(/** @type {string} */ (record.root)))) ? { root: record.root, problem: "inRepository" } : record };
 }
 
 /**
@@ -794,7 +873,8 @@ const blockIdNames = (data) => data === null || BLOCK_ID.test(basename(data));
  *   this copy is the plugin, install-hook writes nothing and says how to go on (`followsRecord`). Otherwise the
  *   hook names `cliPath`. A data directory inside the repository is refused (`dataInRepository`): a record
  *   there would be the repository's own file.
- * @returns {{ result: "installed" | "updated" | "unchanged" | "wired" | "notThere" | "notExecutable" | "blockUnread" | "late" | "hooksOff" | "blockUnrecorded" | "blockStale" | "blockNoData" | "blockNoNode" | "cliGone" | "cliUnrecorded" | "cliRefused" | "cliForeign" | "cliReplaced" | "cliPinned" | "cliOtherVersion" | "replacedCopy" | "followsRecord" | "dataInRepository" | "dataName" | "other" | "hooksPath", path: string, hooksPath: string | null, hooksKind: "repo" | "husky" | "global" | null, line: string, block: string, cli: string | null, data: string | null, root: string, recorded: string, chmod: string, own: string }}
+ * `restored`: no record was there, and install-hook wrote it from this plugin session (sessionRoot).
+ * @returns {{ restored: boolean, result: "installed" | "updated" | "unchanged" | "wired" | "notThere" | "notExecutable" | "blockUnread" | "late" | "hooksOff" | "blockUnrecorded" | "blockStale" | "blockNoData" | "blockNoNode" | "cliGone" | "cliUnrecorded" | "cliRefused" | "cliForeign" | "cliReplaced" | "cliPinned" | "cliOtherVersion" | "replacedCopy" | "followsRecord" | "dataInRepository" | "dataName" | "other" | "hooksPath", path: string, hooksPath: string | null, hooksKind: "repo" | "husky" | "global" | null, line: string, block: string, cli: string | null, data: string | null, root: string, recorded: string, chmod: string, own: string }}
  *   `line`: what to add to a hook Ennyn does not write (shell-quoted); `block`: with the plugin's data directory
  *   known, hookBlock's block for the project's own hook, for a tracked hooks directory, husky's, or a hook doctor
  *   cannot read (else ""); dataName: that directory's last part is no id the block can hold (BLOCK_ID), so
@@ -814,6 +894,35 @@ const blockIdNames = (data) => data === null || BLOCK_ID.test(basename(data));
  */
 export function installHook({ cwd, cliPath, pluginData = null, session = null }) {
   const st = hookStatus(cwd);
+  const res = installWith(st, { cwd, cliPath, pluginData, session });
+  // No record, and the hook checks with this session's version: on a run that goes through, and only then, the record
+  // written again, as the session's start writes it, so a commit outside the session is checked too. A refused run
+  // writes nothing, and a fallback is never read as a record.
+  const through = ["installed", "updated", "unchanged", "wired"].includes(res.result);
+  const restored = through && st.fromSession && st.data !== null && st.recorded !== null && readRecord(st.data).problem === "none" ? restoreRecord(st.data, st.recorded) : false;
+  return { ...res, restored };
+}
+
+/**
+ * Records the session's version `root` in `data` for installHook, once its real path is the same version folder in
+ * Claude Code's cache beside `data`, the cache resolved too: a link there to anywhere else would have every commit
+ * with no session run its target. sessionRoot has read the text already.
+ * @param {string} data @param {string} root
+ */
+function restoreRecord(data, root) {
+  const [market, plugin, version] = slashed(root).split("/").slice(-3);
+  const cache = join(dirname(dirname(data)), "cache");
+  if (real(root) !== join(real(cache), market, plugin, version)) throw new RecordError("link", `${root} is no version folder of ${cache} once links are followed, so it is not recorded`);
+  return recordPluginRoot(data, root);
+}
+
+/**
+ * installHook's answer for the hook as `st` reads it.
+ * @param {ReturnType<typeof hookStatus>} st
+ * @param {{ cwd: string, cliPath: string, pluginData: string | null, session: { data: string, root: string } | null }} opts
+ * @returns {Omit<ReturnType<typeof installHook>, "restored">}
+ */
+function installWith(st, { cwd, cliPath, pluginData, session }) {
   const self = rootOf(cliPath);
   const own = st.hooksPath ? join(dirname(st.hooksPath), "commit-msg") : "";
   const base = { path: st.path, hooksPath: st.hooksPath, hooksKind: st.hooksKind, cli: st.cli, chmod: `chmod +x ${shQuote(st.path)}`, own, root: "", recorded: st.recorded ?? "", line: hookLine(cliPath), block: "", data: st.data };
