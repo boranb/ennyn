@@ -513,20 +513,28 @@
         "new: narrowing applied past the case it was measured on",
         "new: count in prose disagrees with the table",
         "new: evidence table overstates its source",
-        "new: text names a tool for a number it does not print"
+        "new: text names a tool for a number it does not print",
+        "new: refusal reason names a symptom, not the cause",
+        "new: stated limits list incomplete"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet."
     },
     {
       "id": "procedure-leaves-case-open",
       "says": "A written procedure or definition reaches a case with no single answer or no next step, or leans on something nothing provides, so the reader stalls or guesses. Two texts that answer one case differently are one-question-several-places.",
-      "state": "open",
+      "state": "partial",
       "gates": [
         {
           "commit": "7fd12bb4f20a44d8487366b48e0e47f676f07b80",
           "file": "test/plugin.test.mjs",
           "action": "red-green",
           "proof": "A skill must link every file of its tree and each link must lead to a file, with guard mutants, so a step cannot name a file that is gone. It holds a skill's links and no other gap."
+        },
+        {
+          "commit": "13d6f936f0d1083313434f6affc01b0cf031b368",
+          "file": "test/method-walk.test.mjs",
+          "action": "red-green",
+          "proof": "The failure count of the cycle task brief is written as data and walked: one answer per state and event, every path ends within a measured bound, and every sentence of the section is claimed, with guard mutants. It holds that one section and no other procedure."
         }
       ],
       "linked": [
@@ -561,7 +569,10 @@
         "new: format says appended while its fields need editing",
         "new: stated repair forbidden by another rule"
       ],
-      "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet."
+      "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet.",
+      "nodes": [
+        "report-formats-walked"
+      ]
     },
     {
       "id": "stand-in-for-the-fact",
@@ -594,7 +605,8 @@
         "new: lossy name decoding collides two staged names",
         "new: gate scoped to a file beside another",
         "new: one event recorded twice counted twice",
-        "new: definition read from the wrong project"
+        "new: definition read from the wrong project",
+        "new: refusal widened past the ask"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate.",
       "gates": [
@@ -831,6 +843,28 @@
         "new: older record format read as unknown"
       ],
       "judged": "the orchestrator of cycle 20, reading the rows"
+    },
+    {
+      "id": "corpus-carries-private-text",
+      "says": "Text copied from a real machine or session into a test, a probe or a corpus carries a home path, a user name or another project's name.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: probe text carries a home path or project name into a corpus"
+      ],
+      "judged": "Named in cycle 23 by the orchestrator, from the rows that named it."
+    },
+    {
+      "id": "ask-part-left-undone",
+      "says": "A task delivers part of what its node asks and leaves the rest unsaid, so the node reads as done.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: ask part left undone"
+      ],
+      "judged": "Named in cycle 23 by the orchestrator, from the rows that named it."
     }
   ]
 }

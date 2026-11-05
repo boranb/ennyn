@@ -1431,7 +1431,7 @@
       "value": "medium",
       "cost": "M",
       "cluster": "distribution",
-      "source": "cycle 2026-10-26 (12), hook-follows-plugin-update and the budget audit: every Windows claim this cycle is unverified; cycle 2026-11-04 (20), on Windows 10 (Git for Windows 2.47.1, Node 22.23.4, Claude Code 2.1.317): the suite run natively took 41 min and 269 of 1262 tests failed (CRLF checkout, fixtures Windows cannot hold: symlinks, FIFOs, chmod, /bin/sh, names with quotes or tabs; and some unexplained compaction and hook-oracle verdicts); in WSL Ubuntu 22.04 as a non-root user with a Linux PATH 1340/1340; the push hook and the commit-msg hook were measured live on Windows (security audit c20); NTFS alternate data streams in a tracked file read as nothing to lose for worktrees (c20-t5-auth-r0-06); a .GIT folder is the repository but init-scan lists it as a name (c20-t1-code-r1-07); worktrees-filemode; the user, 2026-11-05: approved; split, the verdict part is windows-verdict and joins v0.1.0, the rest waits for after the release",
+      "source": "cycle 2026-10-26 (12), hook-follows-plugin-update and the budget audit: every Windows claim this cycle is unverified; cycle 2026-11-04 (20), on Windows 10 (Git for Windows 2.47.1, Node 22.23.4, Claude Code 2.1.317): the suite run natively took 41 min and 269 of 1262 tests failed (CRLF checkout, fixtures Windows cannot hold: symlinks, FIFOs, chmod, /bin/sh, names with quotes or tabs; and some unexplained compaction and hook-oracle verdicts); in WSL Ubuntu 22.04 as a non-root user with a Linux PATH 1340/1340; the push hook and the commit-msg hook were measured live on Windows (security audit c20); NTFS alternate data streams in a tracked file read as nothing to lose for worktrees (c20-t5-auth-r0-06); a .GIT folder is the repository but init-scan lists it as a name (c20-t1-code-r1-07); worktrees-filemode; the user, 2026-11-05: approved; split, the verdict part is windows-verdict and joins v0.1.0, the rest waits for after the release; cycle 2026-11-05 (23), windows-verdict's diagnosis (native runs in the cycle's kept folder): hook-oracle's 10 failures all come from absolute /bin/sh, dash, bash and /usr/bin/env; compact-boundary's 17 from sh or #!node git stand-ins and a ':'-joined PATH, mkfifo and links, chmod without effect on NTFS, names Windows cannot hold, POSIX paths in the test, a Windows path written unescaped into .git/config, fixtures written with realpathSync against the hook's .native (8.3 read as another tree), and COMMIT_AT fixed at load (the first test took 281 s); test/verdicts.mjs cannot add a cell natively ('\\\\.\\nul' as the config path)",
       "since": 12
     },
     {
@@ -2948,7 +2948,7 @@
       "cluster": "gates",
       "mechanization": true,
       "sourceClass": "a reading of text stands in for running the program it answers for",
-      "source": "cycle 2026-10-31 (15) convergence: the class recurred in tasks 2 and 3, about 30 times, all caught by reviewers or by the author's differential run: a word search for exit, a marker comment taken for the block's position, a made-up path, the folders on disk today, a regex over shell lines (wholeTree: 69 of 88 labelled lines wrongly named). Each ended by asking the real program (scratch repository) or by a rule that needs no reading (exact text). Patching the reader failed three rounds; a harness of real commits found 132 false ✓ a review had not, and 82 per git at the third reader, against 0 after the exact-print rule. Harnesses kept outside the repository, to be rewritten as a test; cycle 2026-11-02 (18): reader-drifts-from-program recurred most, 49 rows, 42 of them the push reader: three authors and a hand corpus missed what a reviewer found by carving the real parser out of the binary and generating from the reader's own acceptance, 6 million texts in minutes. That is this node's method, and it decided the design; cycle 2026-11-04 (20) convergence: reader-drifts-from-program recurred most again, 20 rows (review 11, measurement 7), nearly all the push reader against Git Bash 5.2, pwsh 7.4, Windows PowerShell 5.1, cmd, WSL bash 5.1 and dash, and ssh's far side; each fix round opened or missed a shape a real run found (a .bat taken for an inert builtin, a second reading applied where no second shell runs); what held was the reviewers' differential runs: real programs pushing to a local bare remote, 1,905 session commands replayed through each reader version, 3,420 ssh cells against bash -c",
+      "source": "cycle 2026-10-31 (15) convergence: the class recurred in tasks 2 and 3, about 30 times, all caught by reviewers or by the author's differential run: a word search for exit, a marker comment taken for the block's position, a made-up path, the folders on disk today, a regex over shell lines (wholeTree: 69 of 88 labelled lines wrongly named). Each ended by asking the real program (scratch repository) or by a rule that needs no reading (exact text). Patching the reader failed three rounds; a harness of real commits found 132 false ✓ a review had not, and 82 per git at the third reader, against 0 after the exact-print rule. Harnesses kept outside the repository, to be rewritten as a test; cycle 2026-11-02 (18): reader-drifts-from-program recurred most, 49 rows, 42 of them the push reader: three authors and a hand corpus missed what a reviewer found by carving the real parser out of the binary and generating from the reader's own acceptance, 6 million texts in minutes. That is this node's method, and it decided the design; cycle 2026-11-04 (20) convergence: reader-drifts-from-program recurred most again, 20 rows (review 11, measurement 7), nearly all the push reader against Git Bash 5.2, pwsh 7.4, Windows PowerShell 5.1, cmd, WSL bash 5.1 and dash, and ssh's far side; each fix round opened or missed a shape a real run found (a .bat taken for an inert builtin, a second reading applied where no second shell runs); what held was the reviewers' differential runs: real programs pushing to a local bare remote, 1,905 session commands replayed through each reader version, 3,420 ssh cells against bash -c; cycle 2026-11-05 (23): reader-drifts-from-program the most recurring class, 21 rows (review 16, measurement 5), nearly all in the kill hook and the push reader: PowerShell grammar (a brace glued to a word, a parenthesised argument, colon parameters, aliases and member names), bash group targets after a signal, unquoted backslash paths; PowerShell's own tokenizer ([PSParser]::Tokenize, pwsh 7.4 and 5.1) and bash read each one right, so a differential test against them would have caught them before review",
       "since": 15
     },
     {
@@ -3489,19 +3489,6 @@
       "cost": "S",
       "cluster": "gates",
       "source": "cycle 2026-11-01 (16), findings-ledger review round 1",
-      "since": 16
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "method-rules-walked",
-      "title": "A written method rule with states, counts or limits carries a small executable walk beside it: a test enumerates its states and asserts each ends, each answers once, and no two rules answer one state differently; the task-brief failure count first, then report-formats' table beyond what ennyn convergence runs. No reader of prose: the rule's states are written as data in the test, and a change to the text that the data does not follow is caught by a pointer test",
-      "value": "high",
-      "cost": "M",
-      "cluster": "gates",
-      "mechanization": true,
-      "sourceClass": "procedure-leaves-case-open",
-      "source": "cycle 2026-11-01 (16): the most recurring class of the cycle's ledger, ennyn convergence; cycle 2026-11-05 (22): procedure-leaves-case-open again the most recurring class, 10 rows, all caught by review, in the method text of T1 (the closing's whole run, undecided rows) and T3 (escalation's unknown model, a host without subagents)",
       "since": 16
     },
     {
@@ -4521,7 +4508,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "security",
-      "source": "cycle 2026-11-04 (20) security audit, not measured: it would prompt the user",
+      "source": "cycle 2026-11-04 (20) security audit, not measured: it would prompt the user; cycle 2026-11-05 (23), windows-verdict: the push hook's refusal in the PowerShell tool names only the Bash(git push *) rule",
       "since": 20
     },
     {
@@ -4660,30 +4647,6 @@
     },
     {
       "status": "planned",
-      "needs": [
-        "worktrees-filemode"
-      ],
-      "id": "windows-verdict",
-      "title": "A measured Windows verdict before the public release: on native Windows (Git for Windows, Git Bash and PowerShell) the push hook, the commit-msg hook, the gate-loosening guard and the plugin-data record's drive-path spelling and rename are measured live, each with its command and result; the unexplained native-suite verdicts of cycle 20 (compaction, hook-oracle) are diagnosed and a real defect is fixed or becomes a node; README and SECURITY.md say what holds: Windows through WSL is supported, native Windows has measured hooks and no passing suite",
-      "value": "high",
-      "cost": "M",
-      "cluster": "distribution",
-      "source": "the user, 2026-11-05, on whether windows-run joins v0.1.0 (approved to the split): cycle 20's security audit found the push hook missed Windows spellings and a push went through (c200aaf); README names no platform; the native suite's 269 of 1262 failures are mostly fixtures, left to windows-run; cycle 2026-11-05 (22): ennyn worktrees measured natively (filemode, junctions, 8.3 and case spellings, busy folders, the removal race) and fixed in c65692b; ennyn agents finds no session by default on this machine, whose session folder starts with a lower-case drive letter (agents-session-dir-case)",
-      "since": 21
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "kill-own-pid-only",
-      "title": "Task and review agents stop only a process they started, by its PID or process group: the brief and the three reviewers say so, and a PreToolUse hook (beside deletion-target-hook) refuses a kill chosen by filter, title or image name (taskkill /FI or /IM, Stop-Process -Name, pkill, killall, kill of a substitution, a PID read from a port lookup such as netstat -ano or Get-NetTCPConnection); a reviewer ran taskkill //F //FI \"WINDOWTITLE eq *\", which matches every window on the desktop, to stop its own hung process",
-      "value": "high",
-      "cost": "S",
-      "cluster": "security",
-      "source": "a report from another project's cycle run on Windows, 2026-11-05: a code-reviewer ran the filter; other desktop applications were open afterwards, what closed is unknown; skills/cycle/task-brief.md and agents/*.md hold no process rule (grep for kill, PID, process); related: resource-ledger, cleanup-command, deletion-target-hook; observed on Windows, 2026-11-05: a cleanup that stopped every process listening on a port while its comment said only ours, and a port check (netstat | grep -q under pipefail) that answered free when it was not",
-      "since": 21
-    },
-    {
-      "status": "planned",
       "needs": [],
       "id": "deps-unread-lock-said",
       "title": "ennyn deps says a manifest has no lock beside or above it (deps.noneMeasured) when a lock it does not read sits there (pnpm-lock.yaml, yarn.lock, bun.lock): it names that lock as present and unread instead; until deps-other-locks, the claim outruns what was measured",
@@ -4793,7 +4756,7 @@
       "value": "high",
       "cost": "S",
       "cluster": "distribution",
-      "source": "observed on Windows, 2026-11-05: 367 taskkill SUCCESS lines and a lesson 'terminating is not exiting' (a delete after taskkill hit files the process still held); measured in this repository: metrics/mutation.mjs:182 and core/git.mjs:141 do not wait; related: mutate-kills-its-tree, windows-verdict",
+      "source": "observed on Windows, 2026-11-05: 367 taskkill SUCCESS lines and a lesson 'terminating is not exiting' (a delete after taskkill hit files the process still held); measured in this repository: metrics/mutation.mjs:182 and core/git.mjs:141 do not wait; related: mutate-kills-its-tree, windows-verdict; cycle 2026-11-05 (23): left for cycle 24, its slot went to method-rules-walked by the user's decision (approved): mutate runs in WSL on this machine, so its harm today is the smallest of the release needs",
       "since": 21
     },
     {
@@ -4986,6 +4949,119 @@
       "cluster": "distribution",
       "source": "cycle 2026-11-05 (22), the orchestrator on Windows: 'Bu depo için Claude Code oturum kaydı yok' until --session was given; adapters/claude-code/agent-usage.mjs:89 folderName keeps the case",
       "since": 22
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "report-formats-walked",
+      "title": "A pointer test for skills/cycle/report-formats.md's 'One row, one column' table and 'By age' list: each row's number and condition named in the data and tied to findings.test.mjs's convergence-table tests, so a text change the tests do not follow fails; the walk itself already runs there",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "mechanization": true,
+      "sourceClass": "procedure-leaves-case-open",
+      "source": "cycle 2026-11-05 (23), method-rules-walked's step two, left by T3 and its review (c23-t3-code-r1-07)",
+      "since": 23
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "method-walk-escalation-matrix",
+      "title": "test/method-walk.test.mjs walks escalation's ran outcomes as rows of their own (another model, unknown, empty, exit 1, only the session's, stronger models) instead of two author kinds, cheaper and dropped",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-05 (23), T3's report",
+      "since": 23
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "restart-review-counts",
+      "title": "Does a restarted task's one narrow review count as a failed verification? Read plainly, 'The task's first review round does not count' holds once per task, so a single finding in the restart's review stops it, while 'with the failures as step 7's signal' implies fix rounds after it; the user decides, then the prose and method-walk's data follow",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "gate": "user",
+      "source": "cycle 2026-11-05 (23), T3 and its review, rounds 1 and 2 (c23-t3-code-r2-02): the walk keeps the plain reading, its row names this node",
+      "since": 23
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "agents-reviewer-below-session",
+      "title": "ennyn agents marks a reviewer type (Ennyn's three reviewers and review.agents) that ran below the session's model, the model of the row that made the call, as a mismatch: today a reviewer called with model haiku under an opus session reads 'No mismatch', since what ran equals what the call asked",
+      "value": "low",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 2026-11-05 (23), security audit (c23-t4-sec-r0-01), probe 9.4 on Windows",
+      "since": 23
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "ci-cells-actions-record",
+      "title": "Record cycle 23's three ci verdict cells (the repository's own workflow passes; without its permissions block refused ci.permissions; setup-node pinned by tag refused ci.unpinned) with their Actions YAML record (node test/reference/actions-yaml.mjs add, docker), on a machine where docker pulls work; the cells are in the cycle's kept folder",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-05 (23), security audit: test/reference.test.mjs asks the Actions YAML record for every ci workflow text, and docker is not available on the Windows machine",
+      "since": 23
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hook-oracle-limit-load",
+      "title": "The hook-oracle-limit guard survives under the fast suite's load and dies alone, so 'every guard makes its gate test fail' turns red in test:short on a busy machine: give the guarded test a margin that holds under load, or run the guard alone",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-05 (23), T2's first fast-suite run and T3's round-one run, each green alone on the same tree",
+      "since": 23
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-hook-reference",
+      "title": "test/reference/pretooluse.json records the kill hook's deny stopping the call, and the case of two hooks in one group where one denies and the other says nothing",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-05 (23), T2's impact table, S4: unmeasured",
+      "since": 23
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-hook-runtime-text",
+      "title": "The kill hook reads no text that becomes a program only at run time: an escaped word (pk\\ill, \\x70kill), base64 -d | sh, rev | bash, string concatenation into iex; decide whether a fed shell or iex with any such transform is refused whatever it holds, measured on real calls for false refusals",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-11-05 (23), T2 security review, round 2 (c23-t2-sec-r2-06): written as a limit in SECURITY.md",
+      "since": 23
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "push-alias-false-refusals",
+      "title": "The push hook's alias rule refuses a text that defines an alias and holds a push word in a command not headed by git, push or no push (g stash push, g log --grep push, alias ll='ls -la'; ll push, a mention of alias in a message): count these on real calls and narrow the rule where git's own verb can be read",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-05 (23), windows-verdict security review, round 2 (c23-t1-sec-r2-03): kept as the rule's stated cost",
+      "since": 23
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "push-session-shell-aliases",
+      "title": "Measure whether aliases from the user's shell start-up files (.bashrc, an oh-my-zsh gp), which the session's shell snapshot brings, get past the push hook: a gp holds no push word, so the alias rule does not see it; measure how Claude Code builds the snapshot first",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-05 (23), windows-verdict security review, round 2 (c23-t1-sec-r2-02): the snapshot of this session holds shopt -s expand_aliases and no user alias",
+      "since": 23
     }
   ],
   "done": [
@@ -5643,6 +5719,24 @@
     {
       "id": "worktrees-filemode",
       "title": "ennyn worktrees compares the executable bit everywhere but on win32 and reads no core.fileMode, so on Windows a clean marked worktree goes; with it, --remove no longer lets git delete: the folder is moved aside, looked at again, deleted by Node (a link or junction unlinked, never entered), then git's entry dropped, unlocked last; busy is exit 1, a folder left aside is named in later runs; measured natively on Git for Windows 2.47.1 (c65692b, cycle 22 legacy audit)",
+      "status": "done",
+      "finished": "2026-11-05"
+    },
+    {
+      "id": "windows-verdict",
+      "title": "A measured Windows verdict (cycle 23, Windows 10, Git for Windows 2.47.1, Git Bash, pwsh 7.4 and Windows PowerShell 5.1, Node 22): the push hook, the commit-msg hook, the gate-loosening guard and the plugin-data record measured live, each command with its result in the cycle's kept folder; install-hook knows its plugin session in any drive spelling (realpathSync.native, an unreadable root is not the session); a BOM or UTF-16 message says why it is refused where commitMsg.types is set; the push reader refuses a text that defines an alias and pushes through anything but git, and PowerShell's @args splat; cycle 20's native compaction and hook-oracle failures diagnosed as fixtures Windows cannot hold (added to windows-run); README and SECURITY.md say Windows through WSL is supported, native Windows has these measured hooks and no passing suite (7f2a70b)",
+      "status": "done",
+      "finished": "2026-11-05"
+    },
+    {
+      "id": "method-rules-walked",
+      "title": "test/method-walk.test.mjs walks the failure count of skills/cycle/task-brief.md written as data: one answer per (state, event), every path ends within a measured bound, the counts, sources and exempt rounds drive the walk, and every sentence of the section is claimed by a row or listed as narrative, so an added, dropped, rewritten or moved sentence fails; the prose's open pairs were answered (others landed or stopped, waiting, one more conflict); report-formats' tables are left to report-formats-walked (13d6f93)",
+      "status": "done",
+      "finished": "2026-11-05"
+    },
+    {
+      "id": "kill-own-pid-only",
+      "title": "A PreToolUse hook beside the push hook (adapters/claude-code/kill-targets.mjs) refuses a kill chosen by a filter, a title, an image name, a port or a lookup at run time (taskkill /FI and /IM, Stop-Process -Name and its aliases, pkill, killall, a PowerShell object's Kill or Terminate, wmic, fuser -k, kill of a substitution or a PID read from a lookup, PID 0 and -1) in Bash, Git Bash and PowerShell spellings, and lets through a literal PID or group, $!, a Start-Process variable and a PID file the same text wrote from $!; text that becomes a program only at run time is a stated limit (kill-hook-runtime-text); the brief and the three reviewers carry the rule (a912f35)",
       "status": "done",
       "finished": "2026-11-05"
     }
