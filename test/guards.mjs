@@ -216,6 +216,8 @@ export const GATES = [
       { id: "hermetic-fetch", why: "a fetch off the machine let through", file: "test/hermetic.mjs", old: "  if (LOOPBACK.includes(url.hostname)) return realFetch(input, init);\n", new: "  return realFetch(input, init);\n", pattern: "hermetic: a test file that fetches off the machine" },
       { id: "hermetic-cwd", why: "a test file that starts in the repository", file: "test/hermetic.mjs", old: "process.chdir(start);\n", new: "", pattern: "hermetic: every test file starts in an empty directory" },
       { id: "hermetic-clean", why: "a test file that leaves its temporary directories", file: "test/hermetic.mjs", old: "  if (!hostileRoot) return;\n", new: "  return;\n", pattern: "hermetic: a test file's temporary directories are gone" },
+      { id: "hermetic-input", why: "a child's input left on a pipe that can hang", file: "test/hermetic.mjs", old: '    const file = name.endsWith("Sync") && !outsideTest() ? inputFile(args) : null;\n', new: "    const file = null;\n", pattern: "hermetic: a child given input" },
+      { id: "hermetic-input-product", why: "product code's children given a file where production gives a pipe", file: "test/hermetic.mjs", old: "  return isAbsolute(path) && !path.startsWith(testDir);\n", new: "  return true;\n", pattern: "hermetic: a child given input" },
       {
         id: "hermetic-env",
         why: "a variable left naming the repository",

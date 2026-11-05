@@ -19,7 +19,7 @@
 
 import "./hostile.mjs";
 import childProcess from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, mkdirSync, mkdtempSync, openSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, normalize, sep } from "node:path";
@@ -143,10 +143,79 @@ function guard(name, args) {
   refused.push(message);
   throw new Error(message);
 }
+// The sync calls hand `input` to the child through a pipe node writes and then shuts down. Under load on macOS
+// the shutdown was lost about once in 100,000 calls: the child sat in read() on its stdin, node in kevent holding
+// the write end, with no timeout (cycle 2026-11-06 (24): two short suites hung over an hour in ci.test.mjs). The
+// input goes through a file instead, so the child reads it to its end with nothing left for node to finish. With
+// stdio now given, an exec*Sync call no longer copies the child's stderr to this process's; it still captures it.
+// Only a call a file under test/ makes: product code under test runs its children as in production (a pipe gives
+// EPIPE to a child that exits unread and ESPIPE to one that seeks), and bounds them with a timeout of its own. The
+// caller is read from V8's call sites, not the stack's text (a path may hold `(`, `%`, `#`; a CommonJS file is a
+// plain path), with this file's own limit and format. A caller that cannot be read (no file: eval, new Function)
+// gets a file too: a test call misread as product code would hang, a product call misread loses only the pipe.
+const testDir = dirname(fileURLToPath(import.meta.url)) + sep;
+/** Whether the frame that called child_process, past this file's own, is known to lie outside test/. */
+function outsideTest() {
+  const limit = Error.stackTraceLimit;
+  const prepare = Error.prepareStackTrace;
+  /** @type {NodeJS.CallSite[]} */
+  let sites = [];
+  try {
+    Error.stackTraceLimit = 20;
+    Error.prepareStackTrace = (_, s) => s;
+    const holder = /** @type {{ stack?: unknown }} */ ({});
+    Error.captureStackTrace(holder);
+    sites = Array.isArray(holder.stack) ? holder.stack : [];
+  } finally {
+    Error.stackTraceLimit = limit;
+    Error.prepareStackTrace = prepare;
+  }
+  const file = sites.map((c) => c.getFileName()).find((f) => f !== import.meta.url);
+  if (!file) return false;
+  const path = file.startsWith("file:") ? fileURLToPath(file) : file;
+  return isAbsolute(path) && !path.startsWith(testDir);
+}
+let inputDir = "";
+let inputs = 0;
+/** The call with its input as a file on stdin, or null where node would pipe nothing. @param {unknown[]} args */
+function inputFile(args) {
+  const at = args.findIndex((a, i) => i > 0 && a !== null && typeof a === "object" && !Array.isArray(a));
+  const opts = /** @type {{ input?: unknown, encoding?: BufferEncoding, stdio?: unknown }} */ (args[at]);
+  if (at < 0 || !opts.input) return null;
+  const stdio = opts.stdio ?? "pipe";
+  const first = Array.isArray(stdio) ? stdio[0] : stdio;
+  if (first != null && first !== "pipe" && first !== "overlapped") return null;
+  const { input } = opts;
+  let bytes;
+  try {
+    if (typeof input === "string") bytes = Buffer.from(input, opts.encoding);
+    else if (ArrayBuffer.isView(input)) bytes = new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+  } catch {
+    // node refuses the call itself
+  }
+  if (!bytes) return null;
+  const path = join((inputDir ||= mkdtempSync(join(tmpdir(), "en-input-"))), String(inputs++));
+  writeFileSync(path, bytes);
+  const fd = openSync(path, "r");
+  const { input: _, ...rest } = opts;
+  const call = [...args];
+  call[at] = { ...rest, stdio: [fd, ...(Array.isArray(stdio) ? stdio.slice(1) : [stdio, stdio])] };
+  return { call, fd, path };
+}
 const cp = /** @type {Record<string, any>} */ (childProcess);
 for (const name of ["spawn", "spawnSync", "execFile", "execFileSync", "exec", "execSync", "fork"]) {
   const original = cp[name];
-  const guarded = (/** @type {unknown[]} */ ...args) => (guard(name, args), original(...args));
+  const guarded = (/** @type {unknown[]} */ ...args) => {
+    guard(name, args);
+    const file = name.endsWith("Sync") && !outsideTest() ? inputFile(args) : null;
+    if (!file) return original(...args);
+    try {
+      return original(...file.call);
+    } finally {
+      closeSync(file.fd);
+      rmSync(file.path, { force: true });
+    }
+  };
   // util.promisify(execFile) calls the original through this symbol; it is guarded too.
   const custom = original[promisify.custom];
   if (custom) guarded[promisify.custom] = (/** @type {unknown[]} */ ...args) => (guard(name, args), custom(...args));

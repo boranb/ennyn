@@ -229,10 +229,10 @@ export function runCommand(command, { cwd, timeoutMs = null, onChild = () => {} 
  * "type", and without "module" there it is CommonJS when it parses as such, else a module (a bundler's
  * ESM in a package without a type). node --check on the file itself would guess per run, and a module
  * that fails to parse as CommonJS passes it whatever follows.
- * @param {string} abs @param {Buffer} original
- * @returns {"module" | "commonjs"}
+ * @param {string} abs @param {Buffer} original @param {number} [limit] ms for node --check
+ * @returns {"module" | "commonjs" | null} null: node did not answer, so no check applies
  */
-function moduleGoal(abs, original) {
+export function moduleGoal(abs, original, limit = PARSE_LIMIT) {
   const ext = extname(abs).toLowerCase();
   if (ext === ".mjs") return "module";
   if (ext === ".cjs") return "commonjs";
@@ -248,12 +248,19 @@ function moduleGoal(abs, original) {
     }
     if (dirname(dir) === dir) break;
   }
-  return nodeParses(original, "commonjs") ? "commonjs" : "module";
+  const parses = nodeParses(original, "commonjs", limit);
+  return parses === null ? null : parses ? "commonjs" : "module";
 }
 
-/** @param {Buffer} source @param {"module" | "commonjs"} goal @returns {boolean | null} null: node did not answer */
-function nodeParses(source, goal) {
-  const r = spawnSync(process.execPath, [`--input-type=${goal}`, "--check"], { input: source, stdio: ["pipe", "ignore", "ignore"] });
+/** node --check's time: 44 to 135 ms on an 88 KB module at load 40 (cycle 24); its input goes through a pipe. */
+const PARSE_LIMIT = 60_000;
+/**
+ * @param {Buffer} source @param {"module" | "commonjs" | null} goal null: moduleGoal got no answer @param {number} [limit] ms
+ * @returns {boolean | null} null: node did not answer (past the limit, killed, did not start), or no goal to check as
+ */
+export function nodeParses(source, goal, limit = PARSE_LIMIT) {
+  if (goal === null) return null;
+  const r = spawnSync(process.execPath, [`--input-type=${goal}`, "--check"], { input: source, stdio: ["pipe", "ignore", "ignore"], timeout: limit, killSignal: "SIGKILL" });
   return r.error || r.signal ? null : r.status === 0;
 }
 

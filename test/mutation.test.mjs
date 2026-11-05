@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { git } from "../core/git.mjs";
-import { journalPath, MutationError, otherNames, parseMutants, restoreJournal, runMutants, summarizeMutants } from "../metrics/mutation.mjs";
+import { journalPath, moduleGoal, MutationError, nodeParses, otherNames, parseMutants, restoreJournal, runMutants, summarizeMutants } from "../metrics/mutation.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
 const NODE = JSON.stringify(process.execPath);
@@ -1735,4 +1735,18 @@ test("mutate: what a test run leaves running is stopped before the next mutant",
       assert.match(stderr, forced ? /^notes\.txt got another name while mutant e1 was in it; / : /^notes\.txt had another name and already held the original, so mutant e1 left nothing to put back\.\n/, name);
     }
   });
+});
+
+test("mutate: node's parse check past its time limit gives no answer, never a verdict, and no goal for a .js file", () => {
+  const dir = mkdtempSync(join(tmpdir(), "en-mut-parse-"));
+  const file = join(dir, "a.js");
+  const source = Buffer.from("module.exports = 1;\n");
+  writeFileSync(file, source);
+  assert.equal(nodeParses(source, "commonjs"), true);
+  assert.equal(nodeParses(Buffer.from("export const = ;\n"), "module"), false);
+  assert.equal(moduleGoal(file, source), "commonjs");
+  // 1 ms: no node starts that fast.
+  assert.equal(nodeParses(source, "commonjs", 1), null, "stopped: no answer, not 'does not parse'");
+  assert.equal(moduleGoal(file, source, 1), null, "no goal, not 'module'");
+  assert.equal(nodeParses(source, null), null, "no goal: nothing to check as");
 });

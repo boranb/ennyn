@@ -8,9 +8,10 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { exec, execFile, execFileSync, spawnSync } from "node:child_process";
+import { exec, execFile, execFileSync, execSync, spawnSync } from "node:child_process";
 import { promisify } from "node:util";
-import { existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { runInThisContext } from "node:vm";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, delimiter, join, dirname, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -208,4 +209,72 @@ test("hermetic: every test file starts in an empty directory of its own, and no 
   const PATH = [join(ROOT, "node_modules", ".bin"), "node_modules/.bin", process.env.PATH].join(delimiter);
   const run = spawnSync(process.execPath, ["--test", "--import", pathToFileURL(join(ROOT, "test", "hermetic.mjs")).href, probe], { cwd: ROOT, env: { ...env, ...gone, ...kept, PWD: ROOT, PATH }, encoding: "utf8" });
   assert.equal(run.status, 0, run.stdout + run.stderr);
+});
+
+test("hermetic: a child given input reads it from a file, not a pipe that can hang, as the bytes node would send", async () => {
+  // The child says what its stdin is and what it read, in hex.
+  const probe = ["-e", 'const fs = require("node:fs"); process.stdout.write((fs.fstatSync(0).isFile() ? "file " : "pipe ") + fs.readFileSync(0).toString("hex"))'];
+  const before = readdirSync(tmpdir()).sort();
+  assert.equal(spawnSync(process.execPath, probe, { input: "é", encoding: "latin1" }).stdout, "file e9", "a string in the call's encoding");
+  assert.equal(spawnSync(process.execPath, probe, { input: Buffer.from([0, 255]), encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] }).stdout, "file 00ff");
+  assert.equal(spawnSync(process.execPath, probe, { input: new Uint8Array([1, 2]).subarray(1), stdio: "pipe" }).stdout.toString(), "file 02");
+  assert.equal(spawnSync(process.execPath, probe, { input: "x", stdio: [null, "pipe", "pipe"], encoding: "utf8" }).stdout, "file 78", "null: node's pipe");
+  const quiet = spawnSync(process.execPath, probe, { input: "x", stdio: ["pipe", "pipe", "ignore"], encoding: "utf8" });
+  assert.deepEqual([quiet.stdout, quiet.stderr], ["file 78", null], "the rest of stdio as given");
+  assert.equal(execFileSync(process.execPath, probe, { input: "é" }).toString(), "file c3a9");
+  assert.equal(execSync(`"${process.execPath}" -e "process.stdout.write(String(require('node:fs').fstatSync(0).isFile()))"`, { input: "x", encoding: "utf8" }), "true");
+  // Where node would pipe nothing, the call is left as it is: no input, an empty one, stdin not a pipe.
+  assert.equal(spawnSync(process.execPath, probe, { encoding: "utf8" }).stdout, "pipe ");
+  assert.equal(spawnSync(process.execPath, probe, { input: "", encoding: "utf8" }).stdout, "pipe ");
+  assert.equal(spawnSync(process.execPath, ["-e", 'process.stdout.write(String(require("node:fs").fstatSync(0).isCharacterDevice()))'], { input: "x", stdio: ["ignore", "pipe", "pipe"], encoding: "utf8" }).stdout, "true", "ignore: /dev/null, the input dropped");
+  // A call from outside test/ (product code under test) runs as in production: its input on a pipe.
+  const outside = join(mkdtempSync(join(tmpdir(), "en-herm-product-")), "product.mjs");
+  writeFileSync(outside, `import { spawnSync } from "node:child_process";\nexport const run = (probe) => spawnSync(process.execPath, probe, { input: "x", encoding: "utf8" }).stdout;\n`);
+  const { run } = await import(pathToFileURL(outside).href);
+  assert.equal(run(probe), "pipe 78", "a product module's call untouched");
+  // A stack that cannot be read is no product call: the call goes to the safe side, a file.
+  const limit = Error.stackTraceLimit;
+  const prepare = Error.prepareStackTrace;
+  try {
+    Error.stackTraceLimit = 0;
+    assert.equal(spawnSync(process.execPath, probe, { input: "x", encoding: "utf8" }).stdout, "file 78", "no frames");
+    assert.equal(Error.stackTraceLimit, 0, "the test's own limit kept");
+    assert.equal(run(probe), "pipe 78", "a product call read with this file's own limit");
+    Error.stackTraceLimit = limit;
+    const custom = () => "custom";
+    Error.prepareStackTrace = custom;
+    assert.equal(spawnSync(process.execPath, probe, { input: "x", encoding: "utf8" }).stdout, "file 78", "a stack of another shape");
+    assert.equal(Error.prepareStackTrace, custom, "the test's own format kept");
+    Error.prepareStackTrace = prepare;
+    const call = "return s(process.execPath, p, { input: 'x', encoding: 'utf8' }).stdout";
+    assert.equal(new Function("s", "p", call)(spawnSync, probe), "file 78", "a caller with no file");
+    assert.equal(runInThisContext(`(s, p) => { ${call} }`, { filename: "relative.js" })(spawnSync, probe), "file 78", "a caller named by no path");
+  } finally {
+    Error.stackTraceLimit = limit;
+    Error.prepareStackTrace = prepare;
+  }
+  // A checkout whose path holds characters a URL keeps as they are, or escapes: a test file's call (ESM or CommonJS)
+  // still gets a file, a product module's call a pipe.
+  for (const name of ["dir (old)", "100% a#b ünï"]) {
+    const tree = join(mkdtempSync(join(tmpdir(), "en-herm-tree-")), name);
+    mkdirSync(join(tree, "test"), { recursive: true });
+    mkdirSync(join(tree, "core"));
+    for (const f of ["hermetic.mjs", "hostile.mjs"]) copyFileSync(join(ROOT, "test", f), join(tree, "test", f));
+    const body = `(fs) => spawnSync(process.execPath, ["-e", ${JSON.stringify(probe[1])}], { input: "x", encoding: "utf8" }).stdout`;
+    writeFileSync(join(tree, "core", "q.mjs"), `import { spawnSync } from "node:child_process";\nexport const q = ${body};\n`);
+    writeFileSync(join(tree, "test", "c.cjs"), `const { spawnSync } = require("node:child_process");\nexports.c = ${body};\n`);
+    writeFileSync(join(tree, "test", "p.mjs"), [
+      'import { spawnSync } from "node:child_process";',
+      'import { createRequire } from "node:module";',
+      'import { q } from "../core/q.mjs";',
+      `const p = ${body};`,
+      'process.stdout.write(JSON.stringify({ test: p(), cjs: createRequire(import.meta.url)("./c.cjs").c(), product: q() }));',
+      "",
+    ].join("\n"));
+    const r = spawnSync(process.execPath, ["--import", pathToFileURL(join(tree, "test", "hermetic.mjs")).href, join(tree, "test", "p.mjs")], { encoding: "utf8" });
+    assert.deepEqual(JSON.parse(r.stdout || "null"), { test: "file 78", cjs: "file 78", product: "pipe 78" }, `${name}: ${r.stderr}`);
+  }
+  // A call node refuses is refused as before.
+  assert.throws(() => spawnSync(process.execPath, probe, { input: "x", encoding: "buffer" }), /Unknown encoding: buffer/);
+  assert.deepEqual(readdirSync(tmpdir()).filter((n) => !before.includes(n) && n.startsWith("en-input-")).flatMap((n) => readdirSync(join(tmpdir(), n))), [], "no input file left behind");
 });
