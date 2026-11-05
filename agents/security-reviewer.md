@@ -24,6 +24,8 @@ If the task's impact table (rows S1–S5) was given, check its S2 row against yo
 
 **Verify** each finding (request, test, or code path read). Unverified claims are `Confidence: low`.
 
+**Stop only a process you started, by its PID or process group**: never a kill chosen by a filter, a name, a window title or a port (`taskkill /FI` or `/IM`, `Stop-Process -Name`, `pkill`, `killall`, `kill $(lsof …)`); the user's own programs may be open.
+
 ## Output
 
 Use the finding schema (Title · Quote · Scenario · Class · Source · Confidence · Check). List **evidence gaps** (a test that does not pin where a gate sits, a path not tried) under their own heading, even at low confidence. End with the count line. Write in the language of the prompt.

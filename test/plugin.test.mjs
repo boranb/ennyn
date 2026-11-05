@@ -281,8 +281,13 @@ test("plugin: rules the cycle's hand-written briefs carried are in the shipped t
   holds("skills/cycle/finding-schema.md", "**Prefer running to reading:** a test, a command or a harness through the real program over a code path read. A claim about what another program does (git, a shell, npm, Claude Code) is checked in that program, with its version, never from memory.");
   const schema = read("skills/cycle/finding-schema.md");
   assert.ok(schema.indexOf("**Prefer running to reading:**") < schema.indexOf("## Fields"), "the reviewer reads it before the fields");
-  const rules = "| **Rules** | prefer running to reading; a claim about what another program does (git, a shell, npm, Claude Code) is checked in that program, with its version, never from memory. Stay in the task: what is small and the task's own is fixed (a finding as finding-schema.md's Outcome says), the rest goes back as a proposed node (id, one-line title, source). No `git stash` in a worktree: the stash is shared across worktrees. The snapshot ref below keeps a copy; to look at the base, read it from git (`git show <start>:<path>`) or a throwaway worktree. A test run keeps its exit status (`set -o pipefail`, or a log file read afterwards). A command that passed is not run again on an unchanged tree |";
+  const rules = "| **Rules** | prefer running to reading; a claim about what another program does (git, a shell, npm, Claude Code) is checked in that program, with its version, never from memory. Stay in the task: what is small and the task's own is fixed (a finding as finding-schema.md's Outcome says), the rest goes back as a proposed node (id, one-line title, source). No `git stash` in a worktree: the stash is shared across worktrees. The snapshot ref below keeps a copy; to look at the base, read it from git (`git show <start>:<path>`) or a throwaway worktree. A test run keeps its exit status (`set -o pipefail`, or a log file read afterwards). A command that passed is not run again on an unchanged tree. Stop only a process you started, by its PID or process group: never a kill chosen by a filter, a name, a window title or a port (`taskkill /FI` or `/IM`, `Stop-Process -Name`, `pkill`, `killall`, `kill $(lsof …)`); the user's own programs may be open. |";
   holds("skills/cycle/task-brief.md", rules);
+  // A reviewer once stopped its own hung process by a window-title filter that matches every window: each reviewer holds the rule.
+  const kill = "**Stop only a process you started, by its PID or process group**: never a kill chosen by a filter, a name, a window title or a port (`taskkill /FI` or `/IM`, `Stop-Process -Name`, `pkill`, `killall`, `kill $(lsof …)`); the user's own programs may be open.";
+  holds("agents/code-reviewer.md", `5. ${kill}`);
+  holds("agents/security-reviewer.md", kill);
+  holds("agents/data-reviewer.md", `6. ${kill}`);
   const brief = read("skills/cycle/task-brief.md");
   assert.ok(brief.indexOf(rules) < brief.indexOf("## What the orchestrator keeps"), "the rules are a part of the brief");
   // The closing writes its report from the template in the fence: a line below the fence is not in the report.
@@ -675,13 +680,16 @@ test("hooks.json: SessionStart `compact` reaches the style hook, which gives the
 });
 
 test("hooks.json: the PreToolUse matcher names the tools that run a command, the record's three, by a quoted command that resolves to the hook", () => {
-  const [entry] = JSON.parse(read("hooks/hooks.json")).hooks.PreToolUse;
+  const [entry, ...more] = JSON.parse(read("hooks/hooks.json")).hooks.PreToolUse;
+  assert.deepEqual(more, [], "one group: the push hook and the kill hook get the same tools");
   assert.deepEqual(entry.matcher.split("|").sort(), ["Bash", "Monitor", "PowerShell"]);
-  const [cmd] = entry.hooks;
-  const m = /^node "\$\{CLAUDE_PLUGIN_ROOT\}\/([^"]+)"$/.exec(cmd.command);
-  assert.equal(m?.[1], "adapters/claude-code/hooks/push-spellings.mjs");
-  assert.ok(read(m[1]).startsWith("#!/usr/bin/env node\n"));
-  assert.ok(cmd.timeout >= 5, "a hook that times out lets the call run");
+  const scripts = entry.hooks.map((/** @type {any} */ cmd) => {
+    const m = /^node "\$\{CLAUDE_PLUGIN_ROOT\}\/([^"]+)"$/.exec(cmd.command);
+    assert.ok(m && read(m[1]).startsWith("#!/usr/bin/env node\n"), cmd.command);
+    assert.ok(cmd.timeout >= 5, "a hook that times out lets the call run");
+    return m[1];
+  });
+  assert.deepEqual(scripts, ["adapters/claude-code/hooks/push-spellings.mjs", "adapters/claude-code/hooks/kill-targets.mjs"]);
 });
 
 test("hooks.json: the PostToolUse matcher sends exactly the file tools the side-copy hook handles, by a quoted command that resolves to it", () => {
@@ -767,7 +775,7 @@ function runWired(b, projectDir, extra = {}, log) {
   return wiredHooks().flatMap(({ event, sends, script }) =>
     sends.map((send) => {
       const base = { session_id: "s1", hook_event_name: event, cwd: projectDir ?? b.proj };
-      const input = event === "PreToolUse" ? { ...base, tool_name: send, tool_input: { command: "git -C . push", description: "x" } } : event === "PostToolUse" ? { ...base, tool_name: send, tool_input: send === "NotebookEdit" ? { notebook_path: b.file } : { file_path: b.file } } : event === "PreCompact" ? { ...base, trigger: send, custom_instructions: null } : { ...base, source: send };
+      const input = event === "PreToolUse" ? { ...base, tool_name: send, tool_input: { command: "git -C . push; pkill node", description: "x" } } : event === "PostToolUse" ? { ...base, tool_name: send, tool_input: send === "NotebookEdit" ? { notebook_path: b.file } : { file_path: b.file } } : event === "PreCompact" ? { ...base, trigger: send, custom_instructions: null } : { ...base, source: send };
       const before = tree(b.box);
       const gitBefore = calls();
       const r = spawnSync(process.execPath, [join(ROOT, script)], {

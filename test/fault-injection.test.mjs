@@ -501,6 +501,12 @@ const CASES = [
     hook: "push-spellings.mjs",
     input: (repo) => ({ tool_name: "Bash", tool_input: { command: "git -C . push", description: "x" }, session_id: "s1", cwd: repo }),
   },
+  // The kill hook: the same, refused in the clean run, reading no file of the project.
+  {
+    args: ["hook:kill-targets"],
+    hook: "kill-targets.mjs",
+    input: (repo) => ({ tool_name: "Bash", tool_input: { command: 'taskkill //F //FI "WINDOWTITLE eq *"', description: "x" }, session_id: "s1", cwd: repo }),
+  },
   // The plugin's version record and the session's variable: a plugin version, a data directory and an env file
   // of their own in each run's copy.
   {

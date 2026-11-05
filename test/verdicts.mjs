@@ -12,7 +12,7 @@
  * `commit-check --hook` run on its message, so what the hook does around the checks (which files it reads, the
  * names and the message it scans, the budget, a key's file read whole) is replayed too. Their why is each line
  * the hook prints, as its catalog key and the values in it (counts, places), sorted. The readers that are no
- * hook (init-scan's ban lines, doctor's hook reader, the guards test's declarations) are called as their
+ * hook (init-scan's ban lines, doctor's hook reader, the guards test's declarations, the kill hook's reader) are called as their
  * callers call them.
  *
  * Cycles 2026-10-24 (8) and (9) found this class about 80 times, nearly all fix-introduced and found by
@@ -40,6 +40,7 @@ import { availableParallelism, devNull, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { catalog } from "../core/i18n.mjs";
+import { killTarget } from "../adapters/claude-code/kill-targets.mjs";
 import { banLines } from "../setup/scan.mjs";
 import { hookBlock, namesCheck, printedCheck } from "../setup/hook.mjs";
 import { accounting, declarations, testNames } from "./declarations.mjs";
@@ -62,6 +63,7 @@ export const INPUTS = {
   bans: ["text"],
   hook: ["text"],
   declarations: ["text"],
+  kill: ["text"],
   "input-shapes": [],
 };
 
@@ -505,6 +507,16 @@ export const GATES = {
         const d = declarations(text);
         const why = [`declared ${d.calls}`, `read ${names.length}`, ...(d.renamed ? ["renamed"] : [])];
         return [c.id, { verdict: /** @type {Verdict} */ (problems.length ? "said" : "pass"), why }];
+      }),
+    );
+  },
+
+  /** The kill hook's reader: `text`, a shell command. Refused: it stops a process the text did not start, why its reason (name, lookup, port, every, unread). */
+  async kill(cells) {
+    return new Map(
+      cells.map((c) => {
+        const r = killTarget(String(c.text));
+        return [c.id, r ? { verdict: /** @type {Verdict} */ ("refused"), why: [r.why] } : { verdict: /** @type {Verdict} */ ("pass") }];
       }),
     );
   },

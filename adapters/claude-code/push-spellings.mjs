@@ -96,7 +96,7 @@
  */
 
 /** Where an expansion stands inside a word's text. */
-const GAP = "\u0000";
+export const GAP = "\u0000";
 /** A whole push word: `push-spellings.mjs` and `feat/git-push-hook` are none, `/opt/git-core/git-push` is one. */
 const PUSH_WORD = /(?<![\w./-])(push|send-pack|http-push)(?![\w./?*[-])|(?<![\w.-])git-(push|send-pack|http-push)(?![\w./?*[-])/;
 /**
@@ -122,14 +122,14 @@ const CEILING = 65536;
  * gives the rest of its line to a Linux shell as text, which reads its quotes and backslashes again, and `Start-Process`
  * (`start`, `saps`) joins its words into a command line the program splits again.
  */
-const RUNS = /^((ba|z|da|k|c|tc|fi|a|rba)?sh|eval|source|xargs|parallel|watch|trap|alias|su|runuser|script|wsl|flock|pwsh|powershell|cmd|start-process|start|saps)$/i;
+export const RUNS = /^((ba|z|da|k|c|tc|fi|a|rba)?sh|eval|source|xargs|parallel|watch|trap|alias|su|runuser|script|wsl|flock|pwsh|powershell|cmd|start-process|start|saps)$/i;
 /**
  * ssh's option letters whose value is the rest of the word or the next word, the same in OpenSSH 8.9p1, 9.5p1 and 9.9p1
  * (`ssh -G -<letter> a b` names b as the host); `-P` is one in 9.5p1 and 9.9p1, not in 8.9p1.
  */
 const SSH_VALUE = "BbcDEeFIiJLlmOopQRSWw";
 /** Programs that run the rest of their words: after one, any word may stand where a program's name stands. */
-const WRAPS = /^(env|command|builtin|exec|nohup|nice|ionice|time|timeout|gtimeout|sudo|doas|stdbuf|caffeinate|setsid|busybox|toybox|chroot|noglob|nocorrect)$/i;
+export const WRAPS = /^(env|command|builtin|exec|nohup|nice|ionice|time|timeout|gtimeout|sudo|doas|stdbuf|caffeinate|setsid|busybox|toybox|chroot|noglob|nocorrect)$/i;
 /**
  * A WSL distribution's own launcher (`ubuntu.exe`, `ubuntu2204.exe`, `debian.exe` …): its `run` gives the rest of the
  * line to the distribution's shell as text (`ubuntu.exe help`, measured), so with a `run` after it, it runs text.
@@ -143,10 +143,10 @@ const GIT = /^=?git$/i;
 /** git's verbs that take a command or a push of their own. */
 const RUNS_VERB = /^(subtree|submodule|rebase|bisect)$/;
 /** A command's first word that is shell grammar. */
-const KEYWORD = /^(if|then|elif|else|while|until|do|!|\{)$/;
+export const KEYWORD = /^(if|then|elif|else|while|until|do|!|\{)$/;
 /** Their words go nowhere, or are no command. A list that only ever leaves: what it does not hold is judged by its words. */
 const INERT = /^(echo|printf|grep|egrep|fgrep|rg|man|for|case|select|\[\[?|test|:|export|local|declare|readonly|typeset)$/;
-const ASSIGNMENT = /^[A-Za-z_]\w*\+?=/;
+export const ASSIGNMENT = /^[A-Za-z_]\w*\+?=/;
 /** A word that sets a git setting for the command it stands in, the value after `-c` apart. */
 const SETS_ALIAS = /^(--config-env=|GIT_CONFIG_(KEY_\d+|PARAMETERS)=)/;
 const REDIRECT = /^(<<<|<<-?|&>>?|>>|>&|<&|>\||<>|<|>)/;
@@ -160,13 +160,17 @@ const DEFINES_ALIAS = /(?<!\w)(alias|sal|nal)(?![\w.])/i;
 const VALUE = /^[#!]?[\w@*]*:?[-=+?]?/;
 
 /**
- * @typedef {{ text: string, literal: boolean, built: boolean, args: boolean }} Word `literal`: no quote or escape touched it;
- *   `built`: an expansion or a spread made it; `args`: the expansion is of positional parameters
- * @typedef {{ words: Word[], fed: boolean, push: boolean, at: number, plain: boolean }} Cmd `fed`: a pipe, a redirection or a
- *   function's arguments give it text from elsewhere; `push`: a push word stands in its words, substitutions included; `at`:
- *   where it starts in the source; `plain`: it is a plain push outside any block
- * @typedef {{ cmds: Cmd[], pushes: number, aliases: Set<string>, aliased: boolean }} Seen what a pass found: `pushes`: how
- *   many texts hold a push word; `aliased`: the text may define a shell alias
+ * @typedef {{ text: string, literal: boolean, built: boolean, args: boolean, exps: string[], raw: string }} Word `literal`: no
+ *   quote or escape touched it; `built`: an expansion or a spread made it; `args`: the expansion is of positional
+ *   parameters; `exps`: the source of each `$` expansion in it, an inner one first (kill-targets.mjs reads `$!` and
+ *   `$name` there); `raw`: the word as the source spells it, quotes and backslashes in (kill-targets.mjs reads a Windows path there)
+ * @typedef {{ words: Word[], fed: boolean, push: boolean, at: number, plain: boolean, paren?: boolean }} Cmd `fed`: a pipe, a
+ *   redirection or a function's arguments give it text from elsewhere; `push`: a push word stands in its words, substitutions
+ *   included; `at`: where it starts in the source; `plain`: it is a plain push outside any block; `paren`: its words end at
+ *   a `(` (kill-targets.mjs reads it)
+ * @typedef {{ cmds: Cmd[], pushes: number, aliases: Set<string>, aliased: boolean, redirs?: Array<{ op: string, word: Word, cmd: Cmd }> }} Seen
+ *   what a pass found: `pushes`: how many texts hold a push word; `aliased`: the text may define a shell alias; `redirs`:
+ *   each redirection, a here-document's apart, with its command, one with no words too (kill-targets.mjs reads them)
  */
 
 /** @param {string} text */
@@ -234,6 +238,7 @@ function parse(src, seen) {
       word.built ||= c === "$";
       i = end + 1;
     } else if (c === "$" && /[\w@*#?$!({-]/.test(d) || (/[<>=]/.test(c) && d === "(" && !quoted)) {
+      const from = i;
       word.built = true;
       word.args ||= /[@*\d]/.test(d === "{" ? (src[i + 2] ?? "") : d);
       word.text += GAP;
@@ -245,6 +250,7 @@ function parse(src, seen) {
         word.text += GAP;
         i++;
       } else while (/[A-Za-z_]/.test(d) && /\w/.test(src[i] ?? "")) i++;
+      word.exps.push(src.slice(from, i));
     } else return false;
     return true;
   };
@@ -275,8 +281,11 @@ function parse(src, seen) {
     /** @type {Word | null} */
     let word = null;
     let after = "";
+    let wordAt = i;
     const endWord = () => {
       if (word && (word.text || !word.literal)) {
+        word.raw = src.slice(wordAt, i);
+        if (after && after !== "<<" && after !== "<<-") seen.redirs?.push({ op: after, word, cmd });
         if (after === "<<" || after === "<<-") docs.push({ cmd, delim: word.text, strip: after === "<<-", quoted: !word.literal });
         else if (after[0] === "<") {
           cmd.fed = true;
@@ -306,8 +315,9 @@ function parse(src, seen) {
       const c = src[i];
       const d = src[i + 1];
       if (cmd.at < 0 && !" \t\r\n;".includes(c)) cmd.at = i;
+      if (!word) wordAt = i;
       /** @type {Word} */
-      const w = word ?? { text: "", literal: true, built: false, args: false };
+      const w = word ?? { text: "", literal: true, built: false, args: false, exps: [], raw: "" };
       if (part(w, false)) word = w;
       else if (c === "#" && !word && src[i - 1] !== ")") i = src.indexOf("\n", i) < 0 ? src.length : src.indexOf("\n", i);
       else if (c === "\n") {
@@ -318,7 +328,11 @@ function parse(src, seen) {
       } else if (" \t\r;)(".includes(c)) {
         const feeds = cmd.fed;
         if (c === " " || c === "\t" || c === "\r") endWord();
-        else endCmd();
+        else {
+          // PowerShell's `Stop-Process (Get-Process x)`: the words stop at a parenthesis that is their argument.
+          cmd.paren = c === "(" && cmd.words.length > 0;
+          endCmd();
+        }
         i++;
         if (c === "(") list(")", docs, feeds);
       } else if (c === "|" || (c === "&" && d !== ">")) {
@@ -359,6 +373,17 @@ const readWhole = (text, seen) => {
   }
 };
 
+/**
+ * The simple commands of a text, those of its substitutions among them, and its redirections, or null when it is not
+ * read whole (over CEILING, not closed, deeper than the stack). The kill reader (kill-targets.mjs) judges these.
+ * @param {string} text @returns {{ cmds: Cmd[], redirs: Array<{ op: string, word: Word, cmd: Cmd }> } | null}
+ */
+export function commandsOf(text) {
+  /** @type {Required<Seen>} */
+  const seen = { cmds: [], pushes: 0, aliases: new Set(), aliased: false, redirs: [] };
+  return readWhole(text, seen) ? { cmds: seen.cmds, redirs: seen.redirs } : null;
+}
+
 /** The extensions Windows runs a program by; a builtin has none of them but `.exe` (Git for Windows' echo.exe). */
 const RUN_BY = /\.(exe|cmd|bat|com)$/i;
 const EXE = /\.exe$/i;
@@ -368,7 +393,7 @@ const EXE = /\.exe$/i;
  * the extension `ext`. One reading: a second shell's is read where one reads the words (ssh), or not at all (RUNS).
  * @param {Word} w @param {RegExp} [ext]
  */
-const nameOf = (w, ext = RUN_BY) => w.text.split(GAP).join("").replace(/^.*[/\\]/s, "").replace(ext, "");
+export const nameOf = (w, ext = RUN_BY) => w.text.split(GAP).join("").replace(/^.*[/\\]/s, "").replace(ext, "");
 
 /** Whether the word's name, any extension off, passes `re`. @param {Word | undefined} w @param {RegExp} re */
 const named = (w, re) => (w ? re.test(nameOf(w)) : false);

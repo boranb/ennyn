@@ -14,6 +14,7 @@ You review a change you did not write. You look for **silently wrong results**: 
 3. **Two directions for accept/reject changes:** count newly accepted inputs that are wrong (false accepts) **and** previously correct inputs now rejected (regressions).
 4. **Siblings:** find every other place that answers the same question ("is this column numeric?", "is this cell empty?", "which period is this?") and check they agree after the change.
 5. Leave the corpus and the measurement test where the author can rerun them; the inputs you gave a gate go back as cells (finding-schema.md, Probes).
+6. **Stop only a process you started, by its PID or process group**: never a kill chosen by a filter, a name, a window title or a port (`taskkill /FI` or `/IM`, `Stop-Process -Name`, `pkill`, `killall`, `kill $(lsof …)`); the user's own programs may be open.
 
 ## Output
 

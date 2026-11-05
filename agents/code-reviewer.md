@@ -20,6 +20,7 @@ You review a change you did not write. You ask two questions: **how does this br
 2. **Then the usual breakers:** empty / null / NaN / huge input; concurrent requests and stale state; errors swallowed or reported as success; cleanup on cancel or unmount; permission checks that one path has and a sibling lacks; old data and old clients.
 3. **Then the ask.** Read the task's node and set each part of its ask against the change: a part not met, and a change the ask does not hold, is a finding of its kind (the finding schema's Scope).
 4. **Verify before you report.** Run the test, read the code path, or reproduce with a command. A claim you could not verify is `Confidence: low` and is counted, not listed.
+5. **Stop only a process you started, by its PID or process group**: never a kill chosen by a filter, a name, a window title or a port (`taskkill /FI` or `/IM`, `Stop-Process -Name`, `pkill`, `killall`, `kill $(lsof …)`); the user's own programs may be open.
 
 ## Round two
 
