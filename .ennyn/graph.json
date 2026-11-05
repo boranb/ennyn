@@ -108,7 +108,8 @@
         "session-handover",
         "fresh-session-run",
         "escalate-on-gate-failure",
-        "impact-scoped-tests"
+        "impact-scoped-tests",
+        "windows-verdict"
       ],
       "gate": "user",
       "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release); read 2026-11-01: the post now opens 'Updated October 15 to include more detail on the projects that pioneered many of the techniques we use in Scion.', and The Pragmatic Engineer (2026-10-22) reports the attribution came after a public complaint; an audit of requests against the graph, 2026-11-01: five had no node in the release needs: a project started from nothing (a request, 2026-10-29: 15 nodes, 0 done), leftovers (a request, 2026-10-29: 14 nodes, 0 done), secrets in chat (a request, 2026-10-28: 12 nodes, 1 done), less code and no repetition (a request, a request, 2026-10-25), findings that can wait (a request, 2026-10-25). The smallest piece of each entered the needs. spec-gates' README: 'Spec Kit is a guidance layer'",
@@ -1434,11 +1435,11 @@
       "status": "planned",
       "needs": [],
       "id": "windows-run",
-      "title": "Nothing runs on Windows: the plugin-data record's rename and drive-path spelling, Git Bash's read -r of a C:\\ record, NTFS spellings of .git past the link walk; a Windows run (a job or a measured manual run) before the public release",
+      "title": "The native Windows suite passes: the fixtures Windows cannot hold (symlinks, FIFOs, chmod, /bin/sh, names with quotes or tabs) are skipped or rewritten per platform, the checkout's line endings are set by .gitattributes, and a Windows run (a job or a measured manual run) repeats per release; after v0.1.0, which takes windows-verdict instead",
       "value": "medium",
       "cost": "M",
       "cluster": "distribution",
-      "source": "cycle 2026-10-26 (12), hook-follows-plugin-update and the budget audit: every Windows claim this cycle is unverified; cycle 2026-11-04 (20), on Windows 10 (Git for Windows 2.47.1, Node 22.23.4, Claude Code 2.1.317): the suite run natively took 41 min and 269 of 1262 tests failed (CRLF checkout, fixtures Windows cannot hold: symlinks, FIFOs, chmod, /bin/sh, names with quotes or tabs; and some unexplained compaction and hook-oracle verdicts); in WSL Ubuntu 22.04 as a non-root user with a Linux PATH 1340/1340; the push hook and the commit-msg hook were measured live on Windows (security audit c20); NTFS alternate data streams in a tracked file read as nothing to lose for worktrees (c20-t5-auth-r0-06); a .GIT folder is the repository but init-scan lists it as a name (c20-t1-code-r1-07); worktrees-filemode",
+      "source": "cycle 2026-10-26 (12), hook-follows-plugin-update and the budget audit: every Windows claim this cycle is unverified; cycle 2026-11-04 (20), on Windows 10 (Git for Windows 2.47.1, Node 22.23.4, Claude Code 2.1.317): the suite run natively took 41 min and 269 of 1262 tests failed (CRLF checkout, fixtures Windows cannot hold: symlinks, FIFOs, chmod, /bin/sh, names with quotes or tabs; and some unexplained compaction and hook-oracle verdicts); in WSL Ubuntu 22.04 as a non-root user with a Linux PATH 1340/1340; the push hook and the commit-msg hook were measured live on Windows (security audit c20); NTFS alternate data streams in a tracked file read as nothing to lose for worktrees (c20-t5-auth-r0-06); a .GIT folder is the repository but init-scan lists it as a name (c20-t1-code-r1-07); worktrees-filemode; the user, 2026-11-05: approved; split, the verdict part is windows-verdict and joins v0.1.0, the rest waits for after the release",
       "since": 12
     },
     {
@@ -4687,6 +4688,19 @@
       "mechanization": true,
       "sourceClass": "claim-outruns-evidence",
       "source": "cycle 2026-11-04 (21): the most recurring class of the convergence block",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "worktrees-filemode"
+      ],
+      "id": "windows-verdict",
+      "title": "A measured Windows verdict before the public release: on native Windows (Git for Windows, Git Bash and PowerShell) the push hook, the commit-msg hook, the gate-loosening guard and the plugin-data record's drive-path spelling and rename are measured live, each with its command and result; the unexplained native-suite verdicts of cycle 20 (compaction, hook-oracle) are diagnosed and a real defect is fixed or becomes a node; README and SECURITY.md say what holds: Windows through WSL is supported, native Windows has measured hooks and no passing suite",
+      "value": "high",
+      "cost": "M",
+      "cluster": "distribution",
+      "source": "the user, 2026-11-05, on whether windows-run joins v0.1.0 (approved to the split): cycle 20's security audit found the push hook missed Windows spellings and a push went through (c200aaf); README names no platform; the native suite's 269 of 1262 failures are mostly fixtures, left to windows-run",
       "since": 21
     }
   ],
