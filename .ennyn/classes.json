@@ -119,7 +119,8 @@
         "new: retry drops the failure it retried",
         "new: unmeasured read as clean",
         "new: a failed read moves a verdict's level and its count",
-        "new: plugin's own agent listing outside the session budget"
+        "new: plugin's own agent listing outside the session budget",
+        "new: escape of a kept defect counts nowhere"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, failed reads held, the same mistake in logic recurs and writes are not covered. Named in cycle 4."
     },
@@ -297,7 +298,8 @@
         "new: guard applied to one of two code paths that resolve the same input",
         "new: report text outside the catalog",
         "new: failure line outside the said pattern",
-        "new: guard dropped when work moves from hook to agent"
+        "new: guard dropped when work moves from hook to agent",
+        "new: rule checked on one row of a duplicate chain"
       ],
       "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict; no gate, both nodes are open. Named in cycle 8 as one-site escape or twin fix."
     },
@@ -416,7 +418,8 @@
         "new: text and its check drift",
         "new: second statement of one rule differs",
         "new: twin definitions disagree",
-        "new: loosening by removal goes unseen beside loosening by value"
+        "new: loosening by removal goes unseen beside loosening by value",
+        "new: two lists count one defect differently"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: no gate, it recurred in all four tasks of cycle 15. Named in cycle 14, first seen in cycle 8. Counting cycle 12's two readers of one decision here is this reconstruction's merge."
     },
@@ -439,7 +442,10 @@
       "nodes": [
         "shell-in-js-templates"
       ],
-      "judged": "Research of 2026-10-31, about 30% either way: no gate. Named in cycle 15."
+      "judged": "Research of 2026-10-31, about 30% either way: no gate. Named in cycle 15.",
+      "linked": [
+        "new: a bulk text replace breaks the quoting of a string it lands in"
+      ]
     },
     {
       "id": "code-no-test-holds",
@@ -631,7 +637,8 @@
         "new: example in code read as live data",
         "new: boundary computed for one language while two are read",
         "new: weak signal chooses the record",
-        "new: document order overrides project language"
+        "new: document order overrides project language",
+        "new: test reads the repository past its listed allow"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
