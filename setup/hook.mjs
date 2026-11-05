@@ -704,12 +704,18 @@ function searchable(dir) {
   }
 }
 
-/** Whether two paths name one directory, compared as real paths; false when either is not there. @param {string} a @param {string} b */
+/**
+ * Whether two paths name one directory, compared as the kernel's real paths: on Windows `c:\…` and an 8.3 name are the
+ * spelling on disk, which realpathSync's own walk keeps as given (measured, Node 22). False when either is not there,
+ * and when either cannot be looked at (EACCES, EPERM): no proof of one folder, so install-hook names this copy.
+ * @param {string} a @param {string} b
+ */
 function sameRoot(a, b) {
   try {
-    return realpathSync(a) === realpathSync(b);
+    return realpathSync.native(a) === realpathSync.native(b);
   } catch (err) {
-    if (gone(err)) return false;
+    const code = /** @type {NodeJS.ErrnoException} */ (err).code;
+    if (gone(err) || code === "EACCES" || code === "EPERM") return false;
     throw err;
   }
 }

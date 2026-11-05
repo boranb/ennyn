@@ -10,7 +10,17 @@
  *   in the command's words with quotes and backslashes removed: `push-spellings.mjs`, `feat/git-push-hook` and
  *   `# no push` are none. The one exception is an alias: a git verb that names an alias set in the session's environment
  *   or by a word of the command (`-c`, `--config-env`, `GIT_CONFIG_*`) is judged a push, whatever it expands to, chains and
- *   subsections included. A name a message only mentions sets nothing.
+ *   subsections included. A name a message only mentions sets nothing. PowerShell's splat at a word's head (`git @args`)
+ *   is a built word, as `"$@"` is.
+ * - A text that may define a shell alias is read by its structure, not by the alias: it holds the word `alias`, `sal` or
+ *   `nal` anywhere but in git's `alias.x` key, quotes and backslashes removed (bash's `alias`, however called:
+ *   `builtin`, `command`, `eval`; PowerShell's `Set-Alias`, `New-Alias`, `Set-Item alias:g`, `New-Item -Path alias:g`,
+ *   `${alias:g}`, colon parameters).
+ *   Then every command with a push word whose program is not git by its own name is refused (`alias g=git; g push`,
+ *   `alias h=git; alias g=h; g push`, `Set-Alias -Name:g -Value:git; g push`): following each way to define one missed a
+ *   spelling each round. The cost, accepted: a push word that is no push under an alias is refused too (`g stash push`,
+ *   `g log --grep push`, `g commit -m 'push later'`, `alias ll='ls -la'; ll push`). A command git heads by its name is
+ *   read as everywhere else.
  * - A push is left alone, to the rule, when every push in the text is `git push` and literal words, read from the source,
  *   at the head of a simple command of the top-level list, with nothing before it in that command and only redirects to
  *   literal places after it; and the whole text is under 9,000 characters and holds nothing but plain words, space, newline,
@@ -144,6 +154,8 @@ const REDIRECT = /^(<<<|<<-?|&>>?|>>|>&|<&|>\||<>|<|>)/;
 const TAKES_VALUE = /^(-C|-c|--git-dir|--work-tree|--namespace|--super-prefix|--config-env|--attr-source)$/;
 /** git's other options before a verb; one neither table knows may take a value, so it hides the verb. */
 const PLAIN_OPTION = /^(-[pPvh]|--|--paginate|--no-pager|--no-replace-objects|--no-lazy-fetch|--no-optional-locks|--no-advice|--bare|--(literal|glob|noglob|icase)-pathspecs|--version|--help|--(exec|html|man|info)-path|--(git-dir|work-tree|namespace|super-prefix|config-env|attr-source|exec-path)=.*)$/s;
+/** A word that may define a shell alias: bash's `alias`, PowerShell's `*-Alias`, `sal`, `nal` and its `alias:` drive; git's `alias.x` key is none. */
+const DEFINES_ALIAS = /(?<!\w)(alias|sal|nal)(?![\w.])/i;
 /** A parameter's name and operator: `${X:-value}` leaves the value. */
 const VALUE = /^[#!]?[\w@*]*:?[-=+?]?/;
 
@@ -153,8 +165,8 @@ const VALUE = /^[#!]?[\w@*]*:?[-=+?]?/;
  * @typedef {{ words: Word[], fed: boolean, push: boolean, at: number, plain: boolean }} Cmd `fed`: a pipe, a redirection or a
  *   function's arguments give it text from elsewhere; `push`: a push word stands in its words, substitutions included; `at`:
  *   where it starts in the source; `plain`: it is a plain push outside any block
- * @typedef {{ cmds: Cmd[], pushes: number, aliases: Set<string> }} Seen what a pass found: `pushes`: how many texts hold a
- *   push word
+ * @typedef {{ cmds: Cmd[], pushes: number, aliases: Set<string>, aliased: boolean }} Seen what a pass found: `pushes`: how
+ *   many texts hold a push word; `aliased`: the text may define a shell alias
  */
 
 /** @param {string} text */
@@ -320,6 +332,8 @@ function parse(src, seen) {
         after = op;
       } else {
         word = w;
+        // PowerShell's splat at a word's head (`git @args`): the arguments a function was given, as `"$@"` is.
+        if (c === "@" && !word.text && /[A-Za-z_]/.test(d ?? "")) word.built = word.args = true;
         word.text += c;
         word.built ||= "*?[{".includes(c);
         i++;
@@ -400,7 +414,7 @@ function remote(words, cmd, seen) {
     const text = words.slice(start).map((w) => w.text.split(GAP).join("${E}")).join(" ");
     const filled = cmd.push && !holdsPush(text);
     /** @type {Seen} */
-    const inner = { cmds: [], pushes: seen.pushes, aliases: new Set(seen.aliases) };
+    const inner = { cmds: [], pushes: seen.pushes, aliases: new Set(seen.aliases), aliased: seen.aliased };
     if (!readWhole(text, inner)) {
       if (cmd.push || inner.aliases.size) return true;
     } else if (inner.cmds.some((c) => judge({ ...c, fed: c.fed || cmd.fed, push: c.push || filled }, inner, true))) return true;
@@ -415,6 +429,8 @@ function remote(words, cmd, seen) {
  */
 function judge(cmd, seen, there = false) {
   const first = cmd.words.findIndex((w) => !ASSIGNMENT.test(w.text) && !KEYWORD.test(w.text));
+  // Where an alias may be defined, a push word under any program but git by its own name is refused: `echo` too may be one.
+  if (seen.aliased && cmd.push && first >= 0 && !named(cmd.words[first], GIT)) return true;
   // A name with an expansion glued to it is no name this list knows, nor is one with a folder: a program planted in the
   // work tree (`./echo.exe`, `./echo`) runs its words. Only `.exe` comes off: `./test.bat` is a batch file.
   if (first < 0 || (INERT.test(nameOf(cmd.words[first], EXE)) && !/[/\\\u0000]/.test(cmd.words[first].text))) return false;
@@ -452,7 +468,7 @@ function judge(cmd, seen, there = false) {
  */
 export function pushSpelling(command, env = {}) {
   /** @type {Seen} */
-  const seen = { cmds: [], pushes: 0, aliases: pushAliases(env) };
+  const seen = { cmds: [], pushes: 0, aliases: pushAliases(env), aliased: [command, command.replace(QUOTES, "")].some((t) => DEFINES_ALIAS.test(t)) };
   if (!readWhole(command, seen)) return holdsPush(command) || seen.aliases.size ? command.slice(0, 200) : null;
   const left = command.length < RULE_READS && NOTHING_TO_MISREAD.test(command);
   const hit = seen.cmds.find((c) => !(left && c.plain) && judge(c, seen));

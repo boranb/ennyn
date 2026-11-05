@@ -172,6 +172,24 @@ test("types: with commitMsg.types set, the subject must start with one; scope an
   assert.ok(checkCommitShape("liste düzeltildi", { config: cfg() }).ok);
 });
 
+test("types: a subject with a byte order mark, or a UTF-16 message, is refused saying why, not only for its type", () => {
+  // Measured on Windows (Git for Windows 2.47.1): Windows PowerShell 5.1's Set-Content -Encoding UTF8 writes a BOM, which
+  // git keeps at the subject's head, and its Out-File writes UTF-16LE, whose NULs git refuses.
+  const c = cfg({ commitMsg: { types: ["docs", "fix"] } });
+  const why = /byte order mark.*UTF-16/;
+  const utf16 = Buffer.from("\uFEFFdocs: add a note\r\n", "utf16le").toString("utf8");
+  for (const bad of ["\uFEFFdocs: add a note\n", utf16]) {
+    const r = checkCommitShape(bad, { config: c });
+    assert.equal(r.ok, false);
+    assert.match(r.errors.join(" "), /commitMsg\.types/);
+    assert.match(r.errors.join(" "), why, JSON.stringify(bad));
+  }
+  // A wrong type with no BOM at its head says nothing of it, nor does a CRLF message; with no types the BOM is not this check's.
+  for (const plain of ["Added stuff", "Added \uFEFFstuff"]) assert.doesNotMatch(checkCommitShape(plain, { config: c }).errors.join(" "), why, plain);
+  assert.deepEqual(checkCommitShape("docs: add a note\r\n", { config: c }).errors, []);
+  assert.ok(checkCommitShape("\uFEFFanything", { config: cfg() }).ok);
+});
+
 test("audit: subjects git writes itself pass a typed convention; an empty message is left to git; spaces after the colon are free", () => {
   const c = cfg({ commitMsg: { types: ["feat", "fix"], style: "terse" } });
   // A fixup! (and an empty squash!) disappears in autosquash; it is not checked.

@@ -356,7 +356,11 @@ function shapeOf(message, { config, stagedPaths = [], cleanup = "strip", cut, co
   // The project's chosen types (/ennyn:init); the rework rate finds repairs by the fix type.
   if (ownSubject && cm.types.length) {
     const typeRe = new RegExp(`^(${cm.types.map(escapeRe).join("|")})(\\([^)]*\\))?!?:\\s+\\S`);
-    if (!typeRe.test(subject)) errors.push(t("shape.typeMissing", { types: cm.types.join(", "), example: cm.fixType }, lang));
+    if (!typeRe.test(subject)) {
+      errors.push(t("shape.typeMissing", { types: cm.types.join(", "), example: cm.fixType }, lang));
+      // A subject that looks right and is not: a byte order mark git keeps at its head, or UTF-16, whose NULs git refuses.
+      if (subject.startsWith("\uFEFF") || text.includes("\0")) errors.push(t("shape.notPlainUtf8", {}, lang));
+    }
   }
 
   // Structured lines (rounds, impact, root cause) may sit in the body or in the

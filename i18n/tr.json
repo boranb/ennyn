@@ -380,6 +380,7 @@
   "scan.roadmapItemAbsent": "{path} (git listeliyor, burada okunacak dosya yok)",
   "scan.roadmapItemOutside": "{path} (depo dışına çıkıyor, okunmadı)",
   "shape.typeMissing": "Konu commitMsg.types içinden bir türle başlamalı ({types}): \"tür: metin\" ya da \"tür(kapsam): metin\"; önceki bir commit'in onarımı \"{example}\" kullanır.",
+  "shape.notPlainUtf8": "Mesaj düz UTF-8 değil: ya bir bayt sıra işaretiyle (BOM) başlıyor, git onu konunun başında saklar, ya da UTF-16, git onun NUL baytlarını reddeder. BOM olmadan UTF-8 olarak kaydedin: Windows PowerShell 5.1 bunları yazar (Set-Content -Encoding UTF8, Out-File), PowerShell 7 yazmaz.",
   "doctor.fixTypeUnseen": "fix etiketi: {pattern}, {forms} konularına uymuyor; yeniden iş oranı yeni onarımları görmez. Onarım türünü metrics.fixSubject'e ekle",
   "doctor.fixBangUnseen": "fix etiketi: {pattern}, commit kapısının kabul ettiği {forms} konularına uymuyor; yeniden iş oranı bu onarımları görmez. metrics.fixSubject iki noktadan önce \"!\" de okusun",
   "doctor.commitStyle": "commit'ler: {language}, türler {types}, onarım \"{type}\"",

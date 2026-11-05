@@ -380,6 +380,7 @@
   "scan.roadmapItemAbsent": "{path} (listed by git, no file here to read)",
   "scan.roadmapItemOutside": "{path} (leads out of the repository, not read)",
   "shape.typeMissing": "Subject must start with a type from commitMsg.types ({types}), as \"type: text\" or \"type(scope): text\"; a repair of an earlier commit uses \"{example}\".",
+  "shape.notPlainUtf8": "The message is not plain UTF-8: it starts with a byte order mark, which git keeps at the head of the subject, or it is UTF-16, whose NUL bytes git refuses. Save it as UTF-8 without a BOM: Windows PowerShell 5.1 writes these (Set-Content -Encoding UTF8, Out-File), PowerShell 7 does not.",
   "doctor.fixTypeUnseen": "fix label: {pattern} does not match {forms}, so the rework rate will not see new repairs; add the fix type to metrics.fixSubject",
   "doctor.fixBangUnseen": "fix label: {pattern} does not match {forms}, which the commit gate admits, so the rework rate will not see those repairs; let metrics.fixSubject read \"!\" before the colon",
   "doctor.commitStyle": "commits: {language}, types {types}, repairs \"{type}\"",

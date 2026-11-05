@@ -56,6 +56,8 @@ Ennyn'in reposu public olana kadar marketplace'i yerel bir klondan `claude plugi
 
 `skills/cycle/` klasöründeki, döngüyü yürüten cycle skill'i [Agent Skills](https://agentskills.io) formatındadır ama CLI'yi `${CLAUDE_PLUGIN_ROOT}` üzerinden çağırır; bu değişkeni yalnızca Claude Code tanımlar. Başka bir agent'la kullanmak için `CLAUDE_PLUGIN_ROOT` değişkenini bir Ennyn klonunun path'ine ayarlayın. CLI, Node 20 ya da üstünü ve git 2.34 ya da üstünü ister, bağımlılığı yoktur. Ennyn klonunun içinden `node scripts/ennyn.mjs --help` komutların listesini verir. README'nin geri kalanında geçen `ennyn`, projenizin içinden çalıştırılan bu script'in kısaltmasıdır.
 
+Ennyn Linux'ta ve macOS'ta, Windows'ta da WSL üzerinden çalışır; test takımı orada geçer (Ubuntu 22.04, git 2.34.1). Doğrudan Windows'ta (Git for Windows 2.47.1, Git Bash, PowerShell 7) push hook'u, commit-msg hook'u, gate gevşetme kontrolü ve plugin'in sürüm kaydı ölçüldü ve tutuyor, [SECURITY.md](SECURITY.md)'nin söylediği gibi; test takımı orada geçmez, sıkıştırma hook'u yalnız bir test projesinde denendi, diğer hook'lar ölçülmedi.
+
 ## Bir döngü nasıl işler
 
 İlk değişiklikten önce agent `ennyn impact` çalıştırır. Ennyn'de yapılan bir değişiklik için çıktı şöyle:

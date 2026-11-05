@@ -56,6 +56,8 @@ Until Ennyn's repository is public, add the marketplace from a local clone with 
 
 The cycle skill in `skills/cycle/` follows the [Agent Skills](https://agentskills.io) format, but it calls the CLI through `${CLAUDE_PLUGIN_ROOT}`, which only Claude Code sets. To use it with another agent, set `CLAUDE_PLUGIN_ROOT` to the path of an Ennyn clone. The CLI needs Node 20 or later and git 2.34 or later, and has no dependencies. From the Ennyn clone, `node scripts/ennyn.mjs --help` lists its commands. Elsewhere in this README, `ennyn` is short for that script, run from your project.
 
+Ennyn runs on Linux and macOS, and on Windows through WSL, where the test suite passes (Ubuntu 22.04, git 2.34.1). On native Windows (Git for Windows 2.47.1, Git Bash, PowerShell 7) the push hook, the commit-msg hook, the gate-loosening check and the plugin's version record were measured and hold, as [SECURITY.md](SECURITY.md) says; the test suite does not pass there, the compaction hook was only tried on a test project, and the other hooks were not measured.
+
 ## How a cycle runs
 
 Before the first edit, the agent runs `ennyn impact`. This is its output for a change to Ennyn:

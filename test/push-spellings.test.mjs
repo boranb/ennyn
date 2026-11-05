@@ -1124,7 +1124,6 @@ const LIMITS = [
   "hub push origin main",
   "git config alias.save push",
   "git config --global alias.save '!git push'",
-  "printf '[alias]\\n\\ts = push\\n' >> .git/config && git s",
   // A git option or setting that runs a command.
   "git ls-remote --upload-pack='git -C . push; :' .",
   "git archive --remote=. --exec='git -C . push; :' HEAD",
@@ -1150,6 +1149,71 @@ test("push reader: the stated limits are limits: each is left, and the header an
   for (const word of ["shell grammar the reader does not read", "echo ${x:-{}; # }; git push origin main", "echo <1-2># | git push origin main", "unmeasured under load", "a script the agent writes", "an interpreter", "an MCP tool", "`gh api`", "another machine", "held whole in a variable", "encoded words", "a word a run puts together", "under another name", "an alias in a config file", "runs a command", "PowerShell's own spellings", "a Skill's shell block", "disableAllHooks", "NODE_OPTIONS", "crashes, is killed or times out", "no boundary", "hand-crafted", "a group, a function", "only if Claude Code's parser finishes"]) assert.ok(header.includes(word), word);
   const security = readFileSync(fileURLToPath(new URL("../SECURITY.md", import.meta.url)), "utf8");
   for (const word of ["shell grammar it does not read", "echo ${x:-{}; # }; git push origin main", "echo <1-2># | git push origin main", "unmeasured", "a script the agent writes", "an interpreter", "an MCP tool", "another machine", "held whole in a variable", "encoded words", "a word a run puts together", "under another name", "an alias in a config file", "disableAllHooks", "NODE_OPTIONS", "no boundary", "only if Claude Code's parser finishes"]) assert.ok(security.includes(word), word);
+});
+
+/**
+ * A text that may define a shell alias, by any way bash or PowerShell has (cycle 23's security review, rounds 1 and 2:
+ * each pushed live in Claude Code's Bash tool, WSL bash with git 2.34.1 or pwsh 7.4.22), with a push word under a
+ * program that is not git by its own name; and PowerShell's splat at git's verb place.
+ */
+const ALIASED = [
+  "alias g=git\ng push origin main",
+  "alias g=git; g push origin main",
+  "alias g=/usr/bin/git; g push origin main",
+  "Set-Alias g git; g push origin main",
+  "sal g git; g push origin main",
+  "nal g git; g push origin main",
+  "New-Alias g git; g push origin main",
+  "Set-Alias -Name g -Value git; g push origin main",
+  "Set-Alias -Name G -Value 'C:\\Program Files\\Git\\cmd\\git.exe'; g push origin main",
+  "alias echo=git; echo push origin main",
+  "al''ias g=git\ng push origin main",
+  "printf '[alias]\\n\\ts = push\\n' >> .git/config && git s",
+  "alias h=git\nalias g=h\ng push origin main",
+  "alias h=git g=h\ng push origin main",
+  "alias g='GIT_DIR=.git git'\ng push origin main",
+  "alias g='command git'\ng push origin main",
+  "builtin alias g=git\ng push origin main",
+  "command alias g=git\ng push origin main",
+  "eval alias g=git\ng push origin main",
+  "Set-Alias -Name:g -Value:git; g push origin main",
+  "Set-Alias g C:\\PROGRA~1\\Git\\cmd\\git.exe; g push origin main",
+  "Set-Item alias:g git; g push origin main",
+  "New-Item -Path alias:g -Value git; g push origin main",
+  "ni alias:g -Value git; g push origin main",
+  "${alias:g} = 'git'; g push origin main",
+  "Set-Alias h git; Set-Alias g h; g push origin main",
+  "alias g='git'\ng push origin main",
+  "alias -- g=git\ng push origin main",
+  "alias g=/usr/bin/git\ng push origin main",
+  "alias a=ls g=git\ng push origin main",
+  "Set-Alias g git -Scope Global; g push origin main",
+  "Set-Alias g 'C:\\Program Files\\Git\\cmd\\git.exe'; g push origin main",
+  "Set-Alias g git; & g push origin main",
+  "function g { git @args }; g push origin main",
+  "function g { & git @args }; g push origin main",
+  "filter g { git @args }; g push origin main",
+  "Set-Item function:g { git @args }; g push origin main",
+  // Controls, refused before: PowerShell's $args and the POSIX "$@".
+  "function g { git $args }; g push origin main",
+  'g() { git "$@"; }; g push origin main',
+];
+
+/** What the alias rule refuses that is no push: the price of reading the structure, not the alias (header, SECURITY.md). */
+const ALIAS_COST = [
+  "Set-Alias g git; g stash push",
+  "alias g=git\ng log --grep push",
+  "alias g=git; g commit -m 'push later'",
+  "alias ll='ls -la'\nll push",
+  "Set-Alias g Get-ChildItem; g push",
+];
+
+test("push reader: a text that may define an alias refuses a push word under any program but git by its name; a splat at git's verb place reaches a push", () => {
+  for (const c of ALIASED) assert.notEqual(pushSpelling(c), null, JSON.stringify(c));
+  for (const c of ALIAS_COST) assert.notEqual(pushSpelling(c), null, JSON.stringify(c));
+  // No push word, git by its name in plain words, a splat or an @ word with no push, an @ inside a word (ssh's
+  // user@host), and a text with no alias word: left.
+  for (const c of ["alias g=git; g status", "Set-Alias g git; g log", "alias ll=ls; git push origin main", "alias ll=ls; git log --grep push", "function g { git @args }; g status", "npm i @types/node", "git log @{u}..", "ssh me@host git log --grep push", "git push origin main", "git push @remote main", "echo @foo; git push origin main", "git config alias.save push"]) assert.equal(pushSpelling(c), null, c);
 });
 
 test("push reader: a PowerShell command is read as shell text: the same spellings, no second reader", () => {

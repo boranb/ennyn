@@ -693,6 +693,45 @@ test("hook follows the plugin: installed from the plugin, it runs the version th
   assert.deepEqual([hookStatus(fresh).cli, hookStatus(fresh).data], [CLI, null]);
 });
 
+test("hook follows the plugin: a session root spelled another way that names this copy is the session, so the hook follows the record", async () => {
+  // Measured on Windows (Node 22): realpathSync's own walk keeps `c:\…` and an 8.3 name as given, the kernel's real
+  // path (realpathSync.native) gives the spelling on disk, and a root spelled so was read as another copy, the hook
+  // pinned to this one. A volume that folds case, made here: that spelling is this copy to the kernel alone.
+  const fs = (await import("node:fs")).default;
+  const { syncBuiltinESMExports } = await import("node:module");
+  const spelled = SELF.replace(/[a-z]/gi, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()));
+  const [walk, kernel] = [fs.realpathSync, fs.realpathSync.native];
+  const folds = Object.assign((/** @type {any} */ p, /** @type {any} */ o) => (p === spelled ? spelled : walk(p, o)), { native: (/** @type {any} */ p, /** @type {any} */ o) => kernel(p === spelled ? SELF : p, o) });
+  const data = join(mkdtempSync(join(tmpdir(), "en-spelled-")), "data");
+  const dir = repo();
+  fs.realpathSync = /** @type {any} */ (folds);
+  syncBuiltinESMExports();
+  try {
+    const res = installHook({ cwd: dir, cliPath: CLI, session: { data, root: spelled } });
+    assert.deepEqual([res.result, res.data], ["installed", data]);
+  } finally {
+    fs.realpathSync = walk;
+    syncBuiltinESMExports();
+  }
+  assert.equal(hookStatus(dir).data, data);
+});
+
+test("hook follows the plugin: a session root that cannot be looked at is no proof of this copy: the hook names this copy, nothing throws", () => {
+  // realpathSync.native refuses what it cannot read (EACCES here, EPERM on Windows); it is read as another copy.
+  if (process.getuid?.() === 0) return;
+  const box = mkdtempSync(join(tmpdir(), "en-shut-"));
+  const shut = join(box, "shut");
+  mkdirSync(join(shut, "root"), { recursive: true });
+  chmodSync(shut, 0o000);
+  try {
+    const dir = repo();
+    const res = installHook({ cwd: dir, cliPath: CLI, session: { data: join(box, "data"), root: join(shut, "root") } });
+    assert.deepEqual([res.result, hookStatus(dir).data, hookStatus(dir).cli], ["installed", null, CLI]);
+  } finally {
+    chmodSync(shut, 0o755);
+  }
+});
+
 test("hook follows the plugin: a record naming a gone version refuses the commit with a way out; no record (uninstalled, or the directory made again empty) lets it through; doctor tells them apart", async () => {
   const { idleReason, replacedRoot, recordPluginRoot, readRecord } = hookModule;
   const dir = doctorRepo();
