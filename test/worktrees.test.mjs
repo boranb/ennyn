@@ -12,10 +12,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { markedWorktrees, verdict } from "../plan/worktrees.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
 
@@ -332,28 +333,55 @@ test("worktrees: when a step of the removal fails, the line says what is true: g
   const real = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
   const bin = mkdtempSync(join(tmpdir(), "en-wt-bin-"));
   // git as it is, but the subcommands FAIL_ON names exit 128, as a refusal does; DROP is a folder deleted first, as a
-  // removal that dropped git's entry and then failed on the folder leaves it.
+  // removal that dropped git's entry and then failed leaves it.
   put(join(bin, "git"), `#!/bin/sh\nfor f in $FAIL_ON; do case " $* " in *" worktree $f "*) [ -n "$DROP" ] && rm -rf "$DROP"; echo "fatal: refused $f" >&2; exit 128 ;; esac; done\nexec '${real}' "$@"\n`);
   chmodSync(join(bin, "git"), 0o755);
-  const line = (/** @type {string} */ step, /** @type {string} */ entry) => new RegExp(`^.*/wts/a \\(ennyn:19\\): git did not finish removing it \\(fatal: refused ${step}\\); ${entry}; its folder is still there, whole or in part`, "m");
+  const line = (/** @type {string} */ step, /** @type {string} */ entry, /** @type {string} */ folder) => new RegExp(`^.*/wts/a \\(ennyn:19\\): the removal did not finish \\(fatal: refused ${step}\\); ${entry}; ${folder}$`, "m");
+  const relocked = "git still lists it, locked with its mark again";
+  // Unlocked once the folder moved aside is deleted, so the mark holds the entry until then; git drops the entry last.
   const cases = [
-    ["remove", "", line("remove", "git still lists it, locked with its mark again"), true],
-    ["unlock", "", line("unlock", "git still lists it, locked with its mark again"), true],
-    ["remove lock", "", line("remove", "git still lists it, but its mark could not be put back, so git no longer keeps it from pruning"), false],
-    ["remove", "admin", line("remove", "git no longer lists it, and its mark went with that entry"), false],
-    ["remove", "folder", /^.*\/wts\/a \(ennyn:19\): git did not finish removing it \(fatal: refused remove\); git still lists it, locked with its mark again; its folder is gone$/m, true],
+    ["unlock", "", line("unlock", relocked, "its folder is gone"), false, true],
+    ["remove", "", line("remove", relocked, "its folder is gone"), false, true],
+    ["remove lock", "", line("remove", "git still lists it, but its mark could not be put back, so git no longer keeps it from pruning", "its folder is gone"), false, false],
+    ["remove", "admin", line("remove", "git no longer lists it, and its mark went with that entry", "its folder is gone"), false, false],
   ];
-  for (const [fail, drop, said, locked] of cases) {
+  for (const [fail, drop, said, folder, locked] of cases) {
     const r = repo();
     const a = r.add("a");
-    const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, FAIL_ON: String(fail), DROP: drop === "admin" ? join(r.main, ".git", "worktrees", "a") : drop === "folder" ? a : "" };
+    const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, FAIL_ON: String(fail), DROP: drop === "admin" ? join(r.main, ".git", "worktrees", "a") : "" };
     const run = spawnSync(process.execPath, [CLI, "worktrees", "--remove"], { cwd: r.main, encoding: "utf8", env });
     assert.equal(run.status, 1, String(fail));
     assert.match(run.stdout, /** @type {RegExp} */ (said));
     assert.match(run.stderr, /each line above says what is true of it/);
-    assert.equal(existsSync(a), drop !== "folder");
+    assert.deepEqual([existsSync(a), readdirSync(join(r.dir, "wts"))], [folder, folder ? ["a"] : []], String(fail));
     assert.equal(g(r.main, ["worktree", "list", "--porcelain"]).includes("locked ennyn:19"), locked, String(fail));
   }
+});
+
+test("worktrees: a folder that cannot be moved aside is kept whole; a delete that stops partway says where the rest is", (t) => {
+  // Root moves and deletes anyway (a container's user): there both worktrees go.
+  const root = process.getuid?.() === 0;
+  const r = repo();
+  const a = r.add("a");
+  mkdirSync(join(r.dir, "locked-parent"));
+  const b = r.add(join("..", "locked-parent", "b"), ["-b", "c/b"]);
+  // A tracked file in a folder that cannot be written: the check reads it, the delete cannot unlink it.
+  const c = r.add("c");
+  put(join(c, "ro", "x.txt"), "x\n"), g(c, ["add", "-A"]), g(c, ["commit", "-q", "-m", "ro"]), g(r.main, ["merge", "-q", "--ff-only", "c/c"]);
+  chmodSync(join(c, "ro"), 0o555), chmodSync(join(r.dir, "locked-parent"), 0o555);
+  t.after(() => (chmodSync(join(r.dir, "locked-parent"), 0o755), existsSync(join(r.dir, "wts")) && readdirSync(join(r.dir, "wts")).forEach((n) => existsSync(join(r.dir, "wts", n, "ro")) && chmodSync(join(r.dir, "wts", n, "ro"), 0o755))));
+  const run = cli(r.main, "--remove");
+  assert.equal(run.status, root ? 0 : 1, run.stdout + run.stderr);
+  if (root) return assert.deepEqual([existsSync(a), existsSync(b), existsSync(c)], [false, false, false]);
+  assert.match(run.stdout, /^removed: .*\/wts\/a \(ennyn:19\)$/m);
+  assert.match(run.stdout, /^kept: .*\/locked-parent\/b \(ennyn:19\): it could not be moved aside for its removal \(EACCES\); nothing was removed$/m);
+  const left = /^.*\/wts\/c \(ennyn:19\): the removal did not finish \(EACCES.*\); git still lists it, locked with its mark again; its folder, whole or what a failed delete left of it \(which matched HEAD when checked\), is at (.*\/wts\/\.c\.ennyn-removing-[0-9a-f]{8})$/m.exec(run.stdout);
+  assert.ok(left, run.stdout);
+  assert.deepEqual([existsSync(b), existsSync(c), readFileSync(join(left[1], "ro", "x.txt"), "utf8")], [true, false, "x\n"]);
+  // Not moved aside is not removed: the command did not do what it was asked, alone too.
+  const alone = cli(r.main, "--remove", b);
+  assert.deepEqual([alone.status, /could not be checked or removed/.test(alone.stderr)], [1, true], alone.stdout);
+  assert.ok(g(r.main, ["worktree", "list", "--porcelain"]).includes(`worktree ${c}\nHEAD`));
 });
 
 test("worktrees: the worktree the command runs in is kept; with no mark anywhere it says so", () => {
@@ -461,6 +489,124 @@ test("worktrees: a file checkout writes through a filter, ident, a line-ending s
     expected[`${Object.keys(want)[0]}: exit`] = "0 ";
   }
   assert.deepEqual(got, expected);
+});
+
+test("worktrees: the executable bit on disk keeps a worktree wherever the disk keeps one, under core.fileMode=false too; on win32 no bit is read, and links HEAD holds go as anywhere", () => {
+  const r = repo();
+  put(join(r.main, "run.sh"), "#!/bin/sh\n"), g(r.main, ["add", "run.sh"]), g(r.main, ["update-index", "--chmod=+x", "run.sh"]), g(r.main, ["commit", "-q", "-m", "exec"]);
+  // Links HEAD holds, on a tag of their own: one to a folder, one to a file, one that leads nowhere. The removal
+  // unlinks each, so none keeps a worktree, on win32 neither.
+  g(r.main, ["checkout", "-q", "-b", "links"]);
+  put(join(r.main, "sub", "x.txt"), "x\n"), symlinkSync("sub", join(r.main, "dir-link")), g(r.main, ["add", "-A"]), g(r.main, ["commit", "-q", "-m", "dir link"]), g(r.main, ["tag", "dir-link"]);
+  g(r.main, ["rm", "-q", "dir-link"]), symlinkSync("a.txt", join(r.main, "file-link")), g(r.main, ["add", "-A"]), g(r.main, ["commit", "-q", "-m", "file link"]), g(r.main, ["tag", "file-link"]);
+  g(r.main, ["rm", "-q", "file-link"]), symlinkSync("nowhere", join(r.main, "lost-link")), g(r.main, ["add", "-A"]), g(r.main, ["commit", "-q", "-m", "lost link"]), g(r.main, ["tag", "lost-link"]);
+  g(r.main, ["checkout", "-q", "main"]);
+  // A setting that hides the bit from git status: removing the folder still loses a bit set or cleared by hand.
+  g(r.main, ["config", "core.fileMode", "false"]);
+  chmodSync(join(r.add("bit-lost"), "run.sh"), 0o644);
+  chmodSync(join(r.add("bit-gained"), "a.txt"), 0o755);
+  // A mode change staged and not on disk: the index differs from HEAD.
+  g(r.add("staged"), ["update-index", "--chmod=-x", "run.sh"]);
+  r.add("clean");
+  r.add("dir-link", ["--detach"], undefined, "dir-link");
+  r.add("file-link", ["--detach"], undefined, "file-link");
+  r.add("lost-link", ["--detach"], undefined, "lost-link");
+  assert.equal(g(join(r.dir, "wts", "bit-lost"), ["status", "--porcelain"]), "");
+  const listed = cli(r.main);
+  assert.equal(listed.status, 0, listed.stderr);
+  const linux = { "bit-lost": "mode", "bit-gained": "mode", staged: "staged", clean: "go", "dir-link": "go", "file-link": "go", "lost-link": "go" };
+  assert.deepEqual(verdicts(listed.stdout), linux, listed.stdout);
+  // The same worktrees read as on Windows, whose disk keeps no bit: what git status there sees decides.
+  const top = realpathSync(r.main);
+  /** @param {string} platform */
+  const on = (platform) => Object.fromEntries(markedWorktrees(r.main).marked.map((w) => { const v = verdict(top, w, [], platform); return [w.id, v.go ? "go" : "why" in v ? `${v.why}${v.vars?.path ? ` ${v.vars.path}` : ""}` : `unmeasured ${v.unmeasured}`]; }));
+  assert.deepEqual(on("linux"), { ...linux, "bit-lost": "mode run.sh", "bit-gained": "mode a.txt" });
+  assert.deepEqual(on("win32"), { ...linux, "bit-lost": "go", "bit-gained": "go" });
+  const removed = cli(r.main, "--remove");
+  assert.equal(removed.status, 0, removed.stderr);
+  assert.deepEqual(readdirSync(join(r.dir, "wts")).sort(), ["bit-gained", "bit-lost", "staged"]);
+  assert.equal(statSync(join(r.dir, "wts", "bit-gained", "a.txt")).mode & 0o777, 0o755);
+});
+
+/**
+ * Removes the worktree at `path` in a process of its own, `fs.rmSync` wrapped by `mode`: "link" makes a link to `out`
+ * in the folder moved aside, as a process still running in it would, right before the delete; "mkdir" makes a folder at
+ * the old path right after it; "die" stops the process before the delete, as a kill or a crash would. `fs.renameSync`
+ * too: "refuse:<code>" fails the move aside with that code; "backfail" writes a file in the moved folder, then fails the
+ * move back. `platform` is the one the removal reads.
+ */
+const HARNESS = `
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+const [mod, main, path, mode, out, platform] = JSON.parse(String(process.env.HARNESS_ARGS));
+const rm = fs.rmSync;
+const mv = fs.renameSync;
+let moves = 0;
+fs.renameSync = (a, b) => {
+  moves++;
+  if (mode.startsWith("refuse:")) throw Object.assign(new Error(mode), { code: mode.slice(7) });
+  if (mode === "backfail" && moves === 2) throw Object.assign(new Error("EPERM: refused"), { code: "EPERM" });
+  const r = mv(a, b);
+  if (mode === "backfail") fs.writeFileSync(join(b, "late.txt"), "late\\n");
+  return r;
+};
+fs.rmSync = (p, o) => {
+  if (mode === "link") fs.symlinkSync(out, join(p, "node_modules"));
+  if (mode === "die") process.exit(9);
+  const r = rm(p, o);
+  if (mode === "mkdir") fs.mkdirSync(path);
+  return r;
+};
+syncBuiltinESMExports();
+const { markedWorktrees, removeWorktree } = await import(pathToFileURL(mod).href);
+const w = markedWorktrees(main).marked.find((m) => m.path === path);
+console.log(JSON.stringify(removeWorktree(fs.realpathSync(main), w, platform)));
+`;
+
+test("worktrees: the removal never enters a link, never hands git a path something new holds, and a stopped one is named", () => {
+  const mod = join(dirname(CLI), "..", "plan", "worktrees.mjs");
+  const r = repo();
+  const out = join(r.dir, "outside");
+  put(join(out, "deep", "keep.txt"), "keep\n");
+  const harness = (/** @type {string} */ path, /** @type {string} */ mode, platform = process.platform) => spawnSync(process.execPath, ["--input-type=module", "-e", HARNESS], { cwd: r.main, encoding: "utf8", env: { ...process.env, HARNESS_ARGS: JSON.stringify([mod, r.main, path, mode, out, platform]) } });
+  // A link HEAD holds to a folder outside goes, as anywhere: the delete unlinks it.
+  g(r.main, ["checkout", "-q", "-b", "held"]), symlinkSync(out, join(r.main, "ext")), g(r.main, ["add", "ext"]), g(r.main, ["commit", "-q", "-m", "ext"]), g(r.main, ["tag", "held"]), g(r.main, ["checkout", "-q", "main"]);
+  const held = r.add("held", ["--detach"], undefined, "held");
+  assert.deepEqual(verdicts(cli(r.main, "--remove", held).stdout), { held: "removed" });
+  const late = harness(r.add("late"), "link");
+  assert.equal(late.stdout.trim(), JSON.stringify({ removed: true }), late.stderr);
+  // Something new at its old path is never handed to git: the entry stays, locked, and the new folder is left alone.
+  const reborn = r.add("reborn");
+  const made = JSON.parse(harness(reborn, "mkdir").stdout);
+  assert.deepEqual([made.error, made.entry, made.folder], ["something new is at its path, so git was not asked to drop its entry", "relocked", "gone"]);
+  // A move aside refused: a process holding something in it is said only where Windows refuses for that.
+  const refused = r.add("refused");
+  const why = (/** @type {string} */ mode, /** @type {string} */ platform) => JSON.parse(harness(refused, mode, platform).stdout).verdict;
+  assert.deepEqual(
+    [why("refuse:EPERM", "win32"), why("refuse:EBUSY", "win32"), why("refuse:EACCES", "win32"), why("refuse:ENAMETOOLONG", "win32"), why("refuse:EPERM", "linux")],
+    [...["EPERM", "EBUSY", "EACCES"].map((error) => ({ go: false, why: "busy", vars: { error } })), ...["ENAMETOOLONG", "EPERM"].map((error) => ({ go: false, why: "notMoved", vars: { error } }))],
+  );
+  // Changed after the check and not moved back: said as a change, left locked, where it is.
+  const changed = r.add("changed");
+  const back = JSON.parse(harness(changed, "backfail").stdout);
+  assert.deepEqual([back.error, back.entry, back.folder, readFileSync(join(back.aside, "late.txt"), "utf8")], ["it changed after it was checked, and could not be moved back", "relocked", "changed", "late\n"]);
+  assert.match(cli(r.main, "--remove", changed).stdout, /: its folder was moved aside for removal and is at .*\/wts\/\.changed\.ennyn-removing-[0-9a-f]{8}: look, then delete it or move it back$/m);
+  // Stopped before the delete: the entry keeps its mark, and the check names where the folder went.
+  const stopped = r.add("stopped");
+  assert.equal(harness(stopped, "die").status, 9);
+  const aside = readdirSync(join(r.dir, "wts")).filter((n) => n.startsWith(".stopped.ennyn-removing-"));
+  assert.equal(aside.length, 1);
+  const entry = g(r.main, ["worktree", "list", "--porcelain"]).split("\n\n").find((b) => b.startsWith(`worktree ${stopped}\n`));
+  assert.match(String(entry), /^locked ennyn:19$/m);
+  const listed = cli(r.main);
+  assert.equal(listed.status, 0, listed.stderr);
+  assert.ok(listed.stdout.includes(`kept: ${stopped} (ennyn:19): its folder was moved aside for removal and is at ${join(r.dir, "wts", aside[0])}: look, then delete it or move it back\n`), listed.stdout);
+  assert.deepEqual([readdirSync(join(r.dir, "wts")).sort(), readdirSync(reborn), readFileSync(join(out, "deep", "keep.txt"), "utf8")], [[aside[0], back.aside.split("/").pop(), "refused", "reborn"].sort(), [], "keep\n"]);
+  // Something else at its path: that is what the check names, not a folder beside it.
+  mkdirSync(stopped);
+  assert.equal(verdicts(cli(r.main).stdout).stopped, "gone");
 });
 
 test("worktrees: what is written in a worktree after its check and before git removes it keeps it", () => {

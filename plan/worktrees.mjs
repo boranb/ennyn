@@ -9,26 +9,32 @@
  * Nothing here asks `git status` whether the folder is clean: status trusts the repository's stat settings (an
  * in-place edit of the same size with its time set back passes under `core.trustctime=false`), does not list a `.git`
  * entry below the top, and warns and exits 0 on a folder it cannot read (cycle 19 review, three gits). The folder is
- * compared with HEAD instead, by its bytes: every file a HEAD path of the same mode and the same blob, or the bytes
- * checkout writes for that blob, every link a HEAD link to the same target, every HEAD path on disk; empty folders
- * pass, and anything else keeps it. So does an index that differs from HEAD, an entry flagged assume-unchanged or
- * skip-worktree, a branch not merged, a detached HEAD no ref outside the worktree holds, state git keeps for an
- * operation in progress, and a commit only the worktree's own reflogs or refs hold.
+ * compared with HEAD instead, by its bytes: every file a HEAD path of the same mode (no executable bit is
+ * read on Windows, whose disk keeps none) and the same blob, or the bytes checkout writes for that blob, every link a
+ * HEAD link to the same target, every HEAD path on disk; empty folders pass, and anything else keeps it. So does an
+ * index that differs from HEAD, an entry flagged assume-unchanged or skip-worktree, a branch not merged, a detached
+ * HEAD no ref outside the worktree holds, state git keeps for an operation in progress, and a commit only the
+ * worktree's own reflogs or refs hold.
  *
  * The mark is read from the common git dir (`worktrees/<id>/locked` and `gitdir`, as gitrepository-layout describes
  * them), never from `git worktree list --porcelain`: below git 2.36 that has no -z, and a path holding a line feed
  * then prints a lock line of its own. Every file read here is a regular file opened without blocking, never through
  * a link: a named pipe in place of `.git`, `locked` or `gitdir` once held the command.
  *
- * What the check cannot see: a process still writing in the worktree after the second look and before git removes it
- * (right before the removal a walk with lstat alone must find the folder and its git folder as the check saw them,
- * and `--remove <path>` is meant for a worktree whose task has stopped), and a mark someone copied onto another
- * worktree by hand, which makes it the cycle's.
+ * The removal is not git's: Git for Windows 2.47.1 deletes through a junction in the folder, with or without
+ * `--force`. The folder is moved aside in one rename, looked at again, and deleted by Node's `rmSync`, which unlinks
+ * a link, a junction too, and never enters it (Node 22, Windows and Linux, measured); git then drops its entry. It
+ * would enter a folder swapped for a junction between its look at it and its read of it, and a volume mount point,
+ * which libuv does not report as a link.
+ *
+ * What the check cannot see: a file a process still writes in the worktree after the last look (a link it makes is
+ * unlinked, never entered; `--remove <path>` is meant for a worktree whose task has stopped), an NTFS alternate data
+ * stream, which Node does not list, and a mark someone copied onto another worktree by hand, which makes it the cycle's.
  */
 
-import { lstatSync, readdirSync, readlinkSync, realpathSync } from "node:fs";
-import { createHash } from "node:crypto";
-import { dirname, join, resolve } from "node:path";
+import { lstatSync, readdirSync, readlinkSync, realpathSync, renameSync, rmSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import { basename, dirname, join, resolve } from "node:path";
 import { readRegular } from "../core/files.mjs";
 import { argBatches, commonDir, git, gitBytes, gitError, gitMaybe, gitRun } from "../core/git.mjs";
 
@@ -43,6 +49,9 @@ export const MARK = /^ennyn:(\d+)\n?$/;
  * ORIG_HEAD and FETCH_HEAD name are checked with the worktree's own.
  */
 export const PLAIN = new Set(["HEAD", "ORIG_HEAD", "AUTO_MERGE", "REBASE_HEAD", "MERGE_RR", "FETCH_HEAD", "commondir", "gitdir", "index", "logs", "locked", "refs", "COMMIT_EDITMSG"]);
+
+/** The name a worktree's folder is moved to for its removal, before its random part. @param {string} name */
+const ASIDE = (name) => `.${name}.ennyn-removing-`;
 
 /** Refs only one worktree sees: they go with it. */
 const OWN_REFS = /^refs\/(worktree|bisect|rewritten)\//;
@@ -174,26 +183,28 @@ function unmeasured(e) {
  * Whether removing a marked worktree loses nothing; a check that could not be made keeps it, and says so.
  * @param {string} top the real path of the worktree the command runs in @param {Marked} w
  * @param {string[]} [shape] gets what the walks saw of its git folder and its folder, for the second look
+ * @param {string} [platform] the platform whose disk is read: on win32 it keeps no executable bit
  * @returns {Verdict}
  */
-export function verdict(top, w, shape = []) {
+export function verdict(top, w, shape = [], platform = process.platform) {
   try {
-    return judge(top, w, shape);
+    return judge(top, w, shape, platform);
   } catch (e) {
     return unmeasured(e);
   }
 }
 
 /**
- * The second look, right before the removal: the worktree's git folder and its folder walked again with lstat alone,
- * which reads no file, against what the check saw. The check reads every tracked byte (32 s for 1 GiB on git 2.34.1,
- * cycle 19 review), and what changed meanwhile it did not read. Any difference keeps it, naming the first entry.
- * @param {Marked} w @param {string[]} shape
+ * The second look, right before the removal: the worktree's git folder and its folder, now at `path`, walked again
+ * with lstat alone, which reads no file, against what the check saw. The check reads every tracked byte (32 s for
+ * 1 GiB on git 2.34.1, cycle 19 review), and what changed meanwhile it did not read. Any difference keeps it, naming
+ * the first entry.
+ * @param {Marked} w @param {string} path @param {string[]} shape
  * @returns {Verdict}
  */
-function again(w, shape) {
+function again(w, path, shape) {
   try {
-    const now = shapeOf(/** @type {string} */ (w.path), w.admin);
+    const now = shapeOf(path, w.admin);
     const at = now.findIndex((s, i) => s !== shape[i]);
     const i = at === -1 && now.length !== shape.length ? Math.min(now.length, shape.length) : at;
     if (i === -1) return { go: true };
@@ -209,49 +220,98 @@ const inGit = (admin) => [...below(admin)].map(({ p, st }) => mark(`.git/${p}`, 
 /** The worktree's git folder, then its folder, as the check's walks met them. @param {string} path @param {string} admin */
 const shapeOf = (path, admin) => [...inGit(admin), ...[...below(path)].map(({ p, st }) => mark(p, st))];
 
+/** Whether anything is at `p`; a look that fails counts as something. @param {string} p */
+const there = (p) => {
+  try {
+    return look(p) !== null;
+  } catch {
+    return true;
+  }
+};
+
 /**
- * Removes a marked worktree that passes, checked again right before and then looked at once more (`again`): unlocked,
- * then `git worktree remove` without `--force`. When a step fails, what is true afterwards is said: whether git still lists it (locked with its mark
- * again, or not) or dropped its entry, and whether its folder is still there.
- * @param {string} top the real path of the worktree the command runs in @param {Marked} w
- * @returns {{ removed: true } | { removed: false, verdict: Verdict } | { removed: false, error: string, entry: "relocked" | "notRelocked" | "dropped", folder: "left" | "gone" }}
+ * @typedef {{ removed: true } | { removed: false, verdict: Verdict, notMoved?: true }
+ *   | { removed: false, error: string, entry: "relocked" | "notRelocked" | "dropped", folder: "left" | "aside" | "changed" | "gone", aside: string }} Removal
  */
-export function removeWorktree(top, w) {
+
+/**
+ * Removes a marked worktree that passes. Git does not delete its folder (Git for Windows 2.47.1 deletes through a
+ * junction in it): the folder is moved aside in one rename to a name beside it (`ASIDE`), and a rename that fails
+ * keeps it (on Windows, while a process holds a file or its working directory in it). The moved folder is looked at
+ * once more (`again`; a change moves it back and keeps it), deleted by `rmSync`, which unlinks a link or a junction
+ * and never enters it, and only then unlocked: a removal stopped before that leaves the entry locked with its mark, and
+ * `verdict` names the moved folder. git then drops the entry (`git worktree remove` of a folder no longer there; never
+ * when something new is at its path). When a step fails, what is true afterwards is said: whether git still lists it
+ * (locked with its mark again, or not) or dropped its entry, and whether its folder is back in place, at the name it
+ * was moved to (whole, what a failed delete left, or with a change made after the check), or gone.
+ * @param {string} top the real path of the worktree the command runs in @param {Marked} w
+ * @param {string} [platform] as `verdict`'s
+ * @returns {Removal}
+ */
+export function removeWorktree(top, w, platform = process.platform) {
   /** @type {string[]} */
   const shape = [];
-  const first = verdict(top, w, shape);
-  const v = first.go ? again(w, shape) : first;
+  const v = verdict(top, w, shape, platform);
   if (!v.go) return { removed: false, verdict: v };
   const path = /** @type {string} */ (w.path);
+  const aside = join(dirname(path), `${ASIDE(basename(path))}${randomBytes(4).toString("hex")}`);
+  try {
+    renameSync(path, aside);
+  } catch (e) {
+    const code = errno(e) ?? /** @type {Error} */ (e).message;
+    // A process holding something in it is what Windows refuses a rename for; any other error is said as it is.
+    const held = platform === "win32" && ["EBUSY", "EPERM", "EACCES"].includes(code);
+    return { removed: false, verdict: { go: false, why: held ? "busy" : "notMoved", vars: { error: code } }, notMoved: true };
+  }
   const run = (/** @type {string[]} */ args) => {
     const r = gitRun(args, { cwd: top });
     return r.error || r.status !== 0 ? gitError(args, r).stderr.trim().split("\n")[0] : null;
   };
-  const error = run(["worktree", "unlock", path]) ?? run(["worktree", "remove", path]);
-  if (error === null) return { removed: true };
-  const there = (/** @type {string} */ p) => {
+  /** What is true after a failed step, its folder where `folder` says. @param {string} error @param {"left" | "aside" | "changed" | "gone"} folder @returns {Removal} */
+  const stopped = (error, folder) => {
+    if (!there(w.admin)) return { removed: false, error, entry: "dropped", folder, aside };
+    let still = false;
     try {
-      return look(p) !== null;
+      still = MARK.test(readSmall(w.admin, "locked") ?? "");
     } catch {
-      return true;
+      // Not readable: lock it again.
+    }
+    return { removed: false, error, entry: still || run(["worktree", "lock", "--reason", w.mark, path]) === null ? "relocked" : "notRelocked", folder, aside };
+  };
+  /** The folder back in place, or where it is when that fails. */
+  const back = () => {
+    try {
+      renameSync(aside, path);
+      return "left";
+    } catch {
+      return "aside";
     }
   };
-  const folder = there(path) ? "left" : "gone";
-  if (!there(w.admin)) return { removed: false, error, entry: "dropped", folder };
-  let still = false;
-  try {
-    still = MARK.test(readSmall(w.admin, "locked") ?? "");
-  } catch {
-    // Not readable: lock it again.
+  const late = again(w, aside, shape);
+  if (!late.go) {
+    const where = back();
+    return where === "left" ? { removed: false, verdict: late } : stopped("it changed after it was checked, and could not be moved back", "changed");
   }
-  return { removed: false, error, entry: still || run(["worktree", "lock", "--reason", w.mark, path]) === null ? "relocked" : "notRelocked", folder };
+  try {
+    rmSync(aside, { recursive: true });
+  } catch (e) {
+    return stopped(/** @type {Error} */ (e).message.split("\n")[0], there(aside) ? "aside" : "gone");
+  }
+  if (there(path)) return stopped("something new is at its path, so git was not asked to drop its entry", "gone");
+  const unlocked = run(["worktree", "unlock", path]);
+  if (unlocked !== null) return stopped(unlocked, "gone");
+  const dropped = run(["worktree", "remove", path]);
+  return dropped === null ? { removed: true } : stopped(dropped, "gone");
 }
 
-/** @param {string} top @param {Marked} w @param {string[]} shape @returns {Verdict} */
-function judge(top, w, shape) {
+/** @param {string} top @param {Marked} w @param {string[]} shape @param {string} platform @returns {Verdict} */
+function judge(top, w, shape, platform) {
   if (w.dup) return { go: false, why: "dup" };
   // The folder itself, never through a link to it.
-  if (w.path === null || !look(w.path)?.isDirectory() || !pointsBack(w.path, w.admin)) return { go: false, why: "gone" };
+  if (w.path === null || !look(w.path)?.isDirectory() || !pointsBack(w.path, w.admin)) {
+    const moved = w.path === null || look(w.path) ? [] : movedAside(w.path);
+    return moved.length ? { go: false, why: "movedAside", vars: { path: moved } } : { go: false, why: "gone" };
+  }
   if (real(w.path) === top) return { go: false, why: "here" };
   const state = readdirSync(w.admin).filter((n) => !PLAIN.has(n)).sort();
   // A worktree's refs and reflogs in a reftable (git 2.45 and later, measured on 2.56.0) are not read here.
@@ -272,7 +332,7 @@ function judge(top, w, shape) {
     .split("\0")
     .filter((e) => /^([a-z]|S) /.test(e));
   if (flagged.length) return { go: false, why: "flagged", vars: { n: flagged.length, first: [flagged[0].slice(2)] } };
-  const odd = compareWithHead(w.path, head, shape);
+  const odd = compareWithHead(w.path, head, shape, platform);
   if (odd) return odd;
   const branch = gitMaybe(["symbolic-ref", "-q", "HEAD"], { cwd: w.path, absent: [1] });
   const holders = lines(git(["for-each-ref", "--contains", head, "--format=%(refname)", "refs/heads", "refs/tags", "refs/remotes"], at)).filter((r) => r !== branch);
@@ -286,6 +346,19 @@ function judge(top, w, shape) {
   const left = shared.notHeld([...ownCommits(w.path, w.admin)]).length;
   if (left) return { go: false, why: "leftBehind", vars: { n: left } };
   return { go: true };
+}
+
+/**
+ * The folders beside `path` a removal moved it to and did not finish deleting, as `removeWorktree` names them; none
+ * when the parent cannot be read.
+ * @param {string} path
+ */
+function movedAside(path) {
+  try {
+    return readdirSync(dirname(path)).filter((n) => n.startsWith(ASIDE(basename(path)))).sort().map((n) => join(dirname(path), n));
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -311,11 +384,12 @@ const quoted = (p) => `"${p.replace(/[\\"]/g, "\\$&").replace(/[\x00-\x1f\x7f]/g
 /**
  * The folder at `path` against HEAD's tree, by what is on disk: null when it holds what a checkout of HEAD writes, else
  * why not. Read with lstat and never through a link; the top `.git` file is git's. `shape` gets each entry the walk
- * meets, for the second look.
- * @param {string} path @param {string} head @param {string[]} shape
+ * meets, for the second look. On win32 the disk keeps no executable bit (Git for Windows sets `core.fileMode=false`),
+ * so none is compared; elsewhere the bit on disk is, whatever `core.fileMode` says: removing the folder loses it.
+ * @param {string} path @param {string} head @param {string[]} shape @param {string} platform
  * @returns {Verdict | null}
  */
-function compareWithHead(path, head, shape) {
+function compareWithHead(path, head, shape, platform) {
   const at = { cwd: path, walk: true };
   /** @type {Map<string, { mode: string, oid: string, size: number }>} */
   const tree = new Map();
@@ -348,7 +422,7 @@ function compareWithHead(path, head, shape) {
     } else if (st.isFile()) {
       const link = want?.mode === "120000" && plainLinks;
       if (!want || !(link || /^100(644|755)$/.test(want.mode))) return keep("notInHead", p);
-      if (!link && (st.mode & 0o100n ? "100755" : "100644") !== want.mode) return keep("mode", p);
+      if (!link && platform !== "win32" && (st.mode & 0o100n ? "100755" : "100644") !== want.mode) return keep("mode", p);
       files.push({ p, oid: want.oid, size: Number(st.size), link });
       seen.add(p);
     } else return keep("special", p);

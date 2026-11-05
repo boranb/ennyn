@@ -1586,13 +1586,17 @@ const COMMANDS = {
       if ("removed" in done && done.removed) say("worktrees.removed", vars);
       else if ("error" in done) {
         const entry = tShown(`worktrees.entry.${done.entry}`, {}, lang);
-        say("worktrees.failed", { ...vars, error: done.error, entry: { shown: entry }, folder: { shown: tShown(`worktrees.folder.${done.folder}`, {}, lang) } });
+        say("worktrees.failed", { ...vars, error: done.error, entry: { shown: entry }, folder: { shown: tShown(`worktrees.folder.${done.folder}`, { aside: [done.aside] }, lang) } });
         failed++;
       } else if ("verdict" in done) {
         const v = done.verdict;
         if (v.go) say("worktrees.canGo", vars);
         else if ("unmeasured" in v) say("worktrees.unmeasured", { ...vars, error: v.unmeasured }), failed++;
-        else say("worktrees.kept", { ...vars, why: { shown: tShown(`worktrees.why.${v.why}`, v.vars ?? {}, lang) } });
+        else {
+          say("worktrees.kept", { ...vars, why: { shown: tShown(`worktrees.why.${v.why}`, v.vars ?? {}, lang) } });
+          // Passed, but not moved aside for its removal: not removed, so the command did not do what it was asked.
+          if ("notMoved" in done) failed++;
+        }
       }
     }
     if (found.others && !positional.length) say("worktrees.others", { n: found.others });
