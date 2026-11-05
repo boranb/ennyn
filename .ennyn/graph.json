@@ -3533,7 +3533,7 @@
       "value": "high",
       "cost": "M",
       "cluster": "distribution",
-      "source": "user, 2026-11-01: a request. Measured then: the address is in commit headers only, in no file and no commit message at any point in history; 660 hash mentions in tracked files, 508 of them in .ennyn/, 151 in a test fixture; related: account-hardening, history-secret-scan",
+      "source": "user, 2026-11-01: a request. Measured then: the address is in commit headers only, in no file and no commit message at any point in history; 660 hash mentions in tracked files, 508 of them in .ennyn/, 151 in a test fixture; related: account-hardening, history-secret-scan; the user, 2026-11-05: a request; in the same rewrite, before the repository is public, the working files leave the history: .ennyn/handoff.md, .ennyn/handoff-archive.md and the user's chat quotes in graph sources and findings rows; which files exactly is settled then, with the README and docs/evidence.md claims that cite them; a delete in a new commit leaves them in every older commit, and a rewrite after the repository is public leaves them in every clone and fork",
       "since": 17
     },
     {
