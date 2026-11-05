@@ -396,6 +396,7 @@
   "bypass.item": "  {hash} · {date} · {subject} · reason: {reason}",
   "bypass.noReason": "(none written)",
   "bypass.shallow": "This clone is shallow: commits before its boundary are not counted.",
+  "bypass.foldMissed": "Commit-shape bypass: the target of squash! {hash} was not found in this shallow clone, so the count may be short.",
   "bypass.looseNone": "Keys loosened: none in {commits} commits.",
   "bypass.looseSummary": "Keys loosened: in {n} of {commits} commits.",
   "bypass.looseItem": "  {hash} · {date} · {subject} · loosened: {keys}",

@@ -6,10 +6,12 @@
  *
  * Counted as the hook decides: a subject the check skips (a revert of a bypass
  * commit, a merge git named) is not a use, but a merge with a subject of its own
- * is checked and counts. An amend! uses the marker only in its own body: its
- * subject repeats the target's and its body replaces the target's message. A
- * squash! is checked with its target and keeps the subject. Only the messages that contain the
- * marker are read, NUL-separated (git messages cannot hold NUL), so a long history
+ * is checked and counts. Each message is read by the hook's own reader (markerUse):
+ * an amend! by its body alone, which replaces the target's message; a squash! with
+ * its target's message, so a marker in the target lets it through too. The target is
+ * searched for from the first parent, which is the HEAD the hook saw only for a commit
+ * made in place: a squash! rebased, or amended into one, may have seen another. Only the messages that contain the
+ * marker or a squash! are read, NUL-separated (git messages cannot hold NUL), so a long history
  * or a control character in a message cannot break the count. The range is listed
  * by commit time alone, a few bytes per commit, and filtered here: git's --since
  * stops walking at a commit dated older, and a clock off by days hides the newer
@@ -44,7 +46,7 @@ import { join } from "node:path";
 import { blobAt, git, gitMaybe, headCommit } from "../core/git.mjs";
 import { CONFIG_PATH, DEFAULTS, configFrom } from "../core/config.mjs";
 import { present } from "../core/files.mjs";
-import { allowMarkerReason, skippedSubject } from "../checks/commit-shape.mjs";
+import { foldTarget, markerUse, skippedSubject } from "../checks/commit-shape.mjs";
 import { approvalLines, approvedKeys, configAt, inside, loaded, loosenedKeys, sameValue } from "../checks/loosening.mjs";
 import { parseBound, shallowEdge } from "./szz.mjs";
 
@@ -163,9 +165,10 @@ export function cycleStart(cwd, from, env = process.env) {
  * @param {{ cwd: string, since?: string, until?: string, from?: string, env?: NodeJS.ProcessEnv }} opts
  *   `since` / `until`: "YYYY-MM-DD" (local days, inclusive) or any Date.parse string; committer time.
  *   `from`: a revision; only commits after it count (`<from>..HEAD`), e.g. the HEAD a cycle started at.
- * @returns {{ commits: number, uses: BypassUse[], shallow: boolean, loosened: Loosening[], unread: { hash: string, reason: Said }[], unmeasured: Said[], language: string }}
+ * @returns {{ commits: number, uses: BypassUse[], shallow: boolean, missed: string[], loosened: Loosening[], unread: { hash: string, reason: Said }[], unmeasured: Said[], language: string }}
  *   uses and loosened newest first; `shallow`: commits before a shallow clone's boundary could be in the range and
- *   are not counted; `unread`: commits that touched the config and could not be compared; `unmeasured`: what the range's
+ *   are not counted; `missed`: squash! commits whose target this shallow clone may lack, so a marker
+ *   there is not counted; `unread`: commits that touched the config and could not be compared; `unmeasured`: what the range's
  *   config rests on that no commit holds; `language`: the end commit's
  */
 export function bypassUses({ cwd, since, until, from, env = process.env }) {
@@ -174,7 +177,7 @@ export function bypassUses({ cwd, since, until, from, env = process.env }) {
   // Throws outside a repository: unmeasured is not zero.
   git(["rev-parse", "--git-dir"], { cwd });
   const isShallow = git(["rev-parse", "--is-shallow-repository"], { cwd }) === "true";
-  if (!headCommit(cwd)) return { commits: 0, uses: [], shallow: false, loosened: [], unread: [], unmeasured: [], language: DEFAULTS.language };
+  if (!headCommit(cwd)) return { commits: 0, uses: [], shallow: false, missed: [], loosened: [], unread: [], unmeasured: [], language: DEFAULTS.language };
   // A bad revision throws too: see cycleStart.
   if (from !== undefined && !from) throw new RangeError("from: empty revision");
   /** @type {string[]} */
@@ -212,21 +215,36 @@ export function bypassUses({ cwd, since, until, from, env = process.env }) {
   const merges = git(["log", "--merges", "-z", "--format=%ct%x00%B", ...range], { cwd, walk: true }).split("\0");
   for (let i = 0; i + 1 < merges.length; i += 2) if (within(timeOf(merges[i].replace(/^\n/, ""))) && !skippedSubject(merges[i + 1].split("\n")[0], config)) commits++;
 
-  const marker = config.commitMsg.allowMarker;
-  const fields = git(["log", "-z", "-F", `--grep=${marker}`, "--format=%H%x00%ct%x00%B", ...range], { cwd, walk: true }).split("\0");
+  // The messages that hold the marker, and the squash! ones: the hook reads those with their target's message.
+  const fields = git(["log", "-z", "-F", `--grep=${config.commitMsg.allowMarker}`, "--grep=squash! ", "--format=%H%x00%ct%x00%P%x00%B", ...range], { cwd, walk: true }).split("\0");
+  /** @type {Set<string> | undefined} */
+  let subjects;
+  // Every subject up to HEAD as the hook's search compares them (%s). A squash!'s first parent is an ancestor of HEAD,
+  // so a name none of them holds is one the search cannot find: then, and only then, it is not made, in a full clone.
+  const known = (/** @type {string} */ name) => (subjects ??= new Set(git(["log", "-z", "--format=%s", "HEAD", "--"], { cwd, walk: true }).split("\0"))).has(name);
   /** @type {BypassUse[]} */
   const uses = [];
-  for (let i = 0; i + 2 < fields.length; i += 3) {
+  /** @type {string[]} */
+  const missed = [];
+  for (let i = 0; i + 3 < fields.length; i += 4) {
     const hash = fields[i].replace(/^\n/, "");
     const time = timeOf(fields[i + 1]);
-    const body = fields[i + 2];
+    const [parent] = fields[i + 2].split(" ");
+    const body = fields[i + 3];
     if (!within(time)) continue;
     const subject = body.split("\n")[0];
-    if (skippedSubject(subject, config)) continue;
-    const own = /^amend! /.test(subject) ? body.slice(subject.length) : body;
-    const reason = allowMarkerReason(own, marker);
+    // The target as the hook searched for it, from the first parent: the HEAD it saw for a commit made in place, not
+    // after a rebase or an amend into a squash!. A root commit had none to fold into.
+    let target = null;
+    if (/^squash! /.test(subject) && parent && (isShallow || known(subject.replace(/^(?:(?:amend|squash|fixup)! )+/, "")))) {
+      const fold = foldTarget(cwd, body, "verbatim", "#", false, parent);
+      target = fold.target;
+      // Past 500 commits the hook did not find it either; a shallow clone may lack one the hook found.
+      if (fold.missed && isShallow) missed.push(hash);
+    }
+    const reason = markerUse(body, config, target);
     if (reason !== null) uses.push({ hash, time, subject, reason });
   }
   const { moved, ...keys } = configMoves({ cwd, namedRel, range, within, edge: isShallow ? shallowEdge(cwd) : new Set() });
-  return { commits, uses, shallow, ...keys, unmeasured: [...unmeasured, ...moved], language: config.language };
+  return { commits, uses, shallow, missed, ...keys, unmeasured: [...unmeasured, ...moved], language: config.language };
 }

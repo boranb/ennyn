@@ -13,7 +13,7 @@ import { CONFIG_PATH, loadConfig, ConfigError } from "../core/config.mjs";
 import { HOOK_INDEX_ENV, HOOK_READ_ENV, MISSING_OBJECT, NAMES_BUFFER, READ_BUDGET, blobBytes, diffGroups, git, headCommit, hookElsewhere, indexEntries, indexKinds, indexNames, machineFault, mergeHeads, projectRoot, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, stagedVersionsEach, stateRoot, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
 import { ends, jsonShown, shown, t, tShown, unshownEscaped } from "../core/i18n.mjs";
 import { matchAny } from "../core/glob.mjs";
-import { checkCommitShape, nameShown, secretErrors, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
+import { checkCommitShape, foldTarget, nameShown, secretErrors, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
 import { ciCallees, ciMessages } from "../checks/ci.mjs";
 import { advisoriesOf, depsMessages, dirOf, judgeEntry, judgeLock, lockEntries, lockPath, lockText, npmrcFindings, npmrcPath, pkgJson, pkgJsonPath, pkgPathOf, reasonText, registryOf, registryResolver } from "../checks/deps.mjs";
 import { readIfThere, readRegular } from "../core/files.mjs";
@@ -161,39 +161,6 @@ async function pickable(cwd, cfg) {
   for (const p of problems) err(`${p.level === "fail" ? "✗" : "!"} ${tShown(p.key, p.vars, cfg.language)}`);
   if (problems.some((p) => p.level === "fail")) return (err(t("mechanization.refused", {}, cfg.language)), null);
   return graph;
-}
-
-/**
- * For an amend! / squash! message, the commit it folds into: the newest of the last 500 whose subject is
- * the one named, every leading fold prefix taken off as autosquash does ("squash! squash! x" folds into
- * x), with its message and paths; null when there is none (or the message is no fold). `missed`: no target
- * was found but the search did not see the whole history (500 commits read, or a shallow clone), so what
- * the target would require goes unchecked, and the caller says so.
- * @param {string} cwd @param {string} message @param {"strip" | "whitespace" | "verbatim" | "scissors"} cleanup @param {string} comment @param {boolean} cut
- * @returns {{ target: { message: string, paths: string[] } | null, missed: "depth" | "shallow" | null, subject: string }}
- */
-function foldTarget(cwd, message, cleanup, comment, cut) {
-  const fold = /^(?:amend|squash)! (.*)$/.exec(storedMessage(message, cleanup, comment, cut).split("\n")[0] ?? "");
-  if (!fold) return { target: null, missed: null, subject: "" };
-  const subject = fold[1].replace(/^(?:(?:amend|squash|fixup)! )+/, "");
-  // No commit yet, or no repository: nothing to fold into. A git that fails is no "no target".
-  if (!headCommit(cwd)) return { target: null, missed: null, subject };
-  // One more than the search: 501 lines say the history goes on, 500 or fewer that it was all read.
-  const log = git(["log", "-n501", "--format=%H%x00%s"], { cwd }).split("\n");
-  const hit = log.slice(0, 500).find((l) => l.slice(l.indexOf("\0") + 1) === subject);
-  if (!hit) {
-    const missed = log.length > 500 ? "depth" : git(["rev-parse", "--is-shallow-repository"], { cwd }) === "true" ? "shallow" : null;
-    return { target: null, missed, subject };
-  }
-  const hash = hit.slice(0, hit.indexOf("\0"));
-  return {
-    target: {
-      message: git(["log", "-1", "--format=%B", hash, "--"], { cwd }),
-      paths: git(["show", "-z", "--name-only", "--no-renames", "--format=", hash, "--"], { cwd }).split("\0").filter(Boolean),
-    },
-    missed: null,
-    subject,
-  };
 }
 
 /** The paths a map holds, by the reason each was not read. @param {Map<string, string>} unread @returns {Map<string, string[]>} */
@@ -1370,6 +1337,7 @@ const COMMANDS = {
     const code = unread.length || unmeasured.length ? 1 : 0;
     if (opts.json) return (out(jsonShown({ ...res, unread, unmeasured })), code);
     if (res.shallow) out(t("bypass.shallow", {}, lang));
+    for (const hash of res.missed) out(t("bypass.foldMissed", { hash: hash.slice(0, 10) }, lang));
     for (const said of res.unmeasured) out(tShown(said.key, said.vars, lang));
     for (const u of unread) out(tShown("bypass.looseUnread", { hash: u.hash.slice(0, 10), reason: u.reason }, lang));
     if (!res.commits) out(t("bypass.noCommits", {}, lang));

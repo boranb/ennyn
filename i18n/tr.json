@@ -396,6 +396,7 @@
   "bypass.item": "  {hash} · {date} · {subject} · gerekçe: {reason}",
   "bypass.noReason": "(yazılmamış)",
   "bypass.shallow": "Bu klon sığ: sınırından önceki commit'ler sayılmadı.",
+  "bypass.foldMissed": "Commit biçimi atlatması: squash! {hash} commit'inin hedefi bu sığ klonda bulunamadı; sayı eksik olabilir.",
   "bypass.looseNone": "Gevşetilen anahtar: {commits} commit'te yok.",
   "bypass.looseSummary": "Gevşetilen anahtar: {commits} commit'in {n} tanesinde.",
   "bypass.looseItem": "  {hash} · {date} · {subject} · gevşetilen: {keys}",

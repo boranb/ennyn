@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -62,7 +62,7 @@ test("bypass: uses in subject or body are counted with their reason; the range i
   ]);
   const mid = bypassUses({ cwd: r.dir, since: "2026-03-02", until: "2026-03-03" });
   assert.deepEqual([mid.commits, mid.uses.length], [2, 2]);
-  assert.deepEqual(bypassUses({ cwd: r.dir, since: "2026-03-05" }), { commits: 1, uses: [], shallow: false, loosened: [], unread: [], unmeasured: [], language: "en" });
+  assert.deepEqual(bypassUses({ cwd: r.dir, since: "2026-03-05" }), { commits: 1, uses: [], shallow: false, missed: [], loosened: [], unread: [], unmeasured: [], language: "en" });
 });
 
 test("bypass: outside a repository it fails (unmeasured, not zero); an empty repository has no commits", () => {
@@ -70,7 +70,7 @@ test("bypass: outside a repository it fails (unmeasured, not zero); an empty rep
   assert.throws(() => bypassUses({ cwd: outside }));
   const empty = mkdtempSync(join(tmpdir(), "en-bypass-empty-"));
   git(["init", "-q"], { cwd: empty });
-  assert.deepEqual(bypassUses({ cwd: empty }), { commits: 0, uses: [], shallow: false, loosened: [], unread: [], unmeasured: [], language: "en" });
+  assert.deepEqual(bypassUses({ cwd: empty }), { commits: 0, uses: [], shallow: false, missed: [], loosened: [], unread: [], unmeasured: [], language: "en" });
 });
 
 test("cli: bypass prints the count and each use; --json is the result; a bad date is a usage error", () => {
@@ -113,7 +113,7 @@ test("bypass: --from counts only the commits after a revision; a bad revision fa
   r.commit("fix: b", "2026-03-01");
   const res = bypassUses({ cwd: r.dir, from: start });
   assert.deepEqual([res.commits, res.uses.length], [2, 1]);
-  assert.deepEqual(bypassUses({ cwd: r.dir, from: "HEAD" }), { commits: 0, uses: [], shallow: false, loosened: [], unread: [], unmeasured: [], language: "en" });
+  assert.deepEqual(bypassUses({ cwd: r.dir, from: "HEAD" }), { commits: 0, uses: [], shallow: false, missed: [], loosened: [], unread: [], unmeasured: [], language: "en" });
   assert.throws(() => bypassUses({ cwd: r.dir, from: "no-such-rev" }));
   // An empty revision (a lost cycle start) is an error, not the whole history.
   assert.throws(() => bypassUses({ cwd: r.dir, from: "" }), /empty revision/);
@@ -284,4 +284,97 @@ test("bypass audit: a merge is judged by its first line, as the hook judges it",
   git(["-c", "user.name=t", "-c", "user.email=t@t", "merge", "-q", "--no-ff", "-m", "Merge\nbranch side [commit-shape-allow: kept as it came]", "side"], { cwd: r.dir });
   const res = bypassUses({ cwd: r.dir });
   assert.deepEqual([res.commits, res.uses.map((u) => u.reason)], [3, ["kept as it came"]]);
+});
+
+test("bypass audit: a fold is read as the hook reads it, a squash! with its target's message and an amend! by its new subject", () => {
+  const r = repo();
+  commitAt(r.dir, "feat: target\n\nOne line.\n[commit-shape-allow: reason in the target body]", "2026-03-01T12:00:00");
+  // The hook reads the target's message with the squash!'s body, so the target's marker lets this one through.
+  commitAt(r.dir, "squash! feat: target\n\nMore lines.", "2026-03-02T12:00:00");
+  commitAt(r.dir, "feat: plain", "2026-03-03T12:00:00");
+  commitAt(r.dir, 'Revert "feat: plain"', "2026-03-04T12:00:00");
+  // Each of these the hook skips by a subject: the amend!'s new one, the squash!'s target's.
+  commitAt(r.dir, 'amend! feat: plain\n\nRevert "x" [commit-shape-allow: behind a skipped subject]', "2026-03-05T12:00:00");
+  commitAt(r.dir, 'squash! Revert "feat: plain"\n\nBody [commit-shape-allow: behind a skipped subject]', "2026-03-06T12:00:00");
+  const res = bypassUses({ cwd: r.dir });
+  assert.deepEqual(res.uses.map((u) => [u.subject, u.reason]), [
+    ["squash! feat: target", "reason in the target body"],
+    ["feat: target", "reason in the target body"],
+  ]);
+});
+
+test("bypass audit: a squash! in the range reads a target from before it, and a target without the marker gives no use", () => {
+  const r = repo();
+  commitAt(r.dir, "feat: old\n\n[commit-shape-allow: marker before the range]", "2026-03-01T12:00:00");
+  commitAt(r.dir, "feat: other", "2026-03-02T12:00:00");
+  const start = git(["rev-parse", "HEAD"], { cwd: r.dir });
+  commitAt(r.dir, "squash! feat: old\n\nMore.", "2026-03-03T12:00:00");
+  commitAt(r.dir, "squash! feat: other\n\nMore.", "2026-03-04T12:00:00");
+  const res = bypassUses({ cwd: r.dir, from: start });
+  assert.deepEqual([res.commits, res.uses.map((u) => [u.subject, u.reason])], [2, [["squash! feat: old", "marker before the range"]]]);
+});
+
+test("bypass audit: a squash!'s target is the one its first parent saw, read by its first line as the hook reads it", () => {
+  const r = repo();
+  commitAt(r.dir, "feat: t\n\n[commit-shape-allow: the target it folds into]", "2026-03-01T12:00:00");
+  commitAt(r.dir, "squash! feat: t\n\nMore.", "2026-03-02T12:00:00");
+  // A later commit of the same subject, no marker: the hook made the squash! before it existed.
+  commitAt(r.dir, "feat: t", "2026-03-03T12:00:00");
+  // A first paragraph of two lines: the search compares "Revert x" (%s), the hook reads the first line, "Revert".
+  commitAt(r.dir, "Revert\nx", "2026-03-04T12:00:00");
+  commitAt(r.dir, "squash! Revert x\n\nBody [commit-shape-allow: the target's first line is no skip]", "2026-03-05T12:00:00");
+  const res = bypassUses({ cwd: r.dir });
+  assert.deepEqual(res.uses.map((u) => [u.subject, u.reason]), [
+    ["squash! Revert x", "the target's first line is no skip"],
+    ["squash! feat: t", "the target it folds into"],
+    ["feat: t", "the target it folds into"],
+  ]);
+});
+
+test("bypass audit: the target is searched wherever it can decide, a fold prefix after squash! and a skip pattern on a first line too", () => {
+  const r = repo();
+  commitAt(r.dir, "feat: plain", "2026-03-01T12:00:00");
+  // git writes this subject for --squash of a fixup! commit: the hook folds into "feat: plain", whose subject it checks.
+  commitAt(r.dir, "squash! fixup! feat: plain\n\nMore [commit-shape-allow: behind a fixup! name]", "2026-03-02T12:00:00");
+  // Read with its target, the body's Revert is no subject; read as an amend! of nothing, it would be.
+  commitAt(r.dir, 'squash! amend! feat: plain\n\nRevert "z" [commit-shape-allow: a revert line in the body]', "2026-03-03T12:00:00");
+  const res = bypassUses({ cwd: r.dir });
+  assert.deepEqual(res.uses.map((u) => u.reason), ["a revert line in the body", "behind a fixup! name"]);
+  // A skip pattern of the project's own, matched against the hook's first line, not git's joined %s.
+  const w = repo();
+  mkdirSync(join(w.dir, ".ennyn"));
+  writeFileSync(join(w.dir, ".ennyn", "config.json"), JSON.stringify({ commitMsg: { skipSubjects: ["^Merge ", "^Revert ", "^fixup! ", "^WIP$"] } }));
+  commitAt(w.dir, "WIP\nmore words", "2026-03-01T12:00:00");
+  commitAt(w.dir, "squash! WIP more words\n\nBody [commit-shape-allow: the target's first line is skipped]", "2026-03-02T12:00:00");
+  assert.deepEqual(bypassUses({ cwd: w.dir }).uses, []);
+});
+
+test("bypass audit: a squash! whose target lies past a shallow clone's boundary says the count may be short", () => {
+  const r = repo();
+  commitAt(r.dir, "feat: t\n\n[commit-shape-allow: marker in the target]", "2026-03-01T12:00:00");
+  for (const i of [1, 2, 3]) commitAt(r.dir, `feat: filler ${i}`, `2026-03-0${1 + i}T12:00:00`);
+  commitAt(r.dir, "squash! feat: t\n\nMore.", "2026-03-05T12:00:00");
+  const full = bypassUses({ cwd: r.dir, from: "HEAD~1" });
+  assert.deepEqual([full.uses.length, full.missed], [1, []]);
+  const shallow = mkdtempSync(join(tmpdir(), "en-bypass-shallow-"));
+  git(["clone", "-q", "--depth", "2", pathToFileURL(r.dir).href, shallow], { cwd: tmpdir() });
+  const res = bypassUses({ cwd: shallow, from: "HEAD~1" });
+  const head = git(["rev-parse", "HEAD"], { cwd: shallow });
+  assert.deepEqual([res.uses.length, res.shallow, res.missed], [0, false, [head]]);
+  const text = spawnSync(process.execPath, [CLI, "bypass", "--from", "HEAD~1"], { cwd: shallow, encoding: "utf8" });
+  assert.match(text.stdout, /^Commit-shape bypass: the target of squash! [0-9a-f]{10} was not found in this shallow clone, so the count may be short\.$/m);
+  assert.deepEqual(JSON.parse(spawnSync(process.execPath, [CLI, "bypass", "--from", "HEAD~1", "--json"], { cwd: shallow, encoding: "utf8" }).stdout).missed, [head]);
+});
+
+test("bypass audit: past 500 commits the hook did not find a squash!'s target either, so a full clone reads it the same and says no shortfall", () => {
+  const r = repo();
+  commitAt(r.dir, "feat: far\n\n[commit-shape-allow: marker 501 commits back]", "2026-03-01T12:00:00");
+  const tip = git(["rev-parse", "HEAD"], { cwd: r.dir });
+  const entry = (/** @type {number} */ i, /** @type {string} */ m) => `commit refs/heads/main\ncommitter t <t@t> ${1772539200 + i} +0000\ndata ${Buffer.byteLength(m)}\n${m}\n${i ? "" : `from ${tip}\n`}\n`;
+  let stream = "";
+  for (let i = 0; i < 501; i++) stream += entry(i, `feat: n${i}`);
+  stream += entry(501, "squash! feat: far\n\nMore.");
+  git(["fast-import", "--quiet"], { cwd: r.dir, input: stream });
+  const res = bypassUses({ cwd: r.dir, from: tip });
+  assert.deepEqual([res.commits, res.uses, res.missed], [502, [], []]);
 });

@@ -10,7 +10,7 @@
 import { isUtf8 } from "node:buffer";
 import { matchAny } from "../core/glob.mjs";
 import { markLength, wideForms } from "../core/encoding.mjs";
-import { gitMaybe, parseTrailers } from "../core/git.mjs";
+import { git, gitMaybe, headCommit, parseTrailers } from "../core/git.mjs";
 import { shown, t } from "../core/i18n.mjs";
 import { LOOSENING_LINE } from "./loosening.mjs";
 import { masked, secretHits, secretsOff, textSecrets } from "./secrets.mjs";
@@ -174,7 +174,7 @@ export function hookCommitMode({ cwd, message, env }) {
 /**
  * The reason written with the bypass marker: "" when the bracket never closes,
  * null without a marker. The one parser for it; metrics/bypass.mjs counts the
- * uses in history with the same rule.
+ * uses in history through markerUse, which reads it where the hook does.
  * @param {string} text the stored message
  * @param {string} marker `commitMsg.allowMarker`
  * @returns {string | null}
@@ -184,6 +184,41 @@ export function allowMarkerReason(text, marker) {
   if (at === -1) return null;
   const close = text.indexOf("]", at);
   return close === -1 ? "" : text.slice(at + marker.length, close).trim();
+}
+
+/**
+ * For an amend! / squash! message, the commit it folds into: the newest of the last 500 whose subject is
+ * the one named, every leading fold prefix taken off as autosquash does ("squash! squash! x" folds into
+ * x), with its message and paths; null when there is none (or the message is no fold). `missed`: no target
+ * was found but the search did not see the whole history (500 commits read, or a shallow clone), so what
+ * the target would require goes unchecked, and the caller says so. `at`: the commit the search starts from, HEAD as
+ * the hook makes a commit; metrics/bypass.mjs gives a fold's first parent, which was HEAD when the hook ran.
+ * @param {string} cwd @param {string} message @param {"strip" | "whitespace" | "verbatim" | "scissors"} cleanup @param {string} comment @param {boolean} cut
+ * @param {string} [at]
+ * @returns {{ target: { message: string, paths: string[] } | null, missed: "depth" | "shallow" | null, subject: string }}
+ */
+export function foldTarget(cwd, message, cleanup, comment, cut, at = "HEAD") {
+  const fold = /^(?:amend|squash)! (.*)$/.exec(storedMessage(message, cleanup, comment, cut).split("\n")[0] ?? "");
+  if (!fold) return { target: null, missed: null, subject: "" };
+  const subject = fold[1].replace(/^(?:(?:amend|squash|fixup)! )+/, "");
+  // No commit yet, or no repository: nothing to fold into. A git that fails is no "no target".
+  if (!headCommit(cwd)) return { target: null, missed: null, subject };
+  // One more than the search: 501 lines say the history goes on, 500 or fewer that it was all read.
+  const log = git(["log", "-n501", "--format=%H%x00%s", at, "--"], { cwd }).split("\n");
+  const hit = log.slice(0, 500).find((l) => l.slice(l.indexOf("\0") + 1) === subject);
+  if (!hit) {
+    const missed = log.length > 500 ? "depth" : git(["rev-parse", "--is-shallow-repository"], { cwd }) === "true" ? "shallow" : null;
+    return { target: null, missed, subject };
+  }
+  const hash = hit.slice(0, hit.indexOf("\0"));
+  return {
+    target: {
+      message: git(["log", "-1", "--format=%B", hash, "--"], { cwd }),
+      paths: git(["show", "-z", "--name-only", "--no-renames", "--format=", hash, "--"], { cwd }).split("\0").filter(Boolean),
+    },
+    missed: null,
+    subject,
+  };
 }
 
 /**
@@ -303,6 +338,17 @@ export function secretErrors(opts) {
 }
 
 /**
+ * The reason of the bypass marker where it decided the hook's shape check of a stored message, null where the check
+ * never reached it: no marker, a subject it skips, a fold's new subject or its target's that it skips. A squash! is
+ * read with its target's message, so a marker there counts for it too. metrics/bypass.mjs counts uses with it.
+ * @param {string} message as git stored it @param {any} config @param {{ message: string, paths: string[] } | null} foldTarget
+ * @returns {string | null}
+ */
+export function markerUse(message, config, foldTarget) {
+  return shapeOf(message, { config, cleanup: "verbatim", cut: false, foldTarget }).marker ?? null;
+}
+
+/**
  * @param {string} message raw commit message (as given to a commit-msg hook)
  * @param {{ config: any, stagedPaths?: string[], cleanup?: "strip" | "whitespace" | "verbatim" | "scissors", cut?: boolean, comment?: string, foldTarget?: { message: string, paths: string[] } | null, ownSubject?: boolean, alsoChanged?: string[] }} opts
  *   `cleanup` is git's mode for this commit: "whitespace" when the message came from `-m` / `-F`.
@@ -311,8 +357,8 @@ export function secretErrors(opts) {
  *   `foldTarget`: for an amend! / squash! commit, the commit it folds into (its message and paths).
  *   `ownSubject`: false when the subject is not this commit's to change (it is checked elsewhere).
  *   `alsoChanged`: paths already in history that the fold adds to; a document among them counts as changed.
- * @returns {{ ok: boolean, errors: string[], warnings?: string[], skipped?: string }} `warnings`: staged paths whose
- *   documents (review.cochange) are not staged; they never fail the check
+ * @returns {{ ok: boolean, errors: string[], warnings?: string[], skipped?: string, marker?: string }} `warnings`: staged paths whose
+ *   documents (review.cochange) are not staged; they never fail the check; `marker`: the reason read where the marker decided
  */
 function shapeOf(message, { config, stagedPaths = [], cleanup = "strip", cut, comment = "#", foldTarget = null, ownSubject = true, alsoChanged = [] }) {
   const lang = config.language;
@@ -347,8 +393,8 @@ function shapeOf(message, { config, stagedPaths = [], cleanup = "strip", cut, co
   const warnings = cochangeWarnings(stagedPaths, rv.cochange, lang, alsoChanged);
   const reason = allowMarkerReason(text, cm.allowMarker);
   if (reason !== null) {
-    if (reason.length < 8) return { ok: false, errors: [t("shape.allowNoReason", { marker: cm.allowMarker }, lang)], warnings };
-    return { ok: true, errors: [], warnings, skipped: "marker" };
+    if (reason.length < 8) return { ok: false, errors: [t("shape.allowNoReason", { marker: cm.allowMarker }, lang)], warnings, marker: reason };
+    return { ok: true, errors: [], warnings, skipped: "marker", marker: reason };
   }
 
   const errors = [];
