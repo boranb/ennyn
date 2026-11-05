@@ -4702,6 +4702,52 @@
       "cluster": "distribution",
       "source": "the user, 2026-11-05, on whether windows-run joins v0.1.0 (approved to the split): cycle 20's security audit found the push hook missed Windows spellings and a push went through (c200aaf); README names no platform; the native suite's 269 of 1262 failures are mostly fixtures, left to windows-run",
       "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-own-pid-only",
+      "title": "Task and review agents stop only a process they started, by its PID or process group: the brief and the three reviewers say so, and a PreToolUse hook (beside deletion-target-hook) refuses a kill chosen by filter, title or image name (taskkill /FI or /IM, Stop-Process -Name, pkill, killall, kill of a substitution); a reviewer ran taskkill //F //FI \"WINDOWTITLE eq *\", which matches every window on the desktop, to stop its own hung process",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "a report from another project's cycle run on Windows, 2026-11-05: a code-reviewer ran the filter; other desktop applications were open afterwards, what closed is unknown; skills/cycle/task-brief.md and agents/*.md hold no process rule (grep for kill, PID, process); related: resource-ledger, cleanup-command, deletion-target-hook",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "deps-unread-lock-said",
+      "title": "ennyn deps says a manifest has no lock beside or above it (deps.noneMeasured) when a lock it does not read sits there (pnpm-lock.yaml, yarn.lock, bun.lock): it names that lock as present and unread instead; until deps-other-locks, the claim outruns what was measured",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "a report from another project's cycle run on Windows, 2026-11-05: a package.json in a subfolder, a tracked pnpm-lock.yaml at the repository root (git ls-files), deps answered 'no lock file'; class claim-outruns-evidence; related: deps-other-locks, deps-other-ecosystems-said, lock-files-unread",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "shared-list-slots",
+      "title": "When tasks of one cycle append to the same numbered or append-only list (a risk table, CHANGELOG's Unreleased), the orchestrator gives each task its own range or slot in the brief; a rebase conflict there is resolved against the merge base, not by keeping the landing side, which drops or duplicates a row",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "a report from another project's cycle run on Windows, 2026-11-05: four parallel tasks added rows to one numbered risk table; ranges set in the briefs left only trivial conflicts, and a script that kept the landing side would once have kept the wrong row until it compared with the base; Ennyn's own cycle 21: CHANGELOG's Unreleased conflicted on every rebase, three times",
+      "since": 21
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "worktrees-filemode"
+      ],
+      "id": "worktree-dependency-links",
+      "title": "Tests in a worktree need the main copy's installed dependencies: the method says how to link them (a symlink on POSIX, a junction on Windows) and how to unlink them, and ennyn worktrees --remove recognizes a link that leads to the main copy and removes only the link, never entering it, measured on a junction, a symlink and a folder of ignored build files (__pycache__) that today make it keep the worktree",
+      "value": "high",
+      "cost": "M",
+      "cluster": "plan",
+      "source": "a report from another project's cycle run on Windows, 2026-11-05: .venv and node_modules linked into worktrees with New-Item -ItemType Junction; --remove rightly refused, first for the junction, then for __pycache__; by hand: [System.IO.Directory]::Delete(path, $false), git clean -fdX, then --remove; the main copy's .venv file count was the same before and after; this machine, 2026-11-05: a WSL worktree had no node_modules and typecheck failed until one was linked; deletion: the most careful of the four",
+      "since": 21
     }
   ],
   "done": [
