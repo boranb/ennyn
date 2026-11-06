@@ -23,7 +23,7 @@ A critical problem (crash, data loss, auth break, blocker) may replace one core 
 
 ## 2. Task protocol (every task, in order)
 
-The orchestrator (the session running the cycle) keeps the plan, step 7's verdicts and the landing. Each task runs in a fresh agent on a written brief, not a fork of that session. Briefs, task states, worktrees, no subagents: [task-brief.md](task-brief.md).
+The orchestrator (the session running the cycle) keeps the plan, step 7's verdicts and the landing. Each task runs in a fresh agent on a written brief, not a fork. Briefs, task states, worktrees, no subagents: [task-brief.md](task-brief.md).
 
 1. **Read** only the relevant files; independent reads go in the **same turn**.
 2. **Design brief** for UI work: [design-brief.md](design-brief.md).
@@ -42,6 +42,7 @@ Never report an unrun test, command or check as done; write `not applicable` ins
 ## 3. End of cycle
 
 1. **Graph:** update every node whose status changed; every leftover real defect but a declined one, every ask of the user, and each brief rule [`### Briefs`](report-formats.md) sends to a node, becomes a node, as do step 3's class and a core split's step (nothing else does), at the end of the list, dated (`graph.fields.since`).
+   Verdicts on proposed nodes first: report-formats.md.
 2. **Handoff** (`paths.handoff`): what was done, what is next, open risks, each with a permanent home (a file that never rotates). Its commands stay for the next cycle.
 3. **Convergence:** first append each kept rows file to `paths.findings`. Each `new:` class joins the registry or links to an entry, per [report-formats.md](report-formats.md). Run `ennyn.mjs convergence --cycle <N> --from <HEAD noted at the start>`; paste what it prints, unchanged. The most recurring class becomes a graph node with `mechanization: true` and its class id; if none, write why.
    Show the user what `ennyn.mjs bypass --from <that HEAD>` lists: each bypass with its reason, each key loosened with its line. One that recurs is a gate to fix, not a habit.

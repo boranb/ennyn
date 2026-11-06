@@ -27,7 +27,7 @@ export const DEFAULTS = Object.freeze({
     stateDir: ".git/ennyn",
   },
   graph: {
-    exports: { open: "nodes", done: "done" },
+    exports: { open: "nodes", done: "done", declined: "declined" },
     fields: {
       id: "id",
       status: "status",
@@ -39,6 +39,7 @@ export const DEFAULTS = Object.freeze({
       mechanization: "mechanization",
       source: "source",
       since: "since",
+      reason: "reason",
     },
     openGateValue: null,
     doneStatus: "done",

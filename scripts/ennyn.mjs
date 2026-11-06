@@ -24,7 +24,7 @@ import { REWORK_DAYS, reworkRate } from "../metrics/szz.mjs";
 import { bypassUses } from "../metrics/bypass.mjs";
 import { leftovers, recordStart } from "../metrics/leftovers.mjs";
 import { gateLogPath, readAttempts, recordAttempt, summarizeAttempts, KINDS } from "../metrics/gate-log.mjs";
-import { costWeight, graphProblems, loadGraph, pickMechanization, pickOldest, readyNodes, scoreNode, splitAt, splitFirst, GraphError } from "../plan/mechanization.mjs";
+import { byAge, costWeight, graphProblems, loadGraph, pickMechanization, pickOldest, readyNodes, scoreNode, splitAt, splitFirst, GraphError } from "../plan/mechanization.mjs";
 import { LINK_RULE, SUBMODULE_RULE, auditAnswer, cycleRecords, markCovers, readLog, securityDue, sensitivePaths } from "../plan/audit.mjs";
 import { scanProject, MIN_HISTORY } from "../setup/scan.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
@@ -52,6 +52,7 @@ Commands:
                                                     SZZ-style rework rate: commits from --since to --until (local days) whose lines a fix changed
                                                     within --days N (the window after each commit, not the range; default ${REWORK_DAYS})
   core [--json]                                     the core slots' picks: the oldest node of the highest value (or the ready need it waits on), and the best ready by value/cost
+  core --value <v> [--json]                         every open node of that value (graph.fields.value), ready or not, flagged or not, oldest first: what a closing reads to decline
   mechanization [--json]                            best ready mechanization node
   classes [--json]                                  the defect class registry: each class's id, state and sentence, its problems, whether each gate's commit is there and each entry that claims a gate has one standing; exit 1 unless all hold
   convergence [<ledger>] --cycle N [--from <rev>] [--json]
@@ -1393,14 +1394,25 @@ const COMMANDS = {
   },
 
   async core(args) {
-    const { opts, help } = parseArgs(args, { flags: ["json"] });
+    const { opts, help } = parseArgs(args, { options: ["value"], flags: ["json"] });
     if (help) return (out(USAGE), 0);
+    const value = opts.value === undefined ? null : strOpt(opts.value);
+    if (opts.value !== undefined && value === null) throw new UsageError("--value needs a value word, such as low");
     const cwd = projectDir();
     const cfg = config(cwd);
     const graph = await pickable(cwd, cfg);
     if (!graph) return 1;
     const f = cfg.graph.fields;
     const lang = cfg.language;
+    if (value !== null) {
+      // Not done and not declined (a declined one left among the nodes is refused above); a number value by its spelling,
+      // and a node with no value has none to match.
+      const open = byAge(graph.open.filter((n) => n[f.status] !== cfg.graph.doneStatus && n[f.value] !== undefined && n[f.value] !== null && String(n[f.value]) === value), cfg);
+      if (opts.json) return (out(jsonShown(open)), 0);
+      out(tShown("core.value", { field: f.value, value, n: open.length }, lang));
+      for (const n of open) out(tShown(n[f.cluster] === undefined ? "core.valueItem" : "core.valueItemCluster", { id: String(n[f.id]), cost: String(n[f.cost] ?? "?"), cluster: String(n[f.cluster]) }, lang));
+      return 0;
+    }
     const pick = pickOldest(graph, cfg);
     const split = pick !== null && splitFirst(pick.node, cfg);
     // The other slot: the rest of the ready core nodes by value/cost, the first few and every one that ties with the last.

@@ -443,7 +443,7 @@ export async function checkSetup({ cwd, env = process.env, self = OWN_ROOT }) {
     add("fail", "doctor.graphBad", { error: e.message });
   }
   if (graph) {
-    add("ok", "doctor.graphOk", { open: graph.open.length, done: graph.done.length, path: [config.paths.graph] });
+    add("ok", "doctor.graphOk", { open: graph.open.length, done: graph.done.length, declined: (graph.declined ?? []).length, path: [config.paths.graph] });
     const f = config.graph.fields;
     // The same list the mechanization command refuses a graph by.
     for (const p of graphProblems(graph, config)) add(p.level, p.key, p.vars);

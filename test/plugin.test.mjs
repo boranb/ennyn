@@ -294,6 +294,8 @@ test("plugin: rules the cycle's hand-written briefs carried are in the shipped t
   const close = read("skills/cycle/report-formats.md").split("## End of cycle")[1] ?? "";
   const template = /```md\n([\s\S]*?)\n```/.exec(close)?.[1] ?? "";
   assert.ok(template.split("\n").includes("### Briefs          → each rule the cycle's hand-written briefs gave that did work, read against the skill's text: the file that holds it, the node that brings it in, or the project's own (its paths, its machine, its own ceilings); none when no brief was written"), template);
+  // The batch's verdicts reach the user in the report, a clarify's question with them, and the cycle's declined count.
+  assert.ok(template.split("\n").includes("### Verdicts        → each proposed node of the batch: go, clarify with its question for the user, or decline with its one reason; nodes declined this cycle: N, from doctor's declined count at the start and now; none when no batch was read"));
   // Each rule once in the skill and the agents: the author's brief and the reviewer's schema are two readers, so running and the other program are said in both.
   const shipped = [...skills.flatMap(({ name }) => readdirSync(join(ROOT, "skills", name)).map((f) => `skills/${name}/${f}`)), ...agents.map((a) => a.path)].map(read).join("\n").toLowerCase();
   const count = (/** @type {string} */ s) => shipped.split(s.toLowerCase()).length - 1;

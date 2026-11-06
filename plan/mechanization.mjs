@@ -4,7 +4,7 @@
  * best ready node flagged `mechanization: true`, and for the core slots the
  * oldest node of the highest value (pickOldest).
  *
- * Ready = flagged, not done, gate open (or no gate field), every `needs` id done
+ * Ready = flagged, not done, not declined, gate open (or no gate field), every `needs` id done
  * (listed in the done export, or an open node carrying the done status).
  * Score = value / cost, value and cost words mapped to their weights;
  * ties break by id so the pick is deterministic.
@@ -20,7 +20,7 @@ import { resolve, extname } from "node:path";
 import { pathToFileURL } from "node:url";
 
 /** @typedef {Record<string, unknown>} GraphNode */
-/** @typedef {{ open: GraphNode[], done: GraphNode[] }} Graph */
+/** @typedef {{ open: GraphNode[], done: GraphNode[], declined?: GraphNode[] }} Graph a graph built in code may have no declined list */
 
 /** A byte order mark some editors write at the start of a file; JSON.parse rejects it. */
 const BOM = /^\uFEFF/;
@@ -47,7 +47,7 @@ export async function loadGraph({ cwd, config }) {
     throw new GraphError(`work graph ${/** @type {Error} */ (err).message}`);
   }
   if (bytes === null) throw new GraphError(`work graph not found: ${path}`);
-  const { open: openName, done: doneName } = config.graph.exports;
+  const { open: openName, done: doneName, declined: declinedName } = config.graph.exports;
   /** @type {Record<string, unknown>} */
   let data;
   const ext = extname(path);
@@ -74,7 +74,7 @@ export async function loadGraph({ cwd, config }) {
       const def = /** @type {Record<string, unknown>} */ (fallback);
       // An array only: a default export about something else (a title, a count) is not read as the graph.
       const pick = (/** @type {string} */ name) => own[name] ?? (Array.isArray(def[name]) ? def[name] : undefined);
-      data = { [openName]: pick(openName), [doneName]: pick(doneName) };
+      data = { [openName]: pick(openName), [doneName]: pick(doneName), [declinedName]: pick(declinedName) };
     }
   } else {
     throw new GraphError(`work graph must be .json, .mjs or .js: ${path}`);
@@ -83,13 +83,23 @@ export async function loadGraph({ cwd, config }) {
   if (!Array.isArray(open)) throw new GraphError(`work graph ${path} has no "${openName}" array (graph.exports.open)`);
   const done = data[doneName] ?? [];
   if (!Array.isArray(done)) throw new GraphError(`work graph ${path}: "${doneName}" must be an array (graph.exports.done)`);
+  // The nodes refused, each with its reason: never picked, and none other may need one (graphProblems).
+  const declined = data[declinedName] ?? [];
+  if (!Array.isArray(declined)) throw new GraphError(`work graph ${path}: "${declinedName}" must be an array (graph.exports.declined)`);
   // A null or a string where a node belongs would crash every reader later; say where it is now.
-  for (const [name, list] of [[openName, open], [doneName, done]]) {
+  for (const [name, list] of [[openName, open], [doneName, done], [declinedName, declined]]) {
     const at = list.findIndex((/** @type {unknown} */ n) => n === null || typeof n !== "object" || Array.isArray(n));
     if (at !== -1) throw new GraphError(`work graph ${path}: "${name}"[${at}] is not an object`);
   }
-  return { open: /** @type {GraphNode[]} */ (open), done: /** @type {GraphNode[]} */ (done) };
+  return { open: /** @type {GraphNode[]} */ (open), done: /** @type {GraphNode[]} */ (done), declined: /** @type {GraphNode[]} */ (declined) };
 }
+
+/**
+ * The ids of the declined nodes.
+ * @param {Graph} graph
+ * @param {any} config
+ */
+const declinedIds = (graph, config) => new Set((graph.declined ?? []).map((n) => n[config.graph.fields.id]));
 
 /** What a value word weighs; a number is its own weight. */
 const VALUE_WEIGHTS = { high: 3, medium: 2, low: 1 };
@@ -161,7 +171,7 @@ export function needsOf(node, config) {
 }
 
 /**
- * Open nodes that can start now (not done, gate open, every need done), best first.
+ * Open nodes that can start now (not done, not declined, gate open, every need done), best first.
  * @param {Graph} graph
  * @param {any} config
  * @returns {GraphNode[]}
@@ -171,9 +181,10 @@ export function readyNodes(graph, config) {
   const { doneStatus, openGateValue } = config.graph;
   const doneIds = new Set(graph.done.map((n) => n[f.id]));
   for (const n of graph.open) if (n[f.status] === doneStatus) doneIds.add(n[f.id]);
+  const declined = declinedIds(graph, config);
 
   const ready = graph.open.filter((n) => {
-    if (n[f.status] === doneStatus) return false;
+    if (n[f.status] === doneStatus || declined.has(n[f.id])) return false;
     const gate = n[f.gate];
     if (gate !== undefined && gate !== openGateValue) return false;
     return needsOf(n, config).every((id) => doneIds.has(id));
@@ -191,15 +202,15 @@ export function readyNodes(graph, config) {
 /**
  * What makes the graph unfit to pick from, and what the pick reads on a guess. The pick reads the open
  * nodes that are not done: a problem there that could change it is a `fail` (a node with no id, an id
- * twice, as when a finished node stays open, a need no node has, needs that wait on each other). The same
- * kind of problem among finished nodes only is a `warn`, and so is a guess: a value or cost the scales do
- * not know, or a node with no value or cost where others have one (each scored as 1), among the core nodes
- * a date that is no number or none where others have one (the core pick reads each as the newest) and a
- * cost given as a number with no planner.splitAbove, a mechanization flag that is not a boolean, and a
- * gate that looks like "no gate" (null, false, "", 0, "false") but is not the open value, unless the open
- * value is a boolean (then false is that project's closed value). doctor lists every one; the core and
- * mechanization commands refuse a graph with a fail, so they never disagree on what can be picked. Message
- * keys, rendered by the caller.
+ * twice, as when a finished node stays open or a declined one is listed elsewhere too, a need no node has, a
+ * need on a declined node, needs that wait on each other). The same kind of problem among finished nodes only
+ * is a `warn`, and so is a declined node with no reason, and a guess: a value or cost the scales do not know,
+ * or a node with no value or cost where others have one (each scored as 1), among the core nodes a date that
+ * is no number or none where others have one (the core pick reads each as the newest) and a cost given as a
+ * number with no planner.splitAbove, a mechanization flag that is not a boolean, and a gate that looks like
+ * "no gate" (null, false, "", 0, "false") but is not the open value, unless the open value is a boolean (then
+ * false is that project's closed value). doctor lists every one; the core and mechanization commands refuse a
+ * graph with a fail, so they never disagree on what can be picked. Message keys, rendered by the caller.
  * @param {Graph} graph
  * @param {any} config
  * @returns {GraphProblem[]}
@@ -241,23 +252,35 @@ export function graphProblems(graph, config) {
   };
   const waitingNodes = graph.open.filter((n) => n[f.status] !== doneStatus);
   const finished = [...graph.done, ...graph.open.filter((n) => n[f.status] === doneStatus)];
-  for (const [list, level] of /** @type {const} */ ([[waitingNodes, "fail"], [finished, "warn"]])) {
+  const declined = graph.declined ?? [];
+  for (const [list, level] of /** @type {const} */ ([[waitingNodes, "fail"], [[...finished, ...declined], "warn"]])) {
     const missing = list.filter((n) => !named(n));
     if (missing.length) out.push({ level, key: "doctor.idMissing", vars: { n: missing.length, field: f.id, where: where(missing) } });
   }
   /** @type {Map<unknown, number>} */
   const seen = new Map();
-  for (const n of [...waitingNodes, ...finished]) if (named(n)) seen.set(n[f.id], (seen.get(n[f.id]) ?? 0) + 1);
+  const all = [...waitingNodes, ...finished, ...declined];
+  for (const n of all) if (named(n)) seen.set(n[f.id], (seen.get(n[f.id]) ?? 0) + 1);
+  // A declined id elsewhere too, or twice, says both "refused" and something else: the pick cannot tell which.
+  const refused = declinedIds(graph, config);
   const waitingIds = new Set(waitingNodes.filter(named).map((n) => n[f.id]));
   const dupes = [...seen].filter(([, c]) => c > 1).map(([id]) => id);
-  for (const [ids, level] of /** @type {const} */ ([[dupes.filter((id) => waitingIds.has(id)), "fail"], [dupes.filter((id) => !waitingIds.has(id)), "warn"]])) {
-    const holders = [...waitingNodes, ...finished].filter((n) => named(n) && ids.includes(n[f.id]));
+  const pickReads = (/** @type {unknown} */ id) => waitingIds.has(id) || refused.has(id);
+  for (const [ids, level] of /** @type {const} */ ([[dupes.filter(pickReads), "fail"], [dupes.filter((id) => !pickReads(id)), "warn"]])) {
+    const holders = all.filter((n) => named(n) && ids.includes(n[f.id]));
     if (ids.length) out.push({ level, key: "doctor.idDuplicate", vars: { list: ids.map(String), where: whereById(ids, holders) } });
   }
+  // A need on a declined node never opens, and dropping it would start the node with no word: refused, by name.
   for (const n of waitingNodes) {
-    const unknown = needsOf(n, config).filter((id) => !seen.has(id));
+    const needs = needsOf(n, config);
+    const gone = needs.filter((id) => refused.has(id));
+    if (gone.length) out.push({ level: "fail", key: "doctor.needsDeclined", vars: { id: String(n[f.id]), list: gone.map(String), where: where([n]) } });
+    const unknown = needs.filter((id) => !seen.has(id));
     if (unknown.length) out.push({ level: "fail", key: "doctor.needsUnknown", vars: { id: String(n[f.id]), list: unknown.map(String), where: where([n]) } });
   }
+  const reasoned = (/** @type {unknown} */ r) => typeof r === "string" && r.trim() !== "";
+  const unreasoned = declined.filter((n) => named(n) && !reasoned(n[f.reason]));
+  if (unreasoned.length) out.push({ level: "warn", key: "doctor.declinedReason", vars: { n: unreasoned.length, field: f.reason, list: unreasoned.map((n) => String(n[f.id])) } });
   // A cycle among waiting nodes never opens. Depth first with a stack of its own: a needs chain thousands
   // long would overflow the call stack.
   const waiting = new Map(waitingNodes.filter(named).map((n) => [n[f.id], n]));
@@ -387,7 +410,8 @@ export function pickOldest(graph, config) {
   const { doneStatus, openGateValue } = config.graph;
   const core = (/** @type {GraphNode} */ n) => n[f.mechanization] !== true;
   const ready = new Set(readyNodes(graph, config).filter(core));
-  const waiting = graph.open.filter((n) => n[f.status] !== doneStatus);
+  const declined = declinedIds(graph, config);
+  const waiting = graph.open.filter((n) => n[f.status] !== doneStatus && !declined.has(n[f.id]));
   const byId = new Map(waiting.map((n) => [n[f.id], n]));
   const gateOpen = (/** @type {GraphNode} */ n) => n[f.gate] === undefined || n[f.gate] === openGateValue;
   /** @type {Map<number, GraphNode[]>} */

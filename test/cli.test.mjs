@@ -306,6 +306,42 @@ test("cli: mechanization picks from the graph; a missing graph is an error", () 
   assert.equal(json.score, 1.5);
 });
 
+test("cli: core --value lists every open node of that value for a closing to decline; declined ones are out, and doctor counts them", () => {
+  const p = project();
+  mkdirSync(join(p.dir, ".ennyn"));
+  const write = (/** @type {unknown} */ graph) => writeFileSync(join(p.dir, ".ennyn", "graph.json"), JSON.stringify(graph));
+  write({
+    nodes: [
+      { id: "new", value: "low", cost: "S", since: 9 },
+      { id: "old", value: "low", cost: "M", cluster: "c", since: 2, needs: ["h"] },
+      { id: "h", value: "high", cost: "S", since: 1 },
+      { id: "bare", cost: "S", gate: "user", since: 7 },
+      { id: "flag", value: "low", mechanization: true, gate: "user", since: 5 },
+      { id: "fin", value: "low", status: "done", since: 0 },
+    ],
+    done: [],
+    declined: [{ id: "gone", title: "an idea", reason: "no user asks for it", since: 3 }],
+  });
+  const low = run(p.dir, "core", "--value", "low");
+  assert.equal(low.code, 0, low.stderr);
+  assert.equal(low.stdout, "open nodes with value low, oldest first: 3\n  old (M, c)\n  flag (?)\n  new (S)\n");
+  assert.deepEqual(JSON.parse(run(p.dir, "core", "--value=low", "--json").stdout).map((/** @type {any} */ n) => n.id), ["old", "flag", "new"]);
+  assert.equal(run(p.dir, "core", "--value", "huge").stdout, "open nodes with value huge, oldest first: 0\n");
+  // A node with no value has none to match, not the word "undefined".
+  assert.equal(run(p.dir, "core", "--value", "undefined").stdout, "open nodes with value undefined, oldest first: 0\n");
+  for (const bad of [["--value"], ["--value="]]) assert.equal(run(p.dir, "core", ...bad).code, 2, bad.join(" "));
+  assert.equal(run(p.dir, "core").stdout.split("\n")[0], "oldest: h (high, S)");
+  assert.match(run(p.dir, "doctor").stdout, /^✓ work graph: 6 open, 0 done, 1 declined \(\.ennyn\/graph\.json\)$/m);
+  // Declined and still among the nodes, or needed by one: refused, the list too.
+  write({ nodes: [{ id: "gone", value: "low" }, { id: "r", value: "high", needs: ["gone2"] }], done: [], declined: [{ id: "gone", reason: "r" }, { id: "gone2", reason: "r" }] });
+  for (const args of [["core"], ["core", "--value", "low"], ["mechanization"]]) {
+    const refused = run(p.dir, ...args);
+    assert.deepEqual([refused.code, refused.stdout], [1, ""], args.join(" "));
+    assert.match(refused.stderr, /^✗ work graph: duplicate ids: gone$/m);
+    assert.match(refused.stderr, /^✗ work graph: r needs declined nodes: gone2; drop the need or keep the node$/m);
+  }
+});
+
 test("cli: core names the oldest node of the highest value and the best of the rest by score, and refuses what mechanization refuses", () => {
   const p = project();
   mkdirSync(join(p.dir, ".ennyn"));

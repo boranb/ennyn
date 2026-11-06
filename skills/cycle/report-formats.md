@@ -31,9 +31,12 @@ Write reports in the project's `language`.
 ### Convergence     → format below
 ### Stopped         → none, or each stopped task's line
 ### Briefs          → each rule the cycle's hand-written briefs gave that did work, read against the skill's text: the file that holds it, the node that brings it in, or the project's own (its paths, its machine, its own ceilings); none when no brief was written
+### Verdicts        → each proposed node of the batch: go, clarify with its question for the user, or decline with its one reason; nodes declined this cycle: N, from doctor's declined count at the start and now; none when no batch was read
 ### Remaining risks → none, or each risk with its permanent home
 ### Push            → N commits waiting; approval asked
 ```
+
+**Verdicts on proposed nodes:** a batch of proposed nodes (the closing's, an outside review's) gets one verdict per node before any enters the graph: `go` (it becomes a node), `clarify` with the one question that decides it, or `decline` with its one decisive reason. Weak or unknown evidence is never `go`: it is `clarify`, or `decline` when no answer would make it worth a slot. The user decides each `decline`; a declined node goes to the graph's declined list (`graph.exports.declined`) with its `reason` and `since`, never deleted. `ennyn.mjs core --value low` lists the open low-value nodes, oldest first, for the user to read for the same verdict; a declined node another node needs is a doctor fail until that need goes.
 
 **Leftovers answered after the closing's commit:** what the user's answer brings (a node, a fix, a line in the handoff) goes into one follow-up commit with the graph and a fresh `ennyn.mjs budget --record`, before the push.
 

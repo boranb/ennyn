@@ -10,6 +10,7 @@ Write the graph to the scan's `graph.path`, as a JSON object with two arrays nam
 - **Age:** one core slot takes the oldest node of the highest value. A node's age is its `since` when the graph dates its nodes (a number, smaller is older: a cycle, or a date as `Date.getTime()`), else its place in the list: a new node goes at the end. A module whose roadmap does not list the oldest item first gives every node a `since` from the roadmap. When the graph already uses `since` for something else, rename the field (`graph.fields.since`).
 - **needs:** set only when a node truly cannot start before another one.
 - **done:** finished features worth re-checking, as `{ "id", "title", "status": "done" }`. The cycle's legacy audit picks from these.
+- **declined:** none at the start. A node the user refuses later moves to a third array (`graph.exports.declined`) as `{ "id", "title", "reason", "since" }`, the one decisive reason in `reason`: never picked, and no open node may need it.
 - **mechanization: true:** only for a defect class that the user or the history names as recurring. Otherwise there are none; the first cycle's convergence report creates them.
 - **gate:** for an item the user must start (a release, work in another project's own session), so the cycle does not pick it alone.
 

@@ -306,7 +306,56 @@ test("loadGraph: missing file, missing open export, bad JSON are errors, not an 
   await assert.rejects(loadGraph({ cwd: graphFile("graph.json", JSON.stringify({ done: [] })), config: cfg() }), /no "nodes" array/);
   await assert.rejects(loadGraph({ cwd: graphFile("graph.json", "{"), config: cfg() }), GraphError);
   const noDone = await loadGraph({ cwd: graphFile("graph.json", JSON.stringify({ nodes: [] })), config: cfg() });
-  assert.deepEqual(noDone, { open: [], done: [] });
+  assert.deepEqual(noDone, { open: [], done: [], declined: [] });
+});
+
+test("declined: a third list, read from JSON, a named export or the default one; none is an empty list; a bad one is a GraphError", async () => {
+  const declined = [{ id: "x", title: "an idea", reason: "no user asks for it", since: 25 }];
+  const json = await loadGraph({ cwd: graphFile("graph.json", JSON.stringify({ nodes: [{ id: "a" }], done: [], declined })), config: cfg() });
+  assert.deepEqual(json.declined, declined);
+  for (const [name, text] of [["graph.mjs", `export const nodes = [{ id: "a" }];\nexport const refused = ${JSON.stringify(declined)};\n`], ["graph.mjs", `export default { nodes: [{ id: "a" }], refused: ${JSON.stringify(declined)} };\n`], ["graph.js", `module.exports = { nodes: [{ id: "a" }], refused: ${JSON.stringify(declined)} };\n`]]) {
+    const g = await loadGraph({ cwd: graphFile(name, text), config: cfg({ paths: { graph: `.ennyn/${name}` }, graph: { exports: { declined: "refused" } } }) });
+    assert.deepEqual(g.declined, declined, text);
+  }
+  assert.deepEqual((await loadGraph({ cwd: graphFile("graph.json", JSON.stringify({ nodes: [] })), config: cfg() })).declined, []);
+  await assert.rejects(loadGraph({ cwd: graphFile("graph.json", JSON.stringify({ nodes: [], declined: {} })), config: cfg() }), (e) => e instanceof GraphError && /"declined" must be an array \(graph\.exports\.declined\)/.test(e.message));
+  await assert.rejects(loadGraph({ cwd: graphFile("graph.json", JSON.stringify({ nodes: [], declined: [{ id: "x" }, "y"] })), config: cfg() }), (e) => e instanceof GraphError && /"declined"\[1\] is not an object/.test(e.message));
+});
+
+test("declined: never picked, an id in two lists is refused, and a node that needs a declined one is refused, not left waiting", () => {
+  const c = cfg();
+  const keys = (/** @type {any} */ g) => graphProblems(g, c).map((p) => `${p.level} ${p.key}`);
+  const declined = [{ id: "x", reason: "no user asks for it" }];
+  assert.deepEqual(keys({ open: [{ id: "a" }], done: [], declined }), []);
+  // Left in the open list too: refused, and the library picks still pass it by.
+  const twice = { open: [{ id: "x", value: "high", cost: "S" }, { id: "m", mechanization: true, value: "high", cost: "S" }, { id: "a", value: "low", cost: "S" }], done: [], declined: [{ id: "x", reason: "r" }, { id: "m", reason: "r" }] };
+  assert.deepEqual(keys(twice), ["fail doctor.idDuplicate"]);
+  assert.deepEqual(graphProblems(twice, c)[0].vars.list, ["x", "m"]);
+  assert.deepEqual(readyNodes(twice, c).map((n) => n.id), ["a"]);
+  assert.equal(pickMechanization(twice, c), null);
+  assert.equal(pickOldest(twice, c)?.node.id, "a");
+  assert.equal(pickOldest({ open: [{ id: "h", value: "high", needs: ["x"] }, { id: "x", value: "low" }, { id: "l", value: "low" }], done: [], declined: [{ id: "x", reason: "r" }] }, c)?.node.id, "l", "no way through a declined node");
+  assert.equal(pickOldest({ open: [{ id: "x", value: "high", needs: ["r"] }, { id: "r", value: "low" }], done: [], declined: [{ id: "x", reason: "r" }] }, c)?.oldest.id, "r", "a declined node is no old node the pick serves");
+  // Declined and done, or declined twice: which is it? Refused too.
+  assert.deepEqual(keys({ open: [], done: [{ id: "x" }], declined }), ["fail doctor.idDuplicate"]);
+  assert.deepEqual(keys({ open: [{ id: "x", status: "done" }], done: [], declined }), ["fail doctor.idDuplicate"]);
+  assert.deepEqual(keys({ open: [], done: [], declined: [...declined, ...declined] }), ["fail doctor.idDuplicate"]);
+  // A waiting node that needs a declined one: its own fail, never "does not exist", never a need dropped.
+  const needs = graphProblems({ open: [{ id: "r", needs: ["x", "ghost"] }], done: [], declined }, c);
+  assert.deepEqual(needs.map((p) => [p.level, p.key, p.vars.list]), [["fail", "doctor.needsDeclined", ["x"]], ["fail", "doctor.needsUnknown", ["ghost"]]]);
+  assert.match(tShown("doctor.needsDeclined", needs[0].vars, "en"), /^work graph: r needs declined nodes: x; drop the need or keep the node$/);
+  assert.deepEqual(readyNodes({ open: [{ id: "r", needs: ["x"] }], done: [], declined }, c), []);
+  // A finished node's need on a declined one changes no pick.
+  assert.deepEqual(keys({ open: [{ id: "r", status: "done", needs: ["x"] }], done: [], declined }), []);
+  // An entry with no id, or no reason: said, as a guess the pick does not read.
+  assert.deepEqual(keys({ open: [], done: [], declined: [{ reason: "r" }, { id: "y" }, { id: "z", reason: " " }] }), ["warn doctor.idMissing", "warn doctor.declinedReason"]);
+  assert.deepEqual(graphProblems({ open: [], done: [], declined: [{ id: "y" }, { id: "z", reason: " " }] }, c).at(-1)?.vars.list, ["y", "z"], "a blank reason is none");
+  assert.deepEqual(keys({ open: [], done: [], declined: [{}] }), ["warn doctor.idMissing"], "no id is said once, not as a node with no reason too");
+  assert.deepEqual(graphProblems({ open: [], done: [], declined: [{ id: "y" }, { id: "z", reason: 3 }] }, c).at(-1)?.vars, { n: 2, field: "reason", list: ["y", "z"] });
+  // Configured names: the reason field, and a graph built in code with no declined list at all.
+  assert.deepEqual(keys({ open: [], done: [], declined: [{ id: "y", neden: "r" }] }), ["warn doctor.declinedReason"]);
+  assert.deepEqual(graphProblems({ open: [], done: [], declined: [{ id: "y", neden: "r" }] }, cfg({ graph: { fields: { reason: "neden" } } })), []);
+  assert.deepEqual(keys({ open: [{ id: "a", needs: ["x"] }], done: [] }), ["fail doctor.needsUnknown"]);
 });
 
 test("loadGraph: a node that is not an object and a module that does not load are GraphErrors", async () => {
