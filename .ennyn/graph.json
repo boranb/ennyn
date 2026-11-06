@@ -1097,17 +1097,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "cycle-journal",
-      "title": "The cycle writes its state to the state dir as it goes (the HEAD it started at, the four tasks and their state, worktrees, the findings ledger's path, the review round), and the SessionStart hook gives one short line of it after compaction, so a compacted session resumes the cycle without guessing; first count from the session transcripts how often a cycle session compacts; the handoff records the HEAD it was written at, and the cycle start names the files it mentions that changed since; each reviewer round and each task result is written to a file in the state dir named by task and round, and the cycle checks the file is there before the next step; session-handover and fresh-session-run read this state, so a new session starts from files and not from a summary; ennyn status prints it for a person: the cycle, tasks landed of tasks planned, each task's step and review round, elapsed time, what waits for the user, and release needs done of total. The percent is counted in steps, never in time, and there is no time estimate; --line gives one line for a status line, --json the rest. It reads files only, so it answers in chat and in a terminal, and ennyn run prints the same line",
-      "value": "high",
-      "cost": "M",
-      "cluster": "cycle",
-      "source": "review of context-mode (MIT), 2026-10-25: a PreCompact hook builds a snapshot of at most 2 KB (files, tasks, decisions, errors, the last request) and SessionStart restores it after compaction; Ennyn re-injects only the conversation style after compaction, and the cycle's bypass count needs the HEAD noted at its start; review of Understand-Anything (MIT, 4e6d329), 2026-10-28: issue #433, the results of 13 batches lost to compaction before the one final write; value raised 2026-10-29: idle compaction is the common case here (6 of 7), and it fires on the first message after an idle hour, often mid-cycle while a long run is awaited; see precompact-boundary-defer; sessions were restarted by hand after cycles; the user, 2026-11-01. A percent of time would mislead: in cycle 16 one task took 11.8 of the 13.1 hours. GSD's status line shows the current task, a progress bar from its state file and context use, and /gsd-progress answers 'Where am I? What's next?'. In spec-kit's 935 records, 12 ask for progress views",
-      "since": 11
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "threat-model",
       "title": "SECURITY.md gets a table of Ennyn's principals and boundaries: the user, a contributor whose commit lands in a project, a cloned repository before the user trusts it, a package registry, the model reading project text, another plugin; each boundary with the part of Ennyn that guards it (commit-msg hook, deps check, side-copy hook, init-scan's escaping, config paths). The security reviewer and the audit name the lower-trust principal and the crossed boundary for every security finding; an effect only the user can cause on their own machine (their own environment variable, a git config they wrote) is a robustness note, not a security finding; the table says what the hooks do not stop: a secret printed in a form no detector matches, a script that reads a secret file without naming it, and prompt-injected exfiltration (DNS, image URLs), for which the boundary is OS isolation and egress control",
       "value": "high",
@@ -2914,21 +2903,6 @@
     },
     {
       "status": "planned",
-      "needs": [
-        "reader-harness-keep"
-      ],
-      "id": "reader-against-real-program",
-      "title": "Every Ennyn reader that answers for another program has a differential test beside its verdict corpus: generated inputs go through the real program and the reader's verdict is compared (doctor's hook rule against real commits with a real secret, the ignore reading against real worktrees and clones), and a test fails when such a reader has no harness; then delete the prose that asks reviewers to try real runs; the test is a READERS and NOT_READERS pair modelled on GATES and NOT_GATES: every production module is listed with its program and harness, or with why it reads none, and an unlisted module fails the suite. A branded type or a ban on .match does not fit: subprocess calls already sit at 9 places in 3 files, against 492 .match, .test, .replace and .split calls, and most of the class guesses at files a program will read",
-      "value": "high",
-      "cost": "M",
-      "cluster": "gates",
-      "mechanization": true,
-      "sourceClass": "a reading of text stands in for running the program it answers for",
-      "source": "cycle 2026-10-31 (15) convergence: the class recurred in tasks 2 and 3, about 30 times, all caught by reviewers or by the author's differential run: a word search for exit, a marker comment taken for the block's position, a made-up path, the folders on disk today, a regex over shell lines (wholeTree: 69 of 88 labelled lines wrongly named). Each ended by asking the real program (scratch repository) or by a rule that needs no reading (exact text). Patching the reader failed three rounds; a harness of real commits found 132 false ✓ a review had not, and 82 per git at the third reader, against 0 after the exact-print rule. Harnesses kept outside the repository, to be rewritten as a test; cycle 2026-11-02 (18): reader-drifts-from-program recurred most, 49 rows, 42 of them the push reader: three authors and a hand corpus missed what a reviewer found by carving the real parser out of the binary and generating from the reader's own acceptance, 6 million texts in minutes. That is this node's method, and it decided the design; cycle 2026-11-04 (20) convergence: reader-drifts-from-program recurred most again, 20 rows (review 11, measurement 7), nearly all the push reader against Git Bash 5.2, pwsh 7.4, Windows PowerShell 5.1, cmd, WSL bash 5.1 and dash, and ssh's far side; each fix round opened or missed a shape a real run found (a .bat taken for an inert builtin, a second reading applied where no second shell runs); what held was the reviewers' differential runs: real programs pushing to a local bare remote, 1,905 session commands replayed through each reader version, 3,420 ssh cells against bash -c; cycle 2026-11-05 (23): reader-drifts-from-program the most recurring class, 21 rows (review 16, measurement 5), nearly all in the kill hook and the push reader: PowerShell grammar (a brace glued to a word, a parenthesised argument, colon parameters, aliases and member names), bash group targets after a signal, unquoted backslash paths; PowerShell's own tokenizer ([PSParser]::Tokenize, pwsh 7.4 and 5.1) and bash read each one right, so a differential test against them would have caught them before review",
-      "since": 15
-    },
-    {
-      "status": "planned",
       "needs": [],
       "id": "shell-in-js-templates",
       "title": "Shell text held in JavaScript templates is checked: a test passes every printed hook text through sh -n and the shells the block supports, and fails on a template escape left in the output; then delete the prose that asks to read the printed text",
@@ -3501,17 +3475,6 @@
       "cost": "S",
       "cluster": "method",
       "source": "one reported case of a bug report passed through several agents: the error no longer looks like the one first reported. One anecdote, unmeasured here; no field holds the user's sentence today; spec-kit has the same marker and leaves it to the agent: no code in its src or scripts reads it. A sentence with a condition can be saved to memory without the condition. Here 4 of 20 memory index lines were stale on 2026-11-01",
-      "since": 17
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "node-verdict",
-      "title": "A node can be refused: the graph gets a declined list, each entry with its one decisive reason, read by core, doctor and the closing report. A batch gives each proposed node a verdict: go, clarify with the question, or decline; weak or unknown evidence cannot be go. First use: the 99 open low-value nodes at a cycle's closing, the user reading the list",
-      "value": "high",
-      "cost": "M",
-      "cluster": "method",
-      "source": "measured 2026-11-01: open nodes 10 to 325 in 13 days, done 9 to 87, about 5 finished per cycle, so about 60 cycles of backlog; 193 open nodes came in the last four cycles; every done node is status done and no state means refused. spec-kit's assess extension: 'Killing ideas here is a success, not a failure'",
       "since": 17
     },
     {
@@ -5260,6 +5223,129 @@
       "cluster": "security",
       "source": "cycle 2026-11-06 (25), T3 reader-against-real-program: a known gap of test/readers.test.mjs",
       "since": 25
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "journal-result-files",
+      "title": "Each reviewer round and each task result is written to a state-dir file named by task and round, and the cycle checks the file is there before the next step; the part of cycle-journal cut for scope",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "cycle",
+      "source": "cycle 2026-11-06 (25), T1 cycle-journal: cut for scope",
+      "since": 25
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "handoff-head-changed-files",
+      "title": "The handoff records the HEAD it was written at, and the cycle start names the files the handoff mentions that changed since; the part of cycle-journal cut for scope",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "cycle",
+      "source": "cycle 2026-11-06 (25), T1 cycle-journal: cut for scope",
+      "since": 25
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "journal-start-clock-order",
+      "title": "journal start tells this cycle's start record from the last one by clock order (plan/cycle-journal.mjs), so a clock set back refuses every new record; compare the record's own at with the journal's startAt, as status does",
+      "value": "low",
+      "cost": "S",
+      "cluster": "cycle",
+      "source": "cycle 2026-11-06 (25), T1 round 2 (c25-t1-r2-02)",
+      "since": 25
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-function-body-wrapper",
+      "title": "The kill reader judges a wrapper (env, nohup, coproc) only at a command's head: in `function f { env pkill node; }` the wrapper after the brace is read as a program, so a kill by name passes; bash ran it (3.2)",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-06 (25), T3 round 2 (c25-t3-r2-01), pre-existing since a912f35",
+      "since": 25
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-runtime-name-after-wrapper",
+      "title": "A program name built at run time is refused only at the head: `env $(echo pkill) node`, `nohup \"$(echo pkill)\" node`, `coproc $(echo pkill) node`, `time`, `sudo` pass the kill reader; bash ran each",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-06 (25), T3 round 2 (c25-t3-r2-02), pre-existing since a912f35",
+      "since": 25
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "shell-box-hardening",
+      "title": "test/shell-box.mjs unsafeTexts() misses shells that drop the startup file (`bash --posix -c`, `BASH_ENV=`, `unset BASH_ENV`, `/bin/sh -c`) and absolute program paths (`/usr/bin/pkill`), where signal 0 reached a real process; read them before any text runs",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-06 (25), T3 round 2 (c25-t3-r2-03); the cycle's kill lab sent real signals before the box existed",
+      "since": 25
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-nested-literal-loop",
+      "title": "The kill reader trusts a loop over literal PIDs only when for is the command's first word; inside { }, if, a function or another loop it refuses (strict side, no kill passes)",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-06 (25), T3 author (c25-t3-author-r0-02), pre-existing",
+      "since": 25
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "folded-name-twins",
+      "title": "The commit-msg hook refuses, or names, a commit that adds a path a case-insensitive file system folds onto another tracked path (case and compatibility forms: `.ennyn/conﬁg.json` won a macOS clone's checkout over the config, impact ran its command, doctor said ✓, bypass said nothing); bypass and doctor read the config the same way",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-11-06 (25), T4 security audit (c25-t4-author-r0-01), bornIn 59135da",
+      "since": 25
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "push-lfs-verb",
+      "title": "git lfs push uploads to the remote past the push hook and init proposes no ask rule for it: the push reader and init read it as a push",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-06 (25), T4 security audit (c25-t4-author-r0-02)",
+      "since": 25
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "impact-globs-adapters",
+      "title": "Ask the user: add adapters/** and setup/hook.mjs to Ennyn's own review.impactRequiredGlobs (a tightening: every later commit to them needs an Impact line); the audit list names hooks/hooks.json but not the adapters it runs",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-06 (25), T4 security audit: the user's call",
+      "since": 25
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "reader-differential-combined-contexts",
+      "title": "The kill and push differentials combine their generated contexts (a wrapper inside a block, `function NAME {` bodies, a wrapper before a name built at run time, coproc on bash 4+) instead of applying one at a time: cycle 25's two kill-reader drifts that passed real kills were in shapes no single context held; run the combined set on Linux bash 5 too",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "mechanization": true,
+      "sourceClass": "reader-drifts-from-program",
+      "source": "cycle 2026-11-06 (25) convergence: reader-drifts-from-program the most recurring class (7: review 5, measurement 2), tied with test-built-on-assumption (7, all in authors' own harnesses, caught by their own runs)",
+      "since": 25
     }
   ],
   "done": [
@@ -5955,6 +6041,24 @@
       "title": "init makes a new project's first commit before any scaffold or install (3380df6): .gitignore for env files, keys, local Claude Code settings and build output; an .npmrc with ignore-scripts=true, and min-release-age from npm 11.15.0 only (measured: 11.10.0 to 11.14.1 fail a git dependency's build or a user before= setting); npm prefix and ignore-scripts checked in every folder before its first install, the root included; the config, the ask rules and the hook installed first; with no repository the two files are still written; pnpm keys read from its changelog, uv unmeasured",
       "status": "done",
       "finished": "2026-11-06"
+    },
+    {
+      "id": "node-verdict",
+      "title": "A node can be declined: the graph's third list (graph.exports.declined) with a reason each, never picked by core or mechanization, counted by doctor, a need on one refused; core --value <word> lists open nodes of a value; the closing report carries the batch's verdicts (ae04b01)",
+      "status": "done",
+      "finished": "2026-11-07"
+    },
+    {
+      "id": "cycle-journal",
+      "title": "The cycle's state is an append-only journal in the state dir (ennyn journal start|task|wait|close), ennyn status prints it (--line, --json; percent in steps), and after compaction the SessionStart hook gives one line of it, marked as data; the per-round result files and the handoff's HEAD went to step nodes (23aedb4)",
+      "status": "done",
+      "finished": "2026-11-07"
+    },
+    {
+      "id": "reader-against-real-program",
+      "title": "test/readers.test.mjs lists every production module as a reader with its program and harness, a known gap on an open node, or with why it reads none; the kill and push readers have generated-text differentials against real bash through test/shell-box.mjs; the reviewer prose stays, as the pair test proves a harness exists, not that it covers a new shape (54890b2)",
+      "status": "done",
+      "finished": "2026-11-07"
     }
   ]
 }

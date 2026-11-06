@@ -449,7 +449,8 @@
       ],
       "judged": "Research of 2026-10-31, about 30% either way: no gate. Named in cycle 15.",
       "linked": [
-        "new: a bulk text replace breaks the quoting of a string it lands in"
+        "new: a bulk text replace breaks the quoting of a string it lands in",
+        "new: state file text promoted to instructions"
       ]
     },
     {
@@ -479,7 +480,8 @@
         "new: test gap on an accepted spelling",
         "new: scope gate untested",
         "new: corpus gap",
-        "new: mirror predicate untested on one input"
+        "new: mirror predicate untested on one input",
+        "new: test misses a branch it names"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -574,7 +576,9 @@
         "new: state label with no rule behind it",
         "new: shared log with no landing rule",
         "new: format says appended while its fields need editing",
-        "new: stated repair forbidden by another rule"
+        "new: stated repair forbidden by another rule",
+        "new: refactor changes untouched output",
+        "new: restart wipes the state it should resume"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet.",
       "nodes": [
@@ -617,7 +621,9 @@
         "new: path trusted as text not as the kernel resolves it",
         "new: path compared as text across separator spellings",
         "new: path match by spelling not by tree",
-        "new: folder read recorded as file"
+        "new: folder read recorded as file",
+        "new: harness safety rests on an unchecked startup file",
+        "new: harness safety rests on an unchecked convention"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate.",
       "gates": [
@@ -662,7 +668,8 @@
         "new: weak signal chooses the record",
         "new: document order overrides project language",
         "new: test reads the repository past its listed allow",
-        "new: check reads its own fixture text as a finding"
+        "new: check reads its own fixture text as a finding",
+        "new: unknown value read as a string"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -714,7 +721,12 @@
         "new: guarded line moved",
         "new: guard on an equivalent mutant",
         "new: test guard left on text a fix removed",
-        "new: mutant that does not parse"
+        "new: mutant that does not parse",
+        "new: import runs an entry point",
+        "new: test fixture leaves out a field the code warns on",
+        "new: harness judge walks past the box",
+        "new: harness judge reads the wrong log line",
+        "new: concurrent log writes interleave"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -840,7 +852,8 @@
       "state": "open",
       "linked": [
         "new: a module-level name added where the module already declares it",
-        "new: test fixture shadows a helper name"
+        "new: test fixture shadows a helper name",
+        "new: config names collide unchecked"
       ],
       "judged": "the orchestrator of cycle 20, reading the rows"
     },
