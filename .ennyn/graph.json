@@ -5194,6 +5194,17 @@
       "cluster": "method",
       "source": "cycle 2026-11-06 (24): reviews waited 5 to 25 minutes on authors' short suites under load; the user, 2026-11-05: left to the session",
       "since": 24
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "hermetic-probe-prefix",
+      "title": "test/hermetic.test.mjs's probe tells a folder inside the repository by a string prefix with no separator: a checkout at /tmp/e reads the test's /tmp/en-hostile-… folders as the repository's and fails; compare the path or the path plus a separator, as inTop does",
+      "value": "low",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 2026-11-06 (24) closing, Linux check of changed test files (c24-orch-r0-02): fails on 43018bc too; the closing's script now clones to /tmp/ennyn-check",
+      "since": 24
     }
   ],
   "done": [
@@ -5880,7 +5891,7 @@
     },
     {
       "id": "impact-scoped-tests",
-      "title": "test:short on a branch that changes no code runs only the test files recorded as reading what changed (7093d1f): a preload (test/reads.mjs) records every repository file each test process reads, lists, stats or loads, children included, and marks a read it cannot name so that file always runs; test/reads.json is checked in with a hash of the code it was recorded on, node test/short.mjs --record rewrites it, and a code change or a stale list runs test:short as before; on three text commits it picked 16, 16 and 13 of 43 files, with no miss when each commit was reverted",
+      "title": "test:short on a branch that changes no code runs only the test files recorded as reading what changed (7093d1f): a preload (test/reads.mjs) records every repository file each test process reads, lists, stats or loads, children included, and marks a read it cannot name so that file always runs; test/reads.json is checked in with a hash of the code it was recorded on, node test/short.mjs --record rewrites it, and a code change or a stale list runs test:short as before; on three text commits it picked 16, 16 and 13 of 43 files, with no miss when each commit was reverted; the closing's Linux run found test:short could not start on the Node 20 floor (a named import of registerHooks), fixed in cd1440d with test/engines.test.mjs refusing such an import",
       "status": "done",
       "finished": "2026-11-06"
     },

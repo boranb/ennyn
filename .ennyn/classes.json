@@ -661,7 +661,8 @@
         "new: boundary computed for one language while two are read",
         "new: weak signal chooses the record",
         "new: document order overrides project language",
-        "new: test reads the repository past its listed allow"
+        "new: test reads the repository past its listed allow",
+        "new: check reads its own fixture text as a finding"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -712,7 +713,8 @@
         "new: test fixture reuses a path a later step makes",
         "new: guarded line moved",
         "new: guard on an equivalent mutant",
-        "new: test guard left on text a fix removed"
+        "new: test guard left on text a fix removed",
+        "new: mutant that does not parse"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
