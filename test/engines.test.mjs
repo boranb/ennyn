@@ -130,3 +130,50 @@ test("engines: the repository's own CI files name every action by a commit, chec
     );
   }
 });
+
+/**
+ * Builtin exports the Node floor lacks, from a run of every tracked file's named imports on the floor image
+ * (Node 20.0.0). An import of one by name fails the whole file's load there, before any check of the version
+ * runs: test:short could not start on the floor for a cycle. Such a name is read through a namespace import.
+ */
+const LATE = { module: ["registerHooks"] };
+
+/** @param {string} text @returns {string[]} each late name the text imports or re-exports by name */
+const lateImports = (text) =>
+  [...text.matchAll(/\b(?:import|export)\s*(?:[\w$]+\s*,\s*)?\{([^}]*)\}\s*from\s*["'](?:node:)?([\w/]+)["']/g)].flatMap((m) => {
+    // Comments in the braces are dropped and a quoted name read as the name it quotes, as the parser reads them.
+    const names = m[1]
+      .replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, " ")
+      .split(",")
+      .map((n) => n.trim().split(/\s+as\s+/)[0].replace(/^(["'])(.*)\1$/, "$2"));
+    return (LATE[/** @type {keyof typeof LATE} */ (m[2])] ?? []).filter((name) => names.includes(name)).map((name) => `${name} from node:${m[2]}`);
+  });
+
+test("engines: no tracked file imports by name a builtin export the Node floor lacks", () => {
+  const named = [
+    'import { registerHooks } from "node:module";',
+    "import { a, registerHooks as hooks } from 'module';",
+    'import m, {\n  registerHooks,\n} from "node:module";',
+    'export { registerHooks } from "node:module";',
+    'import {\n  // the hooks\n  registerHooks,\n} from "node:module";',
+    'import { /* 22.15 */ registerHooks } from "node:module";',
+    'import {\n  syncBuiltinESMExports, // x\n  registerHooks,\n} from "node:module";',
+    'import { "registerHooks" as rh } from "node:module";',
+    "import { 'registerHooks' as rh } from 'node:module';",
+    'import { /* a */ registerHooks /* b */ } from "node:module";',
+    'import { registerHooks/* x */as hooks } from "node:module";',
+  ];
+  for (const text of named) assert.deepEqual(lateImports(text), ["registerHooks from node:module"], text);
+  const not = [
+    'import * as nodeModule from "node:module";',
+    'import { registerHooksLater, syncBuiltinESMExports } from "node:module";',
+    'import { registerHooks } from "./module.mjs";',
+    'import { registerHooks } from "node:modules";',
+    'const { registerHooks } = nodeModule;',
+  ];
+  for (const text of not) assert.deepEqual(lateImports(text), [], text);
+  // This file is left out: its lines above are text, not imports.
+  const files = git(["ls-files", "-z"], { cwd: ROOT }).split("\0").filter((f) => /\.[cm]?js$/.test(f) && f !== "test/engines.test.mjs");
+  assert.ok(files.includes("test/short.mjs"), "the test files are read");
+  assert.deepEqual(files.flatMap((f) => lateImports(read(f)).map((late) => `${f}: ${late}`)), []);
+});

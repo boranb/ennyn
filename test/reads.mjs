@@ -18,10 +18,12 @@
 
 import childProcess from "node:child_process";
 import fs from "node:fs";
-import { registerHooks, syncBuiltinESMExports } from "node:module";
+// By namespace: Node before 22.15 has no registerHooks, and a named import of it fails this file's load.
+import * as nodeModule from "node:module";
 import { basename, delimiter, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+const { registerHooks, syncBuiltinESMExports } = nodeModule;
 const dir = process.env.ENNYN_READS;
 if (dir) start(dir);
 

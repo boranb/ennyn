@@ -8,7 +8,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { appendFileSync, chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { registerHooks } from "node:module";
+// By namespace: Node before 22.15 has no registerHooks, and a named import of it fails this file's load.
+import * as nodeModule from "node:module";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,6 +18,7 @@ import { matchAny } from "../core/glob.mjs";
 import { testNames } from "./declarations.mjs";
 import { ACCOUNTING, READS, SLOW, choose, codeHash, decide, reasons, testFiles, whatChanged } from "./short.mjs";
 
+const { registerHooks } = nodeModule;
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const GUARDS = "test/guards.test.mjs";
 const HOOK = "test/hook.test.mjs";

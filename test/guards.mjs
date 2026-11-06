@@ -185,6 +185,7 @@ export const GATES = [
       { id: "engines-image-tag", why: "a newer major pulled by its tag", file: "test/linux-run.mjs", old: "image: pinned(`node:${major}`)", new: "image: `node:${major}`", pattern: "engines: the Linux run starts at both floors" },
       { id: "engines-action-tag", why: "an action of the workflow named by its tag", file: ".github/workflows/test.yml", old: "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0", new: "actions/setup-node@v7", pattern: "engines: the repository's own CI files" },
       { id: "engines-ci-permissions", why: "the workflow's permissions removed", file: ".github/workflows/test.yml", old: "permissions:\n  contents: read\n", new: "", pattern: "engines: the repository's own CI files" },
+      { id: "engines-late-import", why: "a builtin export the Node floor lacks, imported by name", file: "test/short.mjs", old: "import * as nodeModule from \"node:module\";\n", new: "import * as nodeModule from \"node:module\";\nimport { registerHooks as late } from \"node:module\";\n", pattern: "engines: no tracked file imports by name" },
     ],
   },
   {

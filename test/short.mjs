@@ -31,7 +31,8 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { registerHooks } from "node:module";
+// By namespace: Node before 22.15 has no registerHooks, and a named import of it fails this file's load.
+import * as nodeModule from "node:module";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -40,6 +41,7 @@ import { git, gitMaybe } from "../core/git.mjs";
 import { matchAny } from "../core/glob.mjs";
 import { GATES } from "./guards.mjs";
 
+const { registerHooks } = nodeModule;
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const MAIN = "main";
 const GUARDS = "test/guards.test.mjs";
