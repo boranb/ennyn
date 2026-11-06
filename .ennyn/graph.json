@@ -5033,10 +5033,10 @@
       "needs": [],
       "id": "plugin-version-from-commit",
       "title": "A change to Ennyn reaches an installed copy without a reinstall: ship .claude-plugin/plugin.json with no version, so Claude Code versions the install by commit and claude plugin update follows each commit; change release step 2 and claude plugin tag to match, and say what a user on a pinned version sees",
-      "value": "high",
+      "value": "low",
       "cost": "S",
       "cluster": "distribution",
-      "source": "cycle 2026-11-06 (24), plugin-update-path: measured on Claude Code 2.1.310 (probe4 in the cycle's kept folder) that with no version the install is named by a 12-character commit and update follows it; the node's first clause, left out of ebad47d because it changes the release step in .claude/CLAUDE.md; asks the user",
+      "source": "cycle 2026-11-06 (24), plugin-update-path: measured on Claude Code 2.1.310 (probe4 in the cycle's kept folder) that with no version the install is named by a 12-character commit and update follows it; the node's first clause, left out of ebad47d because it changes the release step in .claude/CLAUDE.md; the choice was left to the orchestrator, 2026-11-06: version stays and the node is not a release need: a public user should get a change at a release, not at every commit to main, and ebad47d already keeps commits checked after a reinstall; worth it only for a development install",
       "since": 24
     },
     {
