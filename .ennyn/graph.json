@@ -5344,7 +5344,7 @@
       "cluster": "gates",
       "mechanization": true,
       "sourceClass": "reader-drifts-from-program",
-      "source": "cycle 2026-11-06 (25) convergence: reader-drifts-from-program the most recurring class (7: review 5, measurement 2), tied with test-built-on-assumption (7, all in authors' own harnesses, caught by their own runs)",
+      "source": "cycle 2026-11-06 (25) convergence: reader-drifts-from-program the most recurring class (8: review 5, measurement 3), including the closing Linux run, where the kill differential judge itself drifted on bash 5 coproc (b555c87)",
       "since": 25
     }
   ],
