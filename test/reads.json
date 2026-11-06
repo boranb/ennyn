@@ -1,6 +1,6 @@
 {
  "version": 1,
- "code": "18022024b56e731ca178b99093c7d1ecbedee0ca3b135ff1321fc28a10ad318f",
+ "code": "39f607e010251601b5dd1d3fd1f23060b6302ac26f4d9ae56866fffd5ac7ada4",
  "tests": {
   "test/agents.test.mjs": {
    "reads": [
@@ -1222,6 +1222,7 @@
     ".claude-plugin/plugin.json",
     ".claude/CLAUDE.md",
     ".claude/settings.json",
+    ".claude/settings.local.json",
     ".ennyn/handoff-archive.md",
     ".ennyn/handoff.md",
     ".gitignore",
@@ -1300,7 +1301,6 @@
     "",
     ".claude",
     ".claude-plugin",
-    ".claude/settings.local.json",
     ".ennyn",
     ".github",
     ".github/workflows",
@@ -1321,6 +1321,7 @@
     "metrics",
     "output-styles",
     "plan",
+    "schema",
     "scripts",
     "setup",
     "side-copy",
