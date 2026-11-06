@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { basename, delimiter, join, posix, win32 } from "node:path";
 import { globToRegExp, literalGlob, matchAny } from "../core/glob.mjs";
 import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
-import { DIFF_GROUP, GIT_LIMITS, MISSING_OBJECT, addedLines, argBatches, batchCheck, diffGroups, git, gitMaybe, headCommit, indexNames, machineFault, nameText, parseTrailers, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedPaths, stagedVersions, stagedVersionsEach, unpushedCount } from "../core/git.mjs";
+import { alive, DIFF_GROUP, GIT_LIMITS, MISSING_OBJECT, addedLines, argBatches, batchCheck, diffGroups, git, gitMaybe, headCommit, indexNames, machineFault, nameText, parseTrailers, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedPaths, stagedVersions, stagedVersionsEach, unpushedCount, waitGone } from "../core/git.mjs";
 import { shown, t } from "../core/i18n.mjs";
 import * as filesModule from "../core/files.mjs";
 import { readIfThere } from "../core/files.mjs";
@@ -807,6 +807,24 @@ test("addedLines: a deleted path below an asked name is that name's old director
   assert.throws(() => addedLines(asked + below.replaceAll("data/x", "database"), new Set(["data"])), /not asked for/, "a name that only starts alike is not below it");
   assert.throws(() => addedLines(asked + below, new Set(["data/y"])), /not asked for/);
   assert.deepEqual(addedLines(below.replaceAll("data/x", "deep/data/x"), new Set(["deep/data"])), new Map(), "a name at any depth");
+});
+
+test("waitGone: a process that stays alive is waited for until the limit and reads not gone; one that goes reads gone at once (win-kill-waits-exit)", () => {
+  let asked = 0;
+  const started = Date.now();
+  assert.equal(waitGone(4242, 300, () => (asked++, true)), false);
+  const took = Date.now() - started;
+  assert.ok(took >= 300 && took < 3000, `waited ${took} ms`);
+  assert.ok(asked > 2, "asked again while waiting");
+  asked = 0;
+  assert.equal(waitGone(4242, 60_000, () => ++asked < 3), true);
+  assert.equal(asked, 3);
+  assert.equal(waitGone(4242, 0, () => false), true);
+  // The real probe: this process runs; a child that has exited and been reaped does not.
+  assert.equal(alive(process.pid), true);
+  const ended = spawnSync(process.execPath, ["-e", ""]);
+  assert.equal(ended.status, 0);
+  assert.equal(waitGone(ended.pid, 2000), true);
 });
 
 test("stagedVersionsEach: a git stopped at its limit is not asked again, by name or by the next call, and every name stands failed", () => {

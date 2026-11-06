@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { git } from "../core/git.mjs";
-import { journalPath, moduleGoal, MutationError, nodeParses, otherNames, parseMutants, restoreJournal, runMutants, summarizeMutants } from "../metrics/mutation.mjs";
+import { journalPath, moduleGoal, MutationError, nodeParses, otherNames, parseMutants, restoreJournal, runCommand, runMutants, summarizeMutants } from "../metrics/mutation.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
 const NODE = JSON.stringify(process.execPath);
@@ -275,6 +275,235 @@ test("mutate: a test run that cannot start ends the pass with no count, the file
   }
   assert.deepEqual(p.snapshot(), p.before);
   assert.equal(existsSync(p.journal), false);
+});
+
+/**
+ * A process's start in clock ticks since boot (field 22 of /proc/<pid>/stat) and whether it is a zombie; null
+ * once there is no such process. A PID with another start is another process: the first one ended and its PID
+ * was given again.
+ * @param {number} pid
+ */
+function procStart(pid) {
+  try {
+    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+    return { start: fields[19], zombie: fields[0] === "Z" };
+  } catch {
+    return null;
+  }
+}
+
+/** Who a process is, read while it is surely the test's own (its child not yet reaped). @param {number | undefined} pid */
+const ident = (pid) => ({ pid: pid ?? 0, start: pid === undefined ? null : (procStart(pid)?.start ?? null) });
+
+/** Whether the process recorded is still that one, and running. @param {{ pid: number, start: string | null }} e */
+const ours = (e) => {
+  const now = procStart(e.pid);
+  return e.start !== null && now !== null && now.start === e.start && !now.zombie;
+};
+
+/** The `pid:start` entries a command wrote of itself. @param {string} path */
+const selfIdents = (path) =>
+  existsSync(path)
+    ? readFileSync(path, "utf8")
+        .trim()
+        .split(" ")
+        .filter(Boolean)
+        .map((x) => ({ pid: Number(x.split(":")[0]), start: x.split(":")[1] ?? null }))
+    : [];
+
+/**
+ * Ends what a test started and the code under test may have left running: each process recorded, while it is
+ * still the same process (its start unchanged), by its group (runCommand starts each command in one of its own,
+ * which a kill of the test run never reaches), else by its PID. A PID now held by another process is left alone.
+ * Returns the PIDs still running as the processes recorded.
+ * @param {{ pid: number, start: string | null }[]} entries
+ */
+async function endGroups(entries) {
+  const left = [];
+  for (const e of entries) {
+    if (!ours(e)) continue;
+    for (const target of [-e.pid, e.pid]) {
+      try {
+        process.kill(target, "SIGKILL");
+        break;
+      } catch {
+        // No such group, or already gone.
+      }
+    }
+    const deadline = Date.now() + 2000;
+    while (ours(e) && Date.now() < deadline) await sleep(50);
+    if (ours(e)) left.push(e.pid);
+  }
+  return left;
+}
+
+/**
+ * A test command that writes `pid:start` of itself to `starts` and, while notes.txt says "sleep", runs `act`,
+ * writes its pid to `sleeping` and sleeps.
+ * @param {string} act
+ */
+const stuckCommand = (act) =>
+  `${NODE} -e "const f = require('fs'); const s = f.readFileSync('/proc/self/stat', 'utf8'); f.appendFileSync('starts', process.pid + ':' + s.slice(s.lastIndexOf(')') + 2).split(' ')[19] + ' '); if (f.readFileSync('notes.txt', 'utf8').includes('sleep')) { ${act} f.writeFileSync('sleeping', String(process.pid)); setTimeout(() => {}, 60000); }"`;
+
+/** What a command written to notes.txt while the mutant was in, then went on running. */
+const WRITES_NOTES = "f.writeFileSync('notes.txt', 'the command wrote this\\n');";
+
+const STILL_AT_LIMIT = "was stopped at its time limit and is still running 5 s later: this run's counts could not be measured; stop it by its PID";
+
+test("mutate tests: endGroups ends a process it recorded and leaves one whose PID now names another process (win-kill-waits-exit)", async () => {
+  const c = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" });
+  const me = ident(c.pid);
+  try {
+    assert.ok(me.start, "the start is read");
+    assert.deepEqual(await endGroups([{ pid: me.pid, start: "1" }]), [], "another start: nothing to end");
+    assert.equal(ours(me), true, "a PID that names another process now is never signalled");
+    assert.deepEqual(await endGroups([me]), []);
+    assert.equal(ours(me), false, "the recorded process is ended");
+  } finally {
+    c.kill("SIGKILL");
+  }
+});
+
+test("mutate: a command still running after its stop at the time limit ends the pass at once, said, never a count; the test ends its own child (win-kill-waits-exit)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "en-mut-stuck-"));
+  /** @type {(number | undefined)[]} */
+  const asked = [];
+  /** Every command this test starts, recorded as it starts, ended at the end whatever the code under test did. @type {{ pid: number, start: string | null }[]} */
+  const started = [];
+  const onChild = (/** @type {import("node:child_process").ChildProcess | null} */ c) => c && started.push(ident(c.pid));
+  // A stop that does not take: nothing is stopped, the command runs on.
+  const stop = (/** @type {number | undefined} */ pid) => (asked.push(pid), false);
+  try {
+    const since = Date.now();
+    const never = new Promise((r) => setTimeout(r, 20_000).unref());
+    const refused = await Promise.race([runCommand(`${NODE} -e "setInterval(() => {}, 1000)"`, { cwd: dir, timeoutMs: 300, onChild, stop }).then(() => "resolved", (e) => e), never.then(() => "no answer in 20 s")]);
+    assert.ok(refused instanceof MutationError, String(refused));
+    assert.equal(refused.message, `the command (PID ${asked[0]}) ${STILL_AT_LIMIT}`);
+    assert.equal(asked.length, 1);
+    assert.ok(Date.now() - since < 5000, "the refusal does not wait for an exit");
+    // A stop that took: the run ends as before, timed out.
+    const run = await runCommand(`${NODE} -e "setInterval(() => {}, 1000)"`, { cwd: dir, timeoutMs: 300, onChild, stop: (pid) => (process.kill(-(/** @type {number} */ (pid)), "SIGKILL"), true) });
+    assert.equal(run.timedOut, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    assert.deepEqual(await endGroups(started), [], "every command this test started is gone");
+  }
+});
+
+test("mutate: after a stop that did not take, the process that ran the pass ends without waiting for the command (win-kill-waits-exit)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "en-mut-stuck-"));
+  const script = join(dir, "run.mjs");
+  writeFileSync(
+    script,
+    [
+      'import { readFileSync } from "node:fs";',
+      `import { MutationError, runCommand } from ${JSON.stringify(pathToFileURL(join(dirname(CLI), "..", "metrics", "mutation.mjs")).href)};`,
+      // Who the command is goes out as it starts, while it is surely this script's child (a pipe to a parent is
+      // written at once on Linux): the test ends it.
+      'const start = (pid) => { const s = readFileSync(`/proc/${pid}/stat`, "utf8"); return s.slice(s.lastIndexOf(")") + 2).split(" ")[19]; };',
+      "const onChild = (c) => c && console.log(`pid ${c.pid}:${start(c.pid)}`);",
+      "try {",
+      `  await runCommand(${JSON.stringify(`${NODE} -e "setTimeout(() => {}, 60000)"`)}, { cwd: process.cwd(), timeoutMs: 300, onChild, stop: () => false });`,
+      '  console.log("resolved");',
+      "} catch (e) {",
+      "  console.log(`refused ${e instanceof MutationError}`);",
+      "}",
+      "",
+    ].join("\n"),
+  );
+  /** @type {{ pid: number, start: string | null }[]} */
+  let commands = [];
+  try {
+    const started = Date.now();
+    const out = spawnSync(process.execPath, [script], { cwd: dir, encoding: "utf8", timeout: 30_000 });
+    const took = Date.now() - started;
+    commands = [...out.stdout.matchAll(/^pid (\d+):(\d+)$/gm)].map((x) => ({ pid: Number(x[1]), start: x[2] }));
+    assert.equal(commands.length, 1, out.stdout + out.stderr);
+    assert.match(out.stdout, /^refused true$/m);
+    assert.equal(out.status, 0, out.stderr);
+    assert.ok(took < 15_000, `the process ended ${took} ms after its start, with its command still running`);
+    assert.equal(ours(commands[0]), true, "the command still runs: the stop did not take");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+    assert.deepEqual(await endGroups(commands), [], "the command this test started is gone");
+  }
+});
+
+test("mutate: a pass ended by a stop that did not take puts the file back, removes the journal and says a later write goes unseen (win-kill-waits-exit)", async () => {
+  const p = project();
+  /** @type {{ pid: number, start: string | null }[]} */
+  const asked = [];
+  try {
+    // Each start of the command is written down: the first run, the one at the time limit, is the one refused (no retry).
+    const run = runMutants({ cwd: p.dir, mutants: [m("t2", "notes.txt", "alpha", "alpha sleep")], command: stuckCommand(""), journal: p.journal, timeoutMs: 1500, stop: (pid) => (asked.push(ident(pid)), false) });
+    const never = new Promise((r) => setTimeout(r, 30_000).unref());
+    const refused = await Promise.race([run.then(() => "resolved", (e) => e), never.then(() => "no answer in 30 s")]);
+    assert.ok(refused instanceof MutationError, String(refused));
+    assert.equal(refused.message, `the command (PID ${asked[0]?.pid}) ${STILL_AT_LIMIT}. Then the file under test was put back and the journal removed, so a write by the command from now on goes unseen: check the tree`);
+    assert.equal(asked.length, 1, "no second run after a refusal");
+    assert.equal(selfIdents(join(p.dir, "starts")).length, 2, "the run without mutants and the mutant's first run, stopped by the stand-in at its time limit");
+    assert.equal(await gone(Number(readFileSync(join(p.dir, "sleeping"), "utf8"))), false, "the test process still runs");
+    assert.deepEqual(p.snapshot(), p.before, "the file is back");
+    assert.equal(existsSync(p.journal), false, "the journal is removed, as the message says");
+  } finally {
+    assert.deepEqual(await endGroups([...asked, ...selfIdents(join(p.dir, "starts"))]), [], "every command this test started is gone");
+  }
+});
+
+test("mutate: a command still running that wrote the file under test is said first, then the file left as it is with the journal kept (win-kill-waits-exit)", async () => {
+  const p = project();
+  /** @type {{ pid: number, start: string | null }[]} */
+  const asked = [];
+  try {
+    const run = runMutants({ cwd: p.dir, mutants: [m("t3", "notes.txt", "alpha", "alpha sleep")], command: stuckCommand(WRITES_NOTES), journal: p.journal, timeoutMs: 1500, stop: (pid) => (asked.push(ident(pid)), false) });
+    const never = new Promise((r) => setTimeout(r, 30_000).unref());
+    const refused = await Promise.race([run.then(() => "resolved", (e) => e), never.then(() => "no answer in 30 s")]);
+    assert.ok(refused instanceof MutationError, String(refused));
+    const head = `the command (PID ${asked[0]?.pid}) ${STILL_AT_LIMIT}. Then the file under test: notes.txt changed while mutant "t3" was in it`;
+    assert.equal(refused.message.slice(0, head.length), head, refused.message);
+    assert.equal(readFileSync(join(p.dir, "notes.txt"), "utf8"), "the command wrote this\n", "the command's write is left as it is");
+    assert.equal(JSON.parse(readFileSync(p.journal, "utf8")).original, Buffer.from("alpha\n").toString("base64"), "the journal keeps the original bytes");
+  } finally {
+    assert.deepEqual(await endGroups([...asked, ...selfIdents(join(p.dir, "starts"))]), [], "every command this test started is gone");
+  }
+});
+
+test("mutate: a signal while the command runs and its stop does not take says one line on stderr once the put-back has run: the command first, then the file (win-kill-waits-exit)", async () => {
+  const p = project();
+  const script = join(p.dir, "..", `${p.dir.split(/[\\/]/).pop()}-signal.mjs`);
+  writeFileSync(
+    script,
+    [
+      'import { existsSync, readFileSync } from "node:fs";',
+      `import { journalPath, runMutants } from ${JSON.stringify(pathToFileURL(join(dirname(CLI), "..", "metrics", "mutation.mjs")).href)};`,
+      'const start = (pid) => { const s = readFileSync(`/proc/${pid}/stat`, "utf8"); return s.slice(s.lastIndexOf(")") + 2).split(" ")[19]; };',
+      "const cwd = process.argv[2];",
+      // The stop is asked only as the process ends: it says who the command is, while it is still this process's child.
+      "const stop = (pid) => (console.log(`pid ${pid}:${start(pid)}`), false);",
+      `const command = ${JSON.stringify(stuckCommand(WRITES_NOTES))};`,
+      'const wait = setInterval(() => { if (existsSync(`${cwd}/sleeping`)) { clearInterval(wait); process.kill(process.pid, "SIGTERM"); } }, 50);',
+      'await runMutants({ cwd, mutants: [{ id: "t4", file: "notes.txt", old: "alpha", new: "alpha sleep" }], command, journal: journalPath(cwd, ".git/ennyn"), timeoutMs: 60000, stop });',
+      "",
+    ].join("\n"),
+  );
+  /** @type {{ pid: number, start: string | null }[]} */
+  let commands = [];
+  try {
+    const out = spawnSync(process.execPath, [script, p.dir], { cwd: p.dir, encoding: "utf8", timeout: 60_000 });
+    commands = [...out.stdout.matchAll(/^pid (\d+):(\d+)$/gm)].map((x) => ({ pid: Number(x[1]), start: x[2] }));
+    assert.equal(out.signal, "SIGTERM", out.stderr);
+    assert.equal(commands.length, 1, out.stdout + out.stderr);
+    const lines = out.stderr.split("\n").filter(Boolean);
+    assert.equal(lines.length, 1, out.stderr);
+    const head = `the command (PID ${commands[0].pid}) was stopped as the run ended and is still running 5 s later: stop it by its PID. Then the file under test: notes.txt changed while mutant "t4" was in it`;
+    assert.equal(lines[0].slice(0, head.length), head, lines[0]);
+    assert.doesNotMatch(out.stderr, /put back and the journal removed/, "no line says the file went back");
+    assert.equal(existsSync(p.journal), true, "the journal keeps the original bytes");
+  } finally {
+    rmSync(script, { force: true });
+    assert.deepEqual(await endGroups([...commands, ...selfIdents(join(p.dir, "starts"))]), [], "every command this test started is gone");
+  }
 });
 
 test("mutate: a killed run is undone by the next one or by --restore while the file still holds the mutant; a file changed since is left alone", async () => {

@@ -108,6 +108,54 @@ export function diffGroups(paths, changes) {
 const seconds = (ms) => `${ms / 1000} s`;
 
 /**
+ * How long a stopped process tree gets to be gone. Measured in cycle 25 (Windows 10 19045, Node 22.23.4): taskkill
+ * /T /F returned only once the tree it found had exited, 20 runs of 20, 0.3 to 1.3 s; the wait covers a stop that
+ * did not take (taskkill missing or refused, a process stuck in the kernel).
+ */
+export const STOP_LIMIT = 5_000;
+
+/**
+ * Whether a process is running: signal 0 finds it (EPERM: it runs as another user). On Windows signal 0 reads the
+ * exit code, so a process that has exited reads gone while a handle to it is still open.
+ * @param {number} pid
+ */
+export function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return /** @type {NodeJS.ErrnoException} */ (e).code === "EPERM";
+  }
+}
+
+/**
+ * Waits, blocking, until `alive(pid)` is false or `limitMs` has passed. Not for a child of this process on Linux:
+ * a killed child stays a zombie until Node reaps it, and Node reaps it only once this wait returns.
+ * @param {number} pid @param {number} limitMs @param {(pid: number) => boolean} [isAlive]
+ * @returns {boolean} gone
+ */
+export function waitGone(pid, limitMs, isAlive = alive) {
+  const end = Date.now() + limitMs;
+  const nap = new Int32Array(new SharedArrayBuffer(4));
+  while (isAlive(pid)) {
+    if (Date.now() >= end) return false;
+    Atomics.wait(nap, 0, 0, 10);
+  }
+  return true;
+}
+
+/**
+ * Windows: stops a process and the processes it started (taskkill /T /F, by its PID only), then waits until it is
+ * gone, at most STOP_LIMIT. The tree's other processes are not known by PID here; on the measured build taskkill
+ * returned after they had exited.
+ * @param {number} pid @returns {boolean} gone; false: still running at the limit, which the caller says
+ */
+export function stopTree(pid) {
+  spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
+  return waitGone(pid, STOP_LIMIT);
+}
+
+/**
  * The command's name, past any "-c key=value" in front of it.
  * @param {string[]} args
  */
@@ -128,7 +176,7 @@ function stopped(args, ms) {
 
 /**
  * Stops a streaming git child once it has written nothing for the call limit: it is killed (with the processes
- * it started, on Windows), its pipes are closed, and `fail` gets an error naming the command and the limit. A
+ * it started, on Windows, waited for up to STOP_LIMIT and said when still running), its pipes are closed, and `fail` gets an error naming the command and the limit. A
  * close handler that would hand on a line returns at once when `stopped` is set: the call has already failed.
  * @param {import("node:child_process").ChildProcess} child @param {string} name @param {(e: Error) => void} fail
  * @returns {{ stopped: boolean }}
@@ -138,10 +186,10 @@ function stopWhenSilent(child, name, fail) {
   const state = { stopped: false };
   const timer = setTimeout(() => {
     state.stopped = true;
-    if (process.platform === "win32" && child.pid !== undefined) spawnSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+    const gone = process.platform !== "win32" || child.pid === undefined || stopTree(child.pid);
     child.kill("SIGKILL");
     for (const pipe of [child.stdin, child.stdout, child.stderr]) pipe?.destroy();
-    const text = `git ${name}: wrote nothing for ${seconds(ms)} and was stopped`;
+    const text = `git ${name}: wrote nothing for ${seconds(ms)} and was stopped${gone ? "" : `, and is still running ${seconds(STOP_LIMIT)} later`}`;
     fail(Object.assign(new Error(text), { code: "ETIMEDOUT", stderr: text }));
   }, ms);
   const heard = () => timer.refresh();

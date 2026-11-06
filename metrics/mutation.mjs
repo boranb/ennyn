@@ -37,7 +37,7 @@ import { gone, linkBelow, present, readRegular, removeState, writeState } from "
 import { shown, unshownEscaped } from "../core/i18n.mjs";
 import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { commonDir, gitRun, resolveStateDir, stateRoot, underGitDir } from "../core/git.mjs";
+import { alive, commonDir, gitRun, resolveStateDir, STOP_LIMIT, stateRoot, stopTree, underGitDir } from "../core/git.mjs";
 
 /** @typedef {{ id: string, file: string, old: string, new: string }} Mutant */
 /** @typedef {"killed" | "timeout" | "survived" | "invalid" | "unchecked" | "unapplied"} Outcome */
@@ -171,28 +171,48 @@ export function journalPath(cwd, stateDir) {
 const quote = (s) => (process.platform === "win32" ? `"${s.replace(/"/g, '""')}"` : `'${s.replace(/'/g, `'\\''`)}'`);
 
 /**
- * The command's whole process group: the shell, the test processes, and whatever they left running.
+ * The command's whole process group: the shell, the test processes, and whatever they left running. On Windows
+ * the tree of a running shell, waited for (stopTree); elsewhere the group's kill is not waited for.
  * @param {number | undefined} pid
  * @param {boolean} running
+ * @returns {boolean} false: the shell is still running STOP_LIMIT after the stop
  */
 function killGroup(pid, running) {
-  if (pid === undefined) return;
+  if (pid === undefined) return true;
   try {
-    if (process.platform === "win32") {
-      if (running) spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
-    } else process.kill(-pid, "SIGKILL");
+    if (process.platform === "win32") return !running || stopTree(pid);
+    process.kill(-pid, "SIGKILL");
   } catch {
     // Already gone.
   }
+  return true;
 }
 
 /**
- * @param {string} command run by the shell
- * @param {{ cwd: string, timeoutMs?: number | null, onChild?: (c: import("node:child_process").ChildProcess | null) => void }} opts
- * @returns {Promise<CommandRun>}
+ * A command still running after its stop. The pass ends without it; what became of the file under test is said
+ * after it, once the put-back has run (afterStillRunning).
+ * @param {number | undefined} pid @param {boolean} atLimit stopped at its time limit, else as the run ended
  */
-export function runCommand(command, { cwd, timeoutMs = null, onChild = () => {} }) {
-  return new Promise((done) => {
+const stillRunning = (pid, atLimit) =>
+  `the command (PID ${pid}) was stopped ${atLimit ? "at its time limit" : "as the run ended"} and is still running ${STOP_LIMIT / 1000} s later: ${atLimit ? "this run's counts could not be measured; " : ""}stop it by its PID`;
+
+/**
+ * The still-running line, then what the put-back did: the file back and the journal gone, so a write by the
+ * command from then on goes unseen, or why the file was left as it is (`back`, the put-back's error).
+ * @param {string} still @param {unknown} back
+ */
+const afterStillRunning = (still, back) =>
+  `${still}. Then ${back ? `the file under test: ${/** @type {Error} */ (back).message}` : "the file under test was put back and the journal removed, so a write by the command from now on goes unseen: check the tree"}`;
+
+/**
+ * @param {string} command run by the shell
+ * @param {{ cwd: string, timeoutMs?: number | null, onChild?: (c: import("node:child_process").ChildProcess | null) => void, stop?: (pid: number | undefined) => boolean }} opts
+ *   `stop`: what stops the command at its timeout, true once it is gone (a test's stand-in; killGroup)
+ * @returns {Promise<CommandRun>} rejects with a MutationError when the command is still running after its stop
+ *   (`stillRunning: true`; runMutants adds what became of the file)
+ */
+export function runCommand(command, { cwd, timeoutMs = null, onChild = () => {}, stop = (pid) => killGroup(pid, true) }) {
+  return new Promise((done, refuse) => {
     const start = Date.now();
     // Its own process group, so a timeout, a signal or the end of the run stops the test processes too.
     const child = spawn(command, { cwd, shell: true, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"] });
@@ -202,8 +222,19 @@ export function runCommand(command, { cwd, timeoutMs = null, onChild = () => {} 
     child.stdout?.on("data", keep);
     child.stderr?.on("data", keep);
     let timedOut = false;
-    const timer = timeoutMs ? setTimeout(() => ((timedOut = true), killGroup(child.pid, true)), Math.min(timeoutMs, MAX_TIMEOUT_MS)) : null;
     let finished = false;
+    const timer = timeoutMs
+      ? setTimeout(() => {
+          timedOut = true;
+          if (stop(child.pid) || finished) return;
+          // Its exit may never come: the pass ends here, with no second stop. Nothing of this process waits for
+          // the command any more (its handle and pipes), so the CLI ends once it has said so.
+          finished = true;
+          for (const pipe of [child.stdout, child.stderr]) pipe?.destroy();
+          child.unref();
+          refuse(Object.assign(new MutationError(stillRunning(child.pid, true)), { stillRunning: true }));
+        }, Math.min(timeoutMs, MAX_TIMEOUT_MS))
+      : null;
     /** @param {number | null} exit @param {string | null} signal @param {string} [error] */
     const finish = (exit, signal, error) => {
       if (finished) return;
@@ -545,16 +576,6 @@ function writeJournal(root, path, data) {
   writeState(root, path, JSON.stringify(data), "replace");
 }
 
-/** @param {number} pid */
-function alive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (e) {
-    return /** @type {NodeJS.ErrnoException} */ (e).code === "EPERM";
-  }
-}
-
 /**
  * Undo what a journal holds: the file goes back while it still holds the mutant, a file changed since is
  * refused (the journal keeps its original bytes), then the journal goes. A file with another name is never written:
@@ -743,16 +764,18 @@ function prepare(cwd, m) {
  * @param {{
  *   cwd: string, mutants: Mutant[], command: string, check?: string | null, journal: string,
  *   timeoutMs?: number | null, onResult?: (r: MutantResult) => void, onBaseline?: (b: CommandRun, timeoutMs: number) => void,
- *   onLinked?: (l: LinkNotice) => void
+ *   onLinked?: (l: LinkNotice) => void, stop?: (pid: number | undefined) => boolean
  * }} opts
  *   `timeoutMs`: per mutant; default three times the baseline, at least the baseline plus 30 s; one shorter
  *   than one and a half times the baseline is refused. A run that reaches it runs once more with twice the
  *   time before it counts as a timeout. A test run that cannot start ends the pass: no number from it.
  *   `onLinked`: what there is to say about other names of a file a mutant was in, as soon as it can be said.
+ *   `stop`: what stops a mutant's test run at its time limit and a running command as the process ends, true once
+ *   it is gone (killGroup; a test's stand-in).
  * @returns {Promise<{ restored: string | null, baseline: CommandRun, timeoutMs: number | null, results: MutantResult[] }>}
  *   no results when the baseline fails
  */
-export async function runMutants({ cwd, mutants, command, check = null, journal, timeoutMs = null, onResult = () => {}, onBaseline = () => {}, onLinked = () => {} }) {
+export async function runMutants({ cwd, mutants, command, check = null, journal, timeoutMs = null, onResult = () => {}, onBaseline = () => {}, onLinked = () => {}, stop }) {
   const { restored } = takeJournal(cwd, journal, onLinked);
   const root = stateRoot(cwd, journal);
   const tree = realpathSync(cwd);
@@ -850,17 +873,24 @@ export async function runMutants({ cwd, mutants, command, check = null, journal,
   // goes back and the journal goes. A signal then ends the process as it would have. Nothing is thrown
   // here: the process is ending, and what it could not put back is said on stderr.
   const onExit = () => {
-    if (child) killGroup(child.pid, true);
+    const running = child && !(stop ?? ((/** @type {number | undefined} */ pid) => killGroup(pid, true)))(child.pid) ? child.pid : null;
+    /** @type {unknown} */
+    let back = null;
     try {
       putBack();
     } catch (e) {
+      back = e;
+    }
+    release();
+    // Said once the put-back has run, from what it did: a command still running first, then the file.
+    const text = running !== null ? afterStillRunning(stillRunning(running, false), back) : back ? /** @type {Error} */ (back).message : null;
+    if (text !== null) {
       try {
-        writeSync(2, `${unshownEscaped(/** @type {Error} */ (e).message)}\n`);
+        writeSync(2, `${unshownEscaped(text)}\n`);
       } catch {
         // No stderr to write to: the journal and the next run still say it.
       }
     }
-    release();
     try {
       sayNames();
     } catch {
@@ -951,17 +981,29 @@ export async function runMutants({ cwd, mutants, command, check = null, journal,
           if (verdict === false) r = { id: m.id, file: p.rel, outcome: "invalid", checked: true, reason: { key: "mutate.reason.parse" } };
           else {
             ran.push("the test command");
-            let run = await runCommand(command, { cwd, timeoutMs: limit, onChild });
-            if (run.timedOut) run = await runCommand(command, { cwd, timeoutMs: 2 * limit, onChild });
+            let run = await runCommand(command, { cwd, timeoutMs: limit, onChild, stop });
+            if (run.timedOut) run = await runCommand(command, { cwd, timeoutMs: 2 * limit, onChild, stop });
             if (run.error) throw new MutationError(`the test command did not start for mutant ${m.id} (${run.error}); no count from this run`);
             // Without a parse check a failure, or a hang, may be a mutant that does not parse.
             /** @type {Outcome} */
             const outcome = run.exit === 0 && !run.timedOut ? "survived" : noCheck ? "unchecked" : run.timedOut ? "timeout" : "killed";
             r = { id: m.id, file: p.rel, outcome, checked: !noCheck, ...(noCheck ? { reason: noCheck } : {}), ms: run.ms, exit: run.exit, tail: run.tail };
           }
+        } catch (e) {
+          // A command still running: the pass ends with that said first, then what the put-back did.
+          if (!(e instanceof MutationError && /** @type {{ stillRunning?: boolean }} */ (e).stillRunning)) throw e;
+          /** @type {unknown} */
+          let back = null;
+          try {
+            putBack();
+          } catch (b) {
+            back = b;
+          }
+          throw new MutationError(afterStillRunning(e.message, back));
         } finally {
           putBack();
-          writeJournal(root, journal, { pid: process.pid });
+          // A put-back that failed above keeps the journal with the original bytes.
+          if (!keep) writeJournal(root, journal, { pid: process.pid });
           sayNames();
         }
       }

@@ -2,6 +2,7 @@
 
 ## Unreleased (0.0.x)
 
+- On Windows a stopped `ennyn mutate` or git process tree is waited for up to 5 s; a stop that does not take ends the mutate pass at once (the CLI no longer waits for the command) and says the command is still running, by its PID, then what became of the file under test.
 - `npm run test:short` no longer narrows by a read list the branch itself changed: such a branch runs the short set and says why, and a stale or missing list says it is recorded on main at the closing instead of sending the branch to `--record` (cycle 29 audit of the short suite).
 - A task agent writes two paragraphs before its first edit, what the task asks and how the code works now as the brief says, and opens its report with them; the orchestrator reads them against the node before review, and a miss or an addition is a ledger row with the new `source: brief` (round 0, review, no file, medium or low, fixed or refuted), which `ennyn convergence` counts in no column, round, recurring class or ladder and lists under its block.
 - `ennyn convergence` reads the recurrence ladder from the ledger: under its block it prints each file at rung 2 and at the fix-loop brake over the cycle and the two before it, with why and its rows, and exits 1 when a file at the brake got a new patch node or its patch nodes could not be looked for.
