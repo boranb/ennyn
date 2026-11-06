@@ -2,7 +2,8 @@
  * The reader behind the PreToolUse hook (adapters/claude-code/push-spellings.mjs): an accept and a reject corpus,
  * written by hand in the shapes real sessions use, the record of what Claude Code's ask rule does with each spelling,
  * and a real shell's and a real git's answer to which commands reach a push: a bare remote that logs what it receives,
- * and a stand-in `git` first on PATH that writes its arguments and runs the real one. A refusal stalls an agent and a
+ * and a stand-in `git` first on PATH that writes its arguments and runs the real one, and a real bash's answer on
+ * generated texts. A refusal stalls an agent and a
  * miss is a push nobody was asked about, so both directions are held. Then the hook itself, as Claude Code runs it, on
  * temporary projects; test/reference/pretooluse.json records what Claude Code does with what it prints.
  */
@@ -17,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { mayHold } from "../adapters/claude-code/config-place.mjs";
 import { pushAliases, pushSpelling } from "../adapters/claude-code/push-spellings.mjs";
 import { SPELLINGS, readRecord } from "./reference/claude-code.mjs";
+import { shellBox, unsafeTexts } from "./shell-box.mjs";
 
 /**
  * Pushes left alone, which only the rule stops: a shell reaches each, and Claude Code's parser finishes on each, so the rule
@@ -1083,6 +1085,73 @@ test("push reader: a real shell and a real git agree: what is refused reaches a 
     assert.equal(existsSync(started), false, "a shell ran a startup file");
   } finally {
     rmSync(box, { recursive: true, force: true });
+  }
+});
+
+/**
+ * Generated texts, as the cycle 18 reviewer generated them: each command of a bounded grammar of git calls, put in each
+ * context the shell gives it and written each way the shell reads alike, runs through a real bash (test/shell-box.mjs)
+ * with a stand-in `git` that writes its words and pushes nothing. A text the reader leaves must reach no push, or only
+ * the plain shape the ask rule reads (`git push …` at the head of its command, in a text of the left alphabet); a text
+ * it refuses that reaches none is the price of not following, counted. What the reader leaves and bash pushes is a push
+ * nobody was asked about.
+ */
+const GIT_CALLS = ["git push", "git push origin main", "git -C . push", "git -c a.b=c push", "git --git-dir=.git push", "git send-pack .", "git status", "git log --grep push", "git commit -qm push", "echo push"];
+/** @type {[string, (s: string) => string | null][]} */
+const SHELL_CONTEXTS = [
+  ["plain", (s) => s], ["seq", (s) => `true; ${s}`], ["and", (s) => `true && ${s}`], ["or", (s) => `false || ${s}`], ["pipe", (s) => `echo x | ${s}`], ["sub", (s) => `( ${s} )`], ["group", (s) => `{ ${s}; }`],
+  ["if", (s) => `if true; then ${s}; fi`], ["func", (s) => `f() { ${s}; }; f`], ["for", (s) => `for i in 1; do ${s}; done`], ["bash-c", (s) => `bash -c '${s}'`], ["sh-c", (s) => `sh -c "${s}"`],
+  ["cmdsub", (s) => `echo "$(${s})"`], ["backtick", (s) => `echo \`${s}\``], ["env", (s) => (s.startsWith("git") ? `env ${s}` : null)], ["command", (s) => (s.startsWith("git") ? `command ${s}` : null)], ["nohup", (s) => (s.startsWith("git") ? `nohup ${s}` : null)],
+  ["echo", (s) => `echo ${s}`], ["comment", (s) => `# ${s}`], ["colon", (s) => `: '${s}'`], ["heredoc", (s) => `cat <<'EOF'\n${s}\nEOF`], ["pipe-sh", (s) => `printf '%s\\n' '${s}' | bash`], ["redirect", (s) => `${s} > out.txt 2>&1`], ["newline", (s) => `cd .\n${s}`],
+  // A plain push in a text that holds something else a shell reads: only the left alphabet leaves it to the rule.
+  ["quote-before", (s) => `echo 'x'; ${s}`], ["dollar-after", (s) => `${s}; echo $HOME`],
+  // bash 4 and later: macOS's bash 3.2 runs neither, Linux's bash 5 both.
+  ["coproc", (s) => (s.startsWith("git") ? `coproc ${s}` : null)], ["coproc-named", (s) => `coproc P { ${s}; }`], ["pipe-err", (s) => `true |& ${s}`],
+];
+/** The program's name and the verb, each written another way a shell reads alike. */
+const SPELL = [(/** @type {string} */ w) => `'${w}'`, (/** @type {string} */ w) => `"${w}"`, (/** @type {string} */ w) => `\\${w}`, (/** @type {string} */ w) => `${w[0]}''${w.slice(1)}`];
+
+test("push reader: on generated texts a real bash agrees: what it leaves reaches no push but the plain shape, and what it refuses is counted", () => {
+  const box = shellBox("en-push-gen-", { stands: { git: "" }, real: ["cat", "env", "nohup"] });
+  try {
+    /** @type {string[]} */
+    const texts = [];
+    for (const s of GIT_CALLS) for (const [, put] of SHELL_CONTEXTS) {
+      const t = put(s);
+      if (t !== null) texts.push(t);
+    }
+    for (const s of GIT_CALLS.filter((c) => c.startsWith("git"))) {
+      const [name, verb, ...rest] = s.split(" ");
+      for (const spell of SPELL) texts.push([spell(name), verb, ...rest].join(" "), [name, spell(verb), ...rest].join(" "));
+    }
+    /** A push the reader leaves: the rule's own shape (the left alphabet, each push `git push …` with its verb first) or not. */
+    const left = (/** @type {string} */ text, /** @type {string[][]} */ pushes) =>
+      /^(?:[\w@%+=:,./~^-]|[ \n;|>]|&&|2>&1)*$/.test(text) && pushes.every((words) => words[0] === "push") ? "asked" : "looser";
+    assert.equal(left("git push origin main", [["push", "origin", "main"]]), "asked");
+    assert.equal(left("git -C . push", [["-C", ".", "push"]]), "looser", "a push past an option is no rule's shape");
+    assert.equal(left("echo 'x'; git push", [["push"]]), "looser", "a text that holds a quote is no rule's shape");
+    assert.deepEqual([...unsafeTexts(texts), ...texts.filter((t) => /kill/.test(t))], [], "a generated text could reach a real process");
+    let asked = 0;
+    let stricter = 0;
+    /** @type {string[]} */
+    const looser = [];
+    for (const text of texts) {
+      const calls = box.run(text).calls.filter((c) => c[1] === "git").map((c) => c.slice(2));
+      const pushes = calls.filter((words) => sends(words.join(" ")));
+      const refused = pushSpelling(text) !== null;
+      if (refused) stricter += pushes.length ? 0 : 1;
+      else if (pushes.length) {
+        if (left(text, pushes) === "asked") asked++;
+        else looser.push(text);
+      }
+    }
+    assert.deepEqual(looser, [], "left, and a real bash pushes outside the shape the rule reads");
+    assert.ok(texts.length >= 250, `${texts.length} texts`);
+    assert.ok(asked >= 10, `${asked} plain pushes left to the rule`);
+    // What it refuses that pushes nothing: the push word with something that could run it. Counted, so a change shows.
+    assert.ok(stricter <= texts.length / 3, `${stricter} of ${texts.length} refused with no push`);
+  } finally {
+    box.close();
   }
 });
 

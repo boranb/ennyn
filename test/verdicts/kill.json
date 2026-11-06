@@ -433,5 +433,13 @@
   {"id":"r2-bang-write-amp-redirect","text":"node s.js & echo $! &> a.pid; kill $(cat a.pid)","from":"cycle 23 kill-own-pid-only correction r2 mutation pass: a write by &> is none of the listed shapes, as the brief decides","verdict":"refused","why":["lookup"]},
   {"id":"r2-bang-write-clobber","text":"node s.js & echo $! >| a.pid; kill $(cat a.pid)","from":"cycle 23 kill-own-pid-only correction r2 mutation pass, as the brief decides","verdict":"refused","why":["lookup"]},
   {"id":"r2-echo-bang-and-lookup","text":"node s.js & echo $! $(pgrep -f OUTLOOK) > a.pid; kill $(cat a.pid)","from":"cycle 23 kill-own-pid-only correction r2 mutation pass: echo of $! and a lookup","verdict":"refused","why":["lookup"]},
-  {"id":"r2-tilde-inside-name","text":"node s.js & echo $! > /tmp/PROGRA~1/a.pid; kill $(cat /tmp/PROGRA~1/a.pid)","from":"cycle 23 kill-own-pid-only correction r2: a ~ inside a path is a letter","verdict":"pass"}
+  {"id":"r2-tilde-inside-name","text":"node s.js & echo $! > /tmp/PROGRA~1/a.pid; kill $(cat /tmp/PROGRA~1/a.pid)","from":"cycle 23 kill-own-pid-only correction r2: a ~ inside a path is a letter","verdict":"pass"},
+  {"id":"coproc-named-group-pkill","text":"coproc P { pkill node; }","from":"cycle 25 review sec-r1-01, written by hand","verdict":"refused","why":["name"]},
+  {"id":"coproc-kill-1234","text":"coproc kill 1234","from":"cycle 25 review sec-r1-01, written by hand","verdict":"pass"},
+  {"id":"coproc-pkill","text":"coproc pkill node","from":"cycle 25 review sec-r1-01, written by hand","verdict":"refused","why":["name"]},
+  {"id":"coproc-killall","text":"coproc killall node","from":"cycle 25 review sec-r1-01, written by hand","verdict":"refused","why":["name"]},
+  {"id":"coproc-taskkill-im","text":"coproc taskkill //IM node.exe","from":"cycle 25 review sec-r1-01, written by hand","verdict":"refused","why":["name"]},
+  {"id":"coproc-fuser-k","text":"coproc fuser -k 3000/tcp","from":"cycle 25 review sec-r1-01, written by hand","verdict":"refused","why":["port"]},
+  {"id":"coproc-kill-pgrep","text":"coproc kill -9 $(pgrep node)","from":"cycle 25 review sec-r1-01, written by hand","verdict":"refused","why":["lookup"]},
+  {"id":"coproc-nohup-pkill","text":"coproc nohup pkill node","from":"cycle 25 review sec-r1-01, written by hand","verdict":"refused","why":["name"]}
 ]

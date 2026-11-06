@@ -3,17 +3,19 @@
  * hand in the shapes agents use on Linux, macOS and Windows (Git Bash, PowerShell, cmd), each refusal with the reason
  * it gets. A refusal stalls an agent and a miss is a kill that may reach the user's own programs, so both directions
  * are held. Then the hook itself, as Claude Code runs it, on temporary projects; test/reference/pretooluse.json records
- * what Claude Code does with what it prints. Nothing here runs a kill: the hook is fed JSON.
+ * what Claude Code does with what it prints. Generated texts run through a real bash against stand-ins, and bash's
+ * answer is held against the reader's. Nothing here runs a kill: the hook is fed JSON, and bash's kills reach stand-ins.
  */
 
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { killTarget } from "../adapters/claude-code/kill-targets.mjs";
+import { shellBox, unsafeTexts } from "./shell-box.mjs";
 
 /** A kill by a literal PID or process group, a job of this shell, a PID this text took from `$!` or Start-Process, and text that only names a kill. */
 const PASS = [
@@ -242,6 +244,154 @@ test("kill reader: 64 KB of the shapes its PID-file trust once read in cubic tim
     const ms = performance.now() - t0;
     assert.ok(ms < 3000, `${String(text).slice(0, 40)}…: ${Math.round(ms)} ms`);
     assert.equal(r?.why ?? null, why, String(text).slice(0, 60));
+  }
+});
+
+/**
+ * A real bash, on generated texts: each stop of a bounded grammar put in each context the shell gives it, and its
+ * program's name written each way the shell reads alike, runs as `bash -c` in a box (test/shell-box.mjs) where every
+ * kill program, lookup and starter is a stand-in on PATH and the `kill` builtin is off, so nothing is signalled. Every
+ * number here is past any PID limit (Linux's 2^22, macOS's 99,999), and no text stops PID 0 or -1, so a builtin that
+ * stayed would signal nothing that is there; a context where it stays fails the test before any text runs. Measured
+ * first without that: bash 3.2 started by node read no BASH_ENV, and the builtin signalled.
+ *
+ * What bash did is read off the stand-ins' words: a kill program by name or filter is `name`, one by port `port`; a
+ * PID that `kill`, `taskkill /PID` or `tskill` gets is the text's own when it is written in the text as a number, or is
+ * a process the text's shells started (its parent is the top shell or one below it, or it is gone: a lookup's answer
+ * is a number no process has); any other is `lookup`; a word that is no number, `name`. The program's own meaning of its words is
+ * this table, not measured; the shell's part, which words reach which program, is. The reader may refuse what bash
+ * does not stop (the price of reading text) and must not pass what bash stops another's process with.
+ */
+const KILL_STOPS = [
+  "kill 9999991", "kill -9 9999991", "kill -s TERM 9999991", "kill -- -9999991", "kill -l",
+  "sleep 1 & kill $!", "sleep 1 & pid=$!; kill $pid", "sleep 1 & echo $! > a.pid; kill $(cat a.pid)", "sleep 1 & pid=$!; kill -- -$pid", "sleep 1 & kill %1",
+  "pkill node", "pkill -f node", "killall node", "killall5 -9", "skill node",
+  "kill $(pgrep node)", "kill `pgrep node`", "pgrep node | xargs kill", "kill $(lsof -ti :3000)", "kill -9 $(ps -o pid= -C node)", "pid=$(pgrep node); kill $pid",
+  "for p in $(pgrep node); do kill $p; done", "for p in 9999991 9999992; do kill $p; done", "pgrep node | while read p; do kill $p; done",
+  "echo $((9999990 + 3)) | xargs kill",
+  "fuser -k 3000/tcp", "npx kill-port 3000", "kill-port 3000", "kill $$",
+  "taskkill //F //IM node.exe", "taskkill //PID 9999991 //F", "tskill node", "tskill 9999991", "kill node",
+];
+/** @type {[string, (s: string) => string | null][]} */
+const KILL_CONTEXTS = (() => {
+  const simple = (/** @type {string} */ s) => !/[;&|]/.test(s);
+  return [
+    ["plain", (s) => s], ["seq", (s) => `true; ${s}`], ["and", (s) => `echo x && ${s}`], ["or", (s) => `false || ${s}`], ["sub", (s) => `( ${s} )`], ["group", (s) => `{ ${s}; }`],
+    ["if", (s) => `if true; then ${s}; fi`], ["func", (s) => `f() { ${s}; }; f`], ["for", (s) => `for i in 1; do ${s}; done`],
+    ["bash-c", (s) => (s.includes("'") ? null : `bash -c '${s}'`)], ["sh-c", (s) => (/["`]/.test(s) ? null : `sh -c "${s}"`)], ["cmdsub", (s) => `echo "$(${s})"`], ["assign", (s) => `x=$(${s})`],
+    ["env", (s) => (simple(s) ? `env ${s}` : null)], ["command", (s) => (simple(s) ? `command ${s}` : null)], ["nohup", (s) => (simple(s) ? `nohup ${s}` : null)], ["exec", (s) => (simple(s) ? `exec ${s}` : null)],
+    ["echo", (s) => `echo ${s}`], ["comment", (s) => `# ${s}`], ["colon", (s) => (s.includes("'") ? null : `: '${s}'`)], ["heredoc", (s) => `cat <<'EOF'\n${s}\nEOF`],
+    ["pipe-sh", (s) => (s.includes("'") ? null : `printf '%s\\n' '${s}' | bash`)], ["file", (s) => (s.includes("'") ? null : `echo '${s}' > note.txt`)],
+    // bash 4 and later: macOS's bash 3.2 runs neither (coproc is no command there, `|&` no syntax), Linux's bash 5 both.
+    ["coproc", (s) => (simple(s) ? `coproc ${s}` : null)], ["coproc-named", (s) => `coproc P { ${s}; }`], ["pipe-err", (s) => `true |& ${s}`],
+  ];
+})();
+/** What a lookup stand-in answers: a number no process has. */
+const LOOKED_UP = "9999990";
+
+/**
+ * Why bash's run of `text` stops a process the text did not start, or null, from the stand-ins' calls.
+ * @param {string} text @param {string[][]} calls each `[pid, name, ...words]`, an `@own` line after a kill's
+ * @returns {string | null}
+ */
+function stopped(text, calls) {
+  for (const [pid, name, ...args] of calls) {
+    if (/^(pkill|killall5?|skill)$/.test(name)) return "name";
+    if (/^(kill-port|fkill)$/.test(name) || (name === "fuser" && args.some((a) => /^-\w*k/.test(a)))) return "port";
+    const own = new Set(calls.find((c) => c[0] === pid && c[1] === "@own")?.slice(2) ?? []);
+    /** @param {string} t */
+    const target = (t) => {
+      if (t.startsWith("%")) return null;
+      if (!/^-?\d+$/.test(t)) return "name";
+      const n = t.replace(/^-/, "");
+      if (new RegExp(`(^|\\D)${n}(\\D|$)`).test(text)) return null;
+      // A number past every PID limit is gone because no process ever had it: no start of the text's.
+      return Number(n) < Number(LOOKED_UP) && own.has(n) ? null : "lookup";
+    };
+    /** @type {string[]} */
+    let targets = [];
+    if (name === "taskkill") {
+      const flags = args.map((a) => a.replace(/^(\/\/|\/|-)/, "").toLowerCase());
+      if (flags.some((a) => a === "im" || a === "fi") || !flags.includes("pid")) return "name";
+      targets = flags.flatMap((a, k) => (a === "pid" ? [args[k + 1] ?? ""] : []));
+    } else if (name === "tskill") targets = args.slice(0, 1);
+    else if (name === "kill" && !["-l", "-L"].includes(args[0])) {
+      let k = 0;
+      for (; k < args.length; k++) {
+        if (args[k] === "--") { k++; break; }
+        if (args[k] === "-s" || args[k] === "-n") k++;
+        else if (!/^-[A-Za-z]/.test(args[k])) break;
+      }
+      targets = args.slice(k);
+    }
+    for (const t of targets) {
+      const why = target(t);
+      if (why) return why;
+    }
+  }
+  return null;
+}
+
+test("kill reader: a real bash agrees on generated texts: nothing it passes stops another's process, and what it refuses that bash does not stop is counted", () => {
+  const ps = existsSync("/proc/self/stat") ? null : "/bin/ps";
+  const sleep = ["/bin/sleep", "/usr/bin/sleep"].find((p) => existsSync(p));
+  assert.ok(sleep && (ps === null || existsSync(ps)), "this harness needs sleep, and ps where there is no /proc");
+  // A PID's parent, from /proc on Linux, from ps elsewhere; the first hop is the stand-in's own $PPID.
+  const ppid = `ppid() { if [ -r /proc/$1/stat ]; then read -r _ _ _ pp _ < /proc/$1/stat; echo "$pp"; else '${ps}' -o ppid= -p "$1" 2>/dev/null | tr -d ' '; fi; }`;
+  const kill = [
+    ppid,
+    // From the stand-in itself (a shell may exec it) up to the top shell; a walk that never meets it keeps only itself.
+    'chain=" $$ "; p=$PPID; n=0; top=""',
+    'while [ -n "$p" ] && [ "$p" -gt 1 ] && [ $n -lt 30 ]; do chain="$chain$p "; [ "$p" = "$BOX_TOP" ] && top=1 && break; p=$(ppid "$p"); n=$((n+1)); done',
+    '[ -n "$top" ] || chain=" $$ "',
+    'own=""',
+    'for a in "$@"; do t=${a#-}; case "$t" in \'\'|*[!0-9]*) continue;; esac; pp=$(ppid "$t"); case "$chain" in *" $pp "*) own="$own $t";; esac; [ -z "$pp" ] && own="$own $t"; done',
+    // One write, as the stand-ins' own lines.
+    "line=$(printf '%s\\037@own%s' \"$$\" \"$own\" | tr ' ' '\\037'); printf '%s\\n' \"$line\" >> \"$LOG\"",
+  ].join("\n");
+  const answer = `echo ${LOOKED_UP}`;
+  const starts = `exec '${sleep}' 1 </dev/null >/dev/null 2>&1`;
+  const box = shellBox("en-kill-bash-", {
+    stands: { kill, pkill: "", killall: "", killall5: "", skill: "", "kill-port": "", fkill: "", taskkill: "", tskill: "", fuser: answer, pgrep: answer, pidof: answer, lsof: answer, ps: answer, sleep: starts, npx: 'exec "$@"' },
+    real: ["cat", "xargs", "env", "nohup", "tr"],
+  });
+  try {
+    const checks = KILL_CONTEXTS.map(([, put]) => put("{}")).filter((t) => t !== null);
+    assert.deepEqual(box.builtins("kill", [...checks, "{} | cat", "echo | while read x; do {}; done"]), [], "a context where the kill builtin is still on");
+    /** @type {string[]} */
+    const texts = [];
+    for (const s of KILL_STOPS) for (const [, put] of KILL_CONTEXTS) {
+      const t = put(s);
+      if (t !== null) texts.push(t);
+    }
+    for (const s of KILL_STOPS) {
+      const [w] = s.split(" ");
+      if (!/^[a-z][a-z-]*\d?$/.test(w) || w === "for" || w === "sleep") continue;
+      for (const spell of [`'${w}'`, `"${w}"`, `\\${w}`, `${w[0]}''${w.slice(1)}`]) texts.push(spell + s.slice(w.length));
+    }
+    // Before any text runs: none reaches the real program or names a number a process can have.
+    const control = ["kill 1234", "kill -9 -1", "kill -1; echo x", "kill 0", "/bin/kill 9999991", "command -p kill 9999991", "PATH=/bin:/usr/bin kill 9999991", "taskkill //PID 4242 //F", "enable kill; kill 9999991", "builtin kill 9999991", "env -i kill 9999991"];
+    assert.equal(unsafeTexts(control).length, control.length, "the safety check misses a text it must refuse");
+    assert.deepEqual(unsafeTexts(["kill -9 9999991", "kill -9 $(pgrep x)", "kill -- -9999991", "sleep 1 & kill $!", "tskill 9999991"]), []);
+    assert.deepEqual(unsafeTexts(texts), [], "a generated text could reach a real process");
+    /** @type {string[]} */
+    const looser = [];
+    let stricter = 0;
+    let stops = 0;
+    for (const text of texts) {
+      const why = stopped(text, box.run(text).calls);
+      const said = killTarget(text);
+      if (why) stops++;
+      if (why && !said) looser.push(`${JSON.stringify(text)}: bash stops by ${why}`);
+      if (!why && said) stricter++;
+    }
+    assert.deepEqual(looser, [], "passed, and a real bash stops a process the text did not start");
+    assert.ok(texts.length >= 700, `${texts.length} texts`);
+    assert.ok(stops >= texts.length / 3, `${stops} texts bash stops by`);
+    // bash 3.2 runs no bash 4 shape, so there the reader refusing one is strict: a quarter at most, on either bash.
+    assert.ok(stricter <= texts.length / 4, `${stricter} of ${texts.length} refused that bash does not stop by`);
+  } finally {
+    box.close();
   }
 });
 

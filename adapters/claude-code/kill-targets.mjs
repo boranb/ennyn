@@ -7,7 +7,7 @@
  * The text goes through the push reader's one pass (push-spellings.mjs `commandsOf`): simple commands, those of
  * substitutions among them, each word with what built it and how it is spelt, and every redirection. A program's name
  * stands at a command's head, after `{`, and after a program that runs its words (a wrapper, a shell, `xargs`, `ssh`,
- * `npx`, `find`: then at any word), read two ways, each matched whole: past its folder and the extension Windows runs
+ * `npx`, `find`, `coproc`: then at any word), read two ways, each matched whole: past its folder and the extension Windows runs
  * it by, and as the last `\` or `/` segment of the word as written (`C:\Windows\System32\cmd.exe`,
  * `$env:SystemRoot\System32\taskkill.exe`). A shell's text (`bash -c "…"`, `powershell -Command "…"`) is read again.
  * The rule is bound to the program and its option's place; a word list only ever refuses.
@@ -73,9 +73,10 @@ const JUDGED = /^(pkill|killall5?|skill|kill-port|fkill|fkill-cli|fuser|wmic|kil
 /**
  * Programs that run their words: after one, a kill program may stand at any word, and a word of it holding a space is
  * read again as text. A WSL distribution's launcher (`ubuntu.exe run …`), an elevation or remote runner (`gsudo`,
- * `psexec`, `runas`), PowerShell's `Invoke-Expression` and `Invoke-Command`.
+ * `psexec`, `runas`), PowerShell's `Invoke-Expression` and `Invoke-Command`, and bash's `coproc` (bash 4 and later
+ * run its command, with a name before it or none; the push reader's keyword list stays as it is).
  */
-const OPENS = /^(ssh|npx|pnpx|bunx|npm|pnpm|yarn|bun|find|gsudo|sudo|psexec(64)?|paexec|runas|iex|invoke-expression|invoke-command|icm|start-job|ubuntu[\d.]*|debian|kali(-linux)?|opensuse[\w.-]*|sles[\w.-]*|fedora[\w.-]*|alpine[\w.-]*|arch(linux)?|oraclelinux[\w.-]*|pengwin)$/i;
+const OPENS = /^(coproc|ssh|npx|pnpx|bunx|npm|pnpm|yarn|bun|find|gsudo|sudo|psexec(64)?|paexec|runas|iex|invoke-expression|invoke-command|icm|start-job|ubuntu[\d.]*|debian|kali(-linux)?|opensuse[\w.-]*|sles[\w.-]*|fedora[\w.-]*|alpine[\w.-]*|arch(linux)?|oraclelinux[\w.-]*|pengwin)$/i;
 /** Programs that hand their words input from a pipe: a kill program after one kills PIDs read at run time. */
 const FEEDS = /^(xargs|parallel)$/i;
 /** A kill word, for text it cannot read whole and for text it sees go to a shell unread. */

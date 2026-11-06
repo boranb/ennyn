@@ -793,6 +793,16 @@ export const GATES = [
       "linux run: a failure shows each failing test with why, else the end of the output": "what a failed run prints; it decides no pass or fail",
     },
   },
+  {
+    test: "test/readers.test.mjs",
+    guards: [
+      { id: "readers-unlisted", why: "a production module the lists do not name", file: "test/readers.test.mjs", old: '  "core/style.mjs": OWN,\n', new: "", pattern: "readers: every production module" },
+      { id: "readers-harness-gone", why: "a harness test renamed away from its listing", file: "test/kill-targets.test.mjs", old: 'test("kill reader: a real bash agrees', new: 'test("kill reader: bash agrees', pattern: "readers: each harness is a test" },
+      { id: "readers-gap-node", why: "a gap naming a node the work graph does not hold open", file: "test/readers.test.mjs", old: 'node: "cli-npm-file-choice"', new: 'node: "cli-npm-file-choise"', pattern: "readers: each harness is a test" },
+      { id: "readers-judge-unlisted", why: "a judge that finds no unlisted module", file: "test/readers.test.mjs", old: 'if (!reads.has(m) && !(m in none)) out.push(', new: "if (false) out.push(", pattern: "readers control" },
+      { id: "readers-judge-name", why: "a judge that takes any test for the harness", file: "test/readers.test.mjs", old: "testNames(text).some((n) => n.startsWith(r.test))", new: "testNames(text).length > 0", pattern: "readers control" },
+    ],
+  },
 ];
 
 /**
