@@ -8,7 +8,7 @@
  */
 
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -257,8 +257,8 @@ test("kill reader: 64 KB of the shapes its PID-file trust once read in cubic tim
  *
  * What bash did is read off the stand-ins' words: a kill program by name or filter is `name`, one by port `port`; a
  * PID that `kill`, `taskkill /PID` or `tskill` gets is the text's own when it is written in the text as a number, or is
- * a process the text's shells started (its parent is the top shell or one below it, or it is gone: a lookup's answer
- * is a number no process has); any other is `lookup`; a word that is no number, `name`. The program's own meaning of its words is
+ * a process the text's shells started (it is in the top shell's process group and is not that shell, or it is gone: a lookup's answer is a
+ * number no process has); any other is `lookup`; a word that is no number, `name`. The program's own meaning of its words is
  * this table, not measured; the shell's part, which words reach which program, is. The reader may refuse what bash
  * does not stop (the price of reading text) and must not pass what bash stops another's process with.
  */
@@ -332,29 +332,34 @@ function stopped(text, calls) {
   return null;
 }
 
-test("kill reader: a real bash agrees on generated texts: nothing it passes stops another's process, and what it refuses that bash does not stop is counted", () => {
+/**
+ * The stand-ins of the differential run. A process the text started is in the top shell's process group: the box
+ * starts bash in a session of its own, and a shell with no job control keeps its children in its group. Its parent is
+ * no anchor: on bash 5 a coproc's shell outlives the top shell and is reparented (measured on 5.1 and 5.2), so a walk
+ * up from the kill never met the top shell. The top shell leads that group and is no start of the text's; a process
+ * outside the box, the test runner's own, is in another group.
+ * @param {Record<string, string>} [lookups] a lookup stand-in's lines, in place of the answer no process has
+ */
+function killStands(lookups = {}) {
   const ps = existsSync("/proc/self/stat") ? null : "/bin/ps";
   const sleep = ["/bin/sleep", "/usr/bin/sleep"].find((p) => existsSync(p));
   assert.ok(sleep && (ps === null || existsSync(ps)), "this harness needs sleep, and ps where there is no /proc");
-  // A PID's parent, from /proc on Linux, from ps elsewhere; the first hop is the stand-in's own $PPID.
-  const ppid = `ppid() { if [ -r /proc/$1/stat ]; then read -r _ _ _ pp _ < /proc/$1/stat; echo "$pp"; else '${ps}' -o ppid= -p "$1" 2>/dev/null | tr -d ' '; fi; }`;
+  // A PID's process group, from /proc on Linux, from ps elsewhere; nothing when it is gone.
+  const pgid = `pgid() { if [ -r /proc/$1/stat ]; then read -r _ _ _ _ g _ < /proc/$1/stat; echo "$g"; else '${ps}' -o pgid= -p "$1" 2>/dev/null | tr -d ' '; fi; }`;
   const kill = [
-    ppid,
-    // From the stand-in itself (a shell may exec it) up to the top shell; a walk that never meets it keeps only itself.
-    'chain=" $$ "; p=$PPID; n=0; top=""',
-    'while [ -n "$p" ] && [ "$p" -gt 1 ] && [ $n -lt 30 ]; do chain="$chain$p "; [ "$p" = "$BOX_TOP" ] && top=1 && break; p=$(ppid "$p"); n=$((n+1)); done',
-    '[ -n "$top" ] || chain=" $$ "',
+    pgid,
     'own=""',
-    'for a in "$@"; do t=${a#-}; case "$t" in \'\'|*[!0-9]*) continue;; esac; pp=$(ppid "$t"); case "$chain" in *" $pp "*) own="$own $t";; esac; [ -z "$pp" ] && own="$own $t"; done',
+    'for a in "$@"; do t=${a#-}; case "$t" in \'\'|*[!0-9]*) continue;; esac; g=$(pgid "$t"); [ "$g" = "$BOX_TOP" ] && [ "$t" != "$BOX_TOP" ] && own="$own $t"; [ -z "$g" ] && own="$own $t"; done',
     // One write, as the stand-ins' own lines.
     "line=$(printf '%s\\037@own%s' \"$$\" \"$own\" | tr ' ' '\\037'); printf '%s\\n' \"$line\" >> \"$LOG\"",
   ].join("\n");
   const answer = `echo ${LOOKED_UP}`;
   const starts = `exec '${sleep}' 1 </dev/null >/dev/null 2>&1`;
-  const box = shellBox("en-kill-bash-", {
-    stands: { kill, pkill: "", killall: "", killall5: "", skill: "", "kill-port": "", fkill: "", taskkill: "", tskill: "", fuser: answer, pgrep: answer, pidof: answer, lsof: answer, ps: answer, sleep: starts, npx: 'exec "$@"' },
-    real: ["cat", "xargs", "env", "nohup", "tr"],
-  });
+  return { kill, pkill: "", killall: "", killall5: "", skill: "", "kill-port": "", fkill: "", taskkill: "", tskill: "", fuser: answer, pgrep: answer, pidof: answer, lsof: answer, ps: answer, sleep: starts, npx: 'exec "$@"', ...lookups };
+}
+
+test("kill reader: a real bash agrees on generated texts: nothing it passes stops another's process, and what it refuses that bash does not stop is counted", () => {
+  const box = shellBox("en-kill-bash-", { stands: killStands(), real: ["cat", "xargs", "env", "nohup", "tr"] });
   try {
     const checks = KILL_CONTEXTS.map(([, put]) => put("{}")).filter((t) => t !== null);
     assert.deepEqual(box.builtins("kill", [...checks, "{} | cat", "echo | while read x; do {}; done"]), [], "a context where the kill builtin is still on");
@@ -392,6 +397,33 @@ test("kill reader: a real bash agrees on generated texts: nothing it passes stop
     assert.ok(stricter <= texts.length / 4, `${stricter} of ${texts.length} refused that bash does not stop by`);
   } finally {
     box.close();
+  }
+});
+
+test("kill reader: the differential judge counts a process outside the box as a lookup, and a sleep the text started, coproc or not, as its own", () => {
+  const sleep = ["/bin/sleep", "/usr/bin/sleep"].find((p) => existsSync(p));
+  assert.ok(sleep, "this harness needs sleep");
+  // The test's own sleep, outside the box; the stand-in kill signals nothing, and the texts ask for signal 0.
+  const outside = spawn(sleep, ["30"], { stdio: "ignore" });
+  const box = shellBox("en-kill-judge-", { stands: killStands({ pgrep: `echo ${outside.pid}` }), real: ["cat", "tr"] });
+  try {
+    const texts = ["kill -0 $(pgrep x)", "sleep 1 & kill -0 $!", "coproc P { kill -0 $(pgrep x); }", "coproc P { sleep 1 & kill -0 $!; }", "coproc P { sleep 1 & pid=$!; kill -- -$pid; }", "kill -0 $$", 'sh -c "kill -0 $$"', "bash -c 'kill -0 $PPID'"];
+    assert.deepEqual(unsafeTexts(texts), []);
+    assert.deepEqual(box.builtins("kill", ["{}", "coproc P { {}; }"]), [], "a context where the kill builtin is still on");
+    const judged = texts.map((text) => {
+      const { calls } = box.run(text);
+      return [text, calls.some((c) => c[1] === "kill") ? stopped(text, calls) : "no kill ran"];
+    });
+    // macOS's bash 3.2 has no coproc; Linux's bash 5 runs it, and there the coproc's shell outlives the top shell.
+    const coproc = existsSync("/proc/self/stat") ? null : "no kill ran";
+    assert.deepEqual(judged, [
+      [texts[0], "lookup"], [texts[1], null], [texts[2], coproc ?? "lookup"], [texts[3], coproc], [texts[4], coproc],
+      // The top shell is in its own group, and the text did not start it.
+      [texts[5], "lookup"], [texts[6], "lookup"], [texts[7], "lookup"],
+    ]);
+  } finally {
+    box.close();
+    outside.kill();
   }
 });
 
