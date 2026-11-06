@@ -5205,6 +5205,61 @@
       "cluster": "method",
       "source": "cycle 2026-11-06 (24) closing, Linux check of changed test files (c24-orch-r0-02): fails on 43018bc too; the closing's script now clones to /tmp/ennyn-check",
       "since": 24
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-against-powershell",
+      "title": "The kill reader (adapters/claude-code/kill-targets.mjs) gets a differential test against PowerShell 7.4 and Windows PowerShell 5.1 on a machine that has them, as its bash differential does: generated texts through the real tokenizer and a stand-in, the reader never passing a stop PowerShell would make",
+      "value": "high",
+      "cost": "M",
+      "cluster": "distribution",
+      "source": "cycle 2026-11-06 (25), T3 reader-against-real-program: a known gap of test/readers.test.mjs",
+      "since": 25
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "push-reader-against-powershell",
+      "title": "The push reader (adapters/claude-code/push-spellings.mjs) gets a differential test against PowerShell 7.4 and 5.1 on a machine that has them, as its bash differential does",
+      "value": "high",
+      "cost": "M",
+      "cluster": "distribution",
+      "source": "cycle 2026-11-06 (25), T3 reader-against-real-program: a known gap of test/readers.test.mjs",
+      "since": 25
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "agent-usage-against-claude-code",
+      "title": "adapters/claude-code/agent-usage.mjs reads Claude Code transcripts and folder names; hold that reading to a Claude Code run against the stand-in model, as test/reference/claude-code.mjs does for other records",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-06 (25), T3 reader-against-real-program: a known gap of test/readers.test.mjs",
+      "since": 25
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "mutation-worktree-porcelain",
+      "title": "metrics/mutation.mjs workTrees() parses git worktree list --porcelain without -z: a worktree path holding a newline and the word bare is dropped and cut (git 2.56); read it with -z, or hold it to git in a harness",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-06 (25), T3 reader-against-real-program: a known gap of test/readers.test.mjs",
+      "since": 25
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "cli-npm-file-choice",
+      "title": "scripts/ennyn.mjs decides which lock files and which .npmrc npm reads for the project (lock beside each package.json, .npmrc at the top or beside a lock, the exact-case .npmrc first); test/reference/npm.mjs holds only checks/deps.mjs: hold the CLI choice to npm too",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-11-06 (25), T3 reader-against-real-program: a known gap of test/readers.test.mjs",
+      "since": 25
     }
   ],
   "done": [
