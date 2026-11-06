@@ -171,6 +171,17 @@ export function needsOf(node, config) {
 }
 
 /**
+ * The ids of the done nodes: listed in the done export, or an open node carrying the done status.
+ * @param {Graph} graph @param {any} config
+ */
+export function doneIds(graph, config) {
+  const f = config.graph.fields;
+  const ids = new Set(graph.done.map((n) => n[f.id]));
+  for (const n of graph.open) if (n[f.status] === config.graph.doneStatus) ids.add(n[f.id]);
+  return ids;
+}
+
+/**
  * Open nodes that can start now (not done, not declined, gate open, every need done), best first.
  * @param {Graph} graph
  * @param {any} config
@@ -179,15 +190,14 @@ export function needsOf(node, config) {
 export function readyNodes(graph, config) {
   const f = config.graph.fields;
   const { doneStatus, openGateValue } = config.graph;
-  const doneIds = new Set(graph.done.map((n) => n[f.id]));
-  for (const n of graph.open) if (n[f.status] === doneStatus) doneIds.add(n[f.id]);
+  const done = doneIds(graph, config);
   const declined = declinedIds(graph, config);
 
   const ready = graph.open.filter((n) => {
     if (n[f.status] === doneStatus || declined.has(n[f.id])) return false;
     const gate = n[f.gate];
     if (gate !== undefined && gate !== openGateValue) return false;
-    return needsOf(n, config).every((id) => doneIds.has(id));
+    return needsOf(n, config).every((id) => done.has(id));
   });
 
   const scored = ready.map((node) => ({ node, score: scoreNode(node, config), id: String(node[f.id]) }));

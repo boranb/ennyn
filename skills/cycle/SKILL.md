@@ -5,13 +5,13 @@ description: Run one development cycle of four tasks picked from the project's w
 
 # Cycle — four tasks, measured
 
-No `.ennyn/` in the project yet: run the init skill first. Project settings come from `.ennyn/config.json` (`language` sets the language of every report and commit message you write). `node "${CLAUDE_PLUGIN_ROOT}/scripts/ennyn.mjs" --help` lists the helper commands used below.
+No `.ennyn/` in the project yet: run the init skill first. Project settings come from `.ennyn/config.json` (`language` sets the language of every report and commit message you write). `node "${CLAUDE_PLUGIN_ROOT}/scripts/ennyn.mjs" --help` lists the commands used below.
 
 A node or fix asked for alone: [one-task.md](one-task.md).
 
 ## 1. Pick the four tasks
 
-Read in one turn, once `ennyn.mjs doctor` shows no ✗ (else stop, saying why): the config, the handoff (`paths.handoff`; unset → `HANDOFF.md`) and the graph. The handoff names the commands later steps run (fast test, whole test, lint, typecheck, the mutation tool; `commands.fastTest` comes first; one neither names → `ennyn.mjs init-scan --json`), the last cycle's next step and open risks. `ennyn.mjs leftovers --start` notes HEAD: `bypass` starts there.
+Read in one turn, once `ennyn.mjs doctor` shows no ✗ (else stop: say why): the config, the handoff (`paths.handoff`; unset → `HANDOFF.md`) and the graph. The handoff names the commands later steps run (fast test, whole test, lint, typecheck, the mutation tool; `commands.fastTest` comes first; one neither names → `ennyn.mjs init-scan --json`), the last cycle's next step and open risks. `ennyn.mjs leftovers --start` notes HEAD: `bypass` starts there.
 
 | Slot | Source | Rule |
 |---|---|---|
@@ -19,11 +19,11 @@ Read in one turn, once `ennyn.mjs doctor` shows no ✗ (else stop, saying why): 
 | Mechanization ×1 | `ennyn.mjs mechanization` | A node with `mechanization: true`: turn a recurring defect class into a gate, test, type or lint, then delete the matching prose rule. None ready → the slot becomes a third core task. A graph it or `core` refuses (exit 1, reasons on stderr) is fixed first. |
 | Legacy audit ×1 | `ennyn.mjs audit`: the security audit unless it answers not due; else the audit queue (oldest / never audited / hit by a shared change) | Security audit: every path it lists, with a path table (every way to reach what each protects). Else re-check a feature: invalid/empty/max input, permission denied, network failure, repeated action, refresh, stale data, then [lean items](lean-audit.md). Findings: [finding-schema.md](finding-schema.md), Outcome. |
 
-A critical problem (crash, data loss, auth break, blocker) may replace one core slot. Write the plan as [report-formats.md](report-formats.md) shows. Do not wait for approval between tasks; push only with the user's approval.
+A critical problem (crash, data loss, auth break, blocker) may replace one core slot. Write the plan as [report-formats.md](report-formats.md) shows. Do not wait for approval between tasks; push only on the user's yes.
 
 ## 2. Task protocol (every task, in order)
 
-The orchestrator (the session running the cycle) keeps the plan, step 7's verdicts and the landing. Each task runs in a fresh agent on a written brief, not a fork. Briefs, task states, worktrees, no subagents: [task-brief.md](task-brief.md).
+The orchestrator (the cycle's session) keeps the plan, step 7's verdicts and the landing. Each task runs in a fresh agent on a written brief, not a fork. Briefs, worktrees, no subagents: [task-brief.md](task-brief.md); task states: [journal.md](journal.md).
 
 1. **Read** only the relevant files; independent reads go in the **same turn**.
 2. **Design brief** for UI work: [design-brief.md](design-brief.md).

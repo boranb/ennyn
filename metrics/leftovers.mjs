@@ -41,10 +41,17 @@ export const START_LIMIT = READ_LIMIT;
  * a removed one's name finds that record, and the top it holds says whose it is.
  * @param {string} top @param {string} stateDir config `paths.stateDir` @param {NodeJS.ProcessEnv} [env]
  */
-export function startPath(top, stateDir, env = process.env) {
+export const startPath = (/** @type {string} */ top, /** @type {string} */ stateDir, env = process.env) => treeFile(top, stateDir, "cycle-start", ".json", env);
+
+/**
+ * A state file of the work tree at `top`, named as startPath names the start record: `<stem><ext>` for the main tree,
+ * `<stem>-<name><ext>` for a linked worktree (the cycle journal too).
+ * @param {string} top @param {string} stateDir @param {string} stem @param {string} ext @param {NodeJS.ProcessEnv} [env]
+ */
+export function treeFile(top, stateDir, stem, ext, env = process.env) {
   const [gitDir, common] = git(["rev-parse", "--git-dir", "--git-common-dir"], { cwd: top, env }).split("\n");
   const own = resolve(top, gitDir) === resolve(top, common) ? "" : `-${basename(gitDir)}`;
-  return join(resolveStateDir(top, stateDir), `cycle-start${own}.json`);
+  return join(resolveStateDir(top, stateDir), `${stem}${own}${ext}`);
 }
 
 /**

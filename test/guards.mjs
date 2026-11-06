@@ -809,6 +809,7 @@ export const NOT_GATES = {
   "test/compact-boundary.test.mjs": { reason: "runs the PreCompact hook on temporary projects", allow: '"\\.\\./adapters/claude-code/hooks/compact-boundary\\.mjs", import\\.meta\\.url' },
   "test/bypass.test.mjs": CLI_ONLY,
   "test/leftovers.test.mjs": CLI_ONLY,
+  "test/journal.test.mjs": { reason: "runs the CLI and the SessionStart hook on temporary repositories", allow: '"\\.\\./(scripts/ennyn|adapters/claude-code/hooks/conversation-style)\\.mjs", import\\.meta\\.url' },
   "test/classes.test.mjs": CLI_ONLY,
   "test/findings.test.mjs": CLI_ONLY,
   "test/cli.test.mjs": CLI_ONLY,

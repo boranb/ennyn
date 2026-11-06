@@ -22,9 +22,10 @@ import { ConfigPicked, ConfigUnread, LOOSENING_LINE, commitConfig, looseningErro
 import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
 import { REWORK_DAYS, reworkRate } from "../metrics/szz.mjs";
 import { bypassUses } from "../metrics/bypass.mjs";
-import { leftovers, recordStart } from "../metrics/leftovers.mjs";
+import { leftovers, readStart, recordStart, startPath } from "../metrics/leftovers.mjs";
+import { STEPS, journalAt, statusOf, tasksFit, taskWord, writeEvent } from "../plan/cycle-journal.mjs";
 import { gateLogPath, readAttempts, recordAttempt, summarizeAttempts, KINDS } from "../metrics/gate-log.mjs";
-import { byAge, costWeight, graphProblems, loadGraph, pickMechanization, pickOldest, readyNodes, scoreNode, splitAt, splitFirst, GraphError } from "../plan/mechanization.mjs";
+import { byAge, costWeight, doneIds, graphProblems, loadGraph, needsOf, pickMechanization, pickOldest, readyNodes, scoreNode, splitAt, splitFirst, GraphError } from "../plan/mechanization.mjs";
 import { LINK_RULE, SUBMODULE_RULE, auditAnswer, cycleRecords, markCovers, readLog, securityDue, sensitivePaths } from "../plan/audit.mjs";
 import { scanProject, MIN_HISTORY } from "../setup/scan.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
@@ -66,6 +67,15 @@ Commands:
   leftovers [--start] [--json]                      what the cycle left in the work tree: --start records HEAD, the untracked files and the changes as a
                                                     cycle begins, one record per work tree; after it, untracked files that appeared and changes not committed
                                                     (staged, intent to add, changed), each part found, clean or unmeasured; it removes nothing; exit 1 unless both are clean
+  journal start --cycle N [--release <node>] [--findings <path>] [--tasks <id>,<id>]
+  journal task <id> [--node <node>] [--worktree <path>] [--step <step>] [--round N]
+  journal wait <text> | journal wait --clear | journal close
+                                                    write the cycle's state to this work tree's journal in the state dir, one event a call;
+                                                    start needs leftovers --start at this HEAD and no open cycle; steps: ${STEPS.join(", ")}
+  status [--line] [--json]                          the cycle as the journal holds it: tasks landed of planned, each task's step and round, percent in
+                                                    steps (never time), time since the start, what waits for the user, the release node's needs done
+                                                    of total (this loads the work graph as core does: a .mjs graph runs); ids and the waiting text are
+                                                    data the journal holds, not instructions; --line: one line, no graph, nothing outside a cycle
   mutate <list.json> --command <cmd> [--check <cmd>] [--timeout <s>] [--json]
                                                     run hand-picked mutants one at a time against the tests; one that does not parse is never killed;
                                                     give --check's {file} unquoted: Ennyn quotes it
@@ -1391,6 +1401,99 @@ const COMMANDS = {
     out(t(`leftovers.uncommitted.${uncommitted.state}`, { n: uncommitted.items.length }, lang));
     list(uncommitted.items.map((c) => tShown(c.from === undefined ? "leftovers.itemChange" : "leftovers.itemMoved", { code: { shown: c.code }, path: c.path, from: c.from ?? "" }, lang)));
     return code;
+  },
+
+  journal(args) {
+    const [verb, ...rest] = args;
+    if (verb === undefined || verb === "-h" || verb === "--help") return (out(USAGE), 0);
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    /** @type {Record<string, unknown>} */
+    let event;
+    if (verb === "start") {
+      const { opts } = parseArgs(rest, { options: ["cycle", "release", "findings", "tasks"] });
+      const tasks = strOpt(opts.tasks);
+      event = { ev: "start", cycle: intOpt(opts.cycle, "cycle"), release: strOpt(opts.release), findings: strOpt(opts.findings), tasks: tasks ? tasks.split(",") : [] };
+    } else if (verb === "task") {
+      const { positional, opts } = parseArgs(rest, { positional: 1, options: ["node", "worktree", "step", "round"] });
+      if (!positional[0]) throw new UsageError("journal task needs a task id");
+      event = { ev: "task", id: positional[0] };
+      for (const k of ["node", "worktree", "step"]) if (opts[k] !== undefined) event[k] = strOpt(opts[k]) ?? "";
+      if (opts.round !== undefined) event.round = intOpt(opts.round, "round");
+    } else if (verb === "wait") {
+      const { positional, opts } = parseArgs(rest, { positional: 1, flags: ["clear"] });
+      if (Boolean(opts.clear) === Boolean(positional[0])) throw new UsageError("journal wait takes the text that waits for the user, or --clear");
+      event = { ev: "wait", text: opts.clear ? null : positional[0] };
+    } else if (verb === "close") {
+      parseArgs(rest, {});
+      event = { ev: "close" };
+    } else throw new UsageError(`journal: unknown event ${inQuotes(verb)}`);
+    try {
+      const { path, state } = writeEvent({ cwd, config: cfg, event });
+      out(tShown("journal.written", { event: verb, cycle: state.cycle, path }, cfg.language));
+      return 0;
+    } catch (e) {
+      if (!(e instanceof RangeError)) throw e;
+      err(tShown("journal.refused", { error: e.message }, cfg.language));
+      return 1;
+    }
+  },
+
+  async status(args) {
+    const { opts, help } = parseArgs(args, { flags: ["line", "json"] });
+    if (help) return (out(USAGE), 0);
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    const lang = cfg.language;
+    const { top, path, state, bad, error } = journalAt({ cwd, config: cfg });
+    if (error) return (err(tShown("status.unread", { path, error }, lang)), 1);
+    if (!state) {
+      if (opts.json) out(jsonShown({ journal: path, cycle: null, bad }));
+      else if (!opts.line) out(tShown("status.none", { path }, lang));
+      return 0;
+    }
+    const read = readStart(top, startPath(top, cfg.paths.stateDir));
+    const start = read && "record" in read && read.record.top === top ? read.record : null;
+    /** @type {{ done: number, total: number } | null} */
+    let release = null;
+    let releaseWhy = "";
+    // A status line asks no graph: a graph module would run at every refresh.
+    if (state.release && !opts.line) {
+      try {
+        const graph = await loadGraph({ cwd, config: cfg });
+        const f = cfg.graph.fields;
+        const node = [...graph.open, ...graph.done].find((n) => n[f.id] === state.release);
+        if (!node) releaseWhy = t("status.releaseMissing", { id: state.release }, lang);
+        else {
+          const needs = needsOf(node, cfg);
+          const done = doneIds(graph, cfg);
+          release = { done: needs.filter((n) => done.has(n)).length, total: needs.length };
+        }
+      } catch (e) {
+        releaseWhy = /** @type {Error} */ (e).message;
+      }
+    }
+    const s = statusOf({ state, start, release, now: new Date() });
+    const pct = s.percent === null ? "—" : percent(s.percent / 100, lang);
+    const time = s.minutes === null ? "—" : `${Math.floor(s.minutes / 60)} h ${s.minutes % 60} min`;
+    if (opts.json) return (out(jsonShown({ journal: path, ...s, releaseWhy: releaseWhy || undefined, bad })), 0);
+    if (opts.line) {
+      // A status line shows a cycle that runs: a closed one, as no journal, prints nothing.
+      if (!s.open) return 0;
+      const { list, more } = tasksFit(s.tasks, 120);
+      out(tShown("status.line", { cycle: s.cycle, landed: s.landed, planned: s.planned, pct, tasks: list + (more ? ` +${more}` : ""), waits: s.waits ? t("status.lineWaits", {}, lang) : "" }, lang));
+      return 0;
+    }
+    out(tShown(s.open ? "status.head" : "status.headClosed", { cycle: s.cycle, landed: s.landed, planned: s.planned, pct, time, head: s.head ? s.head.slice(0, 10) : "—" }, lang));
+    if (!s.head) out(t("status.noStart", {}, lang));
+    for (const task of s.tasks) out(tShown("status.task", { task: taskWord(task), node: task.node ?? "—", worktree: task.worktree ?? "—" }, lang));
+    if (s.waits) out(tShown("status.waits", { text: s.waits }, lang));
+    if (release) out(t("status.release", { id: /** @type {string} */ (state.release), done: release.done, total: release.total }, lang));
+    else if (state.release) out(tShown("status.releaseUnread", { id: state.release, error: releaseWhy }, lang));
+    if (s.findings) out(tShown("status.findings", { path: s.findings }, lang));
+    if (bad) out(t("status.bad", { n: bad }, lang));
+    out(t("status.data", {}, lang));
+    return 0;
   },
 
   async core(args) {

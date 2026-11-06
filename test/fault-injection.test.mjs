@@ -315,6 +315,27 @@ function agentsSession(repo) {
 }
 
 /**
+ * A start record and the journal events `calls` gives, written by the CLI as the orchestrator writes them; the start
+ * record's time and each event's time are set to one value, so every run reads the same.
+ * @param {string} repo @param {string[][]} calls
+ */
+function journal(repo, calls) {
+  for (const args of [["leftovers", "--start"], ...calls.map((c) => ["journal", ...c])]) {
+    const r = spawnSync(process.execPath, [CLI, ...args], { cwd: repo, encoding: "utf8" });
+    if (r.status !== 0) throw new Error(`${args.join(" ")}: ${r.stderr}`);
+  }
+  const at = "2026-01-01T00:00:00.000Z";
+  const dir = join(repo, ".git", "ennyn");
+  const record = join(dir, "cycle-start.json");
+  writeFileSync(record, JSON.stringify({ ...JSON.parse(readFileSync(record, "utf8")), at }));
+  const log = join(dir, "cycle-journal.jsonl");
+  if (calls.length) {
+    const lines = readFileSync(log, "utf8").split("\n").filter(Boolean).map((l) => ({ ...JSON.parse(l), at, ...(l.includes('"startAt"') ? { startAt: at } : {}) }));
+    writeFileSync(log, lines.map((l) => JSON.stringify(l) + "\n").join(""));
+  }
+}
+
+/**
  * @typedef {{ args: string[], noReads?: boolean, cwd?: string, writes?: boolean, setup?: (repo: string) => void, env?: Record<string, string>, first?: boolean, outside?: boolean, hook?: string, input?: (repo: string) => unknown, everyPass?: RegExp }} Case
  *   `cwd` is relative to the repository; a case that writes, or has a setup, runs in a copy of its own.
  *   `env` values are paths relative to the repository. `first`: only the first git call is faulted (the
@@ -426,6 +447,15 @@ const CASES = [
       writeFileSync(join(repo, "stray.txt"), "\n");
     },
   },
+  // The cycle journal: a start needs the start record; status reads the journal, the record and the graph. A closed
+  // cycle's time runs to its close, so it reads the same in every run; --line names no time.
+  { args: ["journal", "start", "--cycle", "1", "--tasks", "T1"], writes: true, setup: (repo) => journal(repo, []) },
+  { args: ["journal", "task", "T1", "--step", "review"], writes: true, setup: (repo) => journal(repo, [["start", "--cycle", "1", "--tasks", "T1"]]) },
+  { args: ["status"], setup: (repo) => journal(repo, [["start", "--cycle", "1", "--release", "rel", "--tasks", "T1,T2"], ["task", "T1", "--step", "landed"], ["wait", "push"], ["close"]]) },
+  { args: ["status", "--json"], setup: (repo) => journal(repo, [["start", "--cycle", "1", "--tasks", "T1"], ["close"]]) },
+  { args: ["status", "--line"], setup: (repo) => journal(repo, [["start", "--cycle", "1", "--tasks", "T1"], ["task", "T1", "--round", "1"]]) },
+  { args: ["status"] },
+  { args: ["status"], outside: true },
   { args: ["mechanization"] },
   { args: ["mechanization"], cwd: "src", first: true },
   { args: ["classes"] },
