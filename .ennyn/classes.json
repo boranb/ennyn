@@ -162,7 +162,8 @@
         "new: test excuses the case it names",
         "new: a required record satisfied by its label alone",
         "new: refusal text names a way around",
-        "new: gate test added with no guard"
+        "new: gate test added with no guard",
+        "new: path helper normalises the probe away"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, it holds inside the listed gates only. Named in cycle 5."
     },
@@ -209,7 +210,8 @@
         "new: brought caller's reach through an unreadable HEAD callee is said not refused",
         "new: a name re-encoded on its way to another program",
         "new: platform data a byte comparison does not see",
-        "new: text check lets half a character through"
+        "new: text check lets half a character through",
+        "new: path separator spelling bypass"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, reviewers found more shapes after it landed. Named in cycle 7."
     },
@@ -330,7 +332,9 @@
         "new: liveness check refuses history",
         "new: a write its own reader refuses",
         "new: an exemption reaches past its cause",
-        "new: another reading's failure counted in this one"
+        "new: another reading's failure counted in this one",
+        "new: over-broad unseen rule",
+        "new: over-broad prefix match"
       ],
       "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict; nothing has recounted it since. Named in cycle 9."
     },
@@ -419,7 +423,8 @@
         "new: second statement of one rule differs",
         "new: twin definitions disagree",
         "new: loosening by removal goes unseen beside loosening by value",
-        "new: two lists count one defect differently"
+        "new: two lists count one defect differently",
+        "new: shell mirror disagreement"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: no gate, it recurred in all four tasks of cycle 15. Named in cycle 14, first seen in cycle 8. Counting cycle 12's two readers of one decision here is this reconstruction's merge."
     },
@@ -473,7 +478,8 @@
         "new: branch with no case",
         "new: test gap on an accepted spelling",
         "new: scope gate untested",
-        "new: corpus gap"
+        "new: corpus gap",
+        "new: mirror predicate untested on one input"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -515,7 +521,8 @@
         "new: evidence table overstates its source",
         "new: text names a tool for a number it does not print",
         "new: refusal reason names a symptom, not the cause",
-        "new: stated limits list incomplete"
+        "new: stated limits list incomplete",
+        "new: gate wider than its stated invariant"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet."
     },
@@ -606,7 +613,11 @@
         "new: gate scoped to a file beside another",
         "new: one event recorded twice counted twice",
         "new: definition read from the wrong project",
-        "new: refusal widened past the ask"
+        "new: refusal widened past the ask",
+        "new: path trusted as text not as the kernel resolves it",
+        "new: path compared as text across separator spellings",
+        "new: path match by spelling not by tree",
+        "new: folder read recorded as file"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate.",
       "gates": [
@@ -695,7 +706,13 @@
         "new: oracle over-claimed",
         "new: control did not isolate the case",
         "new: test expectation wrong",
-        "new: test fixture unlike the state it stands for"
+        "new: test fixture unlike the state it stands for",
+        "new: test pattern misses literal punctuation",
+        "new: test cleanup assumes a file the runner removed",
+        "new: test fixture reuses a path a later step makes",
+        "new: guarded line moved",
+        "new: guard on an equivalent mutant",
+        "new: test guard left on text a fix removed"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -748,7 +765,8 @@
       "state": "open",
       "linked": [
         "new: a write helper that creates the place it should have found",
-        "new: side effect in a state the table says is left alone"
+        "new: side effect in a state the table says is left alone",
+        "new: side effect before refusal"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate. Its own entry: one defect, named twice by two reviewers, that fits nothing else."
     },
@@ -809,7 +827,8 @@
       "linked": [
         "new: limit dies with the process that keeps it",
         "new: limit assumed to bound what it does not",
-        "new: real run with no limit hangs instead of failing"
+        "new: real run with no limit hangs instead of failing",
+        "new: sync child stdin pipe hangs under load"
       ],
       "judged": "the orchestrator of cycle 18, reading the rows"
     },
@@ -818,7 +837,8 @@
       "says": "A name is added in a scope that already declares it, so the file fails to load or one binding quietly takes the place of the other.",
       "state": "open",
       "linked": [
-        "new: a module-level name added where the module already declares it"
+        "new: a module-level name added where the module already declares it",
+        "new: test fixture shadows a helper name"
       ],
       "judged": "the orchestrator of cycle 20, reading the rows"
     },
@@ -851,7 +871,8 @@
       "gates": [],
       "nodes": [],
       "linked": [
-        "new: probe text carries a home path or project name into a corpus"
+        "new: probe text carries a home path or project name into a corpus",
+        "new: home path in checked-in record"
       ],
       "judged": "Named in cycle 23 by the orchestrator, from the rows that named it."
     },
@@ -862,9 +883,33 @@
       "gates": [],
       "nodes": [],
       "linked": [
-        "new: ask part left undone"
+        "new: ask part left undone",
+        "new: requirement partial"
       ],
       "judged": "Named in cycle 23 by the orchestrator, from the rows that named it."
+    },
+    {
+      "id": "path-lookup-runs-repo-code",
+      "says": "A hook or helper finds a program it runs through a search path the repository or the user's environment can put a folder of the project on, so a file the repository holds runs under the check's name.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: helper program found through an unfiltered PATH runs repository code"
+      ],
+      "judged": "Named in cycle 24 by the orchestrator, from one security review row (a tr found through the hook's PATH); hook-node-in-repo is the same shape for node."
+    },
+    {
+      "id": "measurement-changes-measured",
+      "says": "A probe, recorder or test harness changes the behaviour of the code it measures, so what it reports holds only under the measurement.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: probe changes the behaviour it measures",
+        "new: test harness changes what code under test meets"
+      ],
+      "judged": "Named in cycle 24 by the orchestrator, from two review rows: a read recorder's own stat throwing, and a test preload swapping product code's stdin transport."
     }
   ]
 }
