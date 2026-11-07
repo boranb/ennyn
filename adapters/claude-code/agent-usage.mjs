@@ -29,7 +29,7 @@
  * Nothing of a transcript's text is returned: ids, agent types and model names, each held to its shape.
  */
 
-import { closeSync, fstatSync, openSync, readdirSync, readSync, statSync } from "node:fs";
+import { closeSync, fstatSync, openSync, readdirSync, readSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 import { gone } from "../../core/files.mjs";
@@ -144,6 +144,27 @@ export function newestSession(folder) {
     if (st.isFile() && st.mtimeMs > bestTime) [best, bestTime] = [path, st.mtimeMs];
   }
   return best;
+}
+
+/**
+ * The session `ennyn agents` reads when none is given: the one that runs the command, which Claude Code 2.1.310 names
+ * in CLAUDE_CODE_SESSION_ID to the processes it starts. With no such variable, or one that is no session id, the
+ * newest, with why (`unset`, `malformed`); a running session whose transcript is not in `folder` is `missing`, with
+ * no transcript: the newest would be another session's.
+ * @param {string} folder @param {NodeJS.ProcessEnv} [env]
+ * @returns {{ transcript: string | null, chosen: "running" | "newest" | "missing", why: "unset" | "malformed" | null }}
+ */
+export function defaultSession(folder, env = process.env) {
+  const id = env.CLAUDE_CODE_SESSION_ID;
+  if (!id) return { transcript: newestSession(folder), chosen: "newest", why: "unset" };
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return { transcript: newestSession(folder), chosen: "newest", why: "malformed" };
+  const own = join(folder, `${id}.jsonl`);
+  try {
+    statSync(own);
+  } catch {
+    return { transcript: null, chosen: "missing", why: null };
+  }
+  return { transcript: own, chosen: "running", why: null };
 }
 
 /**
@@ -325,7 +346,19 @@ export function context(u) {
  *   `read`: a file's text, null when not there
  * @returns {{ session: string, there: boolean, agents: AgentRow[], skipped: number, unreadMeta: number }}
  */
-export function agentUsage({ transcript, tops, configDir, read }) {
+export function agentUsage({ transcript: given, tops, configDir, read }) {
+  // A link names the transcript it points to: its session and its subagents folder are that file's, unless a
+  // subagents folder stands beside the link's own name (a session kept with its folder).
+  let transcript = given;
+  try {
+    statSync(join(given.slice(0, -".jsonl".length), "subagents"));
+  } catch {
+    try {
+      transcript = realpathSync(given);
+    } catch {
+      // The read below says what stands there: nothing, or what could not be read.
+    }
+  }
   const session = basename(transcript, ".jsonl");
   /** @type {Map<string, { model: string | null, given: boolean, type: string | null, parent: string | null, where: string[] }>} */
   const calls = new Map();

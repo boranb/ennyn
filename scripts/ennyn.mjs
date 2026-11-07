@@ -36,7 +36,7 @@ import { RecordError, installHook, sessionOf } from "../setup/hook.mjs";
 import { instructionBudget, readBudgets, recordBudget, previousBudget, replacedAt } from "../setup/budget.mjs";
 import { journalPath, MAX_TIMEOUT_MS, MutationError, parseMutants, restoreJournal, runMutants, summarizeMutants } from "../metrics/mutation.mjs";
 import { markedWorktrees, removeWorktree, verdict } from "../plan/worktrees.mjs";
-import { READ_LINE_MAX, ALIASES, TranscriptError, agentUsage, claudeConfigDir, namedFolder, newestSession, projectFolder, projectsDir } from "../adapters/claude-code/agent-usage.mjs";
+import { READ_LINE_MAX, ALIASES, TranscriptError, agentUsage, claudeConfigDir, defaultSession, namedFolder, projectFolder, projectsDir } from "../adapters/claude-code/agent-usage.mjs";
 
 export const USAGE = `Usage: ennyn <command> [options]
 
@@ -88,7 +88,7 @@ Commands:
                                                     record one commit-gate attempt (called by the commit wrapper)
   gate-stats [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--json]
                                                     commit-gate wait, failures and time spent in failed attempts
-  agents [--session <id or path>] [--json]          per subagent of a Claude Code session (default: this repository's newest), read only: the model
+  agents [--session <id or path>] [--json]          per subagent of a Claude Code session (default: the one running it, else this repository's newest), read only: the model
                                                     asked for and the models that ran, calls, output tokens, tokens written to and read from cache,
                                                     the context at its last call;
                                                     a mismatch where a model was asked; exit 1 when the session cannot be found or read
@@ -1769,6 +1769,10 @@ const COMMANDS = {
     const cfg = config(cwd);
     const lang = cfg.language;
     let transcript;
+    /** How the session was picked: given by --session, the one running, or the newest, and why not the one running. */
+    let chosen = "given";
+    /** @type {string | null} */
+    let why = null;
     try {
       let real = cwd;
       try {
@@ -1781,15 +1785,17 @@ const COMMANDS = {
       else {
         const folder = projectFolder(projectsDir(), tops, namedFolder());
         if (folder === null) return (err(t("agents.noFolder", {}, lang)), 1);
-        transcript = given === null ? newestSession(folder) : join(folder, `${given}.jsonl`);
+        if (given !== null) transcript = join(folder, `${given}.jsonl`);
+        else ({ transcript, chosen, why } = defaultSession(folder));
+        if (chosen === "missing") return (err(t("agents.noRunning", {}, lang)), 1);
         if (transcript === null) return (err(t("agents.noFolder", {}, lang)), 1);
       }
       const read = (/** @type {string} */ path) => readIfThere(path);
       const report = agentUsage({ transcript, tops, configDir: claudeConfigDir(), read });
-      if (!report.there) return (err(tShown("agents.noSession", { session: basename(transcript, ".jsonl") }, lang)), 1);
+      if (!report.there) return (err(tShown(asPath ? "agents.noPath" : "agents.noSession", { session: basename(transcript, ".jsonl") }, lang)), 1);
       const compared = report.agents.filter((a) => a.mismatch !== null);
       const mismatched = compared.filter((a) => a.mismatch);
-      if (opts.json) return (out(jsonShown({ session: report.session, agents: report.agents.map(({ first, ...a }) => a), mismatches: mismatched.length, skipped: report.skipped, unreadRecords: report.unreadMeta })), 0);
+      if (opts.json) return (out(jsonShown({ session: report.session, agents: report.agents.map(({ first, ...a }) => a), mismatches: mismatched.length, skipped: report.skipped, unreadRecords: report.unreadMeta, chosen })), 0);
       out(tShown(report.agents.length ? "agents.header" : "agents.none", { session: report.session, n: report.agents.length }, lang));
       for (const a of report.agents) {
         const ran = Object.entries(a.ran).map(([m, n]) => `${m} ×${n}`).join(", ") || t("agents.ranNone", {}, lang);
@@ -1812,6 +1818,9 @@ const COMMANDS = {
       }
       if (report.skipped) out(t("agents.skipped", { n: report.skipped, max: READ_LINE_MAX / 1024 / 1024 }, lang));
       if (report.unreadMeta) out(t("agents.unreadRecords", { n: report.unreadMeta }, lang));
+      // Which session was read goes to stderr: the table stays as it is pasted.
+      if (chosen === "running") err(t("agents.chosenRunning", {}, lang));
+      else if (chosen === "newest") err(t("agents.chosenNewest", { why: t(`agents.sessionId.${why}`, {}, lang) }, lang));
       return 0;
     } catch (e) {
       if (e instanceof TranscriptError) return (err(`ennyn agents: ${e.message}`), 1);

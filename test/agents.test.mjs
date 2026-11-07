@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -50,7 +50,9 @@ function fixture({ long = false, base = "repo" } = {}) {
   mkdirSync(folder, { recursive: true });
   /** @param {string[]} args @param {Record<string, string>} [env] */
   const run = (args, env = {}) => {
-    const res = spawnSync(process.execPath, [CLI, "agents", ...args], { cwd: repo, encoding: "utf8", env: { ...process.env, CLAUDE_CONFIG_DIR: config, ...env } });
+    // The session that runs the tests is not the fixture's: a test that wants one names it.
+    const { CLAUDE_CODE_SESSION_ID: _, ...outer } = process.env;
+    const res = spawnSync(process.execPath, [CLI, "agents", ...args], { cwd: repo, encoding: "utf8", env: { ...outer, CLAUDE_CONFIG_DIR: config, ...env } });
     return { code: res.status, stdout: res.stdout, stderr: res.stderr };
   };
   return { box, repo, config, folder, run };
@@ -183,6 +185,63 @@ test("agents: the newest session by default, one by id or by path; a missing fol
   const elsewhere = f.run([], { CLAUDE_CONFIG_DIR: join(f.box, "nothing") });
   assert.equal(elsewhere.code, 1);
   assert.match(elsewhere.stderr, /^No Claude Code session transcript for this repository/);
+});
+
+test("agents: a path given by link reads the subagents beside the transcript it names; a missing path is no folder's (legacy audit)", () => {
+  const f = fixture();
+  session(f.folder);
+  const link = join(f.box, "kept", "copy.jsonl");
+  mkdirSync(dirname(link), { recursive: true });
+  symlinkSync(join(f.folder, "s1.jsonl"), link);
+  const r = f.run(["--session", link, "--json"]);
+  assert.equal(r.code, 0, r.stderr);
+  const report = JSON.parse(r.stdout);
+  assert.equal(report.session, "s1");
+  assert.deepEqual(report.agents.map((/** @type {{ id: string }} */ a) => a.id), ["a1", "a2"]);
+  const none = f.run(["--session", join(f.box, "nope.jsonl")]);
+  assert.equal(none.code, 1);
+  assert.equal(none.stderr, "No session transcript nope at the path given.\n");
+});
+
+test("agents: with no --session, the session that runs the command (CLAUDE_CODE_SESSION_ID), else the newest, and the output says which (review round 1)", () => {
+  const f = fixture();
+  session(f.folder, "running");
+  session(f.folder, "side");
+  utimesSync(join(f.folder, "running.jsonl"), new Date("2026-01-01"), new Date("2026-01-01"));
+  const mine = f.run(["--json"], { CLAUDE_CODE_SESSION_ID: "running" });
+  assert.equal(mine.code, 0, mine.stderr);
+  assert.equal(JSON.parse(mine.stdout).session, "running");
+  assert.equal(JSON.parse(mine.stdout).chosen, "running");
+  assert.match(f.run([], { CLAUDE_CODE_SESSION_ID: "running" }).stderr, /^Read: the session that runs this command \(CLAUDE_CODE_SESSION_ID\)\.$/m);
+  // A running session whose transcript is not here (another folder's, or a link to nothing) is not the newest one.
+  symlinkSync(join(f.box, "nothing.jsonl"), join(f.folder, "dangling.jsonl"));
+  for (const id of ["elsewhere", "dangling"]) {
+    const r = f.run([], { CLAUDE_CODE_SESSION_ID: id });
+    assert.equal(r.code, 1, id);
+    assert.equal(r.stdout, "", id);
+    assert.equal(r.stderr, "The session that runs this command (CLAUDE_CODE_SESSION_ID) has no transcript in this repository's Claude Code folder. Give --session <id or path>.\n", id);
+  }
+  for (const [env, why] of [[{}, "is not set"], [{ CLAUDE_CODE_SESSION_ID: "../running" }, "is no session id"]]) {
+    const r = f.run(["--json"], /** @type {Record<string, string>} */ (env));
+    assert.equal(JSON.parse(r.stdout).session, "side", JSON.stringify(env));
+    assert.equal(JSON.parse(r.stdout).chosen, "newest");
+    assert.match(f.run([], /** @type {Record<string, string>} */ (env)).stderr, new RegExp(`^Read: the newest transcript in this repository's folder; CLAUDE_CODE_SESSION_ID ${why.replace(/[.()]/g, "\\$&")}\\.$`, "m"));
+  }
+  const given = f.run(["--session", "running", "--json"], { CLAUDE_CODE_SESSION_ID: "side" });
+  assert.equal(JSON.parse(given.stdout).session, "running");
+  assert.equal(JSON.parse(given.stdout).chosen, "given");
+});
+
+test("agents: a link kept with its subagents folder beside it reads that folder; without one, the target's (review round 1)", () => {
+  const f = fixture();
+  session(f.folder);
+  const kept = join(f.box, "kept");
+  mkdirSync(join(kept, "copy", "subagents"), { recursive: true });
+  symlinkSync(join(f.folder, "s1.jsonl"), join(kept, "copy.jsonl"));
+  writeFileSync(join(kept, "copy", "subagents", "agent-k1.jsonl"), JSON.stringify(said("k1m", "claude-opus-5-5", usage(1, 1, 1))) + "\n");
+  const r = JSON.parse(f.run(["--session", join(kept, "copy.jsonl"), "--json"]).stdout);
+  assert.equal(r.session, "copy");
+  assert.deepEqual(r.agents.map((/** @type {{ id: string }} */ a) => a.id), ["k1"]);
 });
 
 test("agents: a path past 200 characters finds its folder by the prefix; two such folders are refused", () => {
