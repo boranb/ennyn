@@ -55,6 +55,10 @@ The cycle asks the user before any push. A Claude Code ask rule is the backstop:
    - They stop on text, so some harmless commands stop too: `docker compose down api-v2`, `npm install --global-style tsx`, and a pipe, read as one text, as in `docker compose down 2>&1 | grep -v warning`.
    - They stop the usual spelling, not every one: `git -C <dir> clean`, `git branch -df`, another runner (`pnpm exec`, `bunx`, `python -m pip`) and a script saved and then run stay open, and `pip install` also asks inside a virtualenv, which a rule cannot see.
 
+## Plan approval that clears the context
+
+Claude Code's `showClearContextOnPlanAccept` makes the first option of the plan-approval dialog clear the context and start from the plan alone: the first route a cycle's closing takes to a fresh context ([handover.md](../cycle/handover.md)). Offer it in question 4. On the user's yes, write `"showClearContextOnPlanAccept": true` into `.claude/settings.json`, keeping every other key, and commit it with the config; never into the user's own settings, where it would change the dialog in every project. Say that the VS Code panel does not show the option (Claude Code 2.1.319): there the closing names `/clear` instead.
+
 ## A first config that loosens a default
 
 The commit-msg hook compares a first config with the defaults, as it compares any config with HEAD's. A value looser than the default (a shorter `security.deps.cooldownDays`, a longer `security.everyCycles`, the project's own `commitMsg.structuredLines`) is refused until the commit's message holds a body line `User-Approved-Loosening: <key>, <key>` naming each key. The user's answer to the question that set the key is that yes, for that key alone. A key they were not asked about: ask, in plain words, before you write the line.

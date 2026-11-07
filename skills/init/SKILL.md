@@ -18,7 +18,7 @@ Send one message with at most six questions. Each carries the survey's answer as
 1. **Languages and voice** (`en` | `tr`):
    - `language`: reports and the conversation during a cycle. Default: the user's language.
    - `commitMsg.language`: commit text. Default: `commitStyle.language.guess`; `language` when there is no guess.
-   - `conversation.style`: `normal`; `focused` (result or next action first, numbered steps, one next step, no preamble); `terse` (answer first, short sentences, no filler). Default `normal`. Numbers, paths, commands, negations and money or data-loss warnings are never shortened.
+   - `conversation.style`: `normal`; `focused` (result or next action first, numbered steps, no preamble); `terse` (answer first, short sentences). Default `normal`. Numbers, paths, commands, negations and money or data-loss warnings are never shortened.
    - `commitMsg.style`: `normal`, or `terse` (subject + structured lines, no prose body). Default `normal`.
 2. **Commit convention.** It decides how every cycle commit is written and what the rework rate counts as a repair. Show `commitStyle.types` and the fix-label result (`fixSubject`: share and up to three examples), then offer:
    - the history's own types, when it has a convention (`commitStyle.typedShare` ≥ 0.5); ask which one marks a repair;
@@ -26,7 +26,7 @@ Send one message with at most six questions. Each carries the survey's answer as
    - or a free subject: `types` stays empty.
    The fix type is only for repairs of earlier commits. A `majority` result means the history's rate is a trend only; the convention fixes that from now on.
 3. **Generated files and test layout.** From `churn.paths`, ask which are build output; a `generatedMarker` is a strong hint, not proof. Confirmed paths go into `metrics.excludeRe`. When `tests.proposal` is set, show its example files and ask whether they are tests; a production file that matches would leave the rework rate. Propose a test command of `commands` as the fast test; none: ask for it, or why there are no tests.
-4. **Risky paths and security** (`risky`): they need an impact table before any edit, and the security audit reads them; the user adds or removes. Confirm the values, else the defaults: a security audit every 3 cycles (`security.everyCycles`); a new dependency version waits 7 days (`security.deps.cooldownDays`), refused under 1% of its package's weekly downloads and 1,000 of its own (`minShare`, `minWeekly`); the cycle asks OSV about public packages (`security.deps.advisories`; `""`: none). `agentSetup.ask` rules are proposed: [gates.md](gates.md). Will cycles run unattended? Default yes; only a plain no opens `agentSetup.offered`.
+4. **Risky paths and security** (`risky`): they need an impact table before any edit, and the security audit reads them; the user adds or removes. Confirm the values, else the defaults: a security audit every 3 cycles (`security.everyCycles`); a new dependency version waits 7 days (`security.deps.cooldownDays`), refused under 1% of its package's weekly downloads and 1,000 of its own (`minShare`, `minWeekly`); the cycle asks OSV about public packages (`security.deps.advisories`; `""`: none). `agentSetup.ask` rules and plan approval's clear option: [gates.md](gates.md). Will cycles run unattended? Default yes; only a plain no opens `agentSetup.offered`.
 5. **Where the work comes from**:
    - the `roadmap` files;
    - open GitHub issues (`gh issue list --state open --limit 50 --json number,title,labels`, only when `github` is set and `gh` works);

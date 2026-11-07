@@ -482,6 +482,7 @@ export async function checkSetup({ cwd, env = process.env, self = OWN_ROOT }) {
   const commitLanguage = cm.language ?? config.language;
   if (cm.types.length) add("ok", "doctor.commitStyle", { language: commitLanguage, types: cm.types.join(", "), type: cm.fixType });
   else add("ok", "doctor.commitStyleFree", { language: commitLanguage });
+  add("ok", "doctor.afterCycle", { mode: config.context.afterCycle });
 
   // The rules only the commit-msg hook checks: set, with no hook to check them, they are rules on paper again.
   const repo = repoPath("--git-dir", { cwd }) !== null;

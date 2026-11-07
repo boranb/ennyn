@@ -109,6 +109,7 @@ const NO_GATE = new Set([
   "sideCopy.roots",
   "sideCopy.maxInjectBytes",
   "compaction.defer",
+  "context.afterCycle",
   ...["referenceCommand", "referenceTimeout", "twins", "ceilingRegistry", "fakeGlobs", "fixtureGlobs"].map((k) => `impact.${k}`),
   ...["fixSubject", "excludeRe", "testRe", "minLines", "minShare", "moveSubject"].map((k) => `metrics.${k}`),
 ]);

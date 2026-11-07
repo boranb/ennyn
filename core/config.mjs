@@ -125,6 +125,9 @@ export const DEFAULTS = Object.freeze({
   sideCopy: { roots: [], maxInjectBytes: 9000 },
   // Whether the PreCompact hook runs: false turns it off, the hold and the summary's ask both (adapters/claude-code/compact-boundary.mjs).
   compaction: { defer: true },
+  // What the closing does for the next cycle's context: fresh names /clear or a new chat, compact names /compact
+  // (skills/cycle/handover.md). Read by the closing and doctor; never mid-cycle.
+  context: { afterCycle: "fresh" },
   impact: {
     referenceCommand: null,
     // Seconds the reference command may run before it is stopped and S1's references are unmeasured.
@@ -152,6 +155,8 @@ export const DEFAULTS = Object.freeze({
 
 /** Conversation styles; every one but "normal" has rules in styles/<style>.<lang>.md. */
 export const CONVERSATION_STYLES = ["normal", "focused", "terse"];
+/** What `context.afterCycle` may be: the context the next cycle starts in (skills/cycle/handover.md). */
+export const AFTER_CYCLE = ["fresh", "compact"];
 
 /**
  * The lists a config holds as strings, each of them. A member of any other kind is a config that does not load: a gate
@@ -411,6 +416,7 @@ export function configFrom(text, { cwd, configPath, override }) {
   if (typeof timeout === "number" && !(timeout >= 1 && timeout <= 3600)) problems.push(`"impact.referenceTimeout" must be seconds from 1 to 3600`);
   const style = /** @type {any} */ (cfg).conversation.style;
   if (!CONVERSATION_STYLES.includes(style)) problems.push(`"conversation.style" must be ${CONVERSATION_STYLES.map((s) => `"${s}"`).join(", ")}`);
+  if (!AFTER_CYCLE.includes(/** @type {any} */ (cfg).context.afterCycle)) problems.push(`"context.afterCycle" must be ${AFTER_CYCLE.map((s) => `"${s}"`).join(" or ")}`);
   // A type is the word before "(scope):" or ":"; spaces, colons and brackets would never match a subject.
   const badTypes = cm.types.filter((/** @type {unknown} */ t) => typeof t !== "string" || !/^[^\s:()!]+$/.test(t));
   if (badTypes.length) problems.push(`"commitMsg.types" entries must be single words without ":", "(", ")" or "!": ${badTypes.map(String).join(", ")}`);

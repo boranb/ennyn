@@ -21,7 +21,7 @@ export const STEPS = /** @type {const} */ (["planned", "brief", "author", "revie
 /** The most bytes of a journal read: a cycle writes a few hundred lines. */
 export const JOURNAL_LIMIT = 1024 * 1024;
 
-/** The most bytes of the line the SessionStart hook gives after compaction (adapters/claude-code/hooks/conversation-style.mjs). */
+/** The most bytes of the line the SessionStart hook gives after compaction, /clear or at startup (adapters/claude-code/hooks/conversation-style.mjs). */
 export const CYCLE_LINE_MAX = 512;
 
 /** A task or node id: what a line of the hook may name. */
@@ -135,7 +135,7 @@ export function journalAt({ cwd, config, env = process.env }) {
 /**
  * Writes one event to the journal of the work tree at `cwd`. `start` needs no open cycle and a start record of this
  * cycle (noted at the current HEAD, newer than the one the last journal began from), and replaces the journal; every
- * other event needs an open cycle and is appended. An event that is not one, a journal that cannot be read, or a line
+ * other event needs an open cycle, `wait` a started one, and is appended. An event that is not one, a journal that cannot be read, or a line
  * that would take the journal past JOURNAL_LIMIT writes nothing.
  * @param {{ cwd: string, config: any, event: Record<string, unknown>, env?: NodeJS.ProcessEnv, now?: Date }} opts
  * @returns {{ path: string, state: JournalState }}
@@ -154,7 +154,10 @@ export function writeEvent({ cwd, config, event, env = process.env, now = new Da
     const head = gitMaybe(["rev-parse", "--verify", "-q", "HEAD^{commit}"], { cwd: top, env, absent: [1] });
     if (start.record.head !== head || (state && Date.parse(start.record.at) <= Date.parse(state.startAt))) throw new RangeError(`the start record (HEAD ${start.record.head.slice(0, 10)}, ${start.record.at}) is an earlier cycle's: run \`ennyn leftovers --start\` again at this HEAD`);
     e.startAt = start.record.at;
-  } else if (!state || state.closed) throw new RangeError("no open cycle in this work tree: `ennyn journal start` first");
+  } else if (!state || (state.closed && e.ev !== "wait")) {
+    // What waits for the user still changes after the close (the closing asks for the push then): `wait` alone goes on.
+    throw new RangeError("no open cycle in this work tree: `ennyn journal start` first");
+  }
   const problem = eventProblem(e);
   if (problem) throw new RangeError(problem);
   const line = JSON.stringify(e) + "\n";
@@ -195,14 +198,19 @@ export const taskWord = (t) => `${t.id} ${t.step} r${t.round}`;
  * The tasks not landed, as many as fit in `max` characters, and how many more there are.
  * @param {{ id: string, step: string, round: number }[]} tasks @param {number} max
  */
-export function tasksFit(tasks, max) {
-  const open = tasks.filter((t) => t.step !== "landed").map(taskWord);
+export const tasksFit = (tasks, max) => wordsFit(tasks.filter((t) => t.step !== "landed").map(taskWord), max);
+
+/**
+ * As many of `words` as fit in `max` characters, joined by commas, and how many more there are.
+ * @param {string[]} words @param {number} max
+ */
+export function wordsFit(words, max) {
   const shown = [];
   let used = 0;
-  for (const w of open) {
+  for (const w of words) {
     if (used + w.length + 2 > max) break;
     shown.push(w);
     used += w.length + 2;
   }
-  return { list: shown.join(", "), more: open.length - shown.length };
+  return { list: shown.join(", "), more: words.length - shown.length };
 }

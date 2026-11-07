@@ -1245,6 +1245,10 @@ test("doctor: declared commit types are reported; a fix label that misses the fi
   assert.equal(ok.items.find((i) => i.key === "doctor.commitStyle")?.vars.language, "en", "commit language overrides the report language");
   const free = await checkSetup({ cwd: setup({}, { nodes: [{ id: "a" }] }).dir, env: {} });
   assert.ok(keys(free).includes("ok doctor.commitStyleFree"));
+  // The context the closing names for the next cycle, said as the config holds it.
+  assert.deepEqual(free.items.find((i) => i.key === "doctor.afterCycle")?.vars, { mode: "fresh" });
+  const compact = await checkSetup({ cwd: setup({ context: { afterCycle: "compact" } }, { nodes: [{ id: "a" }] }).dir, env: {} });
+  assert.deepEqual(compact.items.find((i) => i.key === "doctor.afterCycle")?.vars, { mode: "compact" });
 });
 
 /** Claude Code's own name for an agent's worktree. */

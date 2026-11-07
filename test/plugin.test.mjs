@@ -532,6 +532,16 @@ test("plugin: /ennyn:init's first commit sets npm's release age by the installed
 test("plugin: /ennyn:init offers what destroys or installs apart, writes none unasked, and its report says what these rules cannot do", () => {
   const gates = read("skills/init/gates.md");
   assert.ok(read("skills/init/SKILL.md").includes("`agentSetup.offered`"), "the skill sends init to the list");
+  // Plan approval's clear option: asked in question 4, written to the project's settings on a yes, never the user's.
+  assert.ok(read("skills/init/SKILL.md").includes("`agentSetup.ask` rules and plan approval's clear option: [gates.md](gates.md)."));
+  assert.ok(gates.includes("On the user's yes, write `\"showClearContextOnPlanAccept\": true` into `.claude/settings.json`, keeping every other key, and commit it with the config; never into the user's own settings"));
+  // The closing's route through plan approval is one procedure: which session runs the state steps, and the cleared one picks nothing again.
+  const handover = read("skills/cycle/handover.md").split("\n");
+  for (const line of [
+    "**Route (1), before the plan.** The old session, its closing done, reads what section 1 reads, runs `ennyn.mjs doctor`, picks the tasks as section 1 does, then enters plan mode (`EnterPlanMode`; the user approves) and writes the plan: the cycle's number, its tasks, and as its first steps `ennyn.mjs leftovers --start` and `ennyn.mjs journal start --cycle <N> --tasks <ids>`. It runs neither: plan mode writes nothing, and the start record is taken at the HEAD the new cycle begins from. It presents the plan (`ExitPlanMode`).",
+    "**Route (1), after the clear.** The cleared session starts from the plan alone: it runs `ennyn.mjs leftovers --start`, then `ennyn.mjs journal start` with the plan's number and tasks, then goes on at section 2 with the plan's tasks. It does not pick again.",
+    "The key is read merged, as Claude Code reads it: `.claude/settings.local.json` overrides `.claude/settings.json`, so check both.",
+  ]) assert.ok(handover.includes(line), line);
   for (const words of [
     "These rules read command text and are no boundary: an option before the subcommand, a script or an interpreter gets past them.",
     "A rule here stops an unattended cycle: it cannot tell a task's worktree from the main checkout.",
@@ -716,6 +726,8 @@ test("hooks.json: SessionStart `compact` reaches the style hook, which gives the
   const groups = JSON.parse(read("hooks/hooks.json")).hooks.SessionStart.filter((/** @type {any} */ g) => g.hooks.some((/** @type {any} */ h) => h.command === 'node "${CLAUDE_PLUGIN_ROOT}/adapters/claude-code/hooks/conversation-style.mjs"'));
   assert.equal(groups.length, 1);
   assert.ok(groups[0].matcher.split("|").includes("compact"), groups[0].matcher);
+  // The state line of a fresh context: Claude Code 2.1.310 gives `clear` after /clear, `startup` in a new chat.
+  for (const source of ["clear", "startup"]) assert.ok(groups[0].matcher.split("|").includes(source), source);
 });
 
 test("hooks.json: the PreToolUse matcher names the tools that run a command, the record's three, by a quoted command that resolves to the hook", () => {
