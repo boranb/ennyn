@@ -6,8 +6,9 @@
  *
  * The text goes through the push reader's one pass (push-spellings.mjs `commandsOf`): simple commands, those of
  * substitutions among them, each word with what built it and how it is spelt, and every redirection. A program's name
- * stands at a command's head, after `{`, and after a program that runs its words (a wrapper, a shell, `xargs`, `ssh`,
- * `npx`, `find`, `coproc`: then at any word), read two ways, each matched whole: past its folder and the extension Windows runs
+ * stands at a command's head and at the head after each block's `{` (`function f {`, `ForEach-Object {`), each past
+ * assignments, shell grammar and PowerShell's `$x =`, and after such a head that runs its words (a wrapper, a shell,
+ * `xargs`, `ssh`, `npx`, `find`, `coproc`: then at any word), one rule (programs), read two ways, each matched whole: past its folder and the extension Windows runs
  * it by, and as the last `\` or `/` segment of the word as written (`C:\Windows\System32\cmd.exe`,
  * `$env:SystemRoot\System32\taskkill.exe`). A shell's text (`bash -c "…"`, `powershell -Command "…"`) is read again.
  * The rule is bound to the program and its option's place; a word list only ever refuses.
@@ -39,7 +40,7 @@
  * - Refused, `unread`: text it cannot read whole (not closed, over the ceiling, deeper than the stack) with a kill word;
  *   with a kill word in the text (backslashes, quotes, carets out), a shell fed by a pipe or a here-document
  *   (`echo 'pkill x' | sh`) or given its whole text by a run (`sh <(…)`, `bash -c "$(…)"`) and a program's name built
- *   by a run (`"$(echo pkill)" x`, PowerShell's backtick); an encoded command in any spelling PowerShell takes, after
+ *   by a run wherever a name stands (`"$(echo pkill)" x`, `env $(echo pkill) x`, PowerShell's backtick); an encoded command in any spelling PowerShell takes, after
  *   `powershell` or `pwsh` anywhere in the text, whatever it holds.
  * - A PID file is resolved (pidFile) and trusted only where every mention of it reads, tests or removes it or writes it
  *   in a listed shape from what this text trusts (trust). PowerShell's braces are set apart wherever they sit in a word
@@ -47,7 +48,10 @@
  *   lookup.
  *
  * What it refuses that is no kill of another's process, accepted: a word that names a kill program after a wrapper
- * (`sudo grep pkill f`), `.Kill(` and `Get-Process` both in one statement that only mentions them, a PID file read
+ * (`sudo grep pkill f`), a word built by a run after a wrapper, a shell or another runner and before any kill program
+ * (one after an option counts not), in a text with a kill word (`sudo -u $(whoami) kill 1234`, `sudo -E kill $(cat
+ * a.pid)`, `nohup node s.js --port $(cat p) & kill $!`; after `npm`, `npx`, `yarn`, `find` and `ssh` only where the
+ * program's name stands; none of 88,740 commands in one machine's transcripts), `.Kill(` and `Get-Process` both in one statement that only mentions them, a PID file read
  * through a pipe or by any program but `cat`, `<` and `Get-Content`, one named with a variable inside its path
  * (`$S/eg-$d.winpid`) or mentioned by any program but those that read, test or remove it (`node s.js --pidfile a.pid`),
  * and a PID file the agent's earlier call filled from a port lookup (`netstat … > app.winpid`).
@@ -62,7 +66,7 @@
  * list here holds, an MCP tool, and a hook that crashes or times out: Claude Code runs the call.
  */
 
-import { ASSIGNMENT, GAP, KEYWORD, RUNS, WRAPS, commandsOf, nameOf } from "./push-spellings.mjs";
+import { ASSIGNMENT, GAP, KEYWORD, RUNS, SSH_VALUE, WRAPS, commandsOf, nameOf } from "./push-spellings.mjs";
 
 /** Programs that kill by name or filter, whatever their words. */
 const BY_NAME = /^(pkill|killall5?|skill)$/i;
@@ -147,20 +151,131 @@ const names = (w) => {
 /** Whether a program's name, either reading, passes `re`. @param {Word} w @param {RegExp} re */
 const is = (w, re) => names(w).some((n) => re.test(n));
 
-/** The words of a command before its program: assignments, shell grammar, a PowerShell block's opening, `$x =`. @param {Word[]} words */
-const headAt = (words) => {
-  for (let k = 0; k < words.length; k++) {
-    const t = words[k].text;
-    if (ASSIGNMENT.test(t) || KEYWORD.test(t) || BLOCK.test(t)) continue;
-    if (/^\u0000+$/.test(t) && words[k + 1]?.text === "=") {
-      k++;
-      continue;
-    }
-    if (/^\[\w+\]$/.test(t)) continue;
-    return k;
+/**
+ * How many words at `k` stand before a program's name: assignments, shell grammar, a PowerShell block's opening and
+ * `[type]` (1), PowerShell's `$x =` (2), none (0). A word a run built is a program's name before `=` (`$(echo pkill) =
+ * node` runs pkill in bash).
+ * @param {Word[]} words @param {number} k
+ */
+const before = (words, k) => {
+  const t = words[k].text;
+  if (ASSIGNMENT.test(t) || KEYWORD.test(t) || BLOCK.test(t) || /^\[\w+\]$/.test(t)) return 1;
+  return /^\u0000+$/.test(t) && words[k + 1]?.text === "=" && !ranAt(words[k]) ? 2 : 0;
+};
+
+/** The first word from `from` that is a program's, or -1. @param {Word[]} words */
+const headAt = (words, from = 0) => {
+  for (let k = from; k < words.length; ) {
+    const n = before(words, k);
+    if (!n) return k;
+    k += n;
   }
   return -1;
 };
+
+/** Openers whose next word is no program: the program comes after `-exec` (find), after the destination (ssh). */
+const FIND = /^find$/i;
+const SSH = /^ssh$/i;
+/** Package runners: the first word that is no option, or the one after `exec`, `x`, `dlx`, names what runs; a script's words follow. */
+const PACKAGES = /^(npm|pnpm|yarn|bun|npx|pnpx|bunx)$/i;
+const SUB = /^(exec|x|dlx)$/i;
+
+/**
+ * Where a program's name stands in a command's words, the one rule the reading takes, in one pass: the head, and the
+ * head again after each block's opening (`{ …`, `function f { …`, `ForEach-Object { …`); after a head that runs its
+ * words (a wrapper, a shell, an opener), every word that follows it. `built`: the places where a name built at run
+ * time would be the program's: each head; after a wrapper, a shell or another runner every word up to a program
+ * judgeAt reads, options and assignments out, and past a kill program's name too when it follows an option (it may be
+ * the option's value: `exec -a fuser $(echo pkill)`); after a package runner, its first word that is no option and no
+ * option's value (and the one after `exec`, `x`, `dlx`); after `find`, the words after `-exec` (`-execdir`, `-ok`);
+ * after ssh, the words after its destination.
+ * @param {Word[]} words @returns {{ at: number[], built: number[] }}
+ */
+function programs(words) {
+  const n = words.length;
+  // The head that starts at each word, read backwards once.
+  const next = new Array(n + 2).fill(-1);
+  for (let k = n - 1; k >= 0; k--) {
+    const b = before(words, k);
+    next[k] = b ? next[k + b] : k;
+  }
+  /** @type {Set<number>} */
+  const heads = new Set();
+  if (next[0] >= 0) heads.add(next[0]);
+  words.forEach((w, k) => {
+    if (BLOCK.test(w.text) && w.literal && next[k + 1] >= 0) heads.add(next[k + 1]);
+  });
+  /** @type {number[]} */
+  const at = [];
+  /** @type {number[]} */
+  const built = [];
+  let open = false;
+  /** @type {"wrap" | "package" | "find" | "ssh" | null} */
+  let mode = null;
+  let afterOption = false;
+  let sshHost = false;
+  let sshEnded = false;
+  for (let k = 0; k < n; k++) {
+    const w = words[k];
+    if (heads.has(k)) {
+      at.push(k);
+      built.push(k);
+      if (is(w, WRAPS) || is(w, RUNS) || is(w, OPENS)) {
+        open = true;
+        mode = is(w, FIND) ? "find" : is(w, SSH) ? "ssh" : is(w, PACKAGES) ? "package" : "wrap";
+        afterOption = false;
+        sshHost = false;
+        sshEnded = false;
+      }
+      continue;
+    }
+    if (!open) continue;
+    at.push(k);
+    const t = w.text;
+    const option = /^-./s.test(t) && t !== "--";
+    if (mode === "find") {
+      if (/^-(exec|execdir|ok|okdir)$/.test(t)) mode = "wrap";
+      continue;
+    }
+    if (mode === "ssh") {
+      // OpenSSH's options, before and after the destination until `--` (push-spellings.mjs sshCommand).
+      if (afterOption) afterOption = false;
+      else if (!sshEnded && t === "--") sshEnded = true;
+      else if (!sshEnded && option) afterOption = [...t.slice(1)].findIndex((c) => SSH_VALUE.includes(c)) === t.length - 2;
+      else if (sshHost) {
+        mode = "wrap";
+        built.push(k);
+        afterOption = false;
+        if (is(w, JUDGED)) mode = null;
+      } else sshHost = true;
+      continue;
+    }
+    if (mode === null) continue;
+    if (t === "--") {
+      afterOption = false;
+      continue;
+    }
+    if (option) {
+      afterOption = true;
+      continue;
+    }
+    if (ASSIGNMENT.test(t)) continue;
+    const value = afterOption;
+    afterOption = false;
+    if (mode === "package") {
+      if (value) {
+        if (ranAt(w)) built.push(k);
+        continue;
+      }
+      built.push(k);
+      if (!SUB.test(t)) mode = null;
+      continue;
+    }
+    built.push(k);
+    if (is(w, JUDGED) && !value) mode = null;
+  }
+  return { at, built };
+}
 
 /**
  * The lower-case segments a word names a file by: its text and its spelling with its expansions taken out (a
@@ -626,16 +741,20 @@ function tskill(args, own) {
 }
 
 /**
- * Why the program at `k` refuses this command, or null.
- * @param {Word[]} words @param {number} k @param {Cmd} cmd @param {Own} own @returns {Why | null}
+ * Why the program at `k` refuses this command, or null. `feed`: the first word from the command's head that names a
+ * program feeding its words from a pipe (`xargs`), or the words' length.
+ * @param {Word[]} words @param {number} k @param {Cmd} cmd @param {Own} own @param {number} feed @returns {Why | null}
  */
-function judgeAt(words, k, cmd, own) {
+function judgeAt(words, k, cmd, own, feed) {
   const all = names(words[k]);
   const name = all.find((n) => JUDGED.test(n)) ?? all[0];
+  if (!JUDGED.test(name)) return null;
   // A PowerShell block's `}` ends the command's words: `{ taskkill /PID 1234 /F }`.
-  const close = words.findIndex((w, j) => j > k && w.text === "}" && w.literal);
+  let close = k + 1;
+  while (close < words.length && !(words[close].text === "}" && words[close].literal)) close++;
+  if (close === words.length) close = -1;
   const args = words.slice(k + 1, close < 0 ? words.length : close);
-  const viaFeed = words.slice(0, k).some((w) => is(w, FEEDS));
+  const viaFeed = feed < k;
   if (BY_NAME.test(name)) return "name";
   if (BY_PORT.test(name)) return "port";
   if (name === "fuser") return args.some((w) => /^-\w*k|^--kill$/.test(w.text)) ? "port" : null;
@@ -723,24 +842,26 @@ function read(command, depth) {
   const { cmds, redirs } = parsed;
   const own = trust(cmds, redirs, command);
   for (const cmd of cmds) {
-    const all = unglued(cmd.words);
-    const first = all.findIndex((w) => !ASSIGNMENT.test(w.text) && !KEYWORD.test(w.text) && !BLOCK.test(w.text));
-    if (first < 0) continue;
-    const words = all.slice(first);
-    const head = words[0];
+    const words = unglued(cmd.words);
+    const { at, built } = programs(words);
+    if (!at.length) continue;
+    const head = words[at[0]];
     const part = () => cmd.words.map((w) => w.text.split(GAP).join("$…")).join(" ");
-    const opener = is(head, WRAPS) || is(head, RUNS) || is(head, OPENS);
-    const runs = opener || words.some((w) => is(w, RUNS) || is(w, /^ssh$/i));
-    const at = opener ? words.map((_, k) => k) : [0, ...words.flatMap((w, k) => (BLOCK.test(w.text) && w.literal ? [k + 1] : []))];
+    const runs = at.some((k) => is(words[k], WRAPS) || is(words[k], OPENS)) || words.slice(at[0]).some((w) => is(w, RUNS) || is(w, /^ssh$/i));
     // Text no reader here sees, with a kill word in the text: a shell fed by a pipe or a here-document, or given its text
     // whole by a run (`sh <(…)`, `source <(…)`, `bash -c "$(…)"`), and a program's name built at run time
-    // (`"$(echo pkill)" node`, PowerShell's backtick).
-    if (said && at.some((k) => k < words.length && is(words[k], SHELLS) && (cmd.fed || words.slice(k + 1).some((w) => ranAt(w, true) && /^\u0000+$/.test(w.text))))) return { why: "unread", part: part() };
+    // (`"$(echo pkill)" node`, `env $(echo pkill) node`, PowerShell's backtick).
+    let lastRun = -1;
+    words.forEach((w, k) => {
+      if (ranAt(w, true) && /^\u0000+$/.test(w.text)) lastRun = k;
+    });
+    if (said && at.some((k) => is(words[k], SHELLS) && (cmd.fed || lastRun > k))) return { why: "unread", part: part() };
     // A name with a space in it is no program: PowerShell writes a string (`"left: $($k.Count)"`) where bash would run one.
-    if (said && ranAt(head) && !/\s/.test(head.text)) return { why: "unread", part: part() };
+    if (said && built.some((k) => ranAt(words[k]) && !/\s/.test(words[k].text))) return { why: "unread", part: part() };
+    let feed = at[0];
+    while (feed < words.length && !is(words[feed], FEEDS)) feed++;
     for (const k of at) {
-      if (k >= words.length) continue;
-      const why = judgeAt(words, k, cmd, own);
+      const why = judgeAt(words, k, cmd, own, feed);
       if (why) return { why, part: part() };
     }
     // A shell's text, read again: `bash -c "pkill x"`, `pwsh -c "…"`, ssh's command words, cmd's with its caret out. An

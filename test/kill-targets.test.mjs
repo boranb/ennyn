@@ -222,7 +222,7 @@ test("kill reader: a variable is a PID this text started only when every setting
   assert.equal(killTarget("a & pid=$!x; kill $pid")?.why, "lookup");
 });
 
-test("kill reader: 64 KB of the shapes its PID-file trust once read in cubic time is read well inside the hook's 10 s, with the verdict each needs", () => {
+test("kill reader: 64 KB of the shapes its PID-file trust and its program places once read in more than linear time is read well inside the hook's 10 s, with the verdict each needs", () => {
   // Review round 2 measured 15 KB of the first shape at 11.2 s: past the hook's limit, where Claude Code runs the call.
   /** @param {(i: number) => string} unit @param {string} end */
   const fill = (unit, end) => {
@@ -237,6 +237,15 @@ test("kill reader: 64 KB of the shapes its PID-file trust once read in cubic tim
     [fill((i) => `$p${i} = Get-Content a.pid; `, "Stop-Process -Id $p1"), null],
     [fill(() => "$p = Start-Process n -PassThru; $p.Id | Out-File a.pid; ", "$q = Get-Content a.pid; Stop-Process -Id $q"), null],
     [fill((i) => `$a${i + 1} = $a${i}; `, "$a0 = Get-Process x; $a9.Kill()"), "name"],
+    // Where a program's name stands, read once per block opening or per place: review measured 60 to 186 s at 64 KB.
+    [`pkill node${fill(() => " {env", "")}`, "name"],
+    [`pkill node${fill(() => " {", "")}`, "name"],
+    [`pkill node${fill(() => " { env", "")}`, "name"],
+    [`pkill node${fill(() => " {ssh", "")}`, "name"],
+    [`env${fill(() => " a", "; pkill node")}`, "name"],
+    [`env sh${fill(() => " sh", " $(echo x); pkill node")}`, "unread"],
+    [`ForEach-Object${fill(() => " { kill 1234 }", "; pkill node")}`, "name"],
+    [`ssh h${fill(() => " a", "; pkill node")}`, "name"],
   ];
   for (const [text, why] of shapes) {
     const t0 = performance.now();
@@ -277,7 +286,9 @@ const KILL_CONTEXTS = (() => {
   const simple = (/** @type {string} */ s) => !/[;&|]/.test(s);
   return [
     ["plain", (s) => s], ["seq", (s) => `true; ${s}`], ["and", (s) => `echo x && ${s}`], ["or", (s) => `false || ${s}`], ["sub", (s) => `( ${s} )`], ["group", (s) => `{ ${s}; }`],
-    ["if", (s) => `if true; then ${s}; fi`], ["func", (s) => `f() { ${s}; }; f`], ["for", (s) => `for i in 1; do ${s}; done`],
+    ["if", (s) => `if true; then ${s}; fi`], ["func", (s) => `f() { ${s}; }; f`], ["function", (s) => `function f { ${s}; }; f`], ["for", (s) => `for i in 1; do ${s}; done`],
+    // A wrapper inside a block: the program's place is past the brace and past the wrapper both.
+    ["function-env", (s) => (simple(s) ? `function f { env ${s}; }; f` : null)], ["group-nohup", (s) => (simple(s) ? `{ nohup ${s}; }` : null)], ["if-time", (s) => (simple(s) ? `if true; then time ${s}; fi` : null)],
     ["bash-c", (s) => (s.includes("'") ? null : `bash -c '${s}'`)], ["sh-c", (s) => (/["`]/.test(s) ? null : `sh -c "${s}"`)], ["cmdsub", (s) => `echo "$(${s})"`], ["assign", (s) => `x=$(${s})`],
     ["env", (s) => (simple(s) ? `env ${s}` : null)], ["command", (s) => (simple(s) ? `command ${s}` : null)], ["nohup", (s) => (simple(s) ? `nohup ${s}` : null)], ["exec", (s) => (simple(s) ? `exec ${s}` : null)],
     ["echo", (s) => `echo ${s}`], ["comment", (s) => `# ${s}`], ["colon", (s) => (s.includes("'") ? null : `: '${s}'`)], ["heredoc", (s) => `cat <<'EOF'\n${s}\nEOF`],
@@ -373,6 +384,14 @@ test("kill reader: a real bash agrees on generated texts: nothing it passes stop
       const [w] = s.split(" ");
       if (!/^[a-z][a-z-]*\d?$/.test(w) || w === "for" || w === "sleep") continue;
       for (const spell of [`'${w}'`, `"${w}"`, `\\${w}`, `${w[0]}''${w.slice(1)}`]) texts.push(spell + s.slice(w.length));
+      // The name built at run time, at the head, after a wrapper and after a wrapper in a block.
+      const rest = s.slice(w.length);
+      for (const built of [`$(echo ${w})`, `"$(echo ${w})"`, `\`echo ${w}\``]) {
+        texts.push(built + rest);
+        // An option and its value before the name, the value named like a kill program (`exec -a fuser`).
+        for (const wrap of ["env", "nohup", "command", "exec", "time", "exec -a fuser", "time -p"]) texts.push(`${wrap} ${built}${rest}`);
+        if (!/[;&|]/.test(rest)) texts.push(`function f { env ${built}${rest}; }; f`);
+      }
     }
     // Before any text runs: none reaches the real program or names a number a process can have.
     const control = ["kill 1234", "kill -9 -1", "kill -1; echo x", "kill 0", "/bin/kill 9999991", "command -p kill 9999991", "PATH=/bin:/usr/bin kill 9999991", "taskkill //PID 4242 //F", "enable kill; kill 9999991", "builtin kill 9999991", "env -i kill 9999991"];

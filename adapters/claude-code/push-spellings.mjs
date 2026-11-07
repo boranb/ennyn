@@ -127,7 +127,7 @@ export const RUNS = /^((ba|z|da|k|c|tc|fi|a|rba)?sh|eval|source|xargs|parallel|w
  * ssh's option letters whose value is the rest of the word or the next word, the same in OpenSSH 8.9p1, 9.5p1 and 9.9p1
  * (`ssh -G -<letter> a b` names b as the host); `-P` is one in 9.5p1 and 9.9p1, not in 8.9p1.
  */
-const SSH_VALUE = "BbcDEeFIiJLlmOopQRSWw";
+export const SSH_VALUE = "BbcDEeFIiJLlmOopQRSWw";
 /** Programs that run the rest of their words: after one, any word may stand where a program's name stands. */
 export const WRAPS = /^(env|command|builtin|exec|nohup|nice|ionice|time|timeout|gtimeout|sudo|doas|stdbuf|caffeinate|setsid|busybox|toybox|chroot|noglob|nocorrect)$/i;
 /**
