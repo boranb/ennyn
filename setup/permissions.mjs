@@ -162,17 +162,19 @@ export const OFFERED = /** @type {const} */ ({
 });
 
 /**
- * The commands Ennyn asks a rule for: `git push` always; `npm publish` when the repository holds a
+ * The commands Ennyn asks a rule for: `git push` unless `push.mode` is `after-closing`, where the cycle pushes by
+ * itself and a rule would stop it; `npm publish` when the repository holds a
  * package.json anywhere (a private root still publishes its workspaces), git could not list its files, or the
  * work tree has one git does not list (an unborn repository, or none); when `gh` holds (ghApplies), GH_COMMANDS
  * (`gh release`: create, upload, edit). OFFERED is no part of this: what a project declines is no warning.
  * @param {string[] | null} files tracked files; null when git could not list them
  * @param {boolean} gh
  * @param {(rel: string) => boolean} [present] whether the work tree holds a file
+ * @param {string} [pushMode] the config's `push.mode`
  */
-export function outwardCommands(files, gh, present = () => false) {
+export function outwardCommands(files, gh, present = () => false, pushMode = "ask") {
   const pkg = files === null || files.some((f) => /(^|\/)package\.json$/.test(f)) || present("package.json");
-  return ["git push", ...(pkg ? ["npm publish"] : []), ...(gh ? GH_COMMANDS : [])];
+  return [...(pushMode === "after-closing" ? [] : ["git push"]), ...(pkg ? ["npm publish"] : []), ...(gh ? GH_COMMANDS : [])];
 }
 
 /**

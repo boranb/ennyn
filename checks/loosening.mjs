@@ -62,6 +62,8 @@ const MOVES = new Map(/** @type {[string, (a: any, b: any) => boolean][]} */ ([
   ["review.cochange", (/** @type {Cochange[]} */ a, /** @type {Cochange[]} */ b) => a.some((r) => !b.some((s) => !shrinks(r.paths, s.paths) && !grows(r.docs, s.docs)))],
   ["review.forbidden", (/** @type {Forbidden[]} */ a, /** @type {Forbidden[]} */ b) => a.some((r) => !b.some((s) => s.text === r.text && !shrinks(r.paths, s.paths) && !grows(r.except ?? [], s.except ?? [])))],
   ["push.warnAtUnpushed", up],
+  // The cycle pushes by itself: the user's ask is gone (skills/cycle/push.md).
+  ["push.mode", (_, b) => b !== "ask"],
   ["security.everyCycles", (a, b) => b === 0 || (a !== 0 && b > a)],
   ["security.ci.paths", shrinks],
   ["security.ci.except", grows],

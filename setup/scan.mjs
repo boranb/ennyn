@@ -1281,7 +1281,7 @@ export function scanProject({ cwd, env = process.env, from = cwd, ceiling }) {
   // Which settings file holds a rule for each command that leaves the machine: /ennyn:init proposes the missing.
   const pf = projectFiles(cwd);
   const remotes = repo ? remotesByHost(cwd) : { github: [], others: [] };
-  const commands = outwardCommands(files, ghApplies(remotes), (rel) => pf.present(rel));
+  const commands = outwardCommands(files, ghApplies(remotes), (rel) => pf.present(rel), config.push.mode);
   const ask = { ...askRules(pf, commands, { committed: (path) => (repo ? headFile(cwd, path, SETTINGS_LIMIT) : null) }), githubRemotes: remotes.github, otherRemotes: remotes.others };
   // Offered apart, as a choice: a rule the project holds, in either file, committed or not, is not offered again.
   const notHeld = (/** @type {readonly string[]} */ list) => askRules(pf, [...list]).rules.filter((r) => r.where === null).map((r) => r.rule);

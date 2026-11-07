@@ -3072,6 +3072,31 @@ test("ask rules: init-scan's hooks reader and the ask rules count the same files
   assert.deepEqual([res.hooks, res.unreadable], [["SessionStart"], [".claude/settings.json permissions"]]);
 });
 
+test("push.mode: doctor names the mode both ways; with after-closing no git push rule is missing, one held is said, and init-scan proposes none", async () => {
+  const graph = { nodes: [{ id: "a" }] };
+  const push = (/** @type {Awaited<ReturnType<typeof checkSetup>>} */ res) => res.items.filter((i) => /^doctor\.(pushMode|askMissing)/.test(i.key)).map((i) => [i.level, i.key, i.vars]);
+  const scanned = (/** @type {string} */ dir) => JSON.parse(spawnSync(process.execPath, [CLI, "init-scan", "--json"], { cwd: dir, encoding: "utf8" }).stdout).agentSetup.ask.rules.map((/** @type {{ rule: string }} */ r) => r.rule);
+  const both = ["Bash(git push *)", "PowerShell(git push *)"];
+  const asks = elsewhere(setup({}, graph));
+  assert.deepEqual(push(await checkSetup({ cwd: asks.dir, env: {} })), [["ok", "doctor.pushModeAsk", {}], ["warn", "doctor.askMissing", { rules: both }]]);
+  assert.deepEqual(scanned(asks.dir), both);
+  const after = elsewhere(setup({ push: { mode: "after-closing" } }, graph));
+  // Set with no approval line and no upstream: named, and what holds the closing's push back is said.
+  const held = push(await checkSetup({ cwd: after.dir, env: {} }));
+  assert.deepEqual(held.map(([level, key]) => [level, key]), [["ok", "doctor.pushModeAfter"], ["warn", "doctor.pushModeHeld"]]);
+  assert.match(tShown("doctor.pushModeHeld", held[1][2], "en"), /^push\.mode is after-closing, but the closing would still ask: push\.mode is after-closing, but the commit that set it \([0-9a-f]{12}\) holds no User-Approved-Loosening: push\.mode line/);
+  assert.deepEqual(scanned(after.dir), []);
+  // A rule left on push stops the closing's own push: said, in either file.
+  after.commit("chore: rule", { ".claude/settings.json": JSON.stringify({ permissions: { ask: ["Bash(git push *)"] } }), ".claude/settings.local.json": JSON.stringify({ permissions: { deny: ["PowerShell(git push:*)"] } }) });
+  assert.deepEqual(push(await checkSetup({ cwd: after.dir, env: {} })).filter(([, key]) => key !== "doctor.pushModeHeld"), [["ok", "doctor.pushModeAfter", {}], ["warn", "doctor.pushModeRule", { rules: both }]]);
+  // The work tree set back to ask, not committed: the closing asks, and the split is said.
+  put(after.dir, { ".ennyn/config.json": "{}" });
+  assert.deepEqual(push(await checkSetup({ cwd: after.dir, env: {} })).slice(0, 2), [["warn", "doctor.pushModeSplit", { head: "after-closing", work: "ask" }], ["ok", "doctor.pushModeAsk", {}]]);
+  // Turned on in the work tree only: no commit holds it, so the closing still asks.
+  put(asks.dir, { ".ennyn/config.json": JSON.stringify({ push: { mode: "after-closing" } }) });
+  assert.deepEqual(push(await checkSetup({ cwd: asks.dir, env: {} })).slice(0, 2), [["warn", "doctor.pushModeSplit", { head: "ask", work: "after-closing" }], ["ok", "doctor.pushModeAsk", {}]]);
+});
+
 test("ask rules: doctor says which file holds each rule and whether it is committed, with where Claude Code applies it; init-scan lists them", async () => {
   const { GH_COMMANDS, ruleFor, TOOLS } = await import("../setup/permissions.mjs");
   const graph = { nodes: [{ id: "a" }] };

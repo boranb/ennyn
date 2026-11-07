@@ -1344,6 +1344,10 @@ function run(dir, input, env = {}, before = []) {
   return r;
 }
 const call = (/** @type {string} */ command, tool = "Bash") => ({ session_id: "s1", hook_event_name: "PreToolUse", tool_name: tool, tool_input: { command, description: "x" }, cwd: neutral });
+/** A call from a shell standing in `cwd`. @param {string} cwd @param {string} command */
+const at = (cwd, command) => ({ ...call(command), cwd });
+/** A bare `git push` from the session's own folder. @param {string} dir @param {NodeJS.ProcessEnv} [env] */
+const bare = (dir, env = {}) => run(dir, at(dir, "git push"), env);
 const decision = (/** @type {{ stdout: string }} */ r) => JSON.parse(r.stdout).hookSpecificOutput.permissionDecision;
 
 /** A `git` first on PATH that writes each call to `log` and fails. @param {string} log */
@@ -1370,7 +1374,7 @@ test("push hook: with a config it denies a spelling on each tool that runs a com
     assert.match(out.permissionDecisionReason, /`cd <folder> && git push <remote> <branch>` from another folder/);
     assert.doesNotMatch(out.permissionDecisionReason, /earlier call/);
     // The rule asks only where a project holds it: the text does not promise more.
-    assert.match(out.permissionDecisionReason, /rule then asks the user; a project with no such rule runs it/);
+    assert.match(out.permissionDecisionReason, /Unless push\.mode is after-closing, this hook then asks the user; else ask first if nobody has approved this push/);
     assert.doesNotMatch(out.permissionDecisionReason, /script/, "a refusal names no way around it");
   }
 });
@@ -1385,13 +1389,119 @@ test("push hook: what it names is one line, cut, and shown: a long or hostile co
   assert.doesNotMatch(reason("git -C . push \u001b[2J"), /\u001b/);
 });
 
-test("push hook: a plain push and every other command pass, printing nothing; on a pass and a refusal alike it asks git nothing", () => {
+const PLAIN_PUSHES = ["git push origin main", "git add . && git push origin main 2>&1 | tail -3", "cd sub && git push", "git fetch origin\ngit push > out 2>&1"];
+
+test("push hook: a plain push is asked about and every other command passes, printing nothing; on a pass and a refusal it asks git nothing", () => {
   const dir = project("{}\n");
   const log = join(dir, ".git", "calls");
   const PATH = countingGit(log);
-  for (const c of ["git push origin main", "git add . && git push origin main 2>&1 | tail -3", "cd sub && git push", "git status", "ls", 'git commit -m "git -C . push"', "docker push x"]) assert.equal(run(dir, call(c), { PATH }).stdout, "", c);
+  for (const c of ["git status", "ls", 'git commit -m "git -C . push"', "docker push x", "git stash push", "git log --grep push"]) assert.equal(run(dir, call(c), { PATH }).stdout, "", c);
   for (const c of ["git -C . push", "git commit -F - <<'E'\nx\nE\ngit push"]) assert.equal(decision(run(dir, call(c), { PATH })), "deny", c);
   assert.equal(existsSync(log), false, "no git call");
+  // A push it leaves is decided with git, and a git that fails asks.
+  for (const c of PLAIN_PUSHES) assert.equal(decision(run(dir, call(c), { PATH })), "ask", c);
+});
+
+const AFTER = '{ "push": { "mode": "after-closing" } }\n';
+
+/**
+ * A repository on main with an upstream, whose commit holds `config` at `at` (the approval line in its message with
+ * `line`): what the closing's push needs, or one thing short of it.
+ * @param {{ config?: string, line?: boolean, at?: string }} [o]
+ */
+function closing({ config = AFTER, line = true, at = ".ennyn/config.json" } = {}) {
+  const dir = project(null);
+  const remote = realpathSync(mkdtempSync(join(tmpdir(), "en-push-remote-")));
+  execFileSync("git", ["init", "-q", "--bare", "-b", "main"], { cwd: remote });
+  const g = (/** @type {string[]} */ ...args) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args], { cwd: dir, encoding: "utf8" });
+  mkdirSync(join(dir, at, ".."), { recursive: true });
+  writeFileSync(join(dir, at), config);
+  g("checkout", "-q", "-b", "main");
+  g("add", "-A");
+  g("commit", "-q", "--no-verify", "-m", `chore: push by itself${line ? "\n\nUser-Approved-Loosening: push.mode" : ""}`);
+  g("remote", "add", "origin", remote);
+  g("push", "-q", "-u", "origin", "main");
+  return { dir, g };
+}
+
+test("push hook: under push.mode ask a plain push is asked, with the reason; a spelling is refused, and a config that does not load asks", () => {
+  const reason = (/** @type {{ stdout: string }} */ r) => JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason;
+  const asks = project('{ "push": { "mode": "ask" } }\n');
+  for (const c of [...PLAIN_PUSHES, "git push"]) {
+    const r = run(asks, at(asks, c));
+    assert.equal(decision(r), "ask", c);
+    assert.match(reason(r), /^ennyn: this push waits for the user's yes\. .*push\.mode is ask: ask the user before the push\.$/);
+  }
+  for (const text of ['{ "push": { "mode": "After-closing" } }\n', '{ "push": { "mode": "after-closing" }, "nope": 1 }\n', "{"]) assert.equal(decision(bare(project(text))), "ask", text);
+});
+
+test("push hook: under after-closing only a bare git push runs, and only when push-check's decision holds; every other push is asked, a spelling refused", () => {
+  const reason = (/** @type {{ stdout: string }} */ r) => JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason;
+  const { dir, g } = closing();
+  for (const c of ["git push", "  git push\n"]) assert.equal(run(dir, at(dir, c)).stdout, "", c);
+  for (const c of ["git push origin main", "git push --force", "git push -f origin main", "git push origin +main", "git push origin :main", "git push --delete origin main", "git push --mirror", "git push --all", "git push --tags", "git push https://example.invalid/x.git main", "cd . && git push", "git push > out 2>&1"]) {
+    const r = run(dir, at(dir, c));
+    assert.equal(decision(r), "ask", c);
+    assert.match(reason(r), /only a bare git push, in a call of its own, runs by itself/, c);
+  }
+  for (const c of ["git -C . push", 'git commit -m "x" && git push', "true; git push # it's done"]) assert.equal(decision(run(dir, at(dir, c))), "deny", c);
+  // A session in a subfolder decides at the repository's top.
+  mkdirSync(join(dir, "sub"));
+  assert.equal(run(join(dir, "sub"), at(join(dir, "sub"), "git push")).stdout, "");
+  // git config that makes a bare push send more asks.
+  for (const [key, value] of [["remote.origin.mirror", "true"], ["remote.origin.push", "+refs/heads/*:refs/heads/*"], ["push.default", "matching"], ["push.followTags", "true"], ["remote.pushDefault", "other"]]) {
+    g("config", key, value);
+    const r = run(dir, at(dir, "git push"));
+    assert.equal(decision(r), "ask", key);
+    assert.match(reason(r), new RegExp(`git config ${key.replace(/\./g, "\\.")} makes a bare git push send more`), key);
+    g("config", "--unset-all", key);
+  }
+  // Set back to ask in the work tree, not committed: asked.
+  writeFileSync(join(dir, ".ennyn", "config.json"), "{}\n");
+  assert.match(reason(run(dir, at(dir, "git push"))), /HEAD's config holds after-closing, the work tree's ask/);
+});
+
+test("push hook: a mode no commit check judged asks: unapproved, a work-tree edit, ENNYN_CONFIG outside, a subfolder's own config", () => {
+  const reason = (/** @type {{ stdout: string }} */ r) => JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason;
+  assert.match(reason(bare(closing({ line: false }).dir)), /the commit that set it \([0-9a-f]{12}\) holds no User-Approved-Loosening: push\.mode line/);
+  const edited = closing({ config: "{}\n" });
+  writeFileSync(join(edited.dir, ".ennyn", "config.json"), AFTER);
+  assert.match(reason(run(edited.dir, at(edited.dir, "git push"))), /HEAD's config holds ask, the work tree's after-closing/);
+  const outside = join(realpathSync(mkdtempSync(join(tmpdir(), "en-push-outside-"))), "c.json");
+  writeFileSync(outside, AFTER);
+  assert.equal(decision(bare(closing({ config: "{}\n" }).dir, { ENNYN_CONFIG: outside })), "ask");
+  const sub = closing({ config: "{}\n" });
+  mkdirSync(join(sub.dir, "pkg", ".ennyn"), { recursive: true });
+  writeFileSync(join(sub.dir, "pkg", ".ennyn", "config.json"), AFTER);
+  sub.g("add", "-A");
+  sub.g("commit", "-q", "--no-verify", "-m", "chore: pkg\n\nUser-Approved-Loosening: push.mode");
+  assert.equal(decision(run(join(sub.dir, "pkg"), at(join(sub.dir, "pkg"), "git push"))), "ask");
+  // The config ENNYN_CONFIG names inside the repository is the one in force, committed and approved.
+  assert.equal(bare(closing({ at: "e.json" }).dir, { ENNYN_CONFIG: "e.json" }).stdout, "");
+});
+test("push hook: under after-closing the push is decided where the shell stands: another repository, a nested one or a linked worktree asks", () => {
+  const reason = (/** @type {{ stdout: string }} */ r) => JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason;
+  const { dir, g } = closing();
+  // A nested repository the shell moved into, with a mirror remote: the session's decision says nothing of it.
+  const nested = join(dir, "nested");
+  mkdirSync(nested);
+  execFileSync("git", ["init", "-q", "-b", "main"], { cwd: nested });
+  execFileSync("git", ["config", "remote.origin.mirror", "true"], { cwd: nested });
+  const there = run(dir, at(nested, "git push"));
+  assert.equal(decision(there), "ask");
+  assert.match(reason(there), /the shell stands in .*nested, which is not the checkout whose config decided/);
+  // A linked worktree of the same repository is another checkout.
+  const linked = join(realpathSync(mkdtempSync(join(tmpdir(), "en-push-wt-"))), "wt");
+  g("worktree", "add", "-q", "-b", "other", linked);
+  assert.equal(decision(run(dir, at(linked, "git push"))), "ask");
+  // A folder of the same checkout is the same place; no cwd at all, or one that is gone, asks.
+  mkdirSync(join(dir, "sub"));
+  assert.equal(run(dir, at(join(dir, "sub"), "git push")).stdout, "");
+  assert.equal(decision(run(dir, { ...call("git push"), cwd: undefined })), "ask");
+  // No cwd in the input asks even when the hook itself runs in the project.
+  const own = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ ...call("git push"), cwd: undefined }), env: { ...process.env, CLAUDE_PROJECT_DIR: dir }, cwd: dir, encoding: "utf8", timeout: 20000 });
+  assert.equal(decision(own), "ask");
+  assert.equal(decision(run(dir, at(join(dir, "gone"), "git push"))), "ask");
 });
 
 test("push hook: a repository's git settings decide nothing: an earlier call's core.worktree still refuses", () => {

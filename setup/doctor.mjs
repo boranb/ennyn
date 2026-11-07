@@ -24,6 +24,7 @@ import { ciSet, ciText } from "../checks/ci.mjs";
 import { t, tShown } from "../core/i18n.mjs";
 import { literalGlob, matchAny } from "../core/glob.mjs";
 import { secretsOff } from "../checks/secrets.mjs";
+import { closingPush } from "../checks/push-mode.mjs";
 import { checkProofs, loadClasses, registryLine } from "../metrics/classes.mjs";
 import { ledgerLine, loadLedger } from "../metrics/findings.mjs";
 
@@ -167,7 +168,7 @@ function fastTestReport(cwd, config, add) {
  * `read` replaces the readers (tests).
  * @param {string} cwd @param {string[] | null} files tracked files; null when git could not list them
  * @param {(level: DoctorItem["level"], key: string, vars?: DoctorItem["vars"]) => void} add
- * @param {{ read?: (rel: string, opts?: { limit?: number }) => string | null | undefined, remotes?: (cwd: string) => { github: string[], others: string[] }, headFile?: typeof headFile, configured?: boolean }} [readers] `configured`: an Ennyn config was found, where the push hook acts
+ * @param {{ read?: (rel: string, opts?: { limit?: number }) => string | null | undefined, remotes?: (cwd: string) => { github: string[], others: string[] }, headFile?: typeof headFile, configured?: boolean, pushMode?: string }} [readers] `configured`: an Ennyn config was found, where the push hook acts; `pushMode`: the push mode the closing acts on (checks/push-mode.mjs)
  */
 export function askReport(cwd, files, add, readers = {}) {
   const project = projectFiles(cwd);
@@ -205,7 +206,8 @@ export function askReport(cwd, files, add, readers = {}) {
       return undefined;
     }
   };
-  const { rules, unread, head } = askRules(pf, outwardCommands(files, gh, (rel) => project.present(rel)), { committed, failed });
+  const after = readers.pushMode === "after-closing";
+  const { rules, unread, head } = askRules(pf, outwardCommands(files, gh, (rel) => project.present(rel), readers.pushMode), { committed, failed });
   const left = unread.filter((p) => !failed.has(p));
   if (left.length) add("unmeasured", "doctor.askUnread", { list: left });
   for (const error of errors) add("unmeasured", "doctor.askUnmeasured", { error });
@@ -221,6 +223,9 @@ export function askReport(cwd, files, add, readers = {}) {
   if (at("shared").length) add("ok", "doctor.askOk", { n: at("shared").length });
   // Another question from the same text: what the hook does. It acts only with a config, and speaks of a rule on push.
   if (readers.configured && rules.some((r) => r.where !== null && /\(git push\b/.test(r.rule))) add("ok", "doctor.pushHook", {});
+  // A push rule left in after-closing stops the closing's own push: said, not counted as held.
+  const held = after ? askRules(pf, ["git push"]).rules.filter((r) => r.where !== null && r.where !== "unknown") : [];
+  if (held.length) add("warn", "doctor.pushModeRule", { rules: named(held) });
 }
 
 /**
@@ -561,8 +566,13 @@ export async function checkSetup({ cwd, env = process.env, self = OWN_ROOT }) {
     } catch (e) {
       add("unmeasured", "doctor.filesUnmeasured", { error: oneLine(e) });
     }
-    // The cycle asks the user before any push; an ask rule is the harness's backstop.
-    askReport(cwd, files, add, { configured: Boolean(config.configPath) });
+    // The cycle asks the user before any push unless push.mode says after-closing; an ask rule is the harness's backstop.
+    const push = closingPush(cwd, env);
+    if (push.error !== undefined) add("unmeasured", "doctor.pushModeUnread", { error: push.error });
+    else if (push.head !== push.work) add("warn", "doctor.pushModeSplit", { head: push.head, work: push.work });
+    add("ok", push.mode === "after-closing" ? "doctor.pushModeAfter" : "doctor.pushModeAsk", {});
+    if (push.mode === "after-closing" && !push.ok) add("warn", "doctor.pushModeHeld", { why: { shown: push.said.map((l) => tShown(l.key, l.vars, config.language)).join(" ") } });
+    askReport(cwd, files, add, { configured: Boolean(config.configPath), pushMode: push.mode });
     worktreesReport(cwd, add);
     /** @type {ReturnType<typeof instructionBudget> | null} */
     let b = null;

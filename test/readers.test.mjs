@@ -50,6 +50,7 @@ export const READERS = [
   { module: "checks/ci.mjs", program: "Actions YAML", harness: "test/reference.test.mjs", test: "reference: every Actions YAML cell compares as recorded", kind: "record" },
   { module: "checks/commit-shape.mjs", program: "git", harness: "test/git-oracle.test.mjs", test: "oracle: the commit-msg hook computes the message git stores", kind: "live" },
   { module: "checks/deps.mjs", program: "npm", harness: "test/reference.test.mjs", test: "reference: every npm cell compares as recorded", kind: "record" },
+  { module: "checks/push-mode.mjs", program: "git", harness: "test/cli.test.mjs", test: "cli: push-check reads git config as git push does", kind: "live" },
   { module: "checks/loosening.mjs", program: "git", harness: "test/loosening.test.mjs", test: "loosening hook: git commit -a and git commit <path> are read as what they will commit", kind: "runs" },
   { module: "core/git.mjs", program: "git", harness: "test/git-oracle.test.mjs", test: LOG_READERS, kind: "live" },
   { module: "core/git.mjs", program: "git", harness: "test/input-shapes.test.mjs", test: "input shapes: every staged content and name shape is refused, landed, or said to be unchecked", kind: "live" },

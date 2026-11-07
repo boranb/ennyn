@@ -10,7 +10,7 @@ import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { CONFIG_PATH, loadConfig, ConfigError } from "../core/config.mjs";
-import { HOOK_INDEX_ENV, HOOK_READ_ENV, MISSING_OBJECT, NAMES_BUFFER, READ_BUDGET, blobBytes, diffGroups, git, headCommit, hookElsewhere, indexEntries, indexKinds, indexNames, machineFault, mergeHeads, projectRoot, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, stagedVersionsEach, stateRoot, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
+import { HOOK_INDEX_ENV, HOOK_READ_ENV, MISSING_OBJECT, NAMES_BUFFER, READ_BUDGET, blobBytes, diffGroups, git, gitMaybe, headCommit, hookElsewhere, indexEntries, indexKinds, indexNames, machineFault, mergeHeads, projectRoot, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, stagedVersionsEach, stateRoot, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
 import { ends, jsonShown, shown, t, tShown, unshownEscaped } from "../core/i18n.mjs";
 import { matchAny } from "../core/glob.mjs";
 import { checkCommitShape, foldTarget, nameShown, secretErrors, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
@@ -19,6 +19,7 @@ import { advisoriesOf, depsMessages, dirOf, judgeEntry, judgeLock, lockEntries, 
 import { readIfThere, readRegular } from "../core/files.mjs";
 import { SecretScanner, masked, secretsOff } from "../checks/secrets.mjs";
 import { ConfigPicked, ConfigUnread, LOOSENING_LINE, commitConfig, looseningErrors } from "../checks/loosening.mjs";
+import { closingPush } from "../checks/push-mode.mjs";
 import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
 import { REWORK_DAYS, reworkRate } from "../metrics/szz.mjs";
 import { bypassUses } from "../metrics/bypass.mjs";
@@ -80,7 +81,8 @@ Commands:
                                                     run hand-picked mutants one at a time against the tests; one that does not parse is never killed;
                                                     give --check's {file} unquoted: Ennyn quotes it
   mutate --restore [--force]                        put back a file that a mutate run killed outright left mutated
-  push-check                                        warn when too many commits are unpushed
+  push-check [--tested <rev>]                       warn when too many commits are unpushed; say whether the push asks the user (push.mode);
+                                                    --tested: exit 0 only when push.mode after-closing lets the cycle push that commit, HEAD on a branch
   worktrees [--remove] [<path>...]                  the worktrees the cycle marked (a lock whose reason is ennyn:<cycle>), each with whether
                                                     removing it loses nothing, or why not; --remove removes those that pass, checked again first,
                                                     never with --force; paths: only those. Exit 1 when one could not be checked or removed
@@ -1622,8 +1624,10 @@ const COMMANDS = {
   },
 
   "push-check"(args) {
-    const { help } = parseArgs(args, {});
+    const { opts, help } = parseArgs(args, { options: ["tested"] });
     if (help) return (out(USAGE), 0);
+    // A hash, as `git rev-parse HEAD` printed it before the whole test ran: a name could move under it.
+    if (opts.tested !== undefined && !/^[0-9a-f]{7,64}$/i.test(String(opts.tested))) throw new UsageError("--tested takes the commit's hash");
     const cwd = projectDir();
     const cfg = config(cwd);
     const n = unpushedCount(cwd);
@@ -1631,6 +1635,17 @@ const COMMANDS = {
     if (n === null) out(t("push.unmeasured", {}, cfg.language));
     else if (n > max) out(t("push.warn", { n, max }, cfg.language));
     else out(t("push.ok", { n, max }, cfg.language));
+    // The push itself: by the user's yes, or with after-closing by the cycle (checks/push-mode.mjs), on the tested commit
+    // with nothing uncommitted. That a suite ran on it is the caller's word: nothing here checks it.
+    const push = closingPush(cwd);
+    for (const l of push.said) out(t(l.key, l.vars, cfg.language));
+    if (!push.ok) return opts.tested === undefined ? 0 : 1;
+    if (opts.tested === undefined) return (out(t("push.modeUntested", {}, cfg.language)), 0);
+    const at = (/** @type {string} */ rev) => gitMaybe(["rev-parse", "--verify", "-q", `${rev}^{commit}`], { cwd, absent: [1] });
+    const [now, tested] = [at("HEAD"), at(String(opts.tested))];
+    if (!now || now !== tested) return (out(t("push.modeMoved", { head: String(now).slice(0, 12), tested: String(opts.tested).slice(0, 40) }, cfg.language)), 1);
+    if (git(["status", "--porcelain=v1", "-z", "--untracked-files=normal"], { cwd }) !== "") return (out(t("push.modeDirty", {}, cfg.language)), 1);
+    out(t("push.modeTested", { head: now.slice(0, 12), branch: String(push.branch) }, cfg.language));
     return 0;
   },
 

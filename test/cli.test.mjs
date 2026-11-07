@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
+import { delimiter, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MISSING_OBJECT, git, gitMaybe, gitVersion, stagedAddedLines, versionAtLeast } from "../core/git.mjs";
 import { TOKENS } from "./secret-shapes.mjs";
@@ -400,6 +400,240 @@ test("cli: push-check says unmeasured without upstream, warns above the threshol
   const over = run(p.dir, "push-check");
   assert.equal(over.code, 0);
   assert.match(over.stdout, /2 commits are waiting to be pushed \(threshold 1\)\. Ask for push approval/);
+});
+
+/**
+ * A project on main with a bare upstream, whose commit sets `config` (after-closing by default) with the approval line
+ * unless `line` is false.
+ * @param {{ config?: Record<string, unknown>, line?: boolean }} [o]
+ */
+function closing({ config = { push: { mode: "after-closing" } }, line = true } = {}) {
+  const p = project(config);
+  p.commit({ "a.txt": "1" }, `chore: push by itself${line ? "\n\nUser-Approved-Loosening: push.mode" : ""}`);
+  const origin = mkdtempSync(join(tmpdir(), "pl-cli-origin-"));
+  git(["init", "-q", "--bare", "-b", "main"], { cwd: origin });
+  git(["remote", "add", "origin", origin], { cwd: p.dir });
+  git(["push", "-q", "-u", "origin", "main"], { cwd: p.dir });
+  const head = () => git(["rev-parse", "HEAD"], { cwd: p.dir }).trim();
+  return { ...p, origin, head };
+}
+
+test("cli: push-check --tested exits 0 only on the approved after-closing, HEAD the named commit on a branch, nothing uncommitted; else it asks", () => {
+  const p = closing();
+  const head = p.head();
+  const untested = run(p.dir, "push-check");
+  assert.equal(untested.code, 0);
+  assert.match(untested.stdout, /run push-check --tested .*That the test ran is your word: push-check does not check it\./);
+  for (const h of [head, head.slice(0, 7)]) {
+    const ok = run(p.dir, "push-check", "--tested", h);
+    assert.equal(ok.code, 0, ok.stdout + ok.stderr);
+    assert.match(ok.stdout, new RegExp(`HEAD ${head.slice(0, 12)} is the commit you name as tested \\(push-check does not check that a test ran\\), with nothing uncommitted: push main with a bare git push`));
+  }
+  for (const bad of ["HEAD", "main", "-x", `${head}x`]) assert.notEqual(run(p.dir, "push-check", "--tested", bad).code, 0, bad);
+  // Anything uncommitted, an untracked file too, is not the tested commit; an ignored one is no change.
+  writeFileSync(join(p.dir, "new.txt"), "x");
+  assert.match(run(p.dir, "push-check", "--tested", head).stdout, /holds changes or untracked files/);
+  writeFileSync(join(p.dir, ".git", "info", "exclude"), "new.txt\n");
+  assert.equal(run(p.dir, "push-check", "--tested", head).code, 0);
+  writeFileSync(join(p.dir, "a.txt"), "changed");
+  const dirty = run(p.dir, "push-check", "--tested", head);
+  assert.equal(dirty.code, 1);
+  assert.match(dirty.stdout, /holds changes or untracked files/);
+  git(["checkout", "-q", "--", "a.txt"], { cwd: p.dir });
+  p.commit({ "a.txt": "2" }, "c2");
+  const moved = run(p.dir, "push-check", "--tested", head);
+  assert.equal(moved.code, 1);
+  assert.match(moved.stdout, /is not the tested commit .*: ask the user before the push/);
+  const now = p.head();
+  git(["checkout", "-q", "--detach"], { cwd: p.dir });
+  assert.match(run(p.dir, "push-check", "--tested", now).stdout, /HEAD is on no branch: ask the user/);
+  git(["checkout", "-q", "main"], { cwd: p.dir });
+  // Set back to ask in the work tree, not committed: it asks.
+  writeFileSync(join(p.dir, ".ennyn", "config.json"), "{}");
+  const split = run(p.dir, "push-check", "--tested", now);
+  assert.equal(split.code, 1);
+  assert.match(split.stdout, /HEAD's config holds after-closing, the work tree's ask/);
+  assert.match(split.stdout, /push\.mode is ask: ask the user before the push\./);
+  // Ask in the commit, after-closing only in the work tree: no commit the hook checked says so, so it asks.
+  const q = project({});
+  q.commit({ "a.txt": "1" }, "c1");
+  writeFileSync(join(q.dir, ".ennyn", "config.json"), JSON.stringify({ push: { mode: "after-closing" } }));
+  const unsaid = run(q.dir, "push-check", "--tested", git(["rev-parse", "HEAD"], { cwd: q.dir }).trim());
+  assert.equal(unsaid.code, 1);
+  assert.match(unsaid.stdout, /push\.mode is ask/);
+  // HEAD's config does not load: that side is no after-closing, and it is said.
+  const broken = project({ push: { mode: "later" } });
+  broken.commit({ "a.txt": "1" }, "c1");
+  writeFileSync(join(broken.dir, ".ennyn", "config.json"), JSON.stringify({ push: { mode: "after-closing" } }));
+  const unread = run(broken.dir, "push-check", "--tested", git(["rev-parse", "HEAD"], { cwd: broken.dir }).trim());
+  assert.equal(unread.code, 1);
+  assert.match(unread.stdout, /push\.mode could not be read \(.*"push\.mode" must be "ask" or "after-closing".*\), so the push asks the user\./);
+  // No commit yet: HEAD holds the defaults, so a work tree that says after-closing still asks.
+  const unborn = run(project({ push: { mode: "after-closing" } }).dir, "push-check");
+  assert.match(unborn.stdout, /HEAD's config holds ask, the work tree's after-closing/);
+  assert.match(unborn.stdout, /push\.mode is ask: ask the user before the push\./);
+});
+
+test("cli: push-check asks unless the commit that set after-closing carries the approval line, a revert's or one past --no-verify included", () => {
+  const unapproved = closing({ line: false });
+  const r = run(unapproved.dir, "push-check", "--tested", unapproved.head());
+  assert.equal(r.code, 1);
+  assert.match(r.stdout, /the commit that set it \([0-9a-f]{12}\) holds no User-Approved-Loosening: push\.mode line/);
+  // Approved, set back to ask, and that commit reverted: the revert set it, with no line.
+  const p = closing();
+  p.commit({ ".ennyn/config.json": "{}" }, "chore: ask again");
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "revert", "--no-edit", "HEAD"], { cwd: p.dir });
+  assert.match(run(p.dir, "push-check", "--tested", p.head()).stdout, /holds no User-Approved-Loosening: push\.mode line/);
+  // A later commit that changes another key keeps the approved one as the setter.
+  const q = closing();
+  q.commit({ ".ennyn/config.json": JSON.stringify({ push: { mode: "after-closing", warnAtUnpushed: 5 } }) }, "chore: threshold");
+  git(["push", "-q"], { cwd: q.dir });
+  assert.equal(run(q.dir, "push-check", "--tested", q.head()).code, 0);
+});
+
+test("cli: push-check asks when a commit HEAD reaches took after-closing back after the approval, on any line, and in a shallow clone", () => {
+  const g = (/** @type {string} */ dir, /** @type {string[]} */ ...args) => git(["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: dir });
+  // The user sets it back to ask; a branch from before that merges main with -s ours and is fast-forwarded.
+  const p = closing();
+  p.commit({ ".ennyn/config.json": "{}" }, "chore: the user sets it back to ask");
+  g(p.dir, "checkout", "-q", "-b", "side", "HEAD~1");
+  p.commit({ "b.txt": "b" }, "chore: side work");
+  g(p.dir, "merge", "-q", "-s", "ours", "-m", "chore: merge main", "main");
+  g(p.dir, "checkout", "-q", "main");
+  g(p.dir, "merge", "-q", "--ff-only", "side");
+  assert.equal(JSON.parse(readFileSync(join(p.dir, ".ennyn", "config.json"), "utf8")).push.mode, "after-closing", "the merge kept the branch's mode");
+  const r = run(p.dir, "push-check", "--tested", p.head());
+  assert.equal(r.code, 1);
+  assert.match(r.stdout, /a commit HEAD reaches \([0-9a-f]{12}\) set it back to ask after the approval/);
+  // A merged branch that never touched the mode is no move back.
+  const q = closing();
+  g(q.dir, "checkout", "-q", "-b", "old", "HEAD~0");
+  q.commit({ "c.txt": "c" }, "chore: old work");
+  g(q.dir, "checkout", "-q", "main");
+  q.commit({ "d.txt": "d" }, "chore: main work");
+  g(q.dir, "merge", "-q", "--no-edit", "old");
+  assert.equal(run(q.dir, "push-check", "--tested", q.head()).code, 0);
+  // A merge that keeps a branch's ask over the approval it brings takes it back, by its second parent: the branch
+  // forked before the approval, merged main -s ours, and main took that merge in with -s ours too.
+  const m = project({});
+  m.commit({ "a.txt": "1" }, "c1");
+  g(m.dir, "branch", "old");
+  m.commit({ ".ennyn/config.json": JSON.stringify({ push: { mode: "after-closing" } }) }, "chore: on\n\nUser-Approved-Loosening: push.mode");
+  g(m.dir, "checkout", "-q", "old");
+  g(m.dir, "merge", "-q", "-s", "ours", "-m", "chore: keep ask", "main");
+  g(m.dir, "checkout", "-q", "main");
+  g(m.dir, "merge", "-q", "-s", "ours", "-m", "chore: keep after-closing", "old");
+  const origin = mkdtempSync(join(tmpdir(), "pl-cli-origin-"));
+  git(["init", "-q", "--bare", "-b", "main"], { cwd: origin });
+  git(["remote", "add", "origin", origin], { cwd: m.dir });
+  git(["push", "-q", "-u", "origin", "main"], { cwd: m.dir });
+  assert.match(run(m.dir, "push-check", "--tested", git(["rev-parse", "HEAD"], { cwd: m.dir }).trim()).stdout, /set it back to ask after the approval/);
+  // A first commit with no config holds the defaults: the approved commit after it set the mode.
+  const late = project(undefined);
+  late.commit({ "a.txt": "1" }, "c1");
+  late.commit({ ".ennyn/config.json": JSON.stringify({ push: { mode: "after-closing" } }) }, "chore: on\n\nUser-Approved-Loosening: push.mode");
+  const lateOrigin = mkdtempSync(join(tmpdir(), "pl-cli-origin-"));
+  git(["init", "-q", "--bare", "-b", "main"], { cwd: lateOrigin });
+  git(["remote", "add", "origin", lateOrigin], { cwd: late.dir });
+  git(["push", "-q", "-u", "origin", "main"], { cwd: late.dir });
+  assert.equal(run(late.dir, "push-check", "--tested", git(["rev-parse", "HEAD"], { cwd: late.dir }).trim()).code, 0);
+  // A shallow clone has no history to read.
+  const shallow = mkdtempSync(join(tmpdir(), "pl-cli-shallow-"));
+  g(shallow, "clone", "-q", "--depth", "1", `file://${q.dir}`, "c");
+  const c = join(shallow, "c");
+  assert.match(run(c, "push-check", "--tested", git(["rev-parse", "HEAD"], { cwd: c }).trim()).stdout, /this clone is shallow/);
+});
+
+test("cli: push-check reads the config's history in a fixed number of git calls, however long it is", () => {
+  const bin = mkdtempSync(join(tmpdir(), "pl-cli-git-"));
+  const log = join(bin, "calls");
+  const real = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+  writeFileSync(join(bin, "git"), `#!/bin/sh\necho x >> '${log}'\nexec '${real}' "$@"\n`, { mode: 0o755 });
+  const calls = (/** @type {number} */ n) => {
+    const p = closing();
+    for (let i = 0; i < n; i++) p.commit({ ".ennyn/config.json": JSON.stringify({ push: { mode: "after-closing", warnAtUnpushed: 10 + i } }) }, `chore: threshold ${i}`);
+    writeFileSync(log, "");
+    const r = spawnSync(process.execPath, [CLI, "push-check", "--tested", p.head()], { cwd: p.dir, encoding: "utf8", env: { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}` } });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    return readFileSync(log, "utf8").split("\n").filter(Boolean).length;
+  };
+  assert.equal(calls(30), calls(2));
+});
+
+test("cli: push-check reads git config as git push does: what makes a bare push send more asks, and the real push agrees", () => {
+  /** @param {string} origin */
+  const heads = (origin) => git([`--git-dir=${origin}`, "for-each-ref", "--format=%(refname:short) %(objectname)", "refs/heads"], { cwd: origin }).trim();
+  // Each setting, then the real bare push it would have allowed: it sends more than main to its upstream.
+  for (const [key, value] of [["remote.origin.mirror", "true"], ["remote.origin.push", "+refs/heads/*:refs/heads/*"], ["push.default", "matching"]]) {
+    const p = closing();
+    git(["push", "-q", "origin", "main:keep"], { cwd: p.dir });
+    git(["branch", "side"], { cwd: p.dir });
+    git(["push", "-q", "origin", "side"], { cwd: p.dir });
+    git(["branch", "-f", "side", "HEAD"], { cwd: p.dir });
+    p.commit({ "a.txt": "2" }, "c2");
+    git(["checkout", "-q", "side"], { cwd: p.dir });
+    p.commit({ "b.txt": "s" }, "side moves");
+    git(["checkout", "-q", "main"], { cwd: p.dir });
+    git(["config", key, value], { cwd: p.dir });
+    const r = run(p.dir, "push-check", "--tested", p.head());
+    assert.equal(r.code, 1, key);
+    assert.match(r.stdout, new RegExp(`git config ${key.replace(/\./g, "\\.")} makes a bare git push send more than the current branch`), key);
+    const before = heads(p.origin);
+    git(["push", "-q"], { cwd: p.dir });
+    const after = heads(p.origin);
+    assert.notEqual(after.split("\n").filter((l) => !l.startsWith("main ")).join("\n"), before.split("\n").filter((l) => !l.startsWith("main ")).join("\n"), `${key}: the real push changed a branch other than main`);
+  }
+  for (const [key, value] of [["push.followTags", "true"], ["remote.pushDefault", "other"], ["branch.main.pushRemote", "other"], ["push.recurseSubmodules", "on-demand"]]) {
+    const p = closing();
+    git(["config", key, value], { cwd: p.dir });
+    assert.match(run(p.dir, "push-check", "--tested", p.head()).stdout, new RegExp(`git config ${key.replace(/\./g, "\\.")} makes`), key);
+  }
+  // Where the push goes is read by allowing, not by naming what widens it: a push url, a second url, a rewrite of
+  // either, a remote setting no fetch needs, a submodule push.
+  for (const [setting, ...change] of [
+    ["remote.origin.pushurl", "remote.origin.pushurl", "/elsewhere.git"],
+    ["remote.origin.url", "--add", "remote.origin.url", "/elsewhere.git"],
+    ["remote.origin.url", "url./elsewhere/.pushInsteadOf", "/"],
+    ["remote.origin.url", "url./elsewhere/.insteadOf", "/"],
+    ["remote.origin.receivepack", "remote.origin.receivepack", "git-receive-pack"],
+    ["submodule.recurse", "submodule.recurse", "true"],
+    ["push.recurseSubmodules", "push.recurseSubmodules", "yes"],
+  ]) {
+    const p = closing();
+    git(["config", ...change], { cwd: p.dir });
+    assert.match(run(p.dir, "push-check", "--tested", p.head()).stdout, new RegExp(`git config ${setting.replace(/\./g, "\\.")} makes`), change.join(" "));
+  }
+  // A push url sends the real push to another remote: the reading agrees.
+  const elsewhere = mkdtempSync(join(tmpdir(), "pl-cli-elsewhere-"));
+  git(["init", "-q", "--bare", "-b", "main"], { cwd: elsewhere });
+  const pu = closing();
+  pu.commit({ "a.txt": "2" }, "c2");
+  git(["config", "remote.origin.pushurl", elsewhere], { cwd: pu.dir });
+  git(["push", "-q"], { cwd: pu.dir });
+  assert.equal(heads(elsewhere), `main ${pu.head()}`);
+  assert.notEqual(heads(pu.origin), `main ${pu.head()}`);
+  // Fetch settings change no push: allowed.
+  const fetches = closing();
+  for (const [k, v] of [["remote.origin.prune", "true"], ["remote.origin.tagOpt", "--no-tags"]]) git(["config", k, v], { cwd: fetches.dir });
+  assert.equal(run(fetches.dir, "push-check", "--tested", fetches.head()).code, 0);
+  // No upstream, a local one, or one of another name: no bare push of main to main.
+  for (const [setting, change] of [["branch.main.remote", ["branch", "--unset-upstream"]], ["branch.main.remote", ["config", "branch.main.remote", "."]], ["branch.main.merge", ["config", "branch.main.merge", "refs/heads/other"]]]) {
+    const p = closing();
+    git(change, { cwd: p.dir });
+    assert.match(run(p.dir, "push-check", "--tested", p.head()).stdout, new RegExp(`git config ${setting.replace(/\./g, "\\.")} makes`), change.join(" "));
+  }
+  // The control: allowed, and the real bare push sends main alone.
+  const p = closing();
+  git(["push", "-q", "origin", "main:keep"], { cwd: p.dir });
+  git(["branch", "side"], { cwd: p.dir });
+  p.commit({ "a.txt": "2" }, "c2");
+  for (const v of [null, "simple", "upstream", "current"]) {
+    if (v) git(["config", "push.default", v], { cwd: p.dir });
+    assert.equal(run(p.dir, "push-check", "--tested", p.head()).code, 0, String(v));
+  }
+  git(["push", "-q"], { cwd: p.dir });
+  assert.deepEqual(heads(p.origin).split("\n").map((l) => l.split(" ")[0]), ["keep", "main"]);
+  assert.notEqual(git([`--git-dir=${p.origin}`, "rev-parse", "keep"], { cwd: p.origin }).trim(), p.head(), "keep untouched");
 });
 
 test("cli: config errors exit 1 with the message; config is found from a subdirectory; Turkish output", () => {

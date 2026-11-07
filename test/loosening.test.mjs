@@ -123,6 +123,7 @@ test("loosening corpus: a tightening or neutral edit names no key", () => {
     "a list in another order": (c) => (c.commitMsg.types.reverse(), c.review.impactIgnoreGlobs.reverse(), (c.commitMsg.structuredLines = [...DEFAULTS.commitMsg.structuredLines].reverse())),
     "a registry gone": (c) => (c.security.deps.registries = {}),
     "skip pattern gone": (c) => (c.commitMsg.skipSubjects = []),
+    "push mode ask written out": (c) => (c.push = { mode: "ask" }),
     "a key no gate reads": (c) => ((c.language = "tr"), (c.commitMsg.language = "tr"), (c.commitMsg.fixType = "feat"), (c.planner = { splitAbove: 3 }), (c.paths = { handoff: "H.md" }), (c.review.agents = ["a"]), (c.metrics = { minLines: 2 })),
   };
   for (const [name, change] of Object.entries(accept)) assert.deepEqual(keysOf(change), [], name);
@@ -163,6 +164,7 @@ test("loosening corpus: each way a value loosens names its key, and only its key
     ["review.forbidden", (c) => c.review.forbidden[0].except.push("s/u/**")],
     ["review.forbidden", (c) => (c.review.forbidden[0].except = ["**"])],
     ["push.warnAtUnpushed", (c) => (c.push = { warnAtUnpushed: 99 })],
+    ["push.mode", (c) => (c.push = { mode: "after-closing" })],
     ["security.everyCycles", (c) => (c.security.everyCycles = 9)],
     ["security.everyCycles", (c) => (c.security.everyCycles = 0)],
     ["security.ci.paths", (c) => (c.security.ci.paths = [])],
@@ -2052,4 +2054,36 @@ test("a merge: a parent that holds the config elsewhere takes the path off; one 
   const bare = none.commit("chore: merge", [], { ENNYN_CONFIG: "conf.json" });
   assert.equal(bare.status, 1, bare.stderr);
   assert.match(bare.stderr, /This commit loosens \.ennyn\/config\.json,/);
+});
+
+test("loosening hook: push.mode after-closing is the cycle's own push: refused until the line names it, in every spelling the config reads", () => {
+  const after = JSON.stringify({ push: { mode: "after-closing" } });
+  for (const [name, text] of [["plain", after], ["escaped key", '{"push":{"mod\\u0065":"after-closing"}}'], ["key twice, the last read", '{"push":{"mode":"ask","mode":"after-closing"}}']]) {
+    const r = repo({});
+    r.stage({ [CONFIG]: text });
+    const refused = r.commit("chore: push by itself");
+    assert.equal(refused.status, 1, name);
+    assert.match(refused.stderr, /This commit loosens push\.mode\b/, name);
+    assert.equal(r.commit(`chore: push by itself\n\n${LINE} push\n`).status, 1, `${name}: a word that is no key`);
+    const ok = r.commit(`chore: push by itself\n\n${LINE} push.mode\n`);
+    assert.equal(ok.status, 0, `${name}: ${ok.stderr}`);
+  }
+  // A first config is compared with the defaults; a value the config does not know is no mode and counts whole.
+  const first = repo(null);
+  first.stage({ [CONFIG]: after });
+  assert.equal(first.commit("chore: first").status, 1);
+  const odd = repo({});
+  odd.stage({ [CONFIG]: '{"push":{"mode":"After-closing"}}' });
+  assert.match(odd.commit(`chore: x\n\n${LINE} push.mode\n`).stderr, /"push\.mode" must be "ask" or "after-closing"/);
+  // Back to ask takes nothing away from a gate.
+  const back = repo({ push: { mode: "after-closing" } });
+  back.stage({ [CONFIG]: "{}" });
+  assert.equal(back.commit("chore: ask again").status, 0);
+  // Past the hook with --no-verify, the closing's bypass list names it, with no approval.
+  const skipped = repo({});
+  const base = git(["rev-parse", "HEAD"], { cwd: skipped.dir }).trim();
+  skipped.stage({ [CONFIG]: after });
+  assert.equal(skipped.commit("chore: push by itself", ["--no-verify"]).status, 0);
+  const listed = spawnSync(process.execPath, [CLI, "bypass", "--from", base], { cwd: skipped.dir, encoding: "utf8" });
+  assert.match(listed.stdout, /loosened: push\.mode\n\s+no approval line for push\.mode/);
 });

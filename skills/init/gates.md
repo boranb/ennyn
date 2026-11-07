@@ -42,6 +42,15 @@ The cycle asks the user before any push. A Claude Code ask rule is the backstop:
 3. **Say the limits** as `ennyn doctor`'s ask line words them (where Claude Code applies the file, the spellings it does not match). The rule is a backstop, not the gate. Of `gh api`, these rules stop `-X POST` and `--method POST` as written, for POST, PATCH, PUT and DELETE. gh also sends a method written any other way, and those run unasked: glued (`-XPOST`, `-iX POST`), with `=` (`--method=POST`), in lower case or quoted. So does `-f`, `-F` or `--input` with no method, which posts. A read whose text holds `-X POST` stops like a write: a search, a `--jq` filter, a `grep` after a pipe. Rephrase the read.
 4. **Check** with `ennyn doctor`: `✓ ask rules` counts the rules the committed file holds, with these limits; `!` names those missing, uncommitted or only local, the first eight and the number of the rest; `?` what it could not read. `Bash(gh release *)` also asks before `gh release view`, `list` and `download`.
 
+## Who says yes to the push
+
+Ask it as its own question, before the ask rules are proposed: "At the end of a cycle, should the agent ask you before it pushes (`ask`, the default), or push by itself once the closing's checks and the whole test passed on that commit (`after-closing`)?" (The node that asks it beside the no-bypass mode is open: `secret-agent-setup`.)
+
+- `ask`, a bare "ok" or no answer: write no key. Propose the `git push` rules with the rest.
+- A plain `after-closing`: write `"push": { "mode": "after-closing" }`, leave both `git push` rules out of what you propose, and carry `User-Approved-Loosening: push.mode` in the commit that writes the config (the hook refuses it without). Say what it means: the closing pushes with a bare `git push` of the current branch to its upstream, only when `ennyn push-check --tested` allows it ([../cycle/push.md](../cycle/push.md)), and names it in the report; no ask rule stands for `git push`, so a bare `git push` also runs unasked at any other time that check holds; the push hook still asks about every other push (a force, a refspec, `--delete`, `--mirror`) and refuses an odd spelling.
+
+`ennyn doctor` names the mode, and warns when a `git push` rule would stop the closing's push.
+
 ## Ask rules to offer
 
 `agentSetup.offered` lists two more sets of rules, leaving out those the project holds in either settings file: `destroys`, what destroys local work or data (`git clean`, `git reset --hard`, `git checkout --` and `.`, `git restore`, `git branch -D`, `git worktree remove`, `git stash drop` and `clear`, the docker prunes, `docker volume rm`, `docker compose down -v`, `dropdb`, `terraform destroy`, the prisma resets); `installs`, what installs outside the project (`npm install -g`, `pnpm add -g`, `pip install`, `brew install`, `cargo install`, `go install`, a script piped to `sh` or `bash`). They are a choice, never a default.

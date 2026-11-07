@@ -533,7 +533,7 @@ test("plugin: /ennyn:init offers what destroys or installs apart, writes none un
   const gates = read("skills/init/gates.md");
   assert.ok(read("skills/init/SKILL.md").includes("`agentSetup.offered`"), "the skill sends init to the list");
   // Plan approval's clear option: asked in question 4, written to the project's settings on a yes, never the user's.
-  assert.ok(read("skills/init/SKILL.md").includes("`agentSetup.ask` rules and plan approval's clear option: [gates.md](gates.md)."));
+  assert.ok(read("skills/init/SKILL.md").includes("`agentSetup.ask` rules, push mode, plan approval's clear option: [gates.md](gates.md)."));
   assert.ok(gates.includes("On the user's yes, write `\"showClearContextOnPlanAccept\": true` into `.claude/settings.json`, keeping every other key, and commit it with the config; never into the user's own settings"));
   // The closing's route through plan approval is one procedure: which session runs the state steps, and the cleared one picks nothing again.
   const handover = read("skills/cycle/handover.md").split("\n");

@@ -19,7 +19,10 @@
  * parser finishes: the cells past that are here, two commits of ordinary words, nesting, short substitutions repeated and, with
  * the parser finished, a comment holding an apostrophe after a redirect, each with its control and no hook but a silent one,
  * so the fact stands on its own. Two `real` cells hold text the reader sees no push in: only Claude Code's own checks stop
- * those, in words of the moment, and an update that stops holding them shows here.
+ * those, in words of the moment, and an update that stops holding them shows here. `real` cells that set `push.mode`
+ * have no rule: under `ask` the hook's own ask stops a plain push; under an approved `after-closing` a bare `git push` runs,
+ * and a push naming its branch, a force, a delete and a mirror are asked, as a bare push is with no approval line or from
+ * a shell an earlier call moved into another repository.
  *
  *   node test/reference/pretooluse.mjs check [--claude <bin>]    exit 1 when Claude Code reads a cell otherwise
  *   node test/reference/pretooluse.mjs record [--claude <bin>]   take every reading again
@@ -58,6 +61,8 @@ const COMMENT = (say) => `git add . > /dev/null # ${say}\n${COMMIT} -qm x\ngit p
 /** Short substitutions, repeated: the parser's budget is spent over the whole text, not on depth. @param {number} k */
 const REPEATED = (k) => `${"$( (:));".repeat(k)}\ngit push origin main`;
 const PUBLISH = { ask: ["Bash(npm publish *)"] };
+/** A config that has the cycle push by itself: no ask rule, and the hook leaves a plain push. */
+const AFTER = JSON.stringify({ push: { mode: "after-closing" } });
 const IDENTITY = { GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t" };
 
 const decide = (/** @type {string} */ what) => `echo '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"${what}","permissionDecisionReason":"${MARK}"}}'`;
@@ -78,9 +83,10 @@ const HOOKS = {
 const ENTRIES = { crash: 'node "${CLAUDE_PLUGIN_ROOT}/crash.mjs"', missing: 'node "${CLAUDE_PLUGIN_ROOT}/gone.mjs"' };
 
 /**
- * @typedef {{ hook?: string, entry?: string, real?: true, noConfig?: true, command?: string, then?: string, tool?: string, input?: object, matcher?: string, rules?: object, localRules?: object, settings?: object, env?: Record<string, string>, timeout?: number, skipFlag?: true, install?: true, subagent?: true, keeps?: string[] }} Cell
+ * @typedef {{ hook?: string, entry?: string, real?: true, noConfig?: true, config?: string, closing?: "approved" | "unapproved", command?: string, then?: string, tool?: string, input?: object, matcher?: string, rules?: object, localRules?: object, settings?: object, env?: Record<string, string>, timeout?: number, skipFlag?: true, install?: true, subagent?: true, keeps?: string[] }} Cell
  *   `then`: a second call, what an agent writes after a refusal; `keeps`: the input's fields, which the cell records;
- *   `localRules`: rules held only in .claude/settings.local.json
+ *   `localRules`: rules held only in .claude/settings.local.json; `config`: the Ennyn config's text in a `real` cell (`{}` else); `closing`: that config committed, with or without
+ *   the approval line, and the branch given an upstream, as the closing's push needs
  */
 
 /** @type {Record<string, Cell>} */
@@ -143,6 +149,15 @@ export const CELLS = {
   "the-hook-leaves-a-compound-of-8999-characters-to-the-rule": { real: true, command: compound(8999), rules: ASK },
   "claude-code-holds-a-brace-zsh-counts": { real: true, command: "echo ${x:-{}; # }; git push origin main", rules: ASK },
   "claude-code-holds-a-numeric-glob-before-a-hash": { real: true, command: "echo <1-2># | git push origin main", rules: ASK },
+  "push-mode-ask-the-hook-asks-a-plain-push-with-no-rule": { real: true, command: "git push origin main" },
+  "push-mode-after-closing-a-bare-push-runs-with-no-rule": { real: true, command: "git push", config: AFTER, closing: "approved" },
+  "push-mode-after-closing-asks-a-push-that-names-its-branch": { real: true, command: "git push origin main", config: AFTER, closing: "approved" },
+  "push-mode-after-closing-asks-a-force-push": { real: true, command: "git push --force origin main", config: AFTER, closing: "approved" },
+  "push-mode-after-closing-asks-a-delete": { real: true, command: "git push origin :main", config: AFTER, closing: "approved" },
+  "push-mode-after-closing-asks-a-mirror": { real: true, command: "git push --mirror", config: AFTER, closing: "approved" },
+  "push-mode-after-closing-unapproved-asks-a-bare-push": { real: true, command: "git push", config: AFTER, closing: "unapproved" },
+  "push-mode-after-closing-asks-a-bare-push-after-cd-into-another-repository": { real: true, command: "git init -q nested && cd nested", then: "git push", config: AFTER, closing: "approved" },
+  "push-mode-after-closing-the-hook-still-refuses-a-spelling": { real: true, config: AFTER },
 };
 
 const text = (/** @type {string} */ t) => [{ type: "text", text: t }];
@@ -197,7 +212,14 @@ export async function reading(c, bin) {
     writeFileSync(join(PLUGIN, "hooks", "hooks.json"), JSON.stringify({ hooks: { PreToolUse: [{ matcher: c.matcher ?? SHELL_TOOLS, hooks: [{ type: "command", command, ...(c.timeout ? { timeout: c.timeout } : {}) }] }] } }));
     if (c.real && !c.noConfig) {
       mkdirSync(join(P, ".ennyn"));
-      writeFileSync(join(P, ".ennyn", "config.json"), "{}\n");
+      writeFileSync(join(P, ".ennyn", "config.json"), c.config ?? "{}\n");
+      if (c.closing) {
+        const at = { cwd: P, env: { ...git, ...IDENTITY } };
+        execFileSync("git", [...quiet, "add", ".ennyn/config.json"], at);
+        execFileSync("git", [...quiet, "commit", "-qm", `chore: mode${c.closing === "approved" ? "\n\nUser-Approved-Loosening: push.mode" : ""}`, "--no-verify"], at);
+        const branch = execFileSync("git", [...quiet, "symbolic-ref", "--short", "HEAD"], { ...at, encoding: "utf8" }).trim();
+        for (const [k, v] of [["remote.origin.url", join(R, "remote.git")], [`branch.${branch}.remote`, "origin"], [`branch.${branch}.merge`, `refs/heads/${branch}`]]) execFileSync("git", [...quiet, "config", k, v], at);
+      }
     }
     writeFileSync(join(P, ".claude", "settings.json"), JSON.stringify({ ...(c.rules ? { permissions: c.rules } : {}), ...c.settings }));
     if (c.localRules) writeFileSync(join(P, ".claude", "settings.local.json"), JSON.stringify({ permissions: c.localRules }));

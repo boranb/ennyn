@@ -529,6 +529,79 @@
       ],
       "reached": false,
       "hookRuns": null
+    },
+    "push-mode-ask-the-hook-asks-a-plain-push-with-no-rule": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "push-mode-after-closing-a-bare-push-runs-with-no-rule": {
+      "ended": "success",
+      "calls": [
+        "ran"
+      ],
+      "reached": true,
+      "hookRuns": null
+    },
+    "push-mode-after-closing-asks-a-push-that-names-its-branch": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "push-mode-after-closing-asks-a-force-push": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "push-mode-after-closing-asks-a-delete": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "push-mode-after-closing-asks-a-mirror": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "push-mode-after-closing-unapproved-asks-a-bare-push": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "push-mode-after-closing-asks-a-bare-push-after-cd-into-another-repository": {
+      "ended": "success",
+      "calls": [
+        "ran",
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": null
+    },
+    "push-mode-after-closing-the-hook-still-refuses-a-spelling": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": null
     }
   }
 }

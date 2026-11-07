@@ -487,15 +487,24 @@ function judge(cmd, seen, there = false) {
 }
 
 /**
+ * What the hook makes of `command`: `refused`, the part that reaches a push outside the shape the ask rule reads for
+ * certain, or null; `left`, whether a push it leaves in that shape stands in the text (only with nothing refused).
+ * @param {string} command what the tool will run @param {Record<string, string | undefined>} [env] the session's environment
+ * @returns {{ refused: string | null, left: boolean }}
+ */
+export function pushReading(command, env = {}) {
+  /** @type {Seen} */
+  const seen = { cmds: [], pushes: 0, aliases: pushAliases(env), aliased: [command, command.replace(QUOTES, "")].some((t) => DEFINES_ALIAS.test(t)) };
+  if (!readWhole(command, seen)) return { refused: holdsPush(command) || seen.aliases.size ? command.slice(0, 200) : null, left: false };
+  const left = command.length < RULE_READS && NOTHING_TO_MISREAD.test(command);
+  const hit = seen.cmds.find((c) => !(left && c.plain) && judge(c, seen));
+  if (hit) return { refused: hit.words.map((w) => w.text.split(GAP).join("$…")).join(" "), left: false };
+  return { refused: null, left: left && seen.cmds.some((c) => c.plain && judge(c, seen)) };
+}
+
+/**
  * The part of `command` that reaches a push outside the shape the ask rule reads for certain, or null.
  * @param {string} command what the tool will run @param {Record<string, string | undefined>} [env] the session's environment
  * @returns {string | null}
  */
-export function pushSpelling(command, env = {}) {
-  /** @type {Seen} */
-  const seen = { cmds: [], pushes: 0, aliases: pushAliases(env), aliased: [command, command.replace(QUOTES, "")].some((t) => DEFINES_ALIAS.test(t)) };
-  if (!readWhole(command, seen)) return holdsPush(command) || seen.aliases.size ? command.slice(0, 200) : null;
-  const left = command.length < RULE_READS && NOTHING_TO_MISREAD.test(command);
-  const hit = seen.cmds.find((c) => !(left && c.plain) && judge(c, seen));
-  return hit ? hit.words.map((w) => w.text.split(GAP).join("$…")).join(" ") : null;
-}
+export const pushSpelling = (command, env = {}) => pushReading(command, env).refused;

@@ -86,7 +86,9 @@ export const DEFAULTS = Object.freeze({
     // A change that touches only tests next to a guarded file does not need an impact table.
     impactIgnoreGlobs: ["**/*.test.*", "**/*.spec.*", "**/__tests__/**", "**/__fixtures__/**"],
   },
-  push: { warnAtUnpushed: 20 },
+  // ask: the cycle asks before its push. after-closing: it pushes by itself once the closing's checks passed on that
+  // commit (skills/cycle/push.md); turning it on is a loosening the user approves (checks/loosening.mjs).
+  push: { warnAtUnpushed: 20, mode: "ask" },
   security: {
     // Every this many cycles the audit slot is a security audit of the sensitive paths (plan/audit.mjs, `ennyn
     // audit`); 0 turns it off.
@@ -152,6 +154,9 @@ export const DEFAULTS = Object.freeze({
     moveSubject: "^refactor|\\b(rename[ds]?|move[ds]?|split|extract(ed)?|codemod|prettier|reformat(ted)?)\\b",
   },
 });
+
+/** How a cycle's push is decided: `ask` the user, or `after-closing`, by itself once the closing's checks passed. */
+export const PUSH_MODES = ["ask", "after-closing"];
 
 /** Conversation styles; every one but "normal" has rules in styles/<style>.<lang>.md. */
 export const CONVERSATION_STYLES = ["normal", "focused", "terse"];
@@ -417,6 +422,7 @@ export function configFrom(text, { cwd, configPath, override }) {
   const style = /** @type {any} */ (cfg).conversation.style;
   if (!CONVERSATION_STYLES.includes(style)) problems.push(`"conversation.style" must be ${CONVERSATION_STYLES.map((s) => `"${s}"`).join(", ")}`);
   if (!AFTER_CYCLE.includes(/** @type {any} */ (cfg).context.afterCycle)) problems.push(`"context.afterCycle" must be ${AFTER_CYCLE.map((s) => `"${s}"`).join(" or ")}`);
+  if (!PUSH_MODES.includes(/** @type {any} */ (cfg).push.mode)) problems.push(`"push.mode" must be ${PUSH_MODES.map((s) => `"${s}"`).join(" or ")}`);
   // A type is the word before "(scope):" or ":"; spaces, colons and brackets would never match a subject.
   const badTypes = cm.types.filter((/** @type {unknown} */ t) => typeof t !== "string" || !/^[^\s:()!]+$/.test(t));
   if (badTypes.length) problems.push(`"commitMsg.types" entries must be single words without ":", "(", ")" or "!": ${badTypes.map(String).join(", ")}`);
