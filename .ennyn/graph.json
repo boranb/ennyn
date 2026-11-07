@@ -3480,33 +3480,6 @@
     {
       "status": "planned",
       "needs": [
-        "push-spellings-hook",
-        "gate-loosening-guard"
-      ],
-      "id": "push-setting",
-      "title": "push.mode in the config: ask (the default) or after-closing. With after-closing the cycle pushes by itself at its end, only when the closing's checks and the project's slow suites passed on that exact commit: a plain push of the current branch, never a force, named in the report. init asks it in the same question as the no-bypass mode, writes no git push ask rule for after-closing, and doctor names the mode. Turning it on is a loosening: gate-loosening-guard's approval line covers the key, so an agent cannot grant itself the push, and push-spellings-hook reads the same key. A test proves the setting takes effect both ways",
-      "value": "high",
-      "cost": "M",
-      "cluster": "method",
-      "source": "the user, 2026-11-01: a request. Measured: push decisions are delegated (left to the session), each for one push. In spec-kit's 935 records read, none asks for automatic push (it is no step of that tool) and 5 are about automatic commits; it ships auto_commit off by default, and #5050 is open: 'auto_commit.default: true has no effect with the shipped config template', so a setting needs its own test; cycle 2026-11-02 (18): push-spellings-hook is a backstop, not a boundary: 75 of 682 probes still reach a push through real Claude Code, each under a stated limit; a same-user agent can always write a script. 'an agent cannot grant itself the push' rests on the loosening guard and the hook together, and push-pre-push-gate is the stronger base; decided 2026-11-02 on the decision after cycle 18: for v0.1.0 push-setting rests on push-spellings-hook and gate-loosening-guard; push-pre-push-gate stays after the release",
-      "since": 17
-    },
-    {
-      "status": "planned",
-      "needs": [
-        "cycle-journal"
-      ],
-      "id": "session-handover",
-      "title": "A new context at the seams, and only there: a cycle's closing and the end of a one-task run, once the state is on disk and no agent is running. Never mid-cycle, where the hold on compaction stays, and no percentage trigger. The config's context.afterCycle is fresh (the default) or compact, which names /compact and what the summary must keep. No tool lets a session clear itself, so with fresh the closing takes the first of these that works: (1) the next cycle's plan goes to plan approval, and with showClearContextOnPlanAccept on, one key clears the context and starts from the plan; init writes that key to the project's settings, never the user's, because it becomes the menu's first option; (2) the closing names /clear, and the next word starts the work; (3) a new chat (the VS Code panel offers a subset of commands, and a new tab starts as source startup, not clear). After 2 and 3 the SessionStart hook gives one short state line (cycle, what landed, what is next, what waits for the user) from the journal and the handoff. Measure first: whether the model can enter plan mode at a closing, whether the option shows in the VS Code panel and under bypass, and whether claude --bg can start the successor and show in that panel. Tasks stay as they are: each already runs in a fresh agent",
-      "value": "high",
-      "cost": "S",
-      "cluster": "method",
-      "source": "the user, 2026-11-01: a request; sessions were restarted by hand after cycles. Claude Code docs read raw 2026-11-01: SessionStart hooks run with source clear and may add context; initialUserMessage works only with -p, so a hook cannot start the first turn in chat. spec-kit discussion #4655: 'i prefer to clear context and start new session during stages so safe my tokens'. Read raw the same day: the settings reference on showClearContextOnPlanAccept (default false): it 'approves the plan, clears the conversation context, and starts implementing from the plan alone'. Claude Code best practices: 'between unrelated tasks. It costs nothing'. Amp removed compaction for handoff: 'compaction, we found, encourages long, meandering threads'. GSD warns at 35% left and stops at 25%; no measurement backs those numbers, and on a 1M window they mean 650K and 750K. Measured here over 8 days: 21 main sessions, median context 290K, peak 910K; 8 with a median over 300K hold 52% of the turns",
-      "since": 17
-    },
-    {
-      "status": "planned",
-      "needs": [
         "cycle-journal",
         "secret-agent-setup",
         "push-setting",
@@ -4293,7 +4266,7 @@
       "cluster": "gates",
       "mechanization": true,
       "sourceClass": "stand-in-for-the-fact",
-      "source": "cycle 2026-11-02 (19): the most recurring class of the convergence block",
+      "source": "cycle 2026-11-02 (19): the most recurring class of the convergence block; cycle 2026-11-07 (26) convergence: stand-in-for-the-fact recurred 13 times, all in review: ennyn agents read the newest transcript for the running session's and a link's neighbour folder for its target, push-check took a hash for a tested tree and a deny list for what a bare push sends, the push hook decided for the session folder while the push ran in the shell's",
       "since": 19
     },
     {
@@ -5260,28 +5233,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "kill-reader-function-body-wrapper",
-      "title": "The kill reader judges a wrapper (env, nohup, coproc) only at a command's head: in `function f { env pkill node; }` the wrapper after the brace is read as a program, so a kill by name passes; bash ran it (3.2)",
-      "value": "high",
-      "cost": "S",
-      "cluster": "security",
-      "source": "cycle 2026-11-06 (25), T3 round 2 (c25-t3-r2-01), pre-existing since a912f35",
-      "since": 25
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "kill-reader-runtime-name-after-wrapper",
-      "title": "A program name built at run time is refused only at the head: `env $(echo pkill) node`, `nohup \"$(echo pkill)\" node`, `coproc $(echo pkill) node`, `time`, `sudo` pass the kill reader; bash ran each",
-      "value": "high",
-      "cost": "S",
-      "cluster": "security",
-      "source": "cycle 2026-11-06 (25), T3 round 2 (c25-t3-r2-02), pre-existing since a912f35",
-      "since": 25
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "shell-box-hardening",
       "title": "test/shell-box.mjs unsafeTexts() misses shells that drop the startup file (`bash --posix -c`, `BASH_ENV=`, `unset BASH_ENV`, `/bin/sh -c`) and absolute program paths (`/usr/bin/pkill`), where signal 0 reached a real process; read them before any text runs",
       "value": "medium",
@@ -5346,6 +5297,182 @@
       "sourceClass": "reader-drifts-from-program",
       "source": "cycle 2026-11-06 (25) convergence: reader-drifts-from-program the most recurring class (8: review 5, measurement 3), including the closing Linux run, where the kill differential judge itself drifted on bash 5 coproc (b555c87)",
       "since": 25
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-same-text-helper",
+      "title": "A helper function defined in the same text that runs \"$@\" hides a literal kill word passed to it (retry() { …\"$@\"…; }; retry pkill node): bash ran pkill; the stated limit names only a function defined earlier",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-07 (26), T1 round 1 security review (c26-t1-sec-r1-03), pre-existing since a912f35",
+      "since": 26
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-shell-text-runtime-name",
+      "title": "Text given to another shell reads a command substitution as a plain variable, so a run-time program name inside bash -c, sh -c or eval (bash -c \"$(echo pkill) node\") passes the kill reader; bash ran pkill each time",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-07 (26), T1 round 2 security review (c26-t1-sec-r2-02), pre-existing since a912f35",
+      "since": 26
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-wrapper-operand-names",
+      "title": "The run-time-name scan ends at a wrapper's operand named like a kill program (flock fuser $(echo pkill) node, chroot fuser …, ssh host fuser x; $(echo pkill) node): bash ran pkill under stand-ins",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-07 (26), T1 round 2 security review (c26-t1-sec-r2-01), residue of dd614ac's option-value rule",
+      "since": 26
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-expansion-shapes",
+      "title": "Kill words the shell builds by expansion pass the reader: brace expansion ({pkill,node}, p{kill,} node), a glob at a program place (pk?ll), env -S'pkill node', zsh's repeat and =pkill, an alias defined in the same text; each reached pkill in the box or is zsh grammar read only",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-11-07 (26), T1 round 1 security review, evidence gaps (bash 3.2 box; zsh 5.9 grammar with echo only)",
+      "since": 26
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-find-path-as-shell",
+      "title": "After find, a path of . is read as source at a program place, so find . -exec $(echo rm) {} +; kill 1234 is refused as unread (over-refusal)",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-07 (26), T1 round 1 mutation pass, pre-existing",
+      "since": 26
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "session-start-fork-source",
+      "title": "SessionStart in Claude Code 2.1.319 has a fork source that no matcher in hooks/hooks.json names: decide what the side-copy reset and the state line do there",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 2026-11-07 (26), T2 measurement of the 2.1.319 binary's hook input schema",
+      "since": 26
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "plan-accept-clear-panel",
+      "title": "Revisit route (1) of session-handover for the VS Code panel when it offers plan approval's clear option (2.1.319's webview offers Yes / auto-accept / auto mode / No only)",
+      "value": "low",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 2026-11-07 (26), T2 measurement, read in the extension's webview code",
+      "since": 26
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "session-line-next-step",
+      "title": "The closed-cycle SessionStart line gives the handoff's path for what is next, not the next step: the closing writes the next step into the journal as data, and the line shows it, never the handoff's text",
+      "value": "low",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 2026-11-07 (26), T2 round 1 code review (c26-t2-code-r1-04, partial against the node's 'what is next')",
+      "since": 26
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "journal-one-task-start",
+      "title": "A one-task run has no journal start of its own (one-task.md, SKILL.md section 1 do not name it), so its push wait lands in the last closed cycle's journal and the new-chat line names that cycle",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 2026-11-07 (26), T2 round 2 code review (c26-t2-code-r2-03)",
+      "since": 26
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "push-check-recorded-suite",
+      "title": "push-check reads a record that the whole test command ran green on the commit, written by the run itself, instead of the caller's --tested hash",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "method",
+      "source": "cycle 2026-11-07 (26), T3 round 1 security review (c26-t3-sec-r1-05): push-check's 'tested' is the caller's word",
+      "since": 26
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "push-mode-replayed-approval",
+      "title": "Tell a replayed approval commit (a cherry-pick of the user's own User-Approved-Loosening: push.mode commit) from the user's original before after-closing pushes",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-11-07 (26), T3 round 1 security review (P4), stated limit in skills/cycle/push.md",
+      "since": 26
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "push-mode-git-dir-env",
+      "title": "The push decision strips GIT_DIR (core/git.mjs cleanEnv) while the push honours it: a GIT_DIR in the session's settings env makes after-closing judge the project and push another repository (measured through Claude Code 2.1.310)",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-07 (26), T3 round 3 security review (c26-t3-sec-r3-01); after-closing is opt-in, this repository stays on ask",
+      "since": 26
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "push-mode-transport-settings",
+      "title": "core.sshCommand, GIT_SSH_COMMAND (and unmeasured GIT_SSH, core.gitProxy, GIT_PROXY_COMMAND, ssh.variant) send a bare push to another host with the url unchanged; the allow reading of push-mode covers only the remote's section",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-07 (26), T3 round 3 security review (c26-t3-sec-r3-02), measured with a stand-in ssh program on git 2.56.0",
+      "since": 26
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "agents-skipped-per-agent",
+      "title": "ennyn agents counts skipped lines per session, not per agent: an author's ran list can miss a model at exit 0; count per agent and let escalation read a row with skipped lines as unmeasured",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-07 (26), T4 legacy audit (c26-t4-author-r0-04)",
+      "since": 26
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "subagent-walk-one-place",
+      "title": "One subagents-folder walk for agent-usage and compact-boundary (folder naming, entry cap 4,096 against 100,000)",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-07 (26), T4 legacy audit, lean item",
+      "since": 26
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "agents-calls-without-record",
+      "title": "A hard link or copy of a transcript reads 'no subagent' at exit 0: Agent calls in the main transcript with no subagent record should read as unmeasured, not none",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-07 (26), T4 round 1 code review (c26-t4-code-r1-02), pre-existing since 2fe5642",
+      "since": 26
     }
   ],
   "done": [
@@ -6057,6 +6184,30 @@
     {
       "id": "reader-against-real-program",
       "title": "test/readers.test.mjs lists every production module as a reader with its program and harness, a known gap on an open node, or with why it reads none; the kill and push readers have generated-text differentials against real bash through test/shell-box.mjs; the reviewer prose stays, as the pair test proves a harness exists, not that it covers a new shape (54890b2)",
+      "status": "done",
+      "finished": "2026-11-07"
+    },
+    {
+      "id": "push-setting",
+      "title": "push.mode ask or after-closing, one decision (checks/push-mode.mjs) for the hook, push-check and doctor: the approved setting commit with no later move back on any line, the shell's own checkout, a bare git push whose git config sends the branch only to its upstream's one url, a clean tree; the hook asks about every other push; turning it on needs User-Approved-Loosening: push.mode (09ea80c)",
+      "status": "done",
+      "finished": "2026-11-07"
+    },
+    {
+      "id": "session-handover",
+      "title": "context.afterCycle (fresh or compact); skills/cycle/handover.md: plan approval's clear in a terminal session (init offers showClearContextOnPlanAccept in the project's settings; the VS Code panel 2.1.319 has no such option), /clear, a new chat; the SessionStart hook gives one line after clear and at startup, open or closed (UTC day, landed, the handoff's path, what waits); journal wait works after close (a57841c)",
+      "status": "done",
+      "finished": "2026-11-07"
+    },
+    {
+      "id": "kill-reader-function-body-wrapper",
+      "title": "The kill reader finds a program word at every place one stands (a command's head, after each block's brace, after a wrapper or opener, a runner's own program place) by one rule, programs(), in linear time; a run-time name there is refused, an option's value too; 53 new kill cells, 88,740 transcript commands unmoved (dd614ac)",
+      "status": "done",
+      "finished": "2026-11-07"
+    },
+    {
+      "id": "kill-reader-runtime-name-after-wrapper",
+      "title": "A program name built at run time after a wrapper (env, nohup, coproc, time, sudo, exec -a) is refused wherever the reader places a program; a pre-existing quadratic judge (64 KB in 129 s, past the hook's 10 s) is linear (dd614ac)",
       "status": "done",
       "finished": "2026-11-07"
     }

@@ -249,7 +249,9 @@
         "new: no ceiling on the size of untrusted text",
         "new: committed names past the git buffer drop every gate",
         "new: unbounded matching of a pattern from data",
-        "new: square time on hostile text"
+        "new: square time on hostile text",
+        "new: bounded line cuts one field to nothing before another",
+        "new: test pins how much a cut line shows"
       ],
       "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict and record no gate. These tests hold the surfaces they name, and the class came back on others in cycles 9, 10, 12 and 14. Named in cycle 7."
     },
@@ -481,7 +483,8 @@
         "new: scope gate untested",
         "new: corpus gap",
         "new: mirror predicate untested on one input",
-        "new: test misses a branch it names"
+        "new: test misses a branch it names",
+        "new: accept rule widened without a reject case"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -524,7 +527,8 @@
         "new: text names a tool for a number it does not print",
         "new: refusal reason names a symptom, not the cause",
         "new: stated limits list incomplete",
-        "new: gate wider than its stated invariant"
+        "new: gate wider than its stated invariant",
+        "new: over-refusal outside the stated limit"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet."
     },
@@ -683,7 +687,8 @@
         "new: missing type guard at an untyped boundary",
         "new: writer prints what its reader refuses",
         "new: holes in a list skipped by its iterator",
-        "new: a reason that shows nothing counts as one"
+        "new: a reason that shows nothing counts as one",
+        "new: nullable field read without a guard"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -726,7 +731,8 @@
         "new: test fixture leaves out a field the code warns on",
         "new: harness judge walks past the box",
         "new: harness judge reads the wrong log line",
-        "new: concurrent log writes interleave"
+        "new: concurrent log writes interleave",
+        "new: test expectation contradicts the rule it tests"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -842,7 +848,8 @@
         "new: limit dies with the process that keeps it",
         "new: limit assumed to bound what it does not",
         "new: real run with no limit hangs instead of failing",
-        "new: sync child stdin pipe hangs under load"
+        "new: sync child stdin pipe hangs under load",
+        "new: bound held only by an outer retry loop"
       ],
       "judged": "the orchestrator of cycle 18, reading the rows"
     },
