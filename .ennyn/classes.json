@@ -28,7 +28,8 @@
         "new: ordered protocol not reconciled with a split of who runs which step",
         "new: reader missed in a sweep",
         "new: documentation says fallback while the code takes the first",
-        "new: count in fixed text"
+        "new: count in fixed text",
+        "new: guard left on replaced text"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: not stopped, no catch since it landed. Named in cycle 1. Counting the doc twin of cycle 4 here is this reconstruction's merge."
     },
@@ -120,7 +121,8 @@
         "new: unmeasured read as clean",
         "new: a failed read moves a verdict's level and its count",
         "new: plugin's own agent listing outside the session budget",
-        "new: escape of a kept defect counts nowhere"
+        "new: escape of a kept defect counts nowhere",
+        "new: failed read reported without the words that say so"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, failed reads held, the same mistake in logic recurs and writes are not covered. Named in cycle 4."
     },
@@ -163,7 +165,9 @@
         "new: a required record satisfied by its label alone",
         "new: refusal text names a way around",
         "new: gate test added with no guard",
-        "new: path helper normalises the probe away"
+        "new: path helper normalises the probe away",
+        "new: test corpus too weak to fail the defect",
+        "new: text test pins words, not the claim"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, it holds inside the listed gates only. Named in cycle 5."
     },
@@ -211,7 +215,8 @@
         "new: a name re-encoded on its way to another program",
         "new: platform data a byte comparison does not see",
         "new: text check lets half a character through",
-        "new: path separator spelling bypass"
+        "new: path separator spelling bypass",
+        "new: positional run inside re-read text not seen by helper rule"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, reviewers found more shapes after it landed. Named in cycle 7."
     },
@@ -408,7 +413,10 @@
       "nodes": [
         "raw-output-commit-check"
       ],
-      "judged": "Reconstruction of cycle 16, not the research: cycle 13's handoff called it closed; a run in cycle 16 found raw bytes through the show of the npm recorder, and of the claude-code recorder only on a hand-edited record, none through markdown and actions-yaml. No replay."
+      "judged": "Reconstruction of cycle 16, not the research: cycle 13's handoff called it closed; a run in cycle 16 found raw bytes through the show of the npm recorder, and of the claude-code recorder only on a hand-edited record, none through markdown and actions-yaml. No replay.",
+      "linked": [
+        "new: report echoes a file value unmasked"
+      ]
     },
     {
       "id": "one-question-several-places",
@@ -426,7 +434,9 @@
         "new: twin definitions disagree",
         "new: loosening by removal goes unseen beside loosening by value",
         "new: two lists count one defect differently",
-        "new: shell mirror disagreement"
+        "new: shell mirror disagreement",
+        "new: harness rule not extended with the harness",
+        "new: two readings of one fact for two kinds of entry"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: no gate, it recurred in all four tasks of cycle 15. Named in cycle 14, first seen in cycle 8. Counting cycle 12's two readers of one decision here is this reconstruction's merge."
     },
@@ -452,7 +462,8 @@
       "judged": "Research of 2026-10-31, about 30% either way: no gate. Named in cycle 15.",
       "linked": [
         "new: a bulk text replace breaks the quoting of a string it lands in",
-        "new: state file text promoted to instructions"
+        "new: state file text promoted to instructions",
+        "new: message text collides with placeholder syntax"
       ]
     },
     {
@@ -528,7 +539,9 @@
         "new: refusal reason names a symptom, not the cause",
         "new: stated limits list incomplete",
         "new: gate wider than its stated invariant",
-        "new: over-refusal outside the stated limit"
+        "new: over-refusal outside the stated limit",
+        "new: shortened text drops a rule",
+        "new: claim about another program from memory"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet."
     },
@@ -627,7 +640,11 @@
         "new: path match by spelling not by tree",
         "new: folder read recorded as file",
         "new: harness safety rests on an unchecked startup file",
-        "new: harness safety rests on an unchecked convention"
+        "new: harness safety rests on an unchecked convention",
+        "new: construct list over-refuses ordinary commands",
+        "new: caller environment used whole for a child process",
+        "new: content id of one side stands for a difference of three",
+        "new: oracle reads a narrower hold set than the command"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate.",
       "gates": [
@@ -653,7 +670,8 @@
         "new: default scope read from the data being measured",
         "new: committed name picks a git-exec failure the gate catch swallows",
         "new: tool runs a program a cloned folder's config names",
-        "new: exemption decided by text the author writes"
+        "new: exemption decided by text the author writes",
+        "new: rule read from the state the change produced"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -688,7 +706,8 @@
         "new: writer prints what its reader refuses",
         "new: holes in a list skipped by its iterator",
         "new: a reason that shows nothing counts as one",
-        "new: nullable field read without a guard"
+        "new: nullable field read without a guard",
+        "new: honest failure aborts the whole reading"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -732,7 +751,11 @@
         "new: harness judge walks past the box",
         "new: harness judge reads the wrong log line",
         "new: concurrent log writes interleave",
-        "new: test expectation contradicts the rule it tests"
+        "new: test expectation contradicts the rule it tests",
+        "new: test assumes temp folder outside any repository",
+        "new: test child environment built from nothing",
+        "new: git command refuses the fixed call options",
+        "new: corpus state built without the condition it names"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -882,7 +905,8 @@
       ],
       "linked": [
         "new: version skew read as loosening",
-        "new: older record format read as unknown"
+        "new: older record format read as unknown",
+        "new: a record of the past compared with a reading it did not hold"
       ],
       "judged": "the orchestrator of cycle 20, reading the rows"
     },
@@ -917,7 +941,8 @@
       "gates": [],
       "nodes": [],
       "linked": [
-        "new: helper program found through an unfiltered PATH runs repository code"
+        "new: helper program found through an unfiltered PATH runs repository code",
+        "new: data file read as configuration runs a command"
       ],
       "judged": "Named in cycle 24 by the orchestrator, from one security review row (a tr found through the hook's PATH); hook-node-in-repo is the same shape for node."
     },
@@ -929,7 +954,8 @@
       "nodes": [],
       "linked": [
         "new: probe changes the behaviour it measures",
-        "new: test harness changes what code under test meets"
+        "new: test harness changes what code under test meets",
+        "new: lab escapes its box"
       ],
       "judged": "Named in cycle 24 by the orchestrator, from two review rows: a read recorder's own stat throwing, and a test preload swapping product code's stdin transport."
     }

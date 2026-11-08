@@ -113,7 +113,8 @@
         "kill-own-pid-only",
         "plugin-update-path",
         "win-kill-waits-exit",
-        "kept-folder-closing"
+        "kept-folder-closing",
+        "no-bypass-trial"
       ],
       "gate": "user",
       "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release); read 2026-11-01: the post now opens 'Updated October 15 to include more detail on the projects that pioneered many of the techniques we use in Scion.', and The Pragmatic Engineer (2026-10-22) reports the attribution came after a public complaint; an audit of requests against the graph, 2026-11-01: five had no node in the release needs: a project started from nothing (a request, 2026-10-29: 15 nodes, 0 done), leftovers (a request, 2026-10-29: 14 nodes, 0 done), secrets in chat (a request, 2026-10-28: 12 nodes, 1 done), less code and no repetition (a request, a request, 2026-10-25), findings that can wait (a request, 2026-10-25). The smallest piece of each entered the needs. spec-gates' README: 'Spec Kit is a guidance layer'; 2026-11-05, the choice was left to the orchestrator: kill-own-pid-only, plugin-update-path and win-kill-waits-exit join the needs, observed on Windows",
@@ -2383,17 +2384,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "secret-agent-setup",
-      "title": "init-scan and doctor report the agent's secret setup, init proposing what is missing and writing it only on the user's approval: sandbox on with sandbox.credentials (deny unsets a variable for sandboxed commands, mask swaps in a placeholder the proxy replaces); permissions.disableBypassPermissionsMode; CLAUDE_CODE_SUBPROCESS_ENV_SCRUB; Read deny rules for .env*, ~/.ssh and ~/.aws; a ~/.claude inside a git work tree (transcripts are plaintext); literal secret values in .mcp.json. The half of agent-setup-risk about secrets; init asks one question, and nothing changes unless it is taken: keep the agent as it is, or run without bypass: sandbox on with sandbox.failIfUnavailable, commands auto-allowed inside it, permissions.defaultMode acceptEdits, allowWrite for the folder that holds the cycle's worktrees, and the network hosts the project's commands need. It writes to the file the user picks (.claude/settings.local.json for one person, .claude/settings.json for a team); doctor names the mode and the cycle's plan repeats it. Whoever uses bypass keeps it. Before release, one task runs in this mode in a throwaway project, and the report lists what broke (docker, ports, worktrees outside the project)",
-      "value": "medium",
-      "cost": "M",
-      "cluster": "security",
-      "source": "Claude Code docs: 'There is no built-in credential deny list' (sandboxing.md); 'To prevent `bypassPermissions` or `auto` mode from being used, set `permissions.disableBypassPermissionsMode`' (permissions.md); the scrub variable 'strip credentials from the environments of the subprocesses Claude Code starts' (env-vars.md); 'Transcripts and history are not encrypted at rest' (claude-directory.md). Nx s1ngularity, 2025-08: malware ran installed agent CLIs with permission-bypass flags to look for secrets (Wiz, GHSA-cxm3-wv7p-598c); measured 2026-11-01: every session that ran Ennyn on a real project was in bypassPermissions (this repository 28, two trial projects 12 and 5), so no cycle has run in a mode a new user starts in. Claude Code docs: 'Auto-allow runs sandboxed commands without prompting'; a background subagent's prompts surface in the main session. The sandbox covers shell commands only; Read and Edit follow permission rules. This machine stays on bypass by decision",
-      "since": 14
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "secret-transcript-sweep",
       "title": "doctor (or a command of its own) reads this project's Claude Code transcripts, subagents' too, for known values and issuer shapes and reports kind, session, first and last day and count, never a value or a fragment; a value seen on several days is matched by digest, so the first exposure is dated. In the origin project the session that leaked a hash dated the first leak 2026-10-24; the same salt and hash prefix were in transcripts from 2026-10-11. Tests point CLAUDE_CONFIG_DIR at a temporary directory",
       "value": "medium",
@@ -3151,7 +3141,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "source": "measured, cycle 16: three or more heavy jobs ran together for 29% of calendar time, load median 56 on 10 cores; the suite lock added at 16:48 ended the 24-minute runs but not the median (586 to 669 s), since mutation, gates and labs stayed outside it, and it made 32.6 minutes of queue. node --test limits files, not the processes they spawn; cycle 2026-11-01 (17): one short suite sat about 50 minutes in the lock's queue with labs ahead of it, and a reviewer's probe that recursed in a hook reached 1738 processes against a per-user limit of 2666, so other tasks failed with EAGAIN: the limit should count processes too, and probes need a bound; cycle 2026-11-02 (18): T2's short suite waited about 2 hours on the cycle's lock at load up to 241: a mkdir lock keeps no order, and a short suite with guards back runs as long as a whole one; a reviewer's parallel mutant trees reached load 177 before it was told to run them in turn; cycle 2026-11-02 (19): the mkdir lock kept no order: T3's short suite waited 94 minutes and T4's 42 while later arrivals took it; four short suites queued behind one with guards back, load up to 154; cycle 2026-11-04 (20) on Windows with WSL: two suite slots by flock; a locked suite waited over 30 minutes behind two others; cycle 2026-11-04 (21): a request: one heavy job at a time; the cycle-20 test:linux in the 2-CPU VM ran beside cycle 21 outside the suite lock, load 85, its first image took 1 h 41 min against about 38 and two timing ratios went red; stopped on request; cycle 2026-11-06 (24): the suite lock held one suite while load reached 80-170 (labs, lone slow test files and reviewers' recordings outside it, and a lab of 120 CPU burners); test/short.mjs sets no --test-concurrency (node's default: cores minus one); measure test:short with 9, 5 and 3 files at once (time, load) and put lone test-file runs through the same lock; the user, 2026-11-05: left to the session: a rule by hand in cycle 25's briefs first",
+      "source": "measured, cycle 16: three or more heavy jobs ran together for 29% of calendar time, load median 56 on 10 cores; the suite lock added at 16:48 ended the 24-minute runs but not the median (586 to 669 s), since mutation, gates and labs stayed outside it, and it made 32.6 minutes of queue. node --test limits files, not the processes they spawn; cycle 2026-11-01 (17): one short suite sat about 50 minutes in the lock's queue with labs ahead of it, and a reviewer's probe that recursed in a hook reached 1738 processes against a per-user limit of 2666, so other tasks failed with EAGAIN: the limit should count processes too, and probes need a bound; cycle 2026-11-02 (18): T2's short suite waited about 2 hours on the cycle's lock at load up to 241: a mkdir lock keeps no order, and a short suite with guards back runs as long as a whole one; a reviewer's parallel mutant trees reached load 177 before it was told to run them in turn; cycle 2026-11-02 (19): the mkdir lock kept no order: T3's short suite waited 94 minutes and T4's 42 while later arrivals took it; four short suites queued behind one with guards back, load up to 154; cycle 2026-11-04 (20) on Windows with WSL: two suite slots by flock; a locked suite waited over 30 minutes behind two others; cycle 2026-11-04 (21): a request: one heavy job at a time; the cycle-20 test:linux in the 2-CPU VM ran beside cycle 21 outside the suite lock, load 85, its first image took 1 h 41 min against about 38 and two timing ratios went red; stopped on request; cycle 2026-11-06 (24): the suite lock held one suite while load reached 80-170 (labs, lone slow test files and reviewers' recordings outside it, and a lab of 120 CPU burners); test/short.mjs sets no --test-concurrency (node's default: cores minus one); measure test:short with 9, 5 and 3 files at once (time, load) and put lone test-file runs through the same lock; the user, 2026-11-05: left to the session: a rule by hand in cycle 25's briefs first; cycle 2026-11-08 (27): the mkdir lock kept no order and a second project's one-minute run waited 45 minutes behind re-taken locks; the cycle's lock became a ticket queue by hand (first come, first served, dead tickets dropped)",
       "since": 16
     },
     {
@@ -4260,19 +4250,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "fact-oracle-for-verdicts",
-      "title": "A command whose verdict stands for a fact (nothing lost, nothing left behind, a file is used) gets a test that measures the fact itself on every corpus state, git fsck --unreachable and a file listing before and after, or the real program's own reading, and fails where verdict and fact part; the verdict's own tests never caught one of cycle 19's 22 rows of this class",
-      "value": "high",
-      "cost": "M",
-      "cluster": "gates",
-      "mechanization": true,
-      "sourceClass": "stand-in-for-the-fact",
-      "source": "cycle 2026-11-02 (19): the most recurring class of the convergence block; cycle 2026-11-07 (26) convergence: stand-in-for-the-fact recurred 13 times, all in review: ennyn agents read the newest transcript for the running session's and a link's neighbour folder for its target, push-check took a hash for a tested tree and a deny list for what a bare push sends, the push hook decided for the session folder while the push ran in the shell's",
-      "since": 19
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "hook-older-config-keys",
       "title": "A commit hook that runs an older Ennyn (the plugin's recorded root) cannot load a config key it does not know and reads the whole config as loosened (checks/loosening.mjs:389), so a commit that brings a new key with the code reading it is refused for loosening; say it is a version skew, or judge the commit's config with the commit's own reader",
       "value": "medium",
@@ -5235,11 +5212,11 @@
       "status": "planned",
       "needs": [],
       "id": "shell-box-hardening",
-      "title": "test/shell-box.mjs unsafeTexts() misses shells that drop the startup file (`bash --posix -c`, `BASH_ENV=`, `unset BASH_ENV`, `/bin/sh -c`) and absolute program paths (`/usr/bin/pkill`), where signal 0 reached a real process; read them before any text runs",
-      "value": "medium",
+      "title": "test/shell-box.mjs unsafeTexts() misses shells that drop the startup file (`bash --posix -c`, `BASH_ENV=`, `unset BASH_ENV`, `/bin/sh -c`) and absolute program paths (`/usr/bin/pkill`), where signal 0 reached a real process; read them before any text runs; cycle 27 made the check refuse login and interactive shells, PATH changes and startup files, and made run() throw on them, yet round two still escaped it with harmless texts (bash --posix and -p bring the builtin kill back; \"$BASH\" -l, path_helper, PATH set by read, printf -v, declare or a loop; env -P; cd /usr/bin && ./pkill). The next step is an operating-system boundary, not a longer word list: real kill programs and signals to other processes unreachable from the box (macOS sandbox-exec deny signal to others, a Linux pid namespace), measured first",
+      "value": "high",
       "cost": "S",
       "cluster": "gates",
-      "source": "cycle 2026-11-06 (25), T3 round 2 (c25-t3-r2-03); the cycle's kill lab sent real signals before the box existed",
+      "source": "cycle 2026-11-06 (25), T3 round 2 (c25-t3-r2-03); the cycle's kill lab sent real signals before the box existed; cycle 2026-11-08 (27): a reviewer's probe bash -lc \"$(echo pkill) node\" ran the real /usr/bin/pkill node through the box (a login shell's /etc/profile path_helper put /usr/bin first; exit 0, what it stopped unmeasured) (c27-t1-code-r1-01); round two of T1's security review escaped the new check (c27-t1-sec-r2-09)",
       "since": 25
     },
     {
@@ -5298,28 +5275,6 @@
       "sourceClass": "reader-drifts-from-program",
       "source": "cycle 2026-11-06 (25) convergence: reader-drifts-from-program the most recurring class (8: review 5, measurement 3), including the closing Linux run, where the kill differential judge itself drifted on bash 5 coproc (b555c87)",
       "since": 25
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "kill-reader-same-text-helper",
-      "title": "A helper function defined in the same text that runs \"$@\" hides a literal kill word passed to it (retry() { …\"$@\"…; }; retry pkill node): bash ran pkill; the stated limit names only a function defined earlier",
-      "value": "high",
-      "cost": "S",
-      "cluster": "security",
-      "source": "cycle 2026-11-07 (26), T1 round 1 security review (c26-t1-sec-r1-03), pre-existing since a912f35",
-      "since": 26
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "kill-reader-shell-text-runtime-name",
-      "title": "Text given to another shell reads a command substitution as a plain variable, so a run-time program name inside bash -c, sh -c or eval (bash -c \"$(echo pkill) node\") passes the kill reader; bash ran pkill each time",
-      "value": "high",
-      "cost": "S",
-      "cluster": "security",
-      "source": "cycle 2026-11-07 (26), T1 round 2 security review (c26-t1-sec-r2-02), pre-existing since a912f35",
-      "since": 26
     },
     {
       "status": "planned",
@@ -5485,6 +5440,247 @@
       "cluster": "method",
       "source": "the user, 2026-11-08: a request after a cycle-24 folder (376 MB) sat beside its kept copy for two days and was asked about at cycle 26's closing (a request). Measured 2026-11-08 on this machine: the kept folders hold 8.6 GB over 10 cycles (cycle 21: 3.1 GB; cycles 24-26: 365-376 MB each); in cycle 26 five reviewer clones are 32-35 MB each, reproducible from git, while their untracked probes are the evidence. Related: disk-use-record, resource-ledger; entered release-0-1-0's needs on request, 2026-11-08 (approved)",
       "since": 26
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-heredoc-body",
+      "title": "The kill reader blanks quoted here-document bodies by a pattern on the raw text: a here-document opener inside quotes or a comment, a delimiter named like a command, or <<- with a tab-indented end line hides the kill words that follow; and a real quoted body fed to read, xargs or a loop becomes programs (read -r p <<'E' / pkill / E; $p node). bash ran pkill each time",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-08 (27), T1 round 2 security review (c27-t1-sec-r2-01, c27-t1-sec-r2-02), born in 504cd49",
+      "since": 27
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-dash-kill-word",
+      "title": "A kill word right after a dash (${x:-pkill}, ${x-pkill}) is invisible to ANY_KILL and KILL_WORD's lookbehind, so a helper, set --, xargs or a variable runs it: bash ran pkill",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-08 (27), T1 round 2 security review (c27-t1-sec-r2-03), born in 504cd49",
+      "since": 27
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-caret-double-count",
+      "title": "Shell text read twice for the caret retry counts its passed kill program twice, so a second kill by port beside set -- passes (bash -c \"fuser f ^x\"; set -- fuser -k 3000/tcp; \"$@\")",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-08 (27), T1 round 2 security review (c27-t1-sec-r2-04), born in 504cd49",
+      "since": 27
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-turns-list",
+      "title": "The list of constructs that turn a word into a program lacks hash -p and a BASH_ENV= assignment before bash (hash -p /usr/bin/pkill r; r node); decide from bash's own list of builtins that run or bind a name, not by hand",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-08 (27), T1 round 2 security review (c27-t1-sec-r2-07), born in 504cd49; shown with a harmless echo in bash 3.2.57 because the box refuses these texts",
+      "since": 27
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-ansi-c-quote",
+      "title": "An ANSI-C quoted word ($'\\x70kill', $'pk\\151ll') is kept undecoded by the shared word reader, so an escaped kill name at a program's place passes; decode it as bash does",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-08 (27), T1 round 2 security review (c27-t1-sec-r2-06), pre-existing since 06a7bd8",
+      "since": 27
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-depth-word",
+      "title": "Past four levels of shell text, a word with an expansion and no space (pkill${IFS}node) does not count as the depth construct, so five nested bash -c pass a kill",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-08 (27), T1 round 2 security review (c27-t1-sec-r2-05), born in 504cd49",
+      "since": 27
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-set-options-overrefuse",
+      "title": "set with option words only (set -e, set -euo pipefail), . of a file, alias and a function that only echoes are refused beside a kill word in plain data (grep pkill notes.txt): count a construct only when it can make a word a program",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-08 (27), T1 round 2 security review (c27-t1-sec-r2-08); the replay's 23 refusals are of this kind",
+      "since": 27
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "push-reader-shell-text-runtime-name",
+      "title": "The push reader's re-read of shell text joins a run as ${E} (push-spellings.mjs), the shape the kill reader fixed in cycle 27: measure whether bash -c \"git $(echo push)\" passes the push hook",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-08 (27), T1 impact table S1 row, unmeasured",
+      "since": 27
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "push-mode-self-approval",
+      "title": "push.mode's approval is a commit line the agent can write itself, so after-closing, and with it the push hook's own ask in ask mode, is lifted in two calls (a commit and a bare git push) where no ask rule stands; doctor then shows after-closing and advises removing the push ask rule. Find an approval an agent cannot write, or keep the ask rule's advice",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-11-08 (27), security audit (c27-t4-author-r0-01), born in 09ea80c; push.md and SECURITY.md state the limit since 3c050c9",
+      "since": 27
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "no-bypass-trial",
+      "title": "One task of a cycle runs in init's no-bypass mode in a throwaway project, and the report lists what broke (docker, ports, worktrees outside the project, network hosts); the part of secret-agent-setup that needs a real model session",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-08 (27), T2: split from secret-agent-setup's last sentence; release need in its place",
+      "since": 27
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "scrub-forces-default-mode",
+      "title": "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB forces the default permission mode at startup (2.1.310, 2.1.319), so it cancels bypass and acceptEdits; measure whether it still scrubs when set from a settings file's env, and decide what doctor advises",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-08 (27), T2 measurement (probe-scrub.log)",
+      "since": 27
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "worktrees-folder-key",
+      "title": "A config key names the folder that holds a cycle's worktrees, read by the cycle's briefs and by init's sandbox allowWrite; today init asks for the folder and nothing reads the answer back",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 2026-11-08 (27), T2 round 1 code review (c27-t2-code-r1-04)",
+      "since": 27
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "leftovers-ignore-rules-from-start",
+      "title": "ennyn leftovers reads ignore rules at the closing, so a file the cycle hides by .git/info/exclude, a core.excludesFile it sets, or a .gitignore it writes or changes in the tree is invisible; read the start's rules",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-08 (27), T3 review (c27-t3-code-r1-05, c27-t3-code-r2-02); the oracle pins four states as known partings (09fc5dc)",
+      "since": 27
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "work-tree-bytes-reader",
+      "title": "One exported reader of a tracked path's bytes against an index or tree entry, for plan/worktrees.mjs and metrics/leftovers.mjs, which read it two ways today",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-08 (27), T3 (lean item)",
+      "since": 27
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "leftovers-fsmonitor",
+      "title": "Measure leftovers' status reading under core.fsmonitor",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-08 (27), T3, unmeasured",
+      "since": 27
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "fact-oracle-push-check",
+      "title": "test/repo-facts.mjs for push-check: its verdict that the cycle may push against what a bare git push would send and what was tested",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-08 (27), T3: the next command of the class stand-in-for-the-fact",
+      "since": 27,
+      "mechanization": true,
+      "sourceClass": "stand-in-for-the-fact"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "fact-oracle-agents-session",
+      "title": "The same fact oracle for the session ennyn agents reads (the running session's transcript, a link's target)",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-08 (27), T3",
+      "since": 27,
+      "mechanization": true,
+      "sourceClass": "stand-in-for-the-fact"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "fact-oracle-push-hook-folder",
+      "title": "The same fact oracle for the folder the push hook decides for against the folder the push runs in",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-08 (27), T3",
+      "since": 27,
+      "mechanization": true,
+      "sourceClass": "stand-in-for-the-fact"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "landing-same-tree-skip",
+      "title": "No landing rerun on a tree a green short suite already ran on: the landing compares the tree hash with the author's green run and records the skip; when the base moved it runs the files the change and the move touch; the whole suite stays once at the closing",
+      "value": "high",
+      "cost": "S",
+      "cluster": "method",
+      "source": "the user, 2026-11-08: a request; cycle 27: two of four landing runs were exact repeats (T4, T2; T2's stopped after 32 minutes at load 21-37)",
+      "since": 27
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "remote-heavy-runs",
+      "title": "Heavy runs (the whole suite, mutation, Linux images) on a remote host by one command, the Mac reading only the result: an own Unix user and folder, low priority, nothing else on the server touched (its other apps' users, ports, services, databases, containers, cron), no root step without asking, not while another project's gate or deploy runs there. Measure first: time per suite there, agreement with the Mac's run (macOS-only tests stay local), what is copied and where it stays",
+      "value": "high",
+      "cost": "M",
+      "cluster": "method",
+      "source": "the user, 2026-11-08: a request; cycle 27: landing suites took 30+ minutes at load 21-37 against 3-5 alone",
+      "since": 27
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "shell-box-hardening"
+      ],
+      "id": "reader-differential-from-bash-grammar",
+      "title": "The kill differential generates its contexts from bash itself, not from a hand list: every builtin bash names (compgen -b, enable -a), every expansion and quoting form of its manual (parameter defaults, ANSI-C quotes, here-documents fed to read, xargs and loops, hash -p, BASH_ENV), each crossed with a kill word at a program place, an argument and a data place, judged by real bash in the OS-isolated box; a text bash kills with and the reader passes fails the suite. In cycle 27 review found 18 such shapes the generator held none of",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "mechanization": true,
+      "sourceClass": "unreadable-shape-passes",
+      "source": "cycle 2026-11-08 (27) convergence: unreadable-shape-passes the most recurring class, 18 times, all in review (T1 rounds 1 and 2, T2 round 1 and 2); the hand-listed constructs of 504cd49 lost six shapes in round two",
+      "since": 27
     }
   ],
   "done": [
@@ -6222,6 +6418,30 @@
       "title": "A program name built at run time after a wrapper (env, nohup, coproc, time, sudo, exec -a) is refused wherever the reader places a program; a pre-existing quadratic judge (64 KB in 129 s, past the hook's 10 s) is linear (dd614ac)",
       "status": "done",
       "finished": "2026-11-07"
+    },
+    {
+      "id": "secret-agent-setup",
+      "title": "doctor and init-scan report the agent's secret setup (setup/secret-setup.mjs): the settings' mode read as a reading, not proof, Read deny rules, deny credentials, mask entries ignored in project files, the scrub variable only when set (it forces default mode), transcripts git tracks or would add, secrets in .mcp.json by line and kind; a settings file holding a value of a read key outside the kinds measured kept is said may be skipped and its ask rules are not counted; init offers the no-bypass block (measured values only) on a yes and asks the user to see bypass refused; the throwaway-project trial went to no-bypass-trial (0c7118a)",
+      "status": "done",
+      "finished": "2026-11-08"
+    },
+    {
+      "id": "fact-oracle-for-verdicts",
+      "title": "test/repo-facts.mjs reads git and the disk only; test/worktrees-oracle.test.mjs (33 states) and test/leftovers-oracle.test.mjs (39 states) set worktrees --remove's and leftovers' verdicts against the fact and fail where they part; it found 5 leftovers states saying clean over a change, fixed in the same commit; other commands of the class went to fact-oracle-push-check, fact-oracle-agents-session, fact-oracle-push-hook-folder (09fc5dc)",
+      "status": "done",
+      "finished": "2026-11-08"
+    },
+    {
+      "id": "kill-reader-same-text-helper",
+      "title": "A text holding a construct that can turn a word into a program (eval, trap, source, ., set, xargs, parallel, alias, declare, typeset, function, shopt, export -f, an expansion at a program's place, a name () { definition; BASH_FUNC_ anywhere; shell text past four levels) is refused unread when a kill word anywhere in it is not a kill the reader passed; the refusal names the word and the construct. Replay of 89,423 real commands: 23 more refused, none a kill; reviewers' 245 bash-kill texts: 154 newly refused, 0 regressions; 9 round-two shapes left as nodes (504cd49)",
+      "status": "done",
+      "finished": "2026-11-08"
+    },
+    {
+      "id": "kill-reader-shell-text-runtime-name",
+      "title": "Text given to another shell is read again with the outer text's kill word and constructs; a program name a run joins to letters is refused, and a shell's word holding $ or a backtick is read again (504cd49)",
+      "status": "done",
+      "finished": "2026-11-08"
     }
   ]
 }
