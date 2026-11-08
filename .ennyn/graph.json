@@ -114,7 +114,8 @@
         "plugin-update-path",
         "win-kill-waits-exit",
         "kept-folder-closing",
-        "no-bypass-trial"
+        "no-bypass-trial",
+        "convergence-fix-loop-per-file"
       ],
       "gate": "user",
       "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release); read 2026-11-01: the post now opens 'Updated October 15 to include more detail on the projects that pioneered many of the techniques we use in Scion.', and The Pragmatic Engineer (2026-10-22) reports the attribution came after a public complaint; an audit of requests against the graph, 2026-11-01: five had no node in the release needs: a project started from nothing (a request, 2026-10-29: 15 nodes, 0 done), leftovers (a request, 2026-10-29: 14 nodes, 0 done), secrets in chat (a request, 2026-10-28: 12 nodes, 1 done), less code and no repetition (a request, a request, 2026-10-25), findings that can wait (a request, 2026-10-25). The smallest piece of each entered the needs. spec-gates' README: 'Spec Kit is a guidance layer'; 2026-11-05, the choice was left to the orchestrator: kill-own-pid-only, plugin-update-path and win-kill-waits-exit join the needs, observed on Windows",
@@ -5279,28 +5280,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "kill-reader-wrapper-operand-names",
-      "title": "The run-time-name scan ends at a wrapper's operand named like a kill program (flock fuser $(echo pkill) node, chroot fuser …, ssh host fuser x; $(echo pkill) node): bash ran pkill under stand-ins",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "security",
-      "source": "cycle 2026-11-07 (26), T1 round 2 security review (c26-t1-sec-r2-01), residue of dd614ac's option-value rule",
-      "since": 26
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "kill-reader-expansion-shapes",
-      "title": "Kill words the shell builds by expansion pass the reader: brace expansion ({pkill,node}, p{kill,} node), a glob at a program place (pk?ll), env -S'pkill node', zsh's repeat and =pkill, an alias defined in the same text; each reached pkill in the box or is zsh grammar read only",
-      "value": "medium",
-      "cost": "M",
-      "cluster": "security",
-      "source": "cycle 2026-11-07 (26), T1 round 1 security review, evidence gaps (bash 3.2 box; zsh 5.9 grammar with echo only)",
-      "since": 26
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "kill-reader-find-path-as-shell",
       "title": "After find, a path of . is read as source at a program place, so find . -exec $(echo rm) {} +; kill 1234 is refused as unread (over-refusal)",
       "value": "low",
@@ -5445,66 +5424,11 @@
       "status": "planned",
       "needs": [],
       "id": "kill-reader-heredoc-body",
-      "title": "The kill reader blanks quoted here-document bodies by a pattern on the raw text: a here-document opener inside quotes or a comment, a delimiter named like a command, or <<- with a tab-indented end line hides the kill words that follow; and a real quoted body fed to read, xargs or a loop becomes programs (read -r p <<'E' / pkill / E; $p node). bash ran pkill each time",
+      "title": "The kill reader blanks quoted here-document bodies by a pattern on the raw text: a here-document opener inside quotes or a comment, a delimiter named like a command, or <<- with a tab-indented end line hides the kill words that follow: shapes agents write by habit (68 of 389 real kill commands held a here-document, 31 of them a << after a quote or a # on its line, by a rough pattern). A quoted body fed to read, xargs or a loop is a stated limit (declined with the cycle-27 shapes)",
       "value": "high",
       "cost": "S",
       "cluster": "security",
       "source": "cycle 2026-11-08 (27), T1 round 2 security review (c27-t1-sec-r2-01, c27-t1-sec-r2-02), born in 504cd49",
-      "since": 27
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "kill-reader-dash-kill-word",
-      "title": "A kill word right after a dash (${x:-pkill}, ${x-pkill}) is invisible to ANY_KILL and KILL_WORD's lookbehind, so a helper, set --, xargs or a variable runs it: bash ran pkill",
-      "value": "high",
-      "cost": "S",
-      "cluster": "security",
-      "source": "cycle 2026-11-08 (27), T1 round 2 security review (c27-t1-sec-r2-03), born in 504cd49",
-      "since": 27
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "kill-reader-caret-double-count",
-      "title": "Shell text read twice for the caret retry counts its passed kill program twice, so a second kill by port beside set -- passes (bash -c \"fuser f ^x\"; set -- fuser -k 3000/tcp; \"$@\")",
-      "value": "high",
-      "cost": "S",
-      "cluster": "security",
-      "source": "cycle 2026-11-08 (27), T1 round 2 security review (c27-t1-sec-r2-04), born in 504cd49",
-      "since": 27
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "kill-reader-turns-list",
-      "title": "The list of constructs that turn a word into a program lacks hash -p and a BASH_ENV= assignment before bash (hash -p /usr/bin/pkill r; r node); decide from bash's own list of builtins that run or bind a name, not by hand",
-      "value": "high",
-      "cost": "S",
-      "cluster": "security",
-      "source": "cycle 2026-11-08 (27), T1 round 2 security review (c27-t1-sec-r2-07), born in 504cd49; shown with a harmless echo in bash 3.2.57 because the box refuses these texts",
-      "since": 27
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "kill-reader-ansi-c-quote",
-      "title": "An ANSI-C quoted word ($'\\x70kill', $'pk\\151ll') is kept undecoded by the shared word reader, so an escaped kill name at a program's place passes; decode it as bash does",
-      "value": "high",
-      "cost": "S",
-      "cluster": "security",
-      "source": "cycle 2026-11-08 (27), T1 round 2 security review (c27-t1-sec-r2-06), pre-existing since 06a7bd8",
-      "since": 27
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "kill-reader-depth-word",
-      "title": "Past four levels of shell text, a word with an expansion and no space (pkill${IFS}node) does not count as the depth construct, so five nested bash -c pass a kill",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "security",
-      "source": "cycle 2026-11-08 (27), T1 round 2 security review (c27-t1-sec-r2-05), born in 504cd49",
       "since": 27
     },
     {
@@ -5669,17 +5593,26 @@
     },
     {
       "status": "planned",
-      "needs": [
-        "shell-box-hardening"
-      ],
-      "id": "reader-differential-from-bash-grammar",
-      "title": "The kill differential generates its contexts from bash itself, not from a hand list: every builtin bash names (compgen -b, enable -a), every expansion and quoting form of its manual (parameter defaults, ANSI-C quotes, here-documents fed to read, xargs and loops, hash -p, BASH_ENV), each crossed with a kill word at a program place, an argument and a data place, judged by real bash in the OS-isolated box; a text bash kills with and the reader passes fails the suite. In cycle 27 review found 18 such shapes the generator held none of",
+      "needs": [],
+      "id": "kill-reader-design-decision",
+      "title": "The kill reader stops taking shape patches: decide, measured on the transcript replay, between an allow list (a small grammar read whole; a kill word in any text outside it refused, its over-refusals counted on the replay) and the reader as it stands under the habit threat model; then the push reader's open shape nodes get the same replay verdict (a shape no agent writes by habit is declined)",
       "value": "high",
-      "cost": "M",
+      "cost": "S",
+      "cluster": "security",
+      "source": "2026-11-08, after cycle 27's convergence: unreadable-shape-passes 18 times, 8 of cycle 27's rows fix-introduced, 14 in one task; fix-loop brake of skills/cycle/report-formats.md, Convergence",
+      "since": 27
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "convergence-fix-loop-per-file",
+      "title": "ennyn convergence reads the recurrence ladder of skills/cycle/report-formats.md from the ledger: under its block, each file at rung 2 (its second cycle with rows of one class, or previous-fix rows this cycle) and at the brake (third cycle, previous-fix two cycles running, or a round that opened more fix-introduced rows than it fixed), with the class and the rows; exit 1 when a file at the brake gets a new patch node. The ladder's prose then shrinks to the decision it asks for",
+      "value": "high",
+      "cost": "S",
       "cluster": "gates",
       "mechanization": true,
       "sourceClass": "unreadable-shape-passes",
-      "source": "cycle 2026-11-08 (27) convergence: unreadable-shape-passes the most recurring class, 18 times, all in review (T1 rounds 1 and 2, T2 round 1 and 2); the hand-listed constructs of 504cd49 lost six shapes in round two",
+      "source": "2026-11-08, cycle 27 convergence: the most recurring class, unreadable-shape-passes (18), came from patching one reader; replaces reader-differential-from-bash-grammar; back-test on 1,341 ledger rows of cycles 16-27: 310 (23%) were fix-introduced; 130 (9%) came after their file already had findings in three cycles, most in skills/cycle/task-brief.md (24), kill-targets.mjs (17) and scripts/ennyn.mjs (17); one class per file reached two cycles far less often (4%), since class names scatter, so the ladder counts per file",
       "since": 27
     }
   ],
@@ -6442,6 +6375,108 @@
       "title": "Text given to another shell is read again with the outer text's kill word and constructs; a program name a run joins to letters is refused, and a shell's word holding $ or a backtick is read again (504cd49)",
       "status": "done",
       "finished": "2026-11-08"
+    }
+  ],
+  "declined": [
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-wrapper-operand-names",
+      "title": "The run-time-name scan ends at a wrapper's operand named like a kill program (flock fuser $(echo pkill) node, chroot fuser …, ssh host fuser x; $(echo pkill) node): bash ran pkill under stand-ins",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-07 (26), T1 round 2 security review (c26-t1-sec-r2-01), residue of dd614ac's option-value rule",
+      "since": 26,
+      "reason": "Stated limit (SECURITY.md: the hooks guard against habit, not intent): a shape written to get past the reader; none of 389 kill commands in other projects' transcripts on this machine held it (2026-11-08). A deliberate shape is answered by an operating-system boundary (shell-box-hardening), not by a longer list."
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-expansion-shapes",
+      "title": "Kill words the shell builds by expansion pass the reader: brace expansion ({pkill,node}, p{kill,} node), a glob at a program place (pk?ll), env -S'pkill node', zsh's repeat and =pkill, an alias defined in the same text; each reached pkill in the box or is zsh grammar read only",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "cycle 2026-11-07 (26), T1 round 1 security review, evidence gaps (bash 3.2 box; zsh 5.9 grammar with echo only)",
+      "since": 26,
+      "reason": "Stated limit (SECURITY.md: the hooks guard against habit, not intent): a shape written to get past the reader; none of 389 kill commands in other projects' transcripts on this machine held it (2026-11-08). A deliberate shape is answered by an operating-system boundary (shell-box-hardening), not by a longer list."
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-dash-kill-word",
+      "title": "A kill word right after a dash (${x:-pkill}, ${x-pkill}) is invisible to ANY_KILL and KILL_WORD's lookbehind, so a helper, set --, xargs or a variable runs it: bash ran pkill",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-08 (27), T1 round 2 security review (c27-t1-sec-r2-03), born in 504cd49",
+      "since": 27,
+      "reason": "Stated limit (SECURITY.md: the hooks guard against habit, not intent): a shape written to get past the reader; none of 389 kill commands in other projects' transcripts on this machine held it (2026-11-08). A deliberate shape is answered by an operating-system boundary (shell-box-hardening), not by a longer list."
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-caret-double-count",
+      "title": "Shell text read twice for the caret retry counts its passed kill program twice, so a second kill by port beside set -- passes (bash -c \"fuser f ^x\"; set -- fuser -k 3000/tcp; \"$@\")",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-08 (27), T1 round 2 security review (c27-t1-sec-r2-04), born in 504cd49",
+      "since": 27,
+      "reason": "Stated limit (SECURITY.md: the hooks guard against habit, not intent): a shape written to get past the reader; none of 389 kill commands in other projects' transcripts on this machine held it (2026-11-08). A deliberate shape is answered by an operating-system boundary (shell-box-hardening), not by a longer list."
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-turns-list",
+      "title": "The list of constructs that turn a word into a program lacks hash -p and a BASH_ENV= assignment before bash (hash -p /usr/bin/pkill r; r node); decide from bash's own list of builtins that run or bind a name, not by hand",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-08 (27), T1 round 2 security review (c27-t1-sec-r2-07), born in 504cd49; shown with a harmless echo in bash 3.2.57 because the box refuses these texts",
+      "since": 27,
+      "reason": "Stated limit (SECURITY.md: the hooks guard against habit, not intent): a shape written to get past the reader; none of 389 kill commands in other projects' transcripts on this machine held it (2026-11-08). A deliberate shape is answered by an operating-system boundary (shell-box-hardening), not by a longer list."
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-ansi-c-quote",
+      "title": "An ANSI-C quoted word ($'\\x70kill', $'pk\\151ll') is kept undecoded by the shared word reader, so an escaped kill name at a program's place passes; decode it as bash does",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-08 (27), T1 round 2 security review (c27-t1-sec-r2-06), pre-existing since 06a7bd8",
+      "since": 27,
+      "reason": "Stated limit (SECURITY.md: the hooks guard against habit, not intent): a shape written to get past the reader; none of 389 kill commands in other projects' transcripts on this machine held it (2026-11-08). A deliberate shape is answered by an operating-system boundary (shell-box-hardening), not by a longer list."
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-reader-depth-word",
+      "title": "Past four levels of shell text, a word with an expansion and no space (pkill${IFS}node) does not count as the depth construct, so five nested bash -c pass a kill",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-08 (27), T1 round 2 security review (c27-t1-sec-r2-05), born in 504cd49",
+      "since": 27,
+      "reason": "Stated limit (SECURITY.md: the hooks guard against habit, not intent): a shape written to get past the reader; none of 389 kill commands in other projects' transcripts on this machine held it (2026-11-08). A deliberate shape is answered by an operating-system boundary (shell-box-hardening), not by a longer list."
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "shell-box-hardening"
+      ],
+      "id": "reader-differential-from-bash-grammar",
+      "title": "The kill differential generates its contexts from bash itself, not from a hand list: every builtin bash names (compgen -b, enable -a), every expansion and quoting form of its manual (parameter defaults, ANSI-C quotes, here-documents fed to read, xargs and loops, hash -p, BASH_ENV), each crossed with a kill word at a program place, an argument and a data place, judged by real bash in the OS-isolated box; a text bash kills with and the reader passes fails the suite. In cycle 27 review found 18 such shapes the generator held none of",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "mechanization": true,
+      "sourceClass": "unreadable-shape-passes",
+      "source": "cycle 2026-11-08 (27) convergence: unreadable-shape-passes the most recurring class, 18 times, all in review (T1 rounds 1 and 2, T2 round 1 and 2); the hand-listed constructs of 504cd49 lost six shapes in round two",
+      "since": 27,
+      "reason": "It would find more shapes of a stated limit (SECURITY.md: habit, not intent), and each patch of cycle 27 bred fix-introduced findings (8); the fix-loop brake (skills/cycle/report-formats.md, Convergence) declines it with them. Replaced as the mechanization node by convergence-fix-loop-per-file."
     }
   ]
 }

@@ -20,6 +20,8 @@ Shared output contract for every reviewer. Include this file in the reviewer's p
 
 In security reviews, **evidence gaps** (a test does not pin the location of a gate, a path was not tried) are listed under their own heading even at low confidence; they do not open a new round.
 
+**A backstop is judged against habit, not against an attacker.** Where SECURITY.md calls a check a backstop and no boundary (a hook that reads a command's text), an input only an attacker writes is no finding: a program set on getting past text reading always will, and each such shape patched breeds the next. Such an input is a finding only when the project's replay of real agent commands holds its shape, or an agent writes it by habit (a quoted `<<` in a commit message, a heredoc beside a kill word); otherwise it is an evidence gap with its probe, and a shape SECURITY.md already lists as not reached is not even that. The answer to a deliberate shape is a boundary below the text (the operating system's), never a longer word list.
+
 ## Probes
 
 Hand back every input you tried, found or not, as a cell: an id, the input in the gate's own terms, the verdict you expect (`refused`; `said`: let through, saying what it did not check; `pass`), what its reason must hold when the verdict alone would not show the reading (`expectWhy`: the catalog key of a reason, a nested reason's key too, such as `deps.reason.bundled`, never its words), and where it came from:

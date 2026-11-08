@@ -24,6 +24,8 @@ If the task's impact table (rows S1–S5) was given, check its S2 row against yo
 
 **Verify** each finding (request, test, or code path read). Unverified claims are `Confidence: low`.
 
+**A backstop is no boundary.** A check SECURITY.md calls a backstop (the push and kill hooks read text) stops a command an agent writes by habit. A shape only an attacker writes is an evidence gap, not a finding, unless the project's replay of real agent commands holds it (finding-schema.md); a shape SECURITY.md lists as not reached is neither.
+
 **Stop only a process you started, by its PID or process group**: never a kill chosen by a filter, a name, a window title or a port (`taskkill /FI` or `/IM`, `Stop-Process -Name`, `pkill`, `killall`, `kill $(lsof …)`); the user's own programs may be open.
 
 ## Output
