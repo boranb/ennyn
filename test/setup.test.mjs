@@ -1184,7 +1184,10 @@ test("cli: init-scan --json is the scan; doctor prints marks and exits 1 on a pr
   assert.match(doc.stdout, /^! ask rules: no ask or deny rule for Bash\(git push \*\), PowerShell\(git push \*\), .*, \+\d+ in \.claude\/settings\.json; add them to permissions\.ask \(\/ennyn:init proposes them\)$/m);
   // No .gitignore: git does not ignore where Claude Code puts agent worktrees.
   assert.match(doc.stdout, /^! agent worktrees: git does not ignore \.claude\/worktrees\/, where Claude Code puts agent worktrees: .*; add \.claude\/worktrees\/ to \.gitignore and commit it \(\/ennyn:init proposes the line\)$/m);
-  assert.match(doc.stdout, /^problems: 1 · warnings: 3 · unmeasured: 1$/m, "the one unmeasured: too few commits for the fix label");
+  // No settings: the agent as it is, and no Read deny rule for .env*, ~/.ssh or ~/.aws (setup/secret-setup.mjs).
+  assert.match(doc.stdout, /^✓ agent mode: as it is\. /m);
+  assert.match(doc.stdout, /^! agent setup: no Read deny rule Read\(\.env\*\), Read\(~\/\.ssh\/\*\*\), Read\(~\/\.aws\/\*\*\) in the settings files; /m);
+  assert.match(doc.stdout, /^problems: 1 · warnings: 4 · unmeasured: 1$/m, "the one unmeasured: too few commits for the fix label");
 });
 
 test("commit style: language guessed from subjects, also Turkish typed without diacritics; types counted, 'faz 8:' is not one", () => {
@@ -3035,8 +3038,11 @@ test("ask rules: what is asked about, and where each rule is: committed, uncommi
   const hooks = at({ ".claude/settings.local.json": JSON.stringify({ hooks: "x", permissions: { ask: ["Bash(git push *)"] } }) });
   assert.deepEqual([where(hooks), hooks.unread], [["Bash local", "PowerShell null"], []]);
   // Other keys are not checked (Ennyn does not mirror the schema; doctor's line says a file with any setting
-  // Claude Code rejects is skipped whole).
-  assert.deepEqual(where(at({ ".claude/settings.local.json": JSON.stringify({ permissions: { ask: ["Bash(git push *)"], defaultMode: "yolo", allow: "x" } }) })), ["Bash local", "PowerShell null"]);
+  // Claude Code rejects is skipped whole). A key the secret setup reads is (permissions.mjs KEPT): a mode Claude Code
+  // does not take leaves the file unread (settings-default-mode-bogus, recorded).
+  assert.deepEqual(where(at({ ".claude/settings.local.json": JSON.stringify({ permissions: { ask: ["Bash(git push *)"], allow: "x" }, model: 5 }) })), ["Bash local", "PowerShell null"]);
+  const mode = at({ ".claude/settings.local.json": JSON.stringify({ permissions: { ask: ["Bash(git push *)"], defaultMode: "yolo" } }) });
+  assert.deepEqual([where(mode), mode.unread], [["Bash null", "PowerShell null"], [".claude/settings.local.json permissions.defaultMode"]]);
   // A file over 2 MB is skipped by Claude Code, and named; HEAD's copy over 2 MB gives nothing.
   const big = JSON.stringify({ permissions: { ask: ["Bash(git push *)"] }, pad: "x".repeat(SETTINGS_LIMIT) });
   const large = at({ ".claude/settings.json": big }, big);

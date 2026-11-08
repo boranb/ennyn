@@ -327,7 +327,7 @@ test("plugin: a run of one named node or fix: SKILL.md points to one-task.md, wh
     "**Protocol:** section 2 of `SKILL.md`, every step, split between the agent and the session as in a cycle.",
     "**Its number:** the run is a cycle of one task. It takes the next number after the handoff's last cycle, and the next cycle follows it. That number is every row's `cycle`, the rows' ids (`c<N>-t1-…`), the worktree mark (`ennyn:<N>`) and `ennyn.mjs convergence --cycle <N>`, so the command counts this run's rows and no other's. Under the last cycle's number, the counts of a closed cycle would change.",
     "**A fix's defect** is one row of round 0: its code is older than the run's start, so `pre-existing`, with `bornIn` ([report-formats.md](report-formats.md)), and `caughtBy` what reproduced it. A node that asks for something new has no such row.",
-    "**Plan,** two lines: `**One task:** [node id, value and cost; for a fix, the node written for it] — impact table: [required/not needed + why] — checks: [tests, mutation, reviewers]`, then the cycle plan's `**Security:**` line as [report-formats.md](report-formats.md) writes it.",
+    "**Plan,** three lines: `**One task:** [node id, value and cost; for a fix, the node written for it] — impact table: [required/not needed + why] — checks: [tests, mutation, reviewers]`, then the cycle plan's `**Security:**` and `**Agent mode:**` lines as [report-formats.md](report-formats.md) writes them.",
     "**Closing:** section 3 of `SKILL.md`, every step: graph, handoff, convergence, retire lessons, security checks, budget, push. The handoff names the run (cycle N, one task, its node) and keeps the next step for the next cycle.",
     "**Left out:** section 1's slots (core, mechanization, legacy audit), the picks that fill them, and the cycle plan's `**Discovery:**` and `**Tasks:**` lines.",
     "**Budget:** `ennyn.mjs budget --record` without `--security-audit`: the run has no audit slot. The record counts as a cycle toward `security.everyCycles`, so work done brings the security audit nearer; when `ennyn.mjs audit` says it is due, the report says the next cycle of four holds it.",
@@ -541,7 +541,16 @@ test("plugin: /ennyn:init offers what destroys or installs apart, writes none un
   const gates = read("skills/init/gates.md");
   assert.ok(read("skills/init/SKILL.md").includes("`agentSetup.offered`"), "the skill sends init to the list");
   // Plan approval's clear option: asked in question 4, written to the project's settings on a yes, never the user's.
-  assert.ok(read("skills/init/SKILL.md").includes("`agentSetup.ask` rules, push mode, plan approval's clear option: [gates.md](gates.md)."));
+  assert.ok(read("skills/init/SKILL.md").includes("`agentSetup.ask` rules, push mode, plan approval's clear option: [gates.md](gates.md); agent mode: [agent-mode.md](agent-mode.md)."));
+  // The agent's mode: one question, nothing written unless taken, the measured values only, never the scrub variable.
+  const mode = read("skills/init/agent-mode.md");
+  for (const words of [
+    '**As it is** (the default; "ok" or no answer): nothing is written.',
+    "Only on a plain \"without bypass\". Write `proposal` as the scan gives it",
+    "`disableBypassPermissionsMode` is the string `\"disable\"`, never `true`",
+    "The block does not set `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB`",
+    "`credentials` here holds `deny` entries only",
+  ]) assert.ok(mode.includes(words), words);
   assert.ok(gates.includes("On the user's yes, write `\"showClearContextOnPlanAccept\": true` into `.claude/settings.json`, keeping every other key, and commit it with the config; never into the user's own settings"));
   // The closing's route through plan approval is one procedure: which session runs the state steps, and the cleared one picks nothing again.
   const handover = read("skills/cycle/handover.md").split("\n");

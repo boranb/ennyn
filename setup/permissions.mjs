@@ -53,14 +53,50 @@ const WHOLE = ["sh", "bash"];
  */
 export const ruleFor = (command, tool) => `${tool}(${command.endsWith("*") || WHOLE.includes(command) ? command : `${command} *`})`;
 
+/** The permission modes Claude Code 2.1.310 and 2.1.319 take (their settings schema; `manual` is `default`). */
+const MODES = ["acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan", "manual"];
+/** @param {unknown} v */
+const flag = (v) => v === undefined || typeof v === "boolean";
+/** @param {unknown} v */
+const names = (v) => v === undefined || (Array.isArray(v) && v.every((x) => typeof x === "string"));
+/** A credentials list: each entry an object naming its file or variable, with mode deny or mask. @param {unknown} v @param {string} field */
+const credentials = (v, field) => v === undefined || (Array.isArray(v) && v.every((e) => isObject(e) && typeof e[field] === "string" && (e.mode === "deny" || e.mode === "mask")));
+/** @param {unknown} v @param {(o: Record<string, any>) => boolean} inner */
+const part = (v, inner) => v === undefined || (isObject(v) && inner(v));
+
 /**
- * A settings file's text as Ennyn reads it: the one predicate the hooks reader (init-scan) and the ask rules
- * share, so they agree on which files count. `{ json }`, or `{ unread }` naming what gives nothing: no JSON
- * object (a byte order mark is skipped, as Claude Code skips it), or `permissions`, `permissions.ask` or
- * `permissions.deny` in a shape Claude Code rejects, which makes it skip the whole file. A `hooks` value that
- * is no object Claude Code drops before its check ("This field was ignored") and keeps the file: it is left
- * out of `json` and named in `dropped`. Other keys are not checked: the reports say a file with any setting
- * Claude Code rejects is skipped whole.
+ * The keys the secret setup reads (setup/secret-setup.mjs), each with the kinds of value Claude Code keeps the file
+ * with: an absent key, and the kinds measured kept on 2.1.310 and 2.1.319 (test/reference/claude-code.json, the
+ * settings-bypass-*, settings-sandbox-*, settings-credentials-* and settings-no-bypass-* cells; the modes from their
+ * schema). Any other value of these keys may make Claude Code skip the whole file, its ask rules with it: measured
+ * for a boolean, null and another string on the bypass key, a string, a number and null on the sandbox flags, a
+ * string for allowWrite, an entry with no mode or a number for one, a mode typed wrong. So the file is not counted.
+ * Claude Code skips a file for a wrong value of any of its keys; the other keys are not checked here.
+ * @type {readonly { key: string, kept: (json: Record<string, any>) => boolean }[]}
+ */
+export const KEPT = [
+  { key: "permissions.disableBypassPermissionsMode", kept: (j) => !isObject(j.permissions) || [undefined, "disable"].includes(j.permissions.disableBypassPermissionsMode) },
+  { key: "permissions.defaultMode", kept: (j) => !isObject(j.permissions) || j.permissions.defaultMode === undefined || MODES.includes(j.permissions.defaultMode) },
+  {
+    key: "sandbox",
+    kept: (j) =>
+      part(j.sandbox, (sb) =>
+        flag(sb.enabled) && flag(sb.failIfUnavailable) && flag(sb.autoAllowBashIfSandboxed) &&
+        part(sb.filesystem, (fs) => names(fs.allowWrite)) &&
+        part(sb.network, (n) => names(n.allowedDomains)) &&
+        part(sb.credentials, (c) => credentials(c.files, "path") && credentials(c.envVars, "name"))),
+  },
+];
+
+/**
+ * A settings file's text as Ennyn reads it: the one predicate the hooks reader (init-scan), the ask rules and the
+ * secret setup share, so they agree on which files count. `{ json }`, or `{ unread }` naming what gives nothing: no
+ * JSON object (a byte order mark is skipped, as Claude Code skips it), `permissions`, `permissions.ask` or
+ * `permissions.deny` in a shape Claude Code rejects, each of which makes it skip the whole file, or a value of a key
+ * KEPT names that is not a kind it keeps, which may (`<path> <key>`). A `hooks` value that is no object Claude Code
+ * drops before its check ("This field was ignored") and keeps the
+ * file: it is left out of `json` and named in `dropped`. Other keys are not checked: the reports say a file with any
+ * setting Claude Code rejects is skipped whole.
  * @param {string} text @param {string} path
  * @returns {{ json: Record<string, any>, dropped?: string[] } | { unread: string }}
  */
@@ -76,6 +112,8 @@ export function parseSettings(text, path) {
   const { hooks, ...rest } = parsed;
   const json = hooks === undefined || isObject(hooks) ? parsed : rest;
   const dropped = json === rest ? { dropped: [`${path} hooks`] } : {};
+  const odd = KEPT.find((k) => !k.kept(json));
+  if (odd) return { unread: `${path} ${odd.key}` };
   const perms = json.permissions;
   if (perms === undefined) return { json, ...dropped };
   if (!isObject(perms)) return { unread: `${path} permissions` };

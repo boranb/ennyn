@@ -44,7 +44,7 @@ The cycle asks the user before any push. A Claude Code ask rule is the backstop:
 
 ## Who says yes to the push
 
-Ask it as its own question, before the ask rules are proposed: "At the end of a cycle, should the agent ask you before it pushes (`ask`, the default), or push by itself once the closing's checks and the whole test passed on that commit (`after-closing`)?" (The node that asks it beside the no-bypass mode is open: `secret-agent-setup`.)
+Ask it as its own question, before the ask rules are proposed: "At the end of a cycle, should the agent ask you before it pushes (`ask`, the default), or push by itself once the closing's checks and the whole test passed on that commit (`after-closing`)?" Then ask the agent's mode, as its own question too: [agent-mode.md](agent-mode.md).
 
 - `ask`, a bare "ok" or no answer: write no key. Propose the `git push` rules with the rest.
 - A plain `after-closing`: write `"push": { "mode": "after-closing" }`, leave both `git push` rules out of what you propose, and carry `User-Approved-Loosening: push.mode` in the commit that writes the config (the hook refuses it without). Say what it means: the closing pushes with a bare `git push` of the current branch to its upstream, only when `ennyn push-check --tested` allows it ([../cycle/push.md](../cycle/push.md)), and names it in the report; no ask rule stands for `git push`, so a bare `git push` also runs unasked at any other time that check holds; the push hook still asks about every other push (a force, a refspec, `--delete`, `--mirror`) and refuses an odd spelling.

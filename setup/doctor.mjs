@@ -12,6 +12,7 @@ import { loadConfig, ConfigError } from "../core/config.mjs";
 import { loadGraph, readyNodes, readyMechanization, graphProblems, GraphError } from "../plan/mechanization.mjs";
 import { MAYBE_TEST_COMMAND, MIN_HISTORY, TEST_COMMAND, indexMatches, recentCommits, productionSubjects, projectCommands, projectFiles, remotesByHost } from "./scan.mjs";
 import { askRules, capped, ghApplies, outwardCommands, GH_COMMANDS, SETTINGS, SETTINGS_LIMIT } from "./permissions.mjs";
+import { secretSetup } from "./secret-setup.mjs";
 import { ORPHANED, PLUGIN_RECORD, hookStatus, idleReason, replacedRoot, sessionOf, versionNote } from "./hook.mjs";
 import { instructionBudget, readBudgets } from "./budget.mjs";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -226,6 +227,40 @@ export function askReport(cwd, files, add, readers = {}) {
   // A push rule left in after-closing stops the closing's own push: said, not counted as held.
   const held = after ? askRules(pf, ["git push"]).rules.filter((r) => r.where !== null && r.where !== "unknown") : [];
   if (held.length) add("warn", "doctor.pushModeRule", { rules: named(held) });
+}
+
+/**
+ * The agent's secret setup (setup/secret-setup.mjs): the mode first, then each thing that leaves a secret open. What
+ * /ennyn:init writes is the user's choice: whoever keeps bypass gets the open items as warnings, never a fail.
+ * @param {string} cwd @param {NodeJS.ProcessEnv} env
+ * @param {(level: DoctorItem["level"], key: string, vars?: DoctorItem["vars"]) => void} add
+ */
+export function secretReport(cwd, env, add) {
+  /** @type {ReturnType<typeof secretSetup>} */
+  let s;
+  try {
+    s = secretSetup({ env, pf: projectFiles(cwd) });
+  } catch (e) {
+    return add("unmeasured", "doctor.agentUnmeasured", { error: oneLine(e) });
+  }
+  // The mode is what the files ask for, never proof: one not read whole leaves it unclaimed.
+  if (s.mode === "unmeasured") add("unmeasured", "doctor.agentModeUnread", { list: [...s.drops, ...s.unread, ...s.unmeasured] });
+  else if (s.mode === "noBypass") add("ok", "doctor.agentModeNoBypass", { mode: s.defaultMode ?? "default" });
+  else add("ok", s.sandbox.enabled ? "doctor.agentModeAsIsSandbox" : "doctor.agentModeAsIs", {});
+  for (const error of s.unmeasured) add("unmeasured", "doctor.agentUnmeasured", { error });
+  if (s.drops.length) add("warn", "doctor.agentDrops", { list: s.drops });
+  // The project's files the ask line names; the user's is named here.
+  const user = s.unread.filter((p) => p.startsWith(s.userSettings));
+  if (user.length) add("unmeasured", "doctor.agentUserUnread", { list: user });
+  if (s.readDeny.length) add("warn", "doctor.agentReadDeny", { rules: s.readDeny });
+  if (s.unprotected.length) add("warn", "doctor.agentUnprotected", { names: s.unprotected });
+  if (s.maskIgnored.length) add("warn", "doctor.agentMaskIgnored", { list: s.maskIgnored });
+  if (s.scrub.env) add("warn", "doctor.agentScrubEnv", {});
+  if (s.scrub.files.length) add("warn", "doctor.agentScrubFile", { path: s.scrub.files });
+  const c = s.configFolder;
+  if (c.error !== undefined) add("unmeasured", "doctor.agentConfigUnmeasured", { path: [c.path], error: c.error });
+  else if (c.top !== null && c.tracked + c.untracked > 0) add("warn", "doctor.agentConfigInRepo", { path: [c.path], top: [c.top], tracked: c.tracked, untracked: c.untracked });
+  if (s.mcp?.length) add("warn", "doctor.agentMcpSecret", { lines: s.mcp.map((h) => `${h.line ?? "?"} (${h.kind})`) });
 }
 
 /**
@@ -574,6 +609,7 @@ export async function checkSetup({ cwd, env = process.env, self = OWN_ROOT }) {
     if (push.mode === "after-closing" && !push.ok) add("warn", "doctor.pushModeHeld", { why: { shown: push.said.map((l) => tShown(l.key, l.vars, config.language)).join(" ") } });
     askReport(cwd, files, add, { configured: Boolean(config.configPath), pushMode: push.mode });
     worktreesReport(cwd, add);
+    secretReport(cwd, env, add);
     /** @type {ReturnType<typeof instructionBudget> | null} */
     let b = null;
     try {

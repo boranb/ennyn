@@ -11,6 +11,7 @@ Write reports in the project's `language`.
 3. [mechanization: node] — class it turns into a gate: [registry id]
 4. [legacy audit: feature, or the security audit `ennyn.mjs audit` did not rule out] — chosen because: [rule]
 **Security:** [threat this cycle meets · measure] or [none, because …]
+**Agent mode:** [doctor's agent mode line: no bypass, as it is, or not claimed; for a session started at the repository's top only]
 ```
 
 ## End of task

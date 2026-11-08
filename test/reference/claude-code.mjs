@@ -24,7 +24,9 @@
  * no rule stops writes nothing and calls no one, and a real gh would have no host to reach. The one file a spelling
  * hands to a shell (`runs`) is written here with that marker in it, and only the marker script is written runnable. A cell may give the repository a linked worktree outside it (`worktree`,
  * at ../w) and make its call from a subagent (`agent`: the stand-in calls Agent, and the Bash call comes in the
- * subagent's request). cellProblems refuses any other command, a cell holding the file its spelling runs, a settings key that runs or redirects something (a helper, a status
+ * subagent's request). A cell may also put plain files in its home (`home`, never one that runs), set EN_PROBE_* variables
+ * (`env`), read a home file (`{ Read: "~/<path>" }`) and start Claude Code with no mode flag or with
+ * --dangerously-skip-permissions (`launch`). cellProblems refuses any other command, a cell holding the file its spelling runs, a settings key that runs or redirects something (a helper, a status
  * line, an `env` other than EN_PROBE_*, MCP servers of the project), a path under `.git`, an import outside the cell,
  * and `{{bytes:N}}` past 4 MiB a file or 8 MiB a cell. Not measured by the review that set these rules: reads Claude
  * Code makes in the real home, sockets it opens past a proxy, a process that outlives the run's kill, and the case
@@ -54,7 +56,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
+import { devNull, tmpdir } from "node:os";
 import { delimiter, dirname, join, posix } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { DEFAULTS } from "../../core/config.mjs";
@@ -68,7 +70,7 @@ export { claudeBinary, safePath, versionOf };
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const RECORD = join(HERE, "claude-code.json");
-const CELL_KEYS = ["id", "from", "case", "files", "call", "cwd", "plugin", "worktree", "agent", "cc", "except", "ennyn"];
+const CELL_KEYS = ["id", "from", "case", "files", "home", "env", "launch", "call", "cwd", "plugin", "worktree", "agent", "cc", "except", "ennyn"];
 export const RELATIONS = /** @type {const} */ (["agree", "stricter", "extra", "differs", "unmeasured"]);
 
 /**
@@ -208,7 +210,16 @@ export const SPELLINGS = Object.freeze({
   "compose-down-pipe": { command: "docker compose down 2>&1 | grep -v warning", class: "none" },
   "npm-global-style": { command: "npm install --global-style tsx", class: "none" },
   "gh-api-flag-quoted": { command: 'gh api "-X" POST repos/x', class: "option", about: "gh api *-X POST*" },
+  // What a sandboxed command reads of the cell's home and environment: the reading's `seen` names what came back.
+  "secret-read": { command: 'cat "$HOME/.ssh/id_x" "$HOME/.aws/credentials"; echo "token=[$EN_PROBE_TOKEN]"', class: "none" },
 });
+/**
+ * The files a cell's home may hold, each a stand-in read as data: a key in `.ssh` (`id_<name>`), the AWS credentials
+ * file, and a file outside the project (`outside.txt`). None is a configuration any program on the way reads.
+ */
+const HOME_FILES = [/^\.ssh\/id_[A-Za-z0-9_]+$/, /^\.aws\/credentials$/, /^outside\.txt$/];
+/** How a cell starts Claude Code: bypassPermissions (left out), no mode flag, or --dangerously-skip-permissions. */
+const LAUNCH = { default: [], "skip-permissions": ["--dangerously-skip-permissions"] };
 /** The classes doctor's line names as not matched. */
 export const UNMATCHED = Object.freeze(["option", "quoted", "shell", "built"]);
 
@@ -217,8 +228,14 @@ const SCRIPT = "#!/bin/sh\n{{ran}}\n";
 /** The programs a spelling names that reach outside the cell: each a stand-in that does nothing, first on PATH. */
 export const STUBBED = ["gh", "docker", "docker-compose", "npm", "npx", "pnpm"];
 /** Top-level settings keys a cell may write, beside `en_probe_*` ones: none runs or redirects anything. */
-const SETTINGS_KEYS = ["permissions", "hooks", "model", "env"];
-const PERMISSION_KEYS = ["allow", "ask", "deny", "defaultMode", "additionalDirectories"];
+const SETTINGS_KEYS = ["permissions", "hooks", "model", "env", "sandbox"];
+const PERMISSION_KEYS = ["allow", "ask", "deny", "defaultMode", "additionalDirectories", "disableBypassPermissionsMode"];
+/**
+ * The sandbox keys a cell may write, each with the keys below it: the ones the secret setup reads and the block
+ * /ennyn:init writes. None runs a program, opens a port or names a proxy; `allowWrite` widens only what a sandboxed
+ * command may write, and a cell's command is a stand-in.
+ */
+const SANDBOX_KEYS = { enabled: null, failIfUnavailable: null, autoAllowBashIfSandboxed: null, filesystem: ["allowWrite"], network: ["allowedDomains"], credentials: ["files", "envVars"] };
 const MANIFEST_KEYS = ["name", "version", "description", "commands", "agents", "skills", "hooks", "mcpServers", "outputStyles"];
 /** Keys that run, fetch or redirect, refused in any JSON file of a cell. */
 const REFUSED_KEYS = ["url", "headers", "cwd", "apiKeyHelper", "statusLine", "subagentStatusLine", "fileSuggestion", "otelHeadersHelper", "awsAuthRefresh", "awsCredentialExport", "gcpAuthRefresh", "enableAllProjectMcpServers", "enabledMcpjsonServers", "extraKnownMarketplaces", "enabledPlugins", "dependencies", "lspServers", "monitors"];
@@ -229,12 +246,15 @@ const CELL_BYTES = 8 * 1024 * 1024;
 /** A path a cell may hold: plain names, none `.` or `..`, which a marker spells back whole. @param {unknown} p */
 const safe = (p) => typeof p === "string" && /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/.test(p) && p.split("/").every((x) => x !== "." && x !== "..");
 const MARK = /MARK:([A-Za-z0-9._/-]+)/g;
+/** The file a Read call names: in the project, or `~/<path>` in the cell's home. @param {string} read @param {string} project @param {string} home */
+const readPath = (read, project, home) => (read.startsWith("~/") ? join(home, read.slice(2)) : join(project, read));
 
 /**
- * @typedef {{ start: string[], after?: string[], call?: string, ran?: string[], by?: "subagent" }} CcReading what Claude Code
+ * @typedef {{ start: string[], after?: string[], call?: string, ran?: string[], by?: "subagent", seen?: string[] }} CcReading what Claude Code
  *   loaded at the start and after the call (paths), what became of the call (`ran`, `stopped: <reason>`, `unmeasured:
- *   …`), which files' commands ran, and `by`: the run names the cell's subagent as the call's parent
- * @typedef {{ id: string, from: string, case?: true, files: Record<string, string>, call?: { Bash: string } | { Read: string }, cwd?: string, plugin?: string, worktree?: true, agent?: "foreground" | "background", cc?: CcReading, except?: Record<string, string>, ennyn?: Record<string, string> }} Cell
+ *   …`), which files' commands ran, and `by`: the run names the cell's subagent as the call's parent; `seen`, for a cell
+ *   with `home` or `env`, the home files (`home:<path>`) and variables (`env:<name>`) whose text came back to the model
+ * @typedef {{ id: string, from: string, case?: true, files: Record<string, string>, home?: Record<string, string>, env?: Record<string, string>, launch?: keyof typeof LAUNCH, call?: { Bash: string } | { Read: string }, cwd?: string, plugin?: string, worktree?: true, agent?: "foreground" | "background", cc?: CcReading, except?: Record<string, string>, ennyn?: Record<string, string> }} Cell
  *   `case`: Claude Code's reading hangs on the disk folding case (a name in another case), so it is compared only on a
  *   disk that folds case as the record's did; `ennyn`: Ennyn's reading at each place `except` lists, so an accepted
  *   difference that moves to another wrong value is seen
@@ -335,7 +355,8 @@ export function compare(c, mine) {
   }
   // After a Read: a path-scoped rule is the side-copy hook's to give; any other file Ennyn counts on demand loads
   // with a folder the path lies in, or with the file whose import loads it.
-  if (c.call && "Read" in c.call) {
+  // A Read of the cell's home is outside the project: no instruction file loads with it.
+  if (c.call && "Read" in c.call && !c.call.Read.startsWith("~/")) {
     const read = c.call.Read;
     if (!cc.call || cc.call !== "ran") out.set("after", { relation: "unmeasured", ennyn: "-", cc: cc.call ?? "none" });
     else {
@@ -508,6 +529,12 @@ function fileProblems(c) {
     out.push(...jsonProblems(json, at, dotClaude));
     if (dotClaude && isObject(json)) {
       for (const k of Object.keys(json)) if (!SETTINGS_KEYS.includes(k) && !k.startsWith("en_probe_")) out.push(`${at}: settings key ${k} is none a cell may write`);
+      if (isObject(json.sandbox)) {
+        for (const [k, v] of Object.entries(json.sandbox)) {
+          if (!Object.hasOwn(SANDBOX_KEYS, k)) out.push(`${at}: sandbox.${k} is none a cell may write`);
+          else if (isObject(v)) for (const sub of Object.keys(v)) if (!(SANDBOX_KEYS[/** @type {keyof typeof SANDBOX_KEYS} */ (k)] ?? []).includes(sub)) out.push(`${at}: sandbox.${k}.${sub} is none a cell may write`);
+        }
+      }
       if (isObject(json.permissions)) {
         for (const k of Object.keys(json.permissions)) if (!PERMISSION_KEYS.includes(k) && !k.startsWith("en_probe_")) out.push(`${at}: permissions.${k} is none a cell may write`);
         const dirs = json.permissions.additionalDirectories;
@@ -539,7 +566,12 @@ export function cellProblems(c) {
   // The recorder writes each path under a directory of its own, and a marker spells it back: plain names only.
   if (!isObject(c.files) || !Object.entries(c.files).every(([k, v]) => safe(k) && typeof v === "string")) out.push(`${c.id}: files maps relative paths of plain names to text`);
   else out.push(...fileProblems(c));
-  if (c.call !== undefined && !(isObject(c.call) && Object.keys(c.call).length === 1 && ((typeof c.call.Bash === "string" && Object.hasOwn(SPELLINGS, c.call.Bash)) || safe(c.call.Read)))) out.push(`${c.id}: call is { Bash: <a name of SPELLINGS> } or { Read: <relative path> }`);
+  if (c.call !== undefined && !(isObject(c.call) && Object.keys(c.call).length === 1 && ((typeof c.call.Bash === "string" && Object.hasOwn(SPELLINGS, c.call.Bash)) || safe(c.call.Read) || (typeof c.call.Read === "string" && c.call.Read.startsWith("~/") && isObject(c.home) && Object.hasOwn(c.home, c.call.Read.slice(2)))))) out.push(`${c.id}: call is { Bash: <a name of SPELLINGS> } or { Read: <relative path> }, or { Read: "~/<a file of home>" }`);
+  // The cell's home holds plain text, and only at the names HOME_FILES allows: a home file is a program's configuration
+  // the recorder or Claude Code may run (.gitconfig's filters, .zshrc).
+  if (c.home !== undefined && !(isObject(c.home) && Object.entries(c.home).every(([k, v]) => safe(k) && HOME_FILES.some((re) => re.test(k)) && typeof v === "string" && !v.startsWith("#!") && !v.includes("{{")))) out.push(`${c.id}: home maps ${HOME_FILES.map((re) => re.source).join(", ")} to plain text`);
+  if (c.env !== undefined && !(isObject(c.env) && Object.entries(c.env).every(([k, v]) => /^EN_PROBE_[A-Z0-9_]*$/.test(k) && typeof v === "string" && !v.includes("{{")))) out.push(`${c.id}: env maps EN_PROBE_* names to text`);
+  if (c.launch !== undefined && !Object.hasOwn(LAUNCH, c.launch)) out.push(`${c.id}: launch is ${Object.keys(LAUNCH).join(" or ")}, or left out (bypassPermissions)`);
   // A shell runs what the file holds. In any folder and any case: `cwd` moves the call, and a disk that folds case opens it.
   const runs = isObject(c.call) && typeof c.call.Bash === "string" && Object.hasOwn(SPELLINGS, c.call.Bash) ? SPELLINGS[c.call.Bash].runs : undefined;
   if (runs !== undefined && isObject(c.files)) for (const p of Object.keys(c.files)) if (p.split("/").some((x) => x.toLowerCase() === runs)) out.push(`${c.id}: ${p}: ${c.call.Bash} runs ${runs}: the recorder writes it, never a cell`);
@@ -649,13 +681,14 @@ const marks = (body) => [...new Set([...JSON.stringify(body).matchAll(MARK)].map
 
 /**
  * git's environment for a cell's own repository, from nothing but PATH: no GIT_* of the parent (a GIT_DIR would
- * commit into another repository), no agent socket or secret, the cell's home, no system config; with the options
- * that run no hook and no file-system monitor.
+ * commit into another repository), no agent socket or secret, the cell's home, no system or global config (a
+ * `.gitconfig` in that home names filters that run on `git add`); with the options that run no hook and no file-system
+ * monitor.
  * @param {string} root the cell's directory
  */
 export function gitEnv(root) {
   return {
-    env: { PATH: safePath(), HOME: join(root, "home"), GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: join(root, "home", ".gitconfig"), GIT_TEMPLATE_DIR: join(root, "hooks"), GIT_AUTHOR_NAME: "x", GIT_AUTHOR_EMAIL: "x@x", GIT_COMMITTER_NAME: "x", GIT_COMMITTER_EMAIL: "x@x" },
+    env: { PATH: safePath(), HOME: join(root, "home"), GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: devNull, GIT_TEMPLATE_DIR: join(root, "hooks"), GIT_AUTHOR_NAME: "x", GIT_AUTHOR_EMAIL: "x@x", GIT_COMMITTER_NAME: "x", GIT_COMMITTER_EMAIL: "x@x" },
     args: ["-c", `core.hooksPath=${join(root, "hooks")}`, "-c", "core.fsmonitor=false"],
   };
 }
@@ -681,6 +714,10 @@ export async function ccReading(c, bin) {
     const P = join(R, "p");
     for (const d of ["p", "cfg", "home", "run", "tmp", "hooks", "bin"]) mkdirSync(join(R, d));
     writeCell(c, P);
+    for (const [path, text] of Object.entries(c.home ?? {})) {
+      mkdirSync(dirname(join(R, "home", path)), { recursive: true });
+      writeFileSync(join(R, "home", path), text, { mode: 0o644 });
+    }
     // Each says it ran, in the cell's list: the reading shows that the stand-in ran and the real program did not.
     for (const name of STUBBED) writeFileSync(join(R, "bin", name), `#!/bin/sh\necho ${name} >> ${P}/.ran\n`, { mode: 0o755 });
     const { env: git, args: quiet } = gitEnv(R);
@@ -690,7 +727,7 @@ export async function ccReading(c, bin) {
     if (c.worktree) execFileSync("git", [...quiet, "worktree", "add", "-q", "-b", "en-task", join(R, "w")], { cwd: P, env: git });
     writeFileSync(join(R, "cfg", ".claude.json"), JSON.stringify({ customApiKeyResponses: { approved: [KEY.slice(-20)], rejected: [] }, hasCompletedOnboarding: true }));
     const spelling = c.call && "Bash" in c.call ? SPELLINGS[/** @type {keyof typeof SPELLINGS} */ (c.call.Bash)] : undefined;
-    const call = !c.call ? null : spelling ? { name: "Bash", input: { command: spelling.command, description: "stand-in" } } : { name: "Read", input: { file_path: join(P, /** @type {{ Read: string }} */ (c.call).Read) } };
+    const call = !c.call ? null : spelling ? { name: "Bash", input: { command: spelling.command, description: "stand-in" } } : { name: "Read", input: { file_path: readPath(/** @type {{ Read: string }} */ (c.call).Read, P, join(R, "home")) } };
     const server = await standIn(call, c.agent);
     const env = {
       PATH: `${join(R, "bin")}${delimiter}${safePath()}`,
@@ -707,8 +744,9 @@ export async function ccReading(c, bin) {
       DISABLE_ERROR_REPORTING: "1",
       GIT_CONFIG_NOSYSTEM: "1",
       GH_HOST: "en-probe.invalid",
+      ...(c.env ?? {}),
     };
-    const args = ["-p", "--permission-mode", "bypassPermissions", "--output-format", "stream-json", "--verbose", ...(c.plugin ? ["--plugin-dir", join(P, c.plugin)] : []), "stand-in"];
+    const args = ["-p", ...(c.launch ? LAUNCH[c.launch] : ["--permission-mode", "bypassPermissions"]), "--output-format", "stream-json", "--verbose", ...(c.plugin ? ["--plugin-dir", join(P, c.plugin)] : []), "stand-in"];
     /** @type {{ out: string, code: number | null, timedOut: boolean }} */
     const run = await new Promise((resolve) => {
       // Its own process group, killed whole when the run ends or runs out of time.
@@ -740,6 +778,8 @@ export async function ccReading(c, bin) {
       const result = turn?.message.content.find(isResult);
       const text = JSON.stringify(result?.content ?? "");
       const how = /has been denied/.test(text) ? "deny" : /requested permissions/.test(text) ? "ask" : "other";
+      // What of the cell's home and environment came back to the model, by the file's path or the variable's name.
+      if (c.home || c.env) reading.seen = [...Object.entries(c.home ?? {}).filter(([, v]) => v.trim() && text.includes(v.trim())).map(([k]) => `home:${k}`), ...Object.entries(c.env ?? {}).filter(([, v]) => v && text.includes(v)).map(([k]) => `env:${k}`)].sort();
       reading.call = run.timedOut ? "unmeasured: the run did not end" : denied ? `stopped: ${how}` : result ? "ran" : `unmeasured: no call (${main.length} request(s), exit ${run.code})`;
       // A call in a cell with `agent` counts only as the run says whose it was.
       if (c.agent) {

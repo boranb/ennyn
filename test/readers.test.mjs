@@ -66,6 +66,7 @@ export const READERS = [
   { module: "setup/doctor.mjs", program: "Claude Code", harness: "test/reference.test.mjs", test: "reference: doctor's ask line names as unmatched every spelling Claude Code ran under a rule", kind: "record" },
   { module: "setup/hook.mjs", program: "sh", harness: "test/hook-oracle.test.mjs", test: "hook oracle: the hooks install-hook writes stop a real secret", kind: "live" },
   { module: "setup/permissions.mjs", program: "Claude Code", harness: "test/reference.test.mjs", test: CC_CELLS, kind: "record" },
+  { module: "setup/secret-setup.mjs", program: "Claude Code", harness: "test/reference.test.mjs", test: CC_CELLS, kind: "record" },
   { module: "setup/scan.mjs", program: "git", harness: "test/git-oracle.test.mjs", test: LOG_READERS, kind: "live" },
   { module: "setup/scan.mjs", program: "Markdown", harness: "test/reference.test.mjs", test: "reference: every Markdown cell compares as recorded", kind: "record" },
   { module: "setup/scan.mjs", program: "Claude Code", harness: "test/reference.test.mjs", test: CC_CELLS, kind: "record" },

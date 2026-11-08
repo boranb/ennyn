@@ -497,6 +497,8 @@ export const GATES = [
   {
     test: "test/reference.test.mjs",
     guards: [
+      { id: "reference-no-bypass-disable", why: "a block init writes that Claude Code skips whole, ask rules with it", file: "setup/secret-setup.mjs", old: 'disableBypassPermissionsMode: "disable", deny', new: "disableBypassPermissionsMode: true, deny", pattern: "reference: the no-bypass block" },
+      { id: "reference-drops-bypass", why: "a settings file Claude Code skips read as applying its ask rules", file: "setup/permissions.mjs", old: '[undefined, "disable"].includes(j.permissions.disableBypassPermissionsMode)', new: '[undefined, null, true, "disable"].includes(j.permissions.disableBypassPermissionsMode)', pattern: "reference: every Claude Code cell compares" },
       { id: "reference-scope", why: "a project's scope not read: npm sends a package to its registry, the gate proves another", file: "checks/deps.mjs", old: 'else if (x.key === "registry" || x.key === "scope" || x.key.endsWith(":registry")) set.set(x.key, x);', new: 'else if (x.key === "registry" || x.key.endsWith(":registry")) set.set(x.key, x);', pattern: "reference: every npm cell compares" },
       { id: "reference-bundle-spelling", why: "the old bundledDependencies spelling not read as npm reads it", file: "checks/deps.mjs", old: "const bd = m.bundleDependencies === undefined ? m.bundledDependencies : m.bundleDependencies;", new: "const bd = m.bundleDependencies;", pattern: "reference: every npm cell compares" },
       { id: "reference-specs-overrides", why: "the root's overrides not read, though npm fetches what they name", file: "checks/deps.mjs", old: "    if (from === \"\") overrides(pkg.overrides);\n", new: "", pattern: "reference: every npm cell compares" },

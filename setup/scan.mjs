@@ -19,6 +19,7 @@ import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
 import { literalGlob } from "../core/glob.mjs";
 import { clipped, ends } from "../core/i18n.mjs";
 import { LEAVES, keptPaths, loadPathScopedRules, markdownFiles, reasonText, splitFrontMatter, parsePaths } from "../adapters/claude-code/rules-index.mjs";
+import { CREDENTIAL_VARS, neededHosts, noBypassBlock, secretSetup } from "./secret-setup.mjs";
 import { askRules, ghApplies, isGithubHost, OFFERED, outwardCommands, readSettings, SETTINGS, SETTINGS_LIMIT, urlHost } from "./permissions.mjs";
 
 /** Fewer commits than this and a share says little: the default stays. */
@@ -1286,6 +1287,16 @@ export function scanProject({ cwd, env = process.env, from = cwd, ceiling }) {
   // Offered apart, as a choice: a rule the project holds, in either file, committed or not, is not offered again.
   const notHeld = (/** @type {readonly string[]} */ list) => askRules(pf, [...list]).rules.filter((r) => r.where === null).map((r) => r.rule);
   const offered = { destroys: notHeld(OFFERED.destroys), installs: notHeld(OFFERED.installs) };
+  // The agent's secret setup, and the block the no-bypass mode would write (skills/init/agent-mode.md).
+  const found = secretSetup({ env, pf });
+  const secrets = {
+    ...found,
+    proposal: noBypassBlock({
+      worktrees: null,
+      hosts: neededHosts({ npm: files.some((f) => /(^|\/)package\.json$/.test(f)) || pf.present("package.json"), github: remotes.github.length > 0 }),
+      vars: CREDENTIAL_VARS.filter((n) => env[n]),
+    }),
+  };
   const declared = projectCommands(cwd);
   const churn = churnPaths(commits, cwd, patterns.re);
   const roadmap = roadmapFiles(cwd, files);
@@ -1311,7 +1322,7 @@ export function scanProject({ cwd, env = process.env, from = cwd, ceiling }) {
     github: repo ? githubRepo(cwd) : null,
     pathScopedRules: rules.n,
     pathScopedRulesLinkedOut: rules.linkedOut,
-    agentSetup: { ...setup, ask, offered },
+    agentSetup: { ...setup, ask, offered, secrets },
     // Outside a repository there is no index to count in: the lines are listed in agentSetup, `unmeasured` says why.
     bans: repo ? banMatches(cwd, setup.instructions, config.review.forbidden, configPath ? [relative(cwd, configPath).split(sep).join("/")] : []) : [],
     commands: declared.commands,

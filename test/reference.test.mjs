@@ -17,7 +17,7 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
-import { tmpdir } from "node:os";
+import { devNull, tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
@@ -32,6 +32,7 @@ import * as md from "./reference/markdown.mjs";
 import * as ay from "./reference/actions-yaml.mjs";
 import { MIN_RULE, ruleKey, ruleLines } from "../setup/budget.mjs";
 import { banLiterals, outsideFenceLines } from "../setup/scan.mjs";
+import { noBypassBlock } from "../setup/secret-setup.mjs";
 
 /** The open nodes of the work graph: a `gap:` names one. */
 async function openNodes() {
@@ -257,6 +258,25 @@ test("reference: every Claude Code cell compares as recorded", async () => {
   );
 });
 
+test("reference: the no-bypass block /ennyn:init writes is the one Claude Code kept the project's settings with, ask rules applied", () => {
+  // A value Claude Code rejects makes it skip the file whole (the settings-bypass-*, settings-sandbox-* and
+  // settings-credentials-* cells): the block init writes is held to the recorded one, in either file.
+  const rec = cc.readRecord();
+  const block = noBypassBlock({ worktrees: "~/en-probe-worktrees", hosts: ["registry.npmjs.org"], vars: ["EN_PROBE_TOKEN"] });
+  const shared = rec.cells.find((c) => c.id === "settings-no-bypass-block");
+  const local = rec.cells.find((c) => c.id === "settings-no-bypass-block-local");
+  assert.deepEqual(JSON.parse(String(shared?.files[".claude/settings.json"])), { ...block, permissions: { ...block.permissions, ask: ["Bash(git push *)"] } });
+  assert.deepEqual(JSON.parse(String(local?.files[".claude/settings.local.json"])), block);
+  for (const c of [shared, local]) assert.equal(c?.cc?.call, "stopped: ask", c?.id);
+  // What the block keeps out, against controls with no settings: a Read outside the project, under bypassPermissions,
+  // with no mode flag and with --dangerously-skip-permissions; ~/.ssh, ~/.aws and a denied variable from a sandboxed command.
+  const cell = (/** @type {string} */ id) => rec.cells.find((c) => c.id === id)?.cc;
+  assert.deepEqual([cell("read-outside-control")?.call, cell("read-outside-control")?.seen], ["ran", ["home:outside.txt"]]);
+  for (const id of ["block-outside", "block-outside-no-mode-flag", "block-outside-skip-permissions"]) assert.deepEqual([cell(id)?.call, cell(id)?.seen], ["stopped: ask", []], id);
+  assert.deepEqual(cell("secret-read-control")?.seen, ["env:EN_PROBE_TOKEN", "home:.aws/credentials", "home:.ssh/id_x"]);
+  for (const id of ["block-leak", "block-leak-no-mode-flag"]) assert.deepEqual([cell(id)?.call, cell(id)?.seen], ["ran", []], id);
+});
+
 test("reference: the Claude Code record names its version and holds well-formed cells, each with its reading", () => {
   const rec = cc.readRecord();
   assert.match(String(rec.claudeCode), /^\d+\.\d+\.\d+$/);
@@ -450,7 +470,8 @@ test("reference: what the ask rules' reports claim rests on Claude Code's record
   }
   for (const [name, s] of Object.entries(cc.SPELLINGS)) {
     if (name === "plugin-bin" || !(s.about || s.class === "none")) continue;
-    for (const part of s.command.split(/&&|\||;/)) assert.ok(["git", "cd", "echo", "grep", "sh", "bash", ...cc.STUBBED].includes(part.trim().split(" ")[0]), `${name}: ${part}`);
+    // `cat` reads the cell's own home only (secret-read).
+    for (const part of s.command.split(/&&|\||;/)) assert.ok(["git", "cd", "echo", "grep", "sh", "bash", "cat", ...cc.STUBBED].includes(part.trim().split(" ")[0]), `${name}: ${part}`);
   }
 });
 
@@ -493,6 +514,12 @@ test("reference control: a cell runs no command of its own and reaches nothing o
     "rec-run-own-file-below": { cwd: "sub", call: { Bash: "bash-script" }, files: { "sub/x.txt": "touch /tmp/x\n" } },
     // A plugin's bin/ in another case is the same folder on such a disk, and on PATH.
     "rec-plugin-bin-case": { plugin: "p", call: { Bash: "plugin-bin" }, files: { "p/BIN/en-probe-bin": "{{nomark}}#!/bin/sh\ntouch /tmp/x\n" } },
+    // A cell's home is data only: a .gitconfig's filter runs on the recorder's git add, a .zshrc in Claude Code's shell.
+    "rec-home-gitconfig-filter": { files: { ".gitattributes": "*.txt filter=en\n", "x.txt": "x\n" }, home: { ".gitconfig": "[filter \"en\"]\n\tclean = touch /tmp/x && cat\n" } },
+    "rec-home-zshrc": { call: { Bash: "secret-read" }, home: { ".zshrc": "touch /tmp/x\n" } },
+    "rec-home-zshenv": { home: { ".zshenv": "touch /tmp/x\n" } },
+    "rec-home-ssh-config": { home: { ".ssh/config": "Host *\n\tProxyCommand touch /tmp/x\n" } },
+    "rec-home-aws-config": { home: { ".aws/config": "[default]\ncredential_process = touch /tmp/x\n" } },
   };
   for (const [id, probe] of Object.entries(probes)) assert.notDeepEqual(cc.cellProblems({ id, ...base, ...probe }), [], id);
   // The refusal is of the file a call runs: that spelling with no such file passes, and so does the name under a spelling that runs nothing.
@@ -531,11 +558,32 @@ test("reference control: a cell runs no command of its own and reaches nothing o
   try {
     const { env, args } = cc.gitEnv("/cell");
     assert.deepEqual(Object.keys(env).filter((k) => !["PATH", "HOME", "GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL", "GIT_TEMPLATE_DIR"].includes(k) && !/^GIT_(AUTHOR|COMMITTER)_(NAME|EMAIL)$/.test(k)), []);
+    assert.equal(env.GIT_CONFIG_GLOBAL, devNull, "no config from the cell's home");
     assert.equal(env.HOME, join("/cell", "home"));
     assert.deepEqual(args, ["-c", `core.hooksPath=${join("/cell", "hooks")}`, "-c", "core.fsmonitor=false"]);
   } finally {
     for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k];
   }
+  // The recorder's git steps on a cell whose home names a filter: the filter never runs. With the home's file read as
+  // the global config, it does: the probe reaches.
+  const filtered = (/** @type {boolean} */ global) => {
+    const R = realpathSync(mkdtempSync(join(tmpdir(), "en-ref-home-")));
+    const P = join(R, "p");
+    mkdirSync(join(R, "home"), { recursive: true });
+    mkdirSync(join(R, "hooks"));
+    mkdirSync(P);
+    const marker = join(R, "ran");
+    writeFileSync(join(R, "home", ".gitconfig"), `[filter "en"]\n\tclean = touch '${marker}' && cat\n`);
+    writeFileSync(join(P, ".gitattributes"), "*.txt filter=en\n");
+    writeFileSync(join(P, "x.txt"), "x\n");
+    const { env, args } = cc.gitEnv(R);
+    // XDG_CONFIG_HOME, TZ, LC_ALL and the ceiling for test/hermetic.mjs; git reads no XDG config while GIT_CONFIG_GLOBAL is set.
+    const git = { ...env, XDG_CONFIG_HOME: join(R, "xdg"), TZ: "UTC", LC_ALL: "C", GIT_CEILING_DIRECTORIES: R, ...(global ? { GIT_CONFIG_GLOBAL: join(R, "home", ".gitconfig") } : {}) };
+    for (const step of [["init", "-q"], ["add", "-A"], ["commit", "-qm", "cell", "--no-verify"]]) assert.equal(spawnSync("git", [...args, ...step], { cwd: P, env: git }).status, 0, step.join(" "));
+    return existsSync(marker);
+  };
+  assert.equal(filtered(false), false, "a filter in the cell's home ran");
+  assert.equal(filtered(true), true, "the control: a filter read as global config runs");
   // Another version of Claude Code: the message names the record's and how to point at a binary.
   assert.match(cc.otherVersion("2.1.310", "claude", "2.1.207"), /record is Claude Code 2\.1\.310, claude is 2\.1\.207: point at a 2\.1\.310 binary \(npm run test:reference -- --claude <path>/);
 });

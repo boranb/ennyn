@@ -22,7 +22,7 @@ Asked for one task alone, the cycle takes it under the same protocol and closes 
 
 **A fix's defect** is one row of round 0: its code is older than the run's start, so `pre-existing`, with `bornIn` ([report-formats.md](report-formats.md)), and `caughtBy` what reproduced it. A node that asks for something new has no such row.
 
-**Plan,** two lines: `**One task:** [node id, value and cost; for a fix, the node written for it] — impact table: [required/not needed + why] — checks: [tests, mutation, reviewers]`, then the cycle plan's `**Security:**` line as [report-formats.md](report-formats.md) writes it.
+**Plan,** three lines: `**One task:** [node id, value and cost; for a fix, the node written for it] — impact table: [required/not needed + why] — checks: [tests, mutation, reviewers]`, then the cycle plan's `**Security:**` and `**Agent mode:**` lines as [report-formats.md](report-formats.md) writes them.
 
 **Closing:** section 3 of `SKILL.md`, every step: graph, handoff, convergence, retire lessons, security checks, budget, push. The handoff names the run (cycle N, one task, its node) and keeps the next step for the next cycle.
 

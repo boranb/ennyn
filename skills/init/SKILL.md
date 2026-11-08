@@ -24,9 +24,9 @@ Send one message with at most six questions. Each carries the survey's answer as
    - the history's own types, when it has a convention (`commitStyle.typedShare` ≥ 0.5); ask which one marks a repair;
    - otherwise, by commit language: `en` → `feat, fix, docs, test, refactor, chore` with `fix`; `tr` → the same English types with Turkish text, or Turkish types `özellik, düzeltme, belge, test, düzenleme, bakım` with `düzeltme`;
    - or a free subject: `types` stays empty.
-   The fix type is only for repairs of earlier commits. A `majority` result means the history's rate is a trend only; the convention fixes that from now on.
+   The fix type is only for repairs of earlier commits. A `majority` result means the history's rate is a trend only; the convention fixes that.
 3. **Generated files and test layout.** From `churn.paths`, ask which are build output; a `generatedMarker` is a strong hint, not proof. Confirmed paths go into `metrics.excludeRe`. When `tests.proposal` is set, show its example files and ask whether they are tests; a production file that matches would leave the rework rate. Propose a test command of `commands` as the fast test; none: ask for it, or why there are no tests.
-4. **Risky paths and security** (`risky`): they need an impact table before any edit, and the security audit reads them; the user adds or removes. Confirm the values, else the defaults: a security audit every 3 cycles (`security.everyCycles`); a new dependency version waits 7 days (`security.deps.cooldownDays`), refused under 1% of its package's weekly downloads and 1,000 of its own (`minShare`, `minWeekly`); the cycle asks OSV about public packages (`security.deps.advisories`; `""`: none). `agentSetup.ask` rules, push mode, plan approval's clear option: [gates.md](gates.md). Will cycles run unattended? Default yes; only a plain no opens `agentSetup.offered`.
+4. **Risky paths and security** (`risky`): they need an impact table before any edit, and the security audit reads them; the user adds or removes. Confirm the values, else the defaults: a security audit every 3 cycles (`security.everyCycles`); a new dependency version waits 7 days (`security.deps.cooldownDays`), refused under 1% of its package's weekly downloads and 1,000 of its own (`minShare`, `minWeekly`); the cycle asks OSV about public packages (`security.deps.advisories`; `""`: none). `agentSetup.ask` rules, push mode, plan approval's clear option: [gates.md](gates.md); agent mode: [agent-mode.md](agent-mode.md). Will cycles run unattended? Default yes; only a plain no opens `agentSetup.offered`.
 5. **Where the work comes from**:
    - the `roadmap` files;
    - open GitHub issues (`gh issue list --state open --limit 50 --json number,title,labels`, only when `github` is set and `gh` works);
@@ -37,7 +37,7 @@ Nothing else is asked but that offer; everything else keeps its default.
 
 ## 3. Write `.ennyn/config.json`
 
-Write only the keys that differ from the defaults (DESIGN.md has the table). JSON-escape regex values.
+Write only the keys that differ from the defaults (DESIGN.md lists them). JSON-escape regex values.
 
 - `commitMsg.language`: only when it differs from `language`.
 - `commitMsg.types` and `commitMsg.fixType`: the agreed convention; the fix type is one of them.
@@ -54,7 +54,7 @@ Follow [graph.md](graph.md): where the graph goes, a roadmap kept in files, node
 
 ## 5. The project's own instructions
 
-The cycle follows Ennyn's convention. When an instruction or rule file sets another commit format or language (`commitLines` of `agentSetup.instructions`; every-session files first, then on-demand ones, then other agents'), show each such line and propose one that points at `.ennyn/config.json` instead. Edit it only on the user's yes, so the agent never gets two rules.
+The cycle follows Ennyn's convention. When an instruction or rule file sets another commit format or language (`commitLines` of `agentSetup.instructions`: every-session, on-demand, then other agents'), show each such line and propose one that points at `.ennyn/config.json` instead. Edit it only on the user's yes, so the agent never gets two rules.
 
 A line that forbids a literal (`bans`: "never use `console.log`") can become a `review.forbidden` rule the commit-msg hook enforces: [gates.md](gates.md).
 
