@@ -244,6 +244,14 @@ test("plugin: the approval line of a loosening is the user's: the cycle skill sa
   for (const key of GATE_KEYS) assert.ok(section.includes(`\`${key}\``) || section.includes(`\`${key.split(".").at(-1)}\``), key);
   assert.match(section, /a tripwire and a record, not a boundary/);
   assert.match(read("SECURITY.md"), /a tripwire and a record, not a boundary/);
+  // push.mode's approval is the same line: an agent that writes it lets its own bare push run unasked (cycle 27 audit).
+  // Each document states the limit whole: who writes the line, what it turns on, and the ask rule that still stops it.
+  const limit = "an agent that writes it itself turns `after-closing` on, and its next bare `git push` runs unasked where no ask rule stands";
+  for (const doc of ["skills/cycle/push.md", "SECURITY.md"]) {
+    assert.ok(read(doc).includes(limit), `${doc}: the approval an agent writes itself`);
+    assert.doesNotMatch(read(doc), /agent (cannot|can't|can not) (grant|approve|give)/, `${doc}: an agent cannot approve the push`);
+  }
+  assert.ok(read("SECURITY.md").includes("under `push.mode` `after-closing` a bare `git push` the decision allows runs unasked where no ask rule stands"), "SECURITY.md: the push hook under after-closing");
 });
 
 test("plugin: a brief names the task's gate, and a fix no review reads passes it: the agent before it amends, the orchestrator's rerun counted", () => {
