@@ -817,7 +817,7 @@ export const NOT_GATES = {
   "test/budget.test.mjs": { reason: "runs the CLI on temporary repositories, and on the metrics-log corpus", allow: '"scripts", "ennyn\\.mjs"|"__fixtures__", "metrics-log"' },
   "test/ci.test.mjs": CLI_ONLY,
   "test/push-spellings.test.mjs": { reason: "runs the push reader on its corpus and the PreToolUse hook on temporary projects, on a copy of the plugin's files for a broken catalog; reads the header and SECURITY.md for the stated limits", allow: '"\\.\\./(adapters/claude-code/(hooks/)?push-spellings\\.mjs|SECURITY\\.md|)", import\\.meta\\.url|"\\.\\.", import\\.meta\\.url' },
-  "test/kill-targets.test.mjs": { reason: "runs the kill reader on its corpus and the PreToolUse hook on temporary projects, on a copy of the plugin's files for a broken catalog; reads the header and SECURITY.md for the stated limits", allow: '"\\.\\./(adapters/claude-code/(hooks/)?kill-targets\\.mjs|SECURITY\\.md|)", import\\.meta\\.url|"\\.\\.", import\\.meta\\.url' },
+  "test/kill-targets.test.mjs": { reason: "runs the kill reader on its corpus and the PreToolUse hook on temporary projects, on a copy of the plugin's files for a broken catalog; reads the header and SECURITY.md for the stated limits; makes a shell box in a child node inside a sandbox", allow: '"\\.\\./(adapters/claude-code/(hooks/)?kill-targets\\.mjs|SECURITY\\.md|)", import\\.meta\\.url|"\\.\\.", import\\.meta\\.url|"\\./shell-box\\.mjs", import\\.meta\\.url' },
   "test/compact-boundary.test.mjs": { reason: "runs the PreCompact hook on temporary projects", allow: '"\\.\\./adapters/claude-code/hooks/compact-boundary\\.mjs", import\\.meta\\.url' },
   "test/bypass.test.mjs": CLI_ONLY,
   "test/leftovers.test.mjs": CLI_ONLY,

@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { mayHold } from "../adapters/claude-code/config-place.mjs";
 import { pushAliases, pushSpelling } from "../adapters/claude-code/push-spellings.mjs";
 import { SPELLINGS, readRecord } from "./reference/claude-code.mjs";
-import { shellBox, unsafeTexts } from "./shell-box.mjs";
+import { inFence, shellBox, unsafeTexts } from "./shell-box.mjs";
 
 /**
  * Pushes left alone, which only the rule stops: a shell reaches each, and Claude Code's parser finishes on each, so the rule
@@ -1055,7 +1055,9 @@ test("push reader: a real shell and a real git agree: what is refused reaches a 
     const reached = (/** @type {string} */ command) =>
       shells.some((shell) => {
         for (const f of [log, received]) writeFileSync(f, "");
-        const r = spawnSync(join(bin, shell), ["-c", command], { cwd, env, input: "", encoding: "utf8", timeout: 20000 });
+        // Inside the shell box's boundary: no signal, connection or named pipe reaches a process outside.
+        const [program, ...args] = inFence([join(bin, shell), "-c", command]);
+        const r = spawnSync(program, args, { cwd, env, input: "", encoding: "utf8", timeout: 20000 });
         assert.equal(r.signal, null, `${shell} did not end: ${command}`);
         const hit = readFileSync(received, "utf8") !== "" || readFileSync(log, "utf8").split("\n").some(sends);
         // The two lines a rejected push leaves half done.

@@ -7,14 +7,29 @@
  * 3.2 started by node with no SHLVL did not read BASH_ENV (measured: the builtin stayed), so SHLVL is set, and
  * `builtins` says where a builtin is still there: a test asks it for every context it runs before it runs any.
  *
+ * The safety is the operating system's, not the word check. Every run is inside a boundary (`fence`). On macOS it is
+ * sandbox-exec with a profile that denies a signal to any process outside the sandbox, a connection out (a Unix
+ * socket too) and a write to a named pipe, checked when the first box is made: from inside, a signal 0 to the shell
+ * itself must go and one to a sleeper started outside must be refused as not permitted, with that sleeper still there
+ * after. Cycle 27's texts past the check (`bash --posix`, `"$BASH" -l`, a PATH set by `read`, `cd /usr/bin && ./pkill`)
+ * ran the real kill and pkill there and reached nothing outside. The profile denies no Mach lookup (launchd's
+ * services). On
+ * Linux the boundary is the container, read from a PID namespace other than the first and the file the container's
+ * engine leaves: the box shares the container with the test runner and the other test files' processes, and those a
+ * text can reach. A Linux host outside a container (WSL too) and any other system have no boundary, and the box throws
+ * there, as it does where sandbox-exec is missing or lets the signal out. A set-user-ID program (ps on macOS) does not
+ * start in the sandbox. `inFence` puts a test's own shell inside the same boundary. The word check (`unsafeTexts`)
+ * stays as a first, cheap refusal with its reasons; it is no longer what keeps a real process safe, and texts get past
+ * it.
+ *
  * Needs bash at /bin/bash or on PATH, and /bin/sh: one that is missing throws, so the test fails, never skips. A run
  * has a time limit, starts in a process group of its own (a kill of its group reaches no test runner), and the
  * runs are sequential. A stand-in writes its line in one write: written in pieces, two stand-ins
  * of one text (a background start and a kill) once wove their lines together.
  */
 
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -67,6 +82,83 @@ export function unsafeTexts(texts) {
   return out;
 }
 
+/**
+ * macOS's sandbox: everything allowed but a signal to a process outside it, a connection out (a Unix socket too: tmux,
+ * ssh -O, docker) and a write to a named pipe (screen's server listens on one): each reached and stopped an outside
+ * process from a box text (cycle 28's review).
+ */
+export const PROFILE = "(version 1)(allow default)(deny signal)(allow signal (target same-sandbox))(deny network-outbound)(deny file-write* (vnode-type FIFO))";
+const SANDBOX_EXEC = "/usr/bin/sandbox-exec";
+/** The first PID namespace's inode on Linux (PROC_PID_INIT_INO, include/linux/proc_ns.h). */
+export const FIRST_PID_NS = "pid:[4026531836]";
+
+/**
+ * The boundary every run goes through, from what the machine says: `{ name, argv }`, argv put before the box's bash.
+ * @param {{ platform: string, sandboxExec?: boolean, refused?: number | null, pidNs?: string | null, engineFile?: boolean }} m
+ *   `refused`: the exit of the check run in the sandbox, 0 when its signal to the outside sleeper was refused
+ */
+export function pickFence(m) {
+  if (m.platform === "darwin") {
+    if (!m.sandboxExec) throw new Error(`this harness needs ${SANDBOX_EXEC}: without it a text past the check can signal any process`);
+    if (m.refused !== 0) throw new Error(`a signal left the sandbox, or it did not start (exit ${m.refused}): the box runs nothing`);
+    return { name: "sandbox", argv: [SANDBOX_EXEC, "-p", PROFILE] };
+  }
+  if (m.platform === "linux" && m.pidNs && m.pidNs !== FIRST_PID_NS && m.engineFile) return { name: "container", argv: [] };
+  throw new Error(`no boundary keeps a signal in the box on ${m.platform} here (a container on Linux, sandbox-exec on macOS): the box runs nothing`);
+}
+
+/**
+ * The exit of the check that sandbox-exec fences: 0 when, from inside, a signal 0 to the shell itself goes and one to
+ * `pid` (a process outside, alive) is refused as not permitted; a process that is gone answers otherwise. It runs with
+ * no exported shell function, as the box's runs do. @param {number | undefined} pid
+ */
+export function refusedExit(pid) {
+  // A sleeper that did not start leaves nothing to refuse: that reads as not fenced, never as fenced.
+  const check = pid === undefined ? "exit 5" : `kill -0 $$ || exit 4; out=$(kill -0 ${pid} 2>&1) && exit 3; case "$out" in *"not permitted"*) exit 0;; esac; exit 6`;
+  const env = { ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("BASH_FUNC_"))), LC_ALL: "C" };
+  return spawnSync(SANDBOX_EXEC, ["-p", PROFILE, "/bin/sh", "-c", check], { env, stdio: "ignore", timeout: 10000 }).status;
+}
+
+/** What pickFence reads, read on this machine; the macOS check sends signal 0 only, to a sleeper it started. */
+function fenceReadings() {
+  const m = { platform: process.platform, sandboxExec: false, refused: /** @type {number | null} */ (null), pidNs: /** @type {string | null} */ (null), engineFile: false };
+  if (m.platform === "darwin") {
+    m.sandboxExec = existsSync(SANDBOX_EXEC);
+    if (!m.sandboxExec) return m;
+    const outside = spawn("/bin/sleep", ["30"], { stdio: "ignore" });
+    try {
+      m.refused = refusedExit(outside.pid);
+      // The sleeper must still be there after the check, or the refusal read was of nothing.
+      try {
+        if (outside.pid !== undefined) process.kill(outside.pid, 0);
+      } catch {
+        m.refused = 7;
+      }
+    } finally {
+      outside.kill();
+    }
+  } else if (m.platform === "linux") {
+    try {
+      m.pidNs = readlinkSync("/proc/self/ns/pid");
+    } catch {}
+    m.engineFile = existsSync("/.dockerenv") || existsSync("/run/.containerenv");
+  }
+  return m;
+}
+
+/** @type {{ name: string, argv: string[] } | undefined} */
+let picked;
+/** The boundary, picked and checked once a process. */
+const theFence = () => (picked ??= pickFence(fenceReadings()));
+
+/**
+ * A command put inside the box's boundary, for a test that runs a shell of its own on corpus texts: the fence's
+ * program first, then `argv`. Throws where no boundary holds, as the box does. @param {string[]} argv
+ */
+export function inFence(argv) {
+  return [...theFence().argv, ...argv];
+}
+
 /** A word separator and a line end no generated text holds. */
 export const UNIT = "\u001f";
 
@@ -78,6 +170,7 @@ export const UNIT = "\u001f";
 export function shellBox(prefix, { stands, real }) {
   const bash = existsSync("/bin/bash") ? "/bin/bash" : machineProgram("bash");
   if (!bash || !existsSync("/bin/sh")) throw new Error("this harness needs bash and /bin/sh");
+  const fence = theFence();
   const box = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
   const bin = join(box, "bin");
   const cwd = join(box, "work");
@@ -100,9 +193,15 @@ export function shellBox(prefix, { stands, real }) {
   // caller exported, its startup files and its PATH do not.
   const inherited = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("BASH_FUNC_") && !["ENV", "ZDOTDIR", "CDPATH", "GLOBIGNORE", "SHELLOPTS", "BASHOPTS", "IFS", "PS4"].includes(k)));
   const env = { ...inherited, PATH: bin, HOME: box, BASH_ENV: startup, SHLVL: "1", LC_ALL: "C", TMPDIR: box };
+  // Every run inside the fence: its program first, then the box's bash.
+  const command = [...fence.argv, join(bin, "bash")];
+  /** @param {string} text */
+  const inside = (text) => spawnSync(command[0], [...command.slice(1), "-c", text], { cwd, env, input: "", encoding: "utf8", timeout: 10000, detached: true });
   return {
     box,
     cwd,
+    /** The boundary the runs are in: `sandbox` or `container`. */
+    fence: fence.name,
     /**
      * What `bash -c text` ran, one entry a stand-in call: its PID, its name and its words, in the order they were written;
      * the files the text wrote are removed.
@@ -115,7 +214,7 @@ export function shellBox(prefix, { stands, real }) {
       writeFileSync(log, "");
       rmSync(cwd, { recursive: true, force: true });
       mkdirSync(cwd);
-      const r = spawnSync(join(bin, "bash"), ["-c", text], { cwd, env, input: "", encoding: "utf8", timeout: 10000, detached: true });
+      const r = inside(text);
       if (r.signal) throw new Error(`bash did not end: ${JSON.stringify(text)}`);
       const calls = readFileSync(log, "utf8").split("\n").filter(Boolean).map((l) => l.split(UNIT));
       return { calls, status: r.status };
@@ -128,7 +227,7 @@ export function shellBox(prefix, { stands, real }) {
       const unsafe = unsafeTexts(texts.map((t) => t.replaceAll("{}", "")));
       if (unsafe.length) throw new Error(`refused, it could leave the box: ${unsafe.join("; ")}`);
       return texts.filter((t) => {
-        const r = spawnSync(join(bin, "bash"), ["-c", t.replaceAll("{}", `type -t ${name}`)], { cwd, env, input: "", encoding: "utf8", timeout: 10000, detached: true });
+        const r = inside(t.replaceAll("{}", `type -t ${name}`));
         return r.signal !== null || r.stdout.split("\n").includes("builtin");
       });
     },
