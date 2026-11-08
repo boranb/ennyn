@@ -6,6 +6,7 @@
  * 2 usage error · 141 stdout closed before the output was written, as for a process ended by SIGPIPE.
  */
 
+import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -20,6 +21,7 @@ import { readIfThere, readRegular } from "../core/files.mjs";
 import { SecretScanner, masked, secretsOff } from "../checks/secrets.mjs";
 import { ConfigPicked, ConfigUnread, LOOSENING_LINE, commitConfig, looseningErrors } from "../checks/loosening.mjs";
 import { closingPush } from "../checks/push-mode.mjs";
+import { cleanTree, lastRun, pushNeeds, readRuns, recordRun, runBase, within } from "../checks/test-runs.mjs";
 import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
 import { REWORK_DAYS, reworkRate } from "../metrics/szz.mjs";
 import { bypassUses } from "../metrics/bypass.mjs";
@@ -29,7 +31,7 @@ import { gateLogPath, readAttempts, recordAttempt, summarizeAttempts, KINDS } fr
 import { byAge, costWeight, doneIds, graphProblems, loadGraph, needsOf, pickMechanization, pickOldest, readyNodes, scoreNode, splitAt, splitFirst, GraphError } from "../plan/mechanization.mjs";
 import { LINK_RULE, SUBMODULE_RULE, auditAnswer, cycleRecords, markCovers, readLog, securityDue, sensitivePaths } from "../plan/audit.mjs";
 import { scanProject, MIN_HISTORY } from "../setup/scan.mjs";
-import { checkSetup } from "../setup/doctor.mjs";
+import { cannotFail, checkSetup, pipes } from "../setup/doctor.mjs";
 import { capped, ghApplies } from "../setup/permissions.mjs";
 import { PROBLEMS_SHOWN, checkProofs, loadClasses, registryLine, stateCounts } from "../metrics/classes.mjs";
 import { CYCLE_MAX, brakePatches, complete, cycleReport, reportLines } from "../metrics/findings.mjs";
@@ -82,8 +84,13 @@ Commands:
                                                     run hand-picked mutants one at a time against the tests; one that does not parse is never killed;
                                                     give --check's {file} unquoted: Ennyn quotes it
   mutate --restore [--force]                        put back a file that a mutate run killed outright left mutated
-  push-check [--tested <rev>]                       warn when too many commits are unpushed; say whether the push asks the user (push.mode);
-                                                    --tested: exit 0 only when push.mode after-closing lets the cycle push that commit, HEAD on a branch
+  push-check [--tested <rev>]                       warn when too many commits are unpushed; fetch, and say what the push needs (a green fast or whole
+                                                    run recorded on HEAD's tree) and whether it asks the user (push.mode); exit 1 when behind, not met
+                                                    or unmeasured; under after-closing exit 0 when the cycle may push; --tested <rev>: your word that
+                                                    the whole test passed on that commit, read when the record holds no run of what the push needs
+  test fast|whole [--again]                         run commands.fastTest or commands.wholeTest from the top and record its result by HEAD's tree when the
+                                                    work tree is clean before and after; a green run already recorded on the tree is not run again
+                                                    (--again: run it); exit as the command does
   worktrees [--remove] [<path>...]                  the worktrees the cycle marked (a lock whose reason is ennyn:<cycle>), each with whether
                                                     removing it loses nothing, or why not; --remove removes those that pass, checked again first,
                                                     never with --force; paths: only those. Exit 1 when one could not be checked or removed
@@ -1644,23 +1651,103 @@ const COMMANDS = {
     if (opts.tested !== undefined && !/^[0-9a-f]{7,64}$/i.test(String(opts.tested))) throw new UsageError("--tested takes the commit's hash");
     const cwd = projectDir();
     const cfg = config(cwd);
+    const lang = cfg.language;
     const n = unpushedCount(cwd);
     const max = cfg.push.warnAtUnpushed;
-    if (n === null) out(t("push.unmeasured", {}, cfg.language));
-    else if (n > max) out(t("push.warn", { n, max }, cfg.language));
-    else out(t("push.ok", { n, max }, cfg.language));
-    // The push itself: by the user's yes, or with after-closing by the cycle (checks/push-mode.mjs), on the tested commit
-    // with nothing uncommitted. That a suite ran on it is the caller's word: nothing here checks it.
+    if (n === null) out(t("push.unmeasured", {}, lang));
+    else if (n > max) out(t("push.warn", { n, max }, lang));
+    else out(t("push.ok", { n, max }, lang));
+    // What the push needs, from the commits it sends and the record of runs (checks/test-runs.mjs). A git that fails
+    // is said: nothing here reads as met.
+    let needs;
+    try {
+      needs = pushNeeds(cwd, cfg);
+    } catch (e) {
+      needs = { unmeasured: String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message).trim().split("\n")[0] };
+    }
+    /** Whether the push may go as far as the tests go: measured, not behind, and nothing to run or met. */
+    let ready = false;
+    if ("unmeasured" in needs) out(t("push.needUnmeasured", { why: masked(needs.unmeasured) }, lang));
+    else {
+      if (needs.fetched !== null) out(t("push.notFetched", { why: masked(needs.fetched) }, lang));
+      const tree = needs.tree.slice(0, 12);
+      if (needs.behind) out(t("push.behind", { n: needs.behind }, lang));
+      else if (needs.need === null) out(t("push.needNothing", {}, lang));
+      else {
+        const why = needs.code === null ? t("push.noCode", {}, lang) : t("push.code", { path: needs.code }, lang);
+        if (needs.met) out(t("push.needMet", { kind: needs.need, tree, why, end: String(/** @type {any} */ (needs.last).end) }, lang));
+        else out(t(needs.last ? "push.needRed" : "push.needRun", { kind: needs.need, tree, why, end: String(needs.last?.end) }, lang));
+      }
+      ready = !needs.behind && (needs.need === null || needs.met);
+    }
+    // The push itself: by the user's yes, or with after-closing by the cycle (checks/push-mode.mjs), on a commit whose
+    // tree the record holds green, or one the caller names as tested, with nothing uncommitted. Either is a word:
+    // a record line is a file any process here can write. Under ask neither pushes.
     const push = closingPush(cwd);
-    for (const l of push.said) out(t(l.key, l.vars, cfg.language));
-    if (!push.ok) return opts.tested === undefined ? 0 : 1;
-    if (opts.tested === undefined) return (out(t("push.modeUntested", {}, cfg.language)), 0);
+    for (const l of push.said) out(t(l.key, l.vars, lang));
+    if (!push.ok) return opts.tested !== undefined || !ready ? 1 : 0;
+    const clean = () => git(["status", "--porcelain=v1", "-z", "--untracked-files=normal", "--ignore-submodules=none"], { cwd }) === "";
+    if (!("unmeasured" in needs) && ready && needs.met) {
+      if (!clean()) return (out(t("push.modeDirty", {}, lang)), 1);
+      return (out(t("push.modeRecorded", { head: needs.tree.slice(0, 12), branch: String(push.branch) }, lang)), 0);
+    }
+    if (opts.tested === undefined) return (out(t("push.modeUntested", {}, lang)), 1);
+    // The caller's word stands only where the record says nothing of this tree, and never against a branch behind.
+    if (!("unmeasured" in needs) && needs.red) out(t("push.testedRed", { kind: needs.red.kind, tree: needs.tree.slice(0, 12), end: needs.red.end, exit: needs.red.exit }, lang));
+    if ("unmeasured" in needs || needs.behind || needs.last || needs.red) return 1;
     const at = (/** @type {string} */ rev) => gitMaybe(["rev-parse", "--verify", "-q", `${rev}^{commit}`], { cwd, absent: [1] });
     const [now, tested] = [at("HEAD"), at(String(opts.tested))];
-    if (!now || now !== tested) return (out(t("push.modeMoved", { head: String(now).slice(0, 12), tested: String(opts.tested).slice(0, 40) }, cfg.language)), 1);
-    if (git(["status", "--porcelain=v1", "-z", "--untracked-files=normal"], { cwd }) !== "") return (out(t("push.modeDirty", {}, cfg.language)), 1);
-    out(t("push.modeTested", { head: now.slice(0, 12), branch: String(push.branch) }, cfg.language));
+    if (!now || now !== tested) return (out(t("push.modeMoved", { head: String(now).slice(0, 12), tested: String(opts.tested).slice(0, 40) }, lang)), 1);
+    if (!clean()) return (out(t("push.modeDirty", {}, lang)), 1);
+    out(t("push.modeTested", { head: now.slice(0, 12), branch: String(push.branch) }, lang));
     return 0;
+  },
+
+  test(args) {
+    const { opts, positional, help } = parseArgs(args, { flags: ["again"], positional: 1 });
+    if (help) return (out(USAGE), 0);
+    const kind = positional[0];
+    if (kind !== "fast" && kind !== "whole") throw new UsageError("test takes fast or whole");
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    const lang = cfg.language;
+    const key = kind === "fast" ? "fastTest" : "wholeTest";
+    const command = cfg.commands[key];
+    // No command: 78 (EX_CONFIG), apart from the 1 of a red run that most test commands give.
+    if (typeof command !== "string") return (err(t("test.noCommand", { key: `commands.${key}` }, lang)), 78);
+    // A command doctor fails as one that cannot fail, or a pipeline, whose status is its last program's, is run and
+    // never recorded: its green would say nothing.
+    const why = cannotFail(command) ? "test.noop" : pipes(command) ? "test.pipe" : null;
+    const before = why ? { dirty: t(why, { key: `commands.${key}` }, lang) } : cleanTree(cwd);
+    // A fast run's selection may hang on what it is read against: its base goes with it (checks/test-runs.mjs).
+    const base = kind === "fast" && !("dirty" in before) ? runBase(cwd) : null;
+    if ("dirty" in before) out(t("test.unrecorded", { why: before.dirty }, lang));
+    else if (!opts.again) {
+      // A run on this tree whose selection began at this base or before saw at least what this one would.
+      const last = lastRun(readRuns(cwd, cfg).runs, before.tree, kind, (b) => base !== null && within(cwd, b, base));
+      if (last && last.exit === 0) {
+        const now = new Date().toISOString();
+        recordRun(cwd, cfg, { v: 1, kind, tree: before.tree, head: before.head, ...(kind === "fast" ? { base } : {}), exit: 0, start: now, end: now, skipOf: last.end });
+        out(t("test.skipped", { kind, tree: before.tree.slice(0, 12), end: last.end }, lang));
+        return 0;
+      }
+    }
+    const start = new Date().toISOString();
+    const run = spawnSync(command, { cwd, shell: true, stdio: "inherit" });
+    if (run.status === null) {
+      err(t("test.unfinished", { why: String(run.error?.message ?? run.signal) }, lang));
+      return 1;
+    }
+    if (!("dirty" in before)) {
+      // The tree the run ended on must be the one it began on: a run that commits or writes a tracked file tested neither.
+      const after = cleanTree(cwd);
+      if ("dirty" in after || after.head !== before.head) out(t("test.unrecorded", { why: "dirty" in after ? after.dirty : "HEAD moved during the run" }, lang));
+      else {
+        recordRun(cwd, cfg, { v: 1, kind, tree: before.tree, head: before.head, ...(kind === "fast" ? { base } : {}), exit: run.status, start, end: new Date().toISOString() });
+        out(t("test.recorded", { kind, tree: before.tree.slice(0, 12), result: run.status === 0 ? t("test.green", {}, lang) : t("test.red", { exit: run.status }, lang) }, lang));
+      }
+    }
+    return run.status;
   },
 
   worktrees(args) {

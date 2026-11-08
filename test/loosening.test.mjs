@@ -124,6 +124,9 @@ test("loosening corpus: a tightening or neutral edit names no key", () => {
     "a registry gone": (c) => (c.security.deps.registries = {}),
     "skip pattern gone": (c) => (c.commitMsg.skipSubjects = []),
     "push mode ask written out": (c) => (c.push = { mode: "ask" }),
+    "code globs written out as every path": (c) => (c.push = { codeGlobs: ["**"] }),
+    "code globs wider": (c) => (c.push = { codeGlobs: ["**", "src/**"] }),
+    "a whole test command": (c) => (c.commands = { wholeTest: "npm test" }),
     "a key no gate reads": (c) => ((c.language = "tr"), (c.commitMsg.language = "tr"), (c.commitMsg.fixType = "feat"), (c.planner = { splitAbove: 3 }), (c.paths = { handoff: "H.md" }), (c.review.agents = ["a"]), (c.metrics = { minLines: 2 })),
   };
   for (const [name, change] of Object.entries(accept)) assert.deepEqual(keysOf(change), [], name);
@@ -165,6 +168,8 @@ test("loosening corpus: each way a value loosens names its key, and only its key
     ["review.forbidden", (c) => (c.review.forbidden[0].except = ["**"])],
     ["push.warnAtUnpushed", (c) => (c.push = { warnAtUnpushed: 99 })],
     ["push.mode", (c) => (c.push = { mode: "after-closing" })],
+    // Fewer paths are code: more pushes need only a fast run.
+    ["push.codeGlobs", (c) => (c.push = { codeGlobs: ["**/*.mjs"] })],
     ["security.everyCycles", (c) => (c.security.everyCycles = 9)],
     ["security.everyCycles", (c) => (c.security.everyCycles = 0)],
     ["security.ci.paths", (c) => (c.security.ci.paths = [])],
@@ -191,6 +196,13 @@ test("loosening corpus: each way a value loosens names its key, and only its key
     ["security.secrets.except", (c) => (c.security.secrets.except = ["**"])],
   ];
   for (const [key, change] of reject) assert.deepEqual(keysOf(change), [key], `${key}: ${change}`);
+  // A test command push-check reads changed or taken away; the push may then go on a weaker run.
+  const set = { commands: { fastTest: "npm run test:short", wholeTest: "npm test" } };
+  assert.deepEqual(loosenedKeys(eff(set), eff({ commands: { fastTest: "true", wholeTest: "npm test" } })), ["commands.fastTest"]);
+  assert.deepEqual(loosenedKeys(eff(set), eff({ commands: { fastTest: "npm run test:short" } })), ["commands.wholeTest"]);
+  assert.deepEqual(loosenedKeys(eff(set), eff({ commands: { fastTest: "npm run test:short", wholeTest: "true" } })), ["commands.wholeTest"]);
+  assert.deepEqual(loosenedKeys(eff(set), eff({ commands: { fastTest: { none: "no tests" }, wholeTest: "npm test" } })), ["commands.fastTest"]);
+  assert.deepEqual(loosenedKeys(eff({ commands: { fastTest: { none: "no tests" } } }), eff(set)), [], "a command set where none was");
 });
 
 test("loosening: every key of the defaults is judged, none by the catch-all; an unlisted key counts on any change", () => {

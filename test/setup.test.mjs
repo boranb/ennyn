@@ -22,7 +22,7 @@ import {
   commitStyle,
   scanProject,
 } from "../setup/scan.mjs";
-import { askReport, checkSetup, worktreesIgnored } from "../setup/doctor.mjs";
+import { askReport, checkSetup, pipes, worktreesIgnored } from "../setup/doctor.mjs";
 import { shown, t, tShown } from "../core/i18n.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
@@ -1097,6 +1097,24 @@ test("doctor: the fast test is a test command: lint or typecheck alone declares 
   }
 });
 
+test("doctor: a test command that holds a pipe outside quotes is said, the whole one unset too; pipes reads by shape", async () => {
+  // A pipeline's status is its last program's (dash and bash alike; pipefail is bash's, and the shell may be dash).
+  for (const command of ["a | tail", "a 2>&1 | tee x", "a |& b", "a|b", "npm test | tail -20", "set -o pipefail; npm test | tee log", "a || b | c", "echo \"x\" | y", "a | 'b'"]) assert.equal(pipes(command), true, command);
+  for (const command of ["a || b", "echo \"x|y\"", "echo 'x|y'", "a >| log", "echo x\\|y", "npm test", "pytest -k \"a or b\" || exit 1", ""]) assert.equal(pipes(command), false, command);
+  const graph = { nodes: [{ id: "a" }] };
+  /** @param {Record<string, unknown>} config */
+  const said = async (config) => {
+    const res = await checkSetup({ cwd: setup(config, graph).dir, env: {} });
+    return res.items.filter((i) => /^doctor\.(testPipe|wholeTest)/.test(i.key)).map((i) => [i.level, i.key, tShown(i.key, i.vars, "en")]);
+  };
+  assert.deepEqual(await said({ commands: { fastTest: "npm test | tail", wholeTest: "npm test" } }), [["warn", "doctor.testPipe", "fast test: commands.fastTest holds a pipe, and a pipeline's status is its last program's: ennyn test runs it and records no run; npm test | tail"]]);
+  assert.deepEqual((await said({ commands: { fastTest: "npm test", wholeTest: "npm test 2>&1 | tee log" } })).map((i) => i.slice(0, 2)), [["warn", "doctor.testPipe"]]);
+  assert.deepEqual((await said({ commands: { fastTest: "npm test" } })).map((i) => i.slice(0, 2)), [["warn", "doctor.wholeTestUnset"]]);
+  assert.deepEqual(await said({ commands: { fastTest: "npm test", wholeTest: "npm test || echo failed >&2" } }), [["fail", "doctor.wholeTestNoop", "whole test: npm test || echo failed >&2 exits 0 whatever runs, so ennyn test whole records green for any push: set commands.wholeTest to the command that runs the tests"]]);
+  // Turkish is its own text.
+  for (const key of ["doctor.testPipe", "doctor.wholeTestUnset"]) assert.notEqual(tShown(key, { label: "x", key: "commands.fastTest", command: "a | b" }, "tr"), tShown(key, { label: "x", key: "commands.fastTest", command: "a | b" }, "en"), key);
+});
+
 test("doctor: a declaring folder git or the disk will not open is unmeasured, not \"declares none\"", async (t) => {
   if (process.getuid?.() === 0) return t.skip("root reads any file");
   const r = setup({}, { nodes: [{ id: "a" }] });
@@ -1187,7 +1205,9 @@ test("cli: init-scan --json is the scan; doctor prints marks and exits 1 on a pr
   // No settings: the agent as it is, and no Read deny rule for .env*, ~/.ssh or ~/.aws (setup/secret-setup.mjs).
   assert.match(doc.stdout, /^✓ agent mode: as it is\. /m);
   assert.match(doc.stdout, /^! agent setup: no Read deny rule Read\(\.env\*\), Read\(~\/\.ssh\/\*\*\), Read\(~\/\.aws\/\*\*\) in the settings files; /m);
-  assert.match(doc.stdout, /^problems: 1 · warnings: 4 · unmeasured: 1$/m, "the one unmeasured: too few commits for the fix label");
+  // No whole test command: ennyn test whole would run nothing.
+  assert.match(doc.stdout, /^! whole test: commands\.wholeTest is unset, /m);
+  assert.match(doc.stdout, /^problems: 1 · warnings: 5 · unmeasured: 1$/m, "the one unmeasured: too few commits for the fix label");
 });
 
 test("commit style: language guessed from subjects, also Turkish typed without diacritics; types counted, 'faz 8:' is not one", () => {

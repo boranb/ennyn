@@ -381,11 +381,11 @@ test("cli: core names the oldest node of the highest value and the best of the r
   assert.deepEqual([one.byScore, one.more, one.oldest.split], [[], 0, false]);
 });
 
-test("cli: push-check says unmeasured without upstream, warns above the threshold, always exits 0", () => {
+test("cli: push-check says unmeasured without upstream and warns above the threshold; it exits 1 while what the push needs is unmeasured or not met", () => {
   const p = project({ push: { warnAtUnpushed: 1 } });
   p.commit({ "a.txt": "1" }, "c1");
   const none = run(p.dir, "push-check");
-  assert.equal(none.code, 0);
+  assert.equal(none.code, 1);
   assert.match(none.stdout, /could not be measured \(no upstream branch\)/);
 
   const origin = mkdtempSync(join(tmpdir(), "pl-cli-origin-"));
@@ -394,11 +394,12 @@ test("cli: push-check says unmeasured without upstream, warns above the threshol
   git(["push", "-q", "-u", "origin", "main"], { cwd: p.dir });
   p.commit({ "a.txt": "2" }, "c2");
   const under = run(p.dir, "push-check");
-  assert.equal(under.code, 0);
+  assert.equal(under.code, 1);
+  assert.match(under.stdout, /needs a green whole run on HEAD's tree .* \(a\.txt matches push\.codeGlobs\): none is recorded/, "every path is code by default");
   assert.match(under.stdout, /^1 commits are waiting to be pushed \(threshold 1\)\.$/m);
   p.commit({ "a.txt": "3" }, "c3");
   const over = run(p.dir, "push-check");
-  assert.equal(over.code, 0);
+  assert.equal(over.code, 1);
   assert.match(over.stdout, /2 commits are waiting to be pushed \(threshold 1\)\. Ask for push approval/);
 });
 
@@ -422,7 +423,7 @@ test("cli: push-check --tested exits 0 only on the approved after-closing, HEAD 
   const p = closing();
   const head = p.head();
   const untested = run(p.dir, "push-check");
-  assert.equal(untested.code, 0);
+  assert.equal(untested.code, 1);
   assert.match(untested.stdout, /run push-check --tested .*That the test ran is your word: push-check does not check it\./);
   for (const h of [head, head.slice(0, 7)]) {
     const ok = run(p.dir, "push-check", "--tested", h);
@@ -636,6 +637,298 @@ test("cli: push-check reads git config as git push does: what makes a bare push 
   assert.notEqual(git([`--git-dir=${p.origin}`, "rev-parse", "keep"], { cwd: p.origin }).trim(), p.head(), "keep untouched");
 });
 
+/**
+ * A project with a bare upstream whose fast and whole commands are node one-liners: each appends its kind to the file
+ * T_LOG names and exits with T_EXIT. `.mjs` is code (push.codeGlobs), anything else is not.
+ * @param {Record<string, unknown>} [extra] more config
+ */
+function recorded(extra = {}) {
+  const cmd = (/** @type {string} */ kind) => `"${process.execPath}" -e "require('fs').appendFileSync(process.env.T_LOG, '${kind} '); process.exit(Number(process.env.T_EXIT || 0))"`;
+  const p = project({ commands: { fastTest: cmd("fast"), wholeTest: cmd("whole") }, push: { codeGlobs: ["**/*.mjs"] }, ...extra });
+  p.commit({ "a.txt": "1" }, "c1\n\nUser-Approved-Loosening: push.mode");
+  const origin = mkdtempSync(join(tmpdir(), "pl-cli-origin-"));
+  git(["init", "-q", "--bare", "-b", "main"], { cwd: origin });
+  git(["remote", "add", "origin", origin], { cwd: p.dir });
+  git(["push", "-q", "-u", "origin", "main"], { cwd: p.dir });
+  const log = join(mkdtempSync(join(tmpdir(), "pl-cli-log-")), "runs");
+  writeFileSync(log, "");
+  /** @param {string} cwd @param {string[]} args @param {string} [exit] */
+  const go = (cwd, args, exit = "0") => {
+    const r = spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: "utf8", env: { ...process.env, T_LOG: log, T_EXIT: exit } });
+    return { code: r.status, stdout: r.stdout, stderr: r.stderr };
+  };
+  return { ...p, origin, log, ran: () => readFileSync(log, "utf8").trim(), go, tree: () => git(["rev-parse", "HEAD^{tree}"], { cwd: p.dir }).trim().slice(0, 12) };
+}
+
+test("cli: test records a run by HEAD's tree on a clean work tree; push-check says what the push needs, met only by a green run on that tree", () => {
+  const p = recorded();
+  p.commit({ "notes.txt": "1" }, "c2");
+  const before = p.go(p.dir, ["push-check"]);
+  assert.equal(before.code, 1, before.stdout);
+  assert.match(before.stdout, new RegExp(`needs a green fast run on HEAD's tree ${p.tree()} \\(no path the push changes matches push\\.codeGlobs\\): none is recorded\\. Run ennyn test fast on a clean work tree, or ask the user\\.`));
+  const fast = p.go(p.dir, ["test", "fast"]);
+  assert.equal(fast.code, 0, fast.stdout + fast.stderr);
+  assert.match(fast.stdout, new RegExp(`Recorded: fast run on tree ${p.tree()}, green\\.`));
+  const met = p.go(p.dir, ["push-check"]);
+  assert.equal(met.code, 0, met.stdout);
+  assert.match(met.stdout, new RegExp(`needs a green fast run on HEAD's tree ${p.tree()} .*: met, recorded at `));
+  assert.match(met.stdout, /push\.mode is ask: ask the user before the push\./, "a record never turns ask into a push");
+  // The same tree again: not run, and the skip is recorded.
+  const again = p.go(p.dir, ["test", "fast"]);
+  assert.match(again.stdout, /is recorded at .*: not run again/);
+  assert.equal(p.ran(), "fast");
+  assert.equal(p.go(p.dir, ["test", "fast", "--again"]).code, 0);
+  assert.equal(p.ran(), "fast fast");
+  // A code path: a whole run is needed, and a fast one does not answer for it.
+  p.commit({ "src/x.mjs": "export {};\n" }, "c3");
+  assert.equal(p.go(p.dir, ["test", "fast"]).code, 0);
+  const code = p.go(p.dir, ["push-check"]);
+  assert.equal(code.code, 1);
+  assert.match(code.stdout, /needs a green whole run on HEAD's tree .* \(src\/x\.mjs matches push\.codeGlobs\): none is recorded\. Run ennyn test whole/);
+  assert.equal(p.go(p.dir, ["test", "whole"]).code, 0);
+  assert.equal(p.go(p.dir, ["push-check"]).code, 0);
+  // A record on another tree does not count.
+  p.commit({ "notes.txt": "2" }, "c4");
+  assert.match(p.go(p.dir, ["push-check"]).stdout, /none is recorded/);
+  // A dirty tree records nothing: an untracked file, a staged change, an unstaged edit.
+  for (const dirty of [() => writeFileSync(join(p.dir, "loose.txt"), "x"), () => git(["add", "loose.txt"], { cwd: p.dir }), () => (git(["rm", "-q", "--cached", "loose.txt"], { cwd: p.dir }), rmSync(join(p.dir, "loose.txt")), writeFileSync(join(p.dir, "notes.txt"), "edited"))]) {
+    dirty();
+    const r = p.go(p.dir, ["test", "fast"]);
+    assert.equal(r.code, 0);
+    assert.match(r.stdout, /This run is not recorded: the work tree holds changes or untracked files\./);
+  }
+  git(["checkout", "-q", "--", "notes.txt"], { cwd: p.dir });
+  assert.match(p.go(p.dir, ["push-check"]).stdout, /none is recorded/);
+  // A red run is recorded, and the push is not met; the exit is the command's.
+  const red = p.go(p.dir, ["test", "whole"], "3");
+  assert.equal(red.code, 3);
+  assert.match(red.stdout, /whole run on tree .*, red, exit 3\./);
+  const after = p.go(p.dir, ["push-check"]);
+  assert.equal(after.code, 1);
+  assert.match(after.stdout, /the last one, at .*, failed/);
+  // A run that commits tested no tree it can name.
+  const commits = project({ commands: { fastTest: `git -c user.name=t -c user.email=t@t commit -q --allow-empty -m x` } });
+  commits.commit({ "a.txt": "1" }, "c1");
+  assert.match(run(commits.dir, "test", "fast").stdout, /This run is not recorded: HEAD moved during the run\./);
+  // Unset: said, nothing runs.
+  const unset = project({});
+  unset.commit({ "a.txt": "1" }, "c1");
+  const none = run(unset.dir, "test", "whole");
+  assert.equal(none.code, 78);
+  assert.match(none.stderr, /commands\.wholeTest names no command/);
+  assert.equal(run(unset.dir, "test", "slow").code, 2);
+});
+
+test("cli: a run recorded in a linked worktree counts for the main checkout after a fast-forward; a branch behind its upstream is refused", async () => {
+  const p = recorded();
+  const wt = join(mkdtempSync(join(tmpdir(), "pl-cli-wt-")), "wt");
+  git(["worktree", "add", "-q", "-b", "task", wt], { cwd: p.dir });
+  writeFileSync(join(wt, "doc.txt"), "task");
+  git(["add", "doc.txt"], { cwd: wt });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "task"], { cwd: wt });
+  assert.equal(p.go(wt, ["test", "fast"]).code, 0);
+  git(["merge", "-q", "--ff-only", "task"], { cwd: p.dir });
+  const landed = p.go(p.dir, ["push-check"]);
+  assert.equal(landed.code, 0, landed.stdout);
+  assert.match(landed.stdout, /: met, recorded at /);
+  // The landing's own run on that tree is not run again.
+  assert.match(p.go(p.dir, ["test", "fast"]).stdout, /not run again/);
+  assert.equal(p.ran(), "fast");
+  // Someone else pushed: push-check fetches and refuses the branch behind.
+  const other = mkdtempSync(join(tmpdir(), "pl-cli-other-"));
+  git(["clone", "-q", p.origin, other], { cwd: other });
+  writeFileSync(join(other, "theirs.txt"), "x");
+  git(["add", "theirs.txt"], { cwd: other });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "theirs"], { cwd: other });
+  git(["push", "-q"], { cwd: other });
+  const behind = p.go(p.dir, ["push-check"]);
+  assert.equal(behind.code, 1, behind.stdout);
+  assert.match(behind.stdout, /The branch is 1 commits behind its upstream: rebase/);
+  assert.doesNotMatch(behind.stdout, /: met/);
+  // Behind and ahead at once: no need is named, whatever the record holds.
+  const { pushNeeds } = await import("../checks/test-runs.mjs");
+  const { loadConfig } = await import("../core/config.mjs");
+  const both = pushNeeds(p.dir, loadConfig({ cwd: p.dir, env: {} }));
+  assert.ok(!("unmeasured" in both) && both.behind === 1 && both.ahead === 1 && both.need === null && !both.met, JSON.stringify(both));
+  // No upstream: unmeasured, and it asks.
+  git(["branch", "-q", "--unset-upstream"], { cwd: p.dir });
+  const lone = p.go(p.dir, ["push-check"]);
+  assert.equal(lone.code, 1);
+  assert.match(lone.stdout, /What the push needs is unmeasured \(the branch has no upstream\)/);
+});
+
+test("cli: under after-closing a green record on HEAD's tree lets push-check say push; a red one refuses --tested, which counts only where the record is silent", () => {
+  const p = recorded({ push: { mode: "after-closing", codeGlobs: ["**/*.mjs"] } });
+  p.commit({ "src/y.mjs": "export {};\n" }, "c2");
+  const untested = p.go(p.dir, ["push-check"]);
+  assert.equal(untested.code, 1);
+  assert.match(untested.stdout, /the record holds no green run of what the push needs/);
+  assert.equal(p.go(p.dir, ["test", "whole"], "1").code, 1);
+  const red = p.go(p.dir, ["push-check", "--tested", git(["rev-parse", "HEAD"], { cwd: p.dir }).trim()]);
+  assert.equal(red.code, 1, red.stdout);
+  assert.match(red.stdout, /failed\. Fix it/);
+  // A red last run is no reason to skip: it runs again.
+  assert.equal(p.go(p.dir, ["test", "whole"]).code, 0);
+  assert.equal(p.ran(), "whole whole");
+  const ok = p.go(p.dir, ["push-check"]);
+  assert.equal(ok.code, 0, ok.stdout);
+  assert.match(ok.stdout, /push\.mode is after-closing and the record holds what the push needs on HEAD's tree .*: push main with a bare git push/);
+  writeFileSync(join(p.dir, "loose.txt"), "x");
+  assert.equal(p.go(p.dir, ["push-check"]).code, 1, "nothing uncommitted");
+  rmSync(join(p.dir, "loose.txt"));
+  // The record says nothing of a new tree: --tested is the word, as before.
+  p.commit({ "src/z.mjs": "export {};\n" }, "c3");
+  assert.equal(p.go(p.dir, ["push-check", "--tested", git(["rev-parse", "HEAD"], { cwd: p.dir }).trim()]).code, 0);
+});
+
+test("cli: test runs but records nothing on a sparse checkout, a skip-worktree or assume-unchanged entry, or a command that cannot fail", () => {
+  const p = recorded();
+  p.commit({ "docs/a.txt": "1", "notes.txt": "1" }, "c2");
+  const unrecorded = (/** @type {RegExp} */ why) => {
+    const r = p.go(p.dir, ["test", "fast"]);
+    assert.equal(r.code, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, why);
+    assert.doesNotMatch(r.stdout, /Recorded:/);
+  };
+  git(["sparse-checkout", "set", "--no-cone", "/notes.txt", "/.ennyn/"], { cwd: p.dir });
+  unrecorded(/This run is not recorded: sparse checkout is on\./);
+  git(["sparse-checkout", "disable"], { cwd: p.dir });
+  for (const flag of ["--skip-worktree", "--assume-unchanged"]) {
+    git(["update-index", flag, "notes.txt"], { cwd: p.dir });
+    writeFileSync(join(p.dir, "notes.txt"), "edited, and git status does not say so");
+    unrecorded(/This run is not recorded: the index marks 1 entries skip-worktree or assume-unchanged\./);
+    git(["update-index", flag.replace("--", "--no-"), "notes.txt"], { cwd: p.dir });
+    git(["checkout", "-q", "--", "notes.txt"], { cwd: p.dir });
+  }
+  assert.equal(p.ran(), "fast fast fast", "each ran");
+  // A whole command doctor fails as one that cannot fail: run, never recorded, and doctor says so.
+  const noop = project({ commands: { fastTest: "npm test", wholeTest: "npm test || true" } });
+  noop.commit({ "a.txt": "1" }, "c1");
+  const r = run(noop.dir, "test", "whole");
+  assert.match(r.stdout, /This run is not recorded: commands\.wholeTest exits 0 whatever runs \(doctor fails it\)/);
+  assert.match(run(noop.dir, "doctor").stdout, /✗ whole test: npm test \|\| true exits 0 whatever runs/);
+});
+
+test("cli: a red run of either kind on HEAD's tree stops --tested; a fast run counts only when its base is the push's upstream or before it", async () => {
+  const p = recorded({ push: { mode: "after-closing", codeGlobs: ["**/*.mjs"] } });
+  p.commit({ "src/y.mjs": "export {};\n" }, "c2");
+  assert.equal(p.go(p.dir, ["test", "fast"], "1").code, 1);
+  const head = git(["rev-parse", "HEAD"], { cwd: p.dir }).trim();
+  const red = p.go(p.dir, ["push-check", "--tested", head]);
+  assert.equal(red.code, 1, red.stdout);
+  // Two landings between pushes: the second task's fast run began at the first landing, after the upstream.
+  const q = recorded();
+  q.commit({ "one.txt": "1" }, "task one");
+  const wt = join(mkdtempSync(join(tmpdir(), "pl-cli-wt-")), "wt");
+  git(["worktree", "add", "-q", "-b", "two", wt, "main"], { cwd: q.dir });
+  writeFileSync(join(wt, "two.txt"), "2");
+  git(["add", "two.txt"], { cwd: wt });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "task two"], { cwd: wt });
+  assert.equal(q.go(wt, ["test", "fast"]).code, 0);
+  git(["merge", "-q", "--ff-only", "two"], { cwd: q.dir });
+  const later = q.go(q.dir, ["push-check"]);
+  assert.equal(later.code, 1, later.stdout);
+  assert.match(later.stdout, /none is recorded/);
+  // On main the run's base is the upstream: it runs again, and then counts.
+  const again = q.go(q.dir, ["test", "fast"]);
+  assert.match(again.stdout, /Recorded: fast run/);
+  assert.equal(q.ran(), "fast fast");
+  assert.equal(q.go(q.dir, ["push-check"]).code, 0);
+  const { readRuns } = await import("../checks/test-runs.mjs");
+  const { loadConfig } = await import("../core/config.mjs");
+  const runs = readRuns(q.dir, loadConfig({ cwd: q.dir, env: {} })).runs;
+  assert.deepEqual(runs.map((r) => r.base), [git(["rev-parse", "HEAD~1"], { cwd: q.dir }).trim(), git(["rev-parse", "origin/main"], { cwd: q.dir }).trim()]);
+  // A bare push that goes to another remote: the upstream says nothing of it.
+  const other = mkdtempSync(join(tmpdir(), "pl-cli-other-"));
+  git(["init", "-q", "--bare", "-b", "main"], { cwd: other });
+  git(["remote", "add", "other", other], { cwd: q.dir });
+  git(["config", "remote.pushDefault", "other"], { cwd: q.dir });
+  const elsewhere = q.go(q.dir, ["push-check"]);
+  assert.equal(elsewhere.code, 1);
+  assert.match(elsewhere.stdout, /What the push needs is unmeasured \(a bare git push goes .*, not to the upstream refs\/remotes\/origin\/main\)/);
+  // Once git can name where it goes, another remote's branch, the answer is the same (simple names none here).
+  git(["config", "push.default", "current"], { cwd: q.dir });
+  git(["push", "-q", "other", "main"], { cwd: q.dir });
+  git(["fetch", "-q", "other"], { cwd: q.dir });
+  assert.equal(git(["rev-parse", "--symbolic-full-name", "@{push}"], { cwd: q.dir }).trim(), "refs/remotes/other/main");
+  const named = q.go(q.dir, ["push-check"]);
+  assert.equal(named.code, 1, named.stdout);
+  assert.match(named.stdout, /a bare git push goes to refs\/remotes\/other\/main, not to the upstream refs\/remotes\/origin\/main/);
+});
+
+test("cli: test records nothing of a pipeline or of a submodule that differs from HEAD, whatever hides it", () => {
+  // A pipeline's status is its last program's: the test's red would read green.
+  const pipe = project({ commands: { fastTest: `"${process.execPath}" -e "process.exit(1)" 2>&1 | cat` } });
+  pipe.commit({ "a.txt": "1" }, "c1");
+  const piped = run(pipe.dir, "test", "fast");
+  assert.equal(piped.code, 0, "the pipeline's own status");
+  assert.match(piped.stdout, /This run is not recorded: commands\.fastTest holds a pipe, and a pipeline's status is its last program's\./);
+  assert.doesNotMatch(piped.stdout, /Recorded:/);
+  assert.match(run(pipe.dir, "doctor").stdout, /! fast test: commands\.fastTest holds a pipe/);
+  // A submodule whose content differs from what HEAD records: .gitmodules ignore = all, or the config's diff.ignoreSubmodules.
+  const p = recorded({ push: { mode: "after-closing", codeGlobs: ["**/*.mjs"] } });
+  const lib = mkdtempSync(join(tmpdir(), "pl-cli-lib-"));
+  git(["init", "-q", "-b", "main"], { cwd: lib });
+  writeFileSync(join(lib, "verdict.txt"), "fail\n");
+  git(["add", "-A"], { cwd: lib });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "lib"], { cwd: lib });
+  git(["-c", "protocol.file.allow=always", "submodule", "add", "-q", lib, "lib"], { cwd: p.dir });
+  git(["config", "-f", ".gitmodules", "submodule.lib.ignore", "all"], { cwd: p.dir });
+  p.commit({}, "lib");
+  writeFileSync(join(p.dir, "lib", "verdict.txt"), "pass\n");
+  const hidden = p.go(p.dir, ["test", "fast"]);
+  assert.match(hidden.stdout, /This run is not recorded: the work tree holds changes or untracked files\./);
+  git(["config", "-f", ".gitmodules", "--unset", "submodule.lib.ignore"], { cwd: p.dir });
+  p.commit({}, "lib seen");
+  git(["config", "diff.ignoreSubmodules", "all"], { cwd: p.dir });
+  const local = p.go(p.dir, ["test", "fast"]);
+  assert.match(local.stdout, /This run is not recorded: the work tree holds changes or untracked files\./);
+  assert.equal(p.ran(), "fast fast", "each ran");
+  assert.equal(existsSync(join(p.dir, ".git", "ennyn", "test-runs.jsonl")), false);
+  // A green run on the clean tree, then the submodule edited: push-check under after-closing does not read it clean.
+  git(["checkout", "-q", "--", "verdict.txt"], { cwd: join(p.dir, "lib") });
+  assert.match(p.go(p.dir, ["test", "fast"]).stdout, /Recorded: fast run/);
+  writeFileSync(join(p.dir, "lib", "verdict.txt"), "pass\n");
+  const dirty = p.go(p.dir, ["push-check"]);
+  assert.equal(dirty.code, 1, dirty.stdout);
+  assert.match(dirty.stdout, /push\.mode is after-closing, but the work tree holds changes or untracked files/);
+});
+
+test("cli: the last run on the tree decides: a red one whatever its base stops met; --tested over a red run is said with the run", () => {
+  const p = recorded({ push: { mode: "after-closing", codeGlobs: ["**/*.mjs"] } });
+  p.commit({ "b.txt": "2" }, "text change");
+  assert.equal(p.go(p.dir, ["test", "fast"]).code, 0, "green, its base the upstream");
+  // The same tree on a branch whose base is past the upstream: red.
+  git(["checkout", "-q", "-b", "side"], { cwd: p.dir });
+  git(["config", "branch.side.remote", "."], { cwd: p.dir });
+  git(["config", "branch.side.merge", "refs/heads/main"], { cwd: p.dir });
+  assert.equal(p.go(p.dir, ["test", "fast", "--again"], "1").code, 1);
+  git(["checkout", "-q", "main"], { cwd: p.dir });
+  const after = p.go(p.dir, ["push-check"]);
+  assert.equal(after.code, 1, after.stdout);
+  assert.match(after.stdout, /the last one, at .*, failed/);
+  const head = git(["rev-parse", "HEAD"], { cwd: p.dir }).trim();
+  const tested = p.go(p.dir, ["push-check", "--tested", head]);
+  assert.equal(tested.code, 1, tested.stdout);
+  assert.match(tested.stdout, /--tested does not stand: the record holds a red fast run on HEAD's tree [0-9a-f]{12}, at \d{4}-\d\d-\d\dT[^ ]+, exit 1\./);
+  // A red run of the smaller kind under a code push: the need is a whole run, and the line names the fast one.
+  p.commit({ "src/z.mjs": "export {};\n" }, "code");
+  assert.equal(p.go(p.dir, ["test", "fast"], "1").code, 1);
+  const code = p.go(p.dir, ["push-check", "--tested", git(["rev-parse", "HEAD"], { cwd: p.dir }).trim()]);
+  assert.equal(code.code, 1, code.stdout);
+  assert.match(code.stdout, /none is recorded/);
+  assert.match(code.stdout, /--tested does not stand: the record holds a red fast run on HEAD's tree/);
+});
+
+test("cli: test whole with no command set exits 78, apart from a red run; doctor warns", () => {
+  const unset = project({ commands: { fastTest: "npm test" } });
+  unset.commit({ "a.txt": "1" }, "c1");
+  const none = run(unset.dir, "test", "whole");
+  assert.equal(none.code, 78);
+  assert.match(none.stderr, /commands\.wholeTest names no command/);
+  assert.match(run(unset.dir, "doctor").stdout, /! whole test: commands\.wholeTest is unset/);
+});
+
 test("cli: config errors exit 1 with the message; config is found from a subdirectory; Turkish output", () => {
   const bad = project({ review: { maxRounds: "two" }, bogus: 1 });
   const r = run(bad.dir, "push-check");
@@ -646,7 +939,7 @@ test("cli: config errors exit 1 with the message; config is found from a subdire
   const tr = project({ language: "tr" });
   mkdirSync(join(tr.dir, "deep", "er"), { recursive: true });
   const sub = run(join(tr.dir, "deep", "er"), "push-check");
-  assert.equal(sub.code, 0);
+  assert.equal(sub.code, 1);
   assert.match(sub.stdout, /Gönderilmemiş commit sayısı ölçülemedi/);
 });
 

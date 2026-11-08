@@ -83,6 +83,7 @@ const SENTENCES = {
   "restart-reviewers": ["Restart", "The reviewers keep their context, and a reviewer or the orchestrator runs what they left."],
   "restart-design": ["Restart", "A new design is a first write nobody has read: it gets one narrow review, with the failures as step 7's signal"],
   "landing-order": ["Landing", "One task at a time: rebase, the fast test command and every slow gate the task touches (no command short of the whole suite: the whole test command), whatever the agent ran, then the main branch moves; the whole test command waits for the closing (section 3 of `SKILL.md`)."],
+  "landing-same-tree": ["Landing", "The fast test command runs as `ennyn.mjs test fast`, which records it by tree: on the tree of the author's last green run (a fast-forward, the base not moved) it is not run again and the skip is recorded; a moved base is a new tree, and the fast test command runs on it as on any tree, choosing what it runs from the change against the new base (the moved commits were tested at their own landing, and the whole suite runs at the closing)."],
   "landing-push": ["Landing", "Red there stops the push: a timing failure is rerun alone first; a real one is traced to the landing commit that brought it and fixed in a new `fix:` commit, written and reviewed as a first write, or the push waits."],
   "landing-repeat": ["Landing", "The whole run repeats on the fixed tree, and what follows the last edit is done again: the `fix:` commit's rows appended first, convergence run again (a new block), the graph, the budget record, leftovers, and `bypass` over the new commit."],
   "landing-closing": ["Landing", "A red closing run is a landed task's defect: it counts against no task (Landed), its `fix:` commit is written by a fresh agent on the session's model and reviewed as a first write, and no escalation applies."],
@@ -119,7 +120,7 @@ const SENTENCES = {
   "corr-count": ["A correction sent to a fresh agent", "It is not the restart: the count does not move, and the second failure still restarts the task (four of the eight went on to one)."],
 };
 /** Sentences that decide no (state, event) pair: what is written, who reads what, why. */
-const NARRATIVE = ["intro", "restart-reviewers", "landing-repeat", "landing-clean", "landing-delta", "stopped-ends", "stopped-stays", "stopped-gate", "stopped-report", "unnamed", "esc-reads", "esc-why", "esc-brief", "corr-size", "corr-evidence", "corr-picked", "corr-reads", "corr-place"];
+const NARRATIVE = ["intro", "restart-reviewers", "landing-same-tree", "landing-repeat", "landing-clean", "landing-delta", "stopped-ends", "stopped-stays", "stopped-gate", "stopped-report", "unnamed", "esc-reads", "esc-why", "esc-brief", "corr-size", "corr-evidence", "corr-picked", "corr-reads", "corr-place"];
 
 /** Where a task stands between events. `name` is bold in the prose, `says` a sentence id. */
 const PHASES = /** @type {Record<Phase, { name?: string, says?: string }>} */ ({

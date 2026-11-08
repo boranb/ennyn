@@ -486,6 +486,26 @@ test("config: impact.referenceTimeout is whole seconds from 1 to 3600", () => {
   for (const bad of [0, 0.5, 3601, -5]) assert.throws(at(bad), ConfigError, String(bad));
 });
 
+test("config: commands.wholeTest is a command on one line or null; push.codeGlobs a list of globs, every path by default", () => {
+  const load = (/** @type {unknown} */ v) => {
+    const dir = mkdtempSync(join(tmpdir(), "en-wholetest-"));
+    mkdirSync(join(dir, ".ennyn"));
+    writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify(v));
+    try {
+      return loadConfig({ cwd: dir, env: {} });
+    } catch (e) {
+      return /** @type {any} */ (e).problems;
+    }
+  };
+  const plain = load({});
+  assert.deepEqual([plain.commands.wholeTest, plain.push.codeGlobs], [null, ["**"]]);
+  assert.equal(load({ commands: { wholeTest: "npm test" } }).commands.wholeTest, "npm test");
+  assert.deepEqual(load({ push: { codeGlobs: ["**/*.mjs"] } }).push.codeGlobs, ["**/*.mjs"]);
+  for (const bad of ["", "  ", "npm test\nrm -rf x"]) assert.deepEqual(load({ commands: { wholeTest: bad } }), ['"commands.wholeTest" must be a command on one line, or null'], JSON.stringify(bad));
+  assert.match(String(load({ commands: { wholeTest: { none: "x" } } })), /commands\.wholeTest/);
+  assert.deepEqual(load({ push: { codeGlobs: ["", "x"] } }), ['"push.codeGlobs" must be a list of globs']);
+});
+
 test("config: commands.fastTest is a command, or none with its reason; no typo reads as none", () => {
   const load = (/** @type {unknown} */ fastTest) => {
     const dir = mkdtempSync(join(tmpdir(), "en-fasttest-"));

@@ -48,8 +48,9 @@ export const DEFAULTS = Object.freeze({
   // weights (plan/mechanization.mjs). Set it when costs are numbers such as hours.
   planner: { splitAbove: null },
   // The command the cycle runs as its fast test, from the project's top; null: unset (doctor fails when the project
-  // declares no test command either). A project with no tests says why: { "none": "<why>" }.
-  commands: { fastTest: null },
+  // declares no test command either). A project with no tests says why: { "none": "<why>" }. `wholeTest`: the whole
+  // test command, which `ennyn test whole` runs and records for push-check (checks/test-runs.mjs); null: unset.
+  commands: { fastTest: null, wholeTest: null },
   commitMsg: {
     // Language of commit text; null follows `language` (reports and conversation).
     language: null,
@@ -88,7 +89,9 @@ export const DEFAULTS = Object.freeze({
   },
   // ask: the cycle asks before its push. after-closing: it pushes by itself once the closing's checks passed on that
   // commit (skills/cycle/push.md); turning it on is a loosening the user approves (checks/loosening.mjs).
-  push: { warnAtUnpushed: 20, mode: "ask" },
+  // codeGlobs: a push whose commits change a path these match needs a green whole run on its tree, any other a fast
+  // one (push-check); every path by default.
+  push: { warnAtUnpushed: 20, mode: "ask", codeGlobs: ["**"] },
   security: {
     // Every this many cycles the audit slot is a security audit of the sensitive paths (plan/audit.mjs, `ennyn
     // audit`); 0 turns it off.
@@ -183,6 +186,7 @@ export const STRING_LISTS = new Set([
   "security.deps.sources",
   "security.deps.advisoryRegistries",
   "security.secrets.except",
+  "push.codeGlobs",
   "sideCopy.roots",
   "impact.fakeGlobs",
   "impact.fixtureGlobs",
@@ -216,6 +220,7 @@ const NULLABLE = new Map([
   ["impact.ceilingRegistry", ["string"]],
   ["planner.splitAbove", ["number"]],
   ["commands.fastTest", ["string", "object"]],
+  ["commands.wholeTest", ["string"]],
 ]);
 
 // Keys that name a file or directory Ennyn reads or writes, resolved against the project directory.
@@ -462,6 +467,9 @@ export function configFrom(text, { cwd, configPath, override }) {
     // A reason that shows nothing (a zero-width space, a dash) is none: it holds a letter or a digit, as the Impact line does.
     if (typeof fast.none !== "string" || !/[\p{L}\p{N}]/u.test(fast.none) || /[\r\n\0]/.test(fast.none)) problems.push(`"commands.fastTest.none" must say, on one line, why the project has no tests`);
   }
+  const wholeTest = /** @type {any} */ (cfg).commands.wholeTest;
+  if (typeof wholeTest === "string" && (wholeTest.trim() === "" || /[\r\n\0]/.test(wholeTest))) problems.push(`"commands.wholeTest" must be a command on one line, or null`);
+  if (!/** @type {any} */ (cfg).push.codeGlobs.every((/** @type {unknown} */ g) => typeof g === "string" && g !== "")) problems.push(`"push.codeGlobs" must be a list of globs`);
   const split = /** @type {any} */ (cfg).planner.splitAbove;
   if (split !== null && !(Number.isFinite(split) && split > 0)) problems.push(`"planner.splitAbove" must be a number above 0, or null`);
   const every = /** @type {any} */ (cfg).security.everyCycles;
@@ -516,6 +524,7 @@ export function configFrom(text, { cwd, configPath, override }) {
     ["security.ci.except", c.security.ci.except],
     ["security.deps.paths", c.security.deps.paths],
     ["security.secrets.except", c.security.secrets.except],
+    ["push.codeGlobs", c.push.codeGlobs],
     ...c.review.cochange.flatMap((/** @type {any} */ r, /** @type {number} */ i) =>
       r && typeof r === "object" ? [[`review.cochange[${i}].paths`, r.paths], [`review.cochange[${i}].docs`, r.docs]] : [],
     ),

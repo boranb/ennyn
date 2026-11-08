@@ -113,20 +113,41 @@ function ciReport(cwd, tracked, config, add) {
  * its redirects (`>&2`, `2>&1`) its own, with no pipe or `&&`. Read by shape, in the safe direction: a command that
  * holds `set` is not judged (`set -e` stops the list at a failure), and a last part with an odd count of either quote
  * lies inside one and is no command; `&>` is a redirect to bash and a background job to dash (`sh`, which `mutate`
- * runs), so it is not judged either (measured in dash 0.5.11 and bash 5.1.16). A pipe to tee, a program that exits 0
- * (`env true`) and a script that does are not seen.
+ * runs), so it is not judged either (measured in dash 0.5.11 and bash 5.1.16). A pipe to tee is `pipes`' to say; a
+ * program that exits 0 (`env true`) and a script that does are not seen.
  */
 const NO_OP = /^(?:(?:(?:\/usr)?\/bin\/)?true|:|echo)(?:\s(?:(?!&&)[^|])*)?$|^exit\s+0$/;
 /** A list separator: `;`, `||` and `&`, but not the `&` of `&&` or of a redirect (`>&2`, `2>&1`, `&>`). */
 const SEPARATOR = /;|\|\||(?<![&<>])&(?![&>])/;
 /** @param {string} command */
-function cannotFail(command) {
+export function cannotFail(command) {
   if (/\bset\s/.test(command)) return false;
   const text = command.replace(/[\s;]+$/, "");
   if (/(?<![&<>])&$/.test(text)) return true;
   const last = String(text.split(SEPARATOR).at(-1)).trim();
   const balanced = [/"/g, /'/g].every((q) => (last.match(q) ?? []).length % 2 === 0);
   return balanced && NO_OP.test(last);
+}
+
+/**
+ * Whether a command holds a pipe outside quotes: `|` or bash's `|&`, not `||` and not the `>|` redirect. A pipeline's
+ * status is its last program's (`a | tail` is green when `a` fails); `set -o pipefail` is bash's, and the shell may be
+ * dash, so it is not read. By shape, in the safe direction: a pipe inside `$( )` or after `#` counts too.
+ * @param {string} command
+ */
+export function pipes(command) {
+  let quote = "";
+  for (let i = 0; i < command.length; i++) {
+    const c = command[i];
+    if (quote) {
+      if (c === quote) quote = "";
+      else if (c === "\\" && quote === '"') i++;
+    } else if (c === "\\") i++;
+    else if (c === "'" || c === '"') quote = c;
+    else if (c === "|" && command[i + 1] === "|") i++;
+    else if (c === "|" && command[i - 1] !== ">") return true;
+  }
+  return false;
 }
 
 /**
@@ -140,6 +161,15 @@ function cannotFail(command) {
  * @param {(level: DoctorItem["level"], key: string, vars?: DoctorItem["vars"]) => void} add
  */
 function fastTestReport(cwd, config, add) {
+  // The whole test command: one that cannot fail would record a green run for any push (`ennyn test whole`).
+  const whole = config.commands.wholeTest;
+  if (whole === null) add("warn", "doctor.wholeTestUnset", {});
+  else if (cannotFail(whole)) add("fail", "doctor.wholeTestNoop", { command: whole });
+  // A pipeline's status is its last program's: `ennyn test` runs such a command and records no run.
+  const lang = config.language;
+  for (const [kind, command] of [["fast", config.commands.fastTest], ["whole", whole]]) {
+    if (typeof command === "string" && pipes(command)) add("warn", "doctor.testPipe", { label: { shown: tShown(`doctor.${kind}Label`, {}, lang) }, key: `commands.${kind}Test`, command });
+  }
   const fast = config.commands.fastTest;
   if (typeof fast === "string") return cannotFail(fast) ? add("fail", "doctor.fastTestNoop", { command: fast }) : add("ok", "doctor.fastTest", { command: fast });
   if (fast !== null) return add("warn", "doctor.fastTestNone", { reason: fast.none });
@@ -151,7 +181,6 @@ function fastTestReport(cwd, config, add) {
     return add("warn", "doctor.fastTestUnread", { why: oneLine(e) });
   }
   const unread = declared.unmeasured.commands ?? [];
-  const lang = config.language;
   const tests = declared.commands.filter((c) => TEST_COMMAND.test(c));
   const maybe = declared.commands.filter((c) => MAYBE_TEST_COMMAND.test(c));
   if (tests.length) add("warn", "doctor.fastTestUnset", { list: tests });

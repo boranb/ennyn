@@ -16,7 +16,8 @@ import { fileURLToPath } from "node:url";
 import { git } from "../core/git.mjs";
 import { matchAny } from "../core/glob.mjs";
 import { testNames } from "./declarations.mjs";
-import { ACCOUNTING, READS, SLOW, choose, codeHash, decide, reasons, testFiles, whatChanged } from "./short.mjs";
+import { DEFAULTS } from "../core/config.mjs";
+import { ACCOUNTING, READS, SLOW, choose, codeHash, decide, isCode, reasons, testFiles, whatChanged } from "./short.mjs";
 
 const { registerHooks } = nodeModule;
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -512,6 +513,15 @@ test("short: with guards left out its accounting test still runs, on its own; it
   assert.equal(back.stdout.split("ACCOUNTING RAN").length - 1, 1);
 });
 
+test("short: push.codeGlobs reads as code what isCode reads, over every tracked file; the default reads every one as code", () => {
+  const files = git(["ls-files", "-z"], { cwd: ROOT }).split("\0").filter(Boolean);
+  assert.ok(files.length > 100, "the tracked files");
+  assert.deepEqual(files.filter((f) => !matchAny(f, DEFAULTS.push.codeGlobs)), [], "every path is code by default");
+  // This repository's own list, once its config sets one: push-check asks a whole run for exactly what the short suite reads as code.
+  const own = JSON.parse(readFileSync(join(ROOT, ".ennyn", "config.json"), "utf8")).push?.codeGlobs;
+  if (own !== undefined) assert.deepEqual(files.filter((f) => matchAny(f, own)), files.filter(isCode));
+});
+
 test("short: the method names the whole test command, runs it once at the closing and the fast one at landing, and answers a fast command with no slow list and a new slow test", () => {
   const read = (/** @type {string} */ f) => readFileSync(join(ROOT, f), "utf8");
   const brief = read("skills/cycle/task-brief.md");
@@ -520,7 +530,7 @@ test("short: the method names the whole test command, runs it once at the closin
   assert.match(brief, /\| \*\*Landing\*\* \| One task at a time: rebase, the fast test command and every slow gate the task touches \(no command short of the whole suite: the whole test command\), whatever the agent ran, then the main branch moves; the whole test command waits for the closing \(section 3 of `SKILL\.md`\)\./);
   assert.match(brief, /The landing runs the fast test command and the slow gates the task touches \(the \*\*Landing\*\* row below\), before the main branch moves/);
   assert.match(brief, /One heavy job at a time on the machine: a whole suite, a mutation run, a platform image\./);
-  assert.match(read("skills/cycle/SKILL.md"), /7\. \*\*Push:\*\* `ennyn\.mjs worktrees --remove`; the whole test command, once \(red: task-brief\.md's Landing row\);/);
+  assert.match(read("skills/cycle/SKILL.md"), /7\. \*\*Push:\*\* `ennyn\.mjs worktrees --remove`; `ennyn\.mjs test whole`, once \(red: task-brief\.md's Landing row\);/);
   assert.match(brief, /Red there stops the push: a timing failure is rerun alone first; a real one is traced to the landing commit that brought it and fixed in a new `fix:` commit, written and reviewed as a first write, or the push waits\. The whole run repeats on the fixed tree, and what follows the last edit is done again: the `fix:` commit's rows appended first, convergence run again \(a new block\), the graph, the budget record, leftovers, and `bypass` over the new commit\. A red closing run is a landed task's defect: it counts against no task \(\*\*Landed\*\*\), its `fix:` commit is written by a fresh agent on the session's model and reviewed as a first write, and no escalation applies\./);
   assert.match(brief, /A platform or release matrix the handoff names runs before a release, never at the closing\./);
   assert.match(brief, /a fast command with no slow list is run as it is/);

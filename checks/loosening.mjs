@@ -64,6 +64,12 @@ const MOVES = new Map(/** @type {[string, (a: any, b: any) => boolean][]} */ ([
   ["push.warnAtUnpushed", up],
   // The cycle pushes by itself: the user's ask is gone (skills/cycle/push.md).
   ["push.mode", (_, b) => b !== "ask"],
+  // A path no glob matches needs only a fast run before a push (push-check).
+  ["push.codeGlobs", shrinks],
+  // The commands whose green run push-check reads (`ennyn test`): a set command changed or taken away; setting one
+  // where none was set is not.
+  ["commands.fastTest", (a) => typeof a === "string"],
+  ["commands.wholeTest", (a) => typeof a === "string"],
   ["security.everyCycles", (a, b) => b === 0 || (a !== 0 && b > a)],
   ["security.ci.paths", shrinks],
   ["security.ci.except", grows],
@@ -103,8 +109,6 @@ const NO_GATE = new Set([
   "graph.openGateValue",
   "graph.doneStatus",
   "planner.splitAbove",
-  // Read by doctor and the cycle skill, never by the hook: what the cycle runs, not what a commit may hold.
-  "commands.fastTest",
   "commitMsg.language",
   "commitMsg.fixType",
   "review.agents",

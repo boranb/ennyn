@@ -304,7 +304,7 @@ export const GATES = [
         new: "counted(after) >= counted(before)) continue;",
         pattern: "fault matrix control: the judge",
       },
-      { id: "fault-cases", why: "a command with no case", file: "test/fault-injection.test.mjs", old: '  { args: ["push-check"] },\n', new: "", pattern: "fault matrix: every command" },
+      { id: "fault-cases", why: "a command with no case", file: "test/fault-injection.test.mjs", old: '  { args: ["push-check"], writes: true },\n', new: "", pattern: "fault matrix: every command" },
       { id: "fault-hooks", why: "a Claude Code hook with no case", file: "test/fault-injection.test.mjs", old: '    hook: "conversation-style.mjs",\n', new: '    hook: "conversation-style.mjs.off",\n', pattern: "fault matrix: every Claude Code hook" },
       { id: "fault-reference", why: "a killed reference command said without its signal", file: "impact/table.mjs", old: "e.signal ? `killed by ${e.signal}`", new: 'e.signal ? "killed"', pattern: "fault matrix: a reference command" },
       {
@@ -735,6 +735,7 @@ export const GATES = [
       { id: "short-line-break", why: "a name the shell takes and the list does not", file: "test/short.mjs", old: "/^[^.].*\\.test\\.mjs$/s", new: "/^[^.].*\\.test\\.mjs$/", pattern: "short: every test file is in" },
       { id: "short-slow-gone", why: "a slow file that is no test file", file: "test/short.mjs", old: '"test/hook.test.mjs": [\n    EVERY_FILE,', new: '"test/hooks.test.mjs": [\n    EVERY_FILE,', pattern: "short: every test file is in" },
       { id: "short-path-gone", why: "a path that brings a slow file back and matches nothing", file: "test/short.mjs", old: '"core/git.mjs", "core/files.mjs"', new: '"core/gits.mjs", "core/files.mjs"', pattern: "short: a path that brings" },
+      { id: "short-code-own", why: "this repository's code globs read a code file as text, so a push of it needs only a fast run", file: ".ennyn/config.json", old: '"commands": { "fastTest": "npm run test:short" },', new: '"commands": { "fastTest": "npm run test:short" },\n  "push": { "codeGlobs": ["**/*.mjs"] },', pattern: "short: push.codeGlobs reads" },
       { id: "short-tip", why: "changes read against the main branch's tip, so what it took reads as the branch's", file: "test/short.mjs", old: 'const base = git(["merge-base", "HEAD", `refs/heads/${MAIN}`], { cwd, env });', new: 'const base = git(["rev-parse", `refs/heads/${MAIN}`], { cwd, env });', pattern: "short: what the branch changed" },
       { id: "short-staged", why: "a staged edit with the tree put back read as no change", file: "test/short.mjs", old: 'const fields = [...diff(), ...diff("--cached")];', new: "const fields = diff();", pattern: "short: what the branch changed" },
       { id: "short-machine-ignore", why: "new files a machine's ignore hides read as no change", file: "test/short.mjs", old: '"--exclude-per-directory=.gitignore"', new: '"--exclude-standard"', pattern: "short: what the branch changed" },

@@ -474,7 +474,18 @@ const CASES = [
   { args: ["budget", "--record", "--security-audit"], writes: true },
   { args: ["mutate", ".git/mutants.json", "--command", `${NODE} .git/check.mjs`], writes: true },
   { args: ["mutate", "--restore"], writes: true },
-  { args: ["push-check"] },
+  // The fetch writes the copy's git dir. Ahead of its upstream by a commit that changes code: the record holds no run.
+  { args: ["push-check"], writes: true },
+  // A run recorded by HEAD's tree: each read of the tree before and after it must be said, never recorded.
+  {
+    args: ["test", "fast"],
+    writes: true,
+    setup: (repo) => {
+      const path = join(repo, ".ennyn", "config.json");
+      writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, "utf8")), commands: { fastTest: `${NODE} -e 0` } }));
+      git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-am", "chore: fast test"], { cwd: repo });
+    },
+  },
   { args: ["worktrees"], setup: (repo) => worktrees(repo) },
   { args: ["worktrees", "--remove"], writes: true, setup: (repo) => worktrees(repo) },
   { args: ["gate-record", "--start", START, "--exit", "0", "--commit", "HEAD"], writes: true },
@@ -848,7 +859,8 @@ const LIMITED = [
   [{ args: ["impact", "--symbol", "add", "--files", "src/add.js"] }, " grep --no-color ", "walk"],
   [{ args: ["impact", "--symbol", "add", "--files", "src/add.js"] }, " log --no-merges --full-diff ", "walk"],
   [{ args: ["init-scan"] }, " grep --cached ", "walk"],
-  [{ args: ["push-check"] }, " rev-list --count ", "walk"],
+  [{ args: ["push-check"], writes: true }, " rev-list --count ", "walk"],
+  [{ args: ["push-check"], writes: true }, " fetch ", "walk"],
   [{ args: ["commit-check", "--hook", ".git/AMEND"], setup: (repo) => git(["reset", "-q"], { cwd: repo }) }, " log -n501 ", "call"],
   [{ args: ["doctor"] }, " log -z --no-merges ", "call"],
 ];
