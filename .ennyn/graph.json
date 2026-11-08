@@ -5473,6 +5473,17 @@
       "cluster": "metrics",
       "source": "cycle 2026-11-07 (26), T4 round 1 code review (c26-t4-code-r1-02), pre-existing since 2fe5642",
       "since": 26
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kept-folder-closing",
+      "title": "The closing says what becomes of the cycle's kept folder (task-brief.md, Keeping the work, names the folder but not its end): it keeps what a later cycle, an audit or a person reads (ledger, briefs, impact tables, measurements, rows, every reviewer's and author's untracked probes and labs) and removes what git gives back (a reviewer's or lab's clone of a commit the repository holds: its tracked files go, its untracked files stay), each removal only after a check that nothing it holds is lost (the commit reachable, the untracked files kept); a live cycle folder left beside its kept copy goes without asking once a comparison shows nothing only it holds, a file only it holds first copied over; anything not proven a copy is asked. The report says the folder's size before and after",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "the user, 2026-11-08: a request after a cycle-24 folder (376 MB) sat beside its kept copy for two days and was asked about at cycle 26's closing (a request). Measured 2026-11-08 on this machine: the kept folders hold 8.6 GB over 10 cycles (cycle 21: 3.1 GB; cycles 24-26: 365-376 MB each); in cycle 26 five reviewer clones are 32-35 MB each, reproducible from git, while their untracked probes are the evidence. Related: disk-use-record, resource-ledger",
+      "since": 26
     }
   ],
   "done": [
