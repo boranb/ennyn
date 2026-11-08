@@ -29,16 +29,24 @@ export function machineProgram(name) {
 export const PID_LIMIT = 4194304;
 
 /**
- * The texts that could reach a real kill or a real process, each with why: a path or a lookup that finds the real
- * program past the stand-in (`/kill`, `command -p`, a `PATH=` of its own, `env -i` or `-u`), a builtin turned back on
- * (`enable`, `builtin`), or a number a kill, tskill or /PID may get that a process can have, 0 and -1 among them.
- * A signal written `-9` with a word after it is no target. Asked over every generated text before any of them runs.
+ * What leaves the box: a path or a lookup that finds the real program past the stand-in (`/kill`, `command -p`, a
+ * PATH of its own, `hash`, `env -i`, `-u`, `-S`), a builtin turned back on (`enable`, `builtin`), a startup file other than
+ * the box's (`BASH_ENV`, `ENV=`, `/etc/`, `~/.`), and a login or interactive shell, which reads /etc/profile: on macOS its
+ * path_helper put /usr/bin before the stand-ins, and a real pkill ran. A shell's options are the words after its name
+ * that start with `-` or `+`: `bash -c 'kill -l'` holds none.
+ */
+const LEAVES = /\/kill|command\s+-p|PATH\+?=|\bexport\s+PATH\b|\bhash\b|BASH_ENV|\bENV=|\benable\b|\bbuiltin\b|\benv\s+-[iuS]|\/etc\/|~\/\.|\bsu\b|\bsudo\s+-\w*[is]|--login|--rcfile|--init-file|-o\s*login|\bexec\s+-\w*l|\bexec\s+(?:-\w+\s+)*-a\s*['"]?-|(?:^|[\s'"(;&|`/\\])-(?:ba|z|da|k|c|tc|fi|a|rba)?sh\b|(?:^|[\s'"(;&|`/\\])(?:ba|z|da|k|c|tc|fi|a|rba)?sh(?:\s+['"]?[-+][\w-]*['"]?)*?\s+['"]?[-+][a-zA-Z]*[li]/;
+
+/**
+ * The texts that could reach a real kill or a real process, each with why: what leaves the box (LEAVES), or a number
+ * a kill, tskill or /PID may get that a process can have, 0 and -1 among them. A signal written `-9` with a word after
+ * it is no target. Asked over every generated text before any of them runs, and by the box before each run.
  * @param {string[]} texts
  */
 export function unsafeTexts(texts) {
   const out = [];
   for (const text of texts) {
-    const found = /\/kill|command\s+-p|PATH=|\benable\b|\bbuiltin\b|\benv\s+-[iu]/.exec(text);
+    const found = LEAVES.exec(text);
     if (found) {
       out.push(`${JSON.stringify(text)}: ${found[0]}`);
       continue;
@@ -102,6 +110,8 @@ export function shellBox(prefix, { stands, real }) {
      * @returns {{ calls: string[][], status: number | null }}
      */
     run(text) {
+      const unsafe = unsafeTexts([text]);
+      if (unsafe.length) throw new Error(`refused, it could leave the box: ${unsafe.join("; ")}`);
       writeFileSync(log, "");
       rmSync(cwd, { recursive: true, force: true });
       mkdirSync(cwd);
@@ -115,6 +125,8 @@ export function shellBox(prefix, { stands, real }) {
      * @param {string} name @param {string[]} texts each holding `{}` where the check goes
      */
     builtins(name, texts) {
+      const unsafe = unsafeTexts(texts.map((t) => t.replaceAll("{}", "")));
+      if (unsafe.length) throw new Error(`refused, it could leave the box: ${unsafe.join("; ")}`);
       return texts.filter((t) => {
         const r = spawnSync(join(bin, "bash"), ["-c", t.replaceAll("{}", `type -t ${name}`)], { cwd, env, input: "", encoding: "utf8", timeout: 10000, detached: true });
         return r.signal !== null || r.stdout.split("\n").includes("builtin");

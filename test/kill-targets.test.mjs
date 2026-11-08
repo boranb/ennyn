@@ -246,6 +246,9 @@ test("kill reader: 64 KB of the shapes its PID-file trust and its program places
     [`env sh${fill(() => " sh", " $(echo x); pkill node")}`, "unread"],
     [`ForEach-Object${fill(() => " { kill 1234 }", "; pkill node")}`, "name"],
     [`ssh h${fill(() => " a", "; pkill node")}`, "name"],
+    // A kill word beside what turns a word into a program: each kill judged and passed is counted off once, not searched for.
+    [`f() { :; }; ${fill(() => "kill -9 1234\n", "echo")}`, null],
+    [`eval x; ${fill(() => "echo kill; ", "echo")}`, "unread"],
   ];
   for (const [text, why] of shapes) {
     const t0 = performance.now();
@@ -295,6 +298,8 @@ const KILL_CONTEXTS = (() => {
     ["pipe-sh", (s) => (s.includes("'") ? null : `printf '%s\\n' '${s}' | bash`)], ["file", (s) => (s.includes("'") ? null : `echo '${s}' > note.txt`)],
     // bash 4 and later: macOS's bash 3.2 runs neither (coproc is no command there, `|&` no syntax), Linux's bash 5 both.
     ["coproc", (s) => (simple(s) ? `coproc ${s}` : null)], ["coproc-named", (s) => `coproc P { ${s}; }`], ["pipe-err", (s) => `true |& ${s}`],
+    // A helper the same text defines that runs its arguments: its arguments stand where a wrapper's do.
+    ["helper", (s) => (simple(s) ? `r() { "$@"; }; r ${s}` : null)], ["helper-function", (s) => (simple(s) ? `function r { "$1" "\${@:2}"; }; r ${s}` : null)],
   ];
 })();
 /** What a lookup stand-in answers: a number no process has. */
@@ -372,7 +377,7 @@ function killStands(lookups = {}) {
 test("kill reader: a real bash agrees on generated texts: nothing it passes stops another's process, and what it refuses that bash does not stop is counted", () => {
   const box = shellBox("en-kill-bash-", { stands: killStands(), real: ["cat", "xargs", "env", "nohup", "tr"] });
   try {
-    const checks = KILL_CONTEXTS.map(([, put]) => put("{}")).filter((t) => t !== null);
+    const checks = [...KILL_CONTEXTS.map(([, put]) => put("{}")), 'eval "{}"', 'bash -c "env {}"'].filter((t) => t !== null);
     assert.deepEqual(box.builtins("kill", [...checks, "{} | cat", "echo | while read x; do {}; done"]), [], "a context where the kill builtin is still on");
     /** @type {string[]} */
     const texts = [];
@@ -391,6 +396,11 @@ test("kill reader: a real bash agrees on generated texts: nothing it passes stop
         // An option and its value before the name, the value named like a kill program (`exec -a fuser`).
         for (const wrap of ["env", "nohup", "command", "exec", "time", "exec -a fuser", "time -p"]) texts.push(`${wrap} ${built}${rest}`);
         if (!/[;&|]/.test(rest)) texts.push(`function f { env ${built}${rest}; }; f`);
+      }
+      // Inside double-quoted text another shell reads: the outer shell runs the substitution, the inner one gets the name.
+      if (!/["`\\]/.test(rest)) {
+        for (const shell of ["bash -c", "sh -c", "eval"]) texts.push(`${shell} "$(echo ${w})${rest}"`);
+        texts.push(`eval "\`echo ${w}\`${rest}"`, `bash -c "env $(echo ${w})${rest}"`);
       }
     }
     // Before any text runs: none reaches the real program or names a number a process can have.
@@ -484,6 +494,37 @@ test("kill hook: with a config it denies a kill by name on each tool that runs a
   }
 });
 
+test("kill reader: each piece of the beside rule decides: export -f, a definition's body, BASH_FUNC_, a kill counted once, a built kill name, quotes out, a quoted here-document, the last segment, the depth", () => {
+  const deep = 'bash -c \'bash -c "bash -c \'"\'"\'bash -c \\"bash -c \\\\\\"pkill node\\\\\\"\\"\'"\'"\'"\'';
+  for (const [text, why, beside] of [
+    ["export -f r; bash -c 'r pkill node'", "unread", "export"],
+    ['env \'BASH_FUNC_r%%=() { "$@"; }\' bash -c \'r pkill node\'', "unread", "BASH_FUNC_"],
+    // One passed kill accounts for one kill word, not for every word of its spelling.
+    ["set -e; kill 1234; echo kill", "unread", "set"],
+    // A kill program's name a variable builds is no kill judged and passed: bash runs `killall` when x is `all`.
+    ["x=all; kill$x 1234", "unread", "kill$x"],
+    ['r() { "$@"; }; r p\'\'kill node', "unread", "r ()"],
+    // Found only with backslashes out: bash reads `pk\\ill` as pkill.
+    ['r() { "$@"; }; r pk\\ill node', "unread", "r ()"],
+    [deep, "unread", "5 shells deep"],
+  ]) {
+    const r = killTarget(text);
+    assert.equal(r?.why, why, text);
+    assert.equal(r?.beside, beside, text);
+  }
+  // A name and `()` with no body is no definition (PowerShell's call); a quoted here-document is data; a run joined to
+  // letters before the last `/` leaves the program's own name.
+  for (const text of ['Get-Date(); Write-Host "kill"', "set -e; cat <<'EOF' > n.md\nkill it\nEOF", "$(pwd)bin/tool x"]) assert.equal(killTarget(text), null, text);
+});
+
+test("kill hook: a kill word beside what can turn a word into a program is denied with both named and how to split the command", () => {
+  const dir = project("{}\n");
+  const out = JSON.parse(run(dir, call('set -e; grep -rn "kill" src')).stdout).hookSpecificOutput;
+  assert.equal(out.permissionDecision, "deny");
+  assert.match(out.permissionDecisionReason, /^ennyn: the kill word `kill` stands in a command that also holds `set`/);
+  assert.match(out.permissionDecisionReason, /Split it: run the part that names `kill`/);
+});
+
 test("kill hook: a kill by PID and every other command pass, printing nothing; what it names is one line, cut", () => {
   const dir = project("{}\n");
   for (const c of ["kill 1234", "taskkill //PID 1234 //T //F", "Stop-Process -Id 1234", "node s.js & pid=$!; kill $pid", "ls", "git push origin main"]) assert.equal(run(dir, call(c)).stdout, "", c);
@@ -527,6 +568,64 @@ test("kill hook: a broken or missing catalog still refuses, with a plain English
     const out = JSON.parse(run(repo, call("pkill node"), [], join(box, "adapters/claude-code/hooks/kill-targets.mjs")).stdout).hookSpecificOutput;
     assert.equal(out.permissionDecision, "deny");
     assert.match(out.permissionDecisionReason, /^ennyn: .*by its PID/);
+  }
+});
+
+test("kill reader: a kill word beside what can turn a word into a program is refused unless it is a kill judged and passed; the refusal names both", () => {
+  // Each ran pkill or killall in bash 3.2 (test/shell-box.mjs); the reason given is the one this reader gives now.
+  const refused = [
+    ['bash -c "$(echo pkill) node"', "unread"], ['sh -c "$(echo pkill) node"', "unread"], ['eval "$(echo pkill) node"', "unread"],
+    ['bash -c "`echo pkill` node"', "unread"], ['eval "`echo pkill` node"', "unread"], ['sh -c "env $(echo pkill) node"', "unread"],
+    ['sudo sh -c "$(echo pkill) node"', "unread"], ['bash -c "true; $(echo pkill) node"', "unread"], ['bash -c "x=1 $(echo pkill) node"', "unread"],
+    ['bash -c "\\"$(echo pkill)\\" node"', "unread"], ['find . -maxdepth 0 -exec sh -c "$(echo pkill) node" \\;', "unread"],
+    ['retry() { for i in 1 2 3; do "$@" && break; done; }; retry pkill node', "name"], ['run() { echo "+ $*"; "$@"; }; run pkill -f node', "name"],
+    ['quiet() { "$@" >/dev/null 2>&1; }; quiet killall node', "name"], ['function r { "$@"; }; r pkill node', "name"], ['function r() { "$@"; }; r pkill node', "name"],
+    ['r () { "$@"; }; r pkill node', "name"], ['r() ( "$@" ); r pkill node', "name"], ['r() { "$1" node; }; r pkill', "name"], ['r() { "${1}" node; }; r pkill', "name"],
+    ['r() { $*; }; r pkill node', "name"], ['r() { "$*"; }; r pkill', "name"], ['r() { shift; "$@"; }; r x pkill node', "name"], ['r() { env "$@"; }; r pkill node', "name"],
+    ['r() { eval "$*"; }; r pkill node', "name"], ['r() { eval "$1"; }; r "pkill node"', "name"], ['r() { "$@"; }; r sudo pkill node', "name"],
+    ['a() { "$@"; }; b() { a "$@"; }; b pkill node', "name"], ['function r {\n"$@"\n}\nr pkill node', "name"], ["bash -c 'r() { \"$@\"; }; r pkill node'", "name"],
+    ['r() { "$@"; }; eval "r pkill node"', "name"], ['r() { "$@"; }; export -f r; bash -c "r pkill node"', "name"], ['r() { "$@"; }; r kill node', "name"],
+    ['r() { "$@"; }; r kill $(pgrep node)', "lookup"],
+    // A helper's name over a program's: bash runs the function.
+    ['find() { "$@"; }; find pkill node', "name"], ['ssh() { "$@"; }; ssh pkill node', "name"],
+    ['find() { "$@"; }; find $(echo pkill) node', "unread"], ['ssh() { "$@"; }; ssh $(echo pkill) node', "unread"],
+  ];
+  const wrong = refused.filter(([c]) => killTarget(c) === null).map(([c]) => JSON.stringify(c));
+  assert.deepEqual(wrong, []);
+  assert.deepEqual(killTarget('set -- pkill node; "$@"'), { why: "unread", part: 'set -- pkill node; "$@"', word: "pkill", beside: "set" });
+  assert.equal(killTarget('retry() { "$@"; }; retry pkill node')?.beside, "retry ()");
+  assert.equal(killTarget('grep -n "function kill" a.mjs'), null, "a construct's name inside an argument is no construct");
+  assert.equal(killTarget("$(echo pk)ill node")?.why, "unread", "a name a run joins to letters");
+  assert.equal(killTarget("bash -c 'pkill${IFS}node'")?.word, "pkill", "a shell's word with an expansion only it expands");
+  assert.equal(killTarget(". lib.sh; grep kill a")?.beside, ".");
+  assert.equal(killTarget("pkill${IFS}node")?.word, "pkill", "a kill word inside a word");
+  assert.equal(killTarget('eval "$(echo pkill) node"')?.why, "unread");
+  // Passes: every kill word a kill judged and passed; the construct elsewhere in the text, or in a quoted here-document.
+  for (const c of ['bash -c "cd $(pwd) && kill 1234"', "set -e; node s.js & kill $!", "npm start & trap 'kill $(jobs -p)' EXIT; npm test", "f() { echo hi; }; f; kill 1234", "cat <<'EOF' > n.md\nset -- pkill x\nEOF", "source .venv/bin/activate && pytest", "ls skills/x/SKILL.md; set -e", "[System.Diagnostics.Process]::GetProcessById(1234).Kill(); function f { }"]) {
+    assert.equal(killTarget(c), null, c);
+  }
+  // Refused that kill nothing (stated in the header): a kill word only named beside such a construct.
+  for (const c of ['set -e; grep -n "kill(" a.mjs', 'r() { "$@"; }; r kill 1234', 'bash -c "echo $(echo pkill) node"']) assert.equal(killTarget(c)?.why, "unread", c);
+});
+
+test("shell box: a login or interactive shell, a startup file of its own or a PATH of its own is refused before it runs, by the check and by the box", () => {
+  // A login shell reads /etc/profile, whose path_helper on macOS put /usr/bin before the stand-ins: the real pkill ran.
+  const unsafe = [
+    'bash -lc "$(echo pkill) node"', "bash -l -c 'pkill node'", "bash -il -c x", "bash -i -c x", "sh -l -c x", "bash --login -c x", "bash --rcfile r -c x",
+    "bash --init-file r -c x", "bash -o login -c x", "exec -l bash", "exec -a -bash bash -c x", "exec -la x bash", "'-bash' -c x", "sudo -i pkill node", "sudo -s x",
+    "su - root", "su -l", "env -S 'bash -l'", "PATH+=:/usr/bin pkill node", "export PATH; pkill node", "hash -p /usr/bin/pkill pkill; pkill node",
+    "BASH_ENV=/dev/null bash -c 'kill 1'", "unset BASH_ENV; bash -c x", ". /etc/profile; pkill node", "source ~/.bashrc", "bash -c 'bash -l -c x'",
+  ];
+  assert.deepEqual(unsafe.filter((t) => unsafeTexts([t]).length === 0), [], "a text that can leave the box passes the check");
+  const safe = ["bash -c 'kill -l'", 'sh -c "kill 9999991"', "bash -c 'pkill -f node'", "f() { kill -l; }; f", "eval 'kill -9 9999991'", "kill -l; echo i"];
+  assert.deepEqual(safe.filter((t) => unsafeTexts([t]).length > 0), []);
+  const box = shellBox("en-kill-safe-", { stands: { pkill: "" }, real: [] });
+  try {
+    // Texts that harm nothing if the guard were gone: the box's own refusal is what fails here.
+    assert.throws(() => box.run("bash -lc true"), /refused/);
+    assert.throws(() => box.builtins("kill", ["bash -l -c 'echo {}'"]), /refused/);
+  } finally {
+    box.close();
   }
 });
 

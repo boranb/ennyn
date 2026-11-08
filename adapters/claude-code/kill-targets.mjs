@@ -11,6 +11,15 @@
  * `xargs`, `ssh`, `npx`, `find`, `coproc`: then at any word), one rule (programs), read two ways, each matched whole: past its folder and the extension Windows runs
  * it by, and as the last `\` or `/` segment of the word as written (`C:\Windows\System32\cmd.exe`,
  * `$env:SystemRoot\System32\taskkill.exe`). A shell's text (`bash -c "…"`, `powershell -Command "…"`) is read again.
+ * A shell's word with `$` or a backtick in it is read again too (`bash -c 'pkill${IFS}node'`). Where a text can turn a
+ * word into a program (TURNS where a program's name stands, here or in a shell's text read again: `eval`, `trap`,
+ * `source`, `.`, `set`, `xargs`, `alias`, `declare`, `function`, `export -f`; a definition `name ()`; any expansion at a
+ * program's place; `BASH_FUNC_` anywhere; shell text past the depth read), a kill word anywhere in it, in any quoting and
+ * inside a word (`pkill${IFS}node`), refuses it unread unless it is a kill program's name the reader judged and passed:
+ * `retry() { "$@"; }; retry pkill node`, `bash -c "$(echo pkill) node"`, `set -- pkill node; "$@"`, `echo pkill node |
+ * xargs env`. The refusal names the word and the construct (`word`, `beside`), so the agent can split the command. A
+ * quoted here-document's body is data here; `skill` counts only as a word of its own; a program's name a run joins to
+ * letters (`$(echo pk)ill`) is refused unread.
  * The rule is bound to the program and its option's place; a word list only ever refuses.
  *
  * - Passes: `kill` of literal PIDs (`kill -9 1234`), of a process group (`kill -- -1234`, `kill -TERM -1234`), of the
@@ -56,7 +65,8 @@
  * (`$S/eg-$d.winpid`) or mentioned by any program but those that read, test or remove it (`node s.js --pidfile a.pid`),
  * and a PID file the agent's earlier call filled from a port lookup (`netstat … > app.winpid`).
  *
- * Stated limits, not chased: a script the agent writes and then runs, an interpreter (`python -c`, `node -e`),
+ * Stated limits, not chased: a script the agent writes and then runs, an interpreter (`python -c`, `node -e`), a
+ * program's name a variable joins to letters (`${x}ill`),
  * an alias or a function defined earlier, a `$cmd` variable at a command's head, PowerShell's grammar past what is
  * listed (`"$(…)"` as an argument, splatting, `&` on a variable), a PID read in an earlier call and written here as a
  * number, a PID file of the same name another session wrote, and a PID file
@@ -127,6 +137,25 @@ const PS_FILE = /^\s*(\[int\]\s*)?\(?\s*get-content\s+("[^"]*"|'[^']*'|[^\s|;()]
 const LEAVES = /^(cat|rm|unlink|test|\[\[?|ls|stat|echo|printf|get-content|gc|type|remove-item|ri|del|erase|test-path|write-host|write-output)$/i;
 /** PowerShell's writers of a PID file: `$p.Id | Out-File <file>`, `Set-Content <file> $p.Id`. */
 const PS_WRITES = /^(out-file|set-content|sc|add-content|ac)$/i;
+/**
+ * Programs that can turn a word into a program when the text runs, judged where a program's name stands, in the text
+ * or a shell's text read again: `eval`, `trap`, `source` and `.`, `set` (positional parameters), `xargs` and
+ * `parallel`, `alias`, `declare`, `typeset`, `function`, `shopt`, and `export` with `-f`. With them, a definition
+ * `name ()` (found from the pass) and an exported function in the environment (`BASH_FUNC_`, anywhere).
+ */
+const TURNS = /^(eval|trap|source|\.|set|xargs|parallel|alias|declare|typeset|function|shopt)$/i;
+/**
+ * The kill words looked for anywhere in such a text, a method's name after `x.` aside (`$p.Kill()` is objectKill's):
+ * procps' `skill` only as a word of its own, since `SKILL.md`, `skills/` and `skill|eval` patterns are everywhere.
+ */
+const ANY_KILL = /(?<![\w-])(?<![\w)\]]\.)(kill|pkill|killall5?|taskkill|tskill|stop-process|spps|fuser|kill-port|fkill(-cli)?)(?![\w-])/i;
+const SKILL = /(?<![^\s'"`;&(/=])skill(?=$|[\s'"`;&)])/;
+const ANY_KILL_ALL = new RegExp(ANY_KILL.source, "gi");
+const SKILL_ALL = new RegExp(SKILL.source, "g");
+/** The first kill word of a text, quotes, backslashes and carets out if need be. @param {string} text */
+const killWordOf = (text) => (KILL_WORD.exec(text) ?? KILL_WORD.exec(text.replace(/[\^`'"\\]/g, "")))?.[0];
+/** A here-document's body under a quoted delimiter: data, unless a shell reads it, which its own rule refuses. */
+const QUOTED_DOC = /<<-?\s*(['"])(\w+)\1[^\n]*\n[\s\S]*?\n\2(?=\n|$)/g;
 /** How deep a shell's text is read again. */
 const DEPTH = 4;
 
@@ -830,10 +859,12 @@ function objectKill(command) {
 }
 
 /**
- * @param {string} command @param {number} depth
- * @returns {{ why: Why | "unread", part: string } | null}
+ * @param {string} command @param {number} depth @param {{ turns: string | null, proven: string[] }} seen of the whole
+ *   text: what can turn a word into a program (an expansion at a program's place, a shell's text past DEPTH), and the
+ *   spelling of each kill program's name judged and passed
+ * @returns {{ why: Why | "unread", part: string, word?: string, beside?: string } | null}
  */
-function read(command, depth) {
+function read(command, depth, seen) {
   const parsed = commandsOf(command);
   const said = killish(command);
   if (!parsed) return said ? { why: "unread", part: command.slice(0, 200) } : null;
@@ -845,8 +876,16 @@ function read(command, depth) {
     const words = unglued(cmd.words);
     const { at, built } = programs(words);
     if (!at.length) continue;
+    const placed = at.find((k) => words[k].text.includes(GAP) || is(words[k], TURNS) || (is(words[k], /^export$/i) && words.some((w) => /^-\w*f/.test(w.text))));
+    if (placed !== undefined) seen.turns ??= words[placed].raw.slice(0, 40);
+    // `name () {`: the pass leaves the name a command of its own, the parenthesis and the body after it in the text
+    // (PowerShell's `.Kill()` has no body).
+    if (cmd.words.length === 1 && /^\s*\(\s*\)\s*[{(]/.test(command.slice(cmd.at + (cmd.words[0].raw ?? "").length))) seen.turns ??= `${cmd.words[0].raw} ()`;
     const head = words[at[0]];
     const part = () => cmd.words.map((w) => w.text.split(GAP).join("$…")).join(" ");
+    // A name a run joins to letters is no name the text holds: `$(echo pk)ill`, `pk$(echo ill)`, in the word's last
+    // segment (`$(npm bin)/eslint` names eslint). A variable joined so (`node-v$v`) is a stated limit.
+    if (built.some((k) => ranAt(words[k]) && /\w\u0000|\u0000\w/.test(words[k].text.split("/").pop() ?? ""))) return { why: "unread", part: part() };
     const runs = at.some((k) => is(words[k], WRAPS) || is(words[k], OPENS)) || words.slice(at[0]).some((w) => is(w, RUNS) || is(w, /^ssh$/i));
     // Text no reader here sees, with a kill word in the text: a shell fed by a pipe or a here-document, or given its text
     // whole by a run (`sh <(…)`, `source <(…)`, `bash -c "$(…)"`), and a program's name built at run time
@@ -855,25 +894,29 @@ function read(command, depth) {
     words.forEach((w, k) => {
       if (ranAt(w, true) && /^\u0000+$/.test(w.text)) lastRun = k;
     });
-    if (said && at.some((k) => is(words[k], SHELLS) && (cmd.fed || lastRun > k))) return { why: "unread", part: part() };
+    const fed = said ? at.find((k) => is(words[k], SHELLS) && (cmd.fed || lastRun > k)) : undefined;
+    if (fed !== undefined) return { why: "unread", part: part(), word: killWordOf(command), beside: words[fed].raw.slice(0, 40) };
     // A name with a space in it is no program: PowerShell writes a string (`"left: $($k.Count)"`) where bash would run one.
-    if (said && built.some((k) => ranAt(words[k]) && !/\s/.test(words[k].text))) return { why: "unread", part: part() };
+    const ran = said ? built.find((k) => ranAt(words[k]) && !/\s/.test(words[k].text)) : undefined;
+    if (ran !== undefined) return { why: "unread", part: part(), word: killWordOf(command), beside: words[ran].raw.slice(0, 40) };
     let feed = at[0];
     while (feed < words.length && !is(words[feed], FEEDS)) feed++;
     for (const k of at) {
       const why = judgeAt(words, k, cmd, own, feed);
       if (why) return { why, part: part() };
+      if (is(words[k], JUDGED) && !words[k].text.includes(GAP)) seen.proven.push(words[k].raw);
     }
     // A shell's text, read again: `bash -c "pkill x"`, `pwsh -c "…"`, ssh's command words, cmd's with its caret out. An
     // expansion here stands as one there.
     if (runs && depth < DEPTH) {
       for (const w of cmd.words.slice(cmd.words.indexOf(head) + 1)) {
-        if (!/\s/.test(w.text)) continue;
+        // A word with a space, or with an expansion only that shell expands (`'pkill${IFS}node'`).
+        if (!/[\s$`]/.test(w.text)) continue;
         const text = w.text.split(GAP).join("${E}");
-        const inner = read(text, depth + 1) ?? (text.includes("^") ? read(text.replace(/\^(.)/g, "$1"), depth + 1) : null);
+        const inner = read(text, depth + 1, seen) ?? (text.includes("^") ? read(text.replace(/\^(.)/g, "$1"), depth + 1, seen) : null);
         if (inner) return inner;
       }
-    }
+    } else if (runs && cmd.words.some((w) => /\s/.test(w.text))) seen.turns ??= `${DEPTH + 1} shells deep`;
   }
   if (objectKill(command)) return { why: "name", part: command.slice(0, 200) };
   if (MEMBER_KILL.test(command) || NAMED_KILL.test(command) || CIM_KILL.test(command)) return { why: "name", part: command.slice(0, 200) };
@@ -881,10 +924,36 @@ function read(command, depth) {
 }
 
 /**
- * Why `command` stops a process it did not start, and the part refused, or null.
+ * Why `command` stops a process it did not start, and the part refused, or null. A kill word beside what can turn a
+ * word into a program (TURNS) says both: `word`, and `beside`, the construct as written.
  * @param {string} command what the tool will run
- * @returns {{ why: Why | "unread", part: string } | null}
+ * @returns {{ why: Why | "unread", part: string, word?: string, beside?: string } | null}
  */
 export function killTarget(command) {
-  return read(command, 0);
+  const data = command.replace(QUOTED_DOC, " ");
+  /** @type {{ turns: string | null, proven: string[] }} */
+  const seen = { turns: /BASH_FUNC_/.test(data) ? "BASH_FUNC_" : null, proven: [] };
+  const why = read(command, 0, seen);
+  if (why || seen.turns === null) return why;
+  // Each kill program's name judged and passed accounts for one kill word of its spelling; a kill word left over is one
+  // no place here proves. One pass over the text for each reading, so the cost stays linear.
+  const bare = data.replace(/[\^`'"\\]/g, "");
+  /** @type {Map<string, number>} */
+  const passed = new Map();
+  for (const raw of seen.proven) {
+    const w = (ANY_KILL.exec(raw) ?? SKILL.exec(raw) ?? ANY_KILL.exec(raw.replace(/[\^`'"\\]/g, "")))?.[0].toLowerCase();
+    if (w) passed.set(w, (passed.get(w) ?? 0) + 1);
+  }
+  /** @param {string} text @param {RegExp} re */
+  const left = (text, re) => {
+    const have = new Map(passed);
+    for (const m of text.matchAll(re)) {
+      const n = have.get(m[0].toLowerCase()) ?? 0;
+      if (!n) return m[0];
+      have.set(m[0].toLowerCase(), n - 1);
+    }
+    return null;
+  };
+  const word = left(data, ANY_KILL_ALL) ?? left(bare, ANY_KILL_ALL) ?? left(data, SKILL_ALL) ?? left(bare, SKILL_ALL);
+  return word ? { why: "unread", part: command.slice(0, 200), word, beside: seen.turns } : null;
 }

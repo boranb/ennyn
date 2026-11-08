@@ -52,7 +52,7 @@ async function main() {
   if (!possible) return;
   const command = input?.tool_input?.command;
   if (input?.tool_name === "Monitor" && input?.tool_input?.ws !== undefined && command === undefined) return;
-  /** @type {{ why: string, part: string } | null} */
+  /** @type {{ why: string, part: string, word?: string, beside?: string } | null} */
   let refused = null;
   let read = typeof command === "string";
   if (read) {
@@ -68,7 +68,9 @@ async function main() {
     return;
   }
   // Cut: what the refusal names may be long. t escapes what a line cannot hold.
-  const reason = await text("killTargets.refused", { command: /** @type {{ part: string }} */ (refused).part.slice(0, 200) }).catch(() => PLAIN_REFUSAL);
+  const { part, word, beside } = /** @type {{ part: string, word?: string, beside?: string }} */ (refused);
+  // A kill word beside what turns a word into a program: both are named, so the agent can split the command.
+  const reason = await (word && beside ? text("killTargets.beside", { word, beside, command: part.slice(0, 200) }) : text("killTargets.refused", { command: part.slice(0, 200) })).catch(() => PLAIN_REFUSAL);
   process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason } }));
 }
 
