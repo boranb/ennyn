@@ -148,7 +148,9 @@ export function writeEvent({ cwd, config, event, env = process.env, now = new Da
   if (e.ev === "start") {
     // A cycle that runs keeps its journal: a second start (after a compaction) would erase every step and round.
     if (state && !state.closed) throw new RangeError(`cycle ${state.cycle} is open in this work tree: \`ennyn journal close\` ends it before a new start`);
-    const start = readStart(top, startPath(top, config.paths.stateDir, env), READ_LIMIT);
+    const recordPath = startPath(top, config.paths.stateDir, env);
+    const start = readStart(top, recordPath, READ_LIMIT);
+    if (start && "bad" in start) throw new RangeError(`${recordPath} is no start record: ${start.bad}; run \`ennyn leftovers --start\` again`);
     if (!start || !("record" in start) || start.record.top !== top) throw new RangeError("no start record for this work tree: run `ennyn leftovers --start` first, so the journal names the HEAD the cycle began at");
     // An earlier cycle's record: HEAD has moved since it was noted, or the last journal began from it.
     const head = gitMaybe(["rev-parse", "--verify", "-q", "HEAD^{commit}"], { cwd: top, env, absent: [1] });

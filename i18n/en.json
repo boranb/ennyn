@@ -307,6 +307,7 @@
   "status.head": "Cycle {cycle}: {landed} of {planned} tasks landed, {pct} of the steps done, {time} since the start at HEAD {head}.",
   "status.headClosed": "Cycle {cycle} (closed): {landed} of {planned} tasks landed, {pct} of the steps done, {time} from the start at HEAD {head} to the close.",
   "status.noStart": "The start record is not the one the journal began from (none, or a later `leftovers --start`): HEAD and time not measured.",
+  "status.startUnread": "The start record: {error}; HEAD and time not measured.",
   "status.task": "  {task} · node {node} · worktree {worktree}",
   "status.waits": "Waits for the user: {text}",
   "status.release": "Release needs of {id}: {done} of {total} done.",

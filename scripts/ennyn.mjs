@@ -1458,8 +1458,18 @@ const COMMANDS = {
       else if (!opts.line) out(tShown("status.none", { path }, lang));
       return 0;
     }
-    const read = readStart(top, startPath(top, cfg.paths.stateDir));
-    const start = read && "record" in read && read.record.top === top ? read.record : null;
+    const recordPath = startPath(top, cfg.paths.stateDir);
+    let start = null;
+    let startWhy = "";
+    // A record that cannot be read (a link, a folder, no permission) or holds none leaves HEAD and time unmeasured, not the journal unread.
+    try {
+      const read = readStart(top, recordPath);
+      if (read && "bad" in read) startWhy = `${recordPath} is no start record: ${read.bad}`;
+      start = read && "record" in read && read.record.top === top ? read.record : null;
+    } catch (e) {
+      startWhy = /** @type {Error} */ (e).message;
+    }
+    const startUnread = () => (err(tShown("status.startUnread", { error: startWhy }, lang)), 1);
     /** @type {{ done: number, total: number } | null} */
     let release = null;
     let releaseWhy = "";
@@ -1482,7 +1492,7 @@ const COMMANDS = {
     const s = statusOf({ state, start, release, now: new Date() });
     const pct = s.percent === null ? "—" : percent(s.percent / 100, lang);
     const time = s.minutes === null ? "—" : `${Math.floor(s.minutes / 60)} h ${s.minutes % 60} min`;
-    if (opts.json) return (out(jsonShown({ journal: path, ...s, releaseWhy: releaseWhy || undefined, bad })), 0);
+    if (opts.json) return (out(jsonShown({ journal: path, ...s, releaseWhy: releaseWhy || undefined, bad })), startWhy ? startUnread() : 0);
     if (opts.line) {
       // A status line shows a cycle that runs: a closed one, as no journal, prints nothing.
       if (!s.open) return 0;
@@ -1491,7 +1501,7 @@ const COMMANDS = {
       return 0;
     }
     out(tShown(s.open ? "status.head" : "status.headClosed", { cycle: s.cycle, landed: s.landed, planned: s.planned, pct, time, head: s.head ? s.head.slice(0, 10) : "—" }, lang));
-    if (!s.head) out(t("status.noStart", {}, lang));
+    if (!s.head && !startWhy) out(t("status.noStart", {}, lang));
     for (const task of s.tasks) out(tShown("status.task", { task: taskWord(task), node: task.node ?? "—", worktree: task.worktree ?? "—" }, lang));
     if (s.waits) out(tShown("status.waits", { text: s.waits }, lang));
     if (release) out(t("status.release", { id: /** @type {string} */ (state.release), done: release.done, total: release.total }, lang));
@@ -1499,7 +1509,7 @@ const COMMANDS = {
     if (s.findings) out(tShown("status.findings", { path: s.findings }, lang));
     if (bad) out(t("status.bad", { n: bad }, lang));
     out(t("status.data", {}, lang));
-    return 0;
+    return startWhy ? startUnread() : 0;
   },
 
   async core(args) {

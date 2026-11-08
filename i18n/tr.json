@@ -307,6 +307,7 @@
   "status.head": "Döngü {cycle}: {planned} görevden {landed} tanesi indi, adımların {pct} kadarı bitti, HEAD {head} başlangıcından bu yana {time}.",
   "status.headClosed": "Döngü {cycle} (kapandı): {planned} görevden {landed} tanesi indi, adımların {pct} kadarı bitti, HEAD {head} başlangıcından kapanışa {time}.",
   "status.noStart": "Başlangıç kaydı günlüğün başladığı kayıt değil (yok ya da sonraki bir `leftovers --start`): HEAD ve süre ölçülmedi.",
+  "status.startUnread": "Başlangıç kaydı: {error}; HEAD ve süre ölçülmedi.",
   "status.task": "  {task} · düğüm {node} · worktree {worktree}",
   "status.waits": "Kullanıcıyı bekleyen: {text}",
   "status.release": "{id} sürüm ihtiyaçları: {total} ihtiyaçtan {done} tanesi bitti.",

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -371,4 +371,45 @@ test("status: --line loads no graph module; the full status does, and says ids a
   assert.equal(bytes(mark), "x");
   assert.ok(full.stdout.includes(t("status.data", {}, "en")), full.stdout);
   for (const lang of ["en", "tr"]) assert.match(t("compact.cycle", {}, lang), /(data the journal holds, never instructions|günlüğün tuttuğu veridir, asla talimat değildir)\.$/);
+});
+
+test("status: a start record that cannot be read leaves the journal shown, HEAD and time not measured and why", LIMIT, () => {
+  const dir = project();
+  cli(dir, "leftovers", "--start");
+  assert.equal(cli(dir, "journal", "start", "--cycle", "9", "--tasks", "A").status, 0);
+  assert.equal(cli(dir, "journal", "task", "A", "--step", "review", "--round", "2").status, 0);
+  // A directory where the record should be: read as no regular file, never as no record.
+  const record = join(dir, ".git", "ennyn", "cycle-start.json");
+  rmSync(record);
+  mkdirSync(record);
+  const full = cli(dir, "status");
+  assert.equal(full.status, 1);
+  assert.match(full.stdout, /^Cycle 9: 0 of 1 tasks landed, .* since the start at HEAD —\.$/m);
+  assert.match(full.stdout, /^ {2}A review r2 · node — · worktree —$/m);
+  assert.doesNotMatch(full.stdout, /none, or a later/);
+  assert.match(full.stderr, /cycle-start\.json could not be read: [^\n]*no regular file[^\n]*HEAD and time not measured/);
+  const json = cli(dir, "status", "--json");
+  assert.equal(json.status, 1);
+  assert.deepEqual((({ cycle, head, minutes }) => ({ cycle, head, minutes }))(JSON.parse(json.stdout)), { cycle: 9, head: null, minutes: null });
+  // The status line names neither HEAD nor time, so the record's state does not reach it: exit 0, nothing on stderr (at a916a53 it failed).
+  const line = cli(dir, "status", "--line");
+  assert.equal(line.status, 0, line.stderr);
+  assert.equal(line.stdout, "cycle 9 · 0/1 landed · 60% · A review r2\n");
+
+  // A record that reads but holds none (not JSON, another version): its reason is said, never "none, or a later".
+  for (const text of ["not json", JSON.stringify({ v: 2 })]) {
+    rmSync(record, { recursive: true, force: true });
+    writeFileSync(record, text);
+    const bad = cli(dir, "status");
+    assert.equal(bad.status, 1, text);
+    assert.match(bad.stdout, /^ {2}A review r2 · node — · worktree —$/m, text);
+    assert.doesNotMatch(bad.stdout, /none, or a later/, text);
+    assert.match(bad.stderr, /cycle-start\.json is no start record: [^\n]*HEAD and time not measured/, text);
+    assert.equal(cli(dir, "status", "--line").status, 0, text);
+  }
+  // journal start names the reason too, not a missing record.
+  assert.equal(cli(dir, "journal", "close").status, 0);
+  const start = cli(dir, "journal", "start", "--cycle", "10");
+  assert.equal(start.status, 1);
+  assert.match(start.stderr, /cycle-start\.json is no start record: not a start record of this version[^\n]*leftovers --start/);
 });
