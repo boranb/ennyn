@@ -39,19 +39,25 @@
  * in one cycle or across cycles, is said, and refuses nothing: a defect seen again after its fix is a new row by
  * report-formats.md. One list, over the whole ledger: doctor counts its groups, a report keeps those with a counted row.
  *
+ * Under the block, the recurrence ladder of report-formats.md, per file, over cycle N and the two before it: which
+ * files are at rung 2 and at the fix-loop brake, and why. A file at the brake that got a new patch node fails the
+ * command, and so does one whose patch nodes could not be looked for: that is never read as none. ladderOf and
+ * brakePatches say what each counts.
+ *
  * What the table needs from git it asks once, and only when a row needs it. Git failing, a tree a partial clone
  * does not hold or a start not noted reads `?` in the columns that row could fall in, with the reason, and the
  * others stay exact. Objects as HOOK_READ_ENV reads them: nothing is fetched.
  */
 
 import { isUtf8 } from "node:buffer";
-import { dirname, resolve } from "node:path";
+import { dirname, extname, relative, resolve, sep } from "node:path";
 import { leavesRoot, READ_LIMIT, readRegular } from "../core/files.mjs";
 import { git, gitBytes, HOOK_READ_ENV } from "../core/git.mjs";
 import { tShown } from "../core/i18n.mjs";
 import { cycleStart } from "./bypass.mjs";
 import { HASH, classProblems, currentClass, isId, isObject, loadClasses, plain, quoted } from "./classes.mjs";
 import { formatConvergence } from "./convergence.mjs";
+import { loadGraph } from "../plan/mechanization.mjs";
 
 /** The highest cycle: a date for a cycle's number is refused, and with it a typo of a few digits. */
 export const CYCLE_MAX = 9999;
@@ -133,12 +139,19 @@ export const FIELDS = ["cycle", "task", "round", "id", "severity", "class", "sou
  * @typedef {{ key: string, vars?: Record<string, string | number | string[]> }} Reason a catalog key below findings.why, as a report gives it
  * @typedef {{ key: string, vars: Record<string, string | number | string[]>, ids: string[] }} Unplaced what could not be placed, and why
  * @typedef {{ id: string, times: number, layers: [string, number][] }} Recurring
- * @typedef {{ path: string, cycle: number, rows: number, counted: number, counts: import("./convergence.mjs").Convergence, recurring: { exact: boolean, top: Recurring[] }, unplaced: Unplaced[], refused: Refused[], refusedCount: number, stopped: boolean, same: string[][], higher: string[], untracked: string[], declined: string[], refound: string[] }} CycleReport
+ * @typedef {{ file: string, classes: { id: string, cycles: number[] }[], previousFix: number[], rounds: { round: number, previousFix: number, fixed: number }[], ids: string[], nodes: { row: string, node: string }[] }} LadderFile
+ *   why the file is there: classes in the cycles it needs, the cycles of previous-fix rows, the rounds of cycle N with
+ *   more previous-fix rows than fixed ones; `ids` its rows in the window, `nodes` those whose outcome names a node
+ * @typedef {{ node: string, file: string, rows: string[], path: boolean }} Patch a new node linked to a file at the brake: by the rows that name it or it names, or by the file's path
+ * @typedef {{ cycles: number[], read: number[], brake: LadderFile[], rung2: LadderFile[], patches: Patch[], unmeasured: Reason | null }} Ladder
+ *   `read`: the ledger's rows of each cycle, in the order of `cycles`; `unmeasured`: why patch nodes could not be looked for
+ * @typedef {{ path: string, cycle: number, rows: number, counted: number, counts: import("./convergence.mjs").Convergence, recurring: { exact: boolean, top: Recurring[] }, unplaced: Unplaced[], refused: Refused[], refusedCount: number, stopped: boolean, same: string[][], higher: string[], untracked: string[], declined: string[], refound: string[], ladder: Ladder | null }} CycleReport
  *   `rows`: the ledger's, `counted`: the cycle's. `top` is empty unless `exact`. `same`: the ledger's groups that hold
  *   a counted row. `higher`:
  *   ids of rows of a cycle above the one asked for. `untracked`: ids of rows whose test HEAD does not track.
  *   `declined`: ids of the cycle's declined rows line 1 leaves. `refound`: ids of declined rows of earlier cycles,
- *   with no dupOf, whose fingerprint, folded, a row of this cycle that line 1 leaves holds: a lower bound.
+ *   with no dupOf, whose fingerprint, folded, a row of this cycle that line 1 leaves holds: a lower bound. `ladder`:
+ *   the recurrence ladder, null when the counts could not be read.
  */
 
 /**
@@ -487,6 +500,137 @@ function recurring(live, reg) {
   };
 }
 
+/** The cycles the recurrence ladder reads: the one counted and the two before it. */
+export const LADDER_CYCLES = 3;
+/** A graph node that asks for a braked file's design decision is named so: the one new node such a file may get. */
+export const DECISION_SUFFIX = "-design-decision";
+
+/** @param {Row} r */
+const isFixed = (r) => r.outcome === "fixed" || r.outcome === "fixed-test";
+
+/**
+ * The recurrence ladder of report-formats.md, per file, over cycle N and the two before it: rows line 1 leaves, with a
+ * file, classes by registry id as the recurring class reads them. At the brake: one class in all three cycles,
+ * previous-fix rows in cycle N and N-1, or a round of cycle N whose previous-fix rows in the file outnumber its rows
+ * there fixed (`fixed`, `fixed-test`). At rung 2, when not at the brake: one class in two of the cycles, or previous-fix
+ * rows in cycle N. A cycle before 1 is no cycle: with fewer than three, no class is in all three.
+ * @param {Row[]} rows every row the ledger holds @param {number} cycle @param {import("./classes.mjs").Registry} reg
+ * @returns {Ladder}
+ */
+function ladderOf(rows, cycle, reg) {
+  const first = Math.max(1, cycle - LADDER_CYCLES + 1);
+  const cycles = Array.from({ length: cycle - first + 1 }, (_, i) => first + i);
+  const window = rows.filter((r) => r.cycle >= first && r.cycle <= cycle);
+  /** @type {Map<string, Row[]>} */
+  const byFile = new Map();
+  for (const r of window) {
+    if (r.dupOf !== null || r.outcome === "refuted" || r.file === null) continue;
+    const held = byFile.get(r.file);
+    if (held) held.push(r);
+    else byFile.set(r.file, [r]);
+  }
+  /** @type {Ladder} */
+  const ladder = { cycles, read: cycles.map((c) => window.filter((r) => r.cycle === c).length), brake: [], rung2: [], patches: [], unmeasured: null };
+  for (const [file, held] of [...byFile].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    /** @type {Map<string, Set<number>>} */
+    const seen = new Map();
+    for (const r of held) {
+      for (const id of new Set(r.class.map((value) => currentClass(reg, value) ?? value))) {
+        const at = seen.get(id) ?? new Set();
+        at.add(r.cycle);
+        seen.set(id, at);
+      }
+    }
+    const classesIn = (/** @type {number} */ n) =>
+      [...seen]
+        .filter(([, at]) => at.size >= n)
+        .sort(([a], [b]) => (a < b ? -1 : 1))
+        .map(([id, at]) => ({ id, cycles: [...at].sort((a, b) => a - b) }));
+    const fixLoop = new Set(held.filter((r) => r.source === "previous-fix").map((r) => r.cycle));
+    const last = held.filter((r) => r.cycle === cycle);
+    const rounds = [...new Set(last.map((r) => r.round))]
+      .sort((a, b) => a - b)
+      .map((round) => {
+        const of = last.filter((r) => r.round === round);
+        return { round, previousFix: of.filter((r) => r.source === "previous-fix").length, fixed: of.filter(isFixed).length };
+      })
+      .filter((r) => r.previousFix > r.fixed);
+    const ids = held.map((r) => r.id);
+    const nodes = held.flatMap((r) => (r.outcome.startsWith("node:") ? [{ row: r.id, node: r.outcome.slice("node:".length) }] : []));
+    const inAll = classesIn(LADDER_CYCLES);
+    const running = fixLoop.has(cycle) && fixLoop.has(cycle - 1);
+    if (inAll.length || running || rounds.length) ladder.brake.push({ file, classes: inAll, previousFix: running ? [cycle - 1, cycle] : [], rounds, ids, nodes });
+    else {
+      const inTwo = classesIn(2);
+      if (inTwo.length || fixLoop.has(cycle)) ladder.rung2.push({ file, classes: inTwo, previousFix: fixLoop.has(cycle) ? [cycle] : [], rounds: [], ids, nodes });
+    }
+  }
+  return ladder;
+}
+
+/**
+ * Whether a text names a row id or a path as a whole word: not as part of a longer id, name or path. A sentence's
+ * full stop after a path still ends it.
+ * @param {string} text @param {string} word
+ */
+function names(text, word) {
+  for (let at = text.indexOf(word); at !== -1; at = text.indexOf(word, at + 1)) {
+    const before = text[at - 1] ?? "";
+    const after = text.slice(at + word.length, at + word.length + 2);
+    if (!/[\w./-]/.test(before) && !/^(?:[\w/-]|\.\w)/.test(after)) return true;
+  }
+  return false;
+}
+
+/**
+ * The patch nodes of the files at the brake, written into `report.ladder`: a node of the graph's open or done list
+ * that the graph at the cycle's start did not hold, whose id does not end in DECISION_SUFFIX, and that a row of the
+ * file in the window names in its outcome (`node:<id>`), or whose title or source names a row of the file or the
+ * file's path. A declined node is none: declining is what the brake asks. What cannot be read is `unmeasured`, with
+ * why, never no patch: no start, a start refused, a graph that cannot be read, now or at the start, and a graph that
+ * is a module (read at the start, it would run code from history). Nothing is read when no file is at the brake.
+ * @param {{ cwd: string, config: any, from?: string, report: CycleReport }} opts
+ */
+export async function brakePatches({ cwd, config, from, report }) {
+  const ladder = report.ladder;
+  if (ladder === null || !ladder.brake.length) return;
+  const env = { ...process.env, ...HOOK_READ_ENV };
+  const start = startOf(cwd, from, env);
+  if (start.hash === null) return void (ladder.unmeasured = start.why ?? { key: "notNoted" });
+  const path = relative(cwd, resolve(cwd, config.paths.graph)).split(sep).join("/");
+  if (extname(path) !== ".json") return void (ladder.unmeasured = { key: "graphModule", vars: { path } });
+  const { exports: lists, fields } = config.graph;
+  /** @type {import("../plan/mechanization.mjs").Graph} */
+  let now;
+  /** @type {Set<unknown>} */
+  const before = new Set();
+  try {
+    now = await loadGraph({ cwd, config });
+    if (git(["ls-tree", "--full-tree", "--name-only", start.hash, "--", path], { cwd, env }) !== "") {
+      const data = JSON.parse(gitBytes(["cat-file", "blob", `${start.hash}:${path}`], { cwd, env }).toString("utf8").replace(/^﻿/, ""));
+      for (const name of [lists.open, lists.done, lists.declined]) {
+        const list = data?.[name];
+        if (list !== undefined && !Array.isArray(list)) throw new Error(`the graph at the start: "${name}" is not a list`);
+        for (const node of list ?? []) before.add(node?.[fields.id]);
+      }
+    }
+  } catch (e) {
+    return void (ladder.unmeasured = { key: "graphUnread", vars: { error: oneLine(e) } });
+  }
+  for (const node of [...now.open, ...now.done]) {
+    const id = node[fields.id];
+    if (typeof id !== "string" || before.has(id) || id.endsWith(DECISION_SUFFIX)) continue;
+    const text = [node.title, node[fields.source]].filter((v) => typeof v === "string").join("\n");
+    for (const { file, ids, nodes } of ladder.brake) {
+      const held = ids.filter((rid) => names(text, rid));
+      const pointed = nodes.filter((n) => n.node === id).map((n) => n.row);
+      const rows = [...new Set([...pointed, ...held])];
+      const path = names(text, file);
+      if (rows.length || path) ladder.patches.push({ node: id, file, rows, path });
+    }
+  }
+}
+
 /** @returns {import("./convergence.mjs").Convergence} */
 const unknownCounts = () => ({ foundInReview: null, fixIntroduced: null, preExisting: null, gateCaught: null, escapedNew: null, escapedOld: null, perRound: [null, null, null] });
 
@@ -527,7 +671,7 @@ export function cycleReport({ cwd, config, ledger, from, cycle }) {
   // A start given and wrong is said, whether or not a row needs it.
   if (start.why !== null) note(start.why);
   /** @type {CycleReport} */
-  const report = { path: ledger ?? config.paths.findings, cycle, rows: 0, counted: 0, counts: unknownCounts(), recurring: { exact: false, top: [] }, unplaced: [], refused: [], refusedCount: 0, stopped: false, same: [], higher: [], untracked: [], declined: [], refound: [] };
+  const report = { path: ledger ?? config.paths.findings, cycle, rows: 0, counted: 0, counts: unknownCounts(), recurring: { exact: false, top: [] }, unplaced: [], refused: [], refusedCount: 0, stopped: false, same: [], higher: [], untracked: [], declined: [], refound: [], ladder: null };
   const done = () => ({ ...report, unplaced: [...unplaced.values()] });
   /** @type {ReturnType<typeof loadLedger>} */
   let led;
@@ -600,6 +744,7 @@ export function cycleReport({ cwd, config, ledger, from, cycle }) {
   }
   report.counts = { .../** @type {any} */ (counts), perRound: names.length ? [null, null, null] : newClasses(live, led.reg) };
   report.recurring = names.length ? { exact: false, top: [] } : { exact: true, top };
+  report.ladder = ladderOf(led.rows, cycle, led.reg);
   return done();
 }
 
@@ -646,5 +791,34 @@ export function reportLines(report, config) {
   if (report.refound.length) out.push(`! ${ids("findings.refound", report.refound)}`);
   for (const group of report.same.slice(0, SAME_SHOWN)) out.push(`! ${ids("findings.same", group)}`);
   if (report.same.length > SAME_SHOWN) out.push(`! ${tShown("findings.sameMore", { n: report.same.length - SAME_SHOWN }, lang)}`);
+  if (report.ladder !== null) out.push(...ladderLines(report.ladder, report.cycle, lang, ids));
+  return out;
+}
+
+/**
+ * The ladder's lines under the block: what it read, each file at the brake and at rung 2 with why and its rows, each
+ * patch node, and why patch nodes could not be looked for.
+ * @param {Ladder} ladder @param {number} cycle @param {string} lang
+ * @param {(key: string, all: string[], vars?: Record<string, string | number>) => string} ids
+ * @returns {string[]}
+ */
+function ladderLines(ladder, cycle, lang, ids) {
+  const read = ladder.cycles.map((c, i) => `${c} → ${ladder.read[i]}`).join(" · ");
+  const out = [tShown("findings.ladder.read", { cycles: { shown: ladder.cycles.join(", ") }, read: { shown: read } }, lang)];
+  const why = (/** @type {LadderFile} */ f) =>
+    [
+      ...f.classes.map((c) => tShown("findings.ladder.class", { id: c.id, cycles: { shown: c.cycles.join(", ") } }, lang)),
+      ...(f.previousFix.length ? [tShown("findings.ladder.previousFix", { cycles: { shown: f.previousFix.join(", ") } }, lang)] : []),
+      ...f.rounds.map((r) => tShown("findings.ladder.round", { round: r.round, cycle, previousFix: r.previousFix, fixed: r.fixed }, lang)),
+    ].join("; ");
+  for (const [key, files] of /** @type {const} */ ([["findings.ladder.brake", ladder.brake], ["findings.ladder.rung2", ladder.rung2]])) {
+    for (const f of files) out.push(`${tShown(key, { file: f.file, why: { shown: why(f) } }, lang)}${ids("findings.rows", f.ids)}`);
+  }
+  if (!ladder.brake.length && !ladder.rung2.length) out.push(tShown("findings.ladder.none", {}, lang));
+  for (const p of ladder.patches) {
+    const by = [...(p.rows.length ? [ids("findings.ladder.byRows", p.rows)] : []), ...(p.path ? [tShown("findings.ladder.byPath", {}, lang)] : [])].join("; ");
+    out.push(`✗ ${tShown("findings.ladder.patch", { node: p.node, file: p.file, by: { shown: by } }, lang)}`);
+  }
+  if (ladder.unmeasured !== null) out.push(`? ${tShown("findings.ladder.unmeasured", { why: { shown: tShown(`findings.ladder.why.${ladder.unmeasured.key}`, ladder.unmeasured.vars, lang) } }, lang)}`);
   return out;
 }

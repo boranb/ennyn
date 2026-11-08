@@ -51,11 +51,11 @@ cycle N: M of T rows
 Proposal: [mechanization] → [graph node id]   (or: Proposal: none — [reason])
 ```
 
-**Recurrence ladder:** per file, counted from `paths.findings` (no `dupOf`, not refuted) over this cycle and the two before it, at each closing:
+**Recurrence ladder:** the command prints, under the block, each file at rung 2 and at the fix-loop brake over this cycle and the two before it, with why and its rows, and exits 1 when a file at the brake got a new patch node, or when its patch nodes cannot be looked for (no `--from`, a work graph unread now or at the start, a module graph); what each counts is in the command and its test. Rows of the open cycle count once its kept rows are appended. At each closing:
 
 1. A defect is fixed with a test that fails before the fix.
-2. The file's second of those cycles with rows of one class, or `previous-fix` rows in it this cycle: the closing names the cause in one line (why the class can happen there, not what went wrong) and takes the action one rung above the last one taken there. Rungs, lowest first: a prose rule; a gate or test that detects; a construct that refuses what it cannot read (an allow list, a type); removing the need (the reading, the feature, the second copy).
-3. **Fix-loop brake:** rows of one class in all three, `previous-fix` rows in it two cycles running, or a round that opened more fix-introduced rows than it fixed. The file gets no patch nodes: its leftover defects go into one node that asks for a design decision on the top two rungs, or that says the limit and declines the rest, and a mechanization node that only finds more of the same shapes is declined with it.
+2. A file at rung 2: the closing names the cause in one line (why the class can happen there, not what went wrong) and takes the action one rung above the last one taken there. Rungs, lowest first: a prose rule; a gate or test that detects; a construct that refuses what it cannot read (an allow list, a type); removing the need (the reading, the feature, the second copy).
+3. **Fix-loop brake:** a file at the brake gets no patch nodes: its leftover defects go into one node, its id ending in `-design-decision`, that asks for a design decision on the top two rungs, or that says the limit and declines the rest; a mechanization node that only finds more of the same shapes is declined with it.
 
 An action is checked, not trusted: a class that comes back in its file after its action moves the file one rung up.
 

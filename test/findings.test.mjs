@@ -555,6 +555,11 @@ const six = (rep) => {
 /** The reasons of a report, a class name no entry links aside: a row here holds one. @param {any} rep */
 const keys = (rep) => rep.unplaced.map((/** @type {any} */ u) => u.key).filter((/** @type {string} */ k) => k !== "unlinked");
 const REGISTRY = JSON.stringify({ classes: [{ id: "known-class", says: "A class.", state: "open", linked: ["new: a linked name"] }, { id: "other-class", says: "Another.", state: "open" }, { id: "gamma-ray", says: "A third.", state: "open" }, { id: "old-class", says: "An old class.", state: "superseded", by: "known-class" }] });
+/** A graph as the closing writes it. @param {Record<string, unknown>[]} nodes @param {Record<string, unknown>[]} [done] @param {Record<string, unknown>[]} [declined] */
+const graphOf = (nodes, done = [], declined = []) => JSON.stringify({ nodes, done, declined });
+/** @param {string} id @param {string} title @param {string} [source] */
+const gnode = (id, title, source = "a cycle") => ({ id, title, status: "planned", needs: [], value: "low", cost: "S", source });
+
 /** A pre-existing row. @param {string | null} bornIn @param {Record<string, unknown>} [over] */
 const old = (bornIn, over = {}) => row({ source: "pre-existing", bornIn, ...over });
 const NO_AGE = { preExisting: null, gateCaught: null, escapedNew: null, escapedOld: null };
@@ -611,6 +616,8 @@ test("convergence table: a declined row is no refuted one: the defect is real, i
   assert.deepEqual(rep.counts.perRound, [1, 0, 0]);
   assert.deepEqual(rep.recurring.top, [{ id: "other-class", times: 4, layers: [["review", 3], ["gate:mutation", 1]] }]);
   assert.deepEqual(rep.declined, ["c16-t1-code-r1-01", "c16-d-2", "c16-d-3", "c16-d-4"]);
+  // Round 2's declined previous-fix row puts src/a.mjs at the brake: a graph with no patch node lets the command pass.
+  r.put({ ".ennyn/graph.json": graphOf([]) });
   const got = run(r.dir, rows, ["--from", r.start]);
   assert.equal(got.status, 0, got.stdout);
   assert.match(got.stdout, /^! declined, not fixed: 4: c16-t1-code-r1-01, c16-d-2, c16-d-3, c16-d-4$/m);
@@ -1036,7 +1043,7 @@ test("convergence: the block is what report-formats.md shows, in order, and exit
   const clean = run(r.dir, [row({ class: ["other-class"] })], ["--from", r.start]);
   assert.equal(clean.status, 0, clean.stderr);
   assert.equal(clean.stderr, "");
-  assert.equal(clean.stdout, "Findings: found in review 1 · fix-introduced 0 · pre-existing 0 · gate-caught 0 · escaped past commit new 0 · escaped past commit old 0\nNew classes per round: round 1 → 1 · round 2 → 0 · round 3+ → 0\nRecurring class: none, no class came twice\ncycle 16: 1 of 1 rows\n");
+  assert.equal(clean.stdout, "Findings: found in review 1 · fix-introduced 0 · pre-existing 0 · gate-caught 0 · escaped past commit new 0 · escaped past commit old 0\nNew classes per round: round 1 → 1 · round 2 → 0 · round 3+ → 0\nRecurring class: none, no class came twice\ncycle 16: 1 of 1 rows\nRecurrence ladder, cycles 14, 15, 16: rows 14 → 0 · 15 → 0 · 16 → 1; a cycle's rows count once they are in the ledger\nbrake: none; rung 2: none\n");
 });
 
 test("convergence: --from: empty is a usage error; one that is no ancestor reads as not noted, and bypass's sentence stands under the block", () => {
@@ -1370,4 +1377,161 @@ test("findings ledger: a report's lists are cut short, with how many it left out
   assert.match(said, /class names no registry entry links: 7: new: name 0, new: name 1, new: name 2, new: name 3, new: name 4 \(\+2\)/);
   const none = rows.map((one) => ({ ...one, source: "pre-existing", bornIn: null }));
   assert.match(run(r.dir, none, ["--from", r.start]).stdout, /bornIn is null; repair it as report-formats\.md says: rows 7: c16-c-0, c16-c-1, c16-c-2, c16-c-3, c16-c-4 \(\+2\)/);
+});
+
+// ------------------------------------------------------------------------------------ the recurrence ladder --
+
+/** A row of the ladder's ledger. @param {number} n @param {number} cycle @param {string | null} file @param {string} cls @param {Record<string, unknown>} [over] */
+const rung = (n, cycle, file, cls, over = {}) => row({ id: `c${cycle}-l-${n}`, cycle, file, class: [cls], fingerprint: `ladder ${n}`, line: file === null ? null : 1, ...over });
+/** Cycle 16's window is 14 to 16: a file at the brake by each condition, files at rung 2, and files under neither. */
+const LADDER = [
+  // One class in all three, read through the registry: a linked name in 14, a superseded id in 15, the id in 16.
+  rung(1, 14, "src/all.mjs", "new: a linked name"),
+  rung(2, 15, "src/all.mjs", "old-class"),
+  rung(3, 16, "src/all.mjs", "known-class"),
+  // previous-fix rows in 15 and 16, of classes that come once each; the one of 16 fixed, so its round does not brake.
+  rung(4, 15, "src/loop.mjs", "gamma-ray", { source: "previous-fix" }),
+  rung(5, 16, "src/loop.mjs", "other-class", { source: "previous-fix", outcome: "fixed" }),
+  // Round 2 of 16 opened two previous-fix rows and fixed one.
+  rung(6, 16, "src/round.mjs", "gamma-ray", { round: 2, source: "previous-fix", outcome: "fixed" }),
+  rung(7, 16, "src/round.mjs", "other-class", { round: 2, source: "previous-fix", outcome: "node:patch-by-outcome" }),
+  // Rung 2: one class in two cycles; previous-fix rows in 16, as many fixed in their round; a class whose third cycle is past the window.
+  rung(8, 15, "src/rung.mjs", "other-class"),
+  rung(9, 16, "src/rung.mjs", "other-class"),
+  rung(10, 16, "src/even.mjs", "gamma-ray", { source: "previous-fix", outcome: "fixed-test" }),
+  rung(11, 13, "src/old.mjs", "gamma-ray"),
+  rung(12, 15, "src/old.mjs", "gamma-ray"),
+  rung(13, 16, "src/old.mjs", "gamma-ray"),
+  // Neither: previous-fix two cycles running, but not up to 16; a class twice, once refuted, once a duplicate; no file.
+  rung(14, 14, "src/neither.mjs", "gamma-ray", { source: "previous-fix" }),
+  rung(15, 15, "src/neither.mjs", "other-class", { source: "previous-fix" }),
+  rung(16, 15, "src/refuted.mjs", "other-class"),
+  rung(17, 16, "src/refuted.mjs", "other-class", { outcome: "refuted" }),
+  rung(18, 16, "src/refuted.mjs", "other-class", { dupOf: "c15-l-16" }),
+  rung(19, 16, null, "other-class"),
+];
+
+test("recurrence ladder: each file at the brake by each condition, at rung 2, or under neither, over cycle N and the two before", () => {
+  const r = linear();
+  r.put({ ".ennyn/classes.json": REGISTRY, ".ennyn/graph.json": graphOf([]) });
+  const got = run(r.dir, LADDER, ["--from", r.start, "--json"]);
+  const { ladder } = JSON.parse(got.stdout);
+  assert.deepEqual(ladder.cycles, [14, 15, 16]);
+  assert.deepEqual(ladder.read, [2, 6, 10]);
+  const why = (/** @type {any[]} */ files) => files.map(({ file, classes, previousFix, rounds }) => ({ file, classes, previousFix, rounds }));
+  assert.deepEqual(why(ladder.brake), [
+    { file: "src/all.mjs", classes: [{ id: "known-class", cycles: [14, 15, 16] }], previousFix: [], rounds: [] },
+    { file: "src/loop.mjs", classes: [], previousFix: [15, 16], rounds: [] },
+    { file: "src/round.mjs", classes: [], previousFix: [], rounds: [{ round: 2, previousFix: 2, fixed: 1 }] },
+  ]);
+  assert.deepEqual(why(ladder.rung2), [
+    { file: "src/even.mjs", classes: [], previousFix: [16], rounds: [] },
+    { file: "src/old.mjs", classes: [{ id: "gamma-ray", cycles: [15, 16] }], previousFix: [], rounds: [] },
+    { file: "src/rung.mjs", classes: [{ id: "other-class", cycles: [15, 16] }], previousFix: [], rounds: [] },
+  ]);
+  assert.deepEqual(ladder.brake[2].ids, ["c16-l-6", "c16-l-7"]);
+  assert.deepEqual(ladder.brake[2].nodes, [{ row: "c16-l-7", node: "patch-by-outcome" }]);
+  // A graph with no node has no patch: with every count exact the command passes.
+  assert.deepEqual([ladder.patches, ladder.unmeasured], [[], null]);
+  assert.equal(got.status, 0, got.stderr);
+  const text = run(r.dir, LADDER, ["--from", r.start]).stdout.split("\n");
+  const at = text.findIndex((l) => l.startsWith("Recurrence ladder"));
+  assert.deepEqual(text.slice(at, at + 7), [
+    "Recurrence ladder, cycles 14, 15, 16: rows 14 → 2 · 15 → 6 · 16 → 10; a cycle's rows count once they are in the ledger",
+    "brake: src/all.mjs — class known-class in 14, 15, 16: rows 3: c14-l-1, c15-l-2, c16-l-3",
+    "brake: src/loop.mjs — previous-fix rows in 15, 16: rows 2: c15-l-4, c16-l-5",
+    "brake: src/round.mjs — round 2 of 16: previous-fix 2, fixed 1: rows 2: c16-l-6, c16-l-7",
+    "rung 2: src/even.mjs — previous-fix rows in 16: rows 1: c16-l-10",
+    "rung 2: src/old.mjs — class gamma-ray in 15, 16: rows 2: c15-l-12, c16-l-13",
+    "rung 2: src/rung.mjs — class other-class in 15, 16: rows 2: c15-l-8, c16-l-9",
+  ]);
+  // The block above it is the block as it was: the parser reads it back.
+  assert.deepEqual(parseConvergence(text.join("\n"), { language: "en" }), JSON.parse(got.stdout).counts);
+});
+
+test("recurrence ladder: a window shorter than three cycles has no class in all three, and a file of none says so", () => {
+  const r = linear();
+  r.put({ ".ennyn/classes.json": REGISTRY });
+  const two = [rung(1, 1, "src/a.mjs", "gamma-ray"), rung(2, 2, "src/a.mjs", "gamma-ray")];
+  const { ladder } = JSON.parse(run(r.dir, two, ["--from", r.start, "--json", "--cycle", "2"]).stdout);
+  assert.deepEqual([ladder.cycles, ladder.brake.length, ladder.rung2.map((/** @type {any} */ f) => f.file)], [[1, 2], 0, ["src/a.mjs"]]);
+  // A row of a later cycle is past the window: one class in 16 and 17 is not in two of its cycles.
+  const lone = run(r.dir, [rung(1, 16, "src/a.mjs", "gamma-ray"), rung(2, 17, "src/a.mjs", "gamma-ray")], ["--from", r.start]);
+  assert.match(lone.stdout, /\nbrake: none; rung 2: none\n/);
+  assert.equal(lone.status, 0, lone.stderr);
+});
+
+/** A repository whose cycle start holds a graph, and the ladder's ledger. */
+function withGraph() {
+  const r = repo();
+  r.commit("adopt", { ...CONFIG, ".ennyn/classes.json": REGISTRY, ".ennyn/graph.json": graphOf([gnode("old-patch", "fix c16-l-3 in src/all.mjs")]) });
+  const start = r.commit("the start", { "note.md": "x\n" });
+  r.commit("this cycle", { "code.js": "x\n" });
+  return { ...r, start };
+}
+
+test("recurrence ladder: a new node linked to a file at the brake is a patch and the command exits 1; the decision node, a declined node and an old one are none", () => {
+  const r = withGraph();
+  r.put({
+    ".ennyn/graph.json": graphOf(
+      [
+        gnode("old-patch", "fix c16-l-3 in src/all.mjs"),
+        gnode("patch-by-outcome", "a round's leftover"),
+        gnode("patch-by-id", "a shape", "cycle 16, round 1 (c16-l-5)"),
+        gnode("patch-by-path", "Patch src/all.mjs."),
+        gnode("lookalike", "src/all.mjs.bak and c16-l-30 and xsrc/all.mjs", "c16-l-3-b"),
+        gnode("rung-only", "fix src/rung.mjs", "c16-l-9"),
+        gnode("all-design-decision", "decide src/all.mjs: an allow list or the reader as it stands", "c16-l-3"),
+      ],
+      [gnode("patch-done", "landed", "src/loop.mjs")],
+      [gnode("patch-declined", "src/all.mjs, declined")],
+    ),
+  });
+  const got = run(r.dir, LADDER, ["--from", r.start, "--json"]);
+  assert.equal(got.status, 1);
+  assert.match(got.stderr, /a file at the fix-loop brake got a new patch node/);
+  assert.doesNotMatch(got.stderr, /unmeasured/);
+  assert.deepEqual(JSON.parse(got.stdout).ladder.patches, [
+    { node: "patch-by-outcome", file: "src/round.mjs", rows: ["c16-l-7"], path: false },
+    { node: "patch-by-id", file: "src/loop.mjs", rows: ["c16-l-5"], path: false },
+    { node: "patch-by-path", file: "src/all.mjs", rows: [], path: true },
+    { node: "patch-done", file: "src/loop.mjs", rows: [], path: true },
+  ]);
+  assert.match(run(r.dir, LADDER, ["--from", r.start]).stdout, /\n✗ patch node for a file at the brake: patch-by-id → src\/loop\.mjs: rows 1: c16-l-5\n/);
+  // Only the decision node, the declined one and the old one: no patch, exit 0.
+  r.put({ ".ennyn/graph.json": graphOf([gnode("old-patch", "fix c16-l-3 in src/all.mjs"), gnode("all-design-decision", "src/all.mjs", "c16-l-3")], [], [gnode("patch-declined", "src/all.mjs")]) });
+  const clean = run(r.dir, LADDER, ["--from", r.start]);
+  assert.equal(clean.status, 0, clean.stderr);
+  assert.doesNotMatch(clean.stdout, /✗/);
+});
+
+test("recurrence ladder: patch nodes that cannot be looked for are unmeasured, never none, and only a file at the brake needs them", () => {
+  const r = withGraph();
+  const unmeasured = (/** @type {string[]} */ args, /** @type {RegExp} */ why) => {
+    const got = run(r.dir, LADDER, args);
+    assert.equal(got.status, 1, args.join(" "));
+    assert.match(got.stdout, why, args.join(" "));
+    assert.match(got.stderr, /a file is at the brake and its patch nodes could not be looked for/);
+  };
+  unmeasured([], /\n\? patch nodes unmeasured: the cycle's start was not noted \(--from\)\n/);
+  unmeasured(["--from", "nothere"], /\n\? patch nodes unmeasured: from: "nothere" is not in this repository/);
+  const head = r.commit("the head", {});
+  r.commit("a broken start graph", { ".ennyn/graph.json": "{" });
+  const broken = r.commit("the broken start", {});
+  r.commit("a start graph whose list is no list", { ".ennyn/graph.json": JSON.stringify({ nodes: [], declined: {} }) });
+  const odd = r.commit("the odd start", {});
+  r.put({ ".ennyn/graph.json": graphOf([]) });
+  unmeasured(["--from", broken], /\n\? patch nodes unmeasured: the work graph could not be read: /);
+  unmeasured(["--from", odd], /\n\? patch nodes unmeasured: the work graph could not be read: the graph at the start: "declined" is not a list\n/);
+  r.put({ ".ennyn/graph.json": "{" });
+  unmeasured(["--from", head], /\n\? patch nodes unmeasured: the work graph could not be read: /);
+  r.put({ ".ennyn/config.json": JSON.stringify({ language: "en", paths: { graph: ".ennyn/graph.mjs" } }), ".ennyn/graph.mjs": "export const nodes = [];\n" });
+  unmeasured(["--from", head], /\n\? patch nodes unmeasured: the work graph \.ennyn\/graph\.mjs is a module/);
+  // A start with no graph: every node is new.
+  const bare = linear();
+  bare.put({ ".ennyn/classes.json": REGISTRY, ".ennyn/graph.json": graphOf([gnode("p", "src/all.mjs")]) });
+  assert.deepEqual(JSON.parse(run(bare.dir, LADDER, ["--from", bare.start, "--json"]).stdout).ladder.patches, [{ node: "p", file: "src/all.mjs", rows: [], path: true }]);
+  // No file at the brake: no start is needed, nothing is read.
+  const calm = run(bare.dir, [rung(1, 15, "src/a.mjs", "gamma-ray"), rung(2, 16, "src/a.mjs", "gamma-ray")]);
+  assert.equal(calm.status, 0, calm.stderr);
 });

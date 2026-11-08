@@ -32,7 +32,7 @@ import { scanProject, MIN_HISTORY } from "../setup/scan.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
 import { capped, ghApplies } from "../setup/permissions.mjs";
 import { PROBLEMS_SHOWN, checkProofs, loadClasses, registryLine, stateCounts } from "../metrics/classes.mjs";
-import { CYCLE_MAX, complete, cycleReport, reportLines } from "../metrics/findings.mjs";
+import { CYCLE_MAX, brakePatches, complete, cycleReport, reportLines } from "../metrics/findings.mjs";
 import { RecordError, installHook, sessionOf } from "../setup/hook.mjs";
 import { instructionBudget, readBudgets, recordBudget, previousBudget, replacedAt } from "../setup/budget.mjs";
 import { journalPath, MAX_TIMEOUT_MS, MutationError, parseMutants, restoreJournal, runMutants, summarizeMutants } from "../metrics/mutation.mjs";
@@ -60,7 +60,8 @@ Commands:
   convergence [<ledger>] --cycle N [--from <rev>] [--json]
                                                     cycle N's convergence block, counted from the findings ledger (default paths.findings) as skills/cycle/report-formats.md
                                                     says, then what it could not place and why; --cycle: the cycle's number in the handoff, required; --from: the HEAD noted
-                                                    when the cycle began; exit 1 when it could not read or place something
+                                                    when the cycle began; under it the recurrence ladder over cycle N and the two before; exit 1
+                                                    when it could not read or place something, or a file at the fix-loop brake got a new patch node
   audit [--json]                                    whether this cycle's audit slot is the security audit (security.everyCycles), and the sensitive paths it reads
   bypass [--from <rev>] [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--json]
                                                     commits that used the commit-shape bypass marker, with their reasons, and each key a
@@ -1755,7 +1756,7 @@ const COMMANDS = {
     if (moreProblems) out(tShown("classes.more", { n: moreProblems }, lang));
     return code;
   },
-  convergence(args) {
+  async convergence(args) {
     const { positional, opts, help } = parseArgs(args, { positional: 1, options: ["from", "cycle"], flags: ["json"] });
     if (help) return (out(USAGE), 0);
     // As bypass takes it: an empty --from is a lost cycle start. Left out, the table reads "not noted".
@@ -1771,9 +1772,13 @@ const COMMANDS = {
     // A name reads from where the command stands, as any file named on a command line.
     const ledger = positional[0] === undefined ? undefined : resolve(process.cwd(), positional[0]);
     const report = cycleReport({ cwd, config: cfg, ledger, from, cycle });
+    await brakePatches({ cwd, config: cfg, from, report });
     out(opts.json ? jsonShown(report) : reportLines(report, cfg).join("\n"));
-    if (complete(report)) return 0;
-    err(t("findings.unmeasured", {}, cfg.language));
+    const ladder = report.ladder;
+    if (complete(report) && !ladder?.patches.length && !ladder?.unmeasured) return 0;
+    if (!complete(report)) err(t("findings.unmeasured", {}, cfg.language));
+    if (ladder?.patches.length) err(t("findings.ladder.patched", {}, cfg.language));
+    else if (ladder?.unmeasured) err(t("findings.ladder.unmeasuredExit", {}, cfg.language));
     return 1;
   },
   agents(args) {
