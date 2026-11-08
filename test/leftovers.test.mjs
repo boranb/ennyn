@@ -78,11 +78,11 @@ test("leftovers: a new file staged and one added with intent to add, at the clos
   assert.match(close.stdout, /^ {3}A intent\.txt$/m);
 });
 
-test("leftovers: changes not committed: modified, staged, deleted and renamed are listed; one of the start under the same code is not the cycle's", () => {
+test("leftovers: changes not committed: modified, staged, deleted and renamed are listed; one of the start under the same code whose path holds the same is not the cycle's", () => {
   const r = repo();
-  r.commit({ "a.txt": "1\n", "b.txt": "1\n", "c.txt": "1\n", "d.txt": "rename me\n", "e.txt": "1\n" });
-  // The user's own work before the cycle: a.txt changed, e.txt staged.
-  r.put({ "a.txt": "mine\n", "e.txt": "staged\n" });
+  r.commit({ "a.txt": "1\n", "b.txt": "1\n", "c.txt": "1\n", "d.txt": "rename me\n", "e.txt": "1\n", "f.txt": "1\n" });
+  // The user's own work before the cycle: a.txt and f.txt changed, e.txt staged. The cycle edits a.txt further.
+  r.put({ "a.txt": "mine\n", "e.txt": "staged\n", "f.txt": "mine\n" });
   git(["add", "e.txt"], { cwd: r.dir });
   recordStart({ cwd: r.dir, config });
   r.put({ "a.txt": "mine, more\n", "b.txt": "2\n", "e.txt": "staged, then changed\n" });
@@ -91,6 +91,7 @@ test("leftovers: changes not committed: modified, staged, deleted and renamed ar
   const res = leftovers({ cwd: r.dir, config });
   assert.equal(res.uncommitted.state, "found");
   assert.deepEqual(res.uncommitted.items, [
+    { code: " M", path: "a.txt" },
     { code: " M", path: "b.txt" },
     { code: "D ", path: "c.txt" },
     { code: "R ", path: "d2.txt", from: "d.txt" },
@@ -338,4 +339,37 @@ test("leftovers: started inside a bare-looking folder a clone brought in, it rea
   } finally {
     rmSync(box, { recursive: true, force: true });
   }
+});
+
+// Cycle 27, the fact oracle (test/leftovers-oracle.test.mjs): a record written before content ids is read by path.
+test("leftovers: a start record with no content ids compares the start's entries by path alone, and the closing says so", () => {
+  const r = repo();
+  r.commit({ "a.txt": "1\n" });
+  r.put({ "a.txt": "mine\n", "old.txt": "1\n" });
+  recordStart({ cwd: r.dir, config });
+  r.put({ "a.txt": "mine, more\n", "old.txt": "2\n" });
+  const record = JSON.parse(readFileSync(recordOf(r.dir), "utf8"));
+  assert.equal(leftovers({ cwd: r.dir, config }).byPath, undefined);
+  delete record.untrackedIds, delete record.changedIds;
+  writeFileSync(recordOf(r.dir), JSON.stringify(record) + "\n");
+  const res = leftovers({ cwd: r.dir, config });
+  assert.deepEqual([res.byPath, res.untracked.state, res.uncommitted.state], [true, "clean", "clean"]);
+  assert.match(cli(r.dir, "leftovers").stdout, /^The start record holds no content ids .* compared by path alone/m);
+  // Ids that are not one an entry make no record.
+  writeFileSync(recordOf(r.dir), JSON.stringify({ ...record, untrackedIds: [] }) + "\n");
+  assert.equal(leftovers({ cwd: r.dir, config }).untracked.state, "unmeasured");
+});
+
+// Cycle 27 review r1-02: a folder entry of the start (a nested repository) has no content id: both ends name it.
+test("leftovers: an entry recorded by path alone, a nested repository, is named at the start and at the closing", () => {
+  const r = repo();
+  r.commit({ "a.txt": "1\n" });
+  mkdirSync(join(r.dir, "nest"));
+  git(["init", "-q"], { cwd: join(r.dir, "nest") });
+  const started = cli(r.dir, "leftovers", "--start");
+  assert.equal(started.status, 0, started.stderr);
+  assert.match(started.stdout, /^Compared by path alone, their content not read .*: 1, the first nest\//m);
+  writeFileSync(join(r.dir, "nest", "f.txt"), "cycle\n");
+  assert.deepEqual(leftovers({ cwd: r.dir, config }).unread, ["nest/"]);
+  assert.match(cli(r.dir, "leftovers").stdout, /^Compared by path alone, their content not read .*: 1, the first nest\//m);
 });

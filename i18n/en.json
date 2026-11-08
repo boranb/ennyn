@@ -457,6 +457,8 @@
   "leftovers.started": "Recorded the cycle's start of this work tree in {path}: HEAD {head}, untracked files: {n}, changes: {m} (neither is the cycle's).",
   "leftovers.replaced": "It replaces this work tree's record of {head} from {at}.",
   "leftovers.since": "Leftovers since {head}, recorded {at}. Each is a question for the user; nothing is removed.",
+  "leftovers.byPath": "The start record holds no content ids (written by an older version): entries of the start are compared by path alone, so a further edit to one of them is not listed, and an entry flagged assume-unchanged or skip-worktree that the old record did not read may be named once.",
+  "leftovers.unread": "Compared by path alone, their content not read (a folder, or a file this process cannot read): {n}, the first {path}. A change inside them is not seen.",
   "leftovers.untracked.found": "Untracked files that appeared: {n}",
   "leftovers.untracked.clean": "Untracked files that appeared: clean",
   "leftovers.untracked.unmeasured": "Untracked files that appeared: unmeasured, {why}",

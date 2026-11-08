@@ -457,6 +457,8 @@
   "leftovers.started": "Bu çalışma ağacında döngünün başı {path} dosyasına kaydedildi: HEAD {head}, izlenmeyen dosya: {n}, değişiklik: {m} (hiçbiri döngünün değil).",
   "leftovers.replaced": "Bu çalışma ağacının {at} tarihli {head} kaydının yerini alıyor.",
   "leftovers.since": "{head} sonrası artıklar, kayıt {at}. Her biri kullanıcıya bir soru; hiçbir şey silinmez.",
+  "leftovers.byPath": "Başlangıç kaydında içerik kimliği yok (eski bir sürüm yazmış): başlangıçtaki girdiler yalnız yolla karşılaştırıldı, bu yüzden onlardan birine sonradan yapılan değişiklik listelenmez; eski kaydın okumadığı assume-unchanged ya da skip-worktree işaretli bir girdi bir kez adlandırılabilir.",
+  "leftovers.unread": "Yalnız yolla karşılaştırıldı, içeriği okunmadı (bir klasör ya da bu sürecin okuyamadığı bir dosya): {n}, ilki {path}. İçlerindeki değişiklik görülmez.",
   "leftovers.untracked.found": "Ortaya çıkan izlenmeyen dosyalar: {n}",
   "leftovers.untracked.clean": "Ortaya çıkan izlenmeyen dosyalar: temiz",
   "leftovers.untracked.unmeasured": "Ortaya çıkan izlenmeyen dosyalar: ölçülmedi, {why}",

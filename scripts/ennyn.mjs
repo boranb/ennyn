@@ -1384,6 +1384,7 @@ const COMMANDS = {
       if (opts.json) return (out(jsonShown(r)), 0);
       out(tShown("leftovers.started", { path: r.path, head: r.head.slice(0, 10), n: r.untracked, m: r.changed }, lang));
       if (r.replaced) out(tShown("leftovers.replaced", { head: r.replaced.head.slice(0, 10), at: r.replaced.at }, lang));
+      if (r.unread.length) out(tShown("leftovers.unread", { n: r.unread.length, path: r.unread[0] }, lang));
       return 0;
     }
     const res = leftovers({ cwd, config: cfg });
@@ -1392,6 +1393,8 @@ const COMMANDS = {
     const why = untracked.why ? t(untracked.why.key, untracked.why.vars, lang) : "";
     if (opts.json) return (out(jsonShown({ ...res, untracked: { ...untracked, why: why || undefined } })), code);
     if (res.start) out(t("leftovers.since", { head: res.start.head.slice(0, 10), at: res.start.at }, lang));
+    if (res.byPath) out(t("leftovers.byPath", {}, lang));
+    if (res.unread.length) out(tShown("leftovers.unread", { n: res.unread.length, path: res.unread[0] }, lang));
     /** @param {string[]} lines */
     const list = (lines) => {
       for (const line of lines.slice(0, LEFTOVERS_SHOWN)) out(line);

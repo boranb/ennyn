@@ -379,7 +379,7 @@ function pointsBack(path, admin) {
 }
 
 /** A path as git's stdin readers take it: C-quoted, so a quote, a backslash or a line feed in a name is the name's. @param {string} p */
-const quoted = (p) => `"${p.replace(/[\\"]/g, "\\$&").replace(/[\x00-\x1f\x7f]/g, (c) => `\\${c.charCodeAt(0).toString(8).padStart(3, "0")}`)}"`;
+export const quoted = (p) => `"${p.replace(/[\\"]/g, "\\$&").replace(/[\x00-\x1f\x7f]/g, (c) => `\\${c.charCodeAt(0).toString(8).padStart(3, "0")}`)}"`;
 
 /**
  * The folder at `path` against HEAD's tree, by what is on disk: null when it holds what a checkout of HEAD writes, else
