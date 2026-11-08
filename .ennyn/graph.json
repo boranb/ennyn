@@ -115,7 +115,9 @@
         "win-kill-waits-exit",
         "kept-folder-closing",
         "no-bypass-trial",
-        "convergence-fix-loop-per-file"
+        "convergence-fix-loop-per-file",
+        "push-check-recorded-suite",
+        "heavy-job-limit"
       ],
       "gate": "user",
       "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release); read 2026-11-01: the post now opens 'Updated October 15 to include more detail on the projects that pioneered many of the techniques we use in Scion.', and The Pragmatic Engineer (2026-10-22) reports the attribution came after a public complaint; an audit of requests against the graph, 2026-11-01: five had no node in the release needs: a project started from nothing (a request, 2026-10-29: 15 nodes, 0 done), leftovers (a request, 2026-10-29: 14 nodes, 0 done), secrets in chat (a request, 2026-10-28: 12 nodes, 1 done), less code and no repetition (a request, a request, 2026-10-25), findings that can wait (a request, 2026-10-25). The smallest piece of each entered the needs. spec-gates' README: 'Spec Kit is a guidance layer'; 2026-11-05, the choice was left to the orchestrator: kill-own-pid-only, plugin-update-path and win-kill-waits-exit join the needs, observed on Windows",
@@ -3138,8 +3140,8 @@
         "task-short-suite"
       ],
       "id": "heavy-job-limit",
-      "title": "One machine-wide limit covers whole suites, mutation runs and labs, in place of a lock on suites alone: a heavy job waits for a free slot and the wait is logged. It lands after task-short-suite, because a limit alone only moves time into a queue",
-      "value": "medium",
+      "title": "ennyn lock -- <command>: one machine-wide FIFO ticket queue for heavy jobs (whole suites, mutation runs, labs, platform images) across sessions and projects, a dead holder's ticket dropped, the wait logged; the cycle skill and briefs run heavy jobs through it. Today it is a hand-written locked.sh in each cycle folder, and two sessions coordinated main and the lock by messages (2026-11-08)",
+      "value": "high",
       "cost": "S",
       "cluster": "method",
       "source": "measured, cycle 16: three or more heavy jobs ran together for 29% of calendar time, load median 56 on 10 cores; the suite lock added at 16:48 ended the 24-minute runs but not the median (586 to 669 s), since mutation, gates and labs stayed outside it, and it made 32.6 minutes of queue. node --test limits files, not the processes they spawn; cycle 2026-11-01 (17): one short suite sat about 50 minutes in the lock's queue with labs ahead of it, and a reviewer's probe that recursed in a hook reached 1738 processes against a per-user limit of 2666, so other tasks failed with EAGAIN: the limit should count processes too, and probes need a bound; cycle 2026-11-02 (18): T2's short suite waited about 2 hours on the cycle's lock at load up to 241: a mkdir lock keeps no order, and a short suite with guards back runs as long as a whole one; a reviewer's parallel mutant trees reached load 177 before it was told to run them in turn; cycle 2026-11-02 (19): the mkdir lock kept no order: T3's short suite waited 94 minutes and T4's 42 while later arrivals took it; four short suites queued behind one with guards back, load up to 154; cycle 2026-11-04 (20) on Windows with WSL: two suite slots by flock; a locked suite waited over 30 minutes behind two others; cycle 2026-11-04 (21): a request: one heavy job at a time; the cycle-20 test:linux in the 2-CPU VM ran beside cycle 21 outside the suite lock, load 85, its first image took 1 h 41 min against about 38 and two timing ratios went red; stopped on request; cycle 2026-11-06 (24): the suite lock held one suite while load reached 80-170 (labs, lone slow test files and reviewers' recordings outside it, and a lab of 120 CPU burners); test/short.mjs sets no --test-concurrency (node's default: cores minus one); measure test:short with 9, 5 and 3 files at once (time, load) and put lone test-file runs through the same lock; the user, 2026-11-05: left to the session: a rule by hand in cycle 25's briefs first; cycle 2026-11-08 (27): the mkdir lock kept no order and a second project's one-minute run waited 45 minutes behind re-taken locks; the cycle's lock became a ticket queue by hand (first come, first served, dead tickets dropped)",
@@ -5336,11 +5338,11 @@
       "status": "planned",
       "needs": [],
       "id": "push-check-recorded-suite",
-      "title": "push-check reads a record that the whole test command ran green on the commit, written by the run itself, instead of the caller's --tested hash",
-      "value": "medium",
+      "title": "push-check says what a push needs, from the commits it sends and a record each run writes by tree hash: no code changed (the project's code globs; Ennyn's own are test/short.mjs isCode) → a green fast or affected run on that tree; code → a green whole test command on that tree; a green run already recorded on the same tree is not run again (shares the record with landing-same-tree-skip); it fetches first and refuses a branch behind its upstream. CLAUDE.md and push.md then name the command, not a list",
+      "value": "high",
       "cost": "M",
       "cluster": "method",
-      "source": "cycle 2026-11-07 (26), T3 round 1 security review (c26-t3-sec-r1-05): push-check's 'tested' is the caller's word",
+      "source": "cycle 2026-11-07 (26), T3 round 1 security review (c26-t3-sec-r1-05): push-check's 'tested' is the caller's word; 2026-11-08: a whole suite was started for a push of text only, because the rule lived in a hand list in CLAUDE.md that drifted from test/short.mjs (one-question-several-places); projects that use Ennyn have only the prose",
       "since": 26
     },
     {
@@ -5613,6 +5615,17 @@
       "mechanization": true,
       "sourceClass": "unreadable-shape-passes",
       "source": "2026-11-08, cycle 27 convergence: the most recurring class, unreadable-shape-passes (18), came from patching one reader; replaces reader-differential-from-bash-grammar; back-test on 1,341 ledger rows of cycles 16-27: 310 (23%) were fix-introduced; 130 (9%) came after their file already had findings in three cycles, most in skills/cycle/task-brief.md (24), kill-targets.mjs (17) and scripts/ennyn.mjs (17); one class per file reached two cycles far less often (4%), since class names scatter, so the ladder counts per file; the window, measured: with no window 12 files were at the brake after cycle 27, with three cycles one (kill-targets.mjs), and the back-test over cycles 18-27 braked 10 files, 55 rows coming after",
+      "since": 27
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "affected-tests-command",
+      "title": "init finds the project's own affected-test command and offers it as commands.affectedTest (jest --findRelatedTests, vitest related, pytest --testmon, go test on the changed packages, cargo test -p); the landing runs it before the fast test command and push-check counts it for a push with no code. Ennyn has this for itself only (test/short.mjs with test/reads.json)",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "2026-11-08, review of the repository's own rules that do not reach projects using Ennyn",
       "since": 27
     }
   ],
