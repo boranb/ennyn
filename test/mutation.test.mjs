@@ -278,27 +278,62 @@ test("mutate: a test run that cannot start ends the pass with no count, the file
 });
 
 /**
- * A process's start in clock ticks since boot (field 22 of /proc/<pid>/stat) and whether it is a zombie; null
- * once there is no such process. A PID with another start is another process: the first one ended and its PID
- * was given again.
+ * A process's start and whether it is a zombie; null once there is no such process. A PID with another start is
+ * another process: the first one ended and its PID was given again. Where /proc exists (Linux) the start is in
+ * clock ticks since boot (field 22 of /proc/<pid>/stat); elsewhere (macOS) it is ps's `lstart`, to the second, in
+ * UTC: two processes that held one PID within the same second read the same. A start that cannot be read throws,
+ * never reads as gone. The child commands below run this function's source too: it holds no single quote.
  * @param {number} pid
+ * @param {{ proc?: boolean, ps?: string }} [how] read /proc or run `ps`, the program to run (a test sets both)
  */
-function procStart(pid) {
-  try {
-    const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+function procStart(pid, { proc = existsSync("/proc/self/stat"), ps = "ps" } = {}) {
+  if (proc) {
+    let stat;
+    try {
+      stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+    } catch (e) {
+      if (/** @type {NodeJS.ErrnoException} */ (e).code === "ENOENT") return null;
+      throw e;
+    }
     const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
     return { start: fields[19], zombie: fields[0] === "Z" };
-  } catch {
-    return null;
   }
+  const out = spawnSync(ps, ["-o", "stat=,lstart=", "-p", String(pid)], { encoding: "utf8", env: { ...process.env, LC_ALL: "C", TZ: "UTC" } });
+  // A PID that is gone: exit 1 and nothing said. A ps that rejects its flags exits 1 too, with its usage on stderr.
+  if (out.status === 1 && out.stdout === "" && out.stderr === "") return null;
+  const [state, ...start] = out.status === 0 ? out.stdout.trim().split(/\s+/) : [];
+  if (!state || start.length === 0) throw new Error(`the start of PID ${pid} could not be read: ${ps} ${out.error ? out.error.message : `exit ${out.status}: ${out.stdout}${out.stderr}`}`);
+  return { start: start.join("-"), zombie: state.startsWith("Z") };
 }
 
+/** A process a test recorded; `child` when the test process spawned it itself. @typedef {{ pid: number, start: string | null, child?: import("node:child_process").ChildProcess }} Entry */
+
+/** Whether a recorded PID can be signalled: 0, a negative or NaN would name a group of the test itself. @param {unknown} pid */
+const isPid = (pid) => Number.isInteger(pid) && /** @type {number} */ (pid) > 0;
+
+/** How ident and ours read a start: procStart's defaults, unless a test sets another reader. @type {{ proc?: boolean, ps?: string }} */
+const reading = {};
+
 /** Who a process is, read while it is surely the test's own (its child not yet reaped). @param {number | undefined} pid */
-const ident = (pid) => ({ pid: pid ?? 0, start: pid === undefined ? null : (procStart(pid)?.start ?? null) });
+const ident = (pid) => ({ pid: pid ?? NaN, start: pid === undefined ? null : (procStart(pid, reading)?.start ?? null) });
+
+/**
+ * Puts a child this test process spawned on `list` before its start is read: a read that throws leaves it there,
+ * with no start, for endGroups to end through its ChildProcess.
+ * @param {Entry[]} list
+ * @param {import("node:child_process").ChildProcess} c
+ */
+const track = (list, c) => {
+  /** @type {Entry} */
+  const e = { pid: c.pid ?? NaN, start: null, child: c };
+  list.push(e);
+  e.start = ident(c.pid).start;
+  return e;
+};
 
 /** Whether the process recorded is still that one, and running. @param {{ pid: number, start: string | null }} e */
 const ours = (e) => {
-  const now = procStart(e.pid);
+  const now = procStart(e.pid, reading);
   return e.start !== null && now !== null && now.start === e.start && !now.zombie;
 };
 
@@ -309,20 +344,30 @@ const selfIdents = (path) =>
         .trim()
         .split(" ")
         .filter(Boolean)
-        .map((x) => ({ pid: Number(x.split(":")[0]), start: x.split(":")[1] ?? null }))
+        // The start goes to the end of the entry: on macOS it holds colons.
+        .map((x) => ({ pid: Number(x.split(":")[0]), start: x.includes(":") ? x.slice(x.indexOf(":") + 1) : null }))
     : [];
 
 /**
  * Ends what a test started and the code under test may have left running: each process recorded, while it is
  * still the same process (its start unchanged), by its group (runCommand starts each command in one of its own,
  * which a kill of the test run never reaches), else by its PID. A PID now held by another process is left alone.
- * Returns the PIDs still running as the processes recorded.
- * @param {{ pid: number, start: string | null }[]} entries
+ * A child of the test process whose start was never read is ended the same way while it has not exited: until
+ * then it is not reaped, so its PID is still that child. An entry with no PID (a spawn that failed) is never
+ * signalled, only said. Returns the PIDs still running as the processes recorded, and what had no PID.
+ * @param {Entry[]} entries
  */
 async function endGroups(entries) {
+  /** @type {(number | string)[]} */
   const left = [];
   for (const e of entries) {
-    if (!ours(e)) continue;
+    if (!isPid(e.pid)) {
+      left.push(e.child ? "a child with no PID: its spawn failed" : `no PID: ${e.pid}`);
+      continue;
+    }
+    const child = e.start === null ? e.child : undefined;
+    const alive = child ? () => child.exitCode === null && child.signalCode === null : () => ours(e);
+    if (!alive()) continue;
     for (const target of [-e.pid, e.pid]) {
       try {
         process.kill(target, "SIGKILL");
@@ -332,36 +377,155 @@ async function endGroups(entries) {
       }
     }
     const deadline = Date.now() + 2000;
-    while (ours(e) && Date.now() < deadline) await sleep(50);
-    if (ours(e)) left.push(e.pid);
+    while (alive() && Date.now() < deadline) await sleep(50);
+    if (alive()) left.push(e.pid);
   }
   return left;
 }
 
 /**
  * A test command that writes `pid:start` of itself to `starts` and, while notes.txt says "sleep", runs `act`,
- * writes its pid to `sleeping` and sleeps.
+ * writes its pid to `sleeping` and sleeps. Its code is in single quotes for the shell, so it holds none.
  * @param {string} act
  */
 const stuckCommand = (act) =>
-  `${NODE} -e "const f = require('fs'); const s = f.readFileSync('/proc/self/stat', 'utf8'); f.appendFileSync('starts', process.pid + ':' + s.slice(s.lastIndexOf(')') + 2).split(' ')[19] + ' '); if (f.readFileSync('notes.txt', 'utf8').includes('sleep')) { ${act} f.writeFileSync('sleeping', String(process.pid)); setTimeout(() => {}, 60000); }"`;
+  `${NODE} -e 'const f = require("fs"), { existsSync, readFileSync } = f, { spawnSync } = require("child_process"); const procStart = ${procStart}; f.appendFileSync("starts", process.pid + ":" + procStart(process.pid).start + " "); if (f.readFileSync("notes.txt", "utf8").includes("sleep")) { ${act} f.writeFileSync("sleeping", String(process.pid)); setTimeout(() => {}, 60000); }'`;
 
 /** What a command written to notes.txt while the mutant was in, then went on running. */
-const WRITES_NOTES = "f.writeFileSync('notes.txt', 'the command wrote this\\n');";
+const WRITES_NOTES = 'f.writeFileSync("notes.txt", "the command wrote this\\n");';
 
 const STILL_AT_LIMIT = "was stopped at its time limit and is still running 5 s later: this run's counts could not be measured; stop it by its PID";
 
-test("mutate tests: endGroups ends a process it recorded and leaves one whose PID now names another process (win-kill-waits-exit)", async () => {
-  const c = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" });
-  const me = ident(c.pid);
+test("mutate tests: a start that cannot be read throws, never reads as gone; a process that is gone reads null", () => {
+  const ended = /** @type {number} */ (spawnSync(process.execPath, ["-e", "0"]).pid);
+  assert.equal(procStart(ended), null);
+  assert.throws(() => procStart(process.pid, { proc: false, ps: join(tmpdir(), "en-mut-no-ps") }), /^Error: the start of PID \d+ could not be read: .*en-mut-no-ps .*ENOENT/);
+  // A ps that rejects its flags: exit 1 and nothing on stdout, as for a PID that is gone, but its usage on stderr.
+  const dir = mkdtempSync(join(tmpdir(), "en-mut-ps-"));
   try {
+    const badPs = join(dir, "ps");
+    writeFileSync(badPs, "#!/bin/sh\necho \"ps: illegal option\" >&2\nexit 1\n");
+    chmodSync(badPs, 0o755);
+    assert.throws(() => procStart(process.pid, { proc: false, ps: badPs }), /^Error: the start of PID \d+ could not be read: .* exit 1: ps: illegal option/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  // A program that runs and fails: node knows no -o.
+  assert.throws(() => procStart(ended, { proc: false, ps: process.execPath }), /^Error: the start of PID \d+ could not be read: .* exit 9: /);
+});
+
+test("mutate tests: a child whose start cannot be read is still ended, by the PID the test recorded", async () => {
+  /** @type {{ pid: number, start: string | null }[]} */
+  const all = [];
+  /** @type {{ pid: number, start: string | null }[]} */
+  const started = [];
+  Object.assign(reading, { proc: false, ps: join(tmpdir(), "en-mut-no-ps") });
+  try {
+    assert.throws(() => track(all, spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" })), /could not be read/);
+    const dir = mkdtempSync(join(tmpdir(), "en-mut-noread-"));
+    try {
+      await assert.rejects(runCommand(`${NODE} -e "setInterval(() => {}, 1000)"`, { cwd: dir, timeoutMs: 60_000, onChild: (c) => c && track(started, c) }), /could not be read/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    assert.equal(all.length + started.length, 2, "both children are recorded before their start is read");
+    assert.deepEqual(await endGroups([...all, ...started]), [], "ended with no start read");
+  } finally {
+    delete reading.proc;
+    delete reading.ps;
+    await endGroups([...all, ...started]);
+  }
+  for (const e of [...all, ...started]) assert.equal(await gone(e.pid), true, `PID ${e.pid} is ended`);
+});
+
+test("mutate tests: a child whose spawn failed has no PID: it is said, and nothing is signalled", async () => {
+  // A recorder in place of process.kill: no signal is sent, whatever the code under test asks for.
+  const real = process.kill;
+  /** @type {string[]} */
+  const sent = [];
+  process.kill = (target, signal) => (sent.push(`${Object.is(target, -0) ? "-0" : target} ${signal}`), true);
+  /** @type {Entry[]} */
+  const all = [];
+  try {
+    const c = spawn(join(tmpdir(), "en-mut-no-such-program"), [], { detached: true, stdio: "ignore" });
+    c.on("error", () => {});
+    const me = track(all, c);
+    assert.equal(me.start, null);
+    // The same tick, as a finally after a failed assertion: node marks the child exited only later.
+    assert.deepEqual(await endGroups(all), ["a child with no PID: its spawn failed"]);
+    assert.deepEqual(await endGroups([{ pid: 0, start: "1" }, { pid: NaN, start: null }]), ["no PID: 0", "no PID: NaN"]);
+  } finally {
+    process.kill = real;
+  }
+  assert.deepEqual(sent, [], "no signal is asked for");
+});
+
+test("mutate tests: two processes started more than a second apart read two starts, each the same on a second read", async () => {
+  const first = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+  /** @type {import("node:child_process").ChildProcess | undefined} */
+  let second;
+  try {
+    const a = ident(first.pid);
+    await sleep(1100);
+    second = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    const b = ident(second.pid);
+    assert.ok(a.start && b.start, "both starts are read");
+    assert.notEqual(a.start, b.start);
+    assert.equal(ours(a), true, "the first reads the same start again");
+    assert.equal(ours(b), true, "the second reads the same start again");
+  } finally {
+    first.kill("SIGKILL");
+    second?.kill("SIGKILL");
+  }
+});
+
+test("mutate tests: a zombie reads its start and as no longer running", async () => {
+  // The background child exits once its shell has become sleep, which never reaps it (a child that ended sooner
+  // could be reaped by the shell).
+  const parent = spawn("sh", ["-c", "sleep 1 & echo $!; exec sleep 30"], { stdio: ["ignore", "pipe", "ignore"] });
+  try {
+    const pid = Number(await new Promise((r) => parent.stdout.once("data", (d) => r(String(d)))));
+    let read = procStart(pid);
+    const since = performance.now();
+    while (read && !read.zombie && performance.now() - since < 10_000) {
+      await sleep(50);
+      read = procStart(pid);
+    }
+    assert.equal(read?.zombie, true, JSON.stringify(read));
+    assert.ok(read.start, "a zombie's start is read");
+    assert.equal(ours({ pid, start: read.start }), false, "a zombie is not running");
+  } finally {
+    parent.kill("SIGKILL");
+  }
+});
+
+test("mutate tests: endGroups ends the whole group of a process it recorded, a member it never recorded too", async () => {
+  /** @type {Entry[]} */
+  const all = [];
+  try {
+    // The leader writes the PID of a member it started, then waits for it.
+    const leader = spawn("sh", ["-c", "sleep 30 & echo $!; wait"], { detached: true, stdio: ["ignore", "pipe", "ignore"] });
+    const me = track(all, leader);
+    const member = Number(await new Promise((r) => leader.stdout?.once("data", (d) => r(String(d)))));
+    assert.deepEqual(await endGroups([me]), []);
+    assert.equal(await gone(member), true, "the member the test never recorded is ended with its group");
+  } finally {
+    await endGroups(all);
+  }
+});
+
+test("mutate tests: endGroups ends a process it recorded and leaves one whose PID now names another process (win-kill-waits-exit)", async () => {
+  /** @type {Entry[]} */
+  const all = [];
+  try {
+    const me = track(all, spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" }));
     assert.ok(me.start, "the start is read");
     assert.deepEqual(await endGroups([{ pid: me.pid, start: "1" }]), [], "another start: nothing to end");
     assert.equal(ours(me), true, "a PID that names another process now is never signalled");
     assert.deepEqual(await endGroups([me]), []);
     assert.equal(ours(me), false, "the recorded process is ended");
   } finally {
-    c.kill("SIGKILL");
+    await endGroups(all);
   }
 });
 
@@ -369,9 +533,9 @@ test("mutate: a command still running after its stop at the time limit ends the 
   const dir = mkdtempSync(join(tmpdir(), "en-mut-stuck-"));
   /** @type {(number | undefined)[]} */
   const asked = [];
-  /** Every command this test starts, recorded as it starts, ended at the end whatever the code under test did. @type {{ pid: number, start: string | null }[]} */
+  /** Every command this test starts, recorded as it starts, ended at the end whatever the code under test did. @type {Entry[]} */
   const started = [];
-  const onChild = (/** @type {import("node:child_process").ChildProcess | null} */ c) => c && started.push(ident(c.pid));
+  const onChild = (/** @type {import("node:child_process").ChildProcess | null} */ c) => c && track(started, c);
   // A stop that does not take: nothing is stopped, the command runs on.
   const stop = (/** @type {number | undefined} */ pid) => (asked.push(pid), false);
   try {
@@ -383,7 +547,7 @@ test("mutate: a command still running after its stop at the time limit ends the 
     assert.equal(asked.length, 1);
     assert.ok(Date.now() - since < 5000, "the refusal does not wait for an exit");
     // A stop that took: the run ends as before, timed out.
-    const run = await runCommand(`${NODE} -e "setInterval(() => {}, 1000)"`, { cwd: dir, timeoutMs: 300, onChild, stop: (pid) => (process.kill(-(/** @type {number} */ (pid)), "SIGKILL"), true) });
+    const run = await runCommand(`${NODE} -e "setInterval(() => {}, 1000)"`, { cwd: dir, timeoutMs: 300, onChild, stop: (pid) => isPid(pid) && process.kill(-(/** @type {number} */ (pid)), "SIGKILL") });
     assert.equal(run.timedOut, true);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -397,12 +561,13 @@ test("mutate: after a stop that did not take, the process that ran the pass ends
   writeFileSync(
     script,
     [
-      'import { readFileSync } from "node:fs";',
+      'import { spawnSync } from "node:child_process";',
+      'import { existsSync, readFileSync } from "node:fs";',
       `import { MutationError, runCommand } from ${JSON.stringify(pathToFileURL(join(dirname(CLI), "..", "metrics", "mutation.mjs")).href)};`,
       // Who the command is goes out as it starts, while it is surely this script's child (a pipe to a parent is
       // written at once on Linux): the test ends it.
-      'const start = (pid) => { const s = readFileSync(`/proc/${pid}/stat`, "utf8"); return s.slice(s.lastIndexOf(")") + 2).split(" ")[19]; };',
-      "const onChild = (c) => c && console.log(`pid ${c.pid}:${start(c.pid)}`);",
+      `const procStart = ${procStart};`,
+      "const onChild = (c) => c && console.log(`pid ${c.pid}:${procStart(c.pid).start}`);",
       "try {",
       `  await runCommand(${JSON.stringify(`${NODE} -e "setTimeout(() => {}, 60000)"`)}, { cwd: process.cwd(), timeoutMs: 300, onChild, stop: () => false });`,
       '  console.log("resolved");',
@@ -418,7 +583,7 @@ test("mutate: after a stop that did not take, the process that ran the pass ends
     const started = Date.now();
     const out = spawnSync(process.execPath, [script], { cwd: dir, encoding: "utf8", timeout: 30_000 });
     const took = Date.now() - started;
-    commands = [...out.stdout.matchAll(/^pid (\d+):(\d+)$/gm)].map((x) => ({ pid: Number(x[1]), start: x[2] }));
+    commands = [...out.stdout.matchAll(/^pid (\d+):(\S+)$/gm)].map((x) => ({ pid: Number(x[1]), start: x[2] }));
     assert.equal(commands.length, 1, out.stdout + out.stderr);
     assert.match(out.stdout, /^refused true$/m);
     assert.equal(out.status, 0, out.stderr);
@@ -444,6 +609,7 @@ test("mutate: a pass ended by a stop that did not take puts the file back, remov
     assert.equal(asked.length, 1, "no second run after a refusal");
     assert.equal(selfIdents(join(p.dir, "starts")).length, 2, "the run without mutants and the mutant's first run, stopped by the stand-in at its time limit");
     assert.equal(await gone(Number(readFileSync(join(p.dir, "sleeping"), "utf8"))), false, "the test process still runs");
+    assert.equal(ours(selfIdents(join(p.dir, "starts"))[1]), true, "what the command wrote of itself names it, still running: the cleanup can end it");
     assert.deepEqual(p.snapshot(), p.before, "the file is back");
     assert.equal(existsSync(p.journal), false, "the journal is removed, as the message says");
   } finally {
@@ -475,12 +641,13 @@ test("mutate: a signal while the command runs and its stop does not take says on
   writeFileSync(
     script,
     [
+      'import { spawnSync } from "node:child_process";',
       'import { existsSync, readFileSync } from "node:fs";',
       `import { journalPath, runMutants } from ${JSON.stringify(pathToFileURL(join(dirname(CLI), "..", "metrics", "mutation.mjs")).href)};`,
-      'const start = (pid) => { const s = readFileSync(`/proc/${pid}/stat`, "utf8"); return s.slice(s.lastIndexOf(")") + 2).split(" ")[19]; };',
+      `const procStart = ${procStart};`,
       "const cwd = process.argv[2];",
       // The stop is asked only as the process ends: it says who the command is, while it is still this process's child.
-      "const stop = (pid) => (console.log(`pid ${pid}:${start(pid)}`), false);",
+      "const stop = (pid) => (console.log(`pid ${pid}:${procStart(pid).start}`), false);",
       `const command = ${JSON.stringify(stuckCommand(WRITES_NOTES))};`,
       'const wait = setInterval(() => { if (existsSync(`${cwd}/sleeping`)) { clearInterval(wait); process.kill(process.pid, "SIGTERM"); } }, 50);',
       'await runMutants({ cwd, mutants: [{ id: "t4", file: "notes.txt", old: "alpha", new: "alpha sleep" }], command, journal: journalPath(cwd, ".git/ennyn"), timeoutMs: 60000, stop });',
@@ -491,7 +658,7 @@ test("mutate: a signal while the command runs and its stop does not take says on
   let commands = [];
   try {
     const out = spawnSync(process.execPath, [script, p.dir], { cwd: p.dir, encoding: "utf8", timeout: 60_000 });
-    commands = [...out.stdout.matchAll(/^pid (\d+):(\d+)$/gm)].map((x) => ({ pid: Number(x[1]), start: x[2] }));
+    commands = [...out.stdout.matchAll(/^pid (\d+):(\S+)$/gm)].map((x) => ({ pid: Number(x[1]), start: x[2] }));
     assert.equal(out.signal, "SIGTERM", out.stderr);
     assert.equal(commands.length, 1, out.stdout + out.stderr);
     const lines = out.stderr.split("\n").filter(Boolean);
