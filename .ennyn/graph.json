@@ -4633,17 +4633,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "win-kill-waits-exit",
-      "title": "On Windows a stopped process is waited for: taskkill /T /F returns when it has asked, not when the process has exited, and metrics/mutation.mjs (killGroup) and core/git.mjs (stopWhenSilent) go on at once; mutate restores the file and the next mutant writes while the old test tree may still hold it; wait until the PID is gone, with a limit, and say so when it is not",
-      "value": "high",
-      "cost": "S",
-      "cluster": "distribution",
-      "source": "observed on Windows, 2026-11-05: 367 taskkill SUCCESS lines and a lesson 'terminating is not exiting' (a delete after taskkill hit files the process still held); measured in this repository: metrics/mutation.mjs:182 and core/git.mjs:141 do not wait; related: mutate-kills-its-tree, windows-verdict; cycle 2026-11-05 (23): left for cycle 24, its slot went to method-rules-walked by the user's decision (approved): mutate runs in WSL on this machine, so its harm today is the smallest of the release needs",
-      "since": 21
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "win-rename-retry",
       "title": "On Windows a rename or delete of a state file retries on EPERM, EBUSY and EACCES with a short backoff before it fails: an antivirus or endpoint agent, an editor or a test still holding the file makes the single renameSync in core/files.mjs fail once; mutate's restore reads the file back to confirm",
       "value": "medium",
@@ -5590,7 +5579,7 @@
       "value": "high",
       "cost": "S",
       "cluster": "security",
-      "source": "2026-11-08, after cycle 27's convergence: unreadable-shape-passes 18 times, 8 of cycle 27's rows fix-introduced, 14 in one task; fix-loop brake of skills/cycle/report-formats.md, Convergence",
+      "source": "2026-11-08, after cycle 27's convergence: unreadable-shape-passes 18 times, 8 of cycle 27's rows fix-introduced, 14 in one task; fix-loop brake of skills/cycle/report-formats.md, Convergence; cycle 29: the kill hook refuses `timeout -s KILL 900 node …`, a time limit, not a kill of another process (c29-t1-code-r0-04)",
       "since": 27
     },
     {
@@ -5603,17 +5592,6 @@
       "cluster": "gates",
       "source": "2026-11-08, review of the repository's own rules that do not reach projects using Ennyn",
       "since": 27
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "brief-paraphrase",
-      "title": "A task agent opens its report with two short paragraphs in its own words, written before its first edit: what the task asks, and how the code it touches works now as the brief describes it. The orchestrator reads them against the node's ask; a restatement that misses or adds to the ask is a ledger row with source brief, and the brief is corrected before review. Convergence counts these rows, so a brief's gaps are caught before the code instead of in review (skills/cycle/task-brief.md sits at the fix-loop brake with procedure-leaves-case-open over cycles 21-23)",
-      "value": "high",
-      "cost": "S",
-      "cluster": "method",
-      "source": "review of google/elephant-goldfish-model (Apache-2.0, main), 2026-11-09: its comprehension reviewer paraphrases a document first and a section it cannot paraphrase is a blocker, because a list of undefined terms does not find a document whose parts do not connect; no measurement published",
-      "since": 28
     },
     {
       "status": "planned",
@@ -5637,6 +5615,129 @@
       "gate": "user",
       "source": "2026-11-09: cycle 28 closed on the Windows machine, then 29; convergence --cycle 28 read 0 rows and exited 1",
       "since": 28
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "shell-box-groups-design-decision",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "title": "What the shell box still leaves open, decided in one place, no patches: a box text is root in its user namespace and keeps the user's supplementary groups (setgroups deny), so a group-writable file under the rbind'ed /usr or /etc stays writable (none on this machine today); macOS's check reads a zombie sleeper as alive after the check (c29-t1-code-r0-05); the container branch has no file boundary. Decide: a further boundary (a user without groups, a read-only remount), or the limit said in DESIGN.md and SECURITY.md",
+      "source": "cycle 2026-11-09 (29), T1 rounds 1-2 (test/shell-box.mjs is at the fix-loop brake)",
+      "since": 29
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "brief-rows-design-decision",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "metrics",
+      "title": "metrics/findings.mjs and skills/cycle/finding-schema.md reached the fix-loop brake in cycle 29 (round 2 opened more than it fixed, all around brief rows). No more patches to how the ledger treats brief rows: decide on the top rungs, measured on the ledger: brief rows in a log of their own that the findings counts never read (removing the need for every exclusion), or the four edges left said as limits. The edges: refound reads brief rows' fingerprints; an unlinked class on a brief row turns per-round and recurring into ?; finding-schema.md's Outcome and the validator disagree on a low brief row; the same-fingerprint warning asks for a dupOf the validator refuses",
+      "source": "cycle 2026-11-09 (29), T4 round 2 (c29-t4-code-r2-01, -02, c29-t4-data-r2-01, -02)",
+      "since": 29
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "guards-test-timeout",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "title": "test/guards.test.mjs takes 668-737 s alone on the Windows machine's WSL, past the 600 s per-file limit the short suite gives: every short run that picks it cancels it, and each task reran it alone; measure where its time goes and either split it or give the short suite a limit it fits, so a pick of it is a result",
+      "source": "cycle 2026-11-09 (29), T3, T4 and T2 fast suites (logs in the kept folder)",
+      "since": 29
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "short-detached-reads-main",
+      "value": "low",
+      "cost": "S",
+      "cluster": "method",
+      "title": "test:short on a detached HEAD whose commit is not main's tip reads against main as a branch would (today it runs the whole suite, 51 files, saying HEAD is on no branch); a detached HEAD at main's tip reads as main itself",
+      "source": "cycle 2026-11-09 (29), T3 audit of the short suite",
+      "since": 29
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "short-record-off-main",
+      "value": "low",
+      "cost": "S",
+      "cluster": "method",
+      "title": "node test/short.mjs --record off main says the list it writes is not used on a branch, or refuses; a list a branch committed and landed narrows every later branch until the closing records again, so the landing names a list that did not come from the closing",
+      "source": "cycle 2026-11-09 (29), T3 round 1 (c29-t3-code-r1-01) and round 2",
+      "since": 29
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "mutate-exit-stop-closed-handle",
+      "value": "low",
+      "cost": "S",
+      "cluster": "distribution",
+      "title": "mutate's exit handler may send taskkill /T to a PID whose handle closed at exit (on Linux a group id may be reused) in the window between exit and close",
+      "source": "cycle 2026-11-09 (29), T2 (c29-t2-code-r0-02)",
+      "since": 29
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "mutate-exit-line-windows-test",
+      "value": "low",
+      "cost": "S",
+      "cluster": "distribution",
+      "title": "The exit handler's still-running line on the real Windows stopTree path is held by no test (Linux tests reach it through the stop stand-in); a native Windows check or a stand-in at stopTree",
+      "source": "cycle 2026-11-09 (29), T2 mutation survivor r8",
+      "since": 29
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "win-orphan-tree",
+      "value": "low",
+      "cost": "S",
+      "cluster": "distribution",
+      "title": "On Windows killGroup(pid, false) does nothing once the shell has exited: what the tests' shell started is left; find the tree another way (a job object, the recorded children) or say it",
+      "source": "this machine's 2026-11-06 work on win-kill-waits-exit (c29-t2-c25-r0-03)",
+      "since": 29
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "reads-glob-unnamed",
+      "value": "low",
+      "cost": "S",
+      "cluster": "method",
+      "title": "test/reads.mjs keeps an fs.glob/globSync pattern as a listing that names no file, so a test that reads files by glob is recorded as reading none of them",
+      "source": "this machine's 2026-11-09 morning audit (c29-t3-c25-r0-03)",
+      "since": 29
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "reviewer-wait-loops",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "title": "A reviewer's or author's wait loop that starts a process each pass left 43 CPU-burning processes on the Windows machine (parent 1, found by the reviewer, stopped by the orchestrator by PID); no hook sees it. Briefs say: wait for a background run by its notification, never a polling loop that spawns; and the cycle's closing lists the session user's processes started during the cycle that are still alive",
+      "source": "cycle 2026-11-09 (29), T1 code review round 1",
+      "since": 29
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "limit-kill-signal-gate",
+      "title": "Every spawn or spawnSync with a time limit, in product code and in test harnesses, names its kill signal, and a test reads the tree for one that does not; where the limit wraps another program (unshare, a shell, taskkill), a test runs it against a stand-in that ignores SIGTERM and checks the run ends at the limit. The prose rule it replaces: none",
+      "value": "high",
+      "cost": "S",
+      "cluster": "gates",
+      "mechanization": true,
+      "sourceClass": "limit-does-not-bound",
+      "source": "cycle 2026-11-09 (29) convergence: limit-does-not-bound the most recurring class, 6 times (author-reading 2, measurement 2, review 2): push-spellings' corpus limit sent SIGTERM that unshare ignores, mutate's refused stop left the CLI waiting, a box run outlived its limit",
+      "since": 29
     }
   ],
   "done": [
@@ -6410,6 +6511,24 @@
       "title": "test/shell-box.mjs runs every text through sandbox-exec on macOS (a signal to a process outside the sandbox, a connection out and a write to a named pipe denied; the fence is checked when the box is made), and the push reader's real-shell corpus runs inside it; 12 of cycle 27's texts reach an outside sleeper 0/12 (12/12 without). On Linux the boundary is the container, whose other processes a text can still reach; elsewhere the box throws (808fc0a)",
       "status": "done",
       "finished": "2026-11-08"
+    },
+    {
+      "id": "win-kill-waits-exit",
+      "title": "A stopped Windows process tree is waited for (at most 5 s after taskkill /T /F) in mutate and in git's silence stop; a stop that does not take ends the mutate pass at once (the child's pipes closed and unref'd), says the command is still running by its PID, then what became of the file under test; tests record what they start and end only processes still theirs (3f17e65)",
+      "status": "done",
+      "finished": "2026-11-09"
+    },
+    {
+      "id": "brief-paraphrase",
+      "title": "A task agent writes two paragraphs before its first edit and opens its report with them; the orchestrator reads them against the node, and a miss or an addition is a ledger row of source brief (round 0, review, no file, medium or low, fixed or refuted, its own rows file, who orch), which convergence counts in no column, round, recurring class or ladder and lists under its block; dupOf never joins a brief row to another (018347d)",
+      "status": "done",
+      "finished": "2026-11-09"
+    },
+    {
+      "id": "shell-box-linux-design-decision",
+      "title": "On a Linux host outside a container (WSL, a CI machine) the shell box runs each text in user, PID, mount and net namespaces with a root of its own (only /usr, /etc, a minimal /dev and the run's folders; pivot_root), in a session with no terminal, checked when made; inFence runs commands itself with SIGKILL at its limit; a program outside that root is refused by name; no box test hangs when the box throws. Main's suite was red on WSL since 808fc0a (45768ce)",
+      "status": "done",
+      "finished": "2026-11-09"
     }
   ],
   "declined": [
