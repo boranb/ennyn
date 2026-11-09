@@ -1,6 +1,6 @@
 {
  "version": 1,
- "code": "ae7ef5e7b0c07e09a55a68c3883bedc338dd7a0b29591d7fe9b3193d427a0072",
+ "code": "2eea38322b4e8ddb2d26d9d36ed52f1fabc6271880ea770e5649437ead8b05e6",
  "tests": {
   "test/agents.test.mjs": {
    "reads": [
@@ -574,7 +574,11 @@
     ".ennyn"
    ],
    "unseen": [
-    "execFileSync ps: no ENNYN_READS"
+    "execFileSync git-receive-pack: a PATH whose first node is another",
+    "execFileSync git-upload-pack: a PATH whose first node is another",
+    "execFileSync git: a PATH whose first node is another",
+    "execFileSync ps: no ENNYN_READS",
+    "execFileSync sh: a PATH whose first node is another"
    ]
   },
   "test/findings-format.test.mjs": {
@@ -598,6 +602,7 @@
     "metrics/convergence.mjs",
     "metrics/findings.mjs",
     "metrics/szz.mjs",
+    "plan/mechanization.mjs",
     "scripts/ennyn.mjs",
     "setup/permissions.mjs",
     "setup/scan.mjs",
@@ -1215,12 +1220,27 @@
     "adapters/claude-code/hooks/kill-targets.mjs",
     "adapters/claude-code/kill-targets.mjs",
     "adapters/claude-code/push-spellings.mjs",
+    "adapters/claude-code/rules-index.mjs",
+    "checks/deps.mjs",
+    "checks/secrets.mjs",
+    "core/config.mjs",
+    "core/encoding.mjs",
     "core/files.mjs",
+    "core/git.mjs",
+    "core/glob.mjs",
     "core/i18n.mjs",
     "i18n/en.json",
+    "plan/audit.mjs",
+    "setup/budget.mjs",
+    "setup/permissions.mjs",
+    "setup/scan.mjs",
+    "setup/secret-setup.mjs",
     "test/hermetic.mjs",
     "test/hostile.mjs",
     "test/kill-targets.test.mjs",
+    "test/push-spellings.test.mjs",
+    "test/reference/claude-bin.mjs",
+    "test/reference/claude-code.mjs",
     "test/shell-box.mjs"
    ],
    "dirs": [
@@ -1467,7 +1487,6 @@
     ".claude-plugin/plugin.json",
     ".claude/CLAUDE.md",
     ".claude/settings.json",
-    ".claude/settings.local.json",
     ".ennyn/handoff-archive.md",
     ".ennyn/handoff.md",
     ".gitignore",
@@ -1554,6 +1573,7 @@
     "",
     ".claude",
     ".claude-plugin",
+    ".claude/settings.local.json",
     ".ennyn",
     ".github",
     ".github/workflows",
@@ -1574,7 +1594,6 @@
     "metrics",
     "output-styles",
     "plan",
-    "schema",
     "scripts",
     "setup",
     "side-copy",
@@ -1778,8 +1797,7 @@
    ],
    "unseen": [
     "execFileSync claude: no ENNYN_READS",
-    "spawnSync git: no ENNYN_READS",
-    "spawnSync sandbox-exec: no ENNYN_READS"
+    "spawnSync git: no ENNYN_READS"
    ]
   },
   "test/secret-setup.test.mjs": {
