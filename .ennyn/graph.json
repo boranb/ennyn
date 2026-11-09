@@ -5320,7 +5320,7 @@
       "value": "high",
       "cost": "M",
       "cluster": "method",
-      "source": "cycle 2026-11-07 (26), T3 round 1 security review (c26-t3-sec-r1-05): push-check's 'tested' is the caller's word; 2026-11-08: a whole suite was started for a push of text only, because the rule lived in a hand list in CLAUDE.md that drifted from test/short.mjs (one-question-several-places); projects that use Ennyn have only the prose",
+      "source": "cycle 2026-11-07 (26), T3 round 1 security review (c26-t3-sec-r1-05): push-check's 'tested' is the caller's word; 2026-11-08: a whole suite was started for a push of text only, because the rule lived in a hand list in CLAUDE.md that drifted from test/short.mjs (one-question-several-places); projects that use Ennyn have only the prose; cycle 28 T1 (did not land): first commit bab4354 on c28/t1, round 1 decided (see the handoff archive's cycle 28 section), its uncommitted fixes at refs/ennyn/c28-t1-r1-wip",
       "since": 26
     },
     {
@@ -5607,18 +5607,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "cycle-28-rows-from-mac",
-      "title": "Cycle 28 was closed on the Windows machine from its commits alone: its findings rows (the kept folder a kept folder outside the repository), its journal (.git/ennyn on the Mac) and which node its fourth task held are on the Mac. There: append the kept rows to .ennyn/findings.jsonl, link their new: class names, run ennyn convergence --cycle 28 --from a916a53 and put its block in the handoff archive's cycle 28 section, then journal close; a fourth task that did not land is named and its branch kept",
-      "value": "high",
-      "cost": "S",
-      "cluster": "metrics",
-      "gate": "user",
-      "source": "2026-11-09: cycle 28 closed on the Windows machine, then 29; convergence --cycle 28 read 0 rows and exited 1",
-      "since": 28
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "shell-box-groups-design-decision",
       "value": "medium",
       "cost": "S",
@@ -5738,6 +5726,98 @@
       "sourceClass": "limit-does-not-bound",
       "source": "cycle 2026-11-09 (29) convergence: limit-does-not-bound the most recurring class, 6 times (author-reading 2, measurement 2, review 2): push-spellings' corpus limit sent SIGTERM that unshare ignores, mutate's refused stop left the CLI waiting, a box run outlived its limit",
       "since": 29
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "push-corpus-fence-refusal-unread",
+      "title": "The fenced push corpus run (test/push-spellings.test.mjs through the shell box) reads a push the sandbox refused (a named pipe write, a connect) as no push reached: the oracle's verdict comes from the harness, not from git. Say a refused step as unmeasured for that cell, or count the refusal apart",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-08 (28), closed on the Mac 2026-11-09 from its ledger: T2 round 2 security review (c28-t2-sec-r2-02)",
+      "since": 28
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "journal-worktree-identity",
+      "title": "A linked worktree's cycle journal is keyed by git's worktree name alone, so a new worktree that reuses a removed one's name reads the removed tree's cycle. Key it by the worktree's path and creation, or say a mismatch",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-08 (28), closed on the Mac 2026-11-09 from its ledger: T4 author (c28-t4-author-r0-04)",
+      "since": 28
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "journal-line-wrapper-break",
+      "title": "The waiting text in ennyn status --line is journal data and can hold a closing tag of the host's context wrapper, ending the wrapper early. Escape or drop such text in the line",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-08 (28), closed on the Mac 2026-11-09 from its ledger: T4 author (c28-t4-author-r0-05)",
+      "since": 28
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "push-check-recorded-suite"
+      ],
+      "id": "push-hook-reads-record",
+      "title": "The push hook reads the test-run record push-check reads, so a plain git push the hook lets through in after-closing needs the same recorded green run on the pushed tree, not the caller's word",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 2026-11-08 (28), closed on the Mac 2026-11-09 from its ledger: T1 author follow-up",
+      "since": 28
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "push-check-recorded-suite"
+      ],
+      "id": "ennyn-config-code-globs",
+      "title": "This repository's .ennyn/config.json names push.codeGlobs (test/short.mjs isCode: .mjs .cjs .js package.json) and commands.wholeTest, so a text-only push here needs only the short suite as the record reads it. A narrowing is a loosening and carries its User-Approved-Loosening line",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 2026-11-08 (28), closed on the Mac 2026-11-09 from its ledger: T1 round 1 security review (c28-t1-sec-r1-03); the decision was delegated 2026-11-09",
+      "since": 28
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "guards-floor-short-record",
+      "title": "On the Node 20 floor image 8 guards of test/short.test.mjs fail: --record needs Node 22.15+ while its record guards still run there, and short-read-bare times out on 2 CPUs. Make the guards say the floor (skip by version is no t.skip: assert the refusal instead) and bound the bare read's time",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-08 (28), closed on the Mac 2026-11-09 from its ledger: T2 Linux floor run (pre-existing, never run on the floor before)",
+      "since": 28
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "test-churn-off-host-fsevents",
+      "title": "Measure whether whole suites and docker runs grow macOS fseventsd (35 GB compressed after 5 days, 2026-11-09): MB growth over one whole suite and one Linux run after a fresh fseventsd. If they do, heavy runs write in the VM's own disk or a folder excluded from FSEvents",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-08 (28), closed on the Mac 2026-11-09 from its ledger: fseventsd measured at 35 GB; one 10k-file probe was inconclusive at top's GB resolution",
+      "since": 28
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "agent-tmp-leftovers",
+      "title": "Agent probes and labs leave folders in TMPDIR that no step removes (1927 entries, 2.6 GB, mostly cycles 24-25; 1480 removed by hand 2026-11-09). The brief names one folder per agent under the cycle folder, and the closing's leftovers check counts TMPDIR entries newer than the cycle's start",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "cycle",
+      "source": "cycle 2026-11-08 (28), closed on the Mac 2026-11-09 from its ledger: TMPDIR measured during the closing",
+      "since": 28
     }
   ],
   "done": [
@@ -6527,6 +6607,12 @@
     {
       "id": "shell-box-linux-design-decision",
       "title": "On a Linux host outside a container (WSL, a CI machine) the shell box runs each text in user, PID, mount and net namespaces with a root of its own (only /usr, /etc, a minimal /dev and the run's folders; pivot_root), in a session with no terminal, checked when made; inFence runs commands itself with SIGKILL at its limit; a program outside that root is refused by name; no box test hangs when the box throws. Main's suite was red on WSL since 808fc0a (45768ce)",
+      "status": "done",
+      "finished": "2026-11-09"
+    },
+    {
+      "id": "cycle-28-rows-from-mac",
+      "title": "Cycle 28's 47 findings rows appended to the ledger on the Mac, 18 new: class names linked, its convergence block in the handoff archive, its journal closed; the fourth task (push-check-recorded-suite) did not land: branch c28/t1 kept, uncommitted round-1 fixes at refs/ennyn/c28-t1-r1-wip",
       "status": "done",
       "finished": "2026-11-09"
     }
