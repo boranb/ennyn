@@ -90,6 +90,7 @@ const HOOK_ENTRY = "a hook's entry file: the reading is its module's";
 const OWN = "reads only Ennyn's own formats";
 /** @type {Record<string, string>} */
 export const NOT_READERS = {
+  "impact/reference-run.mjs": "runs the reference command and passes its output on unread; it reads only how the command ended",
   "adapters/claude-code/config-place.mjs": "finds the config by the folders Claude Code names a hook (its input and environment)",
   "adapters/claude-code/project.mjs": "finds the project's config; git through core/git.mjs, taken whole",
   "adapters/claude-code/hooks/compact-boundary.mjs": HOOK_ENTRY,

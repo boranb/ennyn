@@ -1346,7 +1346,7 @@ function project(config) {
 
 /** The hook as Claude Code runs it. @param {string} dir @param {unknown} input @param {NodeJS.ProcessEnv} [env] @param {string[]} [before] */
 function run(dir, input, env = {}, before = []) {
-  const r = spawnSync(process.execPath, [...before, HOOK], { input: typeof input === "string" ? input : JSON.stringify(input), env: { ...process.env, CLAUDE_PROJECT_DIR: dir, ...env }, cwd: neutral, encoding: "utf8", timeout: 20000 });
+  const r = spawnSync(process.execPath, [...before, HOOK], { input: typeof input === "string" ? input : JSON.stringify(input), env: { ...process.env, CLAUDE_PROJECT_DIR: dir, ...env }, cwd: neutral, encoding: "utf8", timeout: 20000, killSignal: "SIGKILL" });
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stderr, "");
   return r;
@@ -1507,7 +1507,7 @@ test("push hook: under after-closing the push is decided where the shell stands:
   assert.equal(run(dir, at(join(dir, "sub"), "git push")).stdout, "");
   assert.equal(decision(run(dir, { ...call("git push"), cwd: undefined })), "ask");
   // No cwd in the input asks even when the hook itself runs in the project.
-  const own = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ ...call("git push"), cwd: undefined }), env: { ...process.env, CLAUDE_PROJECT_DIR: dir }, cwd: dir, encoding: "utf8", timeout: 20000 });
+  const own = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ ...call("git push"), cwd: undefined }), env: { ...process.env, CLAUDE_PROJECT_DIR: dir }, cwd: dir, encoding: "utf8", timeout: 20000, killSignal: "SIGKILL" });
   assert.equal(decision(own), "ask");
   assert.equal(decision(run(dir, at(join(dir, "gone"), "git push"))), "ask");
 });
@@ -1530,7 +1530,7 @@ test("push hook: a broken or missing catalog still refuses, with a plain English
   const top = fileURLToPath(new URL("..", import.meta.url));
   for (const d of ["adapters", "core", "i18n"]) cpSync(join(top, d), join(box, d), { recursive: true });
   const repo = project("{}\n");
-  const go = () => spawnSync(process.execPath, [join(box, "adapters/claude-code/hooks/push-spellings.mjs")], { input: JSON.stringify(call("git -C . push")), env: { ...process.env, CLAUDE_PROJECT_DIR: repo }, cwd: neutral, encoding: "utf8", timeout: 20000 });
+  const go = () => spawnSync(process.execPath, [join(box, "adapters/claude-code/hooks/push-spellings.mjs")], { input: JSON.stringify(call("git -C . push")), env: { ...process.env, CLAUDE_PROJECT_DIR: repo }, cwd: neutral, encoding: "utf8", timeout: 20000, killSignal: "SIGKILL" });
   for (const damage of [() => writeFileSync(join(box, "i18n", "en.json"), "{ broken"), () => rmSync(join(box, "i18n", "en.json"))]) {
     damage();
     const r = go();
@@ -1619,7 +1619,7 @@ test("push hook: a place it cannot look at may hold a config: it reads and refus
   writeFileSync(join(dir, ".ennyn", "config.json"), "{}\n");
   chmodSync(box, 0);
   try {
-    const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify(call("git -C . push")), env: { ...process.env, CLAUDE_PROJECT_DIR: dir }, cwd: neutral, encoding: "utf8", timeout: 20000 });
+    const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify(call("git -C . push")), env: { ...process.env, CLAUDE_PROJECT_DIR: dir }, cwd: neutral, encoding: "utf8", timeout: 20000, killSignal: "SIGKILL" });
     assert.equal(decision(r), "deny");
   } finally {
     chmodSync(box, 0o700);

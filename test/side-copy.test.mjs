@@ -142,6 +142,7 @@ function runHook(input, env = { CLAUDE_PROJECT_DIR: project }) {
     encoding: "utf8",
     // Claude Code stops this hook at 15 s (hooks/hooks.json): a run past 20 s here would be stopped there too.
     timeout: 20000,
+    killSignal: "SIGKILL",
   });
   exitCodes.push(r.status);
   return r;

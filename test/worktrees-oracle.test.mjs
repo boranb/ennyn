@@ -24,12 +24,12 @@ const { root: ROOT } = ownHome("en-wt-oracle-");
 const SET = ["user.name=t", "user.email=t@t", "commit.gpgsign=false", "protocol.file.allow=always", "advice.detachedHead=false", "gc.auto=0", "maintenance.auto=false"].flatMap((kv) => ["-c", kv]);
 /** @param {string} cwd @param {string[]} args @param {Record<string, string>} [env] */
 function g(cwd, args, env = {}) {
-  const r = spawnSync("git", [...SET, "-C", cwd, ...args], { encoding: "utf8", env: { ...process.env, ...env }, timeout: 60_000 });
+  const r = spawnSync("git", [...SET, "-C", cwd, ...args], { encoding: "utf8", env: { ...process.env, ...env }, timeout: 60_000, killSignal: "SIGKILL" });
   if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
   return r.stdout.trim();
 }
 /** git that may fail: its exit code. @param {string} cwd @param {string[]} args */
-const gq = (cwd, args) => spawnSync("git", [...SET, "-C", cwd, ...args], { encoding: "utf8", timeout: 60_000 }).status;
+const gq = (cwd, args) => spawnSync("git", [...SET, "-C", cwd, ...args], { encoding: "utf8", timeout: 60_000, killSignal: "SIGKILL" }).status;
 /** @param {string} p @param {string} text */
 const put = (p, text) => (mkdirSync(dirname(p), { recursive: true }), writeFileSync(p, text));
 

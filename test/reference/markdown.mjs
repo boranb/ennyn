@@ -591,7 +591,7 @@ const NO_NETWORK = "(version 1)(allow default)(deny network*)";
 export function lexInChild(source, contents, { env = {}, ms = 120_000, run = spawnSync, sandbox = SANDBOX, node = process.versions.node } = {}) {
   if (!permissionHolds(node)) throw new Error(`the parser runs only under a Node whose permission model holds (22.13, 23.5 or later); this is ${node}`);
   if (!existsSync(sandbox)) throw new Error(`nothing here shuts the parser's network (no ${sandbox}, which macOS has): the parser is not run`);
-  const r = run(sandbox, ["-p", NO_NETWORK, process.execPath, "--permission", "--input-type=module", "-e", CHILD], { input: JSON.stringify({ source, contents }), env, encoding: "utf8", maxBuffer: 512 * 1024 * 1024, timeout: ms });
+  const r = run(sandbox, ["-p", NO_NETWORK, process.execPath, "--permission", "--input-type=module", "-e", CHILD], { input: JSON.stringify({ source, contents }), env, encoding: "utf8", maxBuffer: 512 * 1024 * 1024, timeout: ms, killSignal: "SIGKILL" });
   if (r.error || r.status !== 0) throw new Error(`the parser's child failed (${r.error?.message ?? `exit ${r.status}`}): ${JSON.stringify((r.stderr ?? "").slice(0, 400))}`);
   const out = JSON.parse(r.stdout);
   if (!Array.isArray(out) || out.length !== contents.length) throw new Error("the parser's child gave another number of readings than texts");

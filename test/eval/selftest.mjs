@@ -301,7 +301,7 @@ const tryConnect = (o) => new Promise((r) => { const s = net.connect(o); const t
 
 /** The canary run under the profile. @param {number} port @param {string} root @returns {Record<string, string>} */
 function canary(port, root) {
-  const out = execFileSync(SANDBOX, ["-p", NO_NETWORK(port, root), process.execPath, "-e", CANARY, String(port)], { encoding: "utf8", env: { PATH: safePath() }, timeout: 30_000 });
+  const out = execFileSync(SANDBOX, ["-p", NO_NETWORK(port, root), process.execPath, "-e", CANARY, String(port)], { encoding: "utf8", env: { PATH: safePath() }, timeout: 30_000, killSignal: "SIGKILL" });
   return JSON.parse(out);
 }
 
@@ -508,7 +508,7 @@ export function watchSockets(pid, port, { every = 250, lookMs = 5000, stopMs = 1
   const others = new Set();
   let standIn = false;
   let busy = false;
-  const opts = { env, timeout: lookMs };
+  const opts = { env, timeout: lookMs, killSignal: "SIGKILL" };
   const look = () => {
     if (busy || pid === undefined) return;
     busy = true;

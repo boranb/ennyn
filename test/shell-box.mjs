@@ -34,7 +34,8 @@
  * that ignores signals, and waits until every process of the run has ended, as a coproc's shell outlives the top
  * shell, before it ends with the command's exit (a signal's as 128 + its number): when PID 1 ends, the kernel ends the
  * rest. unshare ignores SIGTERM, so a run's time limit sends SIGKILL, which takes the namespace down with it
- * (`--kill-child`); `inFence` runs a test's own command with the same limit. Where none holds (no container, and
+ * (`--kill-child`), and then the run's process group (in the sandbox and a container, every process the run started that
+ * did not leave it); `inFence` runs a test's own command with the same limit. Where none holds (no container, and
  * unshare missing or refused, as where unprivileged user namespaces are restricted; any other system) the box throws,
  * naming what it tried, as it does where sandbox-exec is missing or lets the signal out. A set-user-ID program (ps on
  * macOS) does not start in the sandbox. `inFence` puts a test's own shell inside the same boundary. The word check (`unsafeTexts`) stays as a first, cheap
@@ -283,6 +284,23 @@ function rootBuilt(r) {
   return r;
 }
 
+/**
+ * A run Node stopped (its time limit, its output past maxBuffer) or that ended by a signal takes its process group
+ * with it. SIGKILL reaches the child only, and a process the child's shell had started went on (measured on macOS,
+ * Node 22.23.4: a stand-in that ignored SIGTERM, under `sh -c`, outlived the shell's SIGKILL). The child is
+ * `detached`, so the group is its own and holds only the run.
+ * @template {{ pid?: number, error?: Error, signal?: NodeJS.Signals | null }} R @param {R} r @returns {R}
+ */
+function groupStopped(r) {
+  if (!r.pid || (!r.error && !r.signal)) return r;
+  try {
+    process.kill(-r.pid, "SIGKILL");
+  } catch {
+    // The group is gone.
+  }
+  return r;
+}
+
 /** The boundary's name: `sandbox`, `container` or `namespace`. Throws where none holds, as the box does. */
 export const fenceName = () => theFence().name;
 
@@ -325,7 +343,7 @@ export function inFence(argv, { keep = [], limit = 10000, ...options }) {
   // No exported shell function: the namespace's PID 1 is a bash too.
   const env = Object.fromEntries(Object.entries(options.env ?? process.env).filter(([k]) => !k.startsWith("BASH_FUNC_")));
   // A session of its own, as the box's runs: no controlling terminal of the caller's.
-  return rootBuilt(spawnSync(program, args, { ...options, env, timeout: limit, killSignal: "SIGKILL", detached: true }));
+  return rootBuilt(groupStopped(spawnSync(program, args, { ...options, env, timeout: limit, killSignal: "SIGKILL", detached: true })));
 }
 
 /** A word separator and a line end no generated text holds. */
@@ -369,8 +387,9 @@ export function shellBox(prefix, { stands, real, limit = 10000 }) {
   // Every run inside the fence: its program first, then the box's bash.
   const command = fencedArgv([join(bin, "bash")], [box]);
   /** @param {string} text */
-  // SIGKILL at the limit: unshare ignores SIGTERM, and its death takes the namespace's processes with it.
-  const inside = (text) => spawnSync(command[0], [...command.slice(1), "-c", text], { cwd, env, input: "", encoding: "utf8", timeout: limit, killSignal: "SIGKILL", detached: true });
+  // SIGKILL at the limit: unshare ignores SIGTERM, and its death takes the namespace's processes with it; elsewhere the
+  // group goes too.
+  const inside = (text) => groupStopped(spawnSync(command[0], [...command.slice(1), "-c", text], { cwd, env, input: "", encoding: "utf8", timeout: limit, killSignal: "SIGKILL", detached: true }));
   return {
     box,
     cwd,

@@ -1071,7 +1071,7 @@ test("reference control: npm run test:reference runs the claude it resolves once
     mkdirSync(real);
     writeFileSync(join(planted, "claude"), `#!/bin/sh\necho x > '${marker}'\necho 9.9.9\n`, { mode: 0o755 });
     writeFileSync(join(real, "claude"), "#!/bin/sh\necho 0.0.1\n", { mode: 0o755 });
-    const r = spawnSync(process.execPath, [fileURLToPath(new URL("./reference/claude.mjs", import.meta.url))], { env: { ...process.env, PATH: [planted, real, process.env.PATH ?? ""].join(delimiter) }, encoding: "utf8", timeout: 120_000 });
+    const r = spawnSync(process.execPath, [fileURLToPath(new URL("./reference/claude.mjs", import.meta.url))], { env: { ...process.env, PATH: [planted, real, process.env.PATH ?? ""].join(delimiter) }, encoding: "utf8", timeout: 120_000, killSignal: "SIGKILL" });
     assert.equal(existsSync(marker), false, r.stdout + r.stderr);
     assert.match(r.stdout, new RegExp(`claude: ${join(real, "claude").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
     // The PATH a recorder hands its children holds no node_modules/.bin and no relative folder either.

@@ -807,6 +807,25 @@ export const GATES = [
       { id: "readers-judge-name", why: "a judge that takes any test for the harness", file: "test/readers.test.mjs", old: "testNames(text).some((n) => n.startsWith(r.test))", new: "testNames(text).length > 0", pattern: "readers control" },
     ],
   },
+  {
+    test: "test/kill-signal.test.mjs",
+    guards: [
+      { id: "kill-signal-tree", why: "a git call with a time limit and node's default SIGTERM", file: "core/git.mjs", old: '      killSignal: "SIGKILL",\n', new: "", pattern: "kill signal: every call in the tree" },
+      { id: "kill-signal-unreadable", why: "a call whose options the reader cannot read, listed nowhere", file: "core/git.mjs", old: 'spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });', new: 'spawnSync("taskkill", ["/pid", String(pid), "/T", "/F"], STOP_OPTIONS);', pattern: "kill signal: every call in the tree" },
+      { id: "kill-signal-stale", why: "an allowed call that no longer matches anything", file: "test/kill-signal.test.mjs", old: "const ALLOWED = [\n", new: 'const ALLOWED = [\n  { file: "core/git.mjs", text: "gone", count: 1, why: "x" },\n', pattern: "kill signal: every call in the tree" },
+      { id: "kill-signal-allow-limit", why: "an allowed line that excuses a limit with no kill signal", file: "test/kill-signal.test.mjs", old: 'if (p.verdict === "unreadable" && at >= 0) used.set(', new: "if (at >= 0) used.set(", pattern: "kill signal: the allow list covers" },
+      { id: "kill-signal-judge-limit", why: "a reader that passes a limit with no kill signal", file: "test/kill-signal.mjs", old: "else if (said.limit) out.push(", new: "else if (false) out.push(", pattern: "kill signal: the reader refuses" },
+      { id: "kill-signal-judge-key", why: "a reader that takes an object's key of the same name for the function", file: "test/kill-signal.mjs", old: 'if (ts[k + 1]?.v === ":" && (prev?.v === "{" || prev?.v === ",")) return null;', new: "", pattern: "kill signal: the reader passes" },
+      { id: "kill-signal-parser", why: "the parser's sandbox stopped by SIGTERM, which it may ignore", file: "test/reference/markdown.mjs", old: 'timeout: ms, killSignal: "SIGKILL" });', new: "timeout: ms });", pattern: "kill signal: the parser's sandbox" },
+      { id: "kill-signal-reference", why: "a reference command's group never given SIGKILL after the grace", file: "impact/reference-run.mjs", old: 'hard = setTimeout(() => signalGroup("SIGKILL"), graceMs);', new: "hard = undefined;", pattern: "kill signal: a reference command" },
+      { id: "kill-signal-reference-term", why: "a reference command's group given no SIGTERM, so a worker cannot clean up", file: "impact/reference-run.mjs", old: '  signalGroup("SIGTERM");\n', new: "", pattern: "kill signal: a reference command" },
+    ],
+    others: {
+      "kill signal: a box run past its limit ends near it, and a stand-in that ignores SIGTERM goes with it": "a guard that drops the box's group stop is killed in the sandbox and a container, and survives in a namespace, where unshare's --kill-child ends the stand-in anyway",
+      "kill signal: a test's own command in the boundary past its limit ends near it, the stand-in with it": "as the box run's: the group stop matters in the sandbox and a container only",
+      "kill signal: a run Node stops for its output past the buffer takes its group with it": "as the box run's: the group stop matters in the sandbox and a container only",
+    },
+  },
 ];
 
 /**

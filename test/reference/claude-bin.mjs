@@ -40,7 +40,7 @@ export function claudeBinary(bin, path = process.env.PATH ?? "") {
 
 /** The binary's version, as `--version` prints it. @param {string} bin */
 export function versionOf(bin) {
-  const m = /^(\d+\.\d+\.\d+)/.exec(execFileSync(bin, ["--version"], { encoding: "utf8", env: { PATH: safePath() }, timeout: 30_000 }).trim());
+  const m = /^(\d+\.\d+\.\d+)/.exec(execFileSync(bin, ["--version"], { encoding: "utf8", env: { PATH: safePath() }, timeout: 30_000, killSignal: "SIGKILL" }).trim());
   if (!m) throw new Error(`${bin} --version printed no version`);
   return m[1];
 }

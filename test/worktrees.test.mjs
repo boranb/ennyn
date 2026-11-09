@@ -26,7 +26,7 @@ const SET = ["user.name=t", "user.email=t@t", "commit.gpgsign=false", "protocol.
 /** @param {string} cwd @param {string[]} args @param {Record<string, string>} [env] */
 function g(cwd, args, env = {}) {
   // A limit: a git that opens a named pipe would wait on it for ever.
-  const r = spawnSync("git", [...SET, "-C", cwd, ...args], { encoding: "utf8", env: { ...process.env, ...env }, timeout: 60_000 });
+  const r = spawnSync("git", [...SET, "-C", cwd, ...args], { encoding: "utf8", env: { ...process.env, ...env }, timeout: 60_000, killSignal: "SIGKILL" });
   if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
   return r.stdout.trim();
 }

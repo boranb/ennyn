@@ -2527,7 +2527,7 @@ test("scan audit (review): a project file that is no regular file, or past the r
   // Inside the repository: a link out is named, not read, whatever it names (below).
   const fifo = join(dir, "p");
   assert.equal(spawnSync("mkfifo", [fifo]).status, 0);
-  const scan = () => spawnSync(process.execPath, [CLI, "init-scan"], { cwd: dir, encoding: "utf8", timeout: 20000 });
+  const scan = () => spawnSync(process.execPath, [CLI, "init-scan"], { cwd: dir, encoding: "utf8", timeout: 20000, killSignal: "SIGKILL" });
   symlinkSync(fifo, join(dir, "CLAUDE.md"));
   const pipe = scan();
   assert.equal(pipe.status, 1, `ended: ${pipe.signal ?? pipe.status}`);
@@ -2686,7 +2686,7 @@ test("scan audit (review two): a config the user names is read whatever it is, a
   assert.equal(spawnSync("mkfifo", [fifo]).status, 0);
   const { spawn } = await import("node:child_process");
   const writer = spawn("sh", ["-c", `printf '%s' '${cfg}' > '${fifo}'`]);
-  const hook = spawnSync(process.execPath, [CLI, "commit-check", "--hook", join(r.dir, ".git", "MSG")], { cwd: r.dir, encoding: "utf8", timeout: 20000, env: { ...process.env, ENNYN_CONFIG: fifo } });
+  const hook = spawnSync(process.execPath, [CLI, "commit-check", "--hook", join(r.dir, ".git", "MSG")], { cwd: r.dir, encoding: "utf8", timeout: 20000, killSignal: "SIGKILL", env: { ...process.env, ENNYN_CONFIG: fifo } });
   writer.kill();
   assert.equal(hook.status, 1, hook.stderr);
   assert.match(hook.stderr, /^Subject must start with a type from commitMsg\.types \(feat, fix\)/m);

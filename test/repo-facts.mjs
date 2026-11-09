@@ -22,7 +22,7 @@ const SET = ["-c", "gc.auto=0", "-c", "maintenance.auto=false", "-c", "core.fsmo
 
 /** git's output, or a throw with its words. @param {string} cwd @param {string[]} args */
 export function gitOut(cwd, args) {
-  const r = spawnSync("git", [...SET, "-C", cwd, ...args], { encoding: "utf8", timeout: 60_000, maxBuffer: 64 * 1024 * 1024 });
+  const r = spawnSync("git", [...SET, "-C", cwd, ...args], { encoding: "utf8", timeout: 60_000, killSignal: "SIGKILL", maxBuffer: 64 * 1024 * 1024 });
   if (r.error || r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.error?.message ?? r.stderr}`);
   return r.stdout;
 }
@@ -69,7 +69,7 @@ export function holds(cwd) {
 
 /** The commit HEAD names in `cwd`, or null. @param {string} cwd */
 export function head(cwd) {
-  const r = spawnSync("git", [...SET, "-C", cwd, "rev-parse", "--verify", "-q", "HEAD^{commit}"], { encoding: "utf8", timeout: 60_000 });
+  const r = spawnSync("git", [...SET, "-C", cwd, "rev-parse", "--verify", "-q", "HEAD^{commit}"], { encoding: "utf8", timeout: 60_000, killSignal: "SIGKILL" });
   return r.status === 0 ? r.stdout.trim() : null;
 }
 

@@ -322,7 +322,7 @@ export function recordText(rec) {
 // Recording: GitHub's parser, built from its pinned source and run where it can reach nothing.
 
 /** @param {string[]} args @param {import("node:child_process").SpawnSyncOptions} [opts] */
-const docker = (args, opts = {}) => spawnSync("docker", args, { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, timeout: 15 * 60_000, ...opts });
+const docker = (args, opts = {}) => spawnSync("docker", args, { encoding: "utf8", maxBuffer: 256 * 1024 * 1024, timeout: 15 * 60_000, killSignal: "SIGKILL", ...opts });
 
 /**
  * A git call of the recorder's, through core/git.mjs: with no GIT_DIR, GIT_WORK_TREE or other variable a hook's

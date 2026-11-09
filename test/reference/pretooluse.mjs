@@ -252,7 +252,7 @@ export async function reading(c, bin) {
       ...c.env,
     };
     if (c.install) {
-      const quietly = { cwd: P, env, stdio: "ignore", timeout: 60_000 };
+      const quietly = { cwd: P, env, stdio: "ignore", timeout: 60_000, killSignal: "SIGKILL" };
       execFileSync(bin, ["plugin", "marketplace", "add", join(R, "market")], /** @type {any} */ (quietly));
       execFileSync(bin, ["plugin", "install", "plug@mk", "--scope", "user"], /** @type {any} */ (quietly));
     }

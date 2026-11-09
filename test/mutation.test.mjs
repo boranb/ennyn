@@ -581,7 +581,7 @@ test("mutate: after a stop that did not take, the process that ran the pass ends
   let commands = [];
   try {
     const started = Date.now();
-    const out = spawnSync(process.execPath, [script], { cwd: dir, encoding: "utf8", timeout: 30_000 });
+    const out = spawnSync(process.execPath, [script], { cwd: dir, encoding: "utf8", timeout: 30_000, killSignal: "SIGKILL" });
     const took = Date.now() - started;
     commands = [...out.stdout.matchAll(/^pid (\d+):(\S+)$/gm)].map((x) => ({ pid: Number(x[1]), start: x[2] }));
     assert.equal(commands.length, 1, out.stdout + out.stderr);
@@ -657,7 +657,7 @@ test("mutate: a signal while the command runs and its stop does not take says on
   /** @type {{ pid: number, start: string | null }[]} */
   let commands = [];
   try {
-    const out = spawnSync(process.execPath, [script, p.dir], { cwd: p.dir, encoding: "utf8", timeout: 60_000 });
+    const out = spawnSync(process.execPath, [script, p.dir], { cwd: p.dir, encoding: "utf8", timeout: 60_000, killSignal: "SIGKILL" });
     commands = [...out.stdout.matchAll(/^pid (\d+):(\S+)$/gm)].map((x) => ({ pid: Number(x[1]), start: x[2] }));
     assert.equal(out.signal, "SIGTERM", out.stderr);
     assert.equal(commands.length, 1, out.stdout + out.stderr);

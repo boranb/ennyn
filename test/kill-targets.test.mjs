@@ -482,7 +482,7 @@ function project(config) {
 
 /** The hook as Claude Code runs it. @param {string} dir @param {unknown} input @param {string[]} [before] @param {string} [hook] */
 function run(dir, input, before = [], hook = HOOK) {
-  const r = spawnSync(process.execPath, [...before, hook], { input: typeof input === "string" ? input : JSON.stringify(input), env: { ...process.env, CLAUDE_PROJECT_DIR: dir }, cwd: neutral, encoding: "utf8", timeout: 20000 });
+  const r = spawnSync(process.execPath, [...before, hook], { input: typeof input === "string" ? input : JSON.stringify(input), env: { ...process.env, CLAUDE_PROJECT_DIR: dir }, cwd: neutral, encoding: "utf8", timeout: 20000, killSignal: "SIGKILL" });
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stderr, "");
   return r;
@@ -659,7 +659,7 @@ test("shell box: a text past the word check runs the real kill, and the box's bo
       assert.deepEqual([outside.exitCode, outside.signalCode], [null, null], "a signal left the sandbox");
       // A box made inside such a sandbox already: the inner one let a signal to the outer one's processes through
       // (measured on macOS 26.6.2), so the box's own check must find it and refuse to run anything.
-      const nested = spawnSync("/usr/bin/sandbox-exec", ["-p", PROFILE, process.execPath, "--input-type=module", "-e", `import { shellBox } from ${JSON.stringify(new URL("./shell-box.mjs", import.meta.url).href)}; shellBox("en-kill-nested-", { stands: {}, real: [] }).close();`], { encoding: "utf8", timeout: 30000 });
+      const nested = spawnSync("/usr/bin/sandbox-exec", ["-p", PROFILE, process.execPath, "--input-type=module", "-e", `import { shellBox } from ${JSON.stringify(new URL("./shell-box.mjs", import.meta.url).href)}; shellBox("en-kill-nested-", { stands: {}, real: [] }).close();`], { encoding: "utf8", timeout: 30000, killSignal: "SIGKILL" });
       assert.match(nested.stderr, /a signal left the sandbox/);
       assert.notEqual(nested.status, 0);
     } else if (box.fence === "namespace") {
@@ -696,7 +696,7 @@ test("shell box: what a text past the word check reaches over a Unix socket, a T
   const screen = process.platform === "darwin" ? "/usr/bin/screen" : null;
   const name = `enchan${process.pid}`;
   const screenDir = join(dir, "screens");
-  const ask = (/** @type {string[]} */ args) => spawnSync(/** @type {string} */ (screen), args, { env: { ...process.env, SCREENDIR: screenDir }, encoding: "utf8", timeout: 10000 });
+  const ask = (/** @type {string[]} */ args) => spawnSync(/** @type {string} */ (screen), args, { env: { ...process.env, SCREENDIR: screenDir }, encoding: "utf8", timeout: 10000, killSignal: "SIGKILL" });
   try {
     // A socket's path has a short limit (104 bytes on macOS), and the temporary root is deep: each side names it relatively.
     await new Promise((resolve) => server.listen(relative(process.cwd(), sock), () => resolve(undefined)));
@@ -889,7 +889,7 @@ test("shell box: a program the namespace's root does not hold is refused when th
   }
 });
 
-test("shell box: a run past its time limit is stopped, and in a namespace every process it started with it", async () => {
+test("shell box: a run past its time limit is stopped, and every process it started with it", async () => {
   const box = shellBox("en-kill-limit-", { stands: {}, real: ["sleep"], limit: 1000 });
   try {
     const text = "(sleep 2; echo late > late) & sleep 30";
@@ -898,14 +898,9 @@ test("shell box: a run past its time limit is stopped, and in a namespace every 
     assert.throws(() => box.run(text), /did not end/);
     assert.ok(Date.now() - start < 8000, `${Date.now() - start} ms`);
     await new Promise((resolve) => setTimeout(resolve, 2500));
-    if (box.fence === "namespace") {
-      // unshare ignores SIGTERM: the limit's SIGKILL ends it, and with it the namespace's PID 1 and the background job.
-      assert.equal(existsSync(join(box.cwd, "late")), false, "a process of a stopped run went on");
-    } else {
-      // The sandbox and a container: the limit's SIGKILL reaches the shell only (node signals the child, not its
-      // group), and the background job it left goes on and writes (unmeasured on macOS and in a container here).
-      assert.equal(existsSync(join(box.cwd, "late")), true, "a stopped run's background job was stopped too");
-    }
+    // unshare ignores SIGTERM: the limit's SIGKILL ends it, and with it the namespace's PID 1 and the background job.
+    // The sandbox and a container: the SIGKILL reaches the shell only, and the box then ends the run's process group.
+    assert.equal(existsSync(join(box.cwd, "late")), false, `a process of a stopped run went on (${box.fence})`);
     // A test's own command run in the boundary has the same limit: SIGKILL, which holds under unshare too.
     const sleep = ["/bin/sleep", "/usr/bin/sleep"].find((p) => existsSync(p));
     assert.ok(sleep, "this harness needs sleep");

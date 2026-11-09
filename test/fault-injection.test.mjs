@@ -920,6 +920,7 @@ test("fault matrix: a file git is slow to diff is named unread, and every other 
       env: { ...process.env, ENNYN_FAULT_GIT_LIMIT_MS: String(HANG_LIMIT_MS) },
       encoding: "utf8",
       timeout: 300_000,
+      killSignal: "SIGKILL",
     });
     return { status: r.status, text: `${r.stdout}\n${r.stderr}` };
   };
@@ -967,6 +968,7 @@ test("fault matrix: a diff that stops after its output is read again whole, and 
     env: { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}`, ENNYN_REAL_GIT: REAL_GIT, ENNYN_FAULT_DIR: bin, ENNYN_FAULT_GIT_LIMIT_MS: String(HANG_LIMIT_MS) },
     encoding: "utf8",
     timeout: 120_000,
+    killSignal: "SIGKILL",
   });
   assert.ok(endHeld(bin) > 0, "the streamed diff was held");
   assert.equal(r.status, 1, r.stderr);
@@ -1005,7 +1007,7 @@ test("fault matrix control: a git call that never ends is stopped at its limit a
   // 25 other new files at load 15, 17 s behind 60, 4 ms from then on. Beside the suite's own new files the limits below
   // fell on a git whose shell had not reached its first line. So that run is had here, under no limit.
   const firstAt = performance.now();
-  const first = spawnSync(join(hang, "git"), [], { env: { ...process.env, ENNYN_HANG_FIRST: "1" }, timeout: HANG_WATCHDOG_MS });
+  const first = spawnSync(join(hang, "git"), [], { env: { ...process.env, ENNYN_HANG_FIRST: "1" }, timeout: HANG_WATCHDOG_MS, killSignal: "SIGKILL" });
   assert.equal(first.status, 0, "the hung git did not start");
   t.diagnostic(`the first run of the hung git took ${Math.round(performance.now() - firstAt)} ms`);
   const box = mkdtempSync(join(tmpdir(), "en-fault-hang-"));

@@ -42,7 +42,7 @@ export const shq = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
  * @param {string} path PATH @param {Record<string, string | undefined>} [env] @returns {string}
  */
 export function realGit(path, env = { PATH: path }) {
-  const run = (/** @type {string} */ file, /** @type {string[]} */ args) => execFileSync(file, args, { encoding: "utf8", env: { ...env, PATH: path }, timeout: 30_000 }).trim();
+  const run = (/** @type {string} */ file, /** @type {string[]} */ args) => execFileSync(file, args, { encoding: "utf8", env: { ...env, PATH: path }, timeout: 30_000, killSignal: "SIGKILL" }).trim();
   const execPath = run("git", ["--exec-path"]);
   if (!isAbsolute(execPath)) throw new Error(`git --exec-path printed ${JSON.stringify(execPath)}, no absolute path`);
   const git = join(dirname(dirname(execPath)), "bin", "git");

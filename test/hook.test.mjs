@@ -868,7 +868,7 @@ test("hook follows the plugin (review round two): a link, a FIFO or a relative l
   // A FIFO is refused unread: the hook never waits on it.
   rmSync(at);
   if (spawnSync("mkfifo", [at]).status === 0) {
-    const fifo = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "untyped through a fifo"], { cwd: dir, encoding: "utf8", timeout: 20000 });
+    const fifo = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "untyped through a fifo"], { cwd: dir, encoding: "utf8", timeout: 20000, killSignal: "SIGKILL" });
     assert.deepEqual([fifo.status, fifo.signal], [1, null]);
     assert.equal(idleReason(hookStatus(dir)), "foreign");
     rmSync(at);
@@ -1552,7 +1552,7 @@ function blockRow(row, shell) {
   writeFileSync(join(repo, "n.txt"), String(Math.random()));
   if (row.secret) writeFileSync(join(repo, "token.js"), `export const token = "${SECRET}";\n`);
   git(["add", "-A"], { cwd: repo });
-  const r = spawnSync(GIT, ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", row.message ?? "feat: x"], { cwd: repo, env: outside({ HOME: home, ...row.env?.(b) }), encoding: "utf8", timeout: 30000 });
+  const r = spawnSync(GIT, ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", row.message ?? "feat: x"], { cwd: repo, env: outside({ HOME: home, ...row.env?.(b) }), encoding: "utf8", timeout: 30000, killSignal: "SIGKILL" });
   row.undo?.(b);
   return { verdict: r.status !== 0 ? "refused" : r.stderr ? "said" : "pass", stderr: r.stderr };
 }

@@ -471,7 +471,7 @@ test("hook oracle: no wrapper of the check reads as wired unless each shell stop
   const stops = (shell, text) => {
     rmSync(mark, { force: true });
     writeFileSync(hook, text);
-    const r = spawnSync(shell, [hook, message], { cwd: dir, env: { ...process.env, PATH: `${join(dir, "bin")}${delimiter}/usr/bin${delimiter}/bin`, S: "y" }, input: "", timeout: 60_000 });
+    const r = spawnSync(shell, [hook, message], { cwd: dir, env: { ...process.env, PATH: `${join(dir, "bin")}${delimiter}/usr/bin${delimiter}/bin`, S: "y" }, input: "", timeout: 60_000, killSignal: "SIGKILL" });
     return existsSync(mark) && r.status !== 0;
   };
   const line = hookLine("/opt/ennyn/scripts/ennyn.mjs");

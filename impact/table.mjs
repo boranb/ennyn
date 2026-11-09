@@ -12,8 +12,9 @@
  * ("unmeasured: <reason>"); an empty cell would read as "nothing to worry about".
  */
 
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { readFileSync, realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { present, readRegular } from "../core/files.mjs";
 import { isAbsolute, join, posix, relative } from "node:path";
 import { git, gitMaybe, gitRun } from "../core/git.mjs";
@@ -102,6 +103,58 @@ function commandEnd(err, program, timeoutSeconds) {
   const how =
     e.code === "ETIMEDOUT" ? `timed out after ${timeoutSeconds} s` : e.code === "ENOENT" ? `${program}: not found` : e.signal ? `killed by ${e.signal}` : typeof e.status === "number" ? `exit ${e.status}` : errorLine(err);
   return said && !how.includes(said) ? `${how}: ${said}` : how;
+}
+
+/** The runner that holds the reference command's whole process group to its limit (impact/reference-run.mjs). */
+const REFERENCE_RUN = fileURLToPath(new URL("./reference-run.mjs", import.meta.url));
+/**
+ * How long the reference command's group has between SIGTERM and SIGKILL at its limit: time for a wrapper to pass
+ * SIGTERM on and a worker to clean up (a lock file, a temporary folder), and short beside the limit (120 s by default).
+ * Measured with a 2 s limit (npm 10.9.9, Node 22.23.4, macOS): a worker that removes its lock on SIGTERM, under
+ * `npm run`, a shell script without `exec` or alone, was gone with its lock removed and the run ended 60 to 108 ms
+ * after the limit; one that ignores SIGTERM was gone 2.06 to 2.08 s after it.
+ */
+export const REFERENCE_GRACE_MS = 2000;
+/** What the runner itself gets past the limit and the grace before it is killed: its start and its own end. */
+const RUNNER_MS = 10_000;
+
+/**
+ * The reference command's output, run by REFERENCE_RUN; an ending that is not exit 0 throws, shaped as
+ * execFileSync's error (`code` ETIMEDOUT or ENOENT, `signal`, `status`, `stderr`) for commandEnd.
+ * @param {string[]} argv @param {string} cwd @param {number} limitMs @returns {string}
+ */
+function referenceRun(argv, cwd, limitMs) {
+  const r = spawnSync(process.execPath, [REFERENCE_RUN, String(limitMs), String(REFERENCE_GRACE_MS), ...argv], {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe", "pipe"],
+    maxBuffer: 64 * 1024 * 1024,
+    timeout: limitMs + REFERENCE_GRACE_MS + RUNNER_MS,
+    killSignal: "SIGKILL",
+  });
+  const said = String(r.output?.[3] ?? "").split("\n");
+  const pid = Number(/^pid (\d+)$/.exec(said[0] ?? "")?.[1]);
+  const end = said.find((l) => /^(exit|signal|stopped|error)\b/.test(l)) ?? "";
+  const stderr = r.stderr ?? "";
+  if (r.error || !end) {
+    // The runner was stopped (its output past the buffer, its own limit) before it said the command's end: the
+    // command's group goes too. Once the end is said the runner has stopped the group itself, and the group's id may
+    // name another group by now.
+    if (!end && pid > 0 && process.platform !== "win32") {
+      try {
+        process.kill(-pid, "SIGKILL");
+      } catch {
+        // The group is gone.
+      }
+    }
+    throw Object.assign(r.error ?? new Error(`the reference command's runner ended with ${r.signal ?? `exit ${r.status}`}`), { stderr });
+  }
+  if (end === "exit 0") return r.stdout ?? "";
+  if (end === "stopped") throw Object.assign(new Error("stopped at its limit"), { code: "ETIMEDOUT", stderr });
+  const [kind, value] = end.split(" ");
+  if (kind === "error") throw Object.assign(new Error(`${argv[0]}: ${value}`), { code: value, stderr });
+  if (kind === "signal") throw Object.assign(new Error(`killed by ${value}`), { signal: value, stderr });
+  throw Object.assign(new Error(`exit ${value}`), { status: Number(value), stderr });
 }
 
 /**
@@ -256,13 +309,7 @@ function rowS1(c) {
       .map((a) => a.split("{symbol}").join(/** @type {string} */ (c.symbol)));
     commands.push(argv.join(" "));
     try {
-      const out = execFileSync(argv[0], argv.slice(1), {
-        cwd: c.cwd,
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-        maxBuffer: 64 * 1024 * 1024,
-        timeout: config.impact.referenceTimeout * 1000,
-      });
+      const out = referenceRun(argv, c.cwd, config.impact.referenceTimeout * 1000);
       const lines = out.replace(/\s+$/, "").split("\n");
       let text = lines.slice(0, OUTPUT_LINES).join("\n");
       if (lines.length > OUTPUT_LINES) text += "\n" + t("impact.moreLines", { n: lines.length - OUTPUT_LINES }, lang);

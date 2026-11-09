@@ -864,6 +864,7 @@ function runWired(b, projectDir, extra = {}, log) {
         cwd: neutral,
         encoding: "utf8",
         timeout: 20000,
+        killSignal: "SIGKILL",
       });
       const after = tree(b.box);
       const changed = [...after.filter((x) => !before.includes(x)), ...before.filter((x) => !after.includes(x)).map((x) => `gone: ${x}`)];
@@ -976,7 +977,7 @@ test("hooks: the version record reads nothing of the project: a config ENNYN_CON
   put(b.proj, ".ennyn/config.json", "{ broken");
   const env = { ...process.env, ...b.env, CLAUDE_PROJECT_DIR: b.proj, ENNYN_CONFIG: fifo };
   const started = performance.now();
-  const r = spawnSync(process.execPath, [join(ROOT, script)], { input: JSON.stringify({ session_id: "s1", hook_event_name: "SessionStart", source: "startup", cwd: b.proj }), env, cwd: neutral, encoding: "utf8", timeout: 8000 });
+  const r = spawnSync(process.execPath, [join(ROOT, script)], { input: JSON.stringify({ session_id: "s1", hook_event_name: "SessionStart", source: "startup", cwd: b.proj }), env, cwd: neutral, encoding: "utf8", timeout: 8000, killSignal: "SIGKILL" });
   assert.deepEqual([r.status, r.signal, r.stdout, r.stderr], [0, null, "", ""], `${performance.now() - started} ms`);
   assert.equal(readFileSync(join(b.box, "data", "root"), "utf8"), `${ROOT}\n`);
 });

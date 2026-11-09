@@ -830,7 +830,7 @@ function project(config = {}) {
 
 /** @param {string} cwd @param {...string} args */
 function run(cwd, ...args) {
-  const r = spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: "utf8", timeout: 60_000 });
+  const r = spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: "utf8", timeout: 60_000, killSignal: "SIGKILL" });
   return { code: r.status, stdout: r.stdout, stderr: r.stderr };
 }
 

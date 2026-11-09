@@ -27,7 +27,7 @@ const config = { paths: { stateDir: ".git/ennyn" } };
 const SET = ["user.name=t", "user.email=t@t", "commit.gpgsign=false", "protocol.file.allow=always", "gc.auto=0", "maintenance.auto=false"].flatMap((kv) => ["-c", kv]);
 /** @param {string} cwd @param {string[]} args */
 function g(cwd, args) {
-  const r = spawnSync("git", [...SET, "-C", cwd, ...args], { encoding: "utf8", timeout: 60_000 });
+  const r = spawnSync("git", [...SET, "-C", cwd, ...args], { encoding: "utf8", timeout: 60_000, killSignal: "SIGKILL" });
   if (r.status !== 0) throw new Error(`git ${args.join(" ")}: ${r.stderr}`);
   return r.stdout.trim();
 }

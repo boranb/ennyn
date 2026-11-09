@@ -94,6 +94,7 @@ function hook(p, lines, { trigger = "auto", env = {}, input = {}, cwd = p.dir } 
     cwd: p.dir,
     encoding: "utf8",
     timeout: 30000,
+    killSignal: "SIGKILL",
   });
   return { status: r.status, stdout: r.stdout, stderr: r.stderr, reason: lastLog(p)?.reason, log: lastLog(p) };
 }
