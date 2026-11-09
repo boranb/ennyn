@@ -401,7 +401,7 @@ test("short: --list says the same and runs nothing; anything else it does not kn
   assert.equal(list.status, 0, list.stderr);
   assert.deepEqual(list.stdout.trimEnd().split("\n"), [
     `short suite, 2 of 3 test files (changed on work since main at ${git(["rev-parse", "HEAD"], { cwd: dir }).slice(0, 7)}: 0)`,
-    "read list: not used, test/reads.json is missing; node test/short.mjs --record writes it",
+    "read list: not used, test/reads.json is missing; it is recorded on main at the closing",
     `left out ${HOOK}: none of its listed paths changed, and it runs at the closing`,
     "test/a.test.mjs",
     "test/b.test.mjs",
@@ -604,17 +604,23 @@ test("short: with a fresh read list a branch that changes no code runs the short
   put(dir, { "notes/none.md": "changed\n" });
   assert.deepEqual(decide(dir).files, ["test/c.test.mjs"]);
   const tests = JSON.parse(readFileSync(join(dir, READS), "utf8"));
+  // The list as main holds it: one the branch changed is not used.
+  const onMain = () => {
+    writeFileSync(join(dir, READS), JSON.stringify(tests));
+    git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "list", "--", READS], { cwd: dir });
+    git(["branch", "-q", "-f", "main", "work"], { cwd: dir });
+  };
   tests.tests["test/c.test.mjs"].unseen = [];
-  writeFileSync(join(dir, READS), JSON.stringify(tests));
+  onMain();
   const none = decide(dir);
   assert.deepEqual(none.files, []);
   assert.equal(none.says[1], "read list: used, no code changed: 0 of 4 short-suite files read what changed");
   // A listing of the whole tree reads every file.
   tests.tests["test/d.test.mjs"].dirs = [""];
-  writeFileSync(join(dir, READS), JSON.stringify(tests));
+  onMain();
   assert.deepEqual(decide(dir).files, ["test/d.test.mjs"]);
   tests.tests["test/d.test.mjs"].dirs = [];
-  writeFileSync(join(dir, READS), JSON.stringify(tests));
+  onMain();
   const bare = run(script, dir);
   assert.equal(bare.status, 0, bare.stdout + bare.stderr);
   assert.doesNotMatch(bare.stdout, /[abcd] ran/, "no test file ran");
@@ -632,6 +638,8 @@ test("short: a code change, or a read list missing, unreadable, of another shape
     const { files, says } = decide(dir);
     assert.deepEqual(files.filter((f) => f !== GUARDS), short, says.join("\n"));
     assert.match(says[1], why);
+    // On a branch a list it records is one it changed, never used: no line sends it to --record.
+    assert.doesNotMatch(says.join("\n"), /--record(?! writes$)/m, says.join("\n"));
     assert.ok(!says.some((l) => /^(kept|left out) test\/[a-d]\./.test(l)), says.join("\n"));
   };
   put(dir, { "notes/a.md": "changed\n" });
@@ -643,22 +651,23 @@ test("short: a code change, or a read list missing, unreadable, of another shape
     put(dir, { "notes/a.md": "changed\n" });
   }
   rmSync(join(dir, READS));
-  asBefore(/^read list: not used, test\/reads\.json is missing; node test\/short\.mjs --record writes it$/);
+  asBefore(/^read list: not used, test\/reads\.json is missing; it is recorded on main at the closing$/);
   mkdirSync(join(dir, READS));
   asBefore(/^read list: not used, test\/reads\.json could not be read \(/);
   rmSync(join(dir, READS), { recursive: true });
   /** @type {[unknown, RegExp][]} */
   const wrong = [
     ["{", /is not JSON$/],
+    ["", /is not JSON$/],
     [null, /does not have the shape --record writes$/],
     [{ version: 2, code: "x", tests }, /does not have the shape/],
     [{ version: 1, tests }, /does not have the shape/],
     [{ version: 1, code: "x", tests: [] }, /does not have the shape/],
     [{ version: 1, code: "x", tests: { ...tests, "test/a.test.mjs": { reads: "notes/a.md", dirs: [], unseen: [] } } }, /does not have the shape/],
     [{ version: 1, code: "x", tests: { ...tests, "test/a.test.mjs": { reads: [1], dirs: [], unseen: [] } } }, /does not have the shape/],
-    [{ ...JSON.parse(original), tests: { ...tests, "test/e.test.mjs": tests["test/d.test.mjs"] } }, /was recorded on other test files; node test\/short\.mjs --record$/],
+    [{ ...JSON.parse(original), tests: { ...tests, "test/e.test.mjs": tests["test/d.test.mjs"] } }, /was recorded on other test files; it is recorded on main at the closing$/],
     [{ ...JSON.parse(original), tests: { "test/a.test.mjs": tests["test/a.test.mjs"] } }, /was recorded on other test files/],
-    [{ ...JSON.parse(original), code: "0".repeat(64) }, /was recorded on other code; node test\/short\.mjs --record$/],
+    [{ ...JSON.parse(original), code: "0".repeat(64) }, /was recorded on other code; it is recorded on main at the closing$/],
   ];
   for (const [list, why] of wrong) {
     writeFileSync(join(dir, READS), typeof list === "string" ? list : JSON.stringify(list));
@@ -666,6 +675,17 @@ test("short: a code change, or a read list missing, unreadable, of another shape
   }
   writeFileSync(join(dir, READS), original);
   assert.deepEqual(decide(dir).files, ["test/a.test.mjs", "test/c.test.mjs"], "the list as written is used");
+
+  // The list rewritten on the branch so that a.test.mjs, which reads what changed, reads nothing: not used, written,
+  // staged or committed. The list main holds, moved with main, narrows again.
+  writeFileSync(join(dir, READS), JSON.stringify({ version: 1, code: codeHash(dir), tests: { ...tests, "test/a.test.mjs": { reads: [], dirs: [], unseen: [] } } }));
+  for (const step of ["written", "staged", "committed"]) {
+    if (step === "staged") git(["add", READS], { cwd: dir });
+    if (step === "committed") git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "list", "--", READS], { cwd: dir });
+    asBefore(/^read list: not used, test\/reads\.json changed on this branch; it is recorded on main at the closing$/);
+  }
+  git(["branch", "-q", "-f", "main", "work"], { cwd: dir });
+  assert.deepEqual(decide(dir).files, ["test/c.test.mjs"], "main's list narrows");
 
   // Code changed since the recording, committed on the branch: the hash says so even when the list came along.
   put(dir, { "core/glob.mjs": `${readFileSync(join(dir, "core/glob.mjs"), "utf8")}// changed\n` });

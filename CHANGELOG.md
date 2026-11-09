@@ -2,6 +2,7 @@
 
 ## Unreleased (0.0.x)
 
+- `npm run test:short` no longer narrows by a read list the branch itself changed: such a branch runs the short set and says why, and a stale or missing list says it is recorded on main at the closing instead of sending the branch to `--record` (cycle 29 audit of the short suite).
 - `ennyn convergence` reads the recurrence ladder from the ledger: under its block it prints each file at rung 2 and at the fix-loop brake over the cycle and the two before it, with why and its rows, and exits 1 when a file at the brake got a new patch node or its patch nodes could not be looked for.
 - `ennyn status` prints the journal when the start record is a link, a folder, unreadable or not a record, says HEAD and time not measured on stderr and exits 1; `--line` prints its line. `journal start` names why it refuses a record.
 - The task brief keeps a changelog to the orchestrator (the agent reports its line), keeps tests in temporary folders with a temporary `HOME` for settings probes, runs a destructive command only in an operating-system box or as a stand-in, and has a safety-path design measured before it is briefed. The closing's push fetches first and does not push a branch behind its upstream (`skills/cycle/push.md`).

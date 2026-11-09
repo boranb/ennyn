@@ -23,6 +23,7 @@
  * recorded by `--record`, which runs the short suite's files with test/reads.mjs preloaded, and it holds a hash of
  * every code file it was recorded on: any code change, or a list that is missing, unreadable or recorded on other
  * code, runs the short set as above and says why. A file that changes what a test reads only through code is code.
+ * So does a branch that changed the list itself: only the list main holds, recorded at the closing, narrows.
  *
  * Node 20.0.0's `node --test` takes no pattern that leaves files out, so the file list is built here;
  * test/short.test.mjs keeps it true.
@@ -50,6 +51,8 @@ export const ACCOUNTING = "^guards: every test that reads this repository has gu
 
 /** The read list, from the top of the tree. */
 export const READS = "test/reads.json";
+/** Where the list is written: a list a branch records is one it changed, so it is never used there. */
+const CLOSING = `it is recorded on ${MAIN} at the closing`;
 /** A change to code changes what tests read, so the read list says nothing about it. @param {string} path */
 export const isCode = (path) => /\.(?:mjs|cjs|js)$/.test(path) || /(?:^|\/)package\.json$/.test(path);
 
@@ -177,6 +180,8 @@ export function choose(all, changed, read, list = { why: `${READS} was not read`
   let files = short;
   if (code !== undefined) mode = `not used, ${code} is code`;
   else if ("why" in list) mode = `not used, ${list.why}`;
+  // A list the branch wrote is the branch's word on what its tests read: one that leaves a gate test out is no reason.
+  else if (changed.paths.includes(READS)) mode = `not used, ${READS} changed on this branch; ${CLOSING}`;
   else {
     /** @type {Map<string, string>} */
     const kept = new Map();
@@ -237,7 +242,7 @@ export function readList(root, all, env = process.env) {
   } catch (err) {
     return { why: `${READS} could not be read (${/** @type {Error} */ (err).message})` };
   }
-  if (text === null) return { why: `${READS} is missing; node test/short.mjs --record writes it` };
+  if (text === null) return { why: `${READS} is missing; ${CLOSING}` };
   /** @type {any} */
   let list;
   try {
@@ -251,8 +256,8 @@ export function readList(root, all, env = process.env) {
     Object.values(list.tests).every((t) => t !== null && typeof t === "object" && strings(t.reads) && strings(t.dirs) && strings(t.unseen));
   if (!shaped) return { why: `${READS} does not have the shape --record writes` };
   const short = all.filter((f) => !(f in SLOW));
-  if (JSON.stringify(Object.keys(list.tests).sort()) !== JSON.stringify(short)) return { why: `${READS} was recorded on other test files; node test/short.mjs --record` };
-  if (list.code !== codeHash(root, env)) return { why: `${READS} was recorded on other code; node test/short.mjs --record` };
+  if (JSON.stringify(Object.keys(list.tests).sort()) !== JSON.stringify(short)) return { why: `${READS} was recorded on other test files; ${CLOSING}` };
+  if (list.code !== codeHash(root, env)) return { why: `${READS} was recorded on other code; ${CLOSING}` };
   return { tests: list.tests };
 }
 
