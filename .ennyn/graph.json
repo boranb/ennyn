@@ -4456,7 +4456,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "security",
-      "source": "cycle 2026-11-04 (20) closing on Windows: the environment holds NODE_TLS_REJECT_UNAUTHORIZED=0, ennyn deps printed Node's warning and a clean count; rerun in WSL with TLS verified (NODE_EXTRA_CA_CERTS) it gave the same count",
+      "source": "cycle 2026-11-04 (20) closing on Windows: the environment holds NODE_TLS_REJECT_UNAUTHORIZED=0, ennyn deps printed Node's warning and a clean count; rerun in WSL with TLS verified (NODE_EXTRA_CA_CERTS) it gave the same count; cycle 28 closing on the Windows machine, 2026-11-09: deps printed 0 advisories, 0 unmeasured and exit 0 beside node's TLS warning",
       "since": 20
     },
     {
@@ -5214,17 +5214,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "shell-box-hardening",
-      "title": "test/shell-box.mjs unsafeTexts() misses shells that drop the startup file (`bash --posix -c`, `BASH_ENV=`, `unset BASH_ENV`, `/bin/sh -c`) and absolute program paths (`/usr/bin/pkill`), where signal 0 reached a real process; read them before any text runs; cycle 27 made the check refuse login and interactive shells, PATH changes and startup files, and made run() throw on them, yet round two still escaped it with harmless texts (bash --posix and -p bring the builtin kill back; \"$BASH\" -l, path_helper, PATH set by read, printf -v, declare or a loop; env -P; cd /usr/bin && ./pkill). The next step is an operating-system boundary, not a longer word list: real kill programs and signals to other processes unreachable from the box (macOS sandbox-exec deny signal to others, a Linux pid namespace), measured first",
-      "value": "high",
-      "cost": "S",
-      "cluster": "gates",
-      "source": "cycle 2026-11-06 (25), T3 round 2 (c25-t3-r2-03); the cycle's kill lab sent real signals before the box existed; cycle 2026-11-08 (27): a reviewer's probe bash -lc \"$(echo pkill) node\" ran the real /usr/bin/pkill node through the box (a login shell's /etc/profile path_helper put /usr/bin first; exit 0, what it stopped unmeasured) (c27-t1-code-r1-01); round two of T1's security review escaped the new check (c27-t1-sec-r2-09)",
-      "since": 25
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "kill-reader-nested-literal-loop",
       "title": "The kill reader trusts a loop over literal PIDs only when for is the command's first word; inside { }, if, a function or another loop it refuses (strict side, no kill passes)",
       "value": "low",
@@ -5607,19 +5596,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "convergence-fix-loop-per-file",
-      "title": "ennyn convergence reads the recurrence ladder of skills/cycle/report-formats.md from the ledger: under its block, over this cycle and the two before it, each file at rung 2 (two of them with rows of one class, or previous-fix rows this cycle) and at the brake (rows of one class in all three, previous-fix two cycles running, or a round that opened more fix-introduced rows than it fixed), with the class and the rows; exit 1 when a file at the brake gets a new patch node. The ladder's prose then shrinks to the decision it asks for",
-      "value": "high",
-      "cost": "S",
-      "cluster": "gates",
-      "mechanization": true,
-      "sourceClass": "unreadable-shape-passes",
-      "source": "2026-11-08, cycle 27 convergence: the most recurring class, unreadable-shape-passes (18), came from patching one reader; replaces reader-differential-from-bash-grammar; back-test on 1,341 ledger rows of cycles 16-27: 310 (23%) were fix-introduced; 130 (9%) came after their file already had findings in three cycles, most in skills/cycle/task-brief.md (24), kill-targets.mjs (17) and scripts/ennyn.mjs (17); one class per file reached two cycles far less often (4%), since class names scatter, so the ladder counts per file; the window, measured: with no window 12 files were at the brake after cycle 27, with three cycles one (kill-targets.mjs), and the back-test over cycles 18-27 braked 10 files, 55 rows coming after",
-      "since": 27
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "affected-tests-command",
       "title": "init finds the project's own affected-test command and offers it as commands.affectedTest (jest --findRelatedTests, vitest related, pytest --testmon, go test on the changed packages, cargo test -p); the landing runs it before the fast test command and push-check counts it for a push with no code. Ennyn has this for itself only (test/short.mjs with test/reads.json)",
       "value": "high",
@@ -5648,6 +5624,18 @@
       "cost": "S",
       "cluster": "method",
       "source": "review of google/elephant-goldfish-model (Apache-2.0, main), 2026-11-09: its review loop and synthesizer, 'never count it as a reviewer with zero findings'. Ennyn reports checks as found, clean or unmeasured, but step 7 has no rule for a reviewer that did not run",
+      "since": 28
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "cycle-28-rows-from-mac",
+      "title": "Cycle 28 was closed on the Windows machine from its commits alone: its findings rows (the kept folder a kept folder outside the repository), its journal (.git/ennyn on the Mac) and which node its fourth task held are on the Mac. There: append the kept rows to .ennyn/findings.jsonl, link their new: class names, run ennyn convergence --cycle 28 --from a916a53 and put its block in the handoff archive's cycle 28 section, then journal close; a fourth task that did not land is named and its branch kept",
+      "value": "high",
+      "cost": "S",
+      "cluster": "metrics",
+      "gate": "user",
+      "source": "2026-11-09: cycle 28 closed on the Windows machine, then 29; convergence --cycle 28 read 0 rows and exited 1",
       "since": 28
     }
   ],
@@ -6408,6 +6396,18 @@
     {
       "id": "kill-reader-shell-text-runtime-name",
       "title": "Text given to another shell is read again with the outer text's kill word and constructs; a program name a run joins to letters is refused, and a shell's word holding $ or a backtick is read again (504cd49)",
+      "status": "done",
+      "finished": "2026-11-08"
+    },
+    {
+      "id": "convergence-fix-loop-per-file",
+      "title": "ennyn convergence prints, under its block, each file at rung 2 and at the fix-loop brake over cycle N and the two before it, with why and its rows, and exits 1 when a braked file got a new patch node or its patch nodes cannot be looked for; the ladder prose in report-formats.md keeps only the closing's decision (bd4aa41)",
+      "status": "done",
+      "finished": "2026-11-08"
+    },
+    {
+      "id": "shell-box-hardening",
+      "title": "test/shell-box.mjs runs every text through sandbox-exec on macOS (a signal to a process outside the sandbox, a connection out and a write to a named pipe denied; the fence is checked when the box is made), and the push reader's real-shell corpus runs inside it; 12 of cycle 27's texts reach an outside sleeper 0/12 (12/12 without). On Linux the boundary is the container, whose other processes a text can still reach; elsewhere the box throws (808fc0a)",
       "status": "done",
       "finished": "2026-11-08"
     }
