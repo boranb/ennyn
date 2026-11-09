@@ -492,10 +492,11 @@ test("plugin: the repository writes no offered rule: it runs cycles, and such a 
 
 test("plugin: Claude Code keeps the repository's ask rules as one file: the record holds that file whole, and its rules stop what they name", () => {
   const rec = JSON.parse(read("test/reference/claude-code.json"));
-  const own = JSON.parse(read(".claude/settings.json")).permissions.ask;
-  for (const id of ["ask-file-whole-push", "ask-file-whole-gh"]) {
+  // The whole file, not its ask list: one wrong value of any key and Claude Code skips the file, every ask rule with it.
+  const own = JSON.parse(read(".claude/settings.json"));
+  for (const id of ["repo-settings-whole-push", "repo-settings-whole-gh"]) {
     const cell = rec.cells.find((/** @type {{ id: string }} */ c) => c.id === id);
-    assert.deepEqual(JSON.parse(cell.files[".claude/settings.json"]).permissions.ask, own, id);
+    assert.deepEqual(JSON.parse(cell.files[".claude/settings.json"]), own, `${id}: .claude/settings.json changed since the record; add cells holding it whole (node test/reference/claude-code.mjs add) and name them here`);
     assert.match(cell.cc.call, /^stopped/, id);
   }
 });
@@ -617,6 +618,8 @@ test("plugin: hook commands point at files that exist; manifests agree on name a
   assert.equal(plugin.name, pkg.name);
   assert.equal(market.name, pkg.name);
   assert.deepEqual(market.plugins.map((/** @type {any} */ p) => p.name), [pkg.name]);
+  // The install source is this repository's root: another repository or a URL would install code no review here read.
+  assert.deepEqual(market.plugins.map((/** @type {any} */ p) => p.source), ["./"], "the marketplace entry installs from this repository's root");
   assert.equal(plugin.version, pkg.version, "a push without a version bump never reaches users; bump both together");
   // One description for the package, the plugin and its marketplace entry: the install description says what the hooks do.
   assert.deepEqual([plugin.description, market.plugins[0].description], [pkg.description, pkg.description]);
