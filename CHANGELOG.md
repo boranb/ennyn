@@ -2,6 +2,7 @@
 
 ## Unreleased (0.0.x)
 
+- Tests: the shell box runs each text on a Linux host outside a container (WSL, a CI machine) in namespaces and a root of its own, in a session with no terminal: no process, port or path outside its folders is there, a program outside that root is refused by name, and its tests no longer hang when no boundary holds.
 - On Windows a stopped `ennyn mutate` or git process tree is waited for up to 5 s; a stop that does not take ends the mutate pass at once (the CLI no longer waits for the command) and says the command is still running, by its PID, then what became of the file under test.
 - `npm run test:short` no longer narrows by a read list the branch itself changed: such a branch runs the short set and says why, and a stale or missing list says it is recorded on main at the closing instead of sending the branch to `--record` (cycle 29 audit of the short suite).
 - A task agent writes two paragraphs before its first edit, what the task asks and how the code works now as the brief says, and opens its report with them; the orchestrator reads them against the node before review, and a miss or an addition is a ledger row with the new `source: brief` (round 0, review, no file, medium or low, fixed or refuted), which `ennyn convergence` counts in no column, round, recurring class or ladder and lists under its block.

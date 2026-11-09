@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { mayHold } from "../adapters/claude-code/config-place.mjs";
 import { pushAliases, pushSpelling } from "../adapters/claude-code/push-spellings.mjs";
 import { SPELLINGS, readRecord } from "./reference/claude-code.mjs";
-import { inFence, shellBox, unsafeTexts } from "./shell-box.mjs";
+import { inFence, inRoot, shellBox, unsafeTexts } from "./shell-box.mjs";
 
 /**
  * Pushes left alone, which only the rule stops: a shell reaches each, and Claude Code's parser finishes on each, so the rule
@@ -1038,12 +1038,19 @@ test("push reader: a real shell and a real git agree: what is refused reaches a 
     for (const m of ["two", "three"]) git(cwd, "commit", "-q", "--allow-empty", "-m", m);
     for (const dir of ["x", "x y", "sub"]) mkdirSync(join(cwd, dir));
     const start = git(cwd, "rev-parse", "HEAD").trim();
+    // Each program the corpus runs is in a folder the box's boundary holds (a Homebrew git or zsh is not there in the
+    // namespace's root, and a line would fail for that, not for the reader): refused here, by name.
+    const held = (/** @type {string} */ name, /** @type {string} */ at) => {
+      if (!inRoot(at)) throw new Error(`this test needs ${name}: ${at} is in no folder the namespace's root holds (/usr, /etc, /bin, /lib)`);
+      return at;
+    };
+    held("git", real);
     // git writes its arguments and runs the real one; a second git behind a shell or an alias is seen by the remote.
     writeFileSync(join(bin, "git"), `#!/bin/sh\nprintf '%s\\n' "$*" >> '${log}'\nexec '${real}' "$@"\n`, { mode: 0o755 });
     // Only the programs named here are on PATH, git's own scripts' among them: a corpus line can reach nothing else.
     for (const name of ["sh", "bash", "zsh", "xargs", "find", "cat", "grep", "sed", "awk", "tee", "env", "nohup", "basename", "dirname", "uname", "tr", "rm", "mkdir", "cp", "mv", "ls", "wc", "cut", "sort", "expr", "head", "tail", "date"]) {
       const at = spawnSync("/bin/sh", ["-c", `command -v ${name}`], { encoding: "utf8" }).stdout.trim();
-      if (at) writeFileSync(join(bin, name), `#!/bin/sh\nexec ${at} "$@"\n`, { mode: 0o755 });
+      if (at) writeFileSync(join(bin, name), `#!/bin/sh\nexec ${held(name, at)} "$@"\n`, { mode: 0o755 });
     }
     // Claude Code runs the user's shell, and shells differ here: zsh does not split ${IFS}, macOS's bash 3.2 cannot read
     // an apostrophe in a here-document inside $(…), only zsh reads an apostrophe in "${x:-…}" as a letter, and bash
@@ -1055,9 +1062,8 @@ test("push reader: a real shell and a real git agree: what is refused reaches a 
     const reached = (/** @type {string} */ command) =>
       shells.some((shell) => {
         for (const f of [log, received]) writeFileSync(f, "");
-        // Inside the shell box's boundary: no signal, connection or named pipe reaches a process outside.
-        const [program, ...args] = inFence([join(bin, shell), "-c", command]);
-        const r = spawnSync(program, args, { cwd, env, input: "", encoding: "utf8", timeout: 20000 });
+        // Inside the shell box's boundary, with this test's folder kept and its time limit holding there.
+        const r = inFence([join(bin, shell), "-c", command], { keep: [box], limit: 20000, cwd, env, input: "", encoding: "utf8" });
         assert.equal(r.signal, null, `${shell} did not end: ${command}`);
         const hit = readFileSync(received, "utf8") !== "" || readFileSync(log, "utf8").split("\n").some(sends);
         // The two lines a rejected push leaves half done.

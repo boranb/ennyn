@@ -13,11 +13,11 @@ import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { killTarget } from "../adapters/claude-code/kill-targets.mjs";
-import { FIRST_PID_NS, PROFILE, inFence, pickFence, refusedExit, shellBox, unsafeTexts } from "./shell-box.mjs";
+import { FIRST_PID_NS, PROFILE, UNSHARE_ARGS, fenceExit, fenceName, fencedArgv, inFence, inRoot, namespaceArgv, pickFence, refusedExit, shellBox, unsafeTexts } from "./shell-box.mjs";
 
 /** A kill by a literal PID or process group, a job of this shell, a PID this text took from `$!` or Start-Process, and text that only names a kill. */
 const PASS = [
@@ -355,7 +355,10 @@ function stopped(text, calls) {
  * starts bash in a session of its own, and a shell with no job control keeps its children in its group. Its parent is
  * no anchor: on bash 5 a coproc's shell outlives the top shell and is reparented (measured on 5.1 and 5.2), so a walk
  * up from the kill never met the top shell. The top shell leads that group and is no start of the text's; a process
- * outside the box, the test runner's own, is in another group.
+ * outside the box, the test runner's own, is in another group. In the box's own PID namespace a process outside is
+ * not there at all, as a gone one is not: a number past the PID a new process gets now was never one of the text's.
+ * Not the stand-in's own PID, which can be the top shell's (bash runs a text's last command in its own process), and
+ * not ns_last_pid: dash reads a file a byte at a time, and that file gives its first digit only (measured: 4 for 45).
  * @param {Record<string, string>} [lookups] a lookup stand-in's lines, in place of the answer no process has
  */
 function killStands(lookups = {}) {
@@ -368,7 +371,8 @@ function killStands(lookups = {}) {
   const kill = [
     pgid,
     'own=""',
-    'for a in "$@"; do t=${a#-}; case "$t" in \'\'|*[!0-9]*) continue;; esac; g=$(pgid "$t"); [ "$g" = "$BOX_TOP" ] && [ "$t" != "$BOX_TOP" ] && own="$own $t"; [ -z "$g" ] && own="$own $t"; done',
+    'last=; [ -r /proc/self/stat ] && last=$(/bin/sh -c \'echo "$$"\')',
+    'for a in "$@"; do t=${a#-}; case "$t" in \'\'|*[!0-9]*) continue;; esac; g=$(pgid "$t"); [ "$g" = "$BOX_TOP" ] && [ "$t" != "$BOX_TOP" ] && own="$own $t"; [ -z "$g" ] && { [ -z "$last" ] || [ "$t" -le "$last" ]; } && own="$own $t"; done',
     // One write, as the stand-ins' own lines.
     "line=$(printf '%s\\037@own%s' \"$$\" \"$own\" | tr ' ' '\\037'); printf '%s\\n' \"$line\" >> \"$LOG\"",
   ].join("\n");
@@ -435,15 +439,18 @@ test("kill reader: a real bash agrees on generated texts: nothing it passes stop
 test("kill reader: the differential judge counts a process outside the box as a lookup, and a sleep the text started, coproc or not, as its own", () => {
   const sleep = ["/bin/sleep", "/usr/bin/sleep"].find((p) => existsSync(p));
   assert.ok(sleep, "this harness needs sleep");
-  // The test's own sleep, outside the box; the stand-in kill signals nothing, and the texts ask for signal 0.
+  // The test's own sleep, outside the box; the stand-in kill signals nothing, and the texts ask for signal 0. The box
+  // is made inside the sleeper's try: where it throws, the sleeper is stopped.
   const outside = spawn(sleep, ["30"], { stdio: "ignore" });
-  const box = shellBox("en-kill-judge-", { stands: killStands({ pgrep: `echo ${outside.pid}` }), real: ["cat", "tr"] });
+  /** @type {ReturnType<typeof shellBox> | undefined} */
+  let box;
   try {
+    box = shellBox("en-kill-judge-", { stands: killStands({ pgrep: `echo ${outside.pid}` }), real: ["cat", "tr"] });
     const texts = ["kill -0 $(pgrep x)", "sleep 1 & kill -0 $!", "coproc P { kill -0 $(pgrep x); }", "coproc P { sleep 1 & kill -0 $!; }", "coproc P { sleep 1 & pid=$!; kill -- -$pid; }", "kill -0 $$", 'sh -c "kill -0 $$"', "bash -c 'kill -0 $PPID'"];
     assert.deepEqual(unsafeTexts(texts), []);
     assert.deepEqual(box.builtins("kill", ["{}", "coproc P { {}; }"]), [], "a context where the kill builtin is still on");
     const judged = texts.map((text) => {
-      const { calls } = box.run(text);
+      const { calls } = /** @type {ReturnType<typeof shellBox>} */ (box).run(text);
       return [text, calls.some((c) => c[1] === "kill") ? stopped(text, calls) : "no kill ran"];
     });
     // macOS's bash 3.2 has no coproc; Linux's bash 5 runs it, and there the coproc's shell outlives the top shell.
@@ -454,7 +461,7 @@ test("kill reader: the differential judge counts a process outside the box as a 
       [texts[5], "lookup"], [texts[6], "lookup"], [texts[7], "lookup"],
     ]);
   } finally {
-    box.close();
+    box?.close();
     outside.kill();
   }
 });
@@ -638,8 +645,9 @@ test("shell box: a text past the word check runs the real kill, and the box's bo
   assert.deepEqual(unsafeTexts([text]), []);
   const sleep = ["/bin/sleep", "/usr/bin/sleep"].find((p) => existsSync(p));
   assert.ok(sleep, "this harness needs sleep");
-  const outside = spawn(sleep, ["30"], { stdio: "ignore" });
+  // The box first: where it throws, this test has started nothing.
   const box = shellBox("en-kill-fence-", { stands: {}, real: ["cat"] });
+  const outside = spawn(sleep, ["30"], { stdio: "ignore" });
   try {
     writeFileSync(join(box.box, "pid"), String(outside.pid));
     const { status } = box.run(text);
@@ -654,6 +662,11 @@ test("shell box: a text past the word check runs the real kill, and the box's bo
       const nested = spawnSync("/usr/bin/sandbox-exec", ["-p", PROFILE, process.execPath, "--input-type=module", "-e", `import { shellBox } from ${JSON.stringify(new URL("./shell-box.mjs", import.meta.url).href)}; shellBox("en-kill-nested-", { stands: {}, real: [] }).close();`], { encoding: "utf8", timeout: 30000 });
       assert.match(nested.stderr, /a signal left the sandbox/);
       assert.notEqual(nested.status, 0);
+    } else if (box.fence === "namespace") {
+      // Linux outside a container: the sleeper is in no PID namespace the box's shell sees, so the kill finds no such
+      // process (status 1) and the sleeper lives.
+      assert.equal(status, 1);
+      assert.deepEqual([outside.exitCode, outside.signalCode], [null, null], "a signal left the namespace");
     } else {
       // A container: the boundary is the container's, and the test's own sleeper is inside it, so the same text reaches it.
       assert.equal(box.fence, "container");
@@ -661,35 +674,43 @@ test("shell box: a text past the word check runs the real kill, and the box's bo
       assert.equal(outside.signalCode, "SIGTERM");
     }
   } finally {
-    box.close();
     outside.kill();
+    box.close();
   }
 });
 
-test("shell box: a text past the word check reaches no outside server over a Unix socket or a named pipe on macOS", async () => {
+test("shell box: what a text past the word check reaches over a Unix socket, a TCP port or a named pipe is its boundary's", async () => {
+  const perl = ["/usr/bin/perl", "/bin/perl"].find((p) => existsSync(p));
+  assert.ok(perl, "this harness needs perl");
+  // The box first: where it throws, this test has opened no server.
+  const box = shellBox("en-kill-chan-", { stands: {}, real: [] });
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "en-kill-chan-")));
   const sock = join(dir, "s");
   /** @type {string[]} */
   const got = [];
+  /** @type {string[]} */
+  const tcpGot = [];
   const server = createServer((c) => c.on("data", (d) => got.push(String(d))).on("end", () => c.end()));
-  // A socket's path has a short limit (104 bytes on macOS), and the temporary root is deep: each side names it relatively.
-  await new Promise((resolve) => server.listen(relative(process.cwd(), sock), () => resolve(undefined)));
-  const perl = ["/usr/bin/perl", "/bin/perl"].find((p) => existsSync(p));
-  assert.ok(perl, "this harness needs perl");
+  const tcp = createServer((c) => c.on("data", (d) => tcpGot.push(String(d))).on("end", () => c.end()));
   // screen's server on macOS listens on a named pipe in SCREENDIR; asked to quit from a box text, it quit (cycle 28's review).
   const screen = process.platform === "darwin" ? "/usr/bin/screen" : null;
   const name = `enchan${process.pid}`;
   const screenDir = join(dir, "screens");
   const ask = (/** @type {string[]} */ args) => spawnSync(/** @type {string} */ (screen), args, { env: { ...process.env, SCREENDIR: screenDir }, encoding: "utf8", timeout: 10000 });
-  if (screen) {
-    mkdirSync(screenDir, { mode: 0o700 });
-    assert.equal(ask(["-dmS", name, perl, "-e", "select(undef,undef,undef,30)"]).status, 0);
-  }
-  const box = shellBox("en-kill-chan-", { stands: {}, real: [] });
   try {
+    // A socket's path has a short limit (104 bytes on macOS), and the temporary root is deep: each side names it relatively.
+    await new Promise((resolve) => server.listen(relative(process.cwd(), sock), () => resolve(undefined)));
+    await new Promise((resolve) => tcp.listen(0, "127.0.0.1", () => resolve(undefined)));
+    const port = /** @type {import("node:net").AddressInfo} */ (tcp.address()).port;
+    if (screen) {
+      mkdirSync(screenDir, { mode: 0o700 });
+      assert.equal(ask(["-dmS", name, perl, "-e", "select(undef,undef,undef,30)"]).status, 0);
+    }
     const text = `${perl} -MIO::Socket::UNIX -e '$c = IO::Socket::UNIX->new(Peer => shift) or exit 7; print $c "reached\\n"' ${relative(box.cwd, sock)}`;
-    assert.deepEqual(unsafeTexts([text]), []);
+    const tcpText = `${perl} -MIO::Socket::INET -e '$c = IO::Socket::INET->new(PeerAddr => "127.0.0.1", PeerPort => shift, Timeout => 3) or exit 7; print $c "reached\\n"' ${port}`;
+    assert.deepEqual(unsafeTexts([text, tcpText]), []);
     const { status } = box.run(text);
+    const tcpStatus = box.run(tcpText).status;
     await new Promise((resolve) => setTimeout(resolve, 300));
     if (box.fence === "sandbox") {
       assert.deepEqual([status, got], [7, []], "a connection left the sandbox");
@@ -697,15 +718,22 @@ test("shell box: a text past the word check reaches no outside server over a Uni
       assert.deepEqual(unsafeTexts([quit]), []);
       box.run(quit);
       assert.match(ask(["-ls"]).stdout, new RegExp(`\\.${name}\\s`), "a screen server outside quit at a box text's word");
+    } else if (box.fence === "namespace") {
+      // The namespace's root holds no path outside the box's folders, so the socket's path is not there; its own
+      // network has no route to a port outside.
+      assert.deepEqual([status, got], [7, []], "a Unix socket outside the box's folders was reached");
+      assert.deepEqual([tcpStatus, tcpGot], [7, []], "a TCP connection left the namespace");
     } else {
-      // A container: the boundary is the container's, and this server is inside it, so the same text reaches it.
+      // A container: the boundary is the container's, and these servers are inside it, so the same texts reach them.
       assert.equal(box.fence, "container");
       assert.deepEqual([status, got.join("")], [0, "reached\n"]);
+      assert.deepEqual([tcpStatus, tcpGot.join("")], [0, "reached\n"]);
     }
   } finally {
-    box.close();
     if (screen) ask(["-S", name, "-X", "quit"]);
     server.close();
+    tcp.close();
+    box.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -719,21 +747,57 @@ test("shell box: the boundary check reads a refused signal only, never a sleeper
   const live = spawn(sleep, ["30"], { stdio: "ignore" });
   const saved = process.env;
   try {
+    const fence = fencedArgv(["/bin/sh", "-c", "x"]);
     if (process.platform === "darwin") {
       // macOS: a signal to a sleeper that is gone fails as well, and is no refusal.
       assert.notEqual(refusedExit(gone.pid), 0, "a gone sleeper read as fenced");
+      assert.equal(fenceExit("sandbox", gone.pid), 5, "a gone sleeper read as fenced");
       // An exported function named kill that succeeds would read as a signal let out; the check runs without it.
       process.env = { ...saved, "BASH_FUNC_kill%%": "() { return 0; }" };
       assert.equal(refusedExit(live.pid), 0, "a shell function stood for kill in the check");
       process.env = saved;
-      assert.equal(refusedExit(live.pid), 0, "the sandbox let the signal out");
+      assert.equal(fenceExit("sandbox", live.pid), 0, "the sandbox let the signal out");
       // A test's own shell goes in the same sandbox.
-      assert.deepEqual(inFence(["/bin/sh", "-c", "x"]), ["/usr/bin/sandbox-exec", "-p", PROFILE, "/bin/sh", "-c", "x"]);
+      assert.deepEqual(fence, ["/usr/bin/sandbox-exec", "-p", PROFILE, "/bin/sh", "-c", "x"]);
+    } else if (fence.length > 3) {
+      // Linux outside a container: the namespace answers no such process for a sleeper that is gone too, so the check
+      // asks the sleeper itself, before and after.
+      assert.equal(fenceExit("namespace", gone.pid), 5, "a gone sleeper read as fenced");
+      assert.equal(fenceExit("namespace", undefined), 5, "a sleeper that did not start read as fenced");
+      // A sleeper that ends during the check (here the stand-in check stops it by its PID) is no refusal, though node
+      // has not reaped it yet.
+      const dies = spawn(sleep, ["30"], { stdio: "ignore" });
+      assert.equal(fenceExit("namespace", dies.pid, ["/bin/sh", "-c", `kill ${dies.pid}; exit 0`, "check"]), 7, "a sleeper gone during the check read as fenced");
+      // Without the namespace the signal goes: the check's own reading, not the namespace's absence, says fenced.
+      assert.equal(fenceExit("namespace", live.pid, []), 3, "a signal that went read as fenced");
+      process.env = { ...saved, "BASH_FUNC_kill%%": "() { return 0; }" };
+      assert.equal(refusedExit(live.pid, "namespace"), 0, "a shell function stood for kill in the check");
+      process.env = { ...saved, "BASH_FUNC_kill%%": '() { echo "No such process" >&2; return 1; }' };
+      assert.equal(refusedExit(live.pid, "namespace", []), 3, "a shell function read a signal that went as refused");
+      // Nor a kill a startup file defines: the check's shell reads none (BASH_ENV, ENV), and the namespace's PID 1 is a
+      // bash in POSIX mode, which reads none either.
+      const startup = join(realpathSync(mkdtempSync(join(tmpdir(), "en-kill-env-"))), "env");
+      writeFileSync(startup, 'kill() { [ "$2" = "$$" ] && return 0; echo "No such process" >&2; return 1; }\n');
+      process.env = { ...saved, BASH_ENV: startup, ENV: startup };
+      assert.equal(refusedExit(live.pid, "namespace", []), 3, "a startup file's kill read a signal that went as refused");
+      assert.equal(fenceExit("namespace", live.pid), 0, "a startup file broke the namespace's check");
+      // The namespace's PID 1 reads none for a test's own command either: a cd of a startup file's would leave the
+      // machine's root in place (the new root's step fails, 125).
+      writeFileSync(startup, "cd() { :; }\n");
+      assert.equal(inFence(["/bin/sh", "-c", "exit 0"], { env: { ...saved, BASH_ENV: startup }, encoding: "utf8" }).status, 0, "the namespace's PID 1 read a startup file");
+      process.env = saved;
+      rmSync(dirname(startup), { recursive: true, force: true });
+      assert.equal(fenceExit("namespace", live.pid), 0, "the namespace let the signal out");
+      // A PID namespace with the machine's root: the signal stays in, but a file made outside is there (9).
+      assert.equal(fenceExit("namespace", live.pid, [fence[0], ...UNSHARE_ARGS]), 9, "a namespace that shows the files outside read as fenced");
+      // A test's own shell goes in the same namespace.
+      assert.deepEqual(fence, [...namespaceArgv(fence[0]), "--", "/bin/sh", "-c", "x"]);
+      assert.deepEqual(fence.slice(1, UNSHARE_ARGS.length + 1), UNSHARE_ARGS);
     } else {
       // Elsewhere there is no sandbox to check: every exit but a refusal read from a live sleeper throws.
       for (const refused of [3, 4, 6, 7]) assert.throws(() => pickFence({ platform: "darwin", sandboxExec: true, refused }), /signal left the sandbox/);
       // In a container a test's own shell runs as it is: the container is the boundary.
-      assert.deepEqual(inFence(["/bin/sh", "-c", "x"]), ["/bin/sh", "-c", "x"]);
+      assert.deepEqual(fence, ["/bin/sh", "-c", "x"]);
     }
   } finally {
     process.env = saved;
@@ -741,8 +805,9 @@ test("shell box: the boundary check reads a refused signal only, never a sleeper
   }
 });
 
-test("shell box: the boundary is picked from what the machine says, and where none holds the box throws", () => {
+test("shell box: the boundary is picked from what the machine says, and where none holds the box throws, naming what it tried", () => {
   const ns = "pid:[4026532001]";
+  const unshare = "/usr/bin/unshare";
   assert.equal(pickFence({ platform: "darwin", sandboxExec: true, refused: 0 }).name, "sandbox");
   assert.deepEqual(pickFence({ platform: "darwin", sandboxExec: true, refused: 0 }).argv.slice(0, 2), ["/usr/bin/sandbox-exec", "-p"]);
   assert.throws(() => pickFence({ platform: "darwin", sandboxExec: false, refused: 0 }), /needs \/usr\/bin\/sandbox-exec/);
@@ -750,13 +815,162 @@ test("shell box: the boundary is picked from what the machine says, and where no
   // (65, 71), or it timed out.
   for (const refused of [3, 5, 65, 71, null]) assert.throws(() => pickFence({ platform: "darwin", sandboxExec: true, refused }), /signal left the sandbox/, String(refused));
   assert.deepEqual(pickFence({ platform: "linux", pidNs: ns, engineFile: true }), { name: "container", argv: [] });
+  // A container wins over a namespace that would hold too.
+  assert.deepEqual(pickFence({ platform: "linux", pidNs: ns, engineFile: true, unshare, refused: 0 }), { name: "container", argv: [] });
+  for (const m of [{ platform: "linux", pidNs: FIRST_PID_NS, engineFile: false, unshare, refused: 0 }, { platform: "linux", pidNs: ns, engineFile: false, unshare, refused: 0 }, { platform: "linux", pidNs: null, engineFile: true, unshare, refused: 0 }]) {
+    assert.deepEqual(pickFence(m), { name: "namespace", argv: namespaceArgv(unshare) }, JSON.stringify(m));
+    assert.deepEqual(pickFence(m).argv.slice(0, UNSHARE_ARGS.length + 1), [unshare, ...UNSHARE_ARGS]);
+  }
   for (const m of [
     { platform: "linux", pidNs: FIRST_PID_NS, engineFile: true },
     { platform: "linux", pidNs: ns, engineFile: false },
     { platform: "linux", pidNs: null, engineFile: true },
     { platform: "win32", pidNs: ns, engineFile: true, sandboxExec: true, refused: 0 },
+    { platform: "win32", pidNs: ns, engineFile: false, unshare, refused: 0 },
     { platform: "freebsd", sandboxExec: true, refused: 0 },
   ]) assert.throws(() => pickFence(m), /no boundary keeps a signal/, JSON.stringify(m));
+  // The namespace's check failed (the signal went: 3; the sleeper was gone or never started: 5, 7; unshare refused, as
+  // under a restriction on unprivileged user namespaces: 1; it timed out: null), or there is no unshare.
+  for (const refused of [1, 3, 5, 7, null]) {
+    assert.throws(() => pickFence({ platform: "linux", pidNs: FIRST_PID_NS, engineFile: false, unshare, refused }), new RegExp(`no container .*no PID namespace of its own \\(/usr/bin/unshare: the check's exit ${refused}\\)`), String(refused));
+  }
+  assert.throws(() => pickFence({ platform: "linux", pidNs: FIRST_PID_NS, engineFile: false, unshare: null, refused: 0 }), /no container \(PID namespace pid:\[4026531836\], no engine file\), no unshare/);
+});
+
+test("shell box: a run in the boundary has no terminal of the caller's: a session of its own, and no /dev/tty in the namespace's root", () => {
+  const box = shellBox("en-kill-tty-", { stands: {}, real: [] });
+  try {
+    // The session a command runs in, from /proc where there is one: a session of its own holds no controlling terminal
+    // of the test runner's, so no text writes to the developer's terminal or pushes input into it.
+    const session = "read -r _ _ _ _ _ s _ < /proc/self/stat; echo \"$s\"";
+    if (existsSync("/proc/self/stat")) {
+      const own = readFileSync("/proc/self/stat", "utf8").replace(/^.*\) /s, "").split(" ")[3];
+      const sid = inFence(["/bin/sh", "-c", session], { encoding: "utf8" }).stdout.trim();
+      assert.notEqual(sid, own, "a fenced command ran in the test runner's session");
+      if (box.fence === "namespace") {
+        // The namespace's PID 1 leads a session of its own, and every run is in it.
+        assert.equal(sid, "1");
+        assert.equal(box.run(`${session} > sid`).status, 0);
+        assert.equal(readFileSync(join(box.cwd, "sid"), "utf8").trim(), "1");
+        assert.equal(box.run("test -e /dev/tty").status, 1, "the namespace's root holds the machine's /dev/tty");
+        // A root the namespace's PID 1 could not build throws, said; a text's own exit 125 stays the text's.
+        assert.throws(() => inFence(["/bin/sh", "-c", "exit 0"], { keep: [join(box.box, "missing")] }), /the namespace's root was not built: [^]*box-init: keep /);
+        assert.equal(box.run("exit 125").status, 125);
+      }
+    }
+  } finally {
+    box.close();
+  }
+});
+
+test("shell box: a program the namespace's root does not hold is refused when the box is made, by name", () => {
+  // As a Homebrew, ~/.local/bin or /opt program would be: on PATH outside, in no folder the new root holds.
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "en-kill-prog-")));
+  writeFileSync(join(dir, "hello"), "#!/bin/sh\necho hello\n", { mode: 0o755 });
+  const saved = process.env.PATH;
+  process.env.PATH = `${dir}:${saved}`;
+  try {
+    if (fenceName() === "namespace") {
+      assert.throws(() => shellBox("en-kill-prog-", { stands: {}, real: ["hello"] }).close(), new RegExp(`hello: ${dir}/hello is in no folder the namespace's root holds`));
+      assert.equal(inRoot(join(dir, "hello")), false);
+      assert.equal(inRoot("/bin/sh"), true);
+    } else {
+      const box = shellBox("en-kill-prog-", { stands: {}, real: ["hello"] });
+      try {
+        assert.equal(box.run("hello > out").status, 0);
+        assert.equal(readFileSync(join(box.cwd, "out"), "utf8"), "hello\n");
+      } finally {
+        box.close();
+      }
+    }
+  } finally {
+    process.env.PATH = saved;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("shell box: a run past its time limit is stopped, and in a namespace every process it started with it", async () => {
+  const box = shellBox("en-kill-limit-", { stands: {}, real: ["sleep"], limit: 1000 });
+  try {
+    const text = "(sleep 2; echo late > late) & sleep 30";
+    assert.deepEqual(unsafeTexts([text]), []);
+    const start = Date.now();
+    assert.throws(() => box.run(text), /did not end/);
+    assert.ok(Date.now() - start < 8000, `${Date.now() - start} ms`);
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    if (box.fence === "namespace") {
+      // unshare ignores SIGTERM: the limit's SIGKILL ends it, and with it the namespace's PID 1 and the background job.
+      assert.equal(existsSync(join(box.cwd, "late")), false, "a process of a stopped run went on");
+    } else {
+      // The sandbox and a container: the limit's SIGKILL reaches the shell only (node signals the child, not its
+      // group), and the background job it left goes on and writes (unmeasured on macOS and in a container here).
+      assert.equal(existsSync(join(box.cwd, "late")), true, "a stopped run's background job was stopped too");
+    }
+    // A test's own command run in the boundary has the same limit: SIGKILL, which holds under unshare too.
+    const sleep = ["/bin/sleep", "/usr/bin/sleep"].find((p) => existsSync(p));
+    assert.ok(sleep, "this harness needs sleep");
+    const t = Date.now();
+    const r = inFence([sleep, "30"], { limit: 500, encoding: "utf8" });
+    assert.equal(r.signal, "SIGKILL");
+    assert.ok(Date.now() - t < 5000, `${Date.now() - t} ms`);
+  } finally {
+    box.close();
+  }
+});
+
+test("shell box: what a text sees of the files outside the box's folders is its boundary's", () => {
+  const box = shellBox("en-kill-files-", { stands: {}, real: [] });
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), "en-kill-files-")));
+  try {
+    // What a box text may reach on the machine: the Docker, PostgreSQL, D-Bus and WSL interop sockets, the Windows
+    // drive, the user's home; each looked at only, where the machine has it.
+    const machine = ["/var/run/docker.sock", "/run/docker.sock", "/var/run/postgresql", "/run/dbus/system_bus_socket", "/run/WSL", "/mnt/c", "/mnt/wsl", "/home", "/root"].filter((p) => existsSync(p));
+    const seen = (/** @type {string} */ p) => box.run(`test -e '${p}'`).status === 0;
+    const wrote = box.run(`echo x > '${join(outside, "w")}'`).status === 0;
+    if (box.fence === "namespace") {
+      assert.deepEqual([...machine, outside].filter(seen), [], "a path outside the box's folders is there inside");
+      // Nor the machine's root under another name: the root holds what the namespace's PID 1 put there, nothing else.
+      assert.equal(box.run("printf '%s\\n' /* /.[!.]* > roots").status, 0);
+      const roots = readFileSync(join(box.cwd, "roots"), "utf8").split("\n").filter(Boolean);
+      const put = ["/bin", "/dev", "/etc", "/lib", "/lib32", "/lib64", "/libx32", "/proc", "/sbin", "/tmp", "/usr", "/.[!.]*", `/${box.box.split("/")[1]}`];
+      assert.deepEqual(roots.filter((r) => !put.includes(r)), [], "the root holds a folder the namespace did not put there");
+      assert.deepEqual([wrote, existsSync(join(outside, "w"))], [false, false], "a box text wrote outside its folders");
+      // Its own folders and a /tmp of its own are there to write; /tmp's files stay inside.
+      const name = `en-kill-files-${process.pid}`;
+      assert.equal(box.run(`test -w '${box.box}' && : > '/tmp/${name}' && test -e '/tmp/${name}'`).status, 0);
+      assert.equal(existsSync(join("/tmp", name)), false, "the box's /tmp is the machine's");
+      // WSL: a Windows program on the drive is not there to run (WSL_INTEROP set or not, its socket is gone too).
+      if (existsSync("/mnt/c/Windows/System32/whoami.exe")) assert.equal(box.run("/mnt/c/Windows/System32/whoami.exe").status, 127);
+    } else {
+      // The sandbox and a container share the file system: a text sees and writes what the test runner's user does.
+      assert.deepEqual([seen(outside), wrote, existsSync(join(outside, "w"))], [true, true, true]);
+    }
+  } finally {
+    box.close();
+    rmSync(outside, { recursive: true, force: true });
+  }
+});
+
+test("kill reader's harness: with no boundary every test that makes a box ends, failing on the throw, with nothing left open", () => {
+  // Each test file as node runs it alone: a server or a sleeper a test opened before the box threw and never closed
+  // keeps the file from ending (main 12097c8 in WSL: kill-targets sat on an open server until stopped).
+  const top = fileURLToPath(new URL("..", import.meta.url));
+  for (const [file, pattern] of [
+    ["test/kill-targets.test.mjs", "^shell box|^kill reader: (a real bash agrees|the differential judge)"],
+    ["test/push-spellings.test.mjs", "^push reader: (a real shell and a real git|on generated texts a real bash)"],
+  ]) {
+    // Not as a subtest of this run: node:test would then write its results in its own binary form.
+    const env = { ...process.env, ENNYN_SHELL_BOX: "none" };
+    delete env.NODE_TEST_CONTEXT;
+    const r = spawnSync(process.execPath, ["--import", "./test/hermetic.mjs", "--test-reporter=tap", `--test-name-pattern=${pattern}`, file], { cwd: top, env, encoding: "utf8", timeout: 25000, killSignal: "SIGKILL" });
+    assert.equal(r.signal, null, `${file} did not end with the box throwing`);
+    const count = (/** @type {string} */ word) => Number(new RegExp(`^# ${word} (\\d+)$`, "m").exec(r.stdout)?.[1]);
+    // Every box test ran and failed on the throw; the one that only reads pickFence passes.
+    const thrown = r.stdout.split("ENNYN_SHELL_BOX=none").length - 1;
+    assert.ok(count("fail") >= (file.includes("kill") ? 6 : 2), `${file}: ${count("fail")} failed\n${r.stdout.slice(-2000)}`);
+    assert.ok(thrown >= count("fail"), `${file}: a test failed on something other than the throw\n${r.stdout.slice(-2000)}`);
+    assert.equal(count("cancelled"), 0, file);
+  }
 });
 
 test("kill hook: the header and SECURITY.md name what gets past it", () => {
