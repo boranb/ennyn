@@ -5627,6 +5627,28 @@
       "cluster": "gates",
       "source": "2026-11-08, review of the repository's own rules that do not reach projects using Ennyn",
       "since": 27
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "brief-paraphrase",
+      "title": "A task agent opens its report with two short paragraphs in its own words, written before its first edit: what the task asks, and how the code it touches works now as the brief describes it. The orchestrator reads them against the node's ask; a restatement that misses or adds to the ask is a ledger row with source brief, and the brief is corrected before review. Convergence counts these rows, so a brief's gaps are caught before the code instead of in review (skills/cycle/task-brief.md sits at the fix-loop brake with procedure-leaves-case-open over cycles 21-23)",
+      "value": "high",
+      "cost": "S",
+      "cluster": "method",
+      "source": "review of google/elephant-goldfish-model (Apache-2.0, main), 2026-11-09: its comprehension reviewer paraphrases a document first and a section it cannot paraphrase is a blocker, because a list of undefined terms does not find a document whose parts do not connect; no measurement published",
+      "since": 28
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "reviewer-not-run",
+      "title": "A reviewer whose call fails, times out or returns no report is retried once, then recorded as not run: the round is not clean, the end-of-task line names it (reviewers: completed / not run), and the commit's Review-Rounds says so. finding-schema.md's Rounds and the cycle skill's step 7 say it; a test holds the sentence",
+      "value": "high",
+      "cost": "S",
+      "cluster": "method",
+      "source": "review of google/elephant-goldfish-model (Apache-2.0, main), 2026-11-09: its review loop and synthesizer, 'never count it as a reviewer with zero findings'. Ennyn reports checks as found, clean or unmeasured, but step 7 has no rule for a reviewer that did not run",
+      "since": 28
     }
   ],
   "done": [

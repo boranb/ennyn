@@ -35,6 +35,7 @@ Ennyn starts from the other end. A lesson that keeps coming back becomes a check
 | [automazeio/ccpm](https://github.com/automazeio/ccpm) (8.4k) | PRD, epic and task files kept in sync with GitHub Issues, and parallel agents in worktrees. | A with-and-without eval of whether the agent followed the steps; the harness is not published |
 | [humanlayer/humanlayer](https://github.com/humanlayer/humanlayer) (13k) | Research, plan, implement, with the context compacted in between ([advanced-context-engineering-for-coding-agents](https://github.com/humanlayer/advanced-context-engineering-for-coding-agents)). Since October 2026 the repository carries hook scripts, not registered in its checked-in settings: checks before the agent stops, and a refusal of test, typecheck or lint output piped to `head`, `grep`, `tail` and similar tools. | Case studies |
 | [Kiro](https://kiro.dev) (AWS) | Steering files loaded always, by file match, by hand, or when the request matches their description; requirements written in EARS form; property tests generated from those requirements. | Vendor posts |
+| [google/elephant-goldfish-model](https://github.com/google/elephant-goldfish-model) (15.6k on 2026-11-09) | One agent holds the context and drafts a design document; fresh subagents read only the document and the files it links, through five review stages with a human gate after each. Reviewers rate findings Blocker, Major or Nit; the author marks each one fix, contest (with evidence the reviewer could read), escalate or decline. A loop converges after two clean rounds and stops at five. A reviewer that fails twice is recorded as not run, never as zero findings. A comprehension reviewer first paraphrases the document; a section it cannot paraphrase is a blocker. A drift report compares design documents with the code by hand. | Unit tests of manifests, frontmatter and links; a live probe that reviewers run isolated; a review benchmark file with no runner |
 
 ### Agent harnesses and parallel runners
 
@@ -104,6 +105,8 @@ Each idea became a node in the work graph (`.ennyn/graph.json`), or an addition 
 | A removed config key names the key that replaces it | Scrapling | `config-tombstones` |
 | Uninstall removes only files a ledger says Ennyn wrote | agent-reach | `uninstall-path` |
 | The impact table's search for nearby tests reads the project's test pattern, which init already sets for other languages | Understand-Anything | `impact-test-conventions` |
+| A task agent restates the brief in its own words before it writes; a restatement that misses the ask is a finding against the brief | elephant-goldfish-model's comprehension reviewer | `brief-paraphrase` |
+| A reviewer that fails or returns nothing is retried once, then recorded as not run, and its round is not clean | elephant-goldfish-model's review loop | `reviewer-not-run` |
 
 ## What Ennyn left out
 
@@ -123,6 +126,7 @@ Each idea became a node in the work graph (`.ennyn/graph.json`), or an addition 
 - A release run on every push to main (ScrapeGraphAI's semantic-release). The commit type picks the version bump, which would bend how commits are typed and so what `ennyn rework` counts.
 - Many agent hosts at once (Understand-Anything, agent-reach). Each host's folders move under the tool; Ennyn adds Codex next and nothing more.
 - A scan for high-entropy strings. Minified code and lock-file hashes look the same, and a changed spacing gets past it; `load-time-obfuscation` looks only at files that tools run when they load them.
+- Five review stages with a human gate after each, convergence after two clean rounds, and two copies of the same reviewer for recall (elephant-goldfish-model). Ennyn's cycle runs without a person between tasks and stops at two rounds; whether a second copy of a reviewer finds more is what `reviewer-seeded-recall` would measure, and its contest step is `finding-refuter`. Its drift report is a periodic read by a model; Ennyn's co-change rule refuses the commit instead.
 
 ## Security reports read
 
