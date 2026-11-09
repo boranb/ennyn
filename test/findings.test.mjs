@@ -50,6 +50,8 @@ const reg = parseClasses(JSON.stringify({ classes: [{ id: "known-class", says: "
 const second = (/** @type {Record<string, unknown>} */ over = {}) => row({ id: "c16-t1-code-r1-02", ...over });
 /** @param {string} text */
 const parsed = (text) => parseFindings(text, reg);
+/** A brief row as ledger-row.md writes it: the orchestrator's, round 0, caught by review, no file. @param {Record<string, unknown>} [over] */
+const briefRow = (over = {}) => row({ id: "c16-t1-orch-r0-01", round: 0, severity: "medium", source: "brief", file: null, line: null, outcome: "fixed", ...over });
 
 // ------------------------------------------------------------------------------------------- corpus --
 
@@ -84,6 +86,10 @@ const ACCEPT = [
   ["a task at the limit", lines(row({ task: "t".repeat(120) }))],
   ["a gate at the limit", lines(row({ caughtBy: `gate:${"a".repeat(115)}` }))],
   ["an outcome node at the limit", lines(row({ outcome: `node:${"n".repeat(115)}` }))],
+  ["a brief's gap: the task's restatement missed the node's ask, a row with no place in the tree", lines(briefRow())],
+  ["a low brief row the orchestrator's own writing reaches, fixed", lines(briefRow({ severity: "low", input: "writer" }))],
+  ["a refuted brief row: the restatement misread a brief that held", lines(briefRow({ outcome: "refuted" }))],
+  ["a brief row, a duplicate of a brief row", lines(briefRow({ dupOf: "c16-t1-orch-r0-02" }), briefRow({ id: "c16-t1-orch-r0-02" }))],
   ["a low finding only this project's own writer's input reaches, declined", lines(row({ severity: "low", input: "writer", outcome: "declined" }))],
   ["a declined duplicate of a declined row", lines(row({ severity: "low", input: "writer", outcome: "declined", dupOf: "c16-t1-code-r1-02" }), second({ severity: "low", input: "writer", outcome: "declined" }))],
   ["a refuted duplicate of a declined row", lines(row({ outcome: "refuted", dupOf: "c16-t1-code-r1-02" }), second({ severity: "low", input: "writer", outcome: "declined" }))],
@@ -202,6 +208,9 @@ const REJECT = [
   ["bornIn of 41", lines(row({ source: "pre-existing", bornIn: "a".repeat(41) })), /bornIn must be/],
   ["bornIn a word", lines(row({ source: "pre-existing", bornIn: "main" })), /bornIn must be/],
   ["bornIn on a row that is not pre-existing", lines(row({ bornIn: HASH })), /bornIn belongs only to a pre-existing row/],
+  ...[["a later round", { round: 1 }, /a brief row is of round 0/], ["a gate", { caughtBy: "gate:mutation" }, /a brief row is caught by review/], ["the author's reading", { caughtBy: "author-reading" }, /a brief row is caught by review/], ["a file", { file: "src/a.mjs" }, /a brief row names no file/], ["a high severity", { severity: "high" }, /a brief row is medium or low/], ["an open outcome", { outcome: "open" }, /a brief row is fixed, the brief corrected, or refuted/], ["a node", { outcome: "node:x" }, /a brief row is fixed/], ["a test", { outcome: "fixed-test" }, /a brief row is fixed/]].map(([what, over, reason]) => /** @type {[string, string, RegExp]} */ ([`a brief row with ${what}`, lines(briefRow(/** @type {Record<string, unknown>} */ (over))), /** @type {RegExp} */ (reason)])),
+  ["a review row of the code, a duplicate of a brief row: it would count in no column", lines(row({ dupOf: "c16-t1-orch-r0-01" }), briefRow()), /line 1 .*dupOf joins a brief row and a row that is not/],
+  ["a brief row, a duplicate of a review row of the code: the brief's gap would go unsaid", lines(row(), briefRow({ dupOf: "c16-t1-code-r1-01" })), /line 2 .*dupOf joins a brief row and a row that is not/],
   ["a pre-existing row with no file", lines(row({ source: "pre-existing", file: null, line: null })), /a pre-existing row names a file: the one the fix belongs in/],
   ["a pre-existing row with no file, refuted: the rule does not read the outcome", lines(row({ source: "pre-existing", file: null, line: null, outcome: "refuted" })), /a pre-existing row names a file/],
   ["a pre-existing row with no file and a bornIn", lines(row({ source: "pre-existing", file: null, line: null, bornIn: HASH })), /a pre-existing row names a file/],
@@ -580,13 +589,13 @@ test("convergence table: line 1: a duplicate or a refuted row counts nowhere, wh
   assert.deepEqual(six(report(r.dir, rows, r.start)), columns({ preExisting: 1 }));
 });
 
-test("convergence table: line 2 comes before line 3: a pre-existing row a gate caught goes by its age", () => {
+test("convergence table: line 3 comes before line 4: a pre-existing row a gate caught goes by its age", () => {
   const r = linear();
   assert.deepEqual(six(report(r.dir, [old(r.legacy, { caughtBy: "gate:mutation" })], r.start)), columns({ preExisting: 1 }));
   assert.deepEqual(six(report(r.dir, [old(r.earlier, { caughtBy: "gate:mutation" })], r.start)), columns({ escapedOld: 1 }));
 });
 
-test("convergence table: lines 3 to 6, in order", () => {
+test("convergence table: lines 4 to 7, in order", () => {
   const r = linear();
   assert.deepEqual(six(report(r.dir, [row({ caughtBy: "gate:mutation" })], r.start)), columns({ gateCaught: 1 }));
   assert.deepEqual(six(report(r.dir, [row({ caughtBy: "test:test/tracked.test.mjs" })], r.start)), columns({ gateCaught: 1 }));
@@ -597,6 +606,43 @@ test("convergence table: lines 3 to 6, in order", () => {
   assert.deepEqual(six(report(r.dir, [row()], r.start)), columns({ foundInReview: 1 }));
   assert.deepEqual(six(report(r.dir, [row({ caughtBy: "measurement" })], r.start)), columns());
   assert.deepEqual(six(report(r.dir, [row({ caughtBy: "author-reading" })], r.start)), columns());
+});
+
+test("convergence table: line 2: a brief row counts in no column, whatever caught it, and its id is said under the block", () => {
+  const r = linear();
+  const brief = (/** @type {Record<string, unknown>} */ over) => briefRow(over);
+  const rows = [
+    row(),
+    brief({ id: "c16-b-1" }),
+    brief({ id: "c16-b-2", fingerprint: "b" }),
+    // Line 1 still comes first: a duplicate or a refuted brief row is not said.
+    brief({ id: "c16-b-3", dupOf: "c16-b-1", fingerprint: "c" }),
+    brief({ id: "c16-b-4", outcome: "refuted", fingerprint: "d" }),
+  ];
+  const rep = report(r.dir, rows, r.start);
+  assert.deepEqual(six(rep), columns({ foundInReview: 1 }));
+  assert.deepEqual(rep.brief, ["c16-b-1", "c16-b-2"]);
+  const got = run(r.dir, rows, ["--from", r.start]);
+  assert.match(got.stdout, /^! brief: the task's restatement missed or added to the node's ask: 2: c16-b-1, c16-b-2$/m);
+  assert.doesNotMatch(run(r.dir, [row()], ["--from", r.start]).stdout, /brief/);
+});
+
+test("convergence: a brief row is read by no round and no recurring class: a class it names is still new where review first names it, and the top is the code's", () => {
+  const r = linear();
+  r.put({ ".ennyn/classes.json": REGISTRY });
+  const code = [row({ class: ["known-class"] }), second({ class: ["other-class"] }), row({ id: "c16-t1-code-r1-03", class: ["other-class"], fingerprint: "c" })];
+  const briefs = [1, 2, 3].map((i) => briefRow({ id: `c16-t1-orch-r0-0${i}`, class: ["known-class"], fingerprint: `brief gap ${i}` }));
+  const alone = report(r.dir, code, r.start);
+  const beside = report(r.dir, [...code, ...briefs], r.start);
+  assert.deepEqual(alone.counts.perRound, [2, 0, 0]);
+  assert.deepEqual(beside.counts.perRound, alone.counts.perRound);
+  assert.deepEqual(beside.recurring.top, [{ id: "other-class", times: 2, layers: [["review", 2]] }]);
+  assert.deepEqual(beside.recurring, alone.recurring);
+  assert.deepEqual(beside.brief, ["c16-t1-orch-r0-01", "c16-t1-orch-r0-02", "c16-t1-orch-r0-03"]);
+  // A brief row's name that resolves to no entry is still said: the close links it as any other.
+  const unlinked = report(r.dir, [...code, briefRow({ class: ["new: a gap of its own"] })], r.start);
+  assert.deepEqual(unlinked.counts.perRound, [null, null, null]);
+  assert.ok(unlinked.unplaced.some((/** @type {any} */ u) => u.key === "unlinked"));
 });
 
 test("convergence table: a declined row is no refuted one: the defect is real, it counts in its column, and its id is said under the block", () => {

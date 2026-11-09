@@ -758,6 +758,7 @@
   "findings.untracked": "HEAD izlemiyor, kapı sayılmadı: satır {n}: {ids}{more}",
   "findings.declined": "düzeltilmeden bırakıldı: {n}: {ids}{more}",
   "findings.refound": "önceki döngüde düzeltilmeden bırakılan, parmak izi yeniden bulunan: {n}: {ids}{more}",
+  "findings.brief": "brief: görevin yeniden anlatımı düğümün isteğini kaçırdı ya da ona ekledi: {n}: {ids}{more}",
   "findings.sameMore": "aynı parmak izi taşıyan {n} küme daha",
   "findings.why.startRefused": "yaş yok: {error}",
   "findings.ladder.read": "Yinelenme merdiveni, döngüler {cycles}: satırlar {read}; bir döngünün satırları deftere girince sayılır",

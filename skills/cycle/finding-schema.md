@@ -14,7 +14,7 @@ Shared output contract for every reviewer. Include this file in the reviewer's p
 | Quote | `file:line` and the exact text of that line — a claim that cannot quote a line is not a finding |
 | Scenario | which input or state breaks it, and who produces that input: an attacker, normal use (a person or an agent), or only this project's own writer (the row's `input`); expected ↔ actual |
 | Class | registry id (`ennyn.mjs classes` lists them) or `new: <short name>`, several if they fit — assign it while writing |
-| Source | `first-write`: in the task's own change, not yet landed · `previous-fix`: in a fix made for a finding of the same task, not yet landed · `pre-existing`: already on the default branch when found, whoever wrote it, this cycle's tasks included; it also gives `bornIn`, the commit that last wrote the quoted line ([report-formats.md](report-formats.md)) |
+| Source | `first-write`: in the task's own change, not yet landed · `previous-fix`: in a fix made for a finding of the same task, not yet landed · `pre-existing`: already on the default branch when found, whoever wrote it, this cycle's tasks included; it also gives `bornIn`, the commit that last wrote the quoted line ([report-formats.md](report-formats.md)) · `brief`: the orchestrator's alone, a gap of the cycle's brief ([task-brief.md](task-brief.md), Report) |
 | Confidence | `high` · `medium` · `low`; low-confidence findings are counted, not listed |
 | Check | how you verified it: command, test, or code path read; `unverified` if you could not |
 

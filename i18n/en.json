@@ -758,6 +758,7 @@
   "findings.untracked": "test not tracked at HEAD, read as no gate: rows {n}: {ids}{more}",
   "findings.declined": "declined, not fixed: {n}: {ids}{more}",
   "findings.refound": "declined in an earlier cycle, its fingerprint found again: {n}: {ids}{more}",
+  "findings.brief": "brief: the task's restatement missed or added to the node's ask: {n}: {ids}{more}",
   "findings.sameMore": "{n} more with the same fingerprint",
   "findings.why.startRefused": "no age: {error}",
   "findings.ladder.read": "Recurrence ladder, cycles {cycles}: rows {read}; a cycle's rows count once they are in the ledger",

@@ -66,17 +66,20 @@ A count is exact or it is `?`. For an estimate write `?` and keep the figure in 
 | # | Row | Column |
 |---|---|---|
 | 1 | `dupOf` is set, or `outcome` is `refuted` | none |
-| 2 | `source: pre-existing` | by age, below |
-| 3 | `caughtBy` is a gate | gate-caught |
-| 4 | `source: previous-fix` | fix-introduced |
-| 5 | `caughtBy: review` | found in review |
-| 6 | any other row | none: it stays in the ledger |
+| 2 | `source: brief` | none: its id is said under the block |
+| 3 | `source: pre-existing` | by age, below |
+| 4 | `caughtBy` is a gate | gate-caught |
+| 5 | `source: previous-fix` | fix-introduced |
+| 6 | `caughtBy: review` | found in review |
+| 7 | any other row | none: it stays in the ledger |
 
 **Declined** is not line 1: the defect is real, left unfixed on purpose ([finding-schema.md](finding-schema.md), Outcome), so a `declined` row counts in its column, its round and the recurring class as a fixed one does. Under the block the command lists the cycle's declined rows, and each declined row of an earlier cycle, with no `dupOf`, whose fingerprint a row of this cycle holds, compared folded (NFKC, lower case, runs of white space one space): that defect was found again. The list is a lower bound: a re-find in new words is not on it, so a reviewer who knows a declined defect copies its fingerprint. Read the escapes against them before the rule is kept.
 
+**Brief** rows (line 2) are a gap of the cycle's brief, caught before the code: they count in no column, no round, no recurring class and no ladder, and the command lists the cycle's under the block on a line of their own.
+
 **A gate** is `test:<file>`, when that file is tracked at HEAD as the row is counted, or `gate:<name>`, a gate the repository runs: `gate:mutation`, `gate:ci:tests`, `gate:eslint`. The name is the writer's word and nothing checks it. `review`, `measurement` (an ad hoc run) and `author-reading` are no gates; no other value is valid.
 
-**By age** (line 2), the first that holds:
+**By age** (line 3), the first that holds:
 
 1. `bornIn` is null or not in HEAD's history, the cycle's start was not noted or is not an ancestor of HEAD, HEAD holds no config, the clone is shallow, or step 2's command exits other than 0: no age. The row leaves the table here: pre-existing, gate-caught and both escaped columns read `?` until it is repaired. A start given that names no commit or no ancestor reads as not noted, and the block prints with the reason under it.
 2. `git ls-tree --full-tree --name-only <bornIn> -- .ennyn/config.json` prints nothing: pre-existing. The tree held no config, read as not through the loop; a config moved in or committed late reads this way too.

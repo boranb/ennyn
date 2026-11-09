@@ -80,7 +80,8 @@ const PATH_MAX = 300;
 const NAME_MAX = 120;
 
 export const SEVERITIES = ["critical", "high", "medium", "low"];
-export const SOURCES = ["first-write", "previous-fix", "pre-existing"];
+/** `brief`: a gap of the cycle's own brief, which a task's restatement showed before any code (skills/cycle/task-brief.md, Report). */
+export const SOURCES = ["first-write", "previous-fix", "pre-existing", "brief"];
 /** What finds a defect without being a gate; report-formats.md: any other value is `test:<file>` or `gate:<name>`. */
 export const NOT_GATES = ["review", "measurement", "author-reading"];
 export const OUTCOMES = ["fixed-test", "fixed", "refuted", "declined", "open"];
@@ -145,12 +146,14 @@ export const FIELDS = ["cycle", "task", "round", "id", "severity", "class", "sou
  * @typedef {{ node: string, file: string, rows: string[], path: boolean }} Patch a new node linked to a file at the brake: by the rows that name it or it names, or by the file's path
  * @typedef {{ cycles: number[], read: number[], brake: LadderFile[], rung2: LadderFile[], patches: Patch[], unmeasured: Reason | null }} Ladder
  *   `read`: the ledger's rows of each cycle, in the order of `cycles`; `unmeasured`: why patch nodes could not be looked for
- * @typedef {{ path: string, cycle: number, rows: number, counted: number, counts: import("./convergence.mjs").Convergence, recurring: { exact: boolean, top: Recurring[] }, unplaced: Unplaced[], refused: Refused[], refusedCount: number, stopped: boolean, same: string[][], higher: string[], untracked: string[], declined: string[], refound: string[], ladder: Ladder | null }} CycleReport
+ * @typedef {{ path: string, cycle: number, rows: number, counted: number, counts: import("./convergence.mjs").Convergence, recurring: { exact: boolean, top: Recurring[] }, unplaced: Unplaced[], refused: Refused[], refusedCount: number, stopped: boolean, same: string[][], higher: string[], untracked: string[], declined: string[], refound: string[], brief: string[], ladder: Ladder | null }} CycleReport
  *   `rows`: the ledger's, `counted`: the cycle's. `top` is empty unless `exact`. `same`: the ledger's groups that hold
  *   a counted row. `higher`:
  *   ids of rows of a cycle above the one asked for. `untracked`: ids of rows whose test HEAD does not track.
  *   `declined`: ids of the cycle's declined rows line 1 leaves. `refound`: ids of declined rows of earlier cycles,
- *   with no dupOf, whose fingerprint, folded, a row of this cycle that line 1 leaves holds: a lower bound. `ladder`:
+ *   with no dupOf, whose fingerprint, folded, a row of this cycle that line 1 leaves holds: a lower bound. `brief`: ids
+ *   of the cycle's brief rows line 1 leaves, which line 2 puts in no column; no round, recurring class or ladder reads
+ *   them, and only a name of theirs that resolves to no entry is said. `ladder`:
  *   the recurrence ladder, null when the counts could not be read.
  */
 
@@ -179,6 +182,14 @@ function rowProblems(raw, reg) {
     // Declined by default; a fix that landed anyway is recorded as what happened.
     problems.push("a low row whose input is writer is declined, refuted or fixed: it is never left open, and it becomes no node");
   }
+  if (raw.source === "brief") {
+    // ledger-row.md: the orchestrator's row, read before review from a report's opening, about a text outside the tree.
+    if (raw.round !== 0) problems.push("a brief row is of round 0: it is read before review");
+    if (raw.caughtBy !== "review") problems.push("a brief row is caught by review: the orchestrator's reading of the restatement");
+    if (raw.file !== null) problems.push("a brief row names no file: the brief is not in the tree");
+    if (raw.severity !== "medium" && raw.severity !== "low") problems.push("a brief row is medium or low: the gap reached no code");
+    if (raw.outcome !== "fixed" && raw.outcome !== "refuted") problems.push("a brief row is fixed, the brief corrected, or refuted");
+  }
   if (raw.file === null) {
     // With no file there is no line to blame, so a null bornIn would have no repair.
     if (raw.source === "pre-existing") problems.push("a pre-existing row names a file: the one the fix belongs in");
@@ -188,7 +199,8 @@ function rowProblems(raw, reg) {
 }
 
 /**
- * Every `dupOf`: it names a row, and its chain, read to its end, ends at one that is not refuted unless this row is.
+ * Every `dupOf`: it names a row, and its chain, read to its end, ends at one that is not refuted unless this row is,
+ * and at a brief row exactly when this row is one.
  * A chain that ends at a declined row holds only declined or refuted rows of that row's cycle, and a declined row's
  * chain ends at a declined one. One pass, each row walked once.
  * @param {Entry[]} entries @param {Map<string, Entry>} byId
@@ -215,6 +227,7 @@ function chainProblems(entries, byId) {
     const end = here.has(id) ? null : ends.has(id) ? /** @type {Entry | null} */ (ends.get(id)) : on;
     for (const walked of here) ends.set(walked, end);
     if (end === null) entry.problems.push("dupOf leads in a circle: a chain must end");
+    else if ((end.raw.source === "brief") !== (entry.raw.source === "brief")) entry.problems.push("dupOf joins a brief row and a row that is not: a brief's gap and a defect of the code are two rows, each counted where it belongs");
     else if (end.raw.outcome === "refuted" && entry.raw.outcome !== "refuted") entry.problems.push("dupOf ends at a refuted row while this row is not refuted: the defect would count nowhere, so one of the two is wrong");
     else if (end.raw.outcome === "declined") {
       // The defect would read as declined, left unfixed, whatever this row says of it.
@@ -413,7 +426,7 @@ function isGate(row, facts) {
  */
 
 /**
- * By age: line 2 of the table, the list under it. Which of line 1's conditions holds only changes the reason.
+ * By age: line 3 of the table, the list under it. Which of line 1's conditions holds only changes the reason.
  * @param {Row} row @param {Facts} facts
  * @returns {Placed}
  */
@@ -439,6 +452,7 @@ function byAge(row, facts) {
  */
 function place(row, facts) {
   if (row.dupOf !== null || row.outcome === "refuted") return { column: null };
+  if (row.source === "brief") return { column: null };
   if (row.source === "pre-existing") return byAge(row, facts);
   const gate = isGate(row, facts);
   if (typeof gate === "object") return { unknown: row.source === "previous-fix" ? ["gateCaught", "fixIntroduced"] : ["gateCaught"], why: gate };
@@ -671,7 +685,7 @@ export function cycleReport({ cwd, config, ledger, from, cycle }) {
   // A start given and wrong is said, whether or not a row needs it.
   if (start.why !== null) note(start.why);
   /** @type {CycleReport} */
-  const report = { path: ledger ?? config.paths.findings, cycle, rows: 0, counted: 0, counts: unknownCounts(), recurring: { exact: false, top: [] }, unplaced: [], refused: [], refusedCount: 0, stopped: false, same: [], higher: [], untracked: [], declined: [], refound: [], ladder: null };
+  const report = { path: ledger ?? config.paths.findings, cycle, rows: 0, counted: 0, counts: unknownCounts(), recurring: { exact: false, top: [] }, unplaced: [], refused: [], refusedCount: 0, stopped: false, same: [], higher: [], untracked: [], declined: [], refound: [], brief: [], ladder: null };
   const done = () => ({ ...report, unplaced: [...unplaced.values()] });
   /** @type {ReturnType<typeof loadLedger>} */
   let led;
@@ -735,14 +749,18 @@ export function cycleReport({ cwd, config, ledger, from, cycle }) {
   for (const column of lost) counts[column] = null;
   const live = rows.filter((r) => r.dupOf === null && r.outcome !== "refuted");
   report.declined = live.filter((r) => r.outcome === "declined").map((r) => r.id);
+  report.brief = live.filter((r) => r.source === "brief").map((r) => r.id);
   const prints = new Set(live.map((r) => foldPrint(r.fingerprint)));
   report.refound = led.rows.filter((r) => r.cycle < cycle && r.dupOf === null && r.outcome === "declined" && prints.has(foldPrint(r.fingerprint))).map((r) => r.id);
-  const { top, names } = recurring(live, led.reg);
+  // A brief row is said on its own line: no round, no recurring class, no ladder (its file is null) reads it.
+  const code = live.filter((r) => r.source !== "brief");
+  const { names } = recurring(live, led.reg);
+  const { top } = recurring(code, led.reg);
   if (names.length) {
     const { list, more } = listed(names);
     note({ key: "unlinked", vars: { n: names.length, names: list, more } });
   }
-  report.counts = { .../** @type {any} */ (counts), perRound: names.length ? [null, null, null] : newClasses(live, led.reg) };
+  report.counts = { .../** @type {any} */ (counts), perRound: names.length ? [null, null, null] : newClasses(code, led.reg) };
   report.recurring = names.length ? { exact: false, top: [] } : { exact: true, top };
   report.ladder = ladderOf(led.rows, cycle, led.reg);
   return done();
@@ -789,6 +807,7 @@ export function reportLines(report, config) {
   if (report.untracked.length) out.push(`! ${ids("findings.untracked", report.untracked)}`);
   if (report.declined.length) out.push(`! ${ids("findings.declined", report.declined)}`);
   if (report.refound.length) out.push(`! ${ids("findings.refound", report.refound)}`);
+  if (report.brief.length) out.push(`! ${ids("findings.brief", report.brief)}`);
   for (const group of report.same.slice(0, SAME_SHOWN)) out.push(`! ${ids("findings.same", group)}`);
   if (report.same.length > SAME_SHOWN) out.push(`! ${tShown("findings.sameMore", { n: report.same.length - SAME_SHOWN }, lang)}`);
   if (report.ladder !== null) out.push(...ladderLines(report.ladder, report.cycle, lang, ids));
