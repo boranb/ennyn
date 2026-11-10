@@ -309,6 +309,14 @@ test("impact: referenceCommand output replaces git grep (first 40 lines), failur
   assert.match(bad.answer, /references: unmeasured: reference command failed: /);
 });
 
+test("impact: a reference command whose runner is asked to stop reads as ended by that signal, not as a runner that failed", () => {
+  const dir = fixtureRepo();
+  // The command asks its parent, the runner, to stop: the runner stops the command's group and says so.
+  writeFileSync(join(dir, "ask.mjs"), 'process.kill(process.ppid, "SIGTERM");\nsetInterval(() => {}, 1000);\n');
+  const row = buildImpactTable({ cwd: dir, config: cfg({ impact: { referenceCommand: "node ask.mjs {symbol}" } }), symbol: "x", files: ["src/lib/engine/parse.js"] }).rows[0];
+  assert.match(row.answer, /reference command failed: killed by SIGTERM/);
+});
+
 test("impact: outside a git repository the git-based rows are unmeasured", () => {
   const dir = mkdtempSync(join(tmpdir(), "pl-impact-norepo-"));
   writeFileSync(join(dir, "a.js"), "try {} catch {}\n");

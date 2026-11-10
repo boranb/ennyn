@@ -1,6 +1,7 @@
 /**
  * The impact table's reference command under a time limit that holds for what the command starts, run by
- * impact/table.mjs as `node reference-run.mjs <limitMs> <graceMs> <program> [args...]`.
+ * impact/table.mjs as `node reference-run.mjs <limitMs> <graceMs> <program> [args...]`; `ennyn lock`
+ * (core/heavy-lock.mjs) runs its heavy jobs through it the same way.
  *
  * The command runs in a process group of its own (`detached`), with pipes of its own that this process relays to its
  * stdout and stderr. At the limit its group gets SIGTERM, so a wrapper that forwards it (`npm run`) and a worker that
@@ -18,8 +19,9 @@
  * the command's tree is stopped by taskkill /T /F (stopTree), with no SIGTERM first; nothing is stopped after the
  * command's own end (unmeasured on Windows).
  *
- * File descriptor 3 gets `pid N` first, then the end, `exit N`, `signal NAME`, `stopped` (the limit ended it) or
- * `error CODE`, and after it `left: stopped` when the group had processes left at the command's end.
+ * File descriptor 3 gets `pid N` first, then the end, `exit N`, `signal NAME`, `stopped` (the limit ended it),
+ * `interrupted NAME` (a signal to this process ended it) or `error CODE`, and after it `left: stopped` when the group
+ * had processes left at the command's end.
  */
 import { spawn } from "node:child_process";
 import { writeSync } from "node:fs";
@@ -85,6 +87,30 @@ const soft = setTimeout(() => {
 }, limitMs);
 
 /**
+ * A SIGINT, SIGTERM or SIGHUP to this process (Ctrl-C, a caller that stops it) stops the group as at the limit, and
+ * the end says `interrupted NAME`: the group left the caller's, so the signal does not reach it, and ended here
+ * without this the command would run on with no limit.
+ * @type {NodeJS.Signals | null}
+ */
+let asked = null;
+/** @param {NodeJS.Signals} signal */
+function interrupt(signal) {
+  if (stopped || asked) return;
+  asked = signal;
+  clearTimeout(soft);
+  stopGroup();
+}
+for (const signal of /** @type {const} */ (["SIGINT", "SIGTERM", "SIGHUP"])) process.on(signal, () => interrupt(signal));
+// A reader that closed this process's stdout or stderr (`ennyn lock -- npm test | head`) ends the run as SIGPIPE would
+// end a command it read from; what the command still writes is dropped, so it does not block on a full pipe.
+for (const out of [process.stdout, process.stderr]) {
+  out.on("error", () => {
+    unrelay();
+    interrupt("SIGPIPE");
+  });
+}
+
+/**
  * The relay stops: what the command's pipes still bring is read and dropped until this process ends. Closing them
  * instead would end a left process that writes on SIGPIPE before it can clean up (measured: a shell worker reporting
  * its killed sleep on stderr died so, its lock left, macOS).
@@ -100,11 +126,11 @@ function unrelay() {
 function finish(how) {
   clearTimeout(soft);
   unrelay();
-  say(stopped ? "stopped" : how);
+  say(stopped ? "stopped" : asked ? `interrupted ${asked}` : how);
   const pid = child.pid;
   if (windows || pid === undefined || !groupLives(pid)) return done();
   // Left by the command in its group: stopped as at the limit, said apart from the end.
-  if (!stopped) {
+  if (!stopped && !asked) {
     say("left: stopped");
     stopGroup();
   }

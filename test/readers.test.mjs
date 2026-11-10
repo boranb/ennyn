@@ -59,6 +59,7 @@ export const READERS = [
   { module: "metrics/bypass.mjs", program: "git", harness: "test/git-oracle.test.mjs", test: LOG_READERS, kind: "live" },
   { module: "metrics/szz.mjs", program: "git", harness: "test/git-oracle.test.mjs", test: LOG_READERS, kind: "live" },
   { module: "metrics/leftovers.mjs", program: "git", harness: "test/leftovers.test.mjs", test: "leftovers: changes not committed: modified, staged, deleted and renamed are listed", kind: "runs" },
+  { module: "core/heavy-lock.mjs", program: "sh", harness: "test/heavy-lock.test.mjs", test: "lock: waiters take their turns in the order they came, an ennyn waiter and a locked.sh waiter alike", kind: "live" },
   { module: "plan/worktrees.mjs", program: "git", harness: "test/worktrees.test.mjs", test: "worktrees: a marked worktree goes only when removing it loses nothing", kind: "runs" },
   { module: "plan/audit.mjs", program: "Claude Code", harness: "test/reference.test.mjs", test: CC_CELLS, kind: "record" },
   { module: "setup/budget.mjs", program: "Markdown", harness: "test/reference.test.mjs", test: "reference: every Markdown cell compares as recorded", kind: "record" },

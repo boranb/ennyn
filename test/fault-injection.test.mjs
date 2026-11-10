@@ -488,6 +488,8 @@ const CASES = [
       git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-am", "chore: fast test"], { cwd: repo });
     },
   },
+  // The lock reads git only for the language of its lines; its folder is the copy's own, so runs side by side never wait.
+  { args: ["lock", "--", process.execPath, "-e", "0"], writes: true, env: { ENNYN_LOCK_DIR: ".git/lock" } },
   { args: ["worktrees"], setup: (repo) => worktrees(repo) },
   { args: ["worktrees", "--remove"], writes: true, setup: (repo) => worktrees(repo) },
   { args: ["gate-record", "--start", START, "--exit", "0", "--commit", "HEAD"], writes: true },

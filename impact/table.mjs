@@ -134,7 +134,7 @@ function referenceRun(argv, cwd, limitMs) {
   });
   const said = String(r.output?.[3] ?? "").split("\n");
   const pid = Number(/^pid (\d+)$/.exec(said[0] ?? "")?.[1]);
-  const end = said.find((l) => /^(exit|signal|stopped|error)\b/.test(l)) ?? "";
+  const end = said.find((l) => /^(exit|signal|stopped|interrupted|error)\b/.test(l)) ?? "";
   const stderr = r.stderr ?? "";
   if (r.error || !end) {
     // The runner was stopped (its output past the buffer, its own limit) before it said the command's end: the
@@ -153,7 +153,8 @@ function referenceRun(argv, cwd, limitMs) {
   if (end === "stopped") throw Object.assign(new Error("stopped at its limit"), { code: "ETIMEDOUT", stderr });
   const [kind, value] = end.split(" ");
   if (kind === "error") throw Object.assign(new Error(`${argv[0]}: ${value}`), { code: value, stderr });
-  if (kind === "signal") throw Object.assign(new Error(`killed by ${value}`), { signal: value, stderr });
+  // `interrupted`: the runner was asked to stop and stopped the group itself, as at its limit.
+  if (kind === "signal" || kind === "interrupted") throw Object.assign(new Error(`killed by ${value}`), { signal: value, stderr });
   throw Object.assign(new Error(`exit ${value}`), { status: Number(value), stderr });
 }
 
