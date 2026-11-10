@@ -56,7 +56,8 @@
         "new: directory listing that misses a nested layout of the producer",
         "new: list of switches narrower than the program it models",
         "new: revision argument with no end-of-options separator",
-        "new: platform setting ignored by a byte-for-byte verdict"
+        "new: platform setting ignored by a byte-for-byte verdict",
+        "new: closed pipe kills before cleanup"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, the stored-message scope held and other git readers did not. Named in cycle 2."
     },
@@ -82,7 +83,8 @@
         "new: test setup not hermetic",
         "new: test depends on one machine's layout",
         "new: sandbox root built from a fixed folder list drops what the caller resolved outside it",
-        "new: test reads repository outside its listed allowance"
+        "new: test reads repository outside its listed allowance",
+        "new: test reads a platform-only interface"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, it came back as tests that lean on the machine's identity, found at the Linux run. Named in cycle 3."
     },
@@ -223,7 +225,8 @@
         "new: platform data a byte comparison does not see",
         "new: text check lets half a character through",
         "new: path separator spelling bypass",
-        "new: positional run inside re-read text not seen by helper rule"
+        "new: positional run inside re-read text not seen by helper rule",
+        "new: identity record parsed with a separator its value holds"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, reviewers found more shapes after it landed. Named in cycle 7."
     },
@@ -562,7 +565,8 @@
         "new: shortened text drops a rule",
         "new: claim about another program from memory",
         "new: refusal message names a write that did not happen",
-        "new: assertion from an unmeasured belief"
+        "new: assertion from an unmeasured belief",
+        "new: reason names the wrong cause"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet."
     },
@@ -616,7 +620,8 @@
         "new: format says appended while its fields need editing",
         "new: stated repair forbidden by another rule",
         "new: refactor changes untouched output",
-        "new: restart wipes the state it should resume"
+        "new: restart wipes the state it should resume",
+        "new: refusal without its reason"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet.",
       "nodes": [
@@ -667,7 +672,9 @@
         "new: content id of one side stands for a difference of three",
         "new: oracle reads a narrower hold set than the command",
         "new: restore beside a live writer",
-        "new: cleanup error replaces the cause"
+        "new: cleanup error replaces the cause",
+        "new: an ended command reported as timed out",
+        "new: signal sent to a process group id after the group ended"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate.",
       "gates": [
@@ -735,7 +742,8 @@
         "new: holes in a list skipped by its iterator",
         "new: a reason that shows nothing counts as one",
         "new: nullable field read without a guard",
-        "new: honest failure aborts the whole reading"
+        "new: honest failure aborts the whole reading",
+        "new: no-process id passed to a group kill"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -785,7 +793,8 @@
         "new: git command refuses the fixed call options",
         "new: corpus state built without the condition it names",
         "new: test leaves its child running",
-        "new: test asserts the wrong kind"
+        "new: test asserts the wrong kind",
+        "new: test fixture races the state it needs"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -905,7 +914,10 @@
         "new: real run with no limit hangs instead of failing",
         "new: sync child stdin pipe hangs under load",
         "new: bound held only by an outer retry loop",
-        "new: time limit by a signal the fence wrapper ignores"
+        "new: time limit by a signal the fence wrapper ignores",
+        "new: cleanup registered after the step that can throw",
+        "new: failed test leaves its stand-in running",
+        "new: forced kill skips a wrapper's signal forwarding"
       ],
       "judged": "the orchestrator of cycle 18, reading the rows"
     },
@@ -992,6 +1004,18 @@
         "new: harness step refused by the new boundary"
       ],
       "judged": "Named in cycle 24 by the orchestrator, from two review rows: a read recorder's own stat throwing, and a test preload swapping product code's stdin transport."
+    },
+    {
+      "id": "scripted-edit-overreaches",
+      "says": "A scripted or mechanical edit (a cut, an insert, a replace run over many places) changes more or other text than it meant, and only a later check finds it.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: edit drops the file's tail",
+        "new: edit script spacing"
+      ],
+      "judged": "Named in cycle 30 by the orchestrator, from two author rows of one task: an insert by a cut at a list's end dropped the export after it, and a mechanical insert left a stray space before a comma."
     }
   ]
 }

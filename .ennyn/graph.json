@@ -3140,11 +3140,11 @@
         "task-short-suite"
       ],
       "id": "heavy-job-limit",
-      "title": "ennyn lock -- <command>: one machine-wide FIFO ticket queue for heavy jobs (whole suites, mutation runs, labs, platform images) across sessions and projects, a dead holder's ticket dropped, the wait logged; the cycle skill and briefs run heavy jobs through it. Today it is a hand-written locked.sh in each cycle folder, and two sessions coordinated main and the lock by messages (2026-11-08)",
+      "title": "ennyn lock -- <command>: one machine-wide FIFO ticket queue for heavy jobs (whole suites, mutation runs, labs, platform images) across sessions and projects, a dead holder's ticket dropped, the wait logged; the cycle skill and briefs run heavy jobs through it. Today it is a hand-written locked.sh in each cycle folder, and two sessions coordinated main and the lock by messages (2026-11-08); each run gets a time limit, so a hung run cannot hold the lock (a SIGKILLed locked.sh leaves suite.lock for 120 minutes)",
       "value": "high",
       "cost": "S",
       "cluster": "method",
-      "source": "measured, cycle 16: three or more heavy jobs ran together for 29% of calendar time, load median 56 on 10 cores; the suite lock added at 16:48 ended the 24-minute runs but not the median (586 to 669 s), since mutation, gates and labs stayed outside it, and it made 32.6 minutes of queue. node --test limits files, not the processes they spawn; cycle 2026-11-01 (17): one short suite sat about 50 minutes in the lock's queue with labs ahead of it, and a reviewer's probe that recursed in a hook reached 1738 processes against a per-user limit of 2666, so other tasks failed with EAGAIN: the limit should count processes too, and probes need a bound; cycle 2026-11-02 (18): T2's short suite waited about 2 hours on the cycle's lock at load up to 241: a mkdir lock keeps no order, and a short suite with guards back runs as long as a whole one; a reviewer's parallel mutant trees reached load 177 before it was told to run them in turn; cycle 2026-11-02 (19): the mkdir lock kept no order: T3's short suite waited 94 minutes and T4's 42 while later arrivals took it; four short suites queued behind one with guards back, load up to 154; cycle 2026-11-04 (20) on Windows with WSL: two suite slots by flock; a locked suite waited over 30 minutes behind two others; cycle 2026-11-04 (21): a request: one heavy job at a time; the cycle-20 test:linux in the 2-CPU VM ran beside cycle 21 outside the suite lock, load 85, its first image took 1 h 41 min against about 38 and two timing ratios went red; stopped on request; cycle 2026-11-06 (24): the suite lock held one suite while load reached 80-170 (labs, lone slow test files and reviewers' recordings outside it, and a lab of 120 CPU burners); test/short.mjs sets no --test-concurrency (node's default: cores minus one); measure test:short with 9, 5 and 3 files at once (time, load) and put lone test-file runs through the same lock; the user, 2026-11-05: left to the session: a rule by hand in cycle 25's briefs first; cycle 2026-11-08 (27): the mkdir lock kept no order and a second project's one-minute run waited 45 minutes behind re-taken locks; the cycle's lock became a ticket queue by hand (first come, first served, dead tickets dropped)",
+      "source": "measured, cycle 16: three or more heavy jobs ran together for 29% of calendar time, load median 56 on 10 cores; the suite lock added at 16:48 ended the 24-minute runs but not the median (586 to 669 s), since mutation, gates and labs stayed outside it, and it made 32.6 minutes of queue. node --test limits files, not the processes they spawn; cycle 2026-11-01 (17): one short suite sat about 50 minutes in the lock's queue with labs ahead of it, and a reviewer's probe that recursed in a hook reached 1738 processes against a per-user limit of 2666, so other tasks failed with EAGAIN: the limit should count processes too, and probes need a bound; cycle 2026-11-02 (18): T2's short suite waited about 2 hours on the cycle's lock at load up to 241: a mkdir lock keeps no order, and a short suite with guards back runs as long as a whole one; a reviewer's parallel mutant trees reached load 177 before it was told to run them in turn; cycle 2026-11-02 (19): the mkdir lock kept no order: T3's short suite waited 94 minutes and T4's 42 while later arrivals took it; four short suites queued behind one with guards back, load up to 154; cycle 2026-11-04 (20) on Windows with WSL: two suite slots by flock; a locked suite waited over 30 minutes behind two others; cycle 2026-11-04 (21): a request: one heavy job at a time; the cycle-20 test:linux in the 2-CPU VM ran beside cycle 21 outside the suite lock, load 85, its first image took 1 h 41 min against about 38 and two timing ratios went red; stopped on request; cycle 2026-11-06 (24): the suite lock held one suite while load reached 80-170 (labs, lone slow test files and reviewers' recordings outside it, and a lab of 120 CPU burners); test/short.mjs sets no --test-concurrency (node's default: cores minus one); measure test:short with 9, 5 and 3 files at once (time, load) and put lone test-file runs through the same lock; the user, 2026-11-05: left to the session: a rule by hand in cycle 25's briefs first; cycle 2026-11-08 (27): the mkdir lock kept no order and a second project's one-minute run waited 45 minutes behind re-taken locks; the cycle's lock became a ticket queue by hand (first come, first served, dead tickets dropped); cycle 30: a hung red test held the lock 59 minutes while three agents waited",
       "since": 16
     },
     {
@@ -3928,7 +3928,7 @@
       "cluster": "gates",
       "mechanization": true,
       "sourceClass": "code-no-test-holds",
-      "source": "cycle 2026-11-01 (17): the most recurring class of the convergence block",
+      "source": "cycle 2026-11-01 (17): the most recurring class of the convergence block; cycle 30 convergence: code-no-test-holds the most recurring class, 11 times, all caught by the mutation gate (gate:mutation): a coverage list before the pass would name them before mutants are written",
       "since": 17
     },
     {
@@ -4588,11 +4588,11 @@
       "status": "planned",
       "needs": [],
       "id": "cycle-wake-lock",
-      "title": "The cycle keeps the machine awake while its agents run and lets go at the closing or when it stops: SetThreadExecutionState on Windows, caffeinate on macOS, systemd-inhibit on Linux, one process recorded so a later session can stop it; task-brief.md names sleep only as a way agents get lost",
+      "title": "The cycle keeps the machine awake while its agents run and lets go at the closing or when it stops: SetThreadExecutionState on Windows, caffeinate on macOS, systemd-inhibit on Linux, one process recorded so a later session can stop it; task-brief.md names sleep only as a way agents get lost; no fixed limit while the journal is open",
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "source": "observed 2026-11-05: both cycles wrote their own 10-hour wake script; this repository's cycle 20 on Windows ran a 14-hour SetThreadExecutionState loop by hand, and the handoff tells the next orchestrator to do the same",
+      "source": "observed 2026-11-05: both cycles wrote their own 10-hour wake script; this repository's cycle 20 on Windows ran a 14-hour SetThreadExecutionState loop by hand, and the handoff tells the next orchestrator to do the same; cycle 30: caffeinate -t 43200 ended mid-cycle, the Mac went into maintenance sleep and a short suite took 3 h 10 min with eight git calls past their limits",
       "since": 21
     },
     {
@@ -5315,17 +5315,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "push-check-recorded-suite",
-      "title": "push-check says what a push needs, from the commits it sends and a record each run writes by tree hash: no code changed (the project's code globs; Ennyn's own are test/short.mjs isCode) → a green fast or affected run on that tree; code → a green whole test command on that tree; a green run already recorded on the same tree is not run again (shares the record with landing-same-tree-skip); it fetches first and refuses a branch behind its upstream. CLAUDE.md and push.md then name the command, not a list",
-      "value": "high",
-      "cost": "M",
-      "cluster": "method",
-      "source": "cycle 2026-11-07 (26), T3 round 1 security review (c26-t3-sec-r1-05): push-check's 'tested' is the caller's word; 2026-11-08: a whole suite was started for a push of text only, because the rule lived in a hand list in CLAUDE.md that drifted from test/short.mjs (one-question-several-places); projects that use Ennyn have only the prose; cycle 28 T1 (did not land): first commit bab4354 on c28/t1, round 1 decided (see the handoff archive's cycle 28 section), its uncommitted fixes at refs/ennyn/c28-t1-r1-wip",
-      "since": 26
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "push-mode-replayed-approval",
       "title": "Tell a replayed approval commit (a cherry-pick of the user's own User-Approved-Loosening: push.mode commit) from the user's original before after-closing pushes",
       "value": "medium",
@@ -5552,17 +5541,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "landing-same-tree-skip",
-      "title": "No landing rerun on a tree a green short suite already ran on: the landing compares the tree hash with the author's green run and records the skip; when the base moved it runs the files the change and the move touch; the whole suite stays once at the closing",
-      "value": "high",
-      "cost": "S",
-      "cluster": "method",
-      "source": "the user, 2026-11-08: a request; cycle 27: two of four landing runs were exact repeats (T4, T2; T2's stopped after 32 minutes at load 21-37)",
-      "since": 27
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "remote-heavy-runs",
       "title": "Heavy runs (the whole suite, mutation, Linux images) on a remote host by one command, the Mac reading only the result: an own Unix user and folder, low priority, nothing else on the server touched (its other apps' users, ports, services, databases, containers, cron), no root step without asking, not while another project's gate or deploy runs there. Measure first: time per suite there, agreement with the Mac's run (macOS-only tests stay local), what is copied and where it stays",
       "value": "high",
@@ -5611,7 +5589,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "gates",
-      "title": "What the shell box still leaves open, decided in one place, no patches: a box text is root in its user namespace and keeps the user's supplementary groups (setgroups deny), so a group-writable file under the rbind'ed /usr or /etc stays writable (none on this machine today); macOS's check reads a zombie sleeper as alive after the check (c29-t1-code-r0-05); the container branch has no file boundary. Decide: a further boundary (a user without groups, a read-only remount), or the limit said in DESIGN.md and SECURITY.md",
+      "title": "What the shell box still leaves open, decided in one place, no patches: a box text is root in its user namespace and keeps the user's supplementary groups (setgroups deny), so a group-writable file under the rbind'ed /usr or /etc stays writable (none on this machine today); macOS's check reads a zombie sleeper as alive after the check (c29-t1-code-r0-05); the container branch has no file boundary. Decide: a further boundary (a user without groups, a read-only remount), or the limit said in DESIGN.md and SECURITY.md. Also (cycle 30 security audit, q07): on macOS the sandbox profile has no file boundary either, and a background job of a run that ends before its limit outlives it",
       "source": "cycle 2026-11-09 (29), T1 rounds 1-2 (test/shell-box.mjs is at the fix-loop brake)",
       "since": 29
     },
@@ -5633,7 +5611,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "title": "test/guards.test.mjs takes 668-737 s alone on the Windows machine's WSL, past the 600 s per-file limit the short suite gives: every short run that picks it cancels it, and each task reran it alone; measure where its time goes and either split it or give the short suite a limit it fits, so a pick of it is a result",
+      "title": "test/guards.test.mjs takes 668-737 s alone on the Windows machine's WSL, past the 600 s per-file limit the short suite gives: every short run that picks it cancels it, and each task reran it alone; measure where its time goes and either split it or give the short suite a limit it fits, so a pick of it is a result. On the Mac (cycle 30, loaded): 1071 s alone, 1153 s inside a short suite",
       "source": "cycle 2026-11-09 (29), T3, T4 and T2 fast suites (logs in the kept folder)",
       "since": 29
     },
@@ -5717,19 +5695,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "limit-kill-signal-gate",
-      "title": "Every spawn or spawnSync with a time limit, in product code and in test harnesses, names its kill signal, and a test reads the tree for one that does not; where the limit wraps another program (unshare, a shell, taskkill), a test runs it against a stand-in that ignores SIGTERM and checks the run ends at the limit. The prose rule it replaces: none",
-      "value": "high",
-      "cost": "S",
-      "cluster": "gates",
-      "mechanization": true,
-      "sourceClass": "limit-does-not-bound",
-      "source": "cycle 2026-11-09 (29) convergence: limit-does-not-bound the most recurring class, 6 times (author-reading 2, measurement 2, review 2): push-spellings' corpus limit sent SIGTERM that unshare ignores, mutate's refused stop left the CLI waiting, a box run outlived its limit",
-      "since": 29
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "push-corpus-fence-refusal-unread",
       "title": "The fenced push corpus run (test/push-spellings.test.mjs through the shell box) reads a push the sandbox refused (a named pipe write, a connect) as no push reached: the oracle's verdict comes from the harness, not from git. Say a refused step as unmeasured for that cell, or count the refusal apart",
       "value": "low",
@@ -5762,28 +5727,13 @@
     },
     {
       "status": "planned",
-      "needs": [
-        "push-check-recorded-suite"
-      ],
+      "needs": [],
       "id": "push-hook-reads-record",
       "title": "The push hook reads the test-run record push-check reads, so a plain git push the hook lets through in after-closing needs the same recorded green run on the pushed tree, not the caller's word",
       "value": "medium",
       "cost": "S",
       "cluster": "method",
       "source": "cycle 2026-11-08 (28), closed on the Mac 2026-11-09 from its ledger: T1 author follow-up",
-      "since": 28
-    },
-    {
-      "status": "planned",
-      "needs": [
-        "push-check-recorded-suite"
-      ],
-      "id": "ennyn-config-code-globs",
-      "title": "This repository's .ennyn/config.json names push.codeGlobs (test/short.mjs isCode: .mjs .cjs .js package.json) and commands.wholeTest, so a text-only push here needs only the short suite as the record reads it. A narrowing is a loosening and carries its User-Approved-Loosening line",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "method",
-      "source": "cycle 2026-11-08 (28), closed on the Mac 2026-11-09 from its ledger: T1 round 1 security review (c28-t1-sec-r1-03); the decision was delegated 2026-11-09",
       "since": 28
     },
     {
@@ -5818,6 +5768,94 @@
       "cluster": "cycle",
       "source": "cycle 2026-11-08 (28), closed on the Mac 2026-11-09 from its ledger: TMPDIR measured during the closing",
       "since": 28
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "doctor-noop-quoted-pipe",
+      "title": "cannotFail misses a command like `npm test || echo \"a|b\"`: its echo rule refuses a | even inside quotes, so the shape reads as a pipe or not by accident; read quotes as test/runs' pipe reader does",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-10 (30), T2 round 2 author (older code, found by reading)",
+      "since": 30
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "taskkill-stop-limit",
+      "title": "stopTree's taskkill call (metrics/mutation.mjs, the Windows stop) has no time limit, so a taskkill that hangs holds the run with no bound; give it a limit and a kill signal, measured on Windows",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-10 (30), T3 reading",
+      "since": 30
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "selftest-canary-stand-in",
+      "title": "test/eval/selftest.mjs runs its canary under sandbox-exec with SIGKILL at its limit but no test runs that path against a stand-in that ignores SIGTERM: give the canary's program an injectable path and such a test",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-10 (30), T3",
+      "since": 30
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "kill-signal-string-code",
+      "title": "test/kill-signal.mjs does not read code inside strings (a child's -e text, a generated script), so a spawn with a limit and no kill signal there passes; read such code or list those files",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-10 (30), T3 stated limit",
+      "since": 30
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "mutate-tests-windows-native",
+      "title": "The mutate process tests (win-kill-waits-exit) on native Windows: no /proc, Git's ps may refuse its flags, POSIX single quotes in stuckCommand do not quote under cmd.exe; run there and make them hold or say what they cannot check",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-10 (30), T1 round 1 report gap",
+      "since": 30
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "mutate-tests-harness-design-decision",
+      "title": "test/mutation.test.mjs is at the fix-loop brake (previous-fix rows in cycles 29 and 30: the process identity, cleanup order, pid 0): decide in one place how its tests start, identify and end processes (one helper the box and the mutate tests share, or the stated limit), no further patches",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "cycle 2026-11-10 (30) convergence: fix-loop brake on test/mutation.test.mjs",
+      "since": 30
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "finding-row-shape-at-write",
+      "title": "Reviewers' rows break the ledger's shape when written (fingerprints over 120 characters: 4 rows in cycle 28, 4 in cycle 30), found only at the closing's convergence. A command reviewers and authors run on their rows file (ennyn findings check <file>) says each refused row as they write it",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-10 (30) closing: convergence refused 4 rows, as in cycle 28",
+      "since": 30
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "brief-paraphrase-before-edit",
+      "title": "Two of four authors in cycle 30 wrote the brief's two paragraphs at the end, not before the first edit (T2, T4), so the orchestrator's reading checked nothing before the work. The report says when they were written (a time or the first edit's commit), and a paragraph written after the first edit is a brief row",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 2026-11-10 (30): T2 and T4 reports said so themselves",
+      "since": 30
     }
   ],
   "done": [
@@ -6615,6 +6653,36 @@
       "title": "Cycle 28's 47 findings rows appended to the ledger on the Mac, 18 new: class names linked, its convergence block in the handoff archive, its journal closed; the fourth task (push-check-recorded-suite) did not land: branch c28/t1 kept, uncommitted round-1 fixes at refs/ennyn/c28-t1-r1-wip",
       "status": "done",
       "finished": "2026-11-09"
+    },
+    {
+      "id": "mutate-tests-mac-start",
+      "title": "test/mutation.test.mjs read a process's start from /proc only, so five (win-kill-waits-exit) tests failed on macOS and their cleanup ended nothing; the start is read through ps where /proc is absent, an unreadable start fails the test, every child is recorded before its start is read and a child with no PID is never signalled (6481a01)",
+      "status": "done",
+      "finished": "2026-11-10"
+    },
+    {
+      "id": "push-check-recorded-suite",
+      "title": "ennyn test fast|whole records runs by tree hash in the state dir (never for a dirty, sparse, skip-worktree or submodule-hidden tree, nor for a pipeline or a command that cannot fail); push-check fetches, refuses a branch behind, and says what a push needs from the record; any red run on the tree voids --tested (0e64f1e)",
+      "status": "done",
+      "finished": "2026-11-10"
+    },
+    {
+      "id": "landing-same-tree-skip",
+      "title": "A landing on the tree of a green fast run recorded by the author does not run it again; the Landing row names ennyn test fast on the committed tree (0e64f1e, with push-check-recorded-suite)",
+      "status": "done",
+      "finished": "2026-11-10"
+    },
+    {
+      "id": "limit-kill-signal-gate",
+      "title": "Every child process call with a time limit (timeout or an abort signal) names its kill signal and test/kill-signal.test.mjs reads the tree for one that does not, unreadable shapes refused or allowed by count; the impact reference command runs in its own group, SIGTERM then SIGKILL after 2 s; a shell box run Node stopped takes its group with it (04cfea8)",
+      "status": "done",
+      "finished": "2026-11-10"
+    },
+    {
+      "id": "ennyn-config-code-globs",
+      "title": "This repository's config names commands.wholeTest and push.codeGlobs, the same files test/short.mjs reads as code; the choice went to the orchestrator's recommendation (cc3694a)",
+      "status": "done",
+      "finished": "2026-11-10"
     }
   ],
   "declined": [
