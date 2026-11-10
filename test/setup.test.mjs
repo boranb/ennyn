@@ -3335,3 +3335,301 @@ test("ask rules (review two): a hooks value Claude Code drops leaves the file co
   const scan = JSON.parse(spawnSync(process.execPath, [CLI, "init-scan", "--json"], { cwd: r.dir, encoding: "utf8" }).stdout);
   assert.deepEqual([scan.agentSetup.ask.githubRemotes, scan.agentSetup.ask.rules.some((/** @type {any} */ x) => x.command === "gh release")], [["fork"], true]);
 });
+
+test("uninstall: install-hook records its hook by sha256; uninstall-hook removes it while unchanged, then the state dir, and lists what stays", async () => {
+  const { WRITTEN } = await import("../setup/uninstall.mjs");
+  const cli = (/** @type {string} */ cwd, /** @type {string[]} */ ...args) => spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: "utf8", env: { ...process.env, ENNYN_PLUGIN_DATA: "", ENNYN_PLUGIN_ROOT: "" } });
+  for (const plugin of [false, true]) {
+    const r = repo();
+    const data = plugin ? mkdtempSync(join(tmpdir(), "en-un-data-")) : null;
+    const hook = join(r.dir, ".git", "hooks", "commit-msg");
+    assert.equal(cli(r.dir, "install-hook", ...(data ? ["--plugin-data", data] : [])).status, 0);
+    const record = JSON.parse(readFileSync(join(r.dir, ".git", "ennyn", WRITTEN), "utf8"));
+    assert.deepEqual(record.files.map((/** @type {any} */ f) => [f.path, f.by]), [[join(realpathSync(join(r.dir, ".git", "hooks")), "commit-msg"), "install-hook"]]);
+    assert.match(record.files[0].sha256, /^[0-9a-f]{64}$/);
+    // Running it again on an unchanged hook keeps one entry.
+    assert.equal(cli(r.dir, "install-hook", ...(data ? ["--plugin-data", data] : [])).status, 0);
+    assert.equal(JSON.parse(readFileSync(join(r.dir, ".git", "ennyn", WRITTEN), "utf8")).files.length, 1);
+    // A hook written before there was a record: a run that finds it unchanged records it.
+    rmSync(join(r.dir, ".git", "ennyn", WRITTEN));
+    assert.match(cli(r.dir, "install-hook", ...(data ? ["--plugin-data", data] : [])).stdout, /unchanged|already/i);
+    assert.equal(JSON.parse(readFileSync(join(r.dir, ".git", "ennyn", WRITTEN), "utf8")).files.length, 1);
+    put(r.dir, { ".ennyn/config.json": "{}", "HANDOFF.md": "# h\n", ".claude/settings.json": JSON.stringify({ permissions: { ask: ["Bash(git push *)", "PowerShell(git push *)", "Bash(make deploy *)"] } }) });
+    const un = cli(r.dir, "uninstall-hook", ...(data ? ["--plugin-data", data] : []));
+    assert.equal(un.status, 0, un.stdout + un.stderr);
+    assert.equal(existsSync(hook), false);
+    assert.equal(existsSync(join(r.dir, ".git", "ennyn")), false);
+    assert.match(un.stdout, /^Removed .*commit-msg: install-hook wrote it, and it is unchanged since\.$/m);
+    assert.match(un.stdout, /^Removed the state dir .*ennyn\.$/m);
+    assert.match(un.stdout, /^ {2}\.ennyn\/config\.json$/m);
+    assert.match(un.stdout, /^ {2}HANDOFF\.md$/m);
+    assert.match(un.stdout, /^ {2}\.claude\/settings\.json: the ask rules init proposes: Bash\(git push \*\), PowerShell\(git push \*\)$/m);
+    assert.doesNotMatch(un.stdout, /make deploy/);
+    // The plugin's version record is every repository's: named, never removed.
+    if (data) {
+      assert.equal(existsSync(join(data, "root")), true);
+      assert.match(un.stdout, /^The plugin's version record .*root stays/m);
+    }
+    // A second run finds nothing to remove and says so.
+    const again = cli(r.dir, "uninstall-hook");
+    assert.equal(again.status, 0);
+    assert.match(again.stdout, /^commit-msg hook: nothing of Ennyn's in .*commit-msg\.$/m);
+    assert.match(again.stdout, /^No state dir at /m);
+    // The config and the files the agent wrote stay.
+    assert.equal(existsSync(join(r.dir, ".ennyn", "config.json")), true);
+  }
+});
+
+test("uninstall: a hook edited since, one with the marker and no record, a link in its place, another hook and a record naming a place outside the git dir all stay", async () => {
+  const { WRITTEN } = await import("../setup/uninstall.mjs");
+  const { HOOK_MARKER } = await import("../setup/hook.mjs");
+  const cli = (/** @type {string} */ cwd, /** @type {string[]} */ ...args) => spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: "utf8", env: { ...process.env, ENNYN_PLUGIN_DATA: "", ENNYN_PLUGIN_ROOT: "" } });
+  const hookOf = (/** @type {string} */ dir) => join(dir, ".git", "hooks", "commit-msg");
+  // Edited since install-hook wrote it.
+  const edited = repo();
+  assert.equal(cli(edited.dir, "install-hook").status, 0);
+  writeFileSync(hookOf(edited.dir), `${readFileSync(hookOf(edited.dir), "utf8")}# mine\n`);
+  const e = cli(edited.dir, "uninstall-hook");
+  assert.equal(e.status, 1);
+  assert.match(e.stdout, /^.*commit-msg stays: install-hook wrote it, but it was edited since/m);
+  assert.doesNotMatch(e.stdout, /carries Ennyn's hook marker/);
+  assert.match(readFileSync(hookOf(edited.dir), "utf8"), /# mine/);
+  // The state dir goes all the same; a second run, with no record, still leaves the hook.
+  assert.equal(existsSync(join(edited.dir, ".git", "ennyn")), false);
+  const e2 = cli(edited.dir, "uninstall-hook");
+  assert.equal(e2.status, 1);
+  assert.match(e2.stdout, /^.*commit-msg stays: it carries Ennyn's hook marker, but no record says/m);
+  assert.equal(existsSync(hookOf(edited.dir)), true);
+  // The marker, written by hand, with no record.
+  const hand = repo();
+  put(hand.dir, { ".git/hooks/commit-msg": `#!/bin/sh\n${HOOK_MARKER}\nexit 0\n` });
+  assert.equal(cli(hand.dir, "uninstall-hook").status, 1);
+  assert.equal(existsSync(hookOf(hand.dir)), true);
+  // A link where the recorded file was: not followed, not removed.
+  const linked = repo();
+  assert.equal(cli(linked.dir, "install-hook").status, 0);
+  const target = join(mkdtempSync(join(tmpdir(), "en-un-target-")), "commit-msg");
+  renameSync(hookOf(linked.dir), target);
+  symlinkSync(target, hookOf(linked.dir));
+  const l = cli(linked.dir, "uninstall-hook");
+  assert.equal(l.status, 1);
+  assert.match(l.stdout, /stays: it is no longer the regular file install-hook wrote/);
+  assert.equal(existsSync(target), true);
+  // Another hook: untouched, and nothing to say but that.
+  const other = repo();
+  put(other.dir, { ".git/hooks/commit-msg": "#!/bin/sh\necho mine\n" });
+  const o = cli(other.dir, "uninstall-hook");
+  assert.equal(o.status, 0);
+  assert.match(o.stdout, /^.*commit-msg is another hook, not Ennyn's; it was not touched\.$/m);
+  assert.equal(readFileSync(hookOf(other.dir), "utf8"), "#!/bin/sh\necho mine\n");
+  // A record that names a file outside the git dir, with its true bytes: the record is not trusted for it.
+  const outside = repo();
+  const far = join(mkdtempSync(join(tmpdir(), "en-un-far-")), "f");
+  writeFileSync(far, "x");
+  const { createHash } = await import("node:crypto");
+  put(outside.dir, { [`.git/ennyn/${WRITTEN}`]: JSON.stringify({ files: [{ path: realpathSync(far), sha256: createHash("sha256").update("x").digest("hex"), by: "install-hook" }] }) });
+  const f = cli(outside.dir, "uninstall-hook");
+  assert.equal(f.status, 1);
+  assert.match(f.stdout, /stays: the record names it, but install-hook writes only the commit-msg hook git runs/);
+  assert.equal(existsSync(far), true);
+});
+
+test("uninstall: under a tracked hooks directory the lines that call commit-check are named, and nothing is removed", async () => {
+  const { hookBlock } = await import("../setup/hook.mjs");
+  const { checkLines } = await import("../setup/uninstall.mjs");
+  const r = repo();
+  const block = hookBlock(join(tmpdir(), "ennyn-ennyn"));
+  const text = `#!/bin/sh\n${block}echo mine\n`;
+  r.commit("hooks", { "hooks/commit-msg": text });
+  chmodSync(join(r.dir, "hooks", "commit-msg"), 0o755);
+  git(["config", "core.hooksPath", "hooks"], { cwd: r.dir });
+  const n = block.split("\n").length - 1;
+  assert.deepEqual(checkLines(text), [{ from: 2, to: n + 1 }]);
+  const un = spawnSync(process.execPath, [CLI, "uninstall-hook"], { cwd: r.dir, encoding: "utf8", env: { ...process.env, ENNYN_PLUGIN_DATA: "", ENNYN_PLUGIN_ROOT: "" } });
+  assert.equal(un.status, 1);
+  assert.match(un.stdout, new RegExp(`^.*hooks/commit-msg is your own hook and calls commit-check in lines 2-${n + 1}; Ennyn writes nothing there\\.`, "m"));
+  assert.equal(readFileSync(join(r.dir, "hooks", "commit-msg"), "utf8"), text);
+  // A hand-written call is named by its line.
+  assert.deepEqual(checkLines("#!/bin/sh\nset -e\nnode x/scripts/ennyn.mjs commit-check --hook \"$1\"\n"), [{ from: 3, to: 3 }]);
+  assert.deepEqual(checkLines("#!/bin/sh\necho commit-checker\n"), []);
+});
+
+test("uninstall: the state dir goes only when paths.stateDir names a folder called ennyn in the git dir, and not while a mutation journal is there (corpus)", async () => {
+  const { ownStateDir } = await import("../setup/uninstall.mjs");
+  for (const yes of [".git/ennyn", "./.git/ennyn", ".git\\ennyn", ".git/ennyn/sub", ".git//ennyn/"]) assert.equal(ownStateDir(yes), true, yes);
+  for (const no of [".git", ".git/", ".git/hooks", ".git/objects", ".git/ennyn/..", ".git/ennyn-x", ".git/x/ennyn", "ennyn", ".ennyn", "/abs/.git/ennyn"]) assert.equal(ownStateDir(no), false, no);
+  const cli = (/** @type {string} */ cwd) => spawnSync(process.execPath, [CLI, "uninstall-hook"], { cwd, encoding: "utf8", env: { ...process.env, ENNYN_PLUGIN_DATA: "", ENNYN_PLUGIN_ROOT: "" } });
+  // .git/hooks as the state dir: git's own folder stays, whatever it holds.
+  const hooks = repo();
+  put(hooks.dir, { ".ennyn/config.json": JSON.stringify({ paths: { stateDir: ".git/hooks" } }), ".git/hooks/pre-commit": "#!/bin/sh\n" });
+  const h = cli(hooks.dir);
+  assert.equal(h.status, 1);
+  assert.match(h.stdout, /^The state dir .*hooks stays: paths\.stateDir names no folder called ennyn/m);
+  assert.equal(existsSync(join(hooks.dir, ".git", "hooks", "pre-commit")), true);
+  // A mutation journal: a file a mutate run left changed; its original is in the journal.
+  const mut = repo();
+  put(mut.dir, { ".git/ennyn/mutate-0123456789ab.json": "{}" });
+  const m = cli(mut.dir);
+  assert.equal(m.status, 1);
+  assert.match(m.stdout, /holds a mutation journal \(mutate-0123456789ab\.json\)/);
+  assert.equal(existsSync(join(mut.dir, ".git", "ennyn", "mutate-0123456789ab.json")), true);
+  // A link in the state dir's place stays, and what it points at too.
+  const link = repo();
+  const away = mkdtempSync(join(tmpdir(), "en-un-away-"));
+  writeFileSync(join(away, "keep"), "x");
+  symlinkSync(away, join(link.dir, ".git", "ennyn"));
+  assert.equal(cli(link.dir).status, 1);
+  assert.equal(existsSync(join(away, "keep")), true);
+});
+
+test("uninstall (review round 1): only the commit-msg hook git runs is removed on the record's word, re-read at the removal; a link on the way to the state dir keeps it", async () => {
+  const { WRITTEN } = await import("../setup/uninstall.mjs");
+  const { createHash } = await import("node:crypto");
+  const sha = (/** @type {string} */ p) => createHash("sha256").update(readFileSync(p)).digest("hex");
+  const env = { ...process.env, ENNYN_PLUGIN_DATA: "", ENNYN_PLUGIN_ROOT: "" };
+  const cli = (/** @type {string} */ cwd, /** @type {Record<string, string>} */ more = {}) => spawnSync(process.execPath, [CLI, "uninstall-hook"], { cwd, encoding: "utf8", env: { ...env, ...more } });
+  const install = (/** @type {string} */ cwd) => assert.equal(spawnSync(process.execPath, [CLI, "install-hook"], { cwd, encoding: "utf8", env }).status, 0);
+  const common = (/** @type {string} */ dir) => realpathSync(join(dir, ".git"));
+  // A record that names a file of git's own, with its true bytes: kept.
+  for (const name of ["config", "index"]) {
+    const r = repo();
+    r.commit("one", { f: "x" });
+    install(r.dir);
+    const target = join(common(r.dir), name);
+    writeFileSync(join(r.dir, ".git", "ennyn", WRITTEN), JSON.stringify({ files: [{ path: target, sha256: sha(target), by: "install-hook" }] }));
+    assert.equal(cli(r.dir).status, 1, name);
+    assert.equal(existsSync(target), true, name);
+  }
+  // A file reached through a link inside .git/hooks: kept, and what the link points at too.
+  const l = repo();
+  install(l.dir);
+  const away = mkdtempSync(join(tmpdir(), "en-un-away-"));
+  writeFileSync(join(away, "precious"), "keep");
+  symlinkSync(away, join(l.dir, ".git", "hooks", "out"));
+  const through = join(common(l.dir), "hooks", "out", "precious");
+  writeFileSync(join(l.dir, ".git", "ennyn", WRITTEN), JSON.stringify({ files: [{ path: through, sha256: sha(through), by: "install-hook" }] }));
+  assert.equal(cli(l.dir).status, 1);
+  assert.equal(existsSync(join(away, "precious")), true);
+  // The hook rewritten while the command runs (a git on PATH stands in for another program writing it): kept.
+  const w = repo();
+  install(w.dir);
+  const hook = join(w.dir, ".git", "hooks", "commit-msg");
+  const shim = mkdtempSync(join(tmpdir(), "en-un-shim-"));
+  const real = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+  const flag = join(shim, "armed");
+  writeFileSync(flag, "");
+  writeFileSync(join(shim, "git"), `#!/bin/sh\ncase "$*" in *hooks*) if [ -f '${flag}' ]; then rm -f '${flag}'; printf '#!/bin/sh\\n# edited\\n' > '${hook}'; fi;; esac\nexec '${real}' "$@"\n`);
+  chmodSync(join(shim, "git"), 0o755);
+  const rw = cli(w.dir, { PATH: `${shim}${delimiter}${process.env.PATH}` });
+  assert.equal(existsSync(flag), false, "the stand-in wrote the hook");
+  assert.equal(rw.status, 1, rw.stdout);
+  assert.equal(readFileSync(hook, "utf8"), "#!/bin/sh\n# edited\n");
+  // .git/ennyn a link to a folder elsewhere, the state dir below it: kept, and the folder elsewhere too.
+  const s = repo();
+  put(s.dir, { ".ennyn/config.json": JSON.stringify({ paths: { stateDir: ".git/ennyn/sub" } }) });
+  const elsewhere = mkdtempSync(join(tmpdir(), "en-un-else-"));
+  put(elsewhere, { "sub/precious": "keep" });
+  symlinkSync(elsewhere, join(s.dir, ".git", "ennyn"));
+  const st = cli(s.dir);
+  assert.equal(st.status, 1, st.stdout);
+  assert.equal(existsSync(join(elsewhere, "sub", "precious")), true);
+  // The same with the link's target inside the git dir: the link alone keeps it.
+  const inside = repo();
+  put(inside.dir, { ".ennyn/config.json": JSON.stringify({ paths: { stateDir: ".git/ennyn/sub" } }), ".git/other/sub/precious": "keep" });
+  symlinkSync(join(common(inside.dir), "other"), join(inside.dir, ".git", "ennyn"));
+  assert.equal(cli(inside.dir).status, 1);
+  assert.equal(existsSync(join(inside.dir, ".git", "other", "sub", "precious")), true);
+  // A file in the state dir's place: kept, and said.
+  const plain = repo();
+  put(plain.dir, { ".git/ennyn": "x" });
+  const pl = cli(plain.dir);
+  assert.equal(pl.status, 1);
+  assert.match(pl.stdout, /^The state dir .*ennyn stays: it is no folder/m);
+  // A file named commit-msg in the git dir that git does not run as the hook: kept.
+  const named = repo();
+  install(named.dir);
+  put(named.dir, { ".git/x/commit-msg": "#!/bin/sh\n" });
+  const x = join(common(named.dir), "x", "commit-msg");
+  writeFileSync(join(named.dir, ".git", "ennyn", WRITTEN), JSON.stringify({ files: [{ path: x, sha256: sha(x), by: "install-hook" }] }));
+  assert.equal(cli(named.dir).status, 1);
+  assert.equal(existsSync(x), true);
+  // .git/hooks a link to a folder elsewhere: install-hook writes through it, and uninstall-hook keeps what is there.
+  const linked = repo();
+  const hooksAway = mkdtempSync(join(tmpdir(), "en-un-hooks-"));
+  rmSync(join(linked.dir, ".git", "hooks"), { recursive: true, force: true });
+  symlinkSync(hooksAway, join(linked.dir, ".git", "hooks"));
+  install(linked.dir);
+  assert.equal(existsSync(join(hooksAway, "commit-msg")), true);
+  assert.equal(cli(linked.dir).status, 1);
+  assert.equal(existsSync(join(hooksAway, "commit-msg")), true);
+});
+
+test("uninstall (review round 1): the hook is moved aside and hashed again before it goes; one that no longer matches goes back", async () => {
+  const { removeIfSame } = await import("../setup/uninstall.mjs");
+  const { createHash } = await import("node:crypto");
+  const dir = mkdtempSync(join(tmpdir(), "en-un-aside-"));
+  const p = join(dir, "commit-msg");
+  writeFileSync(p, "mine");
+  assert.equal(removeIfSame(p, createHash("sha256").update("ennyn").digest("hex")), "changed");
+  assert.equal(readFileSync(p, "utf8"), "mine");
+  assert.deepEqual(readdirSync(dir), ["commit-msg"]);
+  // A read that fails: the file is back in place, and the error goes on.
+  assert.throws(() => removeIfSame(p, "0", () => { throw new Error("EACCES: no read"); }), /EACCES/);
+  assert.equal(readFileSync(p, "utf8"), "mine");
+  assert.deepEqual(readdirSync(dir), ["commit-msg"]);
+  assert.equal(removeIfSame(p, createHash("sha256").update("mine").digest("hex")), "removed");
+  assert.deepEqual(readdirSync(dir), []);
+});
+
+test("uninstall (review round 2): no hard links puts the hook back by rename; a missing hooks folder reads as gone; a recorded hook git no longer runs is said; a path recorded twice is read once", async () => {
+  const { removeIfSame, WRITTEN } = await import("../setup/uninstall.mjs");
+  const { createHash } = await import("node:crypto");
+  const noLink = () => { throw Object.assign(new Error("ENOTSUP: operation not supported"), { code: "ENOTSUP" }); };
+  // A file system with no hard links: the edited hook goes back by rename, nothing left aside.
+  const dir = mkdtempSync(join(tmpdir(), "en-un-nolink-"));
+  const p = join(dir, "commit-msg");
+  writeFileSync(p, "mine");
+  assert.equal(removeIfSame(p, "0", readFileSync, noLink), "changed");
+  assert.equal(readFileSync(p, "utf8"), "mine");
+  assert.deepEqual(readdirSync(dir), ["commit-msg"]);
+  // The same with a failed read: back, then the error.
+  assert.throws(() => removeIfSame(p, "0", () => { throw new Error("EIO: no read"); }, noLink), /EIO/);
+  assert.deepEqual(readdirSync(dir), ["commit-msg"]);
+  // Something new at the hook's place: the old one stays aside.
+  assert.equal(removeIfSame(p, "0", (a) => (writeFileSync(p, "new"), readFileSync(a)), noLink), "aside");
+  assert.equal(readFileSync(p, "utf8"), "new");
+  assert.equal(readdirSync(dir).length, 2);
+  // A matching hook still goes.
+  const q = join(mkdtempSync(join(tmpdir(), "en-un-nolink-")), "commit-msg");
+  writeFileSync(q, "ennyn");
+  assert.equal(removeIfSame(q, createHash("sha256").update("ennyn").digest("hex"), readFileSync, noLink), "removed");
+  const env = { ...process.env, ENNYN_PLUGIN_DATA: "", ENNYN_PLUGIN_ROOT: "" };
+  const run = (/** @type {string} */ cwd, /** @type {string} */ cmd) => spawnSync(process.execPath, [CLI, cmd], { cwd, encoding: "utf8", env });
+  // The hooks folder deleted by hand: the hook is gone, the state dir goes, exit 0, and so on every run.
+  const h = repo();
+  assert.equal(run(h.dir, "install-hook").status, 0);
+  rmSync(join(h.dir, ".git", "hooks"), { recursive: true });
+  const hu = run(h.dir, "uninstall-hook");
+  assert.equal(hu.status, 0, hu.stdout + hu.stderr);
+  assert.match(hu.stdout, /commit-msg: install-hook wrote it, and it is gone already\./);
+  assert.equal(existsSync(join(h.dir, ".git", "ennyn")), false);
+  assert.equal(run(h.dir, "uninstall-hook").status, 0);
+  // core.hooksPath set after the install: the recorded hook is unchanged, but git no longer runs it.
+  const m = repo();
+  assert.equal(run(m.dir, "install-hook").status, 0);
+  git(["config", "core.hooksPath", ".git/myhooks"], { cwd: m.dir });
+  const mu = run(m.dir, "uninstall-hook");
+  assert.equal(mu.status, 1);
+  assert.match(mu.stdout, /commit-msg stays: install-hook wrote it and it is unchanged, but git no longer runs it/);
+  assert.equal(existsSync(join(m.dir, ".git", "hooks", "commit-msg")), true);
+  // A record that names the hook twice: one entry, removed once.
+  const d = repo();
+  assert.equal(run(d.dir, "install-hook").status, 0);
+  const rec = join(d.dir, ".git", "ennyn", WRITTEN);
+  const j = JSON.parse(readFileSync(rec, "utf8"));
+  j.files.push(j.files[0]);
+  writeFileSync(rec, JSON.stringify(j));
+  const du = run(d.dir, "uninstall-hook");
+  assert.equal(du.status, 0, du.stdout);
+  assert.equal(du.stdout.match(/^Removed .*commit-msg/gm)?.length, 1);
+});

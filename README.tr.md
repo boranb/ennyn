@@ -54,6 +54,28 @@ Sonra projenizde `/ennyn:init` çalıştırın. Komut repoyu tarar, birkaç soru
 
 Ennyn'in reposu public olana kadar marketplace'i yerel bir klondan `claude plugin marketplace add ./ennyn` ile ekleyin, sonra yukarıdaki install komutunu çalıştırın.
 
+### Güncelleme
+
+```sh
+claude plugin marketplace update ennyn
+claude plugin update ennyn@ennyn
+```
+
+Ardından Claude Code'u yeniden başlatın. Plugin'den kurulan commit-msg hook'u yeni sürümü kendiliğinden izler; projelerinizde yeniden çalıştırılacak bir şey yoktur. Klonla kullanıyorsanız `git pull` yeter.
+
+### Kaldırma
+
+Önce `/ennyn:init` çalıştırdığınız her projede commit-msg hook'unu ve Ennyn'in durum klasörünü kaldırın. Bir Claude Code oturumunda agent'tan `node "$ENNYN_PLUGIN_ROOT/scripts/ennyn.mjs" uninstall-hook` komutunu çalıştırmasını isteyin; klonla kullanıyorsanız `ennyn uninstall-hook` çalıştırın. Komut hook'u yalnız `install-hook` yazdıysa ve o zamandan beri kimse değiştirmediyse siler. Düzenlediğiniz bir hook ya da izlenen bir hooks klasöründeki veya husky'ninkindeki hook yerinde kalır: komut hangi dosyadan hangi satırların çıkarılacağını söyler. Ardından `.git/ennyn` klasörünü siler ve karar size kalanları listeler: `.ennyn/config.json`, iş grafiği, handoff, metrik ve bulgu kayıtları, init'in `.claude/settings.json` dosyasına eklediği ask kuralları. Bunları silebilir ya da tutabilirsiniz; hepsi reponuzdaki sıradan dosyalardır.
+
+Sonra plugin'i ve geldiği marketplace'i kaldırın:
+
+```sh
+claude plugin uninstall ennyn@ennyn
+claude plugin marketplace remove ennyn
+```
+
+Plugin'i kaldırmak, hook'un plugin sürümünü okuduğu veri klasörünü de siler. Bir projede kalmış hook bundan sonra her commit'i bir notla geçirir; klondan çalıştırılan `uninstall-hook` onu yine de siler. `--keep-data` o klasörü tutar; onunla birlikte hook, Claude Code'un 14 gün sonra sildiği bir sürümü göstermeye devam eder ve o günden sonra her commit reddedilir. Bu yüzden önce hook'ları kaldırın.
+
 `skills/cycle/` klasöründeki, döngüyü yürüten cycle skill'i [Agent Skills](https://agentskills.io) formatındadır ama CLI'yi `${CLAUDE_PLUGIN_ROOT}` üzerinden çağırır; bu değişkeni yalnızca Claude Code tanımlar. Başka bir agent'la kullanmak için `CLAUDE_PLUGIN_ROOT` değişkenini bir Ennyn klonunun path'ine ayarlayın. CLI, Node 20 ya da üstünü ve git 2.34 ya da üstünü ister, bağımlılığı yoktur. Ennyn klonunun içinden `node scripts/ennyn.mjs --help` komutların listesini verir. README'nin geri kalanında geçen `ennyn`, projenizin içinden çalıştırılan bu script'in kısaltmasıdır.
 
 Ennyn Linux'ta ve macOS'ta, Windows'ta da WSL üzerinden çalışır; test takımı orada geçer (Ubuntu 22.04, git 2.34.1). Doğrudan Windows'ta (Git for Windows 2.47.1, Git Bash, PowerShell 7) push hook'u, commit-msg hook'u, gate gevşetme kontrolü ve plugin'in sürüm kaydı ölçüldü ve tutuyor, [SECURITY.md](SECURITY.md)'nin söylediği gibi; test takımı orada geçmez, sıkıştırma hook'u yalnız bir test projesinde denendi, diğer hook'lar ölçülmedi.

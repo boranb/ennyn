@@ -363,6 +363,8 @@ const CASES = [
   // The project directory comes from git; from a subdirectory a fallback reads no config.
   { args: ["doctor"], cwd: "src", first: true },
   { args: ["install-hook"], writes: true },
+  // The hook install-hook wrote above, and the state dir, removed: every read comes before the first removal.
+  { args: ["uninstall-hook"], writes: true },
   // core.hooksPath set: the command writes nothing and fails.
   { args: ["install-hook"], setup: (repo) => git(["config", "core.hooksPath", ".hooks"], { cwd: repo }) },
   { args: ["budget"] },

@@ -36,6 +36,7 @@ import { capped, ghApplies } from "../setup/permissions.mjs";
 import { PROBLEMS_SHOWN, checkProofs, loadClasses, registryLine, stateCounts } from "../metrics/classes.mjs";
 import { CYCLE_MAX, brakePatches, complete, cycleReport, reportLines } from "../metrics/findings.mjs";
 import { RecordError, installHook, sessionOf } from "../setup/hook.mjs";
+import { recordWrite, uninstall, writtenPath } from "../setup/uninstall.mjs";
 import { instructionBudget, readBudgets, recordBudget, previousBudget, replacedAt } from "../setup/budget.mjs";
 import { journalPath, MAX_TIMEOUT_MS, MutationError, parseMutants, restoreJournal, runMutants, summarizeMutants } from "../metrics/mutation.mjs";
 import { markedWorktrees, removeWorktree, verdict } from "../plan/worktrees.mjs";
@@ -48,6 +49,8 @@ Commands:
   doctor                                            check config, work graph and fix label; exit 1 on a problem
   install-hook [--plugin-data <dir>]                run commit-check as this repository's commit-msg hook (machine-local); --plugin-data
                                                     (a plugin session gives it as ENNYN_PLUGIN_DATA and ENNYN_PLUGIN_ROOT): the hook follows plugin updates
+  uninstall-hook [--plugin-data <dir>]              remove the commit-msg hook install-hook wrote, if unchanged since, and the state dir; say what to take
+                                                    out of a hook Ennyn did not write, and list what stays (config, graph, handoff, logs, ask rules)
   budget [--json] [--record [--security-audit]]     instruction text loaded every session / by path, rule lines repeated across files; --record appends to paths.metricsLog, --security-audit marks the cycle's security audit
   commit-check [--hook] <message-file>              check commit message shape (commit-msg hook; --hook: a config that does not load warns instead of failing)
   deps [--json]                                     known advisories (OSV), install scripts and unlisted sources of the lock files; exit 1 unless all measured clean
@@ -664,8 +667,50 @@ const COMMANDS = {
     // The block for the project's own hook, as it is pasted: after the message that says where.
     if (res.block) out(res.block);
     if (res.data !== null && ["installed", "updated", "unchanged"].includes(res.result)) out(t("hook.follows", { data: res.data }, cfg.language));
+    // What it wrote, by its bytes, so uninstall-hook removes it only while it is unchanged.
+    if (["installed", "updated", "unchanged"].includes(res.result)) {
+      try {
+        recordWrite(cwd, writtenPath(cwd, cfg.paths.stateDir), res.path, "install-hook");
+      } catch (e) {
+        err(t("hook.writtenUnrecorded", { path: res.path, error: /** @type {Error} */ (e).message }, cfg.language));
+        return 1;
+      }
+    }
     // What doctor warns about is no "nothing to do": a hook left as it is, or one that checks nothing, exits 1.
     return ["installed", "updated", "unchanged", "wired"].includes(res.result) ? 0 : 1;
+  },
+
+  "uninstall-hook"(args) {
+    const { opts, help } = parseArgs(args, { options: ["plugin-data"] });
+    if (help) return (out(USAGE), 0);
+    const pluginData = opts["plugin-data"] === undefined ? null : strOpt(opts["plugin-data"]);
+    if (opts["plugin-data"] !== undefined && (pluginData === null || !isAbsolute(pluginData))) throw new UsageError("--plugin-data needs the plugin's data directory as an absolute path (${CLAUDE_PLUGIN_DATA})");
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    const lang = cfg.language;
+    const res = uninstall({ cwd, cfg, data: pluginData ?? sessionOf(process.env)?.data ?? null });
+    for (const f of res.files) out(t(`uninstall.file.${f.result}`, { path: f.path }, lang));
+    const h = res.hook;
+    if (h.result === "wired") {
+      const lines = h.lines.map((l) => (l.from === l.to ? `${l.from}` : `${l.from}-${l.to}`)).join(", ");
+      out(t(h.lines.length ? "uninstall.hook.wired" : "uninstall.hook.wiredNoLine", { path: h.own ?? h.path, lines }, lang));
+    } else if (h.result !== "none" || !res.files.length) out(t(`uninstall.hook.${h.result}`, { path: h.path }, lang));
+    out(t(`uninstall.state.${res.state.result}`, { path: res.state.path, list: res.state.journals }, lang));
+    const s = res.stays;
+    const items = [
+      ...s.files.map((p) => shown(p, { name: true }).text),
+      ...(s.ask.length ? [t("uninstall.staysAsk", { rules: s.ask }, lang)] : []),
+      ...(s.planClear ? [t("uninstall.staysPlanClear", {}, lang)] : []),
+      ...(s.settingsUnread ? [t("uninstall.staysSettingsUnread", {}, lang)] : []),
+    ];
+    if (items.length) {
+      out(t("uninstall.stays", {}, lang));
+      for (const i of items) out(`  ${i}`);
+    }
+    if (s.record !== null) out(t("uninstall.staysRecord", { path: s.record }, lang));
+    // Something Ennyn would remove that stays, or the state dir left: the user's hand is needed.
+    const left = res.files.some((f) => f.result !== "removed" && f.result !== "gone") || h.result === "wired" || h.result === "unrecorded" || !["removed", "none"].includes(res.state.result);
+    return left ? 1 : 0;
   },
 
   budget(args) {

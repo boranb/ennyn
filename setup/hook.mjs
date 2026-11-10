@@ -276,6 +276,9 @@ ${gate}exec node "$cli" commit-check --hook "$1"
 /** The first line of hookBlock's block: how doctor finds the block in a project's own hook. */
 export const BLOCK_MARKER = "# >>> ennyn commit-check";
 
+/** The last line of hookBlock's block: how uninstall-hook says where the block ends. */
+export const BLOCK_END = "# <<< ennyn commit-check";
+
 /** The last part of a data directory the block can hold: what Claude Code makes of a plugin's id, and no `.`, `..` or quote. */
 export const BLOCK_ID = /^(?!\.+$)[A-Za-z0-9._-]+$/;
 
@@ -388,7 +391,7 @@ unset NODE_OPTIONS NODE_PATH
 # Printed by ennyn install-hook. It checks every commit this hook sees, whatever the rest of the hook skips.
 (
 ${inner}) || exit $?
-# <<< ennyn commit-check
+${BLOCK_END}
 `;
 }
 

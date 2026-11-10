@@ -112,6 +112,7 @@ export const NOT_READERS = {
   "metrics/findings.mjs": `${OWN}; git's answers taken whole`,
   "metrics/gate-log.mjs": `${OWN}; git's answer taken whole`,
   "plan/mechanization.mjs": OWN,
+  "setup/uninstall.mjs": `${OWN} (the install record) and file bytes by sha256; the hook and the settings are read through hook.mjs and permissions.mjs; the lines it names in a hook are advice, no verdict on what sh runs`,
   "plan/cycle-journal.mjs": `${OWN} (the cycle journal); git's answers taken whole`,
 };
 

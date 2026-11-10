@@ -54,6 +54,28 @@ Then run `/ennyn:init` in your project. It scans the repository, asks a few ques
 
 Until Ennyn's repository is public, add the marketplace from a local clone with `claude plugin marketplace add ./ennyn`, then run the install command above.
 
+### Update
+
+```sh
+claude plugin marketplace update ennyn
+claude plugin update ennyn@ennyn
+```
+
+Restart Claude Code afterwards. A commit-msg hook installed from the plugin follows the new version by itself; there is nothing to run again in your projects. With a clone, `git pull` is enough.
+
+### Remove
+
+First, in each project where you ran `/ennyn:init`, remove the commit-msg hook and Ennyn's state folder. In a Claude Code session, ask the agent to run `node "$ENNYN_PLUGIN_ROOT/scripts/ennyn.mjs" uninstall-hook`; with a clone, run `ennyn uninstall-hook`. It removes the hook only if `install-hook` wrote it and nobody has changed it since. A hook you edited, or one in a tracked hooks folder or husky's, stays: the command says which file and which lines to take out. It then removes `.git/ennyn` and lists what stays for you to decide: `.ennyn/config.json`, the work graph, the handoff, the metrics and findings logs, and the ask rules init added to `.claude/settings.json`. Delete those or keep them; they are ordinary files in your repository.
+
+Then remove the plugin, and the marketplace it came from:
+
+```sh
+claude plugin uninstall ennyn@ennyn
+claude plugin marketplace remove ennyn
+```
+
+Uninstalling the plugin also deletes its data folder, where the hook looks up the plugin's version. A hook left behind in some project then lets every commit through with a note; `uninstall-hook` from a clone still removes it. `--keep-data` keeps that folder, and with it a hook that points at a version Claude Code deletes after 14 days, after which every commit is refused, so remove the hooks first.
+
 The cycle skill in `skills/cycle/` follows the [Agent Skills](https://agentskills.io) format, but it calls the CLI through `${CLAUDE_PLUGIN_ROOT}`, which only Claude Code sets. To use it with another agent, set `CLAUDE_PLUGIN_ROOT` to the path of an Ennyn clone. The CLI needs Node 20 or later and git 2.34 or later, and has no dependencies. From the Ennyn clone, `node scripts/ennyn.mjs --help` lists its commands. Elsewhere in this README, `ennyn` is short for that script, run from your project.
 
 Ennyn runs on Linux and macOS, and on Windows through WSL, where the test suite passes (Ubuntu 22.04, git 2.34.1). On native Windows (Git for Windows 2.47.1, Git Bash, PowerShell 7) the push hook, the commit-msg hook, the gate-loosening check and the plugin's version record were measured and hold, as [SECURITY.md](SECURITY.md) says; the test suite does not pass there, the compaction hook was only tried on a test project, and the other hooks were not measured.
