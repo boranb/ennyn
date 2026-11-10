@@ -1,7 +1,8 @@
 {
   "language": "tr",
   "paths": { "handoff": ".ennyn/handoff.md" },
-  "commands": { "fastTest": "npm run test:short" },
+  "commands": { "fastTest": "npm run test:short", "wholeTest": "npm test" },
+  "push": { "codeGlobs": ["**/*.mjs", "**/*.cjs", "**/*.js", "**/package.json"] },
   "commitMsg": {
     "language": "en",
     "types": ["feat", "fix", "docs", "test", "refactor", "chore"],
