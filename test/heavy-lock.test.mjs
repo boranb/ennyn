@@ -650,6 +650,23 @@ test("lock: a waiter reads an ennyn ticket's start once, and after that its pid 
   assert.equal((await waiter.ended).code, 0);
 });
 
+test("lock: a waiter whose ticket another waiter removed ends, saying so, and never waits for a turn that cannot come", async (t) => {
+  const at = box(t);
+  mkdirSync(join(at.lock, "queue"), { recursive: true });
+  // A locked.sh waiter ahead, alive: the waiter waits behind it.
+  const ahead = spawn("sleep", ["300"], { stdio: "ignore" });
+  track(ahead.pid ?? 0);
+  writeFileSync(join(at.lock, "queue", `0000000001.000000-${ahead.pid}`), "");
+  const waiter = lock(["--", "true"], { cwd: at.dir, lock: at.lock });
+  await until(() => tickets(at.lock).length === 2, "the waiter's ticket");
+  const own = tickets(at.lock).find((n) => n.endsWith(`-${waiter.child.pid}`)) ?? "";
+  rmSync(join(at.lock, "queue", own));
+  const w = await waiter.ended;
+  assert.equal(w.code, 1, w.stderr);
+  assert.match(w.stderr, /ticket .* was removed by another waiter/);
+  assert.ok(!existsSync(join(at.lock, "suite.lock")), "the lock was never taken");
+});
+
 test("lock: a waiter reads the holder's start again once a minute has passed since the last read, and once the deadline has passed", async (t) => {
   const at = box(t);
   const dir = join(at.lock, "suite.lock");

@@ -67,17 +67,20 @@ export const lockDir = (env = process.env) => resolve(env.ENNYN_LOCK_DIR || join
 /**
  * A process's start, so a pid given again reads as another process; null once it is gone or a zombie. Linux: clock
  * ticks since boot (field 22 of /proc/<pid>/stat); elsewhere `ps`'s lstart in UTC, to the second; Windows: "" (no
- * start is read there, the pid alone counts). A start that cannot be read throws: never read as gone.
+ * start is read there, the pid alone counts). A start that cannot be read throws: never read as gone. The way is
+ * chosen by the platform, never by a probe of /proc: a probe that failed once would give one process starts of two
+ * forms, and its own ticket would read as another process's.
  * @param {number} pid @returns {string | null}
  */
 export function processStart(pid) {
   if (process.platform === "win32") return alive(pid) ? "" : null;
-  if (existsSync("/proc/self/stat")) {
+  if (process.platform === "linux") {
     let stat;
     try {
       stat = readFileSync(`/proc/${pid}/stat`, "utf8");
     } catch (e) {
-      if (/** @type {NodeJS.ErrnoException} */ (e).code === "ENOENT") return null;
+      // No entry for a pid that still answers (no /proc mounted): its start cannot be read.
+      if (/** @type {NodeJS.ErrnoException} */ (e).code === "ENOENT" && !alive(pid)) return null;
       throw e;
     }
     const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
@@ -146,13 +149,18 @@ function ticketLives(path, pid, startRead = () => {}) {
  * The live tickets in queue order; a ticket whose waiter is gone is removed, as `locked.sh` removes it. A ticket's
  * start is read once (`known`, by name: a name and its process fix the verdict), after that its pid alone is asked
  * (signal 0, no `ps`); a name no longer in the queue is forgotten. An empty ticket (locked.sh's) is read each time.
- * @param {string} queue @param {Set<string>} [known] tickets whose start this waiter read and found living
- * @returns {string[]}
+ * The waiter's own ticket is never judged: it lives while the waiter does. One no longer in the queue (another waiter
+ * read it dead) is null: no turn can come to it, and the wait ends.
+ * @param {string} queue @param {Set<string>} known tickets whose start this waiter read and found living
+ * @param {string} own the waiter's ticket name
+ * @returns {string[] | null}
  */
-function liveTickets(queue, known = new Set()) {
+function liveTickets(queue, known, own) {
   const names = readdirSync(queue).filter((n) => !n.startsWith(".")).sort();
+  if (!names.includes(own)) return null;
   for (const n of known) if (!names.includes(n)) known.delete(n);
   return names.filter((n) => {
+    if (n === own) return true;
     const pid = Number(n.slice(n.lastIndexOf("-") + 1));
     if (Number.isInteger(pid) && pid > 0 && alive(pid) && (known.has(n) || ticketLives(join(queue, n), pid, () => known.add(n)))) return true;
     try {
@@ -340,9 +348,10 @@ export async function runLocked({ command, args, limitMs, cwd = process.cwd(), e
   // Before the ticket: a signal once the ticket is there takes the ticket away with it, never the process alone.
   for (const s of SIGNALS) process.on(s, onSignal);
   let ticket;
+  const ownName = ticketName();
   try {
     mkdirSync(queue, { recursive: true });
-    ticket = join(queue, ticketName());
+    ticket = join(queue, ownName);
     // The waiter's start, so a pid given again to a later process is no waiter of this queue.
     writeFileSync(ticket, safeStart(process.pid) ?? "");
   } catch (e) {
@@ -363,8 +372,12 @@ export async function runLocked({ command, args, limitMs, cwd = process.cwd(), e
     // its own only the first ticket drops, as locked.sh does.
     for (;;) {
       if (asked) return (offSignals(onSignal), 128 + constants.signals[asked]);
-      const first = liveTickets(queue, known)[0];
-      const mine = first !== undefined && join(queue, first) === ticket;
+      const live = liveTickets(queue, known, ownName);
+      if (live === null) {
+        say({ key: "lock.ticketGone", vars: { dir } });
+        return (offSignals(onSignal), 1);
+      }
+      const mine = live[0] === ownName;
       if (mine) {
         try {
           mkdirSync(lock);

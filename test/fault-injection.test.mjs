@@ -80,9 +80,11 @@ writeFileSync(
 chmodSync(join(FAKE, "git"), 0o755);
 /** A hung git's limit in a run (test/fault-fs.mjs lowers Ennyn's to it); a call that walks the history gets twice that. */
 const HANG_LIMIT_MS = 2000;
-/** A run with a hung git still going after this was never stopped: it is killed, and its cell fails. */
+/** A run still going after this never ended: it is killed, and its cell fails. Every cell has the watchdog. */
 const HANG_WATCHDOG_MS = 120_000;
 const NOT_STOPPED = "fault matrix: the run still waited on its hung git when the watchdog killed it";
+/** What a cell with no hung git says when the watchdog killed it: a wait no fault should cause. */
+const NOT_ENDED = "fault matrix: the run never ended; the watchdog killed it";
 
 /** Ends the processes the hung fake gits of a run left holding their output. @param {string} box @returns {number} how many */
 function endHeld(box) {
@@ -625,10 +627,11 @@ function run(c, fault) {
     if (fault.closed) child.stdout.destroy();
     else child.stdout.on("data", (d) => (stdout += d));
     child.stderr.on("data", (d) => (stderr += d));
-    // A run that waits on its hung git past every limit would hold the matrix for an hour.
-    const watchdog = fault.kind === "hang" ? setTimeout(() => ((stderr += `\n${NOT_STOPPED}`), child.kill("SIGKILL")), HANG_WATCHDOG_MS) : null;
+    // A run that waits on its hung git past every limit, or on anything else a fault left it waiting for, would hold
+    // the matrix for hours.
+    const watchdog = setTimeout(() => ((stderr += `\n${fault.kind === "hang" ? NOT_STOPPED : NOT_ENDED}`), child.kill("SIGKILL")), HANG_WATCHDOG_MS);
     child.on("close", (code, signal) => {
-      if (watchdog) clearTimeout(watchdog);
+      clearTimeout(watchdog);
       const hung = endHeld(box);
       let calls = 0;
       try {
@@ -689,6 +692,8 @@ const counted = (parts) => Number([...parts].map((p) => UNMEASURED_COUNT.exec(p)
  * @param {RegExp} [everyPass] a line the command prints on any run that passes, and so says nothing of a fault
  */
 function judge(clean, got, hook, everyPass) {
+  // Killed by the watchdog: a wait the fault caused, whatever the run said before it.
+  if (got.stderr.includes(NOT_ENDED)) return "the run never ended";
   if (/^\s+at .+:\d+:\d+\)?$/m.test(got.stderr)) return "a stack trace";
   if (got.code === 2 && clean.code !== 2) return "exit 2, which a Claude Code hook reads as blocking";
   const same = got.stdout === clean.stdout && got.stderr === clean.stderr && got.code === clean.code;
@@ -1185,6 +1190,7 @@ test("fault matrix control: the judge flags each way a run can hide a failure", 
   const R = (r) => ({ code: 0, signal: null, stdout: "", stderr: "", calls: 1, reads: [], hung: 0, ...r });
   const clean = R({ stdout: "Rework: 2 of 10 lines (20%)\nCo-change: src/a.js (3 commits)\n" });
   assert.equal(judge(clean, clean, false), null);
+  assert.equal(judge(clean, R({ code: null, signal: "SIGKILL", stderr: `lock: waiting for the turn\n${NOT_ENDED}` }), false), "the run never ended");
   assert.match(String(judge(clean, R({ stdout: "Rework: 0 of 10 lines (0%)\nCo-change: src/a.js (3 commits)\n" }), false)), /a number changed/);
   assert.match(String(judge(clean, R({ stdout: "Rework: 2 of 10 lines (20%)\n" }), false)), /parts dropped without saying so/);
   // A line a pass always prints is no change, and says nothing: the fault must still be said.

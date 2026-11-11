@@ -845,6 +845,7 @@
   "lock.recordFailed": "lock: tutan kaydı yeniden yazılamadı: {error}",
   "lock.releaseUnread": "lock: bırakılmadı: {what} okunamadı ({error}); olduğu gibi kaldı",
   "lock.releaseFailed": "lock: kilit bırakılamadı: {error}",
+  "lock.ticketGone": "lock: bu bekleyenin {dir} içindeki bileti başka bir bekleyen tarafından silindi; ona sıra gelemez, bekleme bitti",
   "worktrees.none": "Ennyn'in işaretini (gerekçesi ennyn:<döngü> olan bir kilit) taşıyan worktree yok.",
   "worktrees.others": "işaretsiz {n} bağlı worktree daha var: dokunulmadı.",
   "worktrees.incomplete": "{n} tanesi denetlenemedi ya da kaldırılamadı, ya da işaret taşımıyor: her birinin durumunu yukarıdaki satırı söylüyor.",
