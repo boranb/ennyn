@@ -78,7 +78,7 @@
     },
     {
       "id": "release-0-1-0",
-      "title": "Release v0.1.0: final read of both READMEs, CHANGELOG section, version in package.json, package-lock.json and plugin.json, tag; README and SECURITY.md name the one source to install from and what a genuine copy never holds (binaries, runtime dependencies, install scripts); docs/evidence.md's heading 'Gates stop recurrence, prose does not' is scoped to the origin project, with Ennyn's own table of proposal-born gates beside it; docs/related-work.md drops 'None is built yet' (findings-ledger is built), says which of the table's nodes are, and credits this review's ideas in its table, before publishing: Anthropic's post added its credit to Sapling's Mononoke only in an update of October 15; docs/related-work.md's spec-kit row names assess, bug and the workflow engine, and says its claim holds for core only: community extensions (spec-gates, vurnix, spec-kit-tdd) now run checks as code. The rest of the graph waits for after this release Trimmed 2026-11-11 on the user's ask. Moved to 0.2: fresh-session-run (an unattended runner nobody has measured), secret-output-mask and secret-transcript-probe (the probe's answers serve only the mask), kept-folder-closing (stopped in cycle 31, its branch kept), cycle-record. Merged, each declined with its carrier named: walking-skeleton-first, no-bypass-trial, history-secret-scan. Cycle 32 is the last cycle for these needs: what does not land in it moves to 0.2, except a finding that stops a scenario of docs/acceptance.md At most five findings join after this trim; a sixth is the user's decision",
+      "title": "Release v0.1.0: final read of both READMEs, CHANGELOG section, version in package.json, package-lock.json and plugin.json, tag; README and SECURITY.md name the one source to install from and what a genuine copy never holds (binaries, runtime dependencies, install scripts); docs/evidence.md's heading 'Gates stop recurrence, prose does not' is scoped to the origin project, with Ennyn's own table of proposal-born gates beside it; docs/related-work.md drops 'None is built yet' (findings-ledger is built), says which of the table's nodes are, and credits this review's ideas in its table, before publishing: Anthropic's post added its credit to Sapling's Mononoke only in an update of October 15; docs/related-work.md's spec-kit row names assess, bug and the workflow engine, and says its claim holds for core only: community extensions (spec-gates, vurnix, spec-kit-tdd) now run checks as code. The rest of the graph waits for after this release Trimmed 2026-11-11 on the user's ask. Moved to 0.2: fresh-session-run (an unattended runner nobody has measured), secret-output-mask and secret-transcript-probe (the probe's answers serve only the mask), kept-folder-closing (stopped in cycle 31, its branch kept), cycle-record. Merged, each declined with its carrier named: walking-skeleton-first, no-bypass-trial, history-secret-scan. Cycle 32 is the last cycle for these needs: what does not land in it moves to 0.2, except a finding that stops a scenario of docs/acceptance.md At most five findings join after this trim; a sixth is the user's decision First of the five: lock-wait-on-fs-error (2026-11-11, a done need's command hangs on Linux)",
       "status": "planned",
       "value": "high",
       "cost": "S",
@@ -111,7 +111,8 @@
         "convergence-fix-loop-per-file",
         "push-check-recorded-suite",
         "heavy-job-limit",
-        "engines-floor-22"
+        "engines-floor-22",
+        "lock-wait-on-fs-error"
       ],
       "gate": "user",
       "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release); read 2026-11-01: the post now opens 'Updated October 15 to include more detail on the projects that pioneered many of the techniques we use in Scion.', and The Pragmatic Engineer (2026-10-22) reports the attribution came after a public complaint; an audit of requests against the graph, 2026-11-01: five had no node in the release needs: a project started from nothing (a request, 2026-10-29: 15 nodes, 0 done), leftovers (a request, 2026-10-29: 14 nodes, 0 done), secrets in chat (a request, 2026-10-28: 12 nodes, 1 done), less code and no repetition (a request, a request, 2026-10-25), findings that can wait (a request, 2026-10-25). The smallest piece of each entered the needs. spec-gates' README: 'Spec Kit is a guidance layer'; 2026-11-05, the choice was left to the orchestrator: kill-own-pid-only, plugin-update-path and win-kill-waits-exit join the needs, observed on Windows",
@@ -5898,6 +5899,17 @@
       "cluster": "distribution",
       "source": "roadmap review 2026-11-11 (decisions.md in the keep folder)",
       "since": 32
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "lock-wait-on-fs-error",
+      "title": "ennyn lock: a waiter that meets a file-system error stays in its wait loop for good. Measured in cycle 31's pre-push Linux check (node:22; the floor image never ran): the row at test/fault-injection.test.mjs:492 (`lock -- <node> -e 0`, ENNYN_LOCK_DIR .git/lock) with ENNYN_FS_FAULT=eacces at ENNYN_FS_FAULT_AT=4 and at 8 sat in a timer wait for 2 h 55 min; macOS passes the same cells; nothing was pushed. No limit ended them: the matrix arms its SIGKILL watchdog only for a `hang` fault, so a read-fault cell has none. Fixed in a `fix:` commit written and reviewed as a first write, before 6a3e0e6 is pushed: reproduce both cells on Linux first, then decide (a direction, not measured: an error no wait can change ends the waiter at once with its reason, and the wait itself has a bound), and say why the cells' own time limit did not end them in the container; the fix also gives every cell of the matrix the watchdog and names a cell that reaches it as a failure. Guessed, not checked: the fs-op order differs on Linux (the /proc start-time read)",
+      "value": "high",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 2026-11-10 (31), pre-push Linux check of the changed test files, 2026-11-11; the defect is in f2ca314 (heavy-job-limit)",
+      "since": 32
     }
   ],
   "done": [
@@ -6730,7 +6742,8 @@
       "id": "heavy-job-limit",
       "title": "ennyn lock [--limit <minutes>] -- <command>: one machine-wide FIFO queue for heavy jobs in the layout of the hand-written locked.sh (both take turns in one order); each run has a time limit (default 45 min) that stops its whole process group, exit 124; any ennyn waiter drops a dead holder's lock by its record (pid and start, claimed by one rename), a holder releases only a lock still its own and keeps it fresh during long runs; each run is logged (f2ca314)",
       "status": "done",
-      "finished": "2026-11-11"
+      "finished": "2026-11-11",
+      "cluster": "method"
     },
     {
       "id": "uninstall-path",
