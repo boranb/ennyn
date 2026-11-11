@@ -566,7 +566,8 @@
         "new: claim about another program from memory",
         "new: refusal message names a write that did not happen",
         "new: assertion from an unmeasured belief",
-        "new: reason names the wrong cause"
+        "new: reason names the wrong cause",
+        "new: message names the wrong reason"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet."
     },
@@ -621,7 +622,12 @@
         "new: stated repair forbidden by another rule",
         "new: refactor changes untouched output",
         "new: restart wipes the state it should resume",
-        "new: refusal without its reason"
+        "new: refusal without its reason",
+        "new: missing directory read as failure",
+        "new: missing path part read as an error",
+        "new: unreadable record stops the whole reading",
+        "new: failed read after a move aside leaves the file under the aside name",
+        "new: recursive helper without declared type"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet.",
       "nodes": [
@@ -674,7 +680,12 @@
         "new: restore beside a live writer",
         "new: cleanup error replaces the cause",
         "new: an ended command reported as timed out",
-        "new: signal sent to a process group id after the group ended"
+        "new: signal sent to a process group id after the group ended",
+        "new: folder identity by path spelling",
+        "new: guard knows the work tree, not the git dir",
+        "new: link check on the last part only",
+        "new: deletion scope wider than its stated owner",
+        "new: folder metadata not compared"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate.",
       "gates": [
@@ -726,7 +737,8 @@
         "new: check reads its own fixture text as a finding",
         "new: unknown value read as a string",
         "new: stop by a PID whose handle is closed",
-        "new: kill by a PID whose process has ended"
+        "new: kill by a PID whose process has ended",
+        "new: link target decoded as text"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -794,7 +806,8 @@
         "new: corpus state built without the condition it names",
         "new: test leaves its child running",
         "new: test asserts the wrong kind",
-        "new: test fixture races the state it needs"
+        "new: test fixture races the state it needs",
+        "new: fixture names a default the code does not use"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -917,7 +930,8 @@
         "new: time limit by a signal the fence wrapper ignores",
         "new: cleanup registered after the step that can throw",
         "new: failed test leaves its stand-in running",
-        "new: forced kill skips a wrapper's signal forwarding"
+        "new: forced kill skips a wrapper's signal forwarding",
+        "new: retry loop with no pause on a lasting error"
       ],
       "judged": "the orchestrator of cycle 18, reading the rows"
     },
@@ -975,7 +989,8 @@
       "nodes": [],
       "linked": [
         "new: ask part left undone",
-        "new: requirement partial"
+        "new: requirement partial",
+        "new: dead-lock check gated on queue head"
       ],
       "judged": "Named in cycle 23 by the orchestrator, from the rows that named it."
     },
@@ -987,7 +1002,8 @@
       "nodes": [],
       "linked": [
         "new: helper program found through an unfiltered PATH runs repository code",
-        "new: data file read as configuration runs a command"
+        "new: data file read as configuration runs a command",
+        "new: a check runs a program the judged repository names"
       ],
       "judged": "Named in cycle 24 by the orchestrator, from one security review row (a tr found through the hook's PATH); hook-node-in-repo is the same shape for node."
     },
@@ -1016,6 +1032,57 @@
         "new: edit script spacing"
       ],
       "judged": "Named in cycle 30 by the orchestrator, from two author rows of one task: an insert by a cut at a list's end dropped the export after it, and a mechanical insert left a stray space before a comma."
+    },
+    {
+      "id": "check-then-act-without-recheck",
+      "says": "A command checks a file, folder or lock and then acts on it (deletes, releases, moves) without looking again at the moment it acts, so a change in between is acted on as if it were the checked state.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: check then act on a file without a recheck",
+        "new: check then act without recheck after move aside",
+        "new: release frees a lock it no longer holds"
+      ],
+      "judged": "Named in cycle 31 by the orchestrator, from rows of the cycle's delete and lock tasks. Three tasks (lock release, hook removal, kept-folder prune) in one cycle."
+    },
+    {
+      "id": "assumes-platform-capability",
+      "says": "A fallback or an allow list relies on a capability of the platform or file system it was measured on (hard links, a config key one version control build writes), and on another one the fallback itself fails or refuses everything.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: fallback assumes a filesystem capability",
+        "new: fallback assumes a filesystem feature",
+        "new: put-back that assumes a filesystem feature",
+        "new: allow-list measured on one platform"
+      ],
+      "judged": "Named in cycle 31 by the orchestrator, from rows of the cycle's delete and lock tasks. FAT measured twice (hook put-back, lock claim put-back); Git for Windows' core.symlinks read."
+    },
+    {
+      "id": "removal-breaks-dependent",
+      "says": "Removing a thing judged unneeded breaks another thing that depends on it without naming it (a repository borrowing its objects through alternates).",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: removal breaks a repository that borrows from it",
+        "new: removal breaks a repository that borrows its objects"
+      ],
+      "judged": "Named in cycle 31 by the orchestrator, from rows of the cycle's delete and lock tasks."
+    },
+    {
+      "id": "cleanup-scope-opens-late",
+      "says": "A resource (a lock, a record, a signal's default) is taken before the scope that releases it opens, so a failure or signal in between leaves it held or ends the process without its cleanup.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: resource taken before the cleanup scope opens",
+        "new: signal before its handler"
+      ],
+      "judged": "Named in cycle 31 by the orchestrator, from rows of the cycle's delete and lock tasks."
     }
   ]
 }

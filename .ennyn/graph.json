@@ -1158,7 +1158,7 @@
       "status": "planned",
       "needs": [],
       "id": "external-audit-before-release",
-      "title": "Before v0.1.0, run cloudflare/security-audit-skill at a pinned commit, read in full first, on Ennyn: standard profile, scoped to what ennyn audit lists, output outside the repository, with an agent budget the user sets. Confirmed findings are fixed, needs-validation ones become nodes, and its findings are compared with what Ennyn's own audits found, as a measure of what Ennyn's method misses",
+      "title": "Before v0.1.0, run cloudflare/security-audit-skill at a pinned commit, read in full first, on Ennyn: standard profile, scoped to what ennyn audit lists, output outside the repository, with an agent budget the user sets. Confirmed findings are fixed, needs-validation ones become nodes, and its findings are compared with what Ennyn's own audits found, as a measure of what Ennyn's method misses Free route first: free scanners (Semgrep's free rules, gitleaks or trufflehog over history, OSV-Scanner), GitHub's free code and secret scanning once public, and a full pass of Ennyn's own security reviewers and labs; the report says what that route cannot cover (an independent outside eye), to be asked of the community after release. The user, 2026-11-11: a request.",
       "value": "high",
       "cost": "M",
       "cluster": "security",
@@ -1292,17 +1292,6 @@
       "cost": "S",
       "cluster": "distribution",
       "source": "review of ponytail and i-have-adhd (open-source agent skills, MIT), 2026-10-25: ponytail merges a rule change only with a three-arm benchmark, a case it should help and one it could break, 6 or more runs; i-have-adhd: hooks fast, bounded, fail-safe and opt-in, a write outside the repository needs an opt-in and an undo path; review of Scrapling (BSD-3-Clause, 0336400), 2026-10-28: AI_POLICY.md; 47 issues and pull requests labelled AI-Slop; an issue closed as completed while the code it named stayed",
-      "since": 11
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "uninstall-path",
-      "title": "ennyn uninstall-hook removes only a commit-msg hook Ennyn wrote (as install-hook reads it) and the state dir, and lists what stays for the user to decide: the config, graph, handoff, metrics log and the ask rules init wrote; init and install-hook record each file they write with its sha256, and uninstall removes only files still unchanged and lists the edited ones; the README says how to update and how to remove Ennyn. Raised to a release need: a stranger's first question after trying a tool",
-      "value": "low",
-      "cost": "S",
-      "cluster": "init",
-      "source": "review of i-have-adhd and ponytail (open-source agent skills, MIT), 2026-10-25: a write outside the repository needs an easy undo path; ponytail ships scripts/uninstall.js; Ennyn's hook says only 'delete this file to remove it'; review of agent-reach (MIT, 14c2134), 2026-10-28: agent_reach/runtime/state.py:106, 'Deletion permission comes from the ledger, never a familiar filename.'; spec-kit discussion #168, 38 upvotes, on removing it: 'cleaning it up or replacing it is cumbersome and error-prone'",
       "since": 11
     },
     {
@@ -2338,7 +2327,7 @@
       "status": "planned",
       "needs": [],
       "id": "secret-transcript-probe",
-      "title": "Measure, before any masking hook: (1) whether a PostToolUse hook's hookSpecificOutput.updatedToolOutput also changes what Claude Code writes to the session's .jsonl, or only what the model reads; (2) the output shape it accepts for Bash, Read, Grep and an MCP tool (the docs: 'The value must match the tool's output shape', otherwise 'the original output is used'); (3) whether a blocked UserPromptSubmit prompt lands in the transcript and in prompt history. One claude -p run per question in a temporary directory with a test hook and a fake value, the CLI version recorded; the answers go into the nodes that need them; one report to check under (2): a third-party README says updatedToolOutput given plain text was ignored and worked when the tool's tool_response JSON was kept and only its text fields changed, tried on Claude Code 2.1.287",
+      "title": "Measure, before any masking hook: (1) whether a PostToolUse hook's hookSpecificOutput.updatedToolOutput also changes what Claude Code writes to the session's .jsonl, or only what the model reads; (2) the output shape it accepts for Bash, Read, Grep and an MCP tool (the docs: 'The value must match the tool's output shape', otherwise 'the original output is used'); (3) whether a blocked UserPromptSubmit prompt lands in the transcript and in prompt history. One claude -p run per question in a temporary directory with a test hook and a fake value, the CLI version recorded; the answers go into the nodes that need them; one report to check under (2): a third-party README says updatedToolOutput given plain text was ignored and worked when the tool's tool_response JSON was kept and only its text fields changed, tried on Claude Code 2.1.287 Free route first: the stand-in model of test/reference (no API billing) where the hook behaviour does not depend on the model, else a run in a subscription session rather than a paid claude -p. The user, 2026-11-11: a request.",
       "value": "high",
       "cost": "S",
       "cluster": "security",
@@ -3132,19 +3121,6 @@
       "cost": "S",
       "cluster": "method",
       "source": "measured, cycle 16: planned for four slots, ran six tasks; the third slot became three nodes in sequence; task time set by two chains, so shortening one saved nothing. T4 and T3a held 349 minutes of chain, about 62 USD at list price and 104 findings on a parser no production code calls (parseConvergence, checked on main and all c16 branches). Rank correlation of lines to active hours by cycle 0.89, n=13; cycle 2026-11-01 (17), carried by hand: four nodes and the audit, 8 commits, and the two security nodes took the review rounds: T3 and T4 had three authors each",
-      "since": 16
-    },
-    {
-      "status": "planned",
-      "needs": [
-        "task-short-suite"
-      ],
-      "id": "heavy-job-limit",
-      "title": "ennyn lock -- <command>: one machine-wide FIFO ticket queue for heavy jobs (whole suites, mutation runs, labs, platform images) across sessions and projects, a dead holder's ticket dropped, the wait logged; the cycle skill and briefs run heavy jobs through it. Today it is a hand-written locked.sh in each cycle folder, and two sessions coordinated main and the lock by messages (2026-11-08); each run gets a time limit, so a hung run cannot hold the lock (a SIGKILLed locked.sh leaves suite.lock for 120 minutes)",
-      "value": "high",
-      "cost": "S",
-      "cluster": "method",
-      "source": "measured, cycle 16: three or more heavy jobs ran together for 29% of calendar time, load median 56 on 10 cores; the suite lock added at 16:48 ended the 24-minute runs but not the median (586 to 669 s), since mutation, gates and labs stayed outside it, and it made 32.6 minutes of queue. node --test limits files, not the processes they spawn; cycle 2026-11-01 (17): one short suite sat about 50 minutes in the lock's queue with labs ahead of it, and a reviewer's probe that recursed in a hook reached 1738 processes against a per-user limit of 2666, so other tasks failed with EAGAIN: the limit should count processes too, and probes need a bound; cycle 2026-11-02 (18): T2's short suite waited about 2 hours on the cycle's lock at load up to 241: a mkdir lock keeps no order, and a short suite with guards back runs as long as a whole one; a reviewer's parallel mutant trees reached load 177 before it was told to run them in turn; cycle 2026-11-02 (19): the mkdir lock kept no order: T3's short suite waited 94 minutes and T4's 42 while later arrivals took it; four short suites queued behind one with guards back, load up to 154; cycle 2026-11-04 (20) on Windows with WSL: two suite slots by flock; a locked suite waited over 30 minutes behind two others; cycle 2026-11-04 (21): a request: one heavy job at a time; the cycle-20 test:linux in the 2-CPU VM ran beside cycle 21 outside the suite lock, load 85, its first image took 1 h 41 min against about 38 and two timing ratios went red; stopped on request; cycle 2026-11-06 (24): the suite lock held one suite while load reached 80-170 (labs, lone slow test files and reviewers' recordings outside it, and a lab of 120 CPU burners); test/short.mjs sets no --test-concurrency (node's default: cores minus one); measure test:short with 9, 5 and 3 files at once (time, load) and put lone test-file runs through the same lock; the user, 2026-11-05: left to the session: a rule by hand in cycle 25's briefs first; cycle 2026-11-08 (27): the mkdir lock kept no order and a second project's one-minute run waited 45 minutes behind re-taken locks; the cycle's lock became a ticket queue by hand (first come, first served, dead tickets dropped); cycle 30: a hung red test held the lock 59 minutes while three agents waited",
       "since": 16
     },
     {
@@ -5382,12 +5358,13 @@
       "status": "planned",
       "needs": [],
       "id": "kept-folder-closing",
-      "title": "The closing says what becomes of the cycle's kept folder (task-brief.md, Keeping the work, names the folder but not its end): it keeps what a later cycle, an audit or a person reads (ledger, briefs, impact tables, measurements, rows, every reviewer's and author's untracked probes and labs) and removes what git gives back (a reviewer's or lab's clone of a commit the repository holds: its tracked files go, its untracked files stay), each removal only after a check that nothing it holds is lost (the commit reachable, the untracked files kept); a live cycle folder left beside its kept copy goes without asking once a comparison shows nothing only it holds, a file only it holds first copied over; anything not proven a copy is asked. The report says the folder's size before and after",
+      "title": "The closing says what becomes of the cycle's kept folder (task-brief.md, Keeping the work, names the folder but not its end): it keeps what a later cycle, an audit or a person reads (ledger, briefs, impact tables, measurements, rows, every reviewer's and author's untracked probes and labs) and removes what git gives back (a reviewer's or lab's clone of a commit the repository holds: its tracked files go, its untracked files stay), each removal only after a check that nothing it holds is lost (the commit reachable, the untracked files kept); a live cycle folder left beside its kept copy goes without asking once a comparison shows nothing only it holds, a file only it holds first copied over; anything not proven a copy is asked. The report says the folder's size before and after. Cycle 31 stopped it after three review rounds (branch c31/t2 at 3292a98, worktree the cycle's worktree kept; brief, impact table, 20 author rows and every reviewer lab in the cycle folder): the design held in round 3 (no finding: bundle pin, move aside then lsof then recheck, home-folder rule, git-dir allow list), but the orchestrator's gate was red twice: test/fault-injection.test.mjs with its new kept cells ran 1956 s alone, past the file's 1800 s limit (the file-read matrix cancelled) and with hang cells in other commands under load. The restart: cut the kept cells to what the matrix must hold, then the two round-3 gaps (lsof's can't-opendir warning read as no process; HOME=/ lets volume roots through)",
       "value": "medium",
       "cost": "S",
       "cluster": "method",
       "source": "the user, 2026-11-08: a request after a cycle-24 folder (376 MB) sat beside its kept copy for two days and was asked about at cycle 26's closing (a request). Measured 2026-11-08 on this machine: the kept folders hold 8.6 GB over 10 cycles (cycle 21: 3.1 GB; cycles 24-26: 365-376 MB each); in cycle 26 five reviewer clones are 32-35 MB each, reproducible from git, while their untracked probes are the evidence. Related: disk-use-record, resource-ledger; entered release-0-1-0's needs on request, 2026-11-08 (approved)",
-      "since": 26
+      "since": 26,
+      "gate": "user"
     },
     {
       "status": "planned",
@@ -5486,17 +5463,6 @@
       "cost": "S",
       "cluster": "metrics",
       "source": "cycle 2026-11-08 (27), T3 (lean item)",
-      "since": 27
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "leftovers-fsmonitor",
-      "title": "Measure leftovers' status reading under core.fsmonitor",
-      "value": "low",
-      "cost": "S",
-      "cluster": "metrics",
-      "source": "cycle 2026-11-08 (27), T3, unmeasured",
       "since": 27
     },
     {
@@ -5856,6 +5822,94 @@
       "cluster": "method",
       "source": "cycle 2026-11-10 (30): T2 and T4 reports said so themselves",
       "since": 30
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "leftovers-unopened-folders",
+      "title": "leftovers reads a folder git status cannot open (git prints 'could not open directory' on stderr and exits 0) as clean: read those warnings under LC_ALL=C and name each folder, a new one as an item and one present at the start as compared by path; needs a git call in core/git.mjs that returns stderr when git succeeds",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-10 (31), leftovers audit item 7 (c31-t4-author-r0-01)",
+      "since": 31
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "leftovers-non-utf8-names",
+      "title": "leftovers looks up a name that is not UTF-8 at a U+FFFD path (contentIds, flaggedChanges): give the file system and hash-object the name's own bytes; on Linux an edit to such a file untracked at the start is missed",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-10 (31), leftovers audit item 9 (c31-t4-author-r0-03)",
+      "since": 31
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "leftovers-operation-in-progress",
+      "title": "The closing's leftovers names a merge, rebase, cherry-pick, revert or bisect in progress and stashes added since the start; each reads clean, exit 0, today",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-10 (31), leftovers audit item 18",
+      "since": 31
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "leftovers-start-files-gone",
+      "title": "The closing's leftovers names files untracked at the start that are now gone: the user's files the cycle deleted; the oracle pins them as nothing new today",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-10 (31), leftovers audit item 14",
+      "since": 31
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "leftovers-head-moved",
+      "title": "leftovers says when HEAD no longer descends from the start's HEAD; after a branch switch a file the other branch tracks reads as swept in",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "cycle 2026-11-10 (31), leftovers audit item 14",
+      "since": 31
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "lock-orphan-group-after-runner-kill",
+      "title": "When ennyn lock and its runner are both SIGKILLed the run's group keeps running with no limit and the lock waits only until its deadline: measure what can still stop it (a watchdog outside the group, the record's deadline acted on by a waiter)",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 2026-11-10 (31), T1 lab",
+      "since": 31
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "lock-windows-measure",
+      "title": "Measure ennyn lock on Windows: stopTree at the limit, no process start, Ctrl-C, the queue beside a WSL locked.sh",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 2026-11-10 (31), T1 not measured",
+      "since": 31
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "lock-claim-dir-rename",
+      "title": "Drop a dead lock by renaming suite.lock itself to a claim name, closing the ~100 µs gap in dropRecorded when a dead lock is also past 120 minutes and locked.sh removes it by age in the same instant",
+      "value": "low",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 2026-11-10 (31), T1 round 2 security review gap",
+      "since": 31
     }
   ],
   "done": [
@@ -6683,6 +6737,24 @@
       "title": "This repository's config names commands.wholeTest and push.codeGlobs, the same files test/short.mjs reads as code; the choice went to the orchestrator's recommendation (cc3694a)",
       "status": "done",
       "finished": "2026-11-10"
+    },
+    {
+      "id": "heavy-job-limit",
+      "title": "ennyn lock [--limit <minutes>] -- <command>: one machine-wide FIFO queue for heavy jobs in the layout of the hand-written locked.sh (both take turns in one order); each run has a time limit (default 45 min) that stops its whole process group, exit 124; any ennyn waiter drops a dead holder's lock by its record (pid and start, claimed by one rename), a holder releases only a lock still its own and keeps it fresh during long runs; each run is logged (f2ca314)",
+      "status": "done",
+      "finished": "2026-11-11"
+    },
+    {
+      "id": "uninstall-path",
+      "title": "ennyn uninstall-hook removes the commit-msg hook install-hook wrote while unchanged (sha256 recorded by install-hook, the hook git runs by real path, moved aside and rechecked) and the state dir (no link from the git dir down), names the lines to take out of a project's own hook and lists what stays; the README says how to update and remove Ennyn, marketplace included (5cb9bbb)",
+      "status": "done",
+      "finished": "2026-11-11"
+    },
+    {
+      "id": "leftovers-fsmonitor",
+      "title": "Measured in cycle 31's leftovers audit (item 25): every Ennyn git call sets core.fsmonitor= so a configured hook does not run, and leftovers still lists a new file; nothing to change",
+      "status": "done",
+      "finished": "2026-11-11"
     }
   ],
   "declined": [
