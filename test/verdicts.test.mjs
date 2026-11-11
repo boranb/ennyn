@@ -45,7 +45,7 @@ test("verdicts: every gap and known limit names an open node of the work graph t
   const doneStatus = config.graph.doneStatus;
   const open = new Map(graph.open.filter((n) => n[f.status] !== doneStatus).map((n) => [n[f.id], n]));
   const closed = new Set([...graph.done, ...graph.open.filter((n) => n[f.status] === doneStatus)].map((n) => n[f.id]));
-  const design = readFileSync(join(top, "DESIGN.md"), "utf8");
+  const design = readFileSync(join(top, "DESIGN.md"), "utf8") + readFileSync(join(top, "docs", "modules.md"), "utf8");
   const wrong = [];
   let gaps = 0;
   let known = 0;

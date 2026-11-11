@@ -141,7 +141,7 @@ test("brief: a task agent re-reads its changed files and impact table after a co
 test("docs: the re-read line's limits are said as they are: the summary names files changed since the last commit, and the session-start list stays one list", () => {
   // Where the hook's folder is the agent's own, the PreCompact request names what git shows changed since the last
   // commit: not a task's files committed before it.
-  for (const path of ["DESIGN.md", "CHANGELOG.md", "adapters/claude-code/hooks/conversation-style.mjs"]) {
+  for (const path of ["docs/modules.md", "CHANGELOG.md", "adapters/claude-code/hooks/conversation-style.mjs"]) {
     const text = readFileSync(join(ROOT, path), "utf8").replace(/\n \* /g, " ");
     assert.match(text, /already lists the files changed since the last commit/, path);
     assert.doesNotMatch(text, /already lists its changed files/, path);

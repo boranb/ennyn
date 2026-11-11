@@ -1,6 +1,6 @@
 # Ennyn
 
-A development loop for coding agents, shipped as a Claude Code plugin and a zero-dependency Node CLI. Read README.md for what and why, DESIGN.md for layout, config keys and module APIs.
+A development loop for coding agents, shipped as a Claude Code plugin and a zero-dependency Node CLI. Read README.md for what and why, DESIGN.md for layout and config keys, docs/modules.md for module contracts (only the section of the module you touch).
 
 ## Commits
 

@@ -91,8 +91,8 @@ test("class registry: each reader is told where the ids and the source values ar
   assert.match(close, /gate that landed/);
 });
 
-test("class registry: DESIGN.md defines each state on a line of its own", () => {
-  const lines = read("DESIGN.md").split("\n");
+test("class registry: docs/modules.md defines each state on a line of its own", () => {
+  const lines = read("docs/modules.md").split("\n");
   for (const state of CLASS_STATES) assert.ok(lines.some((l) => l.startsWith(`  - \`${state}\`: `)), state);
 });
 
