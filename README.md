@@ -156,7 +156,7 @@ No setting turns a gate off. The full list of keys is in [DESIGN.md](DESIGN.md).
 
 ## Status and roadmap
 
-- **0.1** (next): the first public release, with the plugin, `/ennyn:init`, and the CLI as they are now.
+- **0.1** (next): the first public release, with the plugin, `/ennyn:init`, and the CLI as they are now. It ships when the scenarios in [docs/acceptance.md](docs/acceptance.md) pass on a second project.
 - **0.2**: Codex support, `claude plugin eval` cases that compare a project with and without the plugin, published results from a second project, a terminal runner for unattended cycles, output masking for secrets, and a triage of the backlog.
 - **1.0**: a stable config format.
 

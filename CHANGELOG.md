@@ -2,6 +2,7 @@
 
 ## Unreleased (0.0.x)
 
+- docs/acceptance.md: eight acceptance scenarios for 0.1.0 from a fresh install, each done by a command's exit; the README's roadmap names them as the condition to ship.
 - README: "When Ennyn does not fit", a glossary and a table of the settings a person changes, after Configure; the 0.2 line names the terminal runner, output masking and the backlog triage. Both languages.
 - Review stops at two rounds (after them a failing test or the gate rerun decides, not another reader); every low finding that is not declined or refuted becomes one `node:<task>-lows` per task instead of a fix. A defect in what a gate accepts or refuses is never low. The cycle plan lists at most four graph nodes and names the longest chain of tasks that must land in order; the closing's Verdicts line adds the open node count at the start and now.
 - Module contracts moved from DESIGN.md to docs/modules.md; DESIGN.md keeps a pointer. `review.cochange` maps module paths to docs/modules.md and `core/config.mjs` to DESIGN.md (the config table).

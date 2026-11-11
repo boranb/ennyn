@@ -156,7 +156,7 @@ Hiçbir ayar bir kapıyı kapatmaz. Anahtarların tam listesi [DESIGN.md](DESIGN
 
 ## Durum ve yol haritası
 
-- **0.1** (sıradaki): ilk public sürüm; plugin, `/ennyn:init` ve CLI bugünkü hâliyle.
+- **0.1** (sıradaki): ilk public sürüm; plugin, `/ennyn:init` ve CLI bugünkü hâliyle. [docs/acceptance.md](docs/acceptance.md)'deki senaryolar ikinci bir projede geçtiğinde çıkar.
 - **0.2**: Codex desteği, aynı projeyi plugin'li ve plugin'siz karşılaştıran `claude plugin eval` senaryoları ve ikinci bir projeden sonuçların yayımlanması, gözetimsiz döngüler için bir terminal runner'ı, secret'lar için çıktı maskeleme ve backlog'un triyajı.
 - **1.0**: kararlı bir config formatı.
 
