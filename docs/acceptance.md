@@ -1,6 +1,6 @@
 # Acceptance scenarios for 0.1.0
 
-These scenarios are the second half of 0.1.0's finish line; the first half is the needs of the release node in the work graph. They run on a second project with the shipped text alone, and every line a person or an orchestrator has to add is written down as a product defect. A finding that stops a scenario (the user cannot finish it, a gate lets through what it says it refuses, data is lost) joins the release needs; any other finding becomes a graph node with a gate and waits.
+These scenarios are the second half of 0.1.0's finish line; the first half is the needs of the release node in the work graph. They run on a second project with the shipped text alone, and every line a person or an orchestrator has to add is written down as a product defect. A finding that stops a scenario (the user cannot finish it, a gate lets through what it says it refuses, data is lost) joins the release needs (at most five findings join this way; a sixth is the user's decision, since whoever runs a scenario also rates what it found); any other finding becomes a graph node with a gate and waits.
 
 Each scenario names who runs it, the start state, the steps in the user's words, what makes it done (a command's exit code or a line it prints), and which of Ennyn's own tests already cover part of it. A test file named here exists in `test/`; "part" means the test runs the piece in a temporary repository, not through a fresh install.
 
@@ -9,7 +9,7 @@ Each scenario names who runs it, the start state, the steps in the user's words,
 - **Who:** a developer with Claude Code, in a project that never had Ennyn.
 - **Start:** a git repository with no `.ennyn/` folder.
 - **Steps:**
-  1. Run `claude plugin marketplace add boranb/ennyn`.
+  1. Run `claude plugin marketplace add boranb/ennyn` (while the repository is private: `claude plugin marketplace add ./ennyn` from a local clone, as the README says).
   2. Run `claude plugin install ennyn@ennyn`.
   3. Restart Claude Code and work in the project as usual: edit, commit, push.
   4. Look for any file the plugin wrote in the project.
