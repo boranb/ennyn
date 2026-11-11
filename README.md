@@ -128,7 +128,7 @@ The work graph is a JSON file (or an ES module) with two arrays, one for open ta
 
 - It runs in Claude Code only for now.
 - Rework is only as good as the fix label: `ennyn rework` counts commits whose subject carries the fix type, so a project that does not mark repairs gets a number that means little.
-- It needs Node 22 and git 2.34 or newer.
+- It needs Node 20 and git 2.34 or newer for now.
 - The config may change before 1.0.
 
 ## Glossary

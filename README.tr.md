@@ -128,7 +128,7 @@ Tüm ayarlar tek bir dosyada durur: `/ennyn:init`'in sizin için yazdığı `.en
 
 - Şimdilik yalnızca Claude Code'da çalışıyor.
 - Rework, fix etiketi kadar güvenilir: `ennyn rework`, konusunda fix tipi geçen commit'leri sayar; onarımlarını işaretlemeyen bir projede çıkan sayı pek bir şey söylemez.
-- Node 22 ve git 2.34 ya da daha yenisi gerekiyor.
+- Şimdilik Node 20 ve git 2.34 ya da daha yenisi gerekiyor.
 - Config 1.0'dan önce değişebilir.
 
 ## Sözlük
