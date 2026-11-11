@@ -50,7 +50,7 @@ Review stays as it is: a reviewer reports every finding it can quote, on gates, 
 
 - **🔴/🟠:** fixed with a test (`fixed-test`), a node (`node:<id>`), or `refuted`. Never `fixed` without a test, never `open` past its round.
 - **⚪ whose input only this project's own writer produces:** `declined` (or `refuted`), not fixed and no node: the defect is real, and the convergence report lists it; a fix that landed anyway (a fix the user asked for, another finding's fix) is recorded as what happened, `fixed` or `fixed-test`. The validator refuses `declined` on any other row, and `open` or a node on such a row.
-- **Every other ⚪:** `node:<task>-lows`, not fixed in the cycle: one node per task, written at the closing, its title the task's id and "low findings left", its body each finding's id with one line.
+- **Every other ⚪:** `node:<task>-lows`, not fixed in the cycle: one node per task, written at the closing, its title the task's id and "low findings left", its body each finding's id with one line. The node carries `gate: beside`, so no cycle picks it alone: it closes beside a task that touches the same file (at most two such nodes a task), or on a user's report.
 - **The rest (🔴/🟠 only):** fixed in the task, with a regression test where one can prove it; a fix larger than the task: a node.
 
 ## Report
