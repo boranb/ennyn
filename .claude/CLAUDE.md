@@ -1,6 +1,6 @@
 # Ennyn
 
-A development loop for coding agents, shipped as a Claude Code plugin and a zero-dependency Node CLI. Read README.md for what and why, DESIGN.md for layout and config keys, docs/modules.md for module contracts (only the section of the module you touch).
+A development loop for coding agents, shipped as a Claude Code plugin and a zero-dependency Node CLI. Read README.md for what and why, DESIGN.md for layout and config keys, docs/modules.md for the module you touch.
 
 ## Commits
 
@@ -16,7 +16,7 @@ A development loop for coding agents, shipped as a Claude Code plugin and a zero
 ## Tests
 
 - Before main moves: `npm run test:short` (it brings back the slow files a branch touches) and `npm run typecheck`. `npm test` runs once a cycle, at the closing, on the tree pushed then, and before a release. Before a later push, `node scripts/ennyn.mjs push-check` says what it needs on its tree, and `node scripts/ennyn.mjs test fast|whole` runs and records it.
-- Before a push, the test files the push adds or changes pass on Linux in a `node:22` container; a change that touches platform or git-version behaviour also runs them on the Node 20 and git 2.34 floor image. The full `npm run test:linux` (needs docker) runs before a release, after the cycle's closing on an idle machine, never beside other heavy work. CI starts no job while the repository is private.
+- Before a push, the test files the push adds or changes pass on Linux in a `node:22` container; a change that touches platform or git-version behaviour also runs them on the Node 20 and git 2.34 floor image. The full `npm run test:linux` (needs docker) runs before a release, after the cycle's closing on an idle machine, never beside other heavy work. CI starts no job while private.
 - One heavy job at a time: a whole suite, a mutation run or a Linux image.
 - Tests are hermetic: temporary directories only, never a path outside the repository.
 
@@ -27,4 +27,4 @@ A development loop for coding agents, shipped as a Claude Code plugin and a zero
 3. `npm test && npm run typecheck && npm run validate:plugin` (the last needs the claude CLI; it checks the manifests, agents, skills and hooks as Claude Code loads them), `npm run test:reference` (the npm, marked, Actions YAML and claude records; needs docker) and `npm run test:linux`.
 4. Commit `chore: release vX.Y.Z`, tag `vX.Y.Z`, push the commit and the tag.
 
-Install: `claude plugin marketplace add boranb/ennyn`. The repository stays private until the public release.
+Install: `claude plugin marketplace add boranb/ennyn`. It stays private until the public release.
