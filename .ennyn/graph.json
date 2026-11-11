@@ -24,7 +24,7 @@
     },
     {
       "id": "second-project-cycles",
-      "title": "Run cycles on a second project from its own session and record the convergence numbers against the baseline; the next run uses the shipped text alone, with no hand-written brief, and every line a person or an orchestrator has to add is recorded as a product defect: fresh-agent-per-task landed on 2026-10-31 (7fd12bb), after the trials of 2026-10-29, so the loop to be released has not run outside this repository",
+      "title": "Run cycles on a second project from its own session and record the convergence numbers against the baseline; the next run uses the shipped text alone, with no hand-written brief, and every line a person or an orchestrator has to add is recorded as a product defect: fresh-agent-per-task landed on 2026-10-31 (7fd12bb), after the trials of 2026-10-29, so the loop to be released has not run outside this repository One task of the run uses init's no-bypass mode (absorbs no-bypass-trial), and the report lists what broke.",
       "status": "planned",
       "value": "high",
       "cost": "L",
@@ -78,7 +78,7 @@
     },
     {
       "id": "release-0-1-0",
-      "title": "Release v0.1.0: final read of both READMEs, CHANGELOG section, version in package.json, package-lock.json and plugin.json, tag; README and SECURITY.md name the one source to install from and what a genuine copy never holds (binaries, runtime dependencies, install scripts); docs/evidence.md's heading 'Gates stop recurrence, prose does not' is scoped to the origin project, with Ennyn's own table of proposal-born gates beside it; docs/related-work.md drops 'None is built yet' (findings-ledger is built), says which of the table's nodes are, and credits this review's ideas in its table, before publishing: Anthropic's post added its credit to Sapling's Mononoke only in an update of October 15; docs/related-work.md's spec-kit row names assess, bug and the workflow engine, and says its claim holds for core only: community extensions (spec-gates, vurnix, spec-kit-tdd) now run checks as code. The rest of the graph waits for after this release",
+      "title": "Release v0.1.0: final read of both READMEs, CHANGELOG section, version in package.json, package-lock.json and plugin.json, tag; README and SECURITY.md name the one source to install from and what a genuine copy never holds (binaries, runtime dependencies, install scripts); docs/evidence.md's heading 'Gates stop recurrence, prose does not' is scoped to the origin project, with Ennyn's own table of proposal-born gates beside it; docs/related-work.md drops 'None is built yet' (findings-ledger is built), says which of the table's nodes are, and credits this review's ideas in its table, before publishing: Anthropic's post added its credit to Sapling's Mononoke only in an update of October 15; docs/related-work.md's spec-kit row names assess, bug and the workflow engine, and says its claim holds for core only: community extensions (spec-gates, vurnix, spec-kit-tdd) now run checks as code. The rest of the graph waits for after this release Trimmed 2026-11-11 on the user's ask (decisions in the keep folder's research/2026-11-11-roadmap): two cycles of Ennyn work, then the user's steps.",
       "status": "planned",
       "value": "high",
       "cost": "S",
@@ -93,10 +93,7 @@
         "greenfield-first-commit",
         "no-test-command-stop",
         "greenfield-intake",
-        "walking-skeleton-first",
         "secret-transcript-probe",
-        "secret-output-mask",
-        "history-secret-scan",
         "smallest-change-row",
         "one-decision-one-site",
         "one-task-run",
@@ -106,18 +103,18 @@
         "push-setting",
         "cycle-journal",
         "session-handover",
-        "fresh-session-run",
         "escalate-on-gate-failure",
         "impact-scoped-tests",
         "windows-verdict",
         "kill-own-pid-only",
         "plugin-update-path",
         "win-kill-waits-exit",
-        "kept-folder-closing",
-        "no-bypass-trial",
         "convergence-fix-loop-per-file",
         "push-check-recorded-suite",
-        "heavy-job-limit"
+        "heavy-job-limit",
+        "fault-matrix-scoped",
+        "engines-floor-22",
+        "cycle-record"
       ],
       "gate": "user",
       "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release); read 2026-11-01: the post now opens 'Updated October 15 to include more detail on the projects that pioneered many of the techniques we use in Scion.', and The Pragmatic Engineer (2026-10-22) reports the attribution came after a public complaint; an audit of requests against the graph, 2026-11-01: five had no node in the release needs: a project started from nothing (a request, 2026-10-29: 15 nodes, 0 done), leftovers (a request, 2026-10-29: 14 nodes, 0 done), secrets in chat (a request, 2026-10-28: 12 nodes, 1 done), less code and no repetition (a request, a request, 2026-10-25), findings that can wait (a request, 2026-10-25). The smallest piece of each entered the needs. spec-gates' README: 'Spec Kit is a guidance layer'; 2026-11-05, the choice was left to the orchestrator: kill-own-pid-only, plugin-update-path and win-kill-waits-exit join the needs, observed on Windows",
@@ -1158,7 +1155,7 @@
       "status": "planned",
       "needs": [],
       "id": "external-audit-before-release",
-      "title": "Before v0.1.0, run cloudflare/security-audit-skill at a pinned commit, read in full first, on Ennyn: standard profile, scoped to what ennyn audit lists, output outside the repository, with an agent budget the user sets. Confirmed findings are fixed, needs-validation ones become nodes, and its findings are compared with what Ennyn's own audits found, as a measure of what Ennyn's method misses Free route first: free scanners (Semgrep's free rules, gitleaks or trufflehog over history, OSV-Scanner), GitHub's free code and secret scanning once public, and a full pass of Ennyn's own security reviewers and labs; the report says what that route cannot cover (an independent outside eye), to be asked of the community after release. The user, 2026-11-11: a request.",
+      "title": "Before v0.1.0, run cloudflare/security-audit-skill at a pinned commit, read in full first, on Ennyn: standard profile, scoped to what ennyn audit lists, output outside the repository, with an agent budget the user sets. Confirmed findings are fixed, needs-validation ones become nodes, and its findings are compared with what Ennyn's own audits found, as a measure of what Ennyn's method misses Free route first: free scanners (Semgrep's free rules, gitleaks or trufflehog over history, OSV-Scanner), GitHub's free code and secret scanning once public, and a full pass of Ennyn's own security reviewers and labs; the report says what that route cannot cover (an independent outside eye), to be asked of the community after release. The user, 2026-11-11: a request. Absorbs history-secret-scan: the history pass of test/hygiene's findings() and secretHits() runs in the same step, right before the repository goes public. Its dependency on secret-held-today is dropped; that node waits for 0.2.",
       "value": "high",
       "cost": "M",
       "cluster": "security",
@@ -1522,19 +1519,6 @@
     },
     {
       "status": "planned",
-      "needs": [
-        "secret-held-today"
-      ],
-      "id": "history-secret-scan",
-      "title": "Once more right before the repository becomes public: every blob and path in history through test/hygiene's findings() and secretHits() (a public repository serves every commit; test/hygiene reads only the tree and commit messages); 2026-10-27 baseline: 876 blobs, 156 paths, 0 names or home paths, 0 secret shapes, controls caught a known token and a home path",
-      "value": "high",
-      "cost": "S",
-      "cluster": "security",
-      "source": "discoverability review, 2026-10-27, one-off scan",
-      "since": 13
-    },
-    {
-      "status": "planned",
       "needs": [],
       "id": "skills-outside-claude-code",
       "title": "skills/cycle and skills/init run the CLI through ${CLAUDE_PLUGIN_ROOT}, which only Claude Code sets: in another agent or a skills.sh install the helper path is empty (read from the text, not run in another agent). Give the skills a helper path that works outside Claude Code (a pinned npx ennyn@<version>, or a path beside the skill) and run one cycle step in one other agent; the READMEs state the limit until then",
@@ -1660,17 +1644,6 @@
       "cost": "S",
       "cluster": "distribution",
       "source": "fzf CHANGELOG.md (bullets average 65 characters), opencode CHANGELOG.md, superpowers RELEASE-NOTES.md, 2026-10-27; agent-reach CHANGELOG.md, 2026-10-28: '28 of 40 actions passed real acceptance before release; these shipped untested with maintainer approval'",
-      "since": 13
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "readme-scope-glossary",
-      "title": "README: 'When Ennyn does not fit' (Claude Code only for now, rework only as good as the fix label, Node 20 and git 2.34, config may change before 1.0), a short glossary (side copy, mechanization, legacy audit, work graph, convergence, gate), and how Ennyn differs from hookify, Mycelium, Compound Engineering and TDD Guard; one line on what a cycle costs, taken from a measured cycle (cycle 16: 33.8 agent-hours; one session stopped mid-cycle on a usage limit), and a line saying the numbers come from one author's projects; a short table of the settings a person would change (language, commit style, push, how the agent runs, reviewers) and how to change each. No setting turns a gate off; and a table of how strongly each rule is held, per rule: written (text the agent is told to follow), checked (a test, doctor or the commit hook says so after the fact) or refused (a hook or a permission rule stops the action), with the host it holds on",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "distribution",
-      "source": "outside-eye review (undefined jargon); ripgrep 'Why shouldn't I use ripgrep?', anthropics/claude-code plugins READMEs, awesome-claude-code neighbours, 2026-10-27; Anthropic's Scion post (read 2026-11-01) on its own workload: 'our ability to spend tokens for internal use far exceeds what any other business would realistically want to spend'. Entered release-0-1-0's needs on the same review; spec-kit's users asked for project-level settings in 57 of 935 records read on 2026-11-01, mostly branch names (#407, #1382) and language (#1239); amended 2026-11-07 on the user's yes: ANEW (MIT, a spec-and-gates workspace for AI agents) has such a table in its README (Documented, Validated, Enforced per rule and per tool), the clearest statement of a rule's strength seen in a peer project",
       "since": 13
     },
     {
@@ -2389,12 +2362,12 @@
       "needs": [],
       "id": "one-decision-one-site",
       "value": "high",
-      "cost": "M",
+      "cost": "S",
       "cluster": "gates",
       "since": 14,
       "mechanization": true,
       "sourceClass": "one question answered in several places drifts apart, and a fix reaches only one of them",
-      "title": "A gate for one decision answered in several places: the impact table's S1 row is answered by a command that lists every function and literal answering the same question as the changed one (same regex or string literals, same called predicates, near-duplicate bodies across modules), and a test fails when a change edits one of a known group of sibling sites and not the others, or adds a new near-duplicate of a decision with no entry in a sibling list; then delete the prose that asks reviewers to look for siblings",
+      "title": "A gate for one decision answered in several places: the impact table's S1 row is answered by a command that lists every function and literal answering the same question as the changed one (same regex or string literals, same called predicates, near-duplicate bodies across modules), and a test fails when a change edits one of a known group of sibling sites and not the others, or adds a new near-duplicate of a decision with no entry in a sibling list; then delete the prose that asks reviewers to look for siblings Narrowed 2026-11-11 (decisions.md in the keep folder): keep only the command that answers the S1 row, every function and literal in the repository that answers the same question as the changed one (same string literals or regex sources, same called predicate); the near-duplicate-body heuristic and the sibling-group test are dropped, because review.cochange already holds the groups that change together and a heuristic reader is the design that fell in cycles 18, 19 and 31; then delete the prose that asks reviewers to look for siblings.",
       "source": "cycle 2026-10-28 (14) convergence: the class recurred in all four tasks, ~10 times, all caught by reviewers: two joiners and three anchor sites in the YAML reader (one got the fix), the judge sharing the rules it measures, a recorder missing its sibling's trace check, the hooks finding the project apart from the CLI, a link filter and the loader disagreeing, the metrics-log predicate not shared by audit and doctor, a paid-run block on one of two paths, hook text left saying the old thing; cycle 2026-10-31 (15): again in all four tasks: the fix label's twins in init and doctor, recentCommits beside readLog, the machine-path advice in five message keys, doctor's reading of the record and of the PATH filter beside the block's"
     },
     {
@@ -2619,7 +2592,7 @@
         "greenfield-detect"
       ],
       "id": "greenfield-intake",
-      "title": "The greenfield path of /ennyn:init asks once, at most five questions, each with a proposed default: what it is in one line; who uses it and where it runs; the stack with a one-line reason and the alternatives; data and auth; the quality tooling (test runner, lint and format, typecheck, end-to-end), asked before any code exists. A one-file script gets one question. Answers go once into the config and a short product note, each marked the user's choice or Ennyn's default, and are not asked again; a stack the user names is never swapped. An empty answer, or one the host filled after a timeout, is no answer: ask again in plain text and write nothing without an explicit yes. No PRD, architecture or epic documents. The text lives in its own file read only on this path (skills/init/SKILL.md is 8,167 bytes, past Codex's 8,000: codex-skill-bytes)",
+      "title": "The greenfield path of /ennyn:init asks once, at most five questions, each with a proposed default: what it is in one line; who uses it and where it runs; the stack with a one-line reason and the alternatives; data and auth; the quality tooling (test runner, lint and format, typecheck, end-to-end), asked before any code exists. A one-file script gets one question. Answers go once into the config and a short product note, each marked the user's choice or Ennyn's default, and are not asked again; a stack the user names is never swapped. An empty answer, or one the host filled after a timeout, is no answer: ask again in plain text and write nothing without an explicit yes. No PRD, architecture or epic documents. The text lives in its own file read only on this path (skills/init/SKILL.md is 8,167 bytes, past Codex's 8,000: codex-skill-bytes) Absorbs walking-skeleton-first's graph rule, three sentences in skills/init/graph.md and no second task: the first node is the thinnest end-to-end path with a test; later nodes are vertical slices, with no layer-only node and no final test node; the project's 'done' line is its fast test, lint and typecheck exiting 0, and one assertion broken on purpose making the test command fail.",
       "value": "high",
       "cost": "M",
       "cluster": "init",
@@ -2648,20 +2621,6 @@
       "cost": "M",
       "cluster": "security",
       "source": "Spracklen et al., USENIX Security 2025 (576,000 code samples, 16 models): 440,445 of 2.23 million package names hallucinated (19.7%), '43% of hallucinated packages were repeated in all 10 queries'; Aikido on react-codeshift (2026-01-21): '237 GitHub repositories were already referencing it, instructing AI agents to install it.'; GSD executor: '1. Do NOT attempt to install a similarly-named alternative.'; OpenSSF guide for AI code assistant instructions: 'Do not add dependencies that may be malicious or hallucinated.'",
-      "since": 15
-    },
-    {
-      "status": "planned",
-      "needs": [
-        "greenfield-intake",
-        "greenfield-first-commit"
-      ],
-      "id": "walking-skeleton-first",
-      "title": "The greenfield graph's first node is a walking skeleton: the thinnest end-to-end path of one real behaviour through every part the project has, permanent code with a test, at most about five steps. Done is checked by commands, not by the report: the fast test, lint and typecheck commands exit 0 (a typecheck is required for a dynamically typed language); one assertion broken on purpose makes the test command fail, so the runner provably runs; the lock file is committed; the hook is installed; the commands are written where the cycle reads them, so its test and mutation steps have something to run. skills/init/graph.md gets the rule for the nodes after it: vertical slices ('after this node, can a user do something new?'), no layer-only node such as a database schema, tests inside each node and never a final test node",
-      "value": "high",
-      "cost": "M",
-      "cluster": "init",
-      "source": "Crystal Clear (2004, page captured 2008): 'A walking skeleton, on the other hand, is permanent code, built with production coding habits, regression tests, and is intended to grow with the system.'; GSD Core planner: 'If Skeleton has more than ~5 tasks, you are not skeletonizing.'; GSD #2826: 'nothing works until the final wiring phase'; spec-kit tasks template: 'Tests are OPTIONAL - only include them if explicitly requested in the feature specification.'; the loop's author: 'I must stress the importance of wiring in a static analyser/type checker'; BMAD v7 slice rules: 'Tests go in every story; the only test story is the closing end-to-end suite.'",
       "since": 15
     },
     {
@@ -2700,7 +2659,7 @@
     {
       "status": "planned",
       "needs": [
-        "walking-skeleton-first"
+        "greenfield-intake"
       ],
       "id": "greenfield-ci",
       "title": "The walking skeleton's CI workflow and a dependabot.yml (a cooldown for the package ecosystem and for github-actions) pass Ennyn's own CI check on the first commit: actions by SHA or the lock file, top-level permissions contents: read, persist-credentials: false, install from the lock (npm ci, --frozen-lockfile, uv sync --locked)",
@@ -2747,7 +2706,6 @@
       "status": "planned",
       "needs": [
         "greenfield-intake",
-        "walking-skeleton-first",
         "no-test-command-stop"
       ],
       "id": "greenfield-trial",
@@ -3110,17 +3068,6 @@
       "cost": "S",
       "cluster": "method",
       "source": "measured 2026-10-31, on whether a language change would pay: 10 of cycle 16's 207 findings (hand labels, 4.8%) are ones a language or its standard library would have stopped, so a language change is not worth it and these flags are the cheap part of the same question",
-      "since": 16
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "cycle-node-limit",
-      "title": "A cycle takes at most four graph nodes, counted as nodes and not as slots, and the cycle's longest chain of tasks that must land in order is named at the start; a node whose code has no caller outside tests is not picked unless the task adds the caller",
-      "value": "high",
-      "cost": "S",
-      "cluster": "method",
-      "source": "measured, cycle 16: planned for four slots, ran six tasks; the third slot became three nodes in sequence; task time set by two chains, so shortening one saved nothing. T4 and T3a held 349 minutes of chain, about 62 USD at list price and 104 findings on a parser no production code calls (parseConvergence, checked on main and all c16 branches). Rank correlation of lines to active hours by cycle 0.89, n=13; cycle 2026-11-01 (17), carried by hand: four nodes and the audit, 8 commits, and the two security nodes took the review rounds: T3 and T4 had three authors each",
       "since": 16
     },
     {
@@ -5413,17 +5360,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "no-bypass-trial",
-      "title": "One task of a cycle runs in init's no-bypass mode in a throwaway project, and the report lists what broke (docker, ports, worktrees outside the project, network hosts); the part of secret-agent-setup that needs a real model session",
-      "value": "high",
-      "cost": "S",
-      "cluster": "security",
-      "source": "cycle 2026-11-08 (27), T2: split from secret-agent-setup's last sentence; release need in its place",
-      "since": 27
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "scrub-forces-default-mode",
       "title": "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB forces the default permission mode at startup (2.1.310, 2.1.319), so it cancels bypass and acceptEdits; measure whether it still scrubs when set from a settings file's env, and decide what doctor advises",
       "value": "low",
@@ -5910,6 +5846,61 @@
       "cluster": "method",
       "source": "cycle 2026-11-10 (31), T1 round 2 security review gap",
       "since": 31
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "fault-matrix-scoped",
+      "title": "test/fault-injection.test.mjs takes ENNYN_FAULT_COMMANDS (a comma list of CLI commands, e.g. lock,kept) and runs only those commands' cells; unset, the whole matrix as now. A task's brief names its commands; the closing's whole suite runs the whole matrix",
+      "value": "high",
+      "cost": "S",
+      "cluster": "gates",
+      "source": "roadmap review 2026-11-11 (decisions.md in the keep folder)",
+      "since": 32
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "cycle-record",
+      "title": "The closing records one line per cycle in the metrics log ({\"kind\":\"cycle\",\"n\":32,\"start\":...,\"close\":...,\"planned\":4,\"landed\":3,\"stopped\":1,\"findings\":83,\"previousFix\":32}), read from the journal and the ledger, through ennyn journal close --record (or budget --record, whichever reads less)",
+      "value": "high",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "roadmap review 2026-11-11 (decisions.md in the keep folder)",
+      "since": 32
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "graph-growth-line",
+      "title": "ennyn convergence prints the open node count at the cycle's start and at its closing (the text line is in report-formats.md's Verdicts already)",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "source": "roadmap review 2026-11-11 (decisions.md in the keep folder)",
+      "since": 32
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "graph-triage",
+      "title": "After the release, triage the open nodes in batches of about 60 by cluster through node-verdict, the low/S ones first; the user decides each batch",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "plan",
+      "source": "roadmap review 2026-11-11 (decisions.md in the keep folder)",
+      "since": 32
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "cli-help-groups",
+      "title": "The CLI's help text groups the commands into project commands and cycle commands; the commands themselves stay",
+      "value": "low",
+      "cost": "S",
+      "cluster": "distribution",
+      "source": "roadmap review 2026-11-11 (decisions.md in the keep folder)",
+      "since": 32
     }
   ],
   "done": [
@@ -6755,6 +6746,18 @@
       "title": "Measured in cycle 31's leftovers audit (item 25): every Ennyn git call sets core.fsmonitor= so a configured hook does not run, and leftovers still lists a new file; nothing to change",
       "status": "done",
       "finished": "2026-11-11"
+    },
+    {
+      "id": "cycle-node-limit",
+      "title": "A cycle takes at most four graph nodes, counted as nodes and not as slots, and the cycle's longest chain of tasks that must land in order is named at the start; a node whose code has no caller outside tests is not picked unless the task adds the caller Landed as text in report-formats.md's Cycle plan, 2026-11-11",
+      "status": "done",
+      "finished": "2026-11-11"
+    },
+    {
+      "id": "readme-scope-glossary",
+      "title": "README: 'When Ennyn does not fit' (Claude Code only for now, rework only as good as the fix label, Node 20 and git 2.34, config may change before 1.0), a short glossary (side copy, mechanization, legacy audit, work graph, convergence, gate), and how Ennyn differs from hookify, Mycelium, Compound Engineering and TDD Guard; one line on what a cycle costs, taken from a measured cycle (cycle 16: 33.8 agent-hours; one session stopped mid-cycle on a usage limit), and a line saying the numbers come from one author's projects; a short table of the settings a person would change (language, commit style, push, how the agent runs, reviewers) and how to change each. No setting turns a gate off; and a table of how strongly each rule is held, per rule: written (text the agent is told to follow), checked (a test, doctor or the commit hook says so after the fact) or refused (a hook or a permission rule stops the action), with the host it holds on Landed narrowed 2026-11-11: no competitor comparison (docs/related-work.md), no cost line, no per-rule table",
+      "status": "done",
+      "finished": "2026-11-11"
     }
   ],
   "declined": [
@@ -6857,6 +6860,47 @@
       "source": "cycle 2026-11-08 (27) convergence: unreadable-shape-passes the most recurring class, 18 times, all in review (T1 rounds 1 and 2, T2 round 1 and 2); the hand-listed constructs of 504cd49 lost six shapes in round two",
       "since": 27,
       "reason": "It would find more shapes of a stated limit (SECURITY.md: habit, not intent), and each patch of cycle 27 bred fix-introduced findings (8); the fix-loop brake (skills/cycle/report-formats.md, Convergence) declines it with them. Replaced as the mechanization node by convergence-fix-loop-per-file."
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "greenfield-intake",
+        "greenfield-first-commit"
+      ],
+      "id": "walking-skeleton-first",
+      "title": "The greenfield graph's first node is a walking skeleton: the thinnest end-to-end path of one real behaviour through every part the project has, permanent code with a test, at most about five steps. Done is checked by commands, not by the report: the fast test, lint and typecheck commands exit 0 (a typecheck is required for a dynamically typed language); one assertion broken on purpose makes the test command fail, so the runner provably runs; the lock file is committed; the hook is installed; the commands are written where the cycle reads them, so its test and mutation steps have something to run. skills/init/graph.md gets the rule for the nodes after it: vertical slices ('after this node, can a user do something new?'), no layer-only node such as a database schema, tests inside each node and never a final test node",
+      "value": "high",
+      "cost": "M",
+      "cluster": "init",
+      "source": "Crystal Clear (2004, page captured 2008): 'A walking skeleton, on the other hand, is permanent code, built with production coding habits, regression tests, and is intended to grow with the system.'; GSD Core planner: 'If Skeleton has more than ~5 tasks, you are not skeletonizing.'; GSD #2826: 'nothing works until the final wiring phase'; spec-kit tasks template: 'Tests are OPTIONAL - only include them if explicitly requested in the feature specification.'; the loop's author: 'I must stress the importance of wiring in a static analyser/type checker'; BMAD v7 slice rules: 'Tests go in every story; the only test story is the closing end-to-end suite.'",
+      "since": 15,
+      "reason": "merged into greenfield-intake (2026-11-11)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "no-bypass-trial",
+      "title": "One task of a cycle runs in init's no-bypass mode in a throwaway project, and the report lists what broke (docker, ports, worktrees outside the project, network hosts); the part of secret-agent-setup that needs a real model session",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-08 (27), T2: split from secret-agent-setup's last sentence; release need in its place",
+      "since": 27,
+      "reason": "merged into second-project-cycles (2026-11-11)"
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "secret-held-today"
+      ],
+      "id": "history-secret-scan",
+      "title": "Once more right before the repository becomes public: every blob and path in history through test/hygiene's findings() and secretHits() (a public repository serves every commit; test/hygiene reads only the tree and commit messages); 2026-10-27 baseline: 876 blobs, 156 paths, 0 names or home paths, 0 secret shapes, controls caught a known token and a home path",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "source": "discoverability review, 2026-10-27, one-off scan",
+      "since": 13,
+      "reason": "merged into external-audit-before-release (2026-11-11)"
     }
   ]
 }

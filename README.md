@@ -124,10 +124,40 @@ All settings live in one file, `.ennyn/config.json`, which `/ennyn:init` writes 
 
 The work graph is a JSON file (or an ES module) with two arrays, one for open tasks and one for done tasks. Field names can be configured, so you can point Ennyn at a graph you already have.
 
+## When Ennyn does not fit
+
+- It runs in Claude Code only for now.
+- Rework is only as good as the fix label: `ennyn rework` counts commits whose subject carries the fix type, so a project that does not mark repairs gets a number that means little.
+- It needs Node 22 and git 2.34 or newer.
+- The config may change before 1.0.
+
+## Glossary
+
+- **Work graph**: the file of open and done tasks the cycle picks from.
+- **Cycle**: one run of four tasks from the graph, ending in a report and a handoff.
+- **Gate**: a check that refuses (the commit hook, a permission rule, a test the commit must pass), as opposed to advice the agent is told to follow.
+- **Mechanization**: the cycle's task that turns a kind of bug that keeps coming back into a gate, a test, a type or a lint rule.
+- **Legacy audit**: the cycle's task that re-checks a feature already finished, or the project's security.
+- **Side copy**: a copy of the project in another directory (a scratch folder or a worktree) where an agent works; the project's rules follow it there.
+- **Convergence**: the report at the end of a cycle that counts findings by where they came from, so you can see whether review is finding fewer new problems.
+- **Impact table**: the short table written before a risky change, listing what else reads or depends on the thing being changed.
+
+## Settings you may change
+
+| Setting | What it changes |
+|---|---|
+| `language` | Language of reports, CLI output and the agent's replies (`en` or `tr`). |
+| `commitMsg.language`, `commitMsg.style` | Language of commit text, and `terse` to keep the body to structured lines. |
+| `push.mode` | Who says yes to the closing's push: `ask` (you, the default) or `after-closing`. |
+| `compaction.defer` | Whether idle compaction waits while a task is half done (default on). |
+| `review.agents` | The reviewer agents a cycle uses; empty means Ennyn's three. |
+
+No setting turns a gate off. The full list of keys is in [DESIGN.md](DESIGN.md).
+
 ## Status and roadmap
 
 - **0.1** (next): the first public release, with the plugin, `/ennyn:init`, and the CLI as they are now.
-- **0.2**: Codex support, `claude plugin eval` cases that compare a project with and without the plugin, and published results from a second project.
+- **0.2**: Codex support, `claude plugin eval` cases that compare a project with and without the plugin, published results from a second project, a terminal runner for unattended cycles, output masking for secrets, and a triage of the backlog.
 - **1.0**: a stable config format.
 
 ## License

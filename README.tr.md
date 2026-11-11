@@ -124,10 +124,40 @@ Tüm ayarlar tek bir dosyada durur: `/ennyn:init`'in sizin için yazdığı `.en
 
 İş grafı bir JSON dosyasıdır (ya da ES modülü): açık görevler ve bitmiş görevler için iki ayrı dizi içerir. Field adları ayarlanabildiği için Ennyn'i elinizdeki bir grafa yönlendirebilirsiniz.
 
+## Ennyn ne zaman uymaz
+
+- Şimdilik yalnızca Claude Code'da çalışıyor.
+- Rework, fix etiketi kadar güvenilir: `ennyn rework`, konusunda fix tipi geçen commit'leri sayar; onarımlarını işaretlemeyen bir projede çıkan sayı pek bir şey söylemez.
+- Node 22 ve git 2.34 ya da daha yenisi gerekiyor.
+- Config 1.0'dan önce değişebilir.
+
+## Sözlük
+
+- **İş grafı**: döngünün görev seçtiği, açık ve bitmiş görevlerin dosyası.
+- **Döngü**: graftan dört görevlik bir tur; bir rapor ve bir devir notuyla biter.
+- **Kapı (gate)**: reddeden bir kontrol (commit hook'u, bir izin kuralı, commit'in geçmesi gereken bir test); agent'a söylenen tavsiyeden farklıdır.
+- **Mekanizasyon**: sürekli geri gelen bir hata türünü kapıya, teste, tipe ya da lint kuralına çeviren görev.
+- **Eski kod denetimi (legacy audit)**: bitmiş bir özelliği ya da projenin güvenliğini yeniden kontrol eden görev.
+- **Yan kopya (side copy)**: projenin başka bir dizindeki kopyası (geçici bir klasör ya da worktree); agent orada çalışır, projenin kuralları da onunla gider.
+- **Yakınsama (convergence)**: bir döngünün sonunda bulguları geldikleri yere göre sayan rapor; review'ın yeni sorun bulmayı azaltıp azaltmadığını gösterir.
+- **Etki tablosu (impact table)**: riskli bir değişiklikten önce yazılan, değişen şeyi başka neyin okuduğunu ya da ona neyin dayandığını sıralayan kısa tablo.
+
+## Değiştirebileceğiniz ayarlar
+
+| Ayar | Neyi değiştirir |
+|---|---|
+| `language` | Raporların, CLI çıktısının ve agent cevaplarının dili (`en` ya da `tr`). |
+| `commitMsg.language`, `commitMsg.style` | Commit metninin dili; `terse` gövdeyi yapılandırılmış satırlarla sınırlar. |
+| `push.mode` | Kapanıştaki push'a kimin evet dediği: `ask` (siz, varsayılan) ya da `after-closing`. |
+| `compaction.defer` | Boşta compaction'ın, görev yarımken bekleyip beklemeyeceği (varsayılan açık). |
+| `review.agents` | Döngünün kullandığı reviewer agent'lar; boşsa Ennyn'in üçü. |
+
+Hiçbir ayar bir kapıyı kapatmaz. Anahtarların tam listesi [DESIGN.md](DESIGN.md) dosyasında (İngilizce).
+
 ## Durum ve yol haritası
 
 - **0.1** (sıradaki): ilk public sürüm; plugin, `/ennyn:init` ve CLI bugünkü hâliyle.
-- **0.2**: Codex desteği, aynı projeyi plugin'li ve plugin'siz karşılaştıran `claude plugin eval` senaryoları ve ikinci bir projeden sonuçların yayımlanması.
+- **0.2**: Codex desteği, aynı projeyi plugin'li ve plugin'siz karşılaştıran `claude plugin eval` senaryoları ve ikinci bir projeden sonuçların yayımlanması, gözetimsiz döngüler için bir terminal runner'ı, secret'lar için çıktı maskeleme ve backlog'un triyajı.
 - **1.0**: kararlı bir config formatı.
 
 ## Lisans
