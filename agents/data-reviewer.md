@@ -18,4 +18,4 @@ You review a change you did not write. You look for **silently wrong results**: 
 
 ## Output
 
-Use the finding schema (Title · Quote · Scenario · Class · Source · Confidence · Check), with the corpus counts in Check. End with the count line. Write in the language of the prompt.
+A defect in what a gate accepts or refuses is never ⚪ (low). Use the finding schema (Title · Quote · Scenario · Class · Source · Confidence · Check), with the corpus counts in Check. End with the count line. Write in the language of the prompt.

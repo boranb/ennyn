@@ -42,7 +42,6 @@ When the table holds a core task's smallest-change row, set it against the full 
 
 - **Round 1:** full review.
 - **Round 2:** only the diff of round-one fixes and the impact-table delta; the same reviewer continues (its context and corpus are kept). Question: "what did this fix open?"
-- **Round 3+:** only when an independent signal (test, mutation run, real-system measurement) shows a new class; the reason goes into the commit body.
 - **Left after round 2:** a critical or high finding still gets its outcome (below); a failing-then-passing test proves a fix, not another round. If no test can prove it, stop and ask the user.
 
 ## Outcome
@@ -51,8 +50,8 @@ Review stays as it is: a reviewer reports every finding it can quote, on gates, 
 
 - **🔴/🟠:** fixed with a test (`fixed-test`), a node (`node:<id>`), or `refuted`. Never `fixed` without a test, never `open` past its round.
 - **⚪ whose input only this project's own writer produces:** `declined` (or `refuted`), not fixed and no node: the defect is real, and the convergence report lists it; a fix that landed anyway (a fix the user asked for, another finding's fix) is recorded as what happened, `fixed` or `fixed-test`. The validator refuses `declined` on any other row, and `open` or a node on such a row.
-- **Any other ⚪ outside a gate (code that accepts or refuses) and outside shared code (read in two or more places):** `node:<id>`, not fixed in the cycle.
-- **The rest:** fixed in the task, with a regression test where one can prove it; a fix larger than the task: a node.
+- **Every other ⚪:** `node:<task>-lows`, not fixed in the cycle: one node per task, written at the closing, its title the task's id and "low findings left", its body each finding's id with one line.
+- **The rest (🔴/🟠 only):** fixed in the task, with a regression test where one can prove it; a fix larger than the task: a node.
 
 ## Report
 

@@ -2,6 +2,7 @@
 
 ## Unreleased (0.0.x)
 
+- Review stops at two rounds (after them a failing test or the gate rerun decides, not another reader); every low finding that is not declined or refuted becomes one `node:<task>-lows` per task instead of a fix. A defect in what a gate accepts or refuses is never low. The cycle plan lists at most four graph nodes and names the longest chain of tasks that must land in order; the closing's Verdicts line adds the open node count at the start and now.
 - Module contracts moved from DESIGN.md to docs/modules.md; DESIGN.md keeps a pointer. `review.cochange` maps module paths to docs/modules.md and `core/config.mjs` to DESIGN.md (the config table).
 - `ennyn lock [--limit <minutes>] -- <command>`: one machine-wide queue for heavy jobs, in the layout of the hand-written `locked.sh` so both take turns in one order. Each run has a time limit (default 45 minutes) that stops its whole process group, exit 124. A dead run's lock is dropped by any ennyn waiter from its record (pid and start), the holder keeps its lock fresh during long runs and releases only a lock still its own, and each run is logged. The reference runner stops its group on SIGINT, SIGTERM, SIGHUP and a closed stdout.
 - `ennyn uninstall-hook`: removes the commit-msg hook install-hook wrote, only while it is the hook git runs and unchanged (install-hook now records its sha256), and the state dir; says which lines to take out of a project's own hook, and lists what stays. The README says how to update and how to remove Ennyn, including its marketplace.

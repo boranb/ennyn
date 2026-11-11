@@ -23,7 +23,7 @@ Kodu bir agent'ın yazdığı bir projede zamanla şu sorunlar ortaya çıkar:
 ## Ne yapar
 
 - Agent kodu değiştirmeden önce bir etki tablosu dolduruyor: değişikliğin nereleri etkilediğini soran beş soru. Her birini mümkün olduğunca git grep, git log ya da testleri çalıştırarak cevaplıyor. Değerine göre seçilen bir görevde önce her yeni parçayı, onu isteyen görev satırıyla ve onu zaten neyin yaptığıyla listeliyor.
-- Review iki turla sınırlı. İkinci tur yalnızca ilk turdaki fix'lerin değiştirdiği yerlere bakıyor. Üçüncü tur ancak arkasında fail eden bir test ya da bir ölçüm varsa açılıyor.
+- Review iki turla sınırlı. İkinci tur yalnızca ilk turdaki fix'lerin değiştirdiği yerlere bakıyor. Ondan sonra bir fix'i fail eden bir test kanıtlar, yeni bir tur değil.
 - Bir hata sınıfı tekrar ediyorsa sonraki döngü (aşağıda adım adım anlatılıyor) onu bir gate'e, yani bir teste ya da commit hook kuralına çeviriyor. O sınıf için CLAUDE.md'deki düz metin kurala artık gerek kalmaz.
 - Her döngü beş metrikle kapanıyor: review'ın bulduğu hatalar, fix'lerin yol açtığı regression'lar, Ennyn'den önceki kodda bulunan eski hatalar, gate'lerin yakaladığı hatalar ve commit'i geçip sonradan ortaya çıkan hatalar. Her oturumda yüklenen talimat metninin büyüyüp büyümediği de ölçülüyor.
 - Görevler bir iş grafında, yani bir JSON dosyasında duruyor. Ennyn her döngüde bunlardan dördünü seçiyor ve değeri yüksek en eski göreve her zaman yer ayırıyor.

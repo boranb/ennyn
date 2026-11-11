@@ -30,4 +30,4 @@ If the task's impact table (rows S1–S5) was given, check its S2 row against yo
 
 ## Output
 
-Use the finding schema (Title · Quote · Scenario · Class · Source · Confidence · Check). List **evidence gaps** (a test that does not pin where a gate sits, a path not tried) under their own heading, even at low confidence. End with the count line. Write in the language of the prompt.
+A defect in what a gate accepts or refuses is never ⚪ (low). Use the finding schema (Title · Quote · Scenario · Class · Source · Confidence · Check). List **evidence gaps** (a test that does not pin where a gate sits, a path not tried) under their own heading, even at low confidence. End with the count line. Write in the language of the prompt.

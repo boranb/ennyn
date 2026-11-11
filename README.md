@@ -23,7 +23,7 @@ In a project where an agent writes the code, these problems show up over time:
 ## What it does
 
 - Before editing code, the agent fills in an impact table: five questions about what the change affects, each answered, where possible, by running git grep, git log, or the tests. For a task picked for its value, it first lists each new piece with the line of the task that asks for it, and what already does it.
-- Review gets two rounds. The second round only looks at what the first round's fixes changed. A third round needs a failing test or a measurement behind it.
+- Review gets two rounds. The second round only looks at what the first round's fixes changed. After that, a failing test proves a fix, not another round.
 - When a class of bug recurs, the next cycle (one pass of the loop described below) turns it into a gate: a test or a commit-hook rule. The prose rule for it in CLAUDE.md is then no longer needed.
 - Each cycle closes with five metrics: bugs review found, regressions introduced by fixes, old bugs in code from before Ennyn, bugs a gate caught, and bugs that got past the commit and turned up later. It also measures whether the instruction text loaded in every session grew.
 - Tasks live in a work graph, a JSON file. Ennyn picks four per cycle and always keeps a slot for the oldest high-value task.

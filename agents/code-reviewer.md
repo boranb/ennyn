@@ -28,4 +28,4 @@ If you are continued for a second round, look only at the diff of the fixes made
 
 ## Output
 
-Positive observations (0–3, only if sincere) · findings sorted by severity with all fields · the count line. Write in the language the prompt is written in.
+A defect in what a gate accepts or refuses is never ⚪ (low). Positive observations (0–3, only if sincere) · findings sorted by severity with all fields · the count line. Write in the language the prompt is written in.

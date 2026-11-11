@@ -14,6 +14,8 @@ Write reports in the project's `language`.
 **Agent mode:** [doctor's agent mode line: no bypass, as it is, or not claimed; for a session started at the repository's top only]
 ```
 
+The plan lists at most four graph nodes (a split's step counts as one) and names the longest chain of tasks that must land in order.
+
 ## End of task
 
 `**Task N done:** [result] | Impact: [summary or not needed — why] | Review-Rounds: [N] | Mutation: [first a/b · last c/d] | Gate: [result · last round clean · none and why] | Checks: [passed] | Escalated: [none, or agent ids with the model asked and the model that ran, before and after] | Commit: [subject or "no commit" + why]`
@@ -32,7 +34,7 @@ Write reports in the project's `language`.
 ### Convergence     → format below
 ### Stopped         → none, or each stopped task's line
 ### Briefs          → each rule the cycle's hand-written briefs gave that did work, read against the skill's text: the file that holds it, the node that brings it in, or the project's own (its paths, its machine, its own ceilings); none when no brief was written
-### Verdicts        → each proposed node of the batch: go, clarify with its question for the user, or decline with its one reason; nodes declined this cycle: N, from doctor's declined count at the start and now; none when no batch was read
+### Verdicts        → each proposed node of the batch: go, clarify with its question for the user, or decline with its one reason; nodes declined this cycle: N, from doctor's declined count at the start and now; none when no batch was read; open nodes at the start and now
 ### Remaining risks → none, or each risk with its permanent home
 ### Push            → N commits waiting; `push.mode`; approval asked, or the push made by after-closing (remote, branch, hash)
 ```
