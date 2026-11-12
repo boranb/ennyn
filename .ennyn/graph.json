@@ -5899,17 +5899,6 @@
       "cluster": "distribution",
       "source": "roadmap review 2026-11-11 (decisions.md in the keep folder)",
       "since": 32
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "lock-wait-on-fs-error",
-      "title": "ennyn lock: a waiter that meets a file-system error stays in its wait loop for good. Measured in cycle 31's pre-push Linux check (node:22; the floor image never ran): the row at test/fault-injection.test.mjs:492 (`lock -- <node> -e 0`, ENNYN_LOCK_DIR .git/lock) with ENNYN_FS_FAULT=eacces at ENNYN_FS_FAULT_AT=4 and at 8 sat in a timer wait for 2 h 55 min; macOS passes the same cells; nothing was pushed. No limit ended them: the matrix arms its SIGKILL watchdog only for a `hang` fault, so a read-fault cell has none. Fixed in a `fix:` commit written and reviewed as a first write, before 6a3e0e6 is pushed: reproduce both cells on Linux first, then decide (a direction, not measured: an error no wait can change ends the waiter at once with its reason, and the wait itself has a bound), and say why the cells' own time limit did not end them in the container; the fix also gives every cell of the matrix the watchdog and names a cell that reaches it as a failure. Guessed, not checked: the fs-op order differs on Linux (the /proc start-time read)",
-      "value": "high",
-      "cost": "S",
-      "cluster": "method",
-      "source": "cycle 2026-11-10 (31), pre-push Linux check of the changed test files, 2026-11-11; the defect is in f2ca314 (heavy-job-limit)",
-      "since": 32
     }
   ],
   "done": [
@@ -6768,6 +6757,13 @@
       "title": "README: 'When Ennyn does not fit' (Claude Code only for now, rework only as good as the fix label, Node 20 and git 2.34, config may change before 1.0), a short glossary (side copy, mechanization, legacy audit, work graph, convergence, gate), and how Ennyn differs from hookify, Mycelium, Compound Engineering and TDD Guard; one line on what a cycle costs, taken from a measured cycle (cycle 16: 33.8 agent-hours; one session stopped mid-cycle on a usage limit), and a line saying the numbers come from one author's projects; a short table of the settings a person would change (language, commit style, push, how the agent runs, reviewers) and how to change each. No setting turns a gate off; and a table of how strongly each rule is held, per rule: written (text the agent is told to follow), checked (a test, doctor or the commit hook says so after the fact) or refused (a hook or a permission rule stops the action), with the host it holds on Landed narrowed 2026-11-11: no competitor comparison (docs/related-work.md), no cost line, no per-rule table; the one-author line stays in docs/evidence.md, and conversation.style joined the settings table",
       "status": "done",
       "finished": "2026-11-11"
+    },
+    {
+      "id": "lock-wait-on-fs-error",
+      "title": "ennyn lock: a waiter that met a failed read of /proc stayed in its wait loop for good (cycle 31's pre-push Linux check, fault-injection row lock, EACCES at fs op 4 and 8). processStart chose /proc or ps by a probe, so one failed probe gave a waiter two start forms and it removed its own ticket; the form now follows the platform, a waiter never judges its own ticket, one whose ticket is gone ends with exit 1, and every fault-matrix cell has the watchdog (0608ca5)",
+      "status": "done",
+      "finished": "2026-11-12",
+      "cluster": "method"
     }
   ],
   "declined": [
