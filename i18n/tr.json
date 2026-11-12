@@ -75,6 +75,7 @@
   "test.recorded": "Kaydedildi: {tree} ağacında {kind} koşusu, {result}.",
   "test.noop": "{key} ne koşarsa koşsun 0 ile çıkar (doctor bunu düşürür), yani yeşili bir şey söylemez",
   "test.pipe": "{key} bir boru tutuyor ve borunun çıkış durumu son programınınkidir",
+  "test.faultCommands": "ENNYN_FAULT_COMMANDS={value} aktarılmadı: kaydedilen koşu hata matrisinin tamamını koşar.",
   "test.green": "yeşil",
   "test.red": "kırmızı, çıkış {exit}",
   "convergence.findings": "Bulgular",

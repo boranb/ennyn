@@ -565,6 +565,26 @@ const CASES = [
   },
 ];
 
+/**
+ * ENNYN_FAULT_COMMANDS, a comma list of case names: a CLI command as USAGE names it, or a Claude Code hook as
+ * `hook:<its file's name without .mjs>`. Set, only those cases' cells run; unset or empty, every cell. A name no case
+ * has fails the file here, so a typo cannot run nothing and pass. The coverage tests and the controls always run.
+ */
+const NAMES = [...new Set(CASES.map((c) => c.args[0]))];
+/** The names a value of the variable holds, and those of them no case has. @param {string | undefined} value */
+function scope(value) {
+  const only = new Set((value ?? "").split(",").map((s) => s.trim()).filter(Boolean));
+  return { only, unknown: [...only].filter((n) => !NAMES.includes(n)) };
+}
+/** Whether a case of this name runs. @param {Set<string>} only @param {string} name */
+const takes = (only, name) => !only.size || only.has(name);
+const { only: ONLY, unknown: UNKNOWN } = scope(process.env.ENNYN_FAULT_COMMANDS);
+if (UNKNOWN.length) throw new Error(`ENNYN_FAULT_COMMANDS names no case: ${UNKNOWN.join(", ")}. The names: ${NAMES.join(", ")}`);
+if (ONLY.size) process.stderr.write(`fault matrix: ENNYN_FAULT_COMMANDS runs only the cells of ${[...ONLY].join(", ")}\n`);
+/** @param {string} name */
+const chosen = (name) => takes(ONLY, name);
+const CHOSEN = CASES.filter((c) => chosen(c.args[0]));
+
 test("fault matrix: every Claude Code hook in hooks/hooks.json has a case", () => {
   const listed = [...readFileSync(join(HOOKS, "..", "..", "..", "hooks", "hooks.json"), "utf8").matchAll(/hooks\/([a-z-]+\.mjs)/g)].map((m) => m[1]);
   assert.ok(listed.length >= 3, `hooks read from hooks.json: ${listed}`);
@@ -742,11 +762,11 @@ async function pool(jobs, n) {
 
 test("fault matrix: with any git call failing, killed or never ending, or no git at all, a command fails or says so; a closed pipe is no crash", async () => {
   const width = Math.max(2, Math.min(8, availableParallelism()));
-  const clean = await pool(CASES.map((c) => () => run(c, {})), width);
-  for (const [i, c] of CASES.entries()) assert.ok(c.hook || clean[i].calls > 0, `${c.args.join(" ")} calls git`);
+  const clean = await pool(CHOSEN.map((c) => () => run(c, {})), width);
+  for (const [i, c] of CHOSEN.entries()) assert.ok(c.hook || clean[i].calls > 0, `${c.args.join(" ")} calls git`);
   /** @type {{ c: Case, i: number, fault: Fault }[]} */
   const cells = [];
-  for (const [i, c] of CASES.entries()) {
+  for (const [i, c] of CHOSEN.entries()) {
     const last = c.first ? 1 : clean[i].calls;
     for (let at = 1; at <= last; at++) cells.push({ c, i, fault: { at, kind: "fail" } });
     for (const at of new Set([1, last])) cells.push({ c, i, fault: { at, kind: "kill" } }, { c, i, fault: { at, kind: "hang" } });
@@ -772,7 +792,7 @@ test("fault matrix: with any git call failing, killed or never ending, or no git
 
 test("fault matrix: a git that cannot start, for any errno but the two a commit can pick, lets the commit through, saying so", async () => {
   const width = Math.max(2, Math.min(8, availableParallelism()));
-  const hooks = CASES.filter((c) => c.args?.includes("--hook"));
+  const hooks = CHOSEN.filter((c) => c.args?.includes("--hook"));
   const clean = await pool(hooks.map((c) => () => run(c, {})), width);
   /** @type {{ c: Case, i: number, fault: Fault }[]} */
   const cells = [];
@@ -786,6 +806,7 @@ test("fault matrix: a git that cannot start, for any errno but the two a commit 
     .filter((r) => r.why)
     .map((r) => `${r.cell.c.args.join(" ")} · spawn ${r.cell.fault.spawn?.at} ${r.cell.fault.spawn?.code}: ${r.why}`);
   assert.deepEqual(bad, [], `${bad.length} of ${cells.length} cells`);
+  if (!hooks.length) return;
   // The control: E2BIG at the same calls refuses, so these faults reach the gates' reads.
   const i = hooks.findIndex((c) => clean[hooks.indexOf(c)].calls > 0 && clean[hooks.indexOf(c)].code === 0);
   const picked = await pool(Array.from({ length: clean[i].calls }, (_, k) => () => run(hooks[i], { spawn: { at: k + 1, code: "E2BIG" } })), width);
@@ -797,13 +818,13 @@ const DIR_READS = /^(readFileSync|openSync) /;
 
 test("fault matrix: with any file read failing (no permission, a directory in its place), a command fails or says so", async () => {
   const width = Math.max(2, Math.min(8, availableParallelism()));
-  const clean = await pool(CASES.map((c) => () => run(c, {})), width);
+  const clean = await pool(CHOSEN.map((c) => () => run(c, {})), width);
   // A preload that stopped counting would leave no cells, and a green test.
   // And a command that reads none is held to that: `bypass` takes nothing from the work tree.
-  for (const [i, c] of CASES.entries()) assert.equal(clean[i].reads.length > 0, !c.noReads, `${c.args.join(" ")} ${c.noReads ? "reads no file" : "reads files"}`);
+  for (const [i, c] of CHOSEN.entries()) assert.equal(clean[i].reads.length > 0, !c.noReads, `${c.args.join(" ")} ${c.noReads ? "reads no file" : "reads files"}`);
   /** @type {{ c: Case, i: number, fault: Fault, call: string }[]} */
   const cells = [];
-  for (const [i, c] of CASES.entries()) {
+  for (const [i, c] of CHOSEN.entries()) {
     clean[i].reads.forEach((call, k) => cells.push({ c, i, fault: { read: { at: k + 1, kind: "eacces" } }, call }));
     clean[i].reads.filter((call) => DIR_READS.test(call)).forEach((call, k) => cells.push({ c, i, fault: { read: { at: k + 1, kind: "eisdir" } }, call }));
   }
@@ -817,6 +838,7 @@ test("fault matrix: with any file read failing (no permission, a directory in it
 });
 
 test("fault matrix: a reference command that fails, is killed, is not found or runs too long leaves S1's references unmeasured, saying how it ended", async () => {
+  if (!chosen("impact")) return;
   assert.ok(!/\s/.test(process.execPath), "the node path splits as one word");
   const node = process.execPath;
   /** @param {string} command @param {number} [timeout] @returns {Case} */
@@ -876,11 +898,12 @@ const LIMITED = [
 
 test("fault matrix: a call that walks the history or the whole tree gets the longer limit, the commit path's reads of the log the shorter one", async () => {
   const width = Math.max(2, Math.min(8, availableParallelism()));
+  const limited = LIMITED.filter(([c]) => chosen(c.args[0]));
   const runs = await pool(
-    LIMITED.map(([c, match]) => () => run(c, { kind: "hang", match })),
+    limited.map(([c, match]) => () => run(c, { kind: "hang", match })),
     width,
   );
-  const wrong = LIMITED.flatMap(([c, match, limit], k) => {
+  const wrong = limited.flatMap(([c, match, limit], k) => {
     const r = runs[k];
     const text = `${r.stdout}\n${r.stderr}`;
     const want = `did not finish in ${(limit === "walk" ? 2 * HANG_LIMIT_MS : HANG_LIMIT_MS) / 1000} s and was stopped`;
@@ -891,6 +914,7 @@ test("fault matrix: a call that walks the history or the whole tree gets the lon
 });
 
 test("fault matrix: a file git is slow to diff is named unread, and every other file is still scanned and judged", async () => {
+  if (!chosen("commit-check")) return;
   // git computes a file's whole diff before it writes any of it: 4 MB of short lines reordered took 5.8 s at load 7
   // and 50 s at load 75, past the 2 s limit of this run. Real git, real content.
   const repo = realpathSync(mkdtempSync(join(tmpdir(), "en-fault-slow-")));
@@ -955,6 +979,7 @@ test("fault matrix: a file git is slow to diff is named unread, and every other 
 });
 
 test("fault matrix: a diff that stops after its output is read again whole, and each secret it held is named once", () => {
+  if (!chosen("commit-check")) return;
   const repo = realpathSync(mkdtempSync(join(tmpdir(), "en-fault-again-")));
   git(["init", "-q", "-b", "main"], { cwd: repo });
   put(repo, { ".ennyn/config.json": JSON.stringify({ language: "en" }), "a.txt": "one\n", "b.txt": "two\n" });
@@ -1183,6 +1208,27 @@ test("fault matrix control: the preload fails the read a cell names, counts only
   assert.deepEqual(go({ ENNYN_FS_FAULT_DIR: box(), ENNYN_FS_FAULT_AT: "2", ENNYN_FS_FAULT: "eacces" }).out, ["read", "read", "EACCES", true]);
   assert.deepEqual(go({ ENNYN_FS_FAULT_DIR: box(), ENNYN_FS_FAULT_AT: "1", ENNYN_FS_FAULT: "eisdir" }).out, ["read", "EISDIR", "read", true]);
   assert.deepEqual(go({ ENNYN_FS_FAULT_DIR: box(), ENNYN_FS_FAULT_AT: "3", ENNYN_FS_FAULT: "eacces" }).out, ["read", "read", "read", false], "existsSync says false");
+});
+
+test("fault matrix control: ENNYN_FAULT_COMMANDS picks the cases it names, every case when unset or empty, and a name no case has fails the file", () => {
+  const all = CASES.map((c) => c.args[0]);
+  /** @param {string | undefined} value */
+  const picked = (value) => {
+    const { only, unknown } = scope(value);
+    return { cases: all.filter((n) => takes(only, n)), unknown };
+  };
+  for (const value of [undefined, "", " , "]) assert.deepEqual(picked(value), { cases: all, unknown: [] }, JSON.stringify(value));
+  assert.deepEqual(picked(" lock ,hook:plugin-root,lock"), { cases: ["lock", "hook:plugin-root"], unknown: [] });
+  assert.deepEqual(picked("lock,kept,LOCK"), { cases: ["lock"], unknown: ["kept", "LOCK"] });
+  // The file itself, given a wrong name: it ends at load, naming it and the names there are. Its run names no test, so a
+  // file that loaded anyway ends at once, and never starts this test again.
+  const env = { ...process.env, ENNYN_FAULT_COMMANDS: "lock,kept" };
+  delete env.NODE_TEST_CONTEXT;
+  const hermetic = join(dirname(fileURLToPath(import.meta.url)), "hermetic.mjs");
+  const r = spawnSync(process.execPath, ["--import", hermetic, "--test-name-pattern=^no test has this name$", fileURLToPath(import.meta.url)], { env, encoding: "utf8", timeout: 120_000, killSignal: "SIGKILL" });
+  assert.ok(r.status !== 0 && r.status !== null, `exit ${r.status}: ${r.stderr}`);
+  assert.match(r.stderr, /ENNYN_FAULT_COMMANDS names no case: kept\. The names: init-scan, .*\block\b.*hook:plugin-root/);
+  assert.doesNotMatch(r.stdout, /^(ok|not ok) /m, "no test ran");
 });
 
 test("fault matrix control: the judge flags each way a run can hide a failure", () => {

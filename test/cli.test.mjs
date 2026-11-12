@@ -719,6 +719,27 @@ test("cli: test records a run by HEAD's tree on a clean work tree; push-check sa
   assert.equal(run(unset.dir, "test", "slow").code, 2);
 });
 
+test("cli: test runs its command without ENNYN_FAULT_COMMANDS and says so, so a recorded run never ran a narrowed fault matrix", () => {
+  const seen = (/** @type {string} */ kind) => `"${process.execPath}" -e "require('fs').appendFileSync(process.env.T_LOG, '${kind}=' + (process.env.ENNYN_FAULT_COMMANDS ?? '-') + ' ')"`;
+  const p = recorded({ commands: { fastTest: seen("fast"), wholeTest: seen("whole") } });
+  /** @param {string} kind @param {string | undefined} value */
+  const go = (kind, value) => {
+    const env = { ...process.env, T_LOG: p.log };
+    delete env.ENNYN_FAULT_COMMANDS;
+    if (value !== undefined) env.ENNYN_FAULT_COMMANDS = value;
+    return spawnSync(process.execPath, [CLI, "test", kind, "--again"], { cwd: p.dir, encoding: "utf8", env });
+  };
+  const whole = go("whole", "lock");
+  assert.equal(whole.status, 0, whole.stdout + whole.stderr);
+  assert.match(whole.stderr, /ENNYN_FAULT_COMMANDS=lock is not passed on: a recorded run runs the whole fault matrix\./);
+  assert.match(whole.stdout, new RegExp(`Recorded: whole run on tree ${p.tree()}, green\\.`));
+  const fast = go("fast", "lock,impact");
+  assert.match(fast.stderr, /ENNYN_FAULT_COMMANDS=lock,impact is not passed on/);
+  // Unset or empty: nothing to say.
+  for (const value of [undefined, ""]) assert.doesNotMatch(go("fast", value).stderr, /ENNYN_FAULT_COMMANDS/, JSON.stringify(value));
+  assert.equal(p.ran(), "whole=- fast=- fast=- fast=-");
+});
+
 test("cli: a run recorded in a linked worktree counts for the main checkout after a fast-forward; a branch behind its upstream is refused", async () => {
   const p = recorded();
   const wt = join(mkdtempSync(join(tmpdir(), "pl-cli-wt-")), "wt");

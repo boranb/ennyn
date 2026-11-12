@@ -1783,7 +1783,11 @@ const COMMANDS = {
       }
     }
     const start = new Date().toISOString();
-    const run = spawnSync(command, { cwd, shell: true, stdio: "inherit" });
+    // A recorded run is the whole one: the fault matrix's narrowing (test/fault-injection.test.mjs) does not reach it.
+    const env = { ...process.env };
+    delete env.ENNYN_FAULT_COMMANDS;
+    if (process.env.ENNYN_FAULT_COMMANDS) err(t("test.faultCommands", { value: process.env.ENNYN_FAULT_COMMANDS }, lang));
+    const run = spawnSync(command, { cwd, env, shell: true, stdio: "inherit" });
     if (run.status === null) {
       err(t("test.unfinished", { why: String(run.error?.message ?? run.signal) }, lang));
       return 1;

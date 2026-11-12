@@ -306,6 +306,9 @@ export const GATES = [
       },
       { id: "fault-cases", why: "a command with no case", file: "test/fault-injection.test.mjs", old: '  { args: ["push-check"], writes: true },\n', new: "", pattern: "fault matrix: every command" },
       { id: "fault-hooks", why: "a Claude Code hook with no case", file: "test/fault-injection.test.mjs", old: '    hook: "conversation-style.mjs",\n', new: '    hook: "conversation-style.mjs.off",\n', pattern: "fault matrix: every Claude Code hook" },
+      { id: "fault-scope-unknown", why: "a misspelt command in ENNYN_FAULT_COMMANDS runs no cell and passes", file: "test/fault-injection.test.mjs", old: "if (UNKNOWN.length) throw", new: "if (UNKNOWN.length < 0) throw", pattern: "fault matrix control: ENNYN_FAULT_COMMANDS" },
+      { id: "fault-scope-pick", why: "a narrowed run that still runs every case", file: "test/fault-injection.test.mjs", old: "=> !only.size || only.has(name);", new: "=> true;", pattern: "fault matrix control: ENNYN_FAULT_COMMANDS" },
+      { id: "fault-scope-trim", why: "a name with a space around it taken for no case", file: "test/fault-injection.test.mjs", old: ".map((s) => s.trim())", new: "", pattern: "fault matrix control: ENNYN_FAULT_COMMANDS" },
       { id: "fault-reference", why: "a killed reference command said without its signal", file: "impact/table.mjs", old: "e.signal ? `killed by ${e.signal}`", new: 'e.signal ? "killed"', pattern: "fault matrix: a reference command" },
       {
         id: "git-limit-absent",

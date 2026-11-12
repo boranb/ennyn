@@ -75,6 +75,7 @@
   "test.recorded": "Recorded: {kind} run on tree {tree}, {result}.",
   "test.noop": "{key} exits 0 whatever runs (doctor fails it), so its green says nothing",
   "test.pipe": "{key} holds a pipe, and a pipeline's status is its last program's",
+  "test.faultCommands": "ENNYN_FAULT_COMMANDS={value} is not passed on: a recorded run runs the whole fault matrix.",
   "test.green": "green",
   "test.red": "red, exit {exit}",
   "convergence.findings": "Findings",
