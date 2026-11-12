@@ -22,7 +22,13 @@
  * pattern or listed in its entry's `others` with why it has none, so a test added to a gate file is decided.
  */
 
-/** @typedef {{ id: string, why: string, file: string, old: string, new: string, pattern: string }} Guard */
+import { parseVersion, versionAtLeast } from "../core/git.mjs";
+
+/**
+ * @typedef {{ id: string, why: string, file: string, old: string, new: string, pattern: string, node?: string }} Guard
+ * `node`: the lowest Node ("X.Y.Z") on which the gate test checks what the guard breaks; below it the guard is left
+ * out of the run and named, never skipped (a test that checks only from a newer Node than the floor).
+ */
 /** @typedef {{ test: string, guards: Guard[], others?: Record<string, string> }} Gate `others`: exact test names, with why each has no guard */
 
 const NAME = "Zor" + "blax";
@@ -177,9 +183,9 @@ export const GATES = [
   {
     test: "test/engines.test.mjs",
     guards: [
-      { id: "engines-lock", why: "engines and the lock file disagree", file: "package-lock.json", old: '"node": ">=20"', new: '"node": ">=22"', pattern: "engines: the Linux run starts at both floors" },
+      { id: "engines-lock", why: "engines and the lock file disagree", file: "package-lock.json", old: '"node": ">=22"', new: '"node": ">=24"', pattern: "engines: the Linux run starts at both floors" },
       { id: "engines-workflow", why: "a workflow changed without the test", file: ".github/workflows/test.yml", old: "          fetch-depth: 0\n", new: "", pattern: "engines: the Linux run starts at both floors" },
-      { id: "engines-readme", why: "a README that names another floor", file: "README.md", old: "needs Node 20 or later", new: "needs Node 18 or later", pattern: "engines: both READMEs" },
+      { id: "engines-readme", why: "a README that names another floor", file: "README.md", old: "needs Node 22 or later", new: "needs Node 20 or later", pattern: "engines: both READMEs" },
       { id: "engines-floor-form", why: "a floor read from a range with an upper bound", file: "test/linux-run.mjs", old: "(?:\\.(\\d+))?(?:\\.(\\d+))?$/.exec(range.trim());", new: "(?:\\.(\\d+))?(?:\\.(\\d+))?/.exec(range.trim());", pattern: "engines: the Node floor parses" },
       { id: "engines-version-part", why: "a container version that matches the floor's major only", file: "test/linux-run.mjs", old: "n.every((part, i) => r[i] === part)", new: "n.every((part, i) => i > 0 || r[i] === part)", pattern: "engines: a container's version is the one named" },
       { id: "engines-image-tag", why: "a newer major pulled by its tag", file: "test/linux-run.mjs", old: "image: pinned(`node:${major}`)", new: "image: `node:${major}`", pattern: "engines: the Linux run starts at both floors" },
@@ -764,9 +770,9 @@ export const GATES = [
       { id: "short-method-slow", why: "a new slow test with no step", file: "skills/cycle/task-brief.md", old: "A task that adds a slow test says so in its report, and the orchestrator adds it wherever the project lists slow gates. ", new: "", pattern: "short: the method names" },
       { id: "short-method-landing", why: "a landing that leaves out the slow gates the task touches", file: "skills/cycle/task-brief.md", old: "the fast test command and every slow gate the task touches (no command short of the whole suite: the whole test command), whatever", new: "the fast test command, whatever", pattern: "short: the method names" },
       { id: "short-read-dirs", why: "a file new under a folder a test listed, statted or found missing read as read by none", file: "test/short.mjs", old: "seen.dirs.some((d) => d === \"\" || p === d || p.startsWith(`${d}/`))", new: "false", pattern: "short: with a fresh read list" },
-      { id: "short-record-handed", why: "a program that is not node handed a path in the tree by its environment or a relative argument read as reading nothing", file: "test/reads.mjs", old: "why.push(`${basename(program)} handed a path in the repository`)", new: "void 0", pattern: "short: --record writes" },
-      { id: "short-record-link", why: "a read through a link from outside the tree read as outside it", file: "test/reads.mjs", old: "if (!real.existsSync(abs)) return null;\n    try {", new: "return null;\n    try {", pattern: "short: --record writes" },
-      { id: "short-record-missing", why: "a folder statted or a path not there yet recorded as one file, so a file new below it reads as read by none", file: "test/reads.mjs", old: "if (!st || st.isDirectory()) {", new: "if (false) {", pattern: "short: --record writes" },
+      { id: "short-record-handed", why: "a program that is not node handed a path in the tree by its environment or a relative argument read as reading nothing", file: "test/reads.mjs", old: "why.push(`${basename(program)} handed a path in the repository`)", new: "void 0", pattern: "short: --record writes", node: "22.15.0" },
+      { id: "short-record-link", why: "a read through a link from outside the tree read as outside it", file: "test/reads.mjs", old: "if (!real.existsSync(abs)) return null;\n    try {", new: "return null;\n    try {", pattern: "short: --record writes", node: "22.15.0" },
+      { id: "short-record-missing", why: "a folder statted or a path not there yet recorded as one file, so a file new below it reads as read by none", file: "test/reads.mjs", old: "if (!st || st.isDirectory()) {", new: "if (false) {", pattern: "short: --record writes", node: "22.15.0" },
       { id: "short-read-unseen", why: "a test whose recording saw a read it could not name left out", file: "test/short.mjs", old: "else if (seen.unseen.length) kept.set(", new: "else if (false) kept.set(", pattern: "short: with a fresh read list" },
       { id: "short-read-bare", why: "no file chosen, so node --test runs every test file it finds", file: "test/short.mjs", old: "...(files.length ? [{ name: \"test files\", args: files }] : [])", new: "{ name: \"test files\", args: files }", pattern: "short: with a fresh read list" },
       { id: "short-read-code", why: "a code change narrowed by the read list", file: "test/short.mjs", old: "if (code !== undefined) mode = ", new: "if (false) mode = ", pattern: "short: a code change, or a read list" },
@@ -774,10 +780,10 @@ export const GATES = [
       { id: "short-read-own", why: "a list the branch itself changed used to leave its tests out", file: "test/short.mjs", old: "else if (changed.paths.includes(READS)) mode = ", new: "else if (false) mode = ", pattern: "short: a code change, or a read list" },
       { id: "short-read-files", why: "a list recorded on other test files used", file: "test/short.mjs", old: "if (JSON.stringify(Object.keys(list.tests).sort()) !== JSON.stringify(short)) return", new: "if (false) return", pattern: "short: a code change, or a read list" },
       { id: "short-read-shape", why: "a list entry of another shape used", file: "test/short.mjs", old: "Object.values(list.tests).every(", new: "[].every(", pattern: "short: a code change, or a read list" },
-      { id: "short-record-path", why: "a node started by name, past a dropped NODE_OPTIONS, unrecorded", file: "test/short.mjs", old: "PATH: `${join(dir, \"bin\")}${delimiter}${process.env.PATH ?? \"\"}`", new: "PATH: process.env.PATH", pattern: "short: --record writes" },
-      { id: "short-record-failed", why: "a failed recording run written as the list", file: "test/short.mjs", old: "if (run.status !== 0) {\n      console.error(`the recording run", new: "if (false) {\n      console.error(`the recording run", pattern: "short: --record writes" },
-      { id: "short-record-node", why: "a node child without the preload read as seen", file: "test/reads.mjs", old: "if (isNode && !(env.NODE_OPTIONS ?? \"\").includes(self)", new: "if (false && !(env.NODE_OPTIONS ?? \"\").includes(self)", pattern: "short: --record writes" },
-      { id: "short-record-git", why: "git working in the repository read as reading nothing", file: "test/reads.mjs", old: "why.push(`${basename(program)} in the repository`)", new: "void 0", pattern: "short: --record writes" },
+      { id: "short-record-path", why: "a node started by name, past a dropped NODE_OPTIONS, unrecorded", file: "test/short.mjs", old: "PATH: `${join(dir, \"bin\")}${delimiter}${process.env.PATH ?? \"\"}`", new: "PATH: process.env.PATH", pattern: "short: --record writes", node: "22.15.0" },
+      { id: "short-record-failed", why: "a failed recording run written as the list", file: "test/short.mjs", old: "if (run.status !== 0) {\n      console.error(`the recording run", new: "if (false) {\n      console.error(`the recording run", pattern: "short: --record writes", node: "22.15.0" },
+      { id: "short-record-node", why: "a node child without the preload read as seen", file: "test/reads.mjs", old: "if (isNode && !(env.NODE_OPTIONS ?? \"\").includes(self)", new: "if (false && !(env.NODE_OPTIONS ?? \"\").includes(self)", pattern: "short: --record writes", node: "22.15.0" },
+      { id: "short-record-git", why: "git working in the repository read as reading nothing", file: "test/reads.mjs", old: "why.push(`${basename(program)} in the repository`)", new: "void 0", pattern: "short: --record writes", node: "22.15.0" },
       { id: "short-script", why: "no command", file: "package.json", old: '"test:short": "node test/short.mjs"', new: '"test:short": "node --test"', pattern: "short: npm run test:short runs" },
     ],
   },
@@ -863,3 +869,15 @@ export const NOT_GATES = {
   "test/impact.test.mjs": { reason: "import.meta is text in a fixture it writes", allow: "__fixtures__/rows\\.jsonl" },
   "test/side-copy.test.mjs": { reason: "runs the side-copy hooks on temporary projects", allow: '"\\.\\./adapters/claude-code/hooks/side-copy-(rules|reset)\\.mjs", import\\.meta\\.url' },
 };
+
+/**
+ * Whether a guard runs on Node `version` ("22.15.0", "v24.11.0"): always without a `node`, else at or above it. A
+ * version that does not parse runs none that has one.
+ * @param {Guard} guard @param {string} version
+ */
+export function guardRuns(guard, version) {
+  if (guard.node === undefined) return true;
+  const have = parseVersion(version.replace(/^v/, ""));
+  const need = parseVersion(guard.node);
+  return have !== null && need !== null && versionAtLeast(have, need);
+}

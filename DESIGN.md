@@ -26,7 +26,7 @@ skills/                             the method (SKILL.md files, < 8 KB each, and
 agents/                             reviewer agents sharing one finding schema (model: inherit); scout and summarizer (haiku, no shell)
 hooks/hooks.json                    Claude Code hooks (push refusal, kill refusal, side-copy rule bridge, conversation style, idle compaction, the summary's request and the re-read and cycle lines after it: only in a project with a config; plugin version record)
 scripts/ennyn.mjs                   CLI entry (no top-level bin/ — claude.ai/Cowork reject it)
-core/                               config, glob, git, i18n (zero dependencies, Node >= 20)
+core/                               config, glob, git, i18n (zero dependencies, Node >= 22)
 checks/                             commit-shape, CI files (ci), dependencies (deps), secrets, the commit's own config and what it loosens (loosening), closeout (later)
 side-copy/                          map a side-copy path back to the project path
 impact/                             impact table runner

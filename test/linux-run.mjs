@@ -18,26 +18,25 @@ import { GIT_FLOOR, parseVersion } from "../core/git.mjs";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** Node majors run after the floor. */
-export const NEWER = ["22", "24"];
+export const NEWER = ["24"];
 
 /** The floor image's base: its git is GIT_FLOOR (Ubuntu 22.04 ships 2.34.1). */
 export const FLOOR_BASE = "ubuntu:22.04";
 
 /**
- * Every image the run pulls, by the digest of its index as Docker Hub served it on 2026-10-24: a tag can be
- * moved to other contents, a digest cannot. A newer major therefore stays on the release it had that day until
- * the digest is changed here. A floor or major with no digest stops the run (test/engines.test.mjs checks the
+ * Every image the run pulls, by the digest of its index as Docker Hub served it on 2026-10-24 (node:22.0.0 on
+ * 2026-11-12): a tag can be moved to other contents, a digest cannot. A newer major therefore stays on the
+ * release it had that day until the digest is changed here. A floor or major with no digest stops the run (test/engines.test.mjs checks the
  * list); a new digest is read with `docker buildx imagetools inspect <image>`.
  */
 export const DIGESTS = Object.freeze({
-  "node:20.0.0": "sha256:942fa0013e9adfbde06ad07433bdb0a67cc2ac0d5a3db38f12a9c8f710b41f1c",
+  "node:22.0.0": "sha256:cbd62dc7ba7e50d01520f2c0a8d9853ec872187fa806ed61d0f87081c220386d",
   "ubuntu:22.04": "sha256:0a9887931b0e38af2e3487ed39e29436b0535c4f3f52e57745baaf79d1898956",
-  "node:22": "sha256:63538dfe497cc29dfafdda25ada09b46db68a3f4cc205abf1f5d6bf0913f3384",
   "node:24": "sha256:6449e19d8184d84062525b6a7524def03146c2cb04a7f08b076680d0e8e4240a",
 });
 
 /**
- * An image named with its digest: "node:22@sha256:…". One with no digest throws.
+ * An image named with its digest: "node:24@sha256:…". One with no digest throws.
  * @param {string} image
  */
 export function pinned(image) {
@@ -47,7 +46,7 @@ export function pinned(image) {
 }
 
 /**
- * The floor of a ">=X[.Y[.Z]]" range, written in full ("20.0.0": "20" would install the newest 20.x); null for
+ * The floor of a ">=X[.Y[.Z]]" range, written in full ("22.0.0": "22" would install the newest 22.x); null for
  * any other form, which has no single floor to run.
  * @param {string} range
  */
@@ -95,7 +94,7 @@ export function versionIs(reported, named) {
 }
 
 /**
- * A count from the test runner's own summary: the last "# pass 284" (TAP: Node 20 and 22 when not on a
+ * A count from the test runner's own summary: the last "# pass 284" (TAP: Node 22 when not on a
  * terminal) or "ℹ pass 284" (spec: Node 24) at the start of a line. An indented one belongs to output a
  * failing test quotes. undefined when there is none.
  * @param {string} out @param {string} key

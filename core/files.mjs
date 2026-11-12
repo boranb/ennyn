@@ -19,7 +19,7 @@ export function gone(err) {
 
 /**
  * Whether something is at `path`. false only when nothing is (ENOENT, ENOTDIR); a path that cannot be
- * looked at throws. Not statSync's throwIfNoEntry: on Node 20.0 it hides ENOENT only. `look`: lstatSync counts a link
+ * looked at throws. Not statSync's throwIfNoEntry: on Node 22.0 it hides ENOENT only. `look`: lstatSync counts a link
  * with nothing behind it.
  * @param {string} path @param {(path: string) => unknown} [look]
  */

@@ -31,24 +31,24 @@ test("linux run: summary counts are the runner's own, the last at the start of a
 });
 
 test("linux run: a container's run passes only with no failure, no skip, the named versions and exit 0", () => {
-  const floor = { node: "20.0.0", git: "2.34" };
-  assert.deepEqual(judgeRun({ out: output("20.0.0", "2.34.1"), status: 0, ...floor }).wrong, []);
-  assert.equal(judgeRun({ out: output("22.21.0", "2.39.5"), status: 0, node: "22", git: null }).ok, true, "a newer major names no git");
+  const floor = { node: "22.0.0", git: "2.34" };
+  assert.deepEqual(judgeRun({ out: output("22.0.0", "2.34.1"), status: 0, ...floor }).wrong, []);
+  assert.equal(judgeRun({ out: output("24.11.0", "2.39.5"), status: 0, node: "24", git: null }).ok, true, "a newer major names no git");
   for (const [out, status, why] of /** @type {const} */ ([
-    [output("20.0.0", "2.39.5"), 0, "git 2.39.5 is not 2.34"],
-    [output("20.19.5", "2.34.1"), 0, "Node v20.19.5 is not 20.0.0"],
-    [output("20.0.0", "2.34.1", { pass: 2, fail: 1 }), 1, "1 failed"],
-    [output("20.0.0", "2.34.1", { pass: 2, skipped: 1 }), 0, "1 skipped"],
-    [output("20.0.0", "2.34.1"), 1, "exit 1"],
-    ["versions: v20.0.0 git version 2.34.1\nnpm ERR! missing script: test\n", 0, "no test summary in the output"],
+    [output("22.0.0", "2.39.5"), 0, "git 2.39.5 is not 2.34"],
+    [output("22.21.0", "2.34.1"), 0, "Node v22.21.0 is not 22.0.0"],
+    [output("22.0.0", "2.34.1", { pass: 2, fail: 1 }), 1, "1 failed"],
+    [output("22.0.0", "2.34.1", { pass: 2, skipped: 1 }), 0, "1 skipped"],
+    [output("22.0.0", "2.34.1"), 1, "exit 1"],
+    ["versions: v22.0.0 git version 2.34.1\nnpm ERR! missing script: test\n", 0, "no test summary in the output"],
     ["# tests 3\n# pass 3\n# fail 0\n# skipped 0\n", 0, "the container did not say its versions"],
-    [output("20.0.0", "2.34.1").replace("# skipped 0\n", ""), 0, "an unknown number of skipped"],
+    [output("22.0.0", "2.34.1").replace("# skipped 0\n", ""), 0, "an unknown number of skipped"],
   ])) {
     const verdict = judgeRun({ out, status, ...floor });
     assert.equal(verdict.ok, false, why);
     assert.ok(verdict.wrong.includes(why), `${why} in ${JSON.stringify(verdict.wrong)}`);
   }
-  assert.ok(judgeRun({ out: output("20.0.0", "2.34.1"), status: null, signal: "SIGKILL", ...floor }).wrong.includes("exit SIGKILL"));
+  assert.ok(judgeRun({ out: output("22.0.0", "2.34.1"), status: null, signal: "SIGKILL", ...floor }).wrong.includes("exit SIGKILL"));
 });
 
 test("linux run: a failure shows each failing test with why, else the end of the output", () => {
@@ -93,15 +93,14 @@ process.stdin.on("end", () => {
 }
 
 const GOOD = {
-  "ennyn-linux-floor:20.0.0": { out: output("20.0.0", "2.34.1"), status: 0 },
-  [pinned("node:22")]: { out: output("22.21.0", "2.39.5"), status: 0 },
+  "ennyn-linux-floor:22.0.0": { out: output("22.0.0", "2.34.1"), status: 0 },
   [pinned("node:24")]: { out: output("24.11.0", "2.39.5"), status: 0 },
 };
 
 test("linux run: the script passes only when every run passes, floor first, and fails or stops otherwise", () => {
   const good = linuxRun({ runs: GOOD });
   assert.equal(good.code, 0, good.stdout + good.stderr);
-  assert.deepEqual(good.stdout.split("\n").filter((l) => /^[✓✗]/.test(l)), ["✓ node v20.0.0 · git 2.34.1: 3/3", "✓ node v22.21.0 · git 2.39.5: 3/3", "✓ node v24.11.0 · git 2.39.5: 3/3"]);
+  assert.deepEqual(good.stdout.split("\n").filter((l) => /^[✓✗]/.test(l)), ["✓ node v22.0.0 · git 2.34.1: 3/3", "✓ node v24.11.0 · git 2.39.5: 3/3"]);
 
   const down = linuxRun({ up: false, runs: GOOD });
   assert.equal(down.code, 2);
@@ -109,8 +108,8 @@ test("linux run: the script passes only when every run passes, floor first, and 
   assert.doesNotMatch(down.stdout, /✓/);
 
   for (const [runs, build, why] of /** @type {const} */ ([
-    [{ ...GOOD, "ennyn-linux-floor:20.0.0": { out: output("20.0.0", "2.39.5"), status: 0 } }, 0, /^✗ node v20\.0\.0 · git 2\.39\.5: git 2\.39\.5 is not 2\.34; 3\/3 passed$/m],
-    [{ ...GOOD, [pinned("node:22")]: { out: "ok 1 - a\nnot ok 2 - b\n  ---\n  error: boom\n  ...\n" + output("22.21.0", "2.39.5", { pass: 2, fail: 1 }), status: 1 } }, 0, /^ {4}error: boom$/m],
+    [{ ...GOOD, "ennyn-linux-floor:22.0.0": { out: output("22.0.0", "2.39.5"), status: 0 } }, 0, /^✗ node v22\.0\.0 · git 2\.39\.5: git 2\.39\.5 is not 2\.34; 3\/3 passed$/m],
+    [{ ...GOOD, [pinned("node:24")]: { out: "ok 1 - a\nnot ok 2 - b\n  ---\n  error: boom\n  ...\n" + output("24.11.0", "2.39.5", { pass: 2, fail: 1 }), status: 1 } }, 0, /^ {4}error: boom$/m],
     [{ ...GOOD, [pinned("node:24")]: { out: output("24.11.0", "2.39.5", { pass: 2, skipped: 1 }), status: 0 } }, 0, /: 1 skipped; 2\/3 passed$/m],
     [{ ...GOOD, [pinned("node:24")]: { out: output("24.11.0", "2.39.5", { tests: 2 }), status: 0 } }, 0, /^✗ the runs ran different numbers of tests: 3, 2$/m],
     [GOOD, 1, /did not build/],

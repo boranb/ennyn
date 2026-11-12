@@ -164,7 +164,7 @@ async function commitAll(cells) {
   g("add", "f.txt");
   g("commit", "-q", "-m", "base");
   // The hook is the node script itself when the shebang can name node (no space in the path), else sh runs it.
-  // Dynamic imports: Node 20 reads the extensionless hook as CommonJS.
+  // Dynamic imports: Node 22.0 reads the extensionless hook as CommonJS.
   const hook = join(dir, ".git", "hooks", "commit-msg");
   const direct = !/\s/.test(process.execPath);
   const view = direct ? hook : join(dir, ".git", "view.mjs");

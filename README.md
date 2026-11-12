@@ -3,7 +3,7 @@
 
 **English** · [Türkçe](README.tr.md)
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Node 20+](https://img.shields.io/badge/node-20%2B-brightgreen)](package.json) [![Runtime dependencies: 0](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen)](package.json)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Node 22+](https://img.shields.io/badge/node-22%2B-brightgreen)](package.json) [![Runtime dependencies: 0](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen)](package.json)
 
 Ennyn is a Claude Code plugin and Node CLI. It gives the agent a working routine: impact analysis before code is written, a two-round review, and checks on every commit for recurring classes of bugs.
 
@@ -76,7 +76,7 @@ claude plugin marketplace remove ennyn
 
 Uninstalling the plugin also deletes its data folder, where the hook looks up the plugin's version. A hook left behind in some project then lets every commit through with a note; `uninstall-hook` from a clone still removes it. `--keep-data` keeps that folder, and with it a hook that points at a version Claude Code deletes after 14 days, after which every commit is refused, so remove the hooks first.
 
-The cycle skill in `skills/cycle/` follows the [Agent Skills](https://agentskills.io) format, but it calls the CLI through `${CLAUDE_PLUGIN_ROOT}`, which only Claude Code sets. To use it with another agent, set `CLAUDE_PLUGIN_ROOT` to the path of an Ennyn clone. The CLI needs Node 20 or later and git 2.34 or later, and has no dependencies. From the Ennyn clone, `node scripts/ennyn.mjs --help` lists its commands. Elsewhere in this README, `ennyn` is short for that script, run from your project.
+The cycle skill in `skills/cycle/` follows the [Agent Skills](https://agentskills.io) format, but it calls the CLI through `${CLAUDE_PLUGIN_ROOT}`, which only Claude Code sets. To use it with another agent, set `CLAUDE_PLUGIN_ROOT` to the path of an Ennyn clone. The CLI needs Node 22 or later and git 2.34 or later, and has no dependencies. From the Ennyn clone, `node scripts/ennyn.mjs --help` lists its commands. Elsewhere in this README, `ennyn` is short for that script, run from your project.
 
 Ennyn runs on Linux and macOS, and on Windows through WSL, where the test suite passes (Ubuntu 22.04, git 2.34.1). On native Windows (Git for Windows 2.47.1, Git Bash, PowerShell 7) the push hook, the commit-msg hook, the gate-loosening check and the plugin's version record were measured and hold, as [SECURITY.md](SECURITY.md) says; the test suite does not pass there, the compaction hook was only tried on a test project, and the other hooks were not measured.
 
@@ -128,7 +128,7 @@ The work graph is a JSON file (or an ES module) with two arrays, one for open ta
 
 - It runs in Claude Code only for now.
 - Rework is only as good as the fix label: `ennyn rework` counts commits whose subject carries the fix type, so a project that does not mark repairs gets a number that means little.
-- It needs Node 20 and git 2.34 or newer for now.
+- It needs Node 22 and git 2.34 or newer for now.
 - The config may change before 1.0.
 
 ## Glossary

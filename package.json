@@ -36,7 +36,7 @@
     "url": "https://github.com/boranb/ennyn/issues"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "test": "node --test --import ./test/hermetic.mjs test/*.test.mjs",

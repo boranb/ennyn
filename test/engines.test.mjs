@@ -133,7 +133,7 @@ test("engines: the repository's own CI files name every action by a commit, chec
 
 /**
  * Builtin exports the Node floor lacks, from a run of every tracked file's named imports on the floor image
- * (Node 20.0.0). An import of one by name fails the whole file's load there, before any check of the version
+ * (Node 22.0.0). An import of one by name fails the whole file's load there, before any check of the version
  * runs: test:short could not start on the floor for a cycle. Such a name is read through a namespace import.
  */
 const LATE = { module: ["registerHooks"] };

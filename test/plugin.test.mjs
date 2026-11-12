@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, readFileSync, readdirSync, readlinkSync, existsSync, rmSync, statSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname, basename, posix } from "node:path";
+import { join, dirname, basename, posix, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { git } from "../core/git.mjs";
 import { ConfigError, loadConfig } from "../core/config.mjs";
@@ -110,8 +110,8 @@ const iconAttributes = (text) => [...text.matchAll(/<[^\s>/!?]+([^>]*)>/g)].flat
 /** What an SVG holds beyond a drawing: other markup (`<!` and `<?` read as names, so they count) or attributes, a reference out of the file, an import, or the `&` or `\\` that would spell one. @param {string} text */
 const iconExtras = (text) => [...[...text.matchAll(/<\/?([^\s>/]*)/g)].map((m) => m[1]).filter((name) => !ICON_MARKUP.has(name)), ...iconAttributes(text).filter((name) => !ICON_ATTRIBUTES.has(name)), ...(text.match(/url\((?!#)|@import|&|\\/gi) ?? [])];
 
-/** Every file below a folder, none when it is not there; Node 20.0 has no recursive read. @param {string} dir @param {string} [root] @returns {string[]} */
-const filesBelow = (dir, root = ROOT) => (existsSync(join(root, dir)) ? readdirSync(join(root, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? filesBelow(`${dir}/${e.name}`, root) : [`${dir}/${e.name}`])) : []);
+/** Every file below a folder, none when it is not there. @param {string} dir @param {string} [root] @returns {string[]} */
+const filesBelow = (dir, root = ROOT) => (existsSync(join(root, dir)) ? readdirSync(join(root, dir), { recursive: true, withFileTypes: true }).filter((e) => !e.isDirectory()).map((e) => relative(root, join(e.parentPath, e.name)).split(sep).join("/")) : []);
 
 /** Where Claude Code 2.1.310's plugin loader reads Markdown by default (the binary). Its `themes` hold JSON and its `workflows` scripts, so neither has front matter. @param {string} [root] */
 const pluginMarkdown = (root = ROOT) => ["skills", "agents", "commands", "output-styles"].flatMap((folder) => filesBelow(folder, root));
@@ -628,8 +628,8 @@ test("plugin: hook commands point at files that exist; manifests agree on name a
 });
 
 /**
- * Markdown files below `dir`, relative. A walk of its own: Node 20.0 ignores readdirSync's recursive option and
- * lists the top only, so the nested documents went unread on the floor (test/guards.mjs, plugin-pipe).
+ * Markdown files below `dir`, relative. A walk of its own, so node_modules and .git are never entered (a recursive
+ * read has no way to leave a folder out).
  * @param {string} dir @returns {string[]}
  */
 function markdownFiles(dir) {

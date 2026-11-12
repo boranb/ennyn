@@ -10,6 +10,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+// By namespace: Node before 22.15 has no registerHooks, and a named import of it fails this file's load.
+import * as nodeModule from "node:module";
 import { availableParallelism, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,7 +19,7 @@ import { readIfThere } from "../core/files.mjs";
 import { git } from "../core/git.mjs";
 import { journalPath, runMutants } from "../metrics/mutation.mjs";
 import { accounting, testNames } from "./declarations.mjs";
-import { GATES, NOT_GATES } from "./guards.mjs";
+import { GATES, NOT_GATES, guardRuns } from "./guards.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TOP = join(HERE, "..");
@@ -77,10 +79,9 @@ export function verdict(res, guards, tap = null) {
 
 /**
  * How a top-level test ended in a TAP report: "ok", "not ok", "skipped" (a SKIP or TODO directive), "hook
- * failed" (not ok because a before or beforeEach hook threw: `failureType: 'hookFailed'` in its block, from
- * Node 20.11), or null when the report holds no line for it (the file failed before it ran, or there is no
- * report). Node's reporter writes \\ and \# for a backslash and a hash in a name; a directive follows an
- * unescaped "#".
+ * failed" (not ok because a before or beforeEach hook threw: `failureType: 'hookFailed'` in its block), or
+ * null when the report holds no line for it (the file failed before it ran, or there is no report). Node's
+ * reporter writes \\ and \# for a backslash and a hash in a name; a directive follows an unescaped "#".
  * @param {string | null} report @param {string} name
  * @returns {"ok" | "not ok" | "skipped" | "hook failed" | null}
  */
@@ -195,6 +196,20 @@ test("guards: every test that reads this repository has guards; each guard chang
   assert.deepEqual(undecided, [], "a test of a gate file that no guard names and others does not list, or a pattern that names not one test");
 });
 
+test("guards control: a guard's lowest Node is a full version; at or above it the guard runs, below it it is left out", () => {
+  const floored = GATES.flatMap((gate) => gate.guards.filter((g) => g.node !== undefined));
+  for (const g of floored) assert.match(String(g.node), /^\d+\.\d+\.\d+$/, `${g.id}: node is X.Y.Z`);
+  // short.test.mjs's --record test checks only where module.registerHooks is (Node 22.15 on).
+  assert.deepEqual(floored.map((g) => `${g.id} ${g.node}`).sort(), ["failed", "git", "handed", "link", "missing", "node", "path"].map((k) => `short-record-${k} 22.15.0`));
+  const g = floored[0];
+  for (const [version, runs] of /** @type {const} */ ([["22.15.0", true], ["22.15.1", true], ["22.16.0", true], ["24.0.0", true], ["v24.11.0", true], ["22.14.9", false], ["22.0.0", false], ["20.19.5", false], ["", false], ["x", false]])) {
+    assert.equal(guardRuns(g, version), runs, version);
+  }
+  assert.equal(guardRuns({ ...g, node: undefined }, "1.0.0"), true, "a guard with no lowest Node runs on any");
+  // On this Node they run exactly when the --record test checks: on 22.15 and later all of them must kill.
+  assert.equal(guardRuns(g, process.versions.node), typeof nodeModule.registerHooks === "function", process.version);
+});
+
 test("guards control: a test that finds the repository and is listed nowhere is named; a test name is read as written", () => {
   const dir = mkdtempSync(join(tmpdir(), "en-guards-dir-"));
   writeFileSync(join(dir, "a.test.mjs"), 'const here = dirname(fileURLToPath(import.meta.url));\n');
@@ -294,11 +309,14 @@ test("guards control: the clone holds the tree as it is, changes not committed i
 // to their end; all it did was fail the suite on a loaded machine (cycle 2026-10-23 (7): 18 minutes under load
 // 30-44, 18 s idle). Each guard run has its own limit, three times its gate's run without guards, then twice that.
 test("guards: every guard makes its gate test fail", async (t) => {
+  // A guard whose gate test checks only from a newer Node than this one is left out, and named once.
+  const below = GATES.flatMap((gate) => gate.guards.filter((g) => !guardRuns(g, process.versions.node)).map((g) => `${g.id} (Node ${g.node})`));
+  if (below.length) t.diagnostic(`left out on Node ${process.versions.node}, below their lowest Node: ${below.join(", ")}`);
   // One clone a gate; a few gates at a time, each one's runs one after another (one journal a tree).
   const jobs = GATES.flatMap((gate) => {
     /** @type {Map<string, import("./guards.mjs").Guard[]>} */
     const byPattern = new Map();
-    for (const g of gate.guards) byPattern.set(g.pattern, [...(byPattern.get(g.pattern) ?? []), g]);
+    for (const g of gate.guards) if (guardRuns(g, process.versions.node)) byPattern.set(g.pattern, [...(byPattern.get(g.pattern) ?? []), g]);
     return [{ gate, groups: [...byPattern] }];
   });
   /** @type {string[]} */
@@ -439,7 +457,7 @@ test("guards control: every test of a gate file is decided once, each pattern na
 });
 
 test("guards control: a kill is the named test reported failed by its runner; a run that failed otherwise is none", async () => {
-  // The runner's own TAP: a name with a hash and a backslash, a subtest, a test the pattern leaves out (Node 20 says SKIP).
+  // The runner's own TAP: a name with a hash and a backslash, a subtest, a test the pattern leaves out.
   const dir = mkdtempSync(join(tmpdir(), "en-guards-tap-"));
   git(["init", "-q"], { cwd: dir });
   mkdirSync(join(dir, "test"));
@@ -456,7 +474,7 @@ test("guards control: a kill is the named test reported failed by its runner; a 
     '  if (doc.includes("print")) (console.log("not ok 1 - named \\\\# \\\\\\\\ one"), (process.exitCode = 1));',
     '});',
     'test("other", () => {});',
-    '// Something other than the named test fails the run (on every Node from 20.0.0): the file sets its exit code.',
+    '// Something other than the named test fails the run (on every Node from 22.0.0): the file sets its exit code.',
     'if (doc.includes("other")) process.exitCode = 1;',
     'before(() => { if (doc.includes("hook")) throw new Error("a hook, not the test"); });',
     "",
@@ -468,8 +486,8 @@ test("guards control: a kill is the named test reported failed by its runner; a 
   assert.equal(problems.length, 4, JSON.stringify(problems));
   assert.match(problems[0], /^other-fails \(other-fails\): the run failed \(exit 1\), but "named # \\ one" reported ok/);
   assert.match(problems[1], /^load-fails \(load-fails\): the run failed \(exit 1\), but "named # \\ one" did not run/);
-  // A before hook that throws: from Node 20.11 the test is "not ok" with failureType hookFailed; 20.0.0 runs it as passed.
-  assert.match(problems[2], /^hook-fails \(hook-fails\): (?:survived|the run failed \(exit 1\), but "named # \\ one" reported hook failed)/);
+  // A before hook that throws: the test is "not ok" with failureType hookFailed.
+  assert.match(problems[2], /^hook-fails \(hook-fails\): the run failed \(exit 1\), but "named # \\ one" reported hook failed/);
   assert.match(problems[3], /^prints \(prints\): the run failed \(exit 1\), but "named # \\ one" reported ok/);
   // A pattern that runs no test: its guards show nothing.
   assert.match((await runGuards(dir, "test/gate.test.mjs", "^nothing", [g("kills", "bad\n")])).join(), /the pattern runs no test/);

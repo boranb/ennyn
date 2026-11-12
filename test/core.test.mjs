@@ -453,7 +453,7 @@ test("files: nothing there is false or null; there but not readable throws, on e
   writeFileSync(join(dir, "f"), "x");
   assert.equal(present(join(dir, "f")), true);
   assert.equal(present(join(dir, "nope")), false);
-  // A file where a directory of the path should be: Node 20.0's statSync throwIfNoEntry still throws ENOTDIR.
+  // A file where a directory of the path should be: Node 22.0's statSync throwIfNoEntry still throws ENOTDIR.
   assert.equal(present(join(dir, "f", "x")), false);
   assert.equal(readIfThere(join(dir, "f", "x")), null);
   assert.equal(readIfThere(join(dir, "nope")), null);

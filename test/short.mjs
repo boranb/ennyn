@@ -25,8 +25,7 @@
  * code, runs the short set as above and says why. A file that changes what a test reads only through code is code.
  * So does a branch that changed the list itself: only the list main holds, recorded at the closing, narrows.
  *
- * Node 20.0.0's `node --test` takes no pattern that leaves files out, so the file list is built here;
- * test/short.test.mjs keeps it true.
+ * The file list is built here, from what the branch changed; test/short.test.mjs keeps it true.
  */
 
 import { spawnSync } from "node:child_process";
