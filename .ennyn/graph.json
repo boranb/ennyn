@@ -5899,6 +5899,18 @@
       "cluster": "distribution",
       "source": "roadmap review 2026-11-11 (decisions.md in the keep folder)",
       "since": 32
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "lock-wait-on-fs-error-lows",
+      "title": "lock-wait-on-fs-error: low findings left. pid-reuse: a pid given again between a ticket's ENOENT and alive() puts that ticket into `known`. exit-one: exit 1 for a lost ticket (lock.ticketGone) cannot be told from the command's own exit 1. start-form-test: no unit test pins processStart's platform choice or its ENOENT-then-alive branch",
+      "value": "low",
+      "cost": "S",
+      "cluster": "method",
+      "gate": "beside",
+      "source": "review of 0608ca5, 2026-11-12",
+      "since": 32
     }
   ],
   "done": [
