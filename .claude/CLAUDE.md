@@ -16,7 +16,7 @@ A development loop for coding agents, shipped as a Claude Code plugin and a zero
 ## Tests
 
 - Before main moves: `npm run test:short` (it brings back the slow files a branch touches) and `npm run typecheck`. `npm test` runs once a cycle, at the closing, on the tree pushed then, and before a release. Before a later push, `node scripts/ennyn.mjs push-check` says what it needs on its tree, and `node scripts/ennyn.mjs test fast|whole` runs and records it.
-- Before a push, the test files the push adds or changes pass on Linux in a `node:22` container; a change that touches platform or git-version behaviour also runs them on the Node 22.0 and git 2.34 floor image. The full `npm run test:linux` (needs docker) runs before a release, after the cycle's closing on an idle machine, never beside other heavy work. CI starts no job while private.
+- Before a push, the test files the push adds or changes pass on Linux in a `node:22` container; a change that touches platform or git-version behaviour also runs them on the Node 22.0, git 2.34 floor image. The full `npm run test:linux` (needs docker) runs before a release, after the cycle's closing on an idle machine, never beside other heavy work. CI starts no job while private.
 - One heavy job at a time: a whole suite, a mutation run or a Linux image.
 - Tests are hermetic: temporary directories only, never a path outside the repository.
 

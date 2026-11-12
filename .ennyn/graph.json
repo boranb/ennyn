@@ -78,7 +78,7 @@
     },
     {
       "id": "release-0-1-0",
-      "title": "Release v0.1.0: final read of both READMEs, CHANGELOG section, version in package.json, package-lock.json and plugin.json, tag; README and SECURITY.md name the one source to install from and what a genuine copy never holds (binaries, runtime dependencies, install scripts); docs/evidence.md's heading 'Gates stop recurrence, prose does not' is scoped to the origin project, with Ennyn's own table of proposal-born gates beside it; docs/related-work.md drops 'None is built yet' (findings-ledger is built), says which of the table's nodes are, and credits this review's ideas in its table, before publishing: Anthropic's post added its credit to Sapling's Mononoke only in an update of October 15; docs/related-work.md's spec-kit row names assess, bug and the workflow engine, and says its claim holds for core only: community extensions (spec-gates, vurnix, spec-kit-tdd) now run checks as code. The rest of the graph waits for after this release Trimmed 2026-11-11 on the user's ask. Moved to 0.2: fresh-session-run (an unattended runner nobody has measured), secret-output-mask and secret-transcript-probe (the probe's answers serve only the mask), kept-folder-closing (stopped in cycle 31, its branch kept), cycle-record. Merged, each declined with its carrier named: walking-skeleton-first, no-bypass-trial, history-secret-scan. Cycle 32 is the last cycle for these needs: what does not land in it moves to 0.2, except a finding that stops a scenario of docs/acceptance.md At most five findings join after this trim; a sixth is the user's decision First of the five: lock-wait-on-fs-error (2026-11-11, a done need's command hangs on Linux)",
+      "title": "Release v0.1.0: final read of both READMEs, CHANGELOG section, version in package.json, package-lock.json and plugin.json, tag; README and SECURITY.md name the one source to install from and what a genuine copy never holds (binaries, runtime dependencies, install scripts); docs/evidence.md's heading 'Gates stop recurrence, prose does not' is scoped to the origin project, with Ennyn's own table of proposal-born gates beside it; docs/related-work.md drops 'None is built yet' (findings-ledger is built), says which of the table's nodes are, and credits this review's ideas in its table, before publishing: Anthropic's post added its credit to Sapling's Mononoke only in an update of October 15; docs/related-work.md's spec-kit row names assess, bug and the workflow engine, and says its claim holds for core only: community extensions (spec-gates, vurnix, spec-kit-tdd) now run checks as code. The rest of the graph waits for after this release Trimmed 2026-11-11 on the user's ask. Moved to 0.2: fresh-session-run (an unattended runner nobody has measured), secret-output-mask and secret-transcript-probe (the probe's answers serve only the mask), kept-folder-closing (stopped in cycle 31, its branch kept), cycle-record. Merged, each declined with its carrier named: walking-skeleton-first, no-bypass-trial, history-secret-scan. Cycle 32 is the last cycle for these needs: what does not land in it moves to 0.2, except a finding that stops a scenario of docs/acceptance.md At most five findings join after this trim; a sixth is the user's decision First of the five: lock-wait-on-fs-error (2026-11-11, a done need's command hangs on Linux) Cycle 32 (2026-11-13): fault-matrix-scoped, engines-floor-22 and greenfield-intake landed; one-decision-one-site moved to 0.2 after its measurement refuted the literal count",
       "status": "planned",
       "value": "high",
       "cost": "S",
@@ -94,7 +94,6 @@
         "no-test-command-stop",
         "greenfield-intake",
         "smallest-change-row",
-        "one-decision-one-site",
         "one-task-run",
         "uninstall-path",
         "node-verdict",
@@ -971,17 +970,6 @@
       "cost": "M",
       "cluster": "evidence",
       "source": "cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): its reviewer runs on an independent model; unmeasured here, so a measurement first; CRBugBench (Microsoft and CMU, arXiv 2610.13668, read 2026-10-31): different-model ensembles did no better than same-model ones, 66.8 against 68.0",
-      "since": 10
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "engines-floor-22",
-      "title": "engines >=22: package.json and package-lock.json, the Linux run's floor container (Node 22.0.0), test/engines.test.mjs and the workflow text it holds, DESIGN.md and both READMEs where they say Node >= 20, and notes that exist only for Node 20 (the single --import before 20.11, fetch on 20.0.0)",
-      "value": "high",
-      "cost": "S",
-      "cluster": "distribution",
-      "source": "cycle 2026-10-25 (10), the user's engines decision",
       "since": 10
     },
     {
@@ -2365,8 +2353,9 @@
       "since": 14,
       "mechanization": true,
       "sourceClass": "one question answered in several places drifts apart, and a fix reaches only one of them",
-      "title": "A gate for one decision answered in several places: the impact table's S1 row is answered by a command that lists every function and literal answering the same question as the changed one (same regex or string literals, same called predicates, near-duplicate bodies across modules), and a test fails when a change edits one of a known group of sibling sites and not the others, or adds a new near-duplicate of a decision with no entry in a sibling list; then delete the prose that asks reviewers to look for siblings Narrowed 2026-11-11 (decisions.md in the keep folder): keep only the command that answers the S1 row, every function and literal in the repository that answers the same question as the changed one (same string literals or regex sources, same called predicate); the near-duplicate-body heuristic and the sibling-group test are dropped, because review.cochange already holds the groups that change together and a heuristic reader is the design that fell in cycles 18, 19 and 31; then delete the prose that asks reviewers to look for siblings.",
-      "source": "cycle 2026-10-28 (14) convergence: the class recurred in all four tasks, ~10 times, all caught by reviewers: two joiners and three anchor sites in the YAML reader (one got the fix), the judge sharing the rules it measures, a recorder missing its sibling's trace check, the hooks finding the project apart from the CLI, a link filter and the loader disagreeing, the metrics-log predicate not shared by audit and doctor, a paid-run block on one of two paths, hook text left saying the old thing; cycle 2026-10-31 (15): again in all four tasks: the fix label's twins in init and doctor, recentCommits beside readLog, the machine-path advice in five message keys, doctor's reading of the record and of the PATH filter beside the block's"
+      "title": "A gate for one decision answered in several places: the impact table's S1 row is answered by a command that lists every function and literal answering the same question as the changed one (same regex or string literals, same called predicates, near-duplicate bodies across modules), and a test fails when a change edits one of a known group of sibling sites and not the others, or adds a new near-duplicate of a decision with no entry in a sibling list; then delete the prose that asks reviewers to look for siblings Narrowed 2026-11-11 (decisions.md in the keep folder): keep only the command that answers the S1 row, every function and literal in the repository that answers the same question as the changed one (same string literals or regex sources, same called predicate); the near-duplicate-body heuristic and the sibling-group test are dropped, because review.cochange already holds the groups that change together and a heuristic reader is the design that fell in cycles 18, 19 and 31; then delete the prose that asks reviewers to look for siblings. Measured in cycle 32 before any edit (the stop condition held): over five named sibling pairs the strict reading found 1 and 1 in part, the lenient one 4 of 6 at up to 66 hits a run, and no too-common cutoff separates the literals to keep (budget 7 files, foreign 3) from the ones to drop (hex 7-8, ETIMEDOUT 3). Moved to 0.2: it needs a design that is not a literal or regex count; the proposed one-decision-one-site-corpus folds in here",
+      "source": "cycle 2026-10-28 (14) convergence: the class recurred in all four tasks, ~10 times, all caught by reviewers: two joiners and three anchor sites in the YAML reader (one got the fix), the judge sharing the rules it measures, a recorder missing its sibling's trace check, the hooks finding the project apart from the CLI, a link filter and the loader disagreeing, the metrics-log predicate not shared by audit and doctor, a paid-run block on one of two paths, hook text left saying the old thing; cycle 2026-10-31 (15): again in all four tasks: the fix label's twins in init and doctor, recentCommits beside readLog, the machine-path advice in five message keys, doctor's reading of the record and of the PATH filter beside the block's",
+      "gate": "user"
     },
     {
       "status": "planned",
@@ -2582,19 +2571,6 @@
       "cost": "S",
       "cluster": "gates",
       "source": "third-project trial, cycle 1, 2026-10-29 (TypeScript, npm, two CI workflows): the project's setup script sets core.hooksPath to the absolute path of .git/hooks; install-hook exited 1 with \"hooksPath\"",
-      "since": 15
-    },
-    {
-      "status": "planned",
-      "needs": [
-        "greenfield-detect"
-      ],
-      "id": "greenfield-intake",
-      "title": "The greenfield path of /ennyn:init asks once, at most five questions, each with a proposed default: what it is in one line; who uses it and where it runs; the stack with a one-line reason and the alternatives; data and auth; the quality tooling (test runner, lint and format, typecheck, end-to-end), asked before any code exists. A one-file script gets one question. Answers go once into the config and a short product note, each marked the user's choice or Ennyn's default, and are not asked again; a stack the user names is never swapped. An empty answer, or one the host filled after a timeout, is no answer: ask again in plain text and write nothing without an explicit yes. No PRD, architecture or epic documents. The text lives in its own file read only on this path (skills/init/SKILL.md is 8,167 bytes, past Codex's 8,000: codex-skill-bytes) Absorbs walking-skeleton-first's graph rule, three sentences in skills/init/graph.md and no second task: the first node is the thinnest end-to-end path with a test; later nodes are vertical slices, with no layer-only node and no final test node; the project's 'done' line is its fast test, lint and typecheck exiting 0, and one assertion broken on purpose making the test command fail.",
-      "value": "high",
-      "cost": "M",
-      "cluster": "init",
-      "source": "superpowers PR #2101 (maintainer, not merged): '0/3 control sessions ever asked the user about tooling', '3/3' with the text, every ask before code; Claude Code #73125 (414 reactions, 144 comments): AskUserQuestion goes on after 60 s without an answer; GSD #803 (54 reactions, 35 comments): 'All questions are auto-answered'; BMAD #2415: 'Intent capture (conversational, ~3–5 questions, not a 20-page brief)'; Taskmaster discussion #864: 'I mentioned using electron-builder. Taskmaster suggested Electron Forge instead.'; spec-kit #1174: '30 files changed, < 20 actual LOC.'; an article on spec-driven development tools (2025-10-15): 'rather review code than all these markdown files.'",
       "since": 15
     },
     {
@@ -5848,17 +5824,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "fault-matrix-scoped",
-      "title": "test/fault-injection.test.mjs takes ENNYN_FAULT_COMMANDS (a comma list of CLI commands, e.g. lock,kept) and runs only those commands' cells; unset, the whole matrix as now. A task's brief names its commands; the closing's whole suite runs the whole matrix",
-      "value": "high",
-      "cost": "S",
-      "cluster": "gates",
-      "source": "roadmap review 2026-11-11 (decisions.md in the keep folder)",
-      "since": 32
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "cycle-record",
       "title": "The closing records one line per cycle in the metrics log ({\"kind\":\"cycle\",\"n\":32,\"start\":...,\"close\":...,\"planned\":4,\"landed\":3,\"stopped\":1,\"findings\":83,\"previousFix\":32}), read from the journal and the ledger, through ennyn journal close --record (or budget --record, whichever reads less)",
       "value": "medium",
@@ -5911,6 +5876,54 @@
       "gate": "beside",
       "source": "review of 0608ca5, 2026-11-12",
       "since": 32
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "value": "low",
+      "cost": "S",
+      "cluster": "method",
+      "gate": "beside",
+      "source": "review of cycle 32, 2026-11-13",
+      "since": 32,
+      "id": "fault-matrix-scoped-lows",
+      "title": "fault-matrix-scoped: low findings left. guard-runner-env: the guard runner and one.sh pass ENNYN_FAULT_COMMANDS on, so a narrowed value in the shell narrows a guard's gate run (proposed guards-run-unset-fault-commands folds in). windows-env-case (unverified): on Windows a mixed-case name is not deleted by ennyn test, while its notice says it was"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "gate": "beside",
+      "source": "review of cycle 32, 2026-11-13",
+      "since": 32,
+      "id": "engines-floor-22-lows",
+      "title": "engines-floor-22: low findings left. verdicts-unref: test/verdicts.mjs:383 still names Node 20.0.0 for its unref, and its probe did not reproduce the hang (proposed verdicts-server-unref folds in). tap-note: test/guards.test.mjs:341 names Node 20.0.0's TAP parser, 0 of 37 control characters reproduce it; reword to NODE_TEST_CONTEXT alone (proposed guards-tap-control-char folds in). The guard's lowest-Node finding is in guards-min-node-design-decision"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "value": "low",
+      "cost": "S",
+      "gate": "user",
+      "source": "cycle 32 convergence: the file reached the fix-loop brake (review of greenfield-intake and engines-floor-22, 2026-11-13)",
+      "since": 32,
+      "id": "new-project-design-decision",
+      "cluster": "init",
+      "title": "skills/init/new-project.md is at the fix-loop brake (8 rows in cycle 32, one a previous-fix in round 2): a design decision on the top two rungs, no patch nodes. Option A, a construct: the intake's answers are written by a CLI command (ennyn init --product) that refuses an answer it cannot place, keeps the Product: line and the chosen lint and typecheck commands in config keys, and reads earlier answers on a rerun. Option B, remove the need: the intake shrinks to the one question the first commit cannot do without, and the rest stays the user's to write. Leftover defects it carries, not fixed one by one: a rerun repeats the intake; the closing's handoff rewrite drops the Product: line; lint and typecheck choices kept only as prose; no guard pins the intake rules; line 18 'in one message' beside the two-message exception; what a question tool returns after askUserQuestionTimeout is unmeasured (the stand-in model on 127.0.0.1 can measure it)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "value": "low",
+      "cost": "S",
+      "gate": "user",
+      "source": "cycle 32 convergence: the file reached the fix-loop brake (review of greenfield-intake and engines-floor-22, 2026-11-13)",
+      "since": 32,
+      "id": "guards-min-node-design-decision",
+      "cluster": "gates",
+      "title": "test/guards.mjs is at the fix-loop brake (cycles 30 and 32): a design decision on the top two rungs, no patch nodes. The guard's lowest Node (node: \"22.15.0\") stands in for the fact the gate test needs, whether module.registerHooks exists, and counts Node 23.0 to 23.4 as having it (it came in 22.15 and 23.5). Option A, a construct: a guard names the capability it needs and guards.test reads that capability on the running Node, not a version. Option B, remove the need: short.test's --record test needs no registerHooks below 22.15 because the floor moves to 22.15 or later"
     }
   ],
   "done": [
@@ -6776,6 +6789,27 @@
       "status": "done",
       "finished": "2026-11-12",
       "cluster": "method"
+    },
+    {
+      "id": "fault-matrix-scoped",
+      "title": "test/fault-injection.test.mjs takes ENNYN_FAULT_COMMANDS (a comma list of CLI commands, e.g. lock,kept) and runs only those commands' cells; unset, the whole matrix as now. A task's brief names its commands; the closing's whole suite runs the whole matrix. Unknown names fail the file; hooks are named hook:<stem>; ennyn test fast|whole drops the variable and says so, so a recorded run is never narrowed (f7a15c7)",
+      "status": "done",
+      "finished": "2026-11-13",
+      "cluster": "gates"
+    },
+    {
+      "id": "engines-floor-22",
+      "title": "engines >=22: package.json and package-lock.json, the Linux run's floor container (Node 22.0.0), test/engines.test.mjs and the workflow text it holds, DESIGN.md and both READMEs where they say Node >= 20, and notes that exist only for Node 20 (the single --import before 20.11, fetch on 20.0.0). The floor image is Node 22.0.0 with git 2.34.1, then Node 24; each Node-20 note measured on 22.0.0 and removed or reworded; guards carry a lowest Node, so the seven short-record guards leave the gate below 22.15 with a diagnostic, not a skip (341ef77)",
+      "status": "done",
+      "finished": "2026-11-13",
+      "cluster": "distribution"
+    },
+    {
+      "id": "greenfield-intake",
+      "title": "The greenfield path of /ennyn:init asks once, at most five questions, each with a proposed default: what it is in one line; who uses it and where it runs; the stack with a one-line reason and the alternatives; data and auth; the quality tooling (test runner, lint and format, typecheck, end-to-end), asked before any code exists. A one-file script gets one question. Answers go once into the config and a short product note, each marked the user's choice or Ennyn's default, and are not asked again; a stack the user names is never swapped. An empty answer, or one the host filled after a timeout, is no answer: ask again in plain text and write nothing without an explicit yes. No PRD, architecture or epic documents. The text lives in its own file read only on this path (skills/init/SKILL.md is 8,167 bytes, past Codex's 8,000: codex-skill-bytes) Absorbs walking-skeleton-first's graph rule, three sentences in skills/init/graph.md and no second task: the first node is the thinnest end-to-end path with a test; later nodes are vertical slices, with no layer-only node and no final test node; the project's 'done' line is its fast test, lint and typecheck exiting 0, and one assertion broken on purpose making the test command fail.. The intake lives in skills/init/new-project.md and writes .ennyn/product.md; skills/init/graph.md has the walking-skeleton rule (9f37aed)",
+      "status": "done",
+      "finished": "2026-11-13",
+      "cluster": "init"
     }
   ],
   "declined": [

@@ -2,6 +2,9 @@
 
 ## Unreleased (0.0.x)
 
+- Node 22 or later is required (was 20); the Linux run's floor image is Node 22.0.0 with git 2.34.1, then Node 24.
+- `/ennyn:init` on a new project asks up to five questions with defaults before any code (what it is, who uses it, stack, data and auth, quality tooling), records them in `.ennyn/product.md`, and treats an empty or timed-out answer as no answer; `skills/init/graph.md` gains the walking-skeleton rule.
+- `ennyn test fast|whole` runs its command without `ENNYN_FAULT_COMMANDS` and says so when it was set, so a recorded run is never a narrowed fault matrix; the fault matrix can run only named commands' cells (`ENNYN_FAULT_COMMANDS`).
 - docs/acceptance.md: eight acceptance scenarios for 0.1.0 from a fresh install, each done by a command's exit; the README's roadmap names them as the condition to ship. At most five findings join the release needs from a run; a sixth is the user's decision.
 - README: "When Ennyn does not fit", a glossary and a table of the settings a person changes (including `conversation.style`), after Configure; the cycle row says the agent asks before pushing unless `push.mode` is `after-closing`; the 0.2 line names the terminal runner, output masking and the backlog triage. Both languages.
 - Review stops at two rounds (after them a failing test or the gate rerun decides, not another reader); every low finding that is not declined or refuted becomes one `node:<task>-lows` per task instead of a fix; the node carries `gate: beside`, so no cycle picks it alone: it closes beside a task that touches the same file (at most two such nodes a task), or on a user's report. A defect in what a gate accepts or refuses is never low. The cycle plan lists at most four graph nodes and names the longest chain of tasks that must land in order; the closing's Verdicts line adds the open node count at the start and now.
