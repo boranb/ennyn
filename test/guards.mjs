@@ -215,7 +215,8 @@ export const GATES = [
   {
     test: "test/hermetic.test.mjs",
     guards: [
-      { id: "hermetic-script", why: "npm test without the setup", file: "package.json", old: '"test": "node --test --import ./test/hermetic.mjs test/*.test.mjs"', new: '"test": "node --test test/*.test.mjs"', pattern: "hermetic: npm test loads" },
+      { id: "hermetic-script", why: "npm test without the setup", file: "test/run.mjs", old: '"--import", "./test/hermetic.mjs", "test/*.test.mjs"]', new: '"test/*.test.mjs"]', pattern: "hermetic: npm test loads" },
+      { id: "hermetic-script-runner", why: "npm test that does not start the runner", file: "package.json", old: '"test": "node test/run.mjs"', new: '"test": "node --test test/*.test.mjs"', pattern: "hermetic: npm test loads" },
       { id: "hermetic-plugin", why: "a plugin session's data directory left to the tests (install-hook would write its record)", file: "test/hermetic.mjs", old: 'const PLUGIN_VARS = ["ENNYN_PLUGIN_DATA", ', new: "const PLUGIN_VARS = [", pattern: "hermetic: after the hostile machine" },
       { id: "hermetic-system", why: "a setup that leaves the system config readable", file: "test/hermetic.mjs", old: '  GIT_CONFIG_NOSYSTEM: "1",\n', new: "", pattern: "hermetic: after the hostile machine" },
       { id: "hermetic-refuse", why: "a child that drops the setup, let run", file: "test/hermetic.mjs", old: "  if (!missing.length) return;\n", new: "  return;\n", pattern: "hermetic: a child given its own environment" },
@@ -785,6 +786,8 @@ export const GATES = [
       { id: "short-record-node", why: "a node child without the preload read as seen", file: "test/reads.mjs", old: "if (isNode && !(env.NODE_OPTIONS ?? \"\").includes(self)", new: "if (false && !(env.NODE_OPTIONS ?? \"\").includes(self)", pattern: "short: --record writes", node: "22.15.0" },
       { id: "short-record-git", why: "git working in the repository read as reading nothing", file: "test/reads.mjs", old: "why.push(`${basename(program)} in the repository`)", new: "void 0", pattern: "short: --record writes", node: "22.15.0" },
       { id: "short-script", why: "no command", file: "package.json", old: '"test:short": "node test/short.mjs"', new: '"test:short": "node --test"', pattern: "short: npm run test:short runs" },
+      { id: "short-concurrency-flag", why: "a short run at node's default concurrency", file: "test/short.mjs", old: '["--test", `--test-concurrency=${n}`, "--import", "./test/hermetic.mjs", ...args]', new: '["--test", "--import", "./test/hermetic.mjs", ...args]', pattern: "short: the run takes the suite's concurrency limit" },
+      { id: "short-concurrency-refused", why: "a refused override run anyway", file: "test/short.mjs", old: "  const n = suiteConcurrency();\n  if (n === null) return 2;\n  // node --test with no file", new: "  const n = suiteConcurrency() ?? 1;\n  // node --test with no file", pattern: "short: the run takes the suite's concurrency limit" },
     ],
   },
   {
@@ -848,6 +851,7 @@ export const NOT_GATES = {
   "test/ci.test.mjs": CLI_ONLY,
   "test/push-spellings.test.mjs": { reason: "runs the push reader on its corpus and the PreToolUse hook on temporary projects, on a copy of the plugin's files for a broken catalog; reads the header and SECURITY.md for the stated limits", allow: '"\\.\\./(adapters/claude-code/(hooks/)?push-spellings\\.mjs|SECURITY\\.md|)", import\\.meta\\.url|"\\.\\.", import\\.meta\\.url' },
   "test/kill-targets.test.mjs": { reason: "runs the kill reader on its corpus and the PreToolUse hook on temporary projects, on a copy of the plugin's files for a broken catalog; reads the header and SECURITY.md for the stated limits; makes a shell box in a child node inside a sandbox; runs its own box tests and the push reader's, from the top, in a child node with the box made to throw", allow: '"\\.\\./(adapters/claude-code/(hooks/)?kill-targets\\.mjs|SECURITY\\.md|)", import\\.meta\\.url|"\\.\\.", import\\.meta\\.url|"\\./shell-box\\.mjs", import\\.meta\\.url' },
+  "test/run.test.mjs": { reason: "runs npm test's runner on a copy in a temporary folder", allow: '"\\./run\\.mjs", import\\.meta\\.url' },
   "test/compact-boundary.test.mjs": { reason: "runs the PreCompact hook on temporary projects", allow: '"\\.\\./adapters/claude-code/hooks/compact-boundary\\.mjs", import\\.meta\\.url' },
   "test/bypass.test.mjs": CLI_ONLY,
   "test/leftovers.test.mjs": CLI_ONLY,

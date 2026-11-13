@@ -3,7 +3,7 @@
  * and a slow file comes back when the branch changed one of its listed paths, against the main branch, committed or
  * not. The whole suite (`npm test`) is not replaced: it runs once at a cycle's closing, before the push, slow files
  * included; a landing runs this and the slow files the task touches. A path list here decides how early a slow
- * file's failure is seen, never whether it runs.
+ * file's failure is seen, never whether it runs. Its runs take the whole suite's concurrency limit (test/run.mjs).
  *
  * The lists are narrow on purpose. The import closure of scripts/ennyn.mjs is nearly the whole tree, and a list that
  * matches every code change would make this the whole suite. Each one names what its file guards. With guards left
@@ -40,6 +40,7 @@ import { readIfThere } from "../core/files.mjs";
 import { git, gitMaybe } from "../core/git.mjs";
 import { matchAny } from "../core/glob.mjs";
 import { GATES } from "./guards.mjs";
+import { suiteConcurrency } from "./run.mjs";
 
 const { registerHooks } = nodeModule;
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -296,6 +297,8 @@ export function record(root) {
     return 2;
   }
   const short = testFiles(root).filter((f) => !(f in SLOW));
+  const n = suiteConcurrency();
+  if (n === null) return 2;
   const dir = mkdtempSync(join(tmpdir(), "en-reads-"));
   try {
     const self = join(dir, "reads.mjs");
@@ -306,7 +309,7 @@ export function record(root) {
     chmodSync(join(dir, "bin", "node"), 0o755);
     const env = { ...process.env, ENNYN_READS: dir, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${self}`.trim(), PATH: `${join(dir, "bin")}${delimiter}${process.env.PATH ?? ""}` };
     delete env.ENNYN_READS_TEST;
-    const run = spawnSync(process.execPath, ["--test", "--import", "./test/hermetic.mjs", ...short], { cwd: root, env, stdio: "inherit" });
+    const run = spawnSync(process.execPath, ["--test", `--test-concurrency=${n}`, "--import", "./test/hermetic.mjs", ...short], { cwd: root, env, stdio: "inherit" });
     if (run.status !== 0) {
       console.error(`the recording run ${run.status === null ? `did not finish (${run.error?.message ?? run.signal})` : `failed, exit ${run.status}`}; ${READS} is not written`);
       return 1;
@@ -352,9 +355,11 @@ function main(argv) {
     console.log(files.join("\n"));
     return 0;
   }
+  const n = suiteConcurrency();
+  if (n === null) return 2;
   // node --test with no file runs every test file it finds.
   const runs = [...(files.length ? [{ name: "test files", args: files }] : []), ...(accounting ? [{ name: "guards' accounting test", args: [`--test-name-pattern=${ACCOUNTING}`, GUARDS] }] : [])];
-  const ended = runs.map(({ name, args }) => ({ name, ...spawnSync(process.execPath, ["--test", "--import", "./test/hermetic.mjs", ...args], { cwd: ROOT, stdio: "inherit" }) }));
+  const ended = runs.map(({ name, args }) => ({ name, ...spawnSync(process.execPath, ["--test", `--test-concurrency=${n}`, "--import", "./test/hermetic.mjs", ...args], { cwd: ROOT, stdio: "inherit" }) }));
   // Again at the end: the run's output pushes the first copy out of a reader's tail.
   say();
   // The words carry the verdict: a later run's summary hides an earlier failure, and a pipe into tail loses the exit code.

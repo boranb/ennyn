@@ -342,6 +342,7 @@ function copy(tests) {
   cpSync(join(ROOT, "core"), join(dir, "core"), { recursive: true });
   copyFileSync(join(ROOT, "test", "short.mjs"), join(dir, "test", "short.mjs"));
   copyFileSync(join(ROOT, "test", "guards.mjs"), join(dir, "test", "guards.mjs"));
+  copyFileSync(join(ROOT, "test", "run.mjs"), join(dir, "test", "run.mjs"));
   commit(dir, "the script");
   git(["branch", "-q", "-f", "main", "work"], { cwd: dir });
   return dir;
@@ -393,6 +394,35 @@ test("short: the script runs what it chose, says so before and after the run, an
   const linked = run(link, dir);
   assert.equal(linked.status, 0, linked.stdout + linked.stderr);
   assert.match(linked.stdout, /the fast file ran/);
+});
+
+/** A test file that waits and writes when it ran, from its own process. @param {string} name */
+const timed = (name) =>
+  `import { test } from "node:test";\nimport { appendFileSync } from "node:fs";\ntest(${JSON.stringify(name)}, async () => { const at = () => performance.timeOrigin + performance.now(); const start = at(); await new Promise((r) => setTimeout(r, 400)); appendFileSync(process.env.EN_TIMES, \`\${start} \${at()}\\n\`); });\n`;
+
+test("short: the run takes the suite's concurrency limit and says it once; an override that is no positive integer runs nothing", () => {
+  const dir = copy({ "test/a.test.mjs": timed("a"), "test/b.test.mjs": timed("b"), "test/c.test.mjs": timed("c") });
+  const script = join(dir, "test", "short.mjs");
+  const times = join(mkdtempSync(join(tmpdir(), "en-short-times-")), "times");
+  const one = run(script, dir, [], { ENNYN_TEST_CONCURRENCY: "1", EN_TIMES: times });
+  assert.equal(one.status, 0, one.stdout + one.stderr);
+  assert.equal(one.stdout.split("test concurrency 1: ENNYN_TEST_CONCURRENCY=1\n").length - 1, 1, one.stdout);
+  // One file at a time: no file started before the one before it ended.
+  const runs = readFileSync(times, "utf8").trim().split("\n").map((l) => l.split(" ").map(Number)).sort((x, y) => x[0] - y[0]);
+  assert.equal(runs.length, 3);
+  for (let i = 1; i < runs.length; i++) assert.ok(runs[i][0] >= runs[i - 1][1], `file ${i} started before the one before it ended: ${JSON.stringify(runs)}`);
+
+  rmSync(times);
+  for (const bad of ["0", "two", ""]) {
+    const refused = run(script, dir, [], { ENNYN_TEST_CONCURRENCY: bad, EN_TIMES: times });
+    assert.equal(refused.status, 2, refused.stdout + refused.stderr);
+    assert.match(refused.stderr, /^ENNYN_TEST_CONCURRENCY must be a positive integer, not /m);
+    assert.ok(!existsSync(times), "nothing ran");
+  }
+  // Unset, it says which limit it took and why.
+  const plain = run(script, dir, [], { ENNYN_TEST_CONCURRENCY: undefined, EN_TIMES: times });
+  assert.equal(plain.status, 0, plain.stdout + plain.stderr);
+  assert.match(plain.stdout, /^test concurrency [1-9]\d*: (half the \d+ physical cores|a quarter of the \d+ logical CPUs: the physical count could not be read|half the [\d.]+ CPUs the container may use)$/m);
 });
 
 test("short: --list says the same and runs nothing; anything else it does not know runs nothing either", () => {
@@ -541,7 +571,7 @@ test("short: the method names the whole test command, runs it once at the closin
 test("short: npm run test:short runs the script and npm test still runs every test file", () => {
   const { scripts } = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
   assert.equal(scripts["test:short"], "node test/short.mjs");
-  assert.equal(scripts.test, "node --test --import ./test/hermetic.mjs test/*.test.mjs");
+  assert.equal(scripts.test, "node test/run.mjs");
 });
 
 /** The accounting test's stand-in, which says it ran. */
@@ -786,6 +816,7 @@ test("short: --record writes what each short-suite file read, in the node childr
   }
   assert.equal(done.status, 0, done.stdout + done.stderr);
   assert.match(done.stdout, /^test\/reads\.json: 7 test files recorded$/m);
+  assert.equal(done.stdout.match(/^test concurrency [1-9]\d*: .+$/gm)?.length, 1, "the recording run says its limit once");
   const list = JSON.parse(readFileSync(join(dir, READS), "utf8"));
   assert.deepEqual(Object.keys(list), ["version", "code", "tests"]);
   assert.equal(list.version, 1);

@@ -17,14 +17,16 @@ import { basename, delimiter, join, dirname, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { hostileHome } from "./hostile.mjs";
 import { takeRefused } from "./hermetic.mjs";
+import { wholeArgs } from "./run.mjs";
 import { hookCommitMode } from "../checks/commit-shape.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 test("hermetic: npm test loads the hostile machine, then the setup that clears it, into every test file", () => {
   const script = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")).scripts.test;
+  assert.equal(script, "node test/run.mjs");
   // One --import: the setup imports the hostile machine first, and every runner names only the setup.
-  assert.match(script, /^node --test --import \.\/test\/hermetic\.mjs test\/\*\.test\.mjs$/);
+  assert.deepEqual(wholeArgs(1).slice(2), ["--import", "./test/hermetic.mjs", "test/*.test.mjs"]);
   const first = readFileSync(join(ROOT, "test", "hermetic.mjs"), "utf8").split("\n").find((l) => l.startsWith("import "));
   assert.equal(first, 'import "./hostile.mjs";', "the hostile machine is the setup's first import");
   // Started from a git hook, the run has a GIT_DIR of its own; the decoy repository is still made where it is named.
