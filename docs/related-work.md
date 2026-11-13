@@ -23,6 +23,7 @@ Ennyn starts from the other end. A lesson that keeps coming back becomes a check
 | [open-gsd/gsd-core](https://github.com/open-gsd/gsd-core) (11k; the original get-shit-done, 64k, is archived) | A fresh subagent for each step, a `STATE.md` file, and enforcement hooks that each declare whether they let the action through or stop it when they crash. | None found |
 | tdd-guard (2.4k), continued as probity | A PreToolUse hook asks a model to judge each write against the latest test results and blocks code with no failing test behind it. Its docs list the ways around it: writing files through Bash and editing the guard's own state. | A demo |
 | agents (42k), [SuperClaude](https://github.com/SuperClaude-Org/SuperClaude_Framework) (24k), ECC (291k) | Large catalogs of agents, skills and commands. | Structural validation; speed and token savings claimed |
+| [GoogleChrome/modern-web-guidance](https://github.com/GoogleChrome/modern-web-guidance) (7.9k on 2026-11-13) | One skill whose description tells the agent to run its CLI first on every web task. The CLI searches 209 guides offline and prints the one asked for. A scan finds dated patterns for about a fifth of the guides, and each finding carries the rule for dropping it. Guides for unstable browser features are found by search but printed only after an opt-in in a committed file. The CLI is fetched at its latest version on every call and reports the agent's search queries to its vendor unless switched off. The install repository is a publish target: source, tests and evals live in a second one. | Each task run with and without the skill on full applications by three agents; Playwright graders that must pass on a reference solution and fail on the untouched application; dated results per agent and model |
 
 ### Spec and planning workflows
 
@@ -107,6 +108,10 @@ Each idea became a node in the work graph (`.ennyn/graph.json`), or an addition 
 | The impact table's search for nearby tests reads the project's test pattern, which init already sets for other languages | Understand-Anything | `impact-test-conventions` |
 | A task agent restates the brief in its own words before it writes; a restatement that misses the ask is a finding against the brief | elephant-goldfish-model's comprehension reviewer | `brief-paraphrase` |
 | A reviewer that fails or returns nothing is retried once, then recorded as not run, and its round is not clean | elephant-goldfish-model's review loop | `reviewer-not-run` |
+| A rule whose eval cases all pass without the plugin is a candidate for deletion | modern-web-guidance, which prunes the advice models already follow unaided | `skill-eval-baseline` |
+| An eval case's prompt never names the rule it tests; a must-not check passes only when every trial does; a case no arm ever passes is read as broken first | modern-web-guidance's task prompts; Anthropic's guide to agent evals | `plugin-eval` |
+| A dated idiom or a deprecated call on changed lines is found by the ecosystem's own tool, which init proposes | Go's `go fix` modernizers, written after assistants kept producing older Go; modern-web-guidance's scan | `modern-idiom-check` |
+| A hot path is timed before and after a change on one machine in one run, and no performance finding is raised anywhere else | Uber's uReview, where low-impact performance comments were rated poorly; an audit of three performance benchmarks | `perf-before-after` |
 
 ## What Ennyn left out
 
@@ -127,6 +132,7 @@ Each idea became a node in the work graph (`.ennyn/graph.json`), or an addition 
 - Many agent hosts at once (Understand-Anything, agent-reach). Each host's folders move under the tool; Ennyn adds Codex next and nothing more.
 - A scan for high-entropy strings. Minified code and lock-file hashes look the same, and a changed spacing gets past it; `load-time-obfuscation` looks only at files that tools run when they load them.
 - Five review stages with a human gate after each, convergence after two clean rounds, and two copies of the same reviewer for recall (elephant-goldfish-model). Ennyn's cycle runs without a person between tasks and stops at two rounds; whether a second copy of a reviewer finds more is what `reviewer-seeded-recall` would measure, and its contest step is `finding-refuter`. Its drift report is a periodic read by a model; Ennyn's co-change rule refuses the commit instead.
+- A guide corpus behind a skill, a CLI fetched at its latest version on every call, and usage reports to the vendor (modern-web-guidance). Ennyn ships no knowledge of one platform, pins what it fetches and connects nowhere. What must always happen in Ennyn is a hook or a command, not a skill's description: Vercel measured a skill that was never invoked in 56% of its eval cases. A web project can install modern-web-guidance itself. Its manifests for eight agent hosts are left out as Understand-Anything's were.
 
 ## Security reports read
 
@@ -152,6 +158,15 @@ Imbue's study was read in full. The others were read through summaries or in par
 - Anthropic, agentic property-based testing (arXiv 2510.09907).
 - "Understanding Spec-Driven-Development: Kiro, spec-kit, and Tessl" (15 October 2025).
 - A benchmark by a software agency (Uvik), 50 tickets, one team, one model: merge rates of 80-84% with a spec tool and 72% without, with gains on medium and large tickets. The authors put the noise at ±10 points, about the size of the gaps.
+- Found on 2026-11-13, each read in part and checked against a saved copy of the page:
+  - Anthropic, "Demystifying evals for AI agents" (9 January 2026): pass^k is the chance that all k trials succeed; a 0% pass rate over many trials is most often a broken task; one-sided evals create one-sided optimization.
+  - Vercel, "AGENTS.md outperforms skills in our agent evals" (27 January 2026): 53% with no docs, 53% with a skill (never invoked in 56% of cases), 79% with a skill and explicit instructions, 100% with an 8 KB index in AGENTS.md; one framework, the vendor's own tasks.
+  - The Go blog, "Using go fix to modernize Go code" (17 February 2026): assistants wrote Go in the style of their training data and often would not use newer ways when told to in general terms, so the modernizers were written as analyzers.
+  - Spotify, background coding agents, part 3 (9 December 2025): the agent does not know what a verifier does, verifiers return only the relevant error lines, and a judge model vetoes about a quarter of sessions, most often for work outside the prompt; the judge itself has no evals.
+  - Anthropic, "Building a C compiler with a team of parallel Claudes" (5 February 2026): a test harness that prints a few lines and logs the rest, and a fast mode that runs a fixed random sample per agent.
+  - Mozilla, "Behind the Scenes Hardening Firefox with Claude Mythos Preview" (7 May 2026): a finding counts when the harness builds a test case that reproduces it; earlier static reads by a model had too many false positives to scale.
+  - Uber, uReview (12 August 2025): comment categories with low developer value are suppressed, low-impact performance comments among them.
+  - "Are Performance-Optimization Benchmarks Reliably Measuring Coding Agents?" (arXiv 2607.01211, abstract only): reference patches kept the benchmarks' validity rules in every cross-machine replay for 39 of 102, 11 of 140 and 411 of 498 tasks.
 
 ## Sources
 
@@ -179,3 +194,12 @@ Imbue's study was read in full. The others were read through summaries or in par
 - Scrapling at 0336400: Scrapling
 - Understand-Anything at 4e6d329: https://github.com/Egonex-AI/Understand-Anything/tree/4e6d329
 - Codex skill loading at e6de6a2423: https://github.com/openai/codex/tree/e6de6a2423/codex-rs/ext/skills/src
+- modern-web-guidance at 4dd9683: https://github.com/GoogleChrome/modern-web-guidance/tree/4dd9683
+- Anthropic, agent evals: https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents
+- Vercel: https://vercel.com/blog/agents-md-outperforms-skills-in-our-agent-evals
+- Go blog: https://go.dev/blog/gofix
+- Spotify: https://engineering.atspotify.com/2025/12/feedback-loops-background-coding-agents-part-3
+- Anthropic, C compiler: https://www.anthropic.com/engineering/building-c-compiler
+- Mozilla: https://hacks.mozilla.org/2026/05/behind-the-scenes-hardening-firefox/
+- Uber: https://www.uber.com/blog/ureview/
+- Performance benchmarks: https://arxiv.org/abs/2607.01211
