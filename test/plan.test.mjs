@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../core/config.mjs";
 import { t, tShown } from "../core/i18n.mjs";
-import { byAge, costWeight, sinceOf, splitAt, graphProblems, loadGraph, pickMechanization, pickOldest, readyMechanization, readyNodes, scoreNode, splitFirst, GraphError } from "../plan/mechanization.mjs";
+import { byAge, costWeight, sinceOf, splitAt, graphProblems, loadGraph, pickMechanization, pickOldest, rankMechanization, readyMechanization, readyNodes, scoreNode, splitFirst, GraphError } from "../plan/mechanization.mjs";
 import { cycleRecords, folded, lineKey, markCovers, securityDue, sensitivePaths, uncovered } from "../plan/audit.mjs";
 
 const cfg = (override = {}) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-p-")), env: {}, override });
@@ -87,6 +87,33 @@ test("ready: configured field names and open gate value", () => {
     done: [],
   };
   assert.deepEqual(readyMechanization(graph, c).map((n) => n.id), ["b", "c"]);
+});
+
+/** Ready flagged nodes in the slot's order, by id, with a count per id (absent: no count). @param {any[]} open @param {Record<string, number | null>} counts */
+const ranked = (open, counts, c = cfg()) => rankMechanization({ open, done: [] }, c, (n) => counts[String(n.id)] ?? null).map((n) => n.id);
+const flagged = (/** @type {string} */ id, /** @type {string} */ value, /** @type {string} */ cost) => ({ id, mechanization: true, value, cost });
+
+test("rank: a class that recurs more ranks above a node with the higher value/cost", () => {
+  const open = [flagged("cheap-rare", "high", "S"), flagged("often", "low", "S")];
+  assert.deepEqual(ranked(open, {}), ["cheap-rare", "often"], "no counts: today's value/cost order");
+  assert.deepEqual(ranked(open, { "cheap-rare": 2, often: 5 }), ["often", "cheap-rare"]);
+  assert.equal(pickMechanization({ open, done: [] }, cfg(), (n) => ({ "cheap-rare": 2, often: 5 })[String(n.id)] ?? null)?.id, "often");
+  assert.equal(pickMechanization({ open, done: [] }, cfg())?.id, "cheap-rare", "no counts given: value/cost");
+});
+
+test("rank: the count is over the cost weight; equal rates go by value/cost, then id", () => {
+  // 5 over M (2) is 2.5, under 3 over S (1).
+  assert.deepEqual(ranked([flagged("m5", "high", "M"), flagged("s3", "low", "S")], { m5: 5, s3: 3 }), ["s3", "m5"]);
+  // 4 over M and 2 over S tie at 2: value/cost puts the S node of high value first.
+  assert.deepEqual(ranked([flagged("m4", "high", "M"), flagged("s2", "high", "S")], { m4: 4, s2: 2 }), ["s2", "m4"]);
+  // Same count, cost and value: by id.
+  assert.deepEqual(ranked([flagged("b", "low", "S"), flagged("a", "low", "S")], { a: 1, b: 1 }), ["a", "b"]);
+});
+
+test("rank: a node with no count, an unknown class or zero rows ranks after every counted one, by value/cost, and none disappears", () => {
+  const open = [flagged("none", "high", "S"), flagged("zero", "medium", "S"), flagged("unknown", "low", "S"), flagged("one", "low", "XL"), flagged("gated", "high", "S")];
+  open[4].gate = "user";
+  assert.deepEqual(ranked(open, { zero: 0, unknown: null, one: 1 }), ["one", "none", "zero", "unknown"]);
 });
 
 /** The pick as [the node the slot works, the old node it serves]. @param {any[]} open @param {any[]} [done] */

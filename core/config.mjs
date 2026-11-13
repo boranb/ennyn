@@ -40,6 +40,7 @@ export const DEFAULTS = Object.freeze({
       source: "source",
       since: "since",
       reason: "reason",
+      sourceClass: "sourceClass",
     },
     openGateValue: null,
     doneStatus: "done",

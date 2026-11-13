@@ -105,7 +105,7 @@ const NO_GATE = new Set([
   "graph.exports.open",
   "graph.exports.done",
   "graph.exports.declined",
-  ...["id", "status", "needs", "gate", "value", "cost", "cluster", "mechanization", "source", "since", "reason"].map((k) => `graph.fields.${k}`),
+  ...["id", "status", "needs", "gate", "value", "cost", "cluster", "mechanization", "source", "since", "reason", "sourceClass"].map((k) => `graph.fields.${k}`),
   "graph.openGateValue",
   "graph.doneStatus",
   "planner.splitAbove",

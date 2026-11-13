@@ -28,13 +28,13 @@ import { bypassUses } from "../metrics/bypass.mjs";
 import { leftovers, readStart, recordStart, startPath } from "../metrics/leftovers.mjs";
 import { STEPS, journalAt, statusOf, tasksFit, taskWord, writeEvent } from "../plan/cycle-journal.mjs";
 import { gateLogPath, readAttempts, recordAttempt, summarizeAttempts, KINDS } from "../metrics/gate-log.mjs";
-import { byAge, costWeight, doneIds, graphProblems, loadGraph, needsOf, pickMechanization, pickOldest, readyNodes, scoreNode, splitAt, splitFirst, GraphError } from "../plan/mechanization.mjs";
+import { byAge, costWeight, doneIds, graphProblems, loadGraph, needsOf, pickMechanization, pickOldest, readyMechanization, readyNodes, scoreNode, splitAt, splitFirst, GraphError } from "../plan/mechanization.mjs";
 import { LINK_RULE, SUBMODULE_RULE, auditAnswer, cycleRecords, markCovers, readLog, securityDue, sensitivePaths } from "../plan/audit.mjs";
 import { scanProject, MIN_HISTORY } from "../setup/scan.mjs";
 import { cannotFail, checkSetup, pipes } from "../setup/doctor.mjs";
 import { capped, ghApplies } from "../setup/permissions.mjs";
 import { PROBLEMS_SHOWN, checkProofs, loadClasses, registryLine, stateCounts } from "../metrics/classes.mjs";
-import { CYCLE_MAX, brakePatches, complete, cycleReport, reportLines } from "../metrics/findings.mjs";
+import { CYCLE_MAX, brakePatches, complete, cycleReport, ledgerLine, loadLedger, recentRecurrence, reportLines } from "../metrics/findings.mjs";
 import { RecordError, installHook, sessionOf } from "../setup/hook.mjs";
 import { recordWrite, uninstall, writtenPath } from "../setup/uninstall.mjs";
 import { instructionBudget, readBudgets, recordBudget, previousBudget, replacedAt } from "../setup/budget.mjs";
@@ -1621,11 +1621,42 @@ const COMMANDS = {
     const cfg = config(cwd);
     const graph = await pickable(cwd, cfg);
     if (!graph) return 1;
-    const node = pickMechanization(graph, cfg);
+    const f = cfg.graph.fields;
+    const lang = cfg.language;
+    const ready = readyMechanization(graph, cfg);
+    // The slot ranks by how often each node's class recurred lately; a ledger that cannot say is never read as none.
+    /** @type {ReturnType<typeof recentRecurrence> | null} */
+    let rec = null;
+    if (ready.length) {
+      let led;
+      try {
+        led = loadLedger({ cwd, config: cfg });
+      } catch (e) {
+        err(`✗ ${tShown("findings.unread", { error: String(/** @type {Error} */ (e).message).trim().split("\n")[0] }, lang)}`);
+        return (err(t("mechanization.unmeasured", {}, lang)), 1);
+      }
+      const line = ledgerLine(led);
+      if (!led.there) err(`! ${tShown("mechanization.noLedger", { path: [led.path] }, lang)}`);
+      else if (line.level !== "ok" || led.reg === null) return (err(`✗ ${tShown(line.key, line.vars, lang)}`), err(t("mechanization.unmeasured", {}, lang)), 1);
+      else {
+        rec = recentRecurrence(led.rows, led.reg);
+        if (rec.names.length) err(`! ${tShown("mechanization.unlinked", { n: rec.names.length, list: rec.names }, lang)}`);
+        for (const n of ready) {
+          if (n[f.sourceClass] !== undefined && rec.count(n[f.sourceClass]) === null) err(`! ${tShown("mechanization.classUnknown", { id: String(n[f.id]), value: String(n[f.sourceClass]) }, lang)}`);
+        }
+      }
+    }
+    const countOf = (/** @type {Record<string, unknown>} */ n) => (rec === null ? null : rec.count(n[f.sourceClass]));
+    const node = pickMechanization(graph, cfg, countOf);
     const score = node ? scoreNode(node, cfg) : null;
-    if (opts.json) return (out(jsonShown(node ? { node, score } : null)), 0);
-    if (!node) out(t("mechanization.none", {}, cfg.language));
-    else out(tShown("mechanization.pick", { id: String(node[cfg.graph.fields.id]), score: Number(score).toFixed(2) }, cfg.language));
+    const count = node ? countOf(node) : null;
+    const window = rec?.cycles.length ? [rec.cycles[0], rec.cycles[rec.cycles.length - 1]] : null;
+    if (opts.json) return (out(jsonShown(node ? { node, score, count, cycles: window } : null)), 0);
+    if (!node) return (out(t("mechanization.none", {}, lang)), 0);
+    const vars = { id: String(node[f.id]), score: Number(score).toFixed(2) };
+    if (window === null) out(tShown("mechanization.pick", vars, lang));
+    else if (count) out(tShown("mechanization.pickCount", { ...vars, class: String(rec?.entry(node[f.sourceClass])), count, from: window[0], to: window[1], cost: String(node[f.cost] ?? "?") }, lang));
+    else out(tShown("mechanization.pickUncounted", { ...vars, from: window[0], to: window[1] }, lang));
     return 0;
   },
 

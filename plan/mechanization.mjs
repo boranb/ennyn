@@ -7,7 +7,8 @@
  * Ready = flagged, not done, not declined, gate open (or no gate field), every `needs` id done
  * (listed in the done export, or an open node carrying the done status).
  * Score = value / cost, value and cost words mapped to their weights;
- * ties break by id so the pick is deterministic.
+ * ties break by id so the pick is deterministic. The mechanization slot ranks by its class's
+ * recent recurrence over cost first (rankMechanization), the caller giving the counts.
  */
 
 import { statSync } from "node:fs";
@@ -370,12 +371,30 @@ export function readyMechanization(graph, config) {
 }
 
 /**
+ * The ready mechanization nodes in the slot's order. `countOf` gives how often a node's class recurred in the recent
+ * cycles, or null for no count (no class, one no registry entry leads to, no ledger). A node counted above 0 comes
+ * first, by its count over its cost weight, then by value/cost, then by id; every other ready node follows in
+ * readyMechanization's order, so none drops out. With no counts the order is readyMechanization's.
  * @param {Graph} graph
  * @param {any} config
+ * @param {(node: GraphNode) => number | null} [countOf]
+ * @returns {GraphNode[]}
+ */
+export function rankMechanization(graph, config, countOf = () => null) {
+  const rated = readyMechanization(graph, config).map((node, at) => ({ node, at, rate: (countOf(node) ?? 0) / costWeight(node, config) }));
+  // A rate is never below 0, so the uncounted (rate 0) come last, in readyMechanization's order.
+  rated.sort((a, b) => b.rate - a.rate || a.at - b.at);
+  return rated.map((r) => r.node);
+}
+
+/**
+ * @param {Graph} graph
+ * @param {any} config
+ * @param {(node: GraphNode) => number | null} [countOf] as rankMechanization takes it
  * @returns {GraphNode | null}
  */
-export function pickMechanization(graph, config) {
-  return readyMechanization(graph, config)[0] ?? null;
+export function pickMechanization(graph, config, countOf) {
+  return rankMechanization(graph, config, countOf)[0] ?? null;
 }
 
 /**

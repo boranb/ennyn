@@ -487,11 +487,26 @@ function newClasses(live, reg) {
  * @returns {{ top: Recurring[], names: string[] }}
  */
 function recurring(live, reg) {
+  const { tally, names } = tallyClasses(live, reg);
+  const most = Math.max(2, ...[...tally.values()].map((c) => c.times));
+  const top = [...tally].filter(([, c]) => c.times === most).sort(([a], [b]) => (a < b ? -1 : 1));
+  return {
+    top: top.map(([id, c]) => ({ id, times: c.times, layers: [...c.layers].sort(([a, x], [b, y]) => y - x || (a < b ? -1 : 1)) })),
+    names: [...names],
+  };
+}
+
+/**
+ * Rows by the registry entry each class value leads to (currentClass), each row once per entry, with the layers that
+ * caught them; `names`: values no entry leads to. The recurring class and the recent recurrence read it.
+ * @param {Row[]} rows @param {import("./classes.mjs").Registry} reg
+ */
+function tallyClasses(rows, reg) {
   /** @type {Map<string, { times: number, layers: Map<string, number> }>} */
   const tally = new Map();
   /** @type {Set<string>} */
   const names = new Set();
-  for (const row of live) {
+  for (const row of rows) {
     /** @type {Set<string>} */
     const ids = new Set();
     for (const value of row.class) {
@@ -506,12 +521,7 @@ function recurring(live, reg) {
       tally.set(id, seen);
     }
   }
-  const most = Math.max(2, ...[...tally.values()].map((c) => c.times));
-  const top = [...tally].filter(([, c]) => c.times === most).sort(([a], [b]) => (a < b ? -1 : 1));
-  return {
-    top: top.map(([id, c]) => ({ id, times: c.times, layers: [...c.layers].sort(([a, x], [b, y]) => y - x || (a < b ? -1 : 1)) })),
-    names: [...names],
-  };
+  return { tally, names };
 }
 
 /** The cycles the recurrence ladder reads: the one counted and the two before it. */
@@ -521,6 +531,30 @@ export const DECISION_SUFFIX = "-design-decision";
 
 /** @param {Row} r */
 const isFixed = (r) => r.outcome === "fixed" || r.outcome === "fixed-test";
+
+/**
+ * How often each class recurred lately, for the mechanization slot (`ennyn mechanization`): over the newest cycle the
+ * rows hold and the LADDER_CYCLES - 1 before it, rows as the recurring class reads them (line 1 leaves, no brief row),
+ * each row once per entry, a linked name, a folded name and a superseded id for their entry: a class split under a new
+ * name counts as one once the name is linked. The window is read from the rows, as the command has no cycle of its own:
+ * a row of a mistyped higher cycle moves it, and the command prints it. `cycles` is empty with no rows. `count(value)`:
+ * the rows of the entry a class value leads to, 0 when none is in the window; null for a value that leads to none.
+ * `entry(value)`: the id of that entry, or null. `names`: values of the window's rows no entry leads to: while there is one, a count may be short.
+ * @param {Row[]} rows every row the ledger holds @param {import("./classes.mjs").Registry} reg
+ * @returns {{ cycles: number[], count: (value: unknown) => number | null, entry: (value: unknown) => string | null, names: string[] }}
+ */
+export function recentRecurrence(rows, reg) {
+  const last = rows.reduce((most, r) => Math.max(most, r.cycle), 0);
+  const first = Math.max(1, last - LADDER_CYCLES + 1);
+  const cycles = last ? Array.from({ length: last - first + 1 }, (_, i) => first + i) : [];
+  const { tally, names } = tallyClasses(rows.filter((r) => r.cycle >= first && r.dupOf === null && r.outcome !== "refuted" && r.source !== "brief"), reg);
+  const entry = (/** @type {unknown} */ value) => (typeof value === "string" ? currentClass(reg, value) : null);
+  const count = (/** @type {unknown} */ value) => {
+    const id = entry(value);
+    return id === null ? null : (tally.get(id)?.times ?? 0);
+  };
+  return { cycles, count, entry, names: [...names] };
+}
 
 /**
  * The recurrence ladder of report-formats.md, per file, over cycle N and the two before it: rows line 1 leaves, with a

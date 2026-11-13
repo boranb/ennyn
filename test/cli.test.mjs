@@ -306,6 +306,78 @@ test("cli: mechanization picks from the graph; a missing graph is an error", () 
   assert.equal(json.score, 1.5);
 });
 
+/** A findings row the ledger takes, of a cycle and classes. @param {number} cycle @param {string[]} classes @param {number} n */
+const finding = (cycle, classes, n) => ({ cycle, task: "t", round: 1, id: `c${cycle}-t1-code-r1-${n}`, severity: "medium", class: classes, source: "first-write", caughtBy: "review", dupOf: null, fingerprint: `defect ${n}`, input: "use", outcome: "fixed", commit: null, bornIn: null, file: "src/a.mjs", line: 1 });
+
+test("cli: mechanization ranks by how often the node's class recurred in the recent cycles, over cost, and says the count and the window", () => {
+  const p = project();
+  mkdirSync(join(p.dir, ".ennyn"));
+  const put = (/** @type {string} */ name, /** @type {string} */ text) => writeFileSync(join(p.dir, ".ennyn", name), text);
+  put("graph.json", JSON.stringify({
+    nodes: [
+      { id: "rare", mechanization: true, value: "high", cost: "S", sourceClass: "rare-class" },
+      { id: "often", mechanization: true, value: "low", cost: "S", sourceClass: "new: often split off" },
+      { id: "free", mechanization: true, value: "high", cost: "S", sourceClass: "a class in free words" },
+    ],
+    done: [],
+  }));
+  put("classes.json", JSON.stringify({ classes: [{ id: "rare-class", says: "Rare.", state: "open" }, { id: "often-class", says: "Often.", state: "open", linked: ["new: often split off"] }] }));
+  // Cycle 1 is out of the window 2-4; the linked name and the id count as one class.
+  const rows = [finding(1, ["rare-class"], 1), finding(1, ["rare-class"], 2), finding(1, ["rare-class"], 3), finding(2, ["rare-class"], 4), finding(3, ["often-class"], 5), finding(4, ["new: often split off"], 6)];
+  put("findings.jsonl", rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+  const ok = run(p.dir, "mechanization");
+  assert.equal(ok.code, 0, ok.stderr);
+  assert.equal(ok.stdout, "often (class often-class: 2 in cycles 2-4, cost S; score 1.00)\n");
+  assert.match(ok.stderr, /^! free: its class "a class in free words" leads to no entry of the class registry; it ranks after the counted nodes$/m);
+  const json = JSON.parse(run(p.dir, "mechanization", "--json").stdout);
+  assert.deepEqual([json.node.id, json.score, json.count, json.cycles], ["often", 1, 2, [2, 4]]);
+  // No class counted: the order is value/cost, ties by id, the window said.
+  put("findings.jsonl", `${JSON.stringify({ ...finding(4, [], 7), class: ["new: not linked"] })}\n`);
+  const uncounted = run(p.dir, "mechanization");
+  assert.equal(uncounted.code, 0, uncounted.stderr);
+  assert.equal(uncounted.stdout, "free (score 3.00; no finding of its class counted in cycles 2-4)\n");
+  assert.match(uncounted.stderr, /^! class names in the window's findings that lead to no entry of the class registry: 1: new: not linked; a count may be short until they are linked$/m);
+  assert.equal(JSON.parse(run(p.dir, "mechanization", "--json").stdout).count, null, "free names no entry: no count, not 0");
+  assert.doesNotMatch(uncounted.stderr, /^! (rare|often):/m, "a class with no row in the window is known, not unknown");
+});
+
+test("cli: mechanization says a ledger it cannot count from: none is value/cost, said; unreadable or refused picks nothing", () => {
+  const p = project();
+  mkdirSync(join(p.dir, ".ennyn"));
+  const put = (/** @type {string} */ name, /** @type {string} */ text) => writeFileSync(join(p.dir, ".ennyn", name), text);
+  put("graph.json", JSON.stringify({ nodes: [{ id: "a", mechanization: true, value: "low", cost: "S", sourceClass: "a-class" }, { id: "b", mechanization: true, value: "high", cost: "S" }], done: [] }));
+  put("classes.json", JSON.stringify({ classes: [{ id: "a-class", says: "A.", state: "open" }] }));
+  const none = run(p.dir, "mechanization");
+  assert.deepEqual([none.code, none.stdout], [0, "b (score 3.00)\n"]);
+  assert.match(none.stderr, /^! no findings ledger \(\.ennyn\/findings\.jsonl\): no class recurrence to rank by; ranked by value\/cost$/m);
+  const noLedger = JSON.parse(run(p.dir, "mechanization", "--json").stdout);
+  assert.deepEqual([noLedger.node.id, noLedger.count, noLedger.cycles], ["b", null, null], "no ledger: no count, not 0");
+  const refused = (/** @type {RegExp} */ said) => {
+    for (const args of [["mechanization"], ["mechanization", "--json"]]) {
+      const got = run(p.dir, ...args);
+      assert.deepEqual([got.code, got.stdout], [1, ""], args.join(" "));
+      assert.match(got.stderr, said);
+      assert.match(got.stderr, /The class recurrence cannot be counted \(✗ above\); nothing is picked/);
+    }
+  };
+  // A ledger with no rows: no window, nothing said.
+  put("findings.jsonl", "");
+  assert.deepEqual(Object.values(run(p.dir, "mechanization")), [0, "b (score 3.00)\n", ""]);
+  put("findings.jsonl", "{ not a row\n");
+  refused(/^✗ findings ledger \.ennyn\/findings\.jsonl: rows 1, refused 1, first: line 1: the line does not parse$/m);
+  rmSync(join(p.dir, ".ennyn", "findings.jsonl"));
+  mkdirSync(join(p.dir, ".ennyn", "findings.jsonl"));
+  refused(/^✗ findings ledger: /m);
+  rmSync(join(p.dir, ".ennyn", "findings.jsonl"), { recursive: true });
+  put("findings.jsonl", `${JSON.stringify(finding(1, ["a-class"], 1))}\n`);
+  assert.equal(run(p.dir, "mechanization").stdout, "a (class a-class: 1 in cycles 1-1, cost S; score 1.00)\n");
+  put("classes.json", "{");
+  refused(/^✗ findings ledger \.ennyn\/findings\.jsonl: rows 1; classes unmeasured: /m);
+  // Nothing ready: nothing is read.
+  put("graph.json", JSON.stringify({ nodes: [], done: [] }));
+  assert.deepEqual(Object.values(run(p.dir, "mechanization")), [0, "No ready mechanization node.\n", ""]);
+});
+
 test("cli: core --value lists every open node of that value for a closing to decline; declined ones are out, and doctor counts them", () => {
   const p = project();
   mkdirSync(join(p.dir, ".ennyn"));

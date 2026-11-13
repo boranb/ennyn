@@ -11,7 +11,7 @@ import { git } from "../core/git.mjs";
 import { CLASS_LIST_MAX, currentClass, emptyRegistry, parseClasses } from "../metrics/classes.mjs";
 import { parseConvergence } from "../metrics/convergence.mjs";
 import { frozenRows, noAgeRows } from "./__fixtures__/findings/frozen.mjs";
-import { FINGERPRINT_MAX, KEPT_MAX, NOTE_MAX, REFUSED_MAX, cycleReport, ledgerLine, loadLedger, parseFindings, reportLines } from "../metrics/findings.mjs";
+import { FINGERPRINT_MAX, KEPT_MAX, NOTE_MAX, REFUSED_MAX, cycleReport, ledgerLine, loadLedger, parseFindings, recentRecurrence, reportLines } from "../metrics/findings.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
 const HASH = "a".repeat(40);
@@ -1580,4 +1580,37 @@ test("recurrence ladder: patch nodes that cannot be looked for are unmeasured, n
   // No file at the brake: no start is needed, nothing is read.
   const calm = run(bare.dir, [rung(1, 15, "src/a.mjs", "gamma-ray"), rung(2, 16, "src/a.mjs", "gamma-ray")]);
   assert.equal(calm.status, 0, calm.stderr);
+});
+
+test("recent recurrence: the newest cycle the rows hold and the two before it, each row once per entry it leads to", () => {
+  const reg = parseClasses(REGISTRY);
+  assert.deepEqual(reg.problems, []);
+  let n = 0;
+  const at = (/** @type {number} */ cycle, /** @type {string[]} */ classes, over = {}) => row({ id: `c${cycle}-t1-code-r1-${String(++n).padStart(2, "0")}`, cycle, class: classes, ...over });
+  const rows = [
+    at(10, ["known-class"]),
+    at(12, ["known-class"]),
+    // A linked name, a folded name and a superseded id count for their entry; one row once, whatever it names twice.
+    at(13, ["new: a linked name", "new: Known Class", "old-class"]),
+    at(14, ["other-class"]),
+    // Line 1's rows and a brief row count nowhere.
+    at(14, ["known-class"], { dupOf: "c12-t1-code-r1-02" }),
+    at(14, ["known-class"], { outcome: "refuted" }),
+    at(14, ["known-class"], { source: "brief", round: 0, file: null, line: null, severity: "low", outcome: "fixed" }),
+    at(14, ["new: nobody linked this"]),
+  ];
+  const rec = recentRecurrence(rows, reg);
+  assert.deepEqual(rec.cycles, [12, 13, 14]);
+  assert.equal(rec.count("known-class"), 2, "cycle 10 is out of the window");
+  assert.equal(rec.count("new: a linked name"), 2, "a name counts with its entry, never by itself");
+  assert.deepEqual([rec.entry("new: a linked name"), rec.entry("old-class"), rec.entry("a free text")], ["known-class", "known-class", null]);
+  assert.equal(rec.count("old-class"), 2, "a superseded id reads its successor's count");
+  assert.equal(rec.count("other-class"), 1);
+  assert.equal(rec.count("gamma-ray"), 0, "an entry with no row in the window");
+  for (const v of ["new: nobody linked this", "a free text", 3, undefined]) assert.equal(rec.count(v), null, String(v));
+  assert.deepEqual(rec.names, ["new: nobody linked this"], "a name no entry leads to may yet link: said");
+  // A first cycle: the window does not reach below 1.
+  assert.deepEqual(recentRecurrence([at(1, ["known-class"]), at(2, ["known-class"])], reg).cycles, [1, 2]);
+  const none = recentRecurrence([], reg);
+  assert.deepEqual([none.cycles, none.count("known-class"), none.names], [[], 0, []]);
 });
