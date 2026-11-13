@@ -859,6 +859,7 @@ export const NOT_GATES = {
   "test/classes.test.mjs": CLI_ONLY,
   "test/findings.test.mjs": CLI_ONLY,
   "test/cli.test.mjs": CLI_ONLY,
+  "test/push-check-oracle.test.mjs": CLI_ONLY,
   "test/worktrees.test.mjs": CLI_ONLY,
   "test/heavy-lock.test.mjs": { reason: "runs the CLI and the hand-written queue's copy on temporary lock folders", allow: '"\\.\\./scripts/ennyn\\.mjs", import\\.meta\\.url|"__fixtures__/locked\\.sh", import\\.meta\\.url' },
   "test/agents.test.mjs": CLI_ONLY,
