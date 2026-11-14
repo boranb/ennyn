@@ -853,6 +853,7 @@
   "lock.releaseUnread": "lock: not released: its {what} could not be read ({error}); left as it is",
   "lock.releaseFailed": "lock: the lock could not be released: {error}",
   "lock.ticketGone": "lock: this waiter's ticket in {dir} was removed by another waiter; no turn can come to it, so the wait ends",
+  "lock.queueLink": "lock: the queue {queue} is a symbolic link, refused: no ticket was written, nothing in it removed, and the command did not run. Make it a plain folder",
   "worktrees.none": "No worktree carries Ennyn's mark (a lock whose reason is ennyn:<cycle>).",
   "worktrees.others": "{n} other linked worktrees carry no mark: left alone.",
   "worktrees.incomplete": "{n} could not be checked or removed, or carry no mark: each line above says what is true of it.",

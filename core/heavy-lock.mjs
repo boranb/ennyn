@@ -4,7 +4,8 @@
  * The folder (`ENNYN_LOCK_DIR`, else `~/.ennyn-lock`) is the one the hand-written `locked.sh` uses, laid out alike, so
  * a waiter of either kind takes its turn in one order: a ticket `queue/<seconds since the epoch, %017.6f>-<pid>`, a
  * ticket whose waiter is gone dropped by any waiter, and the lock taken by the waiter whose ticket sorts first, by
- * creating the directory `suite.lock`. An ennyn ticket holds its waiter's start, so a pid given again to a later
+ * creating the directory `suite.lock`. Only names of a ticket's shape are judged or removed: any other file in the
+ * queue is left where it is. A queue that is a symbolic link is refused: nothing is written or removed behind it. An ennyn ticket holds its waiter's start, so a pid given again to a later
  * process is no waiter; a `locked.sh` ticket is empty, and its pid alone counts.
  *
  * Who holds the lock is written beside it, in `suite.lock.holder` (outside the directory, which `locked.sh` removes
@@ -121,6 +122,9 @@ function groupLives(pid) {
   }
 }
 
+/** A ticket's name, as both writers make it (%017.6f seconds, then the pid): the only names the sweep judges. */
+const TICKET = /^\d{10}\.\d{6}-\d+$/;
+
 /** A ticket's name: the time to the microsecond, %017.6f, and this process's pid. */
 function ticketName() {
   return `${((performance.timeOrigin + performance.now()) / 1000).toFixed(6).padStart(17, "0")}-${process.pid}`;
@@ -146,7 +150,8 @@ function ticketLives(path, pid, startRead = () => {}) {
 }
 
 /**
- * The live tickets in queue order; a ticket whose waiter is gone is removed, as `locked.sh` removes it. A ticket's
+ * The live tickets in queue order; a ticket whose waiter is gone is removed, as `locked.sh` removes it. A name not of
+ * a ticket's shape is no ticket: never judged, never removed, never in the order. A ticket's
  * start is read once (`known`, by name: a name and its process fix the verdict), after that its pid alone is asked
  * (signal 0, no `ps`); a name no longer in the queue is forgotten. An empty ticket (locked.sh's) is read each time.
  * The waiter's own ticket is never judged: it lives while the waiter does. One no longer in the queue (another waiter
@@ -156,7 +161,7 @@ function ticketLives(path, pid, startRead = () => {}) {
  * @returns {string[] | null}
  */
 function liveTickets(queue, known, own) {
-  const names = readdirSync(queue).filter((n) => !n.startsWith(".")).sort();
+  const names = readdirSync(queue).filter((n) => TICKET.test(n)).sort();
   if (!names.includes(own)) return null;
   for (const n of known) if (!names.includes(n)) known.delete(n);
   return names.filter((n) => {
@@ -350,6 +355,11 @@ export async function runLocked({ command, args, limitMs, cwd = process.cwd(), e
   let ticket;
   const ownName = ticketName();
   try {
+    // A queue that is a link (a dangling one too) is refused before a ticket is written: the sweep removes files in it.
+    if (isLink(queue)) {
+      say({ key: "lock.queueLink", vars: { queue } });
+      return (offSignals(onSignal), 1);
+    }
     mkdirSync(queue, { recursive: true });
     ticket = join(queue, ownName);
     // The waiter's start, so a pid given again to a later process is no waiter of this queue.
@@ -513,6 +523,16 @@ export async function runLocked({ command, args, limitMs, cwd = process.cwd(), e
     clearInterval(refresh);
     offSignals(onSignal);
     release(lock, holderPath, held, written, own, say);
+  }
+}
+
+/** Whether the path is a symbolic link; one not there is none, and one that cannot be read throws. @param {string} path */
+function isLink(path) {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch (e) {
+    if (/** @type {NodeJS.ErrnoException} */ (e).code === "ENOENT") return false;
+    throw e;
   }
 }
 

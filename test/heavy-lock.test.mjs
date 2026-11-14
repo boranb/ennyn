@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, rmdirSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, rmdirSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -691,4 +691,43 @@ test("lock: a waiter reads the holder's start again once a minute has passed sin
   assert.equal(deadLock(dir, holderPath, t0 + 1001, memo, { rereadMs: 60_000, startOf }), null);
   assert.equal(deadLock(dir, holderPath, t0 + 1002, memo, { rereadMs: 60_000, startOf }), null);
   assert.equal(reads, 4);
+});
+
+test("lock: the queue's sweep judges only ticket-shaped names and leaves every other file where it is", async (t) => {
+  const at = box(t);
+  const gone = run(process.execPath, ["-e", ""], { cwd: at.dir, lock: at.lock });
+  await gone.ended;
+  const queue = join(at.lock, "queue");
+  mkdirSync(queue, { recursive: true });
+  // Files someone left in the queue, each named as no writer names a ticket; the probe of cycle 33 saw them deleted.
+  const others = ["notes.txt", "README", "build-output", "2026-report-1", `job-${gone.child.pid}`, `1794654969.818353-${gone.child.pid}.tmp`, `old-0000000001.000000-${gone.child.pid}`, ".hidden"];
+  for (const n of others) writeFileSync(join(queue, n), "data\n");
+  // A ticket whose waiter is gone is still dropped.
+  writeFileSync(join(queue, `0000000001.000000-${gone.child.pid}`), "");
+  const r = await lock(["--", ...append(join(at.dir, "ran"), "ran")], { cwd: at.dir, lock: at.lock }).ended;
+  assert.equal(r.code, 0, r.stderr);
+  assert.equal(readFileSync(join(at.dir, "ran"), "utf8"), "ran\n");
+  assert.deepEqual(tickets(at.lock).sort(), [...others].sort());
+  for (const n of others) assert.equal(readFileSync(join(queue, n), "utf8"), "data\n", n);
+});
+
+test("lock: a queue that is a symbolic link is refused and said: no ticket written, nothing behind it removed, nothing run", async (t) => {
+  const at = box(t);
+  const gone = run(process.execPath, ["-e", ""], { cwd: at.dir, lock: at.lock });
+  await gone.ended;
+  const elsewhere = join(at.dir, "elsewhere");
+  mkdirSync(elsewhere);
+  const kept = ["precious.txt", `0000000001.000000-${gone.child.pid}`];
+  for (const n of kept) writeFileSync(join(elsewhere, n), "data\n");
+  mkdirSync(at.lock);
+  for (const target of [elsewhere, join(at.dir, "nothing")]) {
+    rmSync(join(at.lock, "queue"), { force: true });
+    symlinkSync(target, join(at.lock, "queue"));
+    const r = await lock(["--", ...append(join(at.dir, "ran"), "ran")], { cwd: at.dir, lock: at.lock }).ended;
+    assert.equal(r.code, 1, r.stderr);
+    assert.match(r.stderr, /queue .* is a symbolic link/);
+    assert.ok(!existsSync(join(at.dir, "ran")), "the command never ran");
+    assert.ok(!existsSync(join(at.lock, "suite.lock")), "the lock was never taken");
+    assert.deepEqual(readdirSync(elsewhere).sort(), [...kept].sort());
+  }
 });
