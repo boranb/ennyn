@@ -2,6 +2,9 @@
 
 ## Unreleased (0.0.x)
 
+- `npm test` and `npm run test:short` run at most half the physical cores' test files at once (in a container, at most half the CPUs it may use; a quarter of the logical CPUs where the physical count cannot be read), and say which limit they took; `ENNYN_TEST_CONCURRENCY`, a positive integer, overrides it. `npm test` passes SIGTERM, SIGINT and SIGHUP on to the suite and exits 128 plus the signal's number when one ended it.
+- `ennyn mechanization` ranks ready mechanization nodes by how often their class (`sourceClass`, resolved through the class registry) recurred in the findings ledger over the last three cycles, over cost; nodes with no count follow by value/cost. It prints the count and the window (`--json`: `count`, `cycles`), and picks nothing when the ledger or registry cannot be read.
+- Tests: a fact oracle for `ennyn push-check`: each 'may push' verdict is held against what a bare `git push` would send, the record's bytes and the work tree, on a corpus of temporary repositories.
 - Node 22 or later is required (was 20); the Linux run's floor image is Node 22.0.0 with git 2.34.1, then Node 24.
 - `/ennyn:init` on a new project asks up to five questions with defaults before any code (what it is, who uses it, stack, data and auth, quality tooling), records them in `.ennyn/product.md`, and treats an empty or timed-out answer as no answer; `skills/init/graph.md` gains the walking-skeleton rule.
 - `ennyn test fast|whole` runs its command without `ENNYN_FAULT_COMMANDS` and says so when it was set, so a recorded run is never a narrowed fault matrix; the fault matrix can run only named commands' cells (`ENNYN_FAULT_COMMANDS`).

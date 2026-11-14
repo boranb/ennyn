@@ -30,7 +30,8 @@
         "new: documentation says fallback while the code takes the first",
         "new: count in fixed text",
         "new: guard left on replaced text",
-        "new: new skill file not linked from SKILL.md"
+        "new: new skill file not linked from SKILL.md",
+        "new: doc of a changed exit left stale"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: not stopped, no catch since it landed. Named in cycle 1. Counting the doc twin of cycle 4 here is this reconstruction's merge."
     },
@@ -58,7 +59,8 @@
         "new: list of switches narrower than the program it models",
         "new: revision argument with no end-of-options separator",
         "new: platform setting ignored by a byte-for-byte verdict",
-        "new: closed pipe kills before cleanup"
+        "new: closed pipe kills before cleanup",
+        "new: stop passed on in a form the child does not handle"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, the stored-message scope held and other git readers did not. Named in cycle 2."
     },
@@ -131,7 +133,8 @@
         "new: failed read reported without the words that say so",
         "new: fallback contract skipped by an unguarded first read",
         "new: oracle verdict produced by the harness, not the program under test",
-        "new: narrowed run recorded as whole"
+        "new: narrowed run recorded as whole",
+        "new: a skip of a repeated action read as the action"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, failed reads held, the same mistake in logic recurs and writes are not covered. Named in cycle 4."
     },
@@ -229,7 +232,8 @@
         "new: text check lets half a character through",
         "new: path separator spelling bypass",
         "new: positional run inside re-read text not seen by helper rule",
-        "new: identity record parsed with a separator its value holds"
+        "new: identity record parsed with a separator its value holds",
+        "new: output lines the parser does not match dropped from a fact"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, reviewers found more shapes after it landed. Named in cycle 7."
     },
@@ -270,7 +274,8 @@
         "new: square time on hostile text",
         "new: bounded line cuts one field to nothing before another",
         "new: test pins how much a cut line shows",
-        "new: harness limit unknown to the test"
+        "new: harness limit unknown to the test",
+        "new: a failure report sized by its corpus stalls the runner"
       ],
       "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict and record no gate. These tests hold the surfaces they name, and the class came back on others in cycles 9, 10, 12 and 14. Named in cycle 7."
     },
@@ -523,7 +528,9 @@
         "new: module contract untested beneath the CLI",
         "new: skip rule untested on a red record",
         "new: untested direction of a loosening rule",
-        "new: rule with no pinning test"
+        "new: rule with no pinning test",
+        "new: decision branch with no test input",
+        "new: corpus does not reach each deciding line"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -695,7 +702,10 @@
         "new: guard knows the work tree, not the git dir",
         "new: link check on the last part only",
         "new: deletion scope wider than its stated owner",
-        "new: folder metadata not compared"
+        "new: folder metadata not compared",
+        "new: signal exit flattened",
+        "new: raw name shown where the resolved id is meant",
+        "new: cleanup deletes by folder not by own name"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate.",
       "gates": [
@@ -817,7 +827,9 @@
         "new: test leaves its child running",
         "new: test asserts the wrong kind",
         "new: test fixture races the state it needs",
-        "new: fixture names a default the code does not use"
+        "new: fixture names a default the code does not use",
+        "new: fixture default overwrites an intended missing value",
+        "new: a program's refusal assumed absent from recall"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -828,7 +840,8 @@
       "linked": [
         "new: commit message over the project's shape limit",
         "new: size limit passed by own edit",
-        "new: text limit found only by the gate"
+        "new: text limit found only by the gate",
+        "new: gate test added without its guard"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -942,7 +955,8 @@
         "new: failed test leaves its stand-in running",
         "new: forced kill skips a wrapper's signal forwarding",
         "new: retry loop with no pause on a lasting error",
-        "new: self-spawning test with no recursion stop"
+        "new: self-spawning test with no recursion stop",
+        "new: time-limited child call with no named kill signal"
       ],
       "judged": "the orchestrator of cycle 18, reading the rows"
     },

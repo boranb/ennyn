@@ -2978,20 +2978,6 @@
         "class-registry",
         "findings-ledger"
       ],
-      "id": "score-recurrence",
-      "title": "`ennyn mechanization` ranks by the class's count in recent cycles from the registry, over cost, instead of value over cost; `core` is left alone",
-      "value": "high",
-      "cost": "S",
-      "cluster": "plan",
-      "source": "2026-10-31 research on closing escaped classes: scoreNode has no recurrence input, so a class with three slips (shell-in-js-templates, 2.00) outranks one with about 30 in a cycle (reader-against-real-program, 1.50). Its effect is unmeasured, and a split class would game it, which stable ids answer",
-      "since": 16
-    },
-    {
-      "status": "planned",
-      "needs": [
-        "class-registry",
-        "findings-ledger"
-      ],
       "id": "gate-replay-class",
       "title": "'Closed' is proven and watched: a class reaches closed-gate only when its past defects put back (reverted fixes, verdict cells that carry a `class`) and at least one variant turn the gate red; each closing recounts the class and writes the exposure (lines changed in what the gate guards), a recurrence reopens the class and moves its action up a level, and zero recurrence with no exposure is no success. Run back over the 12 gates born from convergence reports. test/guards.mjs tests a gate against mutants of its own check, not against the defect class",
       "value": "high",
@@ -5378,19 +5364,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "fact-oracle-push-check",
-      "title": "test/repo-facts.mjs for push-check: its verdict that the cycle may push against what a bare git push would send and what was tested",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "gates",
-      "source": "cycle 2026-11-08 (27), T3: the next command of the class stand-in-for-the-fact",
-      "since": 27,
-      "mechanization": true,
-      "sourceClass": "stand-in-for-the-fact"
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "fact-oracle-agents-session",
       "title": "The same fact oracle for the session ennyn agents reads (the running session's transcript, a link's target)",
       "value": "low",
@@ -5961,13 +5934,126 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "suite-concurrency-cap",
+      "since": 33,
+      "id": "push-check-exit-zero-not-ok",
       "value": "high",
       "cost": "S",
+      "cluster": "security",
+      "title": "Under push.mode after-closing and without --tested, ennyn push-check exits 0 where closingPush refuses the push (two upstream urls, a pushurl, push.default matching, no approval line, a shallow clone, a deleting refspec, followTags, pushInsteadOf, a shallow clone holding the approval: 9 states), because the exit is only readiness (scripts/ennyn.mjs, push-check's last lines); skills/cycle/push.md step 4 reads exit 0 as 'push with a bare git push'. Make exit 0 mean the push may go, or make push.md read the may-push line, and turn the oracle's known-gap list into expected refusals. Not reached in this repository (ask mode); the push hook still asks, unmeasured under bypass. Ladder action (scripts/ennyn.mjs at rung 2, stand-in-for-the-fact in cycles 31 and 33: one exit code stands for readiness and for permission): remove the double meaning",
+      "source": "cycle 2026-11-13 (33), T3 fact-oracle-push-check: row c33-t3-author-r0-03, the oracle's known-gap list"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 33,
+      "id": "lock-queue-sweep-own-names",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "title": "ennyn lock's queue sweep (core/heavy-lock.mjs, the ticket loop) unlinks every name in <lock dir>/queue that does not end in a live pid, through a queue that is a link too: probed, notes.txt, README and a file behind a linked queue were deleted. Judge only ticket-shaped names (^\\d{10}\\.\\d{6}-\\d+$) and refuse a queue lstat shows is a link; a test fails first with a non-ticket file left in the queue. The hand-written locked.sh does the same (outside the repository). Ladder action (core/heavy-lock.mjs at rung 2, stand-in-for-the-fact in cycles 31 and 33: the lock decides what is its own from markers in a shared folder): a construct that refuses what it cannot read, the ticket-name allow list",
+      "source": "cycle 2026-11-13 (33) security audit: row c33-t4-sec-r1-01, probe lock-probe-queue.sh in a kept folder outside the repository"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 33,
+      "id": "security-md-lock-uninstall",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "title": "SECURITY.md says what uninstall-hook deletes (the unchanged hook and the state dir under the git dir) and what ennyn lock deletes and signals (queue tickets, its own process group), with its stated limits: a run with no limit after the lock and its runner both get SIGKILL, ENNYN_LOCK_DIR must be the user's own folder (record and log writes follow a planted link); today only docs/modules.md says so",
+      "source": "cycle 2026-11-13 (33) security audit: row c33-t4-sec-r1-02"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 33,
+      "id": "lock-bash-tool-kill-measure",
+      "value": "medium",
+      "cost": "S",
       "cluster": "gates",
-      "title": "The suite runs under a concurrency limit that leaves cores to the machine: half the physical cores, at least 1 (the user's rule, 2026-11-13), measured before it lands. npm test and test/short.mjs start node --test with no --test-concurrency, so Node runs one test file fewer at once than the machine has threads (19 of 20 on the Windows machine's WSL), and many of those files start processes of their own; the full-run failures recorded under suite-wall-clock-limits came at loads of 19 to 274 while each file passed alone. Why not the threads less two: on 20 threads it leaves 18 workers, two suites at once make 36, and on a 64-thread machine it still leaves two threads free. Ennyn's own rule is one heavy job at a time, but a project's cycle may run two, so the limit must hold with a second suite beside it. First the measurement, on each machine the suite runs on (the Mac, the Windows machine's WSL, a Linux image): the same tree at the default, at half the physical cores and at the physical cores, three runs each, alone and beside a second suite, giving wall clock, the peak of the load average and the tests that fail. Node gives the logical count only, so how the physical count is read on each platform, by a command that is run, and what stands in where it cannot be read (a quarter of the threads) is part of the task. Then the suite's commands pass the limit, computed from the machine at run time, never a fixed number. If the rule slows the suite past the measured spread and stops no failure, the node says so and the user decides. suite-wall-clock-limits stays: it scales the limits inside tests, this lowers the load they run under. It is the next cycle's first core task In a container the host physical count is the wrong number: the limit reads the CPUs the container may use (its cgroup quota and cpuset) and takes the smaller; the colima profile of cycle 32 has 2 CPUs, where test/guards.test.mjs alone took about 30 minutes. On this Mac physical and logical counts are both 10, so the rule gives 5 workers where Node gives 9",
-      "source": "the user, 2026-11-13: a request; nodejs.org/docs/latest-v22.x/api/cli.html, --test-concurrency (raw copy sha256 f4e53698141d1fbb, 2026-11-13): 'Otherwise, concurrency defaults to os.availableParallelism() - 1.'; measured 2026-11-13 on the Windows machine's WSL: 20 threads, test:short's 50 files in 268 s at the default; the user, later the same day, on the first draft's 'threads less two': a request",
-      "since": 32
+      "title": "Measure what Claude Code's Bash tool sends at its timeout and on TaskStop to a background run (a locked.sh or ennyn lock run): if SIGKILL to the shell's group, the lock and its runner die and the command's detached group runs on with no limit. Evidence the same cycle: the queue stood still about 80 minutes (no lock.log line 16:16Z to 17:37Z, 10 tickets waiting, load about 4), read as a locked.sh lock left without a record, which ennyn lock drops only past 120 minutes (a guess, the folder was gone)",
+      "source": "cycle 2026-11-13 (33) security audit, evidence gap; the orchestrator's reading of ~/.ennyn-lock/lock.log"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 33,
+      "id": "suite-concurrency-cap-rule-review",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "gate": "user",
+      "title": "The user's decision on the suite's limit after cycle 33's measurement: half the physical cores (landed) or the physical count. Linux 4 CPUs, 10-file subset, three runs each: alone default 68.6 s, half 94.2, physical 62.0; beside a second run 72.6 (one failure in six), 90.3 (none), 72.1 (none). Mac: half and physical both stopped the default's failures beside a second run (3 of 6). Physical keeps the default's speed but two suites side by side then hold twice the cores in workers, which the user's rule was written against. The WSL leg is unmeasured: a kept folder outside the repository runs the same matrix on the Windows machine",
+      "source": "cycle 2026-11-13 (33), T1 measure.md and review round 1 (c33-t1-code-r1-02)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 33,
+      "id": "linux-set-hang-at-default",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "title": "In a 4-CPU node:22 container at Node's default concurrency the 23-file set of cycle 33's measurement did not finish in 55 minutes (lock limit, exit 124); the 10-file subset finished in about 70 s. Find which file holds it (per-file times, a run per file)",
+      "source": "cycle 2026-11-13 (33), T1 Linux leg, linux-leg.log"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 33,
+      "id": "short-runner-passes-stops",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "title": "test/short.mjs runs node --test with spawnSync, so SIGTERM to npm run test:short by its pid kills short.mjs and leaves the suite running, the defect test/run.mjs fixed for npm test in cycle 33; the same stop passing (SIGHUP as SIGTERM, 128+n) needs its run loop rewritten. Ladder action (test/run.mjs at rung 2 in cycle 33, previous-fix rows: a runner between npm and node --test must rebuild by hand what exec gave for free): remove the second copy, short.mjs starts its runs through test/run.mjs's own spawn-and-pass function, so the stop handling lives in one place",
+      "source": "cycle 2026-11-13 (33), T1 review round 1 (c33-t1-code-r1-01, the same layering pre-existing in short.mjs)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 33,
+      "id": "suite-concurrency-cap-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "gate": "beside",
+      "title": "suite-concurrency-cap: low findings left. sysctl-by-path: test/run.mjs runs sysctl by PATH, so PATH=/usr/bin:/bin falls back to a quarter of the logical CPUs (it says so); call /usr/sbin/sysctl (c33-t1-code-r1-04). cgroup-root-only: the cgroup files are read at the mount root, so a container with --cgroupns=host or a taskset pin gets the host's half where os.availableParallelism() already knows less (c33-t1-code-r1-05). record-flag-untested: no test watches the --record run's concurrency flag (T1's guard mutant short-record-flag survived). windows-ctrl-c (unverified): on native Windows a forwarded SIGINT/SIGTERM ends node --test at once",
+      "source": "review of cycle 33, 2026-11-14"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 33,
+      "id": "score-recurrence-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "plan",
+      "gate": "beside",
+      "title": "score-recurrence: low findings left. skill-exit-line: skills/cycle/SKILL.md's mechanization row names only a refused graph as the reason the command exits 1; it now also exits 1 on an unreadable ledger, a refused row or a broken registry (c33-t2-code-r1-01). class-unknown-shape: the classUnknown warning shows a non-string sourceClass as String(value)",
+      "source": "review of cycle 33, 2026-11-14"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 33,
+      "id": "source-class-free-text",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "plan",
+      "title": "The ready mechanization nodes shell-in-js-templates and suite-wall-clock-limits carry free-text sourceClass values that resolve to no registry entry, so ennyn mechanization never counts them; link each to an entry (or make doctor warn on a sourceClass that resolves to none)",
+      "source": "cycle 2026-11-13 (33), T2 measurement"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 33,
+      "id": "mechanization-window-anchor",
+      "value": "low",
+      "cost": "S",
+      "cluster": "plan",
+      "title": "ennyn mechanization anchors its three-cycle window on the ledger's newest row, so one row typed with a far higher cycle moves the window (it prints it); anchor on the cycle journal's cycle when one is open",
+      "source": "cycle 2026-11-13 (33), T2 decision and review probe"
     }
   ],
   "done": [
@@ -6854,6 +6940,27 @@
       "status": "done",
       "finished": "2026-11-13",
       "cluster": "init"
+    },
+    {
+      "id": "suite-concurrency-cap",
+      "title": "npm test runs node test/run.mjs and test:short uses the same limit: --test-concurrency is half the physical cores, at least 1 (macOS sysctl, Linux sysfs), in a container no more than half the CPUs its cgroup quota or cpuset allows, a quarter of the logical CPUs where the physical count cannot be read; the run prints the number and why; ENNYN_TEST_CONCURRENCY, a positive integer, overrides, anything else exits 2 before a test runs; the runner passes SIGTERM, SIGINT and SIGHUP (as SIGTERM) on and exits 128+n on a signal. Measured: Mac alone rule 156.7 s against the default's 139.5 s (spread 71.3), beside a second run 200.4 against 263.7 with the default failing kill-timing tests in 3 of 6 runs and the rule in none; Linux 4 CPUs (10-file subset) alone 94.2 against 68.6, beside 90.3 against 72.6, the default failing 1 of 6, the physical count (4) none at the default's speed; WSL unmeasured (dd3c5a0)",
+      "status": "done",
+      "finished": "2026-11-14",
+      "cluster": "gates"
+    },
+    {
+      "id": "score-recurrence",
+      "title": "ennyn mechanization ranks ready mechanization nodes by their sourceClass's recurrence in the findings ledger over the newest cycle and the two before it (resolved through the class registry, brief rows left out), over cost; nodes with no count follow by value/cost; core and readyNodes unchanged; an unreadable ledger, refused row or broken registry picks nothing and exits 1, no ledger ranks by value/cost and says so (b3b4104)",
+      "status": "done",
+      "finished": "2026-11-14",
+      "cluster": "plan"
+    },
+    {
+      "id": "fact-oracle-push-check",
+      "title": "test/push-check-oracle.test.mjs: each push-check 'may push' verdict held against what a bare git push would send (dry-run porcelain, every line parsed), the record's bytes, the work tree and push.mode, on 36 temporary repositories; 18 of 22 product mutants of push-check killed, the 4 survivors refused by an earlier check; known exit-0 gap in 9 states tied to push-check-exit-zero-not-ok (0cfb522)",
+      "status": "done",
+      "finished": "2026-11-14",
+      "cluster": "gates"
     }
   ],
   "declined": [
