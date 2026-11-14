@@ -60,7 +60,9 @@
         "new: revision argument with no end-of-options separator",
         "new: platform setting ignored by a byte-for-byte verdict",
         "new: closed pipe kills before cleanup",
-        "new: stop passed on in a form the child does not handle"
+        "new: stop passed on in a form the child does not handle",
+        "new: shell state handed by environment that the shell resets at start",
+        "new: verdict read by output shape, not by what the host does with it"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, the stored-message scope held and other git readers did not. Named in cycle 2."
     },
@@ -88,7 +90,8 @@
         "new: sandbox root built from a fixed folder list drops what the caller resolved outside it",
         "new: test reads repository outside its listed allowance",
         "new: test reads a platform-only interface",
-        "new: inherited test scope breaks guard verdicts"
+        "new: inherited test scope breaks guard verdicts",
+        "new: gate on live machine state reached by tests that never set it"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, it came back as tests that lean on the machine's identity, found at the Linux run. Named in cycle 3."
     },
@@ -233,7 +236,8 @@
         "new: path separator spelling bypass",
         "new: positional run inside re-read text not seen by helper rule",
         "new: identity record parsed with a separator its value holds",
-        "new: output lines the parser does not match dropped from a fact"
+        "new: output lines the parser does not match dropped from a fact",
+        "new: gate test declared in a form the guards reader cannot see"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, reviewers found more shapes after it landed. Named in cycle 7."
     },
@@ -476,7 +480,8 @@
         "reader-against-real-program"
       ],
       "linked": [
-        "new: a claim about another program written from reading its code and not run"
+        "new: a claim about another program written from reading its code and not run",
+        "new: no-gate test file reads as finding the repository by a word in a string"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: no gate. Cycle 15 closed one surface by no longer reading it and one by asking git. Named in cycle 15, a close relative of reader-drifts-from-program."
     },
@@ -530,7 +535,9 @@
         "new: untested direction of a loosening rule",
         "new: rule with no pinning test",
         "new: decision branch with no test input",
-        "new: corpus does not reach each deciding line"
+        "new: corpus does not reach each deciding line",
+        "new: corpus misses shapes a reader may later widen to",
+        "new: test does not pin a name pattern's anchor"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -581,7 +588,9 @@
         "new: assertion from an unmeasured belief",
         "new: reason names the wrong cause",
         "new: message names the wrong reason",
-        "new: exit status assumed not measured"
+        "new: exit status assumed not measured",
+        "new: known parting named with the wrong cause",
+        "new: shown value rounds across its threshold"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet."
     },
@@ -705,7 +714,11 @@
         "new: folder metadata not compared",
         "new: signal exit flattened",
         "new: raw name shown where the resolved id is meant",
-        "new: cleanup deletes by folder not by own name"
+        "new: cleanup deletes by folder not by own name",
+        "new: limit read from the test's own budget, not the host's",
+        "new: reclaimable cache counted as used memory",
+        "new: share of a growing total read as a shortage",
+        "new: share of a slow-draining total read as a shortage"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate.",
       "gates": [
@@ -735,7 +748,8 @@
         "new: rule read from the state the change produced",
         "new: check environment strips one channel of shell functions but not the startup file",
         "new: gate narrowed by the judged change's own record",
-        "new: record read through one kind only"
+        "new: record read through one kind only",
+        "new: control derived from the value it checks"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -775,7 +789,8 @@
         "new: a reason that shows nothing counts as one",
         "new: nullable field read without a guard",
         "new: honest failure aborts the whole reading",
-        "new: no-process id passed to a group kill"
+        "new: no-process id passed to a group kill",
+        "new: empty variable read as a set value"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -829,7 +844,8 @@
         "new: test fixture races the state it needs",
         "new: fixture names a default the code does not use",
         "new: fixture default overwrites an intended missing value",
-        "new: a program's refusal assumed absent from recall"
+        "new: a program's refusal assumed absent from recall",
+        "new: control expectations not updated for a new excuse"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -1015,7 +1031,8 @@
       "linked": [
         "new: ask part left undone",
         "new: requirement partial",
-        "new: dead-lock check gated on queue head"
+        "new: dead-lock check gated on queue head",
+        "new: oracle corpus cannot hold the known parting it exists for"
       ],
       "judged": "Named in cycle 23 by the orchestrator, from the rows that named it."
     },
@@ -1109,6 +1126,28 @@
         "new: signal before its handler"
       ],
       "judged": "Named in cycle 31 by the orchestrator, from rows of the cycle's delete and lock tasks."
+    },
+    {
+      "id": "record-after-the-act",
+      "says": "A record of a step is written only once the work after it ends, so a run stopped or killed in between leaves no trace that the step happened.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: event logged only at the end of the run it precedes"
+      ],
+      "judged": "Named in cycle 34 by the orchestrator, from rows of the cycle's lock and test-runner tasks."
+    },
+    {
+      "id": "cleanup-misses-children",
+      "says": "A cleanup stops or removes the top of what was started and leaves what that started (child processes, nested folders, containers, a VM) running or in place.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: test cleanup kills the parent only"
+      ],
+      "judged": "Named in cycle 34 by the orchestrator, from rows of the cycle's lock and test-runner tasks."
     }
   ]
 }

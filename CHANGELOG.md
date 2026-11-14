@@ -2,6 +2,11 @@
 
 ## Unreleased (0.0.x)
 
+- `ennyn lock` admits a heavy job only when the machine has room: free memory (macOS `kern.memorystatus_level` read by `/usr/sbin/sysctl`; Linux `MemAvailable`, or a cgroup v2 or v1 limit less its reclaimable file cache), load per host CPU and 5 GB of free disk. It waits up to the job's own `--limit` and logs the reading; swap is shown, never judged. `--min-memory`, `--max-load`, `--min-disk` and `ENNYN_LOCK_MIN_MEMORY`, `ENNYN_LOCK_MAX_LOAD`, `ENNYN_LOCK_MIN_DISK` set the thresholds.
+- `ennyn push-check` exits 0 only where the cycle may push by itself (`push.mode` `after-closing` and the closing's own checks agree); a push that is ready but asked of the user exits 3, one not ready 1. `skills/cycle/push.md` reads the exit.
+- Security: `ennyn lock`'s queue sweep removes only ticket-shaped names and refuses a queue folder that is a link, so a stray file or a linked folder is never deleted.
+- `npm run test:short` passes SIGINT, SIGTERM and SIGHUP on to the run under it, as `npm test` does, and stops after a stopped run.
+- Tests: a fact oracle for the push hook: its verdict, read as Claude Code reads it, held against the folder a bare `git push` really runs in, with the hook's own time limit from hooks/hooks.json.
 - `npm test` and `npm run test:short` run at most half the physical cores' test files at once (in a container, at most half the CPUs it may use; a quarter of the logical CPUs where the physical count cannot be read), and say which limit they took; `ENNYN_TEST_CONCURRENCY`, a positive integer, overrides it. `npm test` passes SIGTERM, SIGINT and SIGHUP on to the suite and exits 128 plus the signal's number when one ended it.
 - `ennyn mechanization` ranks ready mechanization nodes by how often their class (`sourceClass`, resolved through the class registry) recurred in the findings ledger over the last three cycles, over cost; nodes with no count follow by value/cost. It prints the count and the window (`--json`: `count`, `cycles`), and picks nothing when the ledger or registry cannot be read.
 - Tests: a fact oracle for `ennyn push-check`: each 'may push' verdict is held against what a bare `git push` would send, the record's bytes and the work tree, on a corpus of temporary repositories.

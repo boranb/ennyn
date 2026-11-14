@@ -2796,11 +2796,11 @@
       "status": "planned",
       "needs": [],
       "id": "run-leftover-diff",
-      "title": "Each test, mutation or server command the cycle runs is wrapped in a snapshot of what a command can leave behind, taken before and after, and the difference is reported as left behind by that command (what resource-ledger records is explained, once it exists): untracked and ignored files in the work tree (git status --ignored), new entries in the temp folder, docker containers, volumes, networks and images, listening ports and processes whose cwd is in the repository or its worktrees, git worktrees, branches and stashes, global installs (npm -g, pip outside a virtualenv, brew, cargo install, go install, pipx), changes to the user's config files (~/.gitconfig, ~/.npmrc, shell profiles), and databases on the local servers the project declares, through a listing command init records, never a URL. It catches what no list names; the snapshot only reads, and removing stays with cleanup-command",
+      "title": "Each test, mutation or server command the cycle runs is wrapped in a snapshot of what a command can leave behind, taken before and after, and the difference is reported as left behind by that command (what resource-ledger records is explained, once it exists): untracked and ignored files in the work tree (git status --ignored), new entries in the temp folder, docker containers, volumes, networks and images, listening ports and processes whose cwd is in the repository or its worktrees, git worktrees, branches and stashes, global installs (npm -g, pip outside a virtualenv, brew, cargo install, go install, pipx), changes to the user's config files (~/.gitconfig, ~/.npmrc, shell profiles), and databases on the local servers the project declares, through a listing command init records, never a URL. It catches what no list names; the snapshot only reads, and removing stays with cleanup-command Also VMs and containers: what a cycle starts (colima profile, docker container, dev server) is stopped by what started it, and the closing lists those running that were not at the start (cycle 33 left colima ennyn-ci running 13 h, 1.6 GB). The closing report says memory, swap, load and free disk at the start and the end",
       "value": "high",
       "cost": "M",
       "cluster": "cycle",
-      "source": "user, 2026-10-29: a request; claude-code#67163: 'repeated agent-driven Playwright runs leak orphaned Next.js (Turbopack) postcss.js workers — 1,220 processes'; gsd-core#3660: 'bounded check kills the test runner but not its worker'; Claude Code: 'Background tasks are automatically cleaned up when Claude Code exits.', which covers its own tasks, not what a test command starts",
+      "source": "user, 2026-10-29: a request; claude-code#67163: 'repeated agent-driven Playwright runs leak orphaned Next.js (Turbopack) postcss.js workers — 1,220 processes'; gsd-core#3660: 'bounded check kills the test runner but not its worker'; Claude Code: 'Background tasks are automatically cleaned up when Claude Code exits.', which covers its own tasks, not what a test command starts; cycle 2026-11-14 (34): a resource incident",
       "since": 15
     },
     {
@@ -2809,11 +2809,11 @@
         "run-leftover-diff"
       ],
       "id": "test-suite-leaves-nothing",
-      "title": "init, and the legacy audit when it audits the test setup, runs the project's fast test command once inside run-leftover-diff with TMPDIR pointed at a temp root the cycle owns, and reports what the suite leaves behind: a test database a crashed or --keepdb run kept, SQLite files, containers when the reaper is off, temp folders, worker processes, coverage output that is not ignored. A suite that leaves something becomes a graph node, as Ennyn's own did: test/hermetic.mjs removes each test file's temp root at exit since the suite filled a disk",
+      "title": "init, and the legacy audit when it audits the test setup, runs the project's fast test command once inside run-leftover-diff with TMPDIR pointed at a temp root the cycle owns, and reports what the suite leaves behind: a test database a crashed or --keepdb run kept, SQLite files, containers when the reaper is off, temp folders, worker processes, coverage output that is not ignored. A suite that leaves something becomes a graph node, as Ennyn's own did: test/hermetic.mjs removes each test file's temp root at exit since the suite filled a disk 2026-11-14: Ennyn's own suite and agents' labs left 3356 temp folders in five days on the Mac; the temp churn is the likely driver of fseventsd's and the kernel's memory (measure first)",
       "value": "high",
       "cost": "S",
       "cluster": "init",
-      "source": "Django: 'Regardless of whether the tests pass or fail, the test databases are destroyed when all the tests have been executed.' and 'You can prevent the test databases from being destroyed by using the test --keepdb option.'; Testcontainers with its reaper off: 'We recommend using it only for Continuous Integration services that have their own mechanism to clean up resources.'; test/hermetic.mjs: 'cycle 2026-10-24 (9) found 160 GB of them, and a full disk.'",
+      "source": "Django: 'Regardless of whether the tests pass or fail, the test databases are destroyed when all the tests have been executed.' and 'You can prevent the test databases from being destroyed by using the test --keepdb option.'; Testcontainers with its reaper off: 'We recommend using it only for Continuous Integration services that have their own mechanism to clean up resources.'; test/hermetic.mjs: 'cycle 2026-10-24 (9) found 160 GB of them, and a full disk.'; cycle 2026-11-14 (34): a resource incident",
       "since": 15
     },
     {
@@ -5377,19 +5377,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "fact-oracle-push-hook-folder",
-      "title": "The same fact oracle for the folder the push hook decides for against the folder the push runs in",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "gates",
-      "source": "cycle 2026-11-08 (27), T3",
-      "since": 27,
-      "mechanization": true,
-      "sourceClass": "stand-in-for-the-fact"
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "remote-heavy-runs",
       "title": "Heavy runs (the whole suite, mutation, Linux images) on a remote host by one command, the Mac reading only the result: an own Unix user and folder, low priority, nothing else on the server touched (its other apps' users, ports, services, databases, containers, cron), no root step without asking, not while another project's gate or deploy runs there. Measure first: time per suite there, agreement with the Mac's run (macOS-only tests stay local), what is copied and where it stays",
       "value": "high",
@@ -5611,11 +5598,11 @@
       "status": "planned",
       "needs": [],
       "id": "agent-tmp-leftovers",
-      "title": "Agent probes and labs leave folders in TMPDIR that no step removes (1927 entries, 2.6 GB, mostly cycles 24-25; 1480 removed by hand 2026-11-09). The brief names one folder per agent under the cycle folder, and the closing's leftovers check counts TMPDIR entries newer than the cycle's start",
+      "title": "Agent probes and labs leave folders in TMPDIR that no step removes (1927 entries, 2.6 GB, mostly cycles 24-25; 1480 removed by hand 2026-11-09). The brief names one folder per agent under the cycle folder, and the closing's leftovers check counts TMPDIR entries newer than the cycle's start 2026-11-14: 3356 en-* folders in os.tmpdir() since 2026-11-09 (removed by the restart); fseventsd held 9.3 GB and mds_stores 7.3 GB, kernel kalloc.1024 9.8 GB wired, growing while tests ran: one temp root per run, removed at exit, and measure fseventsd before and after",
       "value": "medium",
       "cost": "S",
       "cluster": "cycle",
-      "source": "cycle 2026-11-08 (28), closed on the Mac 2026-11-09 from its ledger: TMPDIR measured during the closing",
+      "source": "cycle 2026-11-08 (28), closed on the Mac 2026-11-09 from its ledger: TMPDIR measured during the closing; cycle 2026-11-14 (34): a resource incident",
       "since": 28
     },
     {
@@ -5935,28 +5922,6 @@
       "status": "planned",
       "needs": [],
       "since": 33,
-      "id": "push-check-exit-zero-not-ok",
-      "value": "high",
-      "cost": "S",
-      "cluster": "security",
-      "title": "Under push.mode after-closing and without --tested, ennyn push-check exits 0 where closingPush refuses the push (two upstream urls, a pushurl, push.default matching, no approval line, a shallow clone, a deleting refspec, followTags, pushInsteadOf, a shallow clone holding the approval: 9 states), because the exit is only readiness (scripts/ennyn.mjs, push-check's last lines); skills/cycle/push.md step 4 reads exit 0 as 'push with a bare git push'. Make exit 0 mean the push may go, or make push.md read the may-push line, and turn the oracle's known-gap list into expected refusals. Not reached in this repository (ask mode); the push hook still asks, unmeasured under bypass. Ladder action (scripts/ennyn.mjs at rung 2, stand-in-for-the-fact in cycles 31 and 33: one exit code stands for readiness and for permission): remove the double meaning",
-      "source": "cycle 2026-11-13 (33), T3 fact-oracle-push-check: row c33-t3-author-r0-03, the oracle's known-gap list"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 33,
-      "id": "lock-queue-sweep-own-names",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "security",
-      "title": "ennyn lock's queue sweep (core/heavy-lock.mjs, the ticket loop) unlinks every name in <lock dir>/queue that does not end in a live pid, through a queue that is a link too: probed, notes.txt, README and a file behind a linked queue were deleted. Judge only ticket-shaped names (^\\d{10}\\.\\d{6}-\\d+$) and refuse a queue lstat shows is a link; a test fails first with a non-ticket file left in the queue. The hand-written locked.sh does the same (outside the repository). Ladder action (core/heavy-lock.mjs at rung 2, stand-in-for-the-fact in cycles 31 and 33: the lock decides what is its own from markers in a shared folder): a construct that refuses what it cannot read, the ticket-name allow list",
-      "source": "cycle 2026-11-13 (33) security audit: row c33-t4-sec-r1-01, probe lock-probe-queue.sh in a kept folder outside the repository"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 33,
       "id": "security-md-lock-uninstall",
       "value": "low",
       "cost": "S",
@@ -5997,17 +5962,6 @@
       "cluster": "gates",
       "title": "In a 4-CPU node:22 container at Node's default concurrency the 23-file set of cycle 33's measurement did not finish in 55 minutes (lock limit, exit 124); the 10-file subset finished in about 70 s. Find which file holds it (per-file times, a run per file)",
       "source": "cycle 2026-11-13 (33), T1 Linux leg, linux-leg.log"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 33,
-      "id": "short-runner-passes-stops",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "gates",
-      "title": "test/short.mjs runs node --test with spawnSync, so SIGTERM to npm run test:short by its pid kills short.mjs and leaves the suite running, the defect test/run.mjs fixed for npm test in cycle 33; the same stop passing (SIGHUP as SIGTERM, 128+n) needs its run loop rewritten. Ladder action (test/run.mjs at rung 2 in cycle 33, previous-fix rows: a runner between npm and node --test must rebuild by hand what exec gave for free): remove the second copy, short.mjs starts its runs through test/run.mjs's own spawn-and-pass function, so the stop handling lives in one place",
-      "source": "cycle 2026-11-13 (33), T1 review round 1 (c33-t1-code-r1-01, the same layering pre-existing in short.mjs)"
     },
     {
       "status": "planned",
@@ -6065,6 +6019,86 @@
       "cluster": "method",
       "title": "Before its first test run, the author agent writes in the task file where its change can break (at most three places, each with the platform it would break on and what would show it: macOS where the cycle runs, Linux in node:22 and the Node 22.0/git 2.34 floor image, WSL, native Windows for the hooks README.md says were measured there) and what it is unsure of; the review step sets that list beside what every run the change went through found (the local suite, the containers, the Windows or WSL check when the change touches one, the review), and every break nobody predicted goes into the findings ledger as unpredicted, with its platform, so the classes and platforms the author keeps missing show up in the recurrence ladder. A platform the change touches but no run measured is said as unmeasured, never as passed. Lands after 0.1.0 (not a release need)",
       "source": "the user, 2026-11-14: a request; Fable evaluation, 2026-11-14"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 34,
+      "id": "push-check-exit-zero-not-ok-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "gate": "beside",
+      "title": "push-check-exit-zero-not-ok: low findings left. tested-met-asked: push.md and the usage say exit 3 for every met and asked push, while a given --tested turns the same state into exit 1 (c34-t1-code-r1-01). modules-exits: docs/modules.md's test-run record contract lists push-check's exits without 3 (c34-t1-sec-r1-01)",
+      "source": "review of cycle 2026-11-14 (34)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 34,
+      "id": "fact-oracle-push-hook-folder-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "gate": "beside",
+      "title": "fact-oracle-push-hook-folder: low findings left. corpus-shapes: the corpus has no env prefix, --git-dir/--work-tree, subshell or or-list shape before a push, shapes a later reader may widen to (c34-t3-code-r1-03)",
+      "source": "review of cycle 2026-11-14 (34)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 34,
+      "id": "short-runner-passes-stops-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "gate": "beside",
+      "title": "short-runner-passes-stops: low findings left. stop-test-cleanup: the stop test's failure path SIGKILLs only the script, leaving its node --test and the test file it runs (c34-t4-code-r1-01)",
+      "source": "review of cycle 2026-11-14 (34)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 34,
+      "id": "push-check-exit-pipe",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "cycle",
+      "title": "skills/cycle/push.md step 4 reads push-check's exit, but a pipe (push-check | tail) hands the pipe's last command's exit: say the command runs unpiped, or read the may-push line, and a guard that no skill text pipes push-check",
+      "source": "T1 security review, cycle 2026-11-14 (34)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 34,
+      "id": "push-check-tested-ignored-with-record",
+      "value": "low",
+      "cost": "S",
+      "cluster": "cycle",
+      "title": "push-check's record route ignores a --tested naming another commit than the record's; refuse or say it",
+      "source": "T1 security review, cycle 2026-11-14 (34)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 34,
+      "id": "suite-concurrency-memory",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "gates",
+      "title": "Test concurrency takes the smaller of the CPU rule (test/run.mjs) and memory available / the measured peak RSS per test file. First step: measure each test file's peak RSS on main; a run on 2026-11-14 pushed load to 147 and swap to 20 GB on a 16 GB Mac. Value not lowered on argument: a request",
+      "source": "user, 2026-11-14: a request; cycle 2026-11-14 (34)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 34,
+      "id": "heavy-lock-design-decision",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "title": "core/heavy-lock.mjs is at the fix-loop brake (stand-in-for-the-fact in cycles 31, 33 and 34; 11 rows, a round-2 previous-fix in 34): the lock decides from stand-ins, markers in a shared folder and readings of machine state. Decide on the top two rungs: a construct that refuses what it cannot read (the room reader in a module of its own, one reader per platform, each answering unreadable instead of a default; a ticket record that holds pid and start time, not a name) or removing the need (the queue gone for one lock file held by a process the OS reaps). Its leftover defects go into that decision, not patches: log-at-end (room wait and admission reach lock.log only in the run's end line, c34-t5-code-r1-06, c34-t5-sec-r1-04), empty-env (an empty ENNYN_LOCK_* variable refuses every run, c34-t5-sec-r1-05), own-ticket-order (a mutant moving the own-ticket check after the sweep loop survives, T2 security review), load-lag (the 1-minute load average lags a job that just ended, T5 author). Or say the limit and decline them",
+      "source": "cycle 2026-11-14 (34) convergence: fix-loop brake, skills/cycle/report-formats.md"
     }
   ],
   "done": [
@@ -6972,6 +7006,41 @@
       "status": "done",
       "finished": "2026-11-14",
       "cluster": "gates"
+    },
+    {
+      "id": "push-check-exit-zero-not-ok",
+      "title": "ennyn push-check exits 0 only where the cycle may push by itself (after-closing, closingPush agrees); a met push the user is asked for exits 3, not met 1; push.md reads the exit; the oracle's known-gap list became expected refusals (6629afb)",
+      "status": "done",
+      "finished": "2026-11-14",
+      "cluster": "security"
+    },
+    {
+      "id": "lock-queue-sweep-own-names",
+      "title": "ennyn lock's queue sweep judges only ticket-shaped names (^\\d{10}\\.\\d{6}-\\d+$) and refuses a queue that is a link; a non-ticket file stays (1644a39)",
+      "status": "done",
+      "finished": "2026-11-14",
+      "cluster": "security"
+    },
+    {
+      "id": "fact-oracle-push-hook-folder",
+      "title": "test/push-hook-folder-oracle.test.mjs: the push hook's verdict (run, ask, deny, read as Claude Code reads it, crash and message-only as run) held against the folder a bare git push really runs in, 29 cases, the hook's own timeout from hooks/hooks.json, known partings named with their cause (c94cb4c)",
+      "status": "done",
+      "finished": "2026-11-14",
+      "cluster": "gates"
+    },
+    {
+      "id": "short-runner-passes-stops",
+      "title": "test/short.mjs runs each node --test through run.mjs's runPassingStops: SIGINT/SIGTERM/SIGHUP reach the suite, the suite ends, short stops after a stopped run; guards short-stop-passed and short-stop-next (3574487)",
+      "status": "done",
+      "finished": "2026-11-14",
+      "cluster": "gates"
+    },
+    {
+      "id": "lock-resource-gate",
+      "title": "ennyn lock admits a heavy job only when the machine has room: memory (macOS kern.memorystatus_level by /usr/sbin/sysctl, Linux MemAvailable, cgroup v2/v1 less inactive_file), load per host CPU, 5 GB free disk; swap shown, never judged; waits up to the job's own --limit; --min-memory, --max-load, --min-disk and ENNYN_LOCK_*; user's ask 2026-11-14 after a swap-full incident (3318864)",
+      "status": "done",
+      "finished": "2026-11-14",
+      "cluster": "security"
     }
   ],
   "declined": [
