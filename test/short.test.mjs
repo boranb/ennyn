@@ -12,7 +12,7 @@ import { appendFileSync, chmodSync, copyFileSync, cpSync, existsSync, mkdirSync,
 import * as nodeModule from "node:module";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { git } from "../core/git.mjs";
 import { matchAny } from "../core/glob.mjs";
 import { testNames } from "./declarations.mjs";
@@ -403,10 +403,29 @@ const timed = (name) =>
 test("short: the run takes the suite's concurrency limit and says it once; an override that is no positive integer runs nothing", () => {
   const dir = copy({ "test/a.test.mjs": timed("a"), "test/b.test.mjs": timed("b"), "test/c.test.mjs": timed("c") });
   const script = join(dir, "test", "short.mjs");
-  const times = join(mkdtempSync(join(tmpdir(), "en-short-times-")), "times");
-  const one = run(script, dir, [], { ENNYN_TEST_CONCURRENCY: "1", EN_TIMES: times });
+  const work = mkdtempSync(join(tmpdir(), "en-short-times-"));
+  const times = join(work, "times");
+  // The node --test runs' arguments, from a stand-in spawnSync: node's own default is availableParallelism() - 1, which
+  // on a 2-CPU machine is the 1 asked for here, so a run without the flag is serial there too and timing cannot tell.
+  const argv = join(work, "argv");
+  const preload = join(work, "argv.mjs");
+  writeFileSync(
+    preload,
+    'import { createRequire, syncBuiltinESMExports } from "node:module";\nimport { appendFileSync } from "node:fs";\nconst cp = createRequire(import.meta.url)("node:child_process");\nconst real = cp.spawnSync;\ncp.spawnSync = (file, args, ...rest) => {\n  if (file === process.execPath && args?.[0] === "--test") appendFileSync(process.env.EN_ARGV, `${JSON.stringify(args)}\\n`);\n  return real(file, args, ...rest);\n};\nsyncBuiltinESMExports();\n',
+  );
+  /** @param {NodeJS.ProcessEnv} more */
+  const recorded = (more) => {
+    const env = { ...process.env, ...more, EN_ARGV: argv };
+    delete env.NODE_TEST_CONTEXT;
+    rmSync(argv, { force: true });
+    const r = spawnSync(process.execPath, ["--import", pathToFileURL(preload).href, script], { cwd: dir, env, encoding: "utf8" });
+    const flags = existsSync(argv) ? readFileSync(argv, "utf8").trim().split("\n").map((l) => JSON.parse(l).filter((/** @type {string} */ a) => a.startsWith("--test-concurrency"))) : [];
+    return { ...r, flags };
+  };
+  const one = recorded({ ENNYN_TEST_CONCURRENCY: "1", EN_TIMES: times });
   assert.equal(one.status, 0, one.stdout + one.stderr);
   assert.equal(one.stdout.split("test concurrency 1: ENNYN_TEST_CONCURRENCY=1\n").length - 1, 1, one.stdout);
+  assert.deepEqual(one.flags, [["--test-concurrency=1"]], "the one node --test run is asked for the limit");
   // One file at a time: no file started before the one before it ended.
   const runs = readFileSync(times, "utf8").trim().split("\n").map((l) => l.split(" ").map(Number)).sort((x, y) => x[0] - y[0]);
   assert.equal(runs.length, 3);
@@ -420,9 +439,11 @@ test("short: the run takes the suite's concurrency limit and says it once; an ov
     assert.ok(!existsSync(times), "nothing ran");
   }
   // Unset, it says which limit it took and why.
-  const plain = run(script, dir, [], { ENNYN_TEST_CONCURRENCY: undefined, EN_TIMES: times });
+  const plain = recorded({ ENNYN_TEST_CONCURRENCY: undefined, EN_TIMES: times });
   assert.equal(plain.status, 0, plain.stdout + plain.stderr);
-  assert.match(plain.stdout, /^test concurrency [1-9]\d*: (half the \d+ physical cores|a quarter of the \d+ logical CPUs: the physical count could not be read|half the [\d.]+ CPUs the container may use)$/m);
+  const said = /^test concurrency ([1-9]\d*): (half the \d+ physical cores|a quarter of the \d+ logical CPUs: the physical count could not be read|half the [\d.]+ CPUs the container may use)$/m.exec(plain.stdout);
+  assert.ok(said, plain.stdout);
+  assert.deepEqual(plain.flags, [[`--test-concurrency=${said[1]}`]], "the run is asked for the limit it said");
 });
 
 test("short: --list says the same and runs nothing; anything else it does not know runs nothing either", () => {
