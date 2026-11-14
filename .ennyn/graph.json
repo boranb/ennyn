@@ -6054,6 +6054,17 @@
       "cluster": "plan",
       "title": "ennyn mechanization anchors its three-cycle window on the ledger's newest row, so one row typed with a far higher cycle moves the window (it prints it); anchor on the cycle journal's cycle when one is open",
       "source": "cycle 2026-11-13 (33), T2 decision and review probe"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 33,
+      "id": "predicted-breaks-first",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "title": "Before its first test run, the author agent writes in the task file where its change can break (at most three places, each with the platform it would break on and what would show it: macOS where the cycle runs, Linux in node:22 and the Node 22.0/git 2.34 floor image, WSL, native Windows for the hooks README.md says were measured there) and what it is unsure of; the review step sets that list beside what every run the change went through found (the local suite, the containers, the Windows or WSL check when the change touches one, the review), and every break nobody predicted goes into the findings ledger as unpredicted, with its platform, so the classes and platforms the author keeps missing show up in the recurrence ladder. A platform the change touches but no run measured is said as unmeasured, never as passed. Lands after 0.1.0 (not a release need)",
+      "source": "the user, 2026-11-14: a request; Fable evaluation, 2026-11-14"
     }
   ],
   "done": [
