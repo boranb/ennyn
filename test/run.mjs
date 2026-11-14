@@ -4,7 +4,8 @@
  * did not show alone came at loads far above the machine's cores. The limit leaves cores to the machine and to a
  * second suite beside this one: half the physical cores, at least 1; inside a container (its cgroup's CPU quota and
  * cpuset) no more than half the CPUs it may use; a quarter of the logical CPUs where the physical count cannot be read.
- * ENNYN_TEST_CONCURRENCY, a positive integer, wins; any other value stops the run. test/short.mjs uses the same limit.
+ * ENNYN_TEST_CONCURRENCY, a positive integer, wins; any other value stops the run. test/short.mjs uses the same limit,
+ * and starts its runs through runPassingStops, so a stop reaches its runs as it reaches npm test's.
  */
 
 import { execFileSync, spawn } from "node:child_process";
@@ -136,22 +137,44 @@ export const wholeArgs = (n) => ["--test", `--test-concurrency=${n}`, "--import"
 /** Every stop npm or a terminal passes on to the script's process. */
 const STOPS = /** @type {const} */ (["SIGTERM", "SIGINT", "SIGHUP"]);
 
-function main() {
+/**
+ * Runs node with `args` and passes on every stop this process gets while it runs: npm test's run and each of
+ * test/short.mjs's start here. Settles when the run ends, in spawnSync's shape, with the stop that came, if one did.
+ * @param {string[]} args @param {{ cwd?: string, env?: NodeJS.ProcessEnv }} [options]
+ * @returns {Promise<{ status: number | null, signal: NodeJS.Signals | null, error?: Error, stop: NodeJS.Signals | null }>}
+ */
+export function runPassingStops(args, { cwd = ROOT, env = process.env } = {}) {
+  return new Promise((resolve) => {
+    const suite = spawn(process.execPath, args, { cwd, env, stdio: "inherit" });
+    /** @type {Error | undefined} */
+    let error;
+    /** @type {NodeJS.Signals | null} */
+    let stop = null;
+    // A stop for this process is the suite's: without this the runner ends and node --test runs on. node --test stops
+    // its test files on SIGINT and SIGTERM; a SIGHUP ends it and leaves them running, so it gets SIGTERM instead.
+    const pass = (/** @type {NodeJS.Signals} */ signal) => {
+      stop ??= signal;
+      suite.kill(signal === "SIGHUP" ? "SIGTERM" : signal);
+    };
+    for (const signal of STOPS) process.on(signal, pass);
+    suite.on("error", (err) => (error = err));
+    // After a failed start too: close follows error.
+    suite.on("close", (code, signal) => {
+      // A stop that comes once this run is over is no longer passed: it ends this process, or the next run takes it.
+      for (const s of STOPS) process.off(s, pass);
+      resolve({ status: typeof code === "number" && code >= 0 ? code : null, signal, error, stop });
+    });
+  });
+}
+
+async function main() {
   const n = suiteConcurrency();
   if (n === null) return void (process.exitCode = 2);
-  const suite = spawn(process.execPath, wholeArgs(n), { cwd: ROOT, stdio: "inherit" });
-  // A stop for this process is the suite's: without this the runner ends and node --test runs on. node --test stops
-  // its test files on SIGINT and SIGTERM; a SIGHUP ends it and leaves them running, so it gets SIGTERM instead.
-  for (const signal of STOPS) process.on(signal, () => suite.kill(signal === "SIGHUP" ? "SIGTERM" : signal));
-  suite.on("error", (err) => {
-    console.error(`the suite did not start: ${err.message}`);
-    process.exitCode = 1;
-  });
-  suite.on("close", (code, signal) => {
-    if (signal) console.error(`the suite did not finish: ${signal}`);
-    // A signal's end reads as a shell gives it, 128 plus its number.
-    process.exitCode = signal ? 128 + constants.signals[signal] : typeof code === "number" && code >= 0 ? code : 1;
-  });
+  const { status, signal, error } = await runPassingStops(wholeArgs(n));
+  if (error) console.error(`the suite did not start: ${error.message}`);
+  if (signal) console.error(`the suite did not finish: ${signal}`);
+  // A signal's end reads as a shell gives it, 128 plus its number.
+  process.exitCode = signal ? 128 + constants.signals[signal] : (status ?? 1);
 }
 
 const invoked = (() => {

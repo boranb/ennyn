@@ -788,6 +788,8 @@ export const GATES = [
       { id: "short-script", why: "no command", file: "package.json", old: '"test:short": "node test/short.mjs"', new: '"test:short": "node --test"', pattern: "short: npm run test:short runs" },
       { id: "short-concurrency-flag", why: "a short run at node's default concurrency", file: "test/short.mjs", old: '["--test", `--test-concurrency=${n}`, "--import", "./test/hermetic.mjs", ...args]', new: '["--test", "--import", "./test/hermetic.mjs", ...args]', pattern: "short: the run takes the suite's concurrency limit" },
       { id: "short-concurrency-refused", why: "a refused override run anyway", file: "test/short.mjs", old: "  const n = suiteConcurrency();\n  if (n === null) return 2;\n  // node --test with no file", new: "  const n = suiteConcurrency() ?? 1;\n  // node --test with no file", pattern: "short: the run takes the suite's concurrency limit" },
+      { id: "short-stop-passed", why: "a stop to the short run that leaves its suite running", file: "test/run.mjs", old: "    for (const signal of STOPS) process.on(signal, pass);\n", new: "", pattern: "short: stopped by" },
+      { id: "short-stop-next", why: "a run started after the command was stopped", file: "test/short.mjs", old: "    if (run.stop) break;\n", new: "", pattern: "short: stopped by" },
     ],
   },
   {

@@ -3,7 +3,8 @@
  * and a slow file comes back when the branch changed one of its listed paths, against the main branch, committed or
  * not. The whole suite (`npm test`) is not replaced: it runs once at a cycle's closing, before the push, slow files
  * included; a landing runs this and the slow files the task touches. A path list here decides how early a slow
- * file's failure is seen, never whether it runs. Its runs take the whole suite's concurrency limit (test/run.mjs).
+ * file's failure is seen, never whether it runs. Its runs take the whole suite's concurrency limit and start through
+ * npm test's own runner (test/run.mjs): a stop to this script reaches the run under it, and no later run starts.
  *
  * The lists are narrow on purpose. The import closure of scripts/ennyn.mjs is nearly the whole tree, and a list that
  * matches every code change would make this the whole suite. Each one names what its file guards. With guards left
@@ -28,7 +29,6 @@
  * The file list is built here, from what the branch changed; test/short.test.mjs keeps it true.
  */
 
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 // By namespace: Node before 22.15 has no registerHooks, and a named import of it fails this file's load.
@@ -40,7 +40,7 @@ import { readIfThere } from "../core/files.mjs";
 import { git, gitMaybe } from "../core/git.mjs";
 import { matchAny } from "../core/glob.mjs";
 import { GATES } from "./guards.mjs";
-import { suiteConcurrency } from "./run.mjs";
+import { runPassingStops, suiteConcurrency } from "./run.mjs";
 
 const { registerHooks } = nodeModule;
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -289,9 +289,9 @@ export function decide(root, env = process.env) {
  * Records the read list: the short suite's files run once with test/reads.mjs preloaded, from a folder outside the
  * tree, in every node process they start (NODE_OPTIONS, and a `node` first on PATH for a child that drops it). A run
  * that fails, or a file with no record, writes nothing.
- * @param {string} root @returns {number}
+ * @param {string} root @returns {Promise<number>}
  */
-export function record(root) {
+export async function record(root) {
   if (typeof registerHooks !== "function") {
     console.error(`--record needs module.registerHooks (Node 22.15 or later); this is node ${process.version}`);
     return 2;
@@ -309,7 +309,7 @@ export function record(root) {
     chmodSync(join(dir, "bin", "node"), 0o755);
     const env = { ...process.env, ENNYN_READS: dir, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${self}`.trim(), PATH: `${join(dir, "bin")}${delimiter}${process.env.PATH ?? ""}` };
     delete env.ENNYN_READS_TEST;
-    const run = spawnSync(process.execPath, ["--test", `--test-concurrency=${n}`, "--import", "./test/hermetic.mjs", ...short], { cwd: root, env, stdio: "inherit" });
+    const run = await runPassingStops(["--test", `--test-concurrency=${n}`, "--import", "./test/hermetic.mjs", ...short], { cwd: root, env });
     if (run.status !== 0) {
       console.error(`the recording run ${run.status === null ? `did not finish (${run.error?.message ?? run.signal})` : `failed, exit ${run.status}`}; ${READS} is not written`);
       return 1;
@@ -340,8 +340,8 @@ export function record(root) {
   }
 }
 
-/** @param {string[]} argv @returns {number} */
-function main(argv) {
+/** @param {string[]} argv @returns {Promise<number>} */
+async function main(argv) {
   if (argv.length === 1 && argv[0] === "--record") return record(ROOT);
   const list = argv[0] === "--list";
   if (argv.length > (list ? 1 : 0)) {
@@ -359,7 +359,14 @@ function main(argv) {
   if (n === null) return 2;
   // node --test with no file runs every test file it finds.
   const runs = [...(files.length ? [{ name: "test files", args: files }] : []), ...(accounting ? [{ name: "guards' accounting test", args: [`--test-name-pattern=${ACCOUNTING}`, GUARDS] }] : [])];
-  const ended = runs.map(({ name, args }) => ({ name, ...spawnSync(process.execPath, ["--test", `--test-concurrency=${n}`, "--import", "./test/hermetic.mjs", ...args], { cwd: ROOT, stdio: "inherit" }) }));
+  /** @type {({ name: string } & Awaited<ReturnType<typeof runPassingStops>>)[]} */
+  const ended = [];
+  for (const { name, args } of runs) {
+    const run = await runPassingStops(["--test", `--test-concurrency=${n}`, "--import", "./test/hermetic.mjs", ...args], { cwd: ROOT });
+    ended.push({ name, ...run });
+    // A stop is the whole command's: the run it reached has ended, and no later run starts.
+    if (run.stop) break;
+  }
   // Again at the end: the run's output pushes the first copy out of a reader's tail.
   say();
   // The words carry the verdict: a later run's summary hides an earlier failure, and a pipe into tail loses the exit code.
@@ -377,4 +384,4 @@ const invoked = (() => {
     return false;
   }
 })();
-if (invoked) process.exitCode = main(process.argv.slice(2));
+if (invoked) process.exitCode = await main(process.argv.slice(2));

@@ -5,8 +5,8 @@ import { spawn, spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { OVERRIDE, concurrency, containerCpus, readMachine, wholeArgs } from "./run.mjs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { OVERRIDE, concurrency, containerCpus, readMachine, runPassingStops, wholeArgs } from "./run.mjs";
 
 test("concurrency: half the physical cores, at least 1", () => {
   assert.deepEqual(concurrency({ physical: 10, logical: 10 }), { n: 5, why: "half the 10 physical cores" });
@@ -148,10 +148,35 @@ test("concurrency: npm test's runner says its limit, passes the suite's exit on,
   assert.equal(killed.status, 137, killed.stdout + killed.stderr);
   assert.match(killed.stderr, /^the suite did not finish: SIGKILL$/m);
 
+  // node not started at all: a stand-in spawn sends it to a folder that is not there. No exit code, and that is no pass.
+  const preload = join(dir, "no-start.mjs");
+  writeFileSync(
+    preload,
+    'import { createRequire, syncBuiltinESMExports } from "node:module";\nconst cp = createRequire(process.execPath)("node:child_process");\nconst real = cp.spawn;\ncp.spawn = (file, args, options) => real(file, args, { ...options, cwd: process.env.EN_NO_DIR });\nsyncBuiltinESMExports();\n',
+  );
+  const unstarted = spawnSync(process.execPath, ["--import", pathToFileURL(preload).href, join(dir, "test", "run.mjs")], { cwd: tmpdir(), env: { ...env, EN_NO_DIR: join(dir, "not-here") }, encoding: "utf8" });
+  assert.equal(unstarted.status, 1, unstarted.stdout + unstarted.stderr);
+  assert.match(unstarted.stderr, /^the suite did not start: .*ENOENT$/m);
+
   const refused = run({ [OVERRIDE]: "many" });
   assert.equal(refused.status, 2, refused.stdout + refused.stderr);
   assert.equal(refused.stderr, `${OVERRIDE} must be a positive integer, not "many"\n`);
   assert.equal(refused.stdout, "", "nothing ran");
+});
+
+test("concurrency: a run through the runner ends as spawnSync says, and leaves no stop handler behind", async () => {
+  const STOPS = /** @type {const} */ (["SIGTERM", "SIGINT", "SIGHUP"]);
+  const before = STOPS.map((s) => process.listenerCount(s));
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  assert.deepEqual(await runPassingStops(["-e", "process.exit(3)"], { cwd: tmpdir(), env }), { status: 3, signal: null, error: undefined, stop: null });
+  // A second run in the same process, as test/short.mjs makes: the first run's handlers are gone.
+  const killed = await runPassingStops(["-e", 'process.kill(process.pid, "SIGKILL")'], { cwd: tmpdir(), env });
+  assert.deepEqual([killed.status, killed.signal, killed.stop], [null, "SIGKILL", null]);
+  const missing = await runPassingStops(["-e", "0"], { cwd: join(tmpdir(), "en-run-no-such-folder"), env });
+  assert.equal(missing.status, null);
+  assert.match(String(missing.error?.message), /ENOENT/);
+  assert.deepEqual(STOPS.map((s) => process.listenerCount(s)), before);
 });
 
 /** Whether a process this test started is still there (signal 0 only). @param {number} pid */

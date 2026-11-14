@@ -6,7 +6,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { appendFileSync, chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 // By namespace: Node before 22.15 has no registerHooks, and a named import of it fails this file's load.
 import * as nodeModule from "node:module";
@@ -405,13 +405,13 @@ test("short: the run takes the suite's concurrency limit and says it once; an ov
   const script = join(dir, "test", "short.mjs");
   const work = mkdtempSync(join(tmpdir(), "en-short-times-"));
   const times = join(work, "times");
-  // The node --test runs' arguments, from a stand-in spawnSync: node's own default is availableParallelism() - 1, which
+  // The node --test runs' arguments, from a stand-in spawn: node's own default is availableParallelism() - 1, which
   // on a 2-CPU machine is the 1 asked for here, so a run without the flag is serial there too and timing cannot tell.
   const argv = join(work, "argv");
   const preload = join(work, "argv.mjs");
   writeFileSync(
     preload,
-    'import { createRequire, syncBuiltinESMExports } from "node:module";\nimport { appendFileSync } from "node:fs";\nconst cp = createRequire(import.meta.url)("node:child_process");\nconst real = cp.spawnSync;\ncp.spawnSync = (file, args, ...rest) => {\n  if (file === process.execPath && args?.[0] === "--test") appendFileSync(process.env.EN_ARGV, `${JSON.stringify(args)}\\n`);\n  return real(file, args, ...rest);\n};\nsyncBuiltinESMExports();\n',
+    'import { createRequire, syncBuiltinESMExports } from "node:module";\nimport { appendFileSync } from "node:fs";\nconst cp = createRequire(import.meta.url)("node:child_process");\nconst real = cp.spawn;\ncp.spawn = (file, args, ...rest) => {\n  if (file === process.execPath && args?.[0] === "--test") appendFileSync(process.env.EN_ARGV, `${JSON.stringify(args)}\\n`);\n  return real(file, args, ...rest);\n};\nsyncBuiltinESMExports();\n',
   );
   /** @param {NodeJS.ProcessEnv} more */
   const recorded = (more) => {
@@ -492,6 +492,61 @@ test("short: after the reports one line per run says how it ended, and the last 
   const whole = run(script, dir, [], { SHORT_FIRST: "pass", SHORT_SECOND: "pass" });
   assert.deepEqual(whole.stdout.trimEnd().split("\n").slice(-2), ["test files: failed, exit 1", "test:short failed"]);
   assert.equal(whole.status, 1);
+});
+
+/** Whether a process this test started is still there (signal 0 only). @param {number} pid */
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Waits up to `ms` for `done()`, reading every 50 ms. @param {() => boolean} done @param {number} ms */
+async function until(done, ms) {
+  const start = performance.now();
+  while (!done() && performance.now() - start < ms) await new Promise((r) => setTimeout(r, 50));
+  return done();
+}
+
+test("short: stopped by SIGTERM, SIGINT or SIGHUP, the script stops the run under it and starts no later run", async () => {
+  for (const signal of /** @type {const} */ (["SIGTERM", "SIGINT", "SIGHUP"])) {
+    // npm passes a stop on to the script's process. The test files' run must not run on, and guards' accounting run,
+    // which would come next, must not start.
+    const accounting = "guards: every test that reads this repository has guards; a stand-in";
+    const work = mkdtempSync(join(tmpdir(), "en-short-stop-"));
+    const started = join(work, "started");
+    const second = join(work, "second");
+    const dir = copy({
+      "test/a.test.mjs": `import { test } from "node:test";\nimport { writeFileSync } from "node:fs";\ntest("waits", async () => { writeFileSync(${JSON.stringify(started)}, String(process.pid)); await new Promise((r) => setTimeout(r, 120000)); });\n`,
+      [GUARDS]: `import { test } from "node:test";\nimport { writeFileSync } from "node:fs";\ntest(${JSON.stringify(accounting)}, () => { writeFileSync(${JSON.stringify(second)}, "ran"); });\n`,
+    });
+    const env = { ...process.env, ENNYN_TEST_CONCURRENCY: "1" };
+    delete env.NODE_TEST_CONTEXT;
+    const script = spawn(process.execPath, [join(dir, "test", "short.mjs")], { cwd: dir, env, stdio: ["ignore", "pipe", "pipe"] });
+    let out = "";
+    script.stdout.on("data", (d) => (out += d));
+    script.stderr.on("data", (d) => (out += d));
+    const exited = new Promise((done) => script.on("exit", (code) => done(code)));
+    // The output is whole at close: the pipe stays open while anything under the script still holds it.
+    const closed = new Promise((done) => script.on("close", done));
+    let file = 0;
+    try {
+      assert.ok(await until(() => existsSync(started) && readFileSync(started, "utf8") !== "", 60000), `${signal}: the test file started: ${out}`);
+      file = Number(readFileSync(started, "utf8"));
+      script.kill(signal);
+      assert.notEqual(await exited, 0, `${signal}: a stopped run is no pass`);
+      assert.ok(await until(() => !alive(file), 30000), `${signal}: the test file ${file} runs on after the script was stopped`);
+      await closed;
+      assert.ok(!existsSync(second), `${signal}: the accounting run started after the stop`);
+      assert.match(out, /^test:short failed$/m, out);
+    } finally {
+      if (file && alive(file)) process.kill(file, "SIGKILL");
+      if (script.exitCode === null && script.signalCode === null) script.kill("SIGKILL");
+    }
+  }
 });
 
 test("short: the accounting pattern names the guards file's test that needs no mutant, and it fails when an existing test file starts to find the repository", () => {
