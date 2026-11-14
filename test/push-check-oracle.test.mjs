@@ -15,10 +15,9 @@
  *   last commit that changed the file.
  *
  * "May push" is exit 0 with the line that says so (`push.modeRecorded`, `push.modeTested`). The test fails where
- * push-check says it may push and a fact does not hold, where every fact holds and it asks, and where it exits 0 under
- * after-closing without that line (skills/cycle/push.md, step 4, reads exit 0 there as the push), unless the corpus
- * names that parting as known: an ask of the design's, with why, or a gap, with the node that would close it. The
- * record is written by the real `ennyn test`, never by hand.
+ * push-check says it may push and a fact does not hold, where every fact holds and it asks, and where it exits 0, in
+ * any mode, without that line (skills/cycle/push.md, step 4, reads exit 0 as the push), unless the corpus names that
+ * parting as known: an ask of the design's, with why. The record is written by the real `ennyn test`, never by hand.
  */
 
 import { test } from "node:test";
@@ -98,12 +97,11 @@ class Repo {
 /**
  * @typedef {{ name: string, build: () => Repo, words?: (r: Repo) => [string, string][], known?: Record<string, Record<string, string>> }} Case
  *   `words`: what else `--tested` names, as [label, word], besides nothing (`none`) and HEAD's hash (`HEAD`); `known`:
- *   by label, each parting the oracle words for that run, with why: the design's, or the node that would close it
+ *   by label, each parting the oracle words for that run, with why: the design's
  */
 const ASKS = "asks where every fact holds";
-/** push.md step 4 pushes on exit 0 under after-closing; without --tested, push-check's exit is the readiness alone. */
-const ZERO = "exits 0 under after-closing without saying it may push";
-const GAP = "node push-check-exit-zero-not-ok: the exit without --tested is the readiness, not the decision";
+/** push.md step 4 pushes on exit 0: in every mode, exit 0 is the line that says the cycle may push, and nothing else. */
+const ZERO = "exits 0 without saying it may push";
 /** @type {Case[]} */
 const CASES = [
   { name: "green on HEAD's tree", build: () => ((r) => (r.test("whole", 0), r))(new Repo("green")) },
@@ -157,7 +155,7 @@ const CASES = [
       return r;
     },
   },
-  { name: "green, two upstream urls", build: () => ((r) => (r.test("whole", 0), g(r.dir, ["remote", "set-url", "--add", "origin", r.other("second")]), r))(new Repo("two-urls")), known: { none: { [ZERO]: GAP } } },
+  { name: "green, two upstream urls", build: () => ((r) => (r.test("whole", 0), g(r.dir, ["remote", "set-url", "--add", "origin", r.other("second")]), r))(new Repo("two-urls")) },
   {
     name: "green, remote.origin.push sends main and deletes side",
     build: () => {
@@ -166,11 +164,10 @@ const CASES = [
       g(r.dir, ["config", "--add", "remote.origin.push", "refs/heads/main:refs/heads/main"]), g(r.dir, ["config", "--add", "remote.origin.push", ":refs/heads/side"]);
       return r;
     },
-    known: { none: { [ZERO]: GAP } },
   },
-  { name: "green, push.followTags with an annotated tag", build: () => ((r) => (r.test("whole", 0), g(r.dir, ["tag", "-a", "-m", "v", "v1"]), g(r.dir, ["config", "push.followTags", "true"]), r))(new Repo("follow-tags")), known: { none: { [ZERO]: GAP } } },
-  { name: "green, a pushInsteadOf rewrite", build: () => ((r) => (r.test("whole", 0), g(r.dir, ["config", `url.${r.other("insteadof")}.pushInsteadOf`, r.bare]), r))(new Repo("push-insteadof")), known: { none: { [ZERO]: GAP } } },
-  { name: "green, a pushurl elsewhere", build: () => ((r) => (r.test("whole", 0), g(r.dir, ["config", "remote.origin.pushurl", r.other("pushurl")]), r))(new Repo("pushurl")), known: { none: { [ZERO]: GAP } } },
+  { name: "green, push.followTags with an annotated tag", build: () => ((r) => (r.test("whole", 0), g(r.dir, ["tag", "-a", "-m", "v", "v1"]), g(r.dir, ["config", "push.followTags", "true"]), r))(new Repo("follow-tags")) },
+  { name: "green, a pushInsteadOf rewrite", build: () => ((r) => (r.test("whole", 0), g(r.dir, ["config", `url.${r.other("insteadof")}.pushInsteadOf`, r.bare]), r))(new Repo("push-insteadof")) },
+  { name: "green, a pushurl elsewhere", build: () => ((r) => (r.test("whole", 0), g(r.dir, ["config", "remote.origin.pushurl", r.other("pushurl")]), r))(new Repo("pushurl")) },
   {
     name: "green, branch.main.pushRemote another remote",
     build: () => ((r) => (r.test("whole", 0), g(r.dir, ["remote", "add", "other", r.other("remote")]), g(r.dir, ["config", "branch.main.pushRemote", "other"]), r))(new Repo("push-remote")),
@@ -183,12 +180,11 @@ const CASES = [
       r.test("whole", 0), g(r.dir, ["config", "push.default", "matching"]);
       return r;
     },
-    known: { none: { [ZERO]: GAP } },
   },
   { name: "green, no upstream", build: () => ((r) => (r.test("whole", 0), r))(new Repo("no-upstream", { upstream: false })) },
   { name: "green, HEAD detached", build: () => ((r) => (r.test("whole", 0), g(r.dir, ["checkout", "-q", "--detach"]), r))(new Repo("detached")) },
   { name: "ask, every other fact met", build: () => ((r) => (r.test("whole", 0), r))(new Repo("ask", { mode: "ask" })) },
-  { name: "after-closing with no approval line", build: () => ((r) => (r.test("whole", 0), r))(new Repo("unapproved", { approve: false })), known: { none: { [ZERO]: GAP } } },
+  { name: "after-closing with no approval line", build: () => ((r) => (r.test("whole", 0), r))(new Repo("unapproved", { approve: false })) },
   {
     name: "after-closing in the work tree only",
     build: () => {
@@ -231,7 +227,6 @@ const CASES = [
       c.commit("chore: three", { "a.txt": "3\n" }), c.test("whole", 0);
       return c;
     },
-    known: { none: { [ZERO]: GAP } },
   },
   {
     name: "a shallow clone that holds the approval, green",
@@ -245,7 +240,7 @@ const CASES = [
       return c;
     },
     // push.md: a shallow clone always asks, whatever history it holds.
-    known: { none: { [ASKS]: "a shallow clone asks", [ZERO]: GAP }, HEAD: { [ASKS]: "a shallow clone asks" } },
+    known: { none: { [ASKS]: "a shallow clone asks" }, HEAD: { [ASKS]: "a shallow clone asks" } },
   },
   {
     name: "green, the upstream branch deleted",
@@ -335,7 +330,7 @@ test("push-check oracle: it says the cycle may push only where the push sends th
       if (says && res.status !== 0) out.push(`says it may push and exits ${res.status}`);
       if (says && !f.may) out.push("says it may push where the facts do not hold");
       if (!says && f.may) out.push(ASKS);
-      if (!says && res.status === 0 && f.mode === "after-closing") out.push(ZERO);
+      if (!says && res.status === 0) out.push(ZERO);
       const known = c.known?.[label] ?? {};
       for (const o of out) if (!(o in known)) parted.push(`${name}: ${o}`);
       for (const k of Object.keys(known)) if (!out.includes(k)) parted.push(`${name}: the known parting "${k}" (${known[k]}) is gone: take it out of the corpus`);

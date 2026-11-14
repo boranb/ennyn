@@ -89,9 +89,10 @@ Commands:
                                                     give --check's {file} unquoted: Ennyn quotes it
   mutate --restore [--force]                        put back a file that a mutate run killed outright left mutated
   push-check [--tested <rev>]                       warn when too many commits are unpushed; fetch, and say what the push needs (a green fast or whole
-                                                    run recorded on HEAD's tree) and whether it asks the user (push.mode); exit 1 when behind, not met
-                                                    or unmeasured; under after-closing exit 0 when the cycle may push; --tested <rev>: your word that
-                                                    the whole test passed on that commit, read when the record holds no run of what the push needs
+                                                    run recorded on HEAD's tree) and whether it asks the user (push.mode); exit 0 only when the cycle
+                                                    may push by itself (after-closing), 3 when what the push needs is met and the user is asked, 1 when
+                                                    behind, not met, unmeasured or refused; --tested <rev>: your word that the whole test passed on that
+                                                    commit, read when the record holds no run of what the push needs
   test fast|whole [--again]                         run commands.fastTest or commands.wholeTest from the top and record its result by HEAD's tree when the
                                                     work tree is clean before and after; a green run already recorded on the tree is not run again
                                                     (--again: run it); exit as the command does
@@ -1764,9 +1765,10 @@ const COMMANDS = {
     // The push itself: by the user's yes, or with after-closing by the cycle (checks/push-mode.mjs), on a commit whose
     // tree the record holds green, or one the caller names as tested, with nothing uncommitted. Either is a word:
     // a record line is a file any process here can write. Under ask neither pushes.
+    // Exit 0 is only the line that says the cycle may push (push.md, step 4, pushes on it); ready but asked is 3.
     const push = closingPush(cwd);
     for (const l of push.said) out(t(l.key, l.vars, lang));
-    if (!push.ok) return opts.tested !== undefined || !ready ? 1 : 0;
+    if (!push.ok) return opts.tested !== undefined || !ready ? 1 : 3;
     const clean = () => git(["status", "--porcelain=v1", "-z", "--untracked-files=normal", "--ignore-submodules=none"], { cwd }) === "";
     if (!("unmeasured" in needs) && ready && needs.met) {
       if (!clean()) return (out(t("push.modeDirty", {}, lang)), 1);

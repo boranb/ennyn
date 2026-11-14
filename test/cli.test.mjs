@@ -742,7 +742,8 @@ test("cli: test records a run by HEAD's tree on a clean work tree; push-check sa
   assert.equal(fast.code, 0, fast.stdout + fast.stderr);
   assert.match(fast.stdout, new RegExp(`Recorded: fast run on tree ${p.tree()}, green\\.`));
   const met = p.go(p.dir, ["push-check"]);
-  assert.equal(met.code, 0, met.stdout);
+  // Met under ask: 3, not 0, which push.md reads as the cycle's own push.
+  assert.equal(met.code, 3, met.stdout);
   assert.match(met.stdout, new RegExp(`needs a green fast run on HEAD's tree ${p.tree()} .*: met, recorded at `));
   assert.match(met.stdout, /push\.mode is ask: ask the user before the push\./, "a record never turns ask into a push");
   // The same tree again: not run, and the skip is recorded.
@@ -758,7 +759,7 @@ test("cli: test records a run by HEAD's tree on a clean work tree; push-check sa
   assert.equal(code.code, 1);
   assert.match(code.stdout, /needs a green whole run on HEAD's tree .* \(src\/x\.mjs matches push\.codeGlobs\): none is recorded\. Run ennyn test whole/);
   assert.equal(p.go(p.dir, ["test", "whole"]).code, 0);
-  assert.equal(p.go(p.dir, ["push-check"]).code, 0);
+  assert.equal(p.go(p.dir, ["push-check"]).code, 3);
   // A record on another tree does not count.
   p.commit({ "notes.txt": "2" }, "c4");
   assert.match(p.go(p.dir, ["push-check"]).stdout, /none is recorded/);
@@ -822,7 +823,7 @@ test("cli: a run recorded in a linked worktree counts for the main checkout afte
   assert.equal(p.go(wt, ["test", "fast"]).code, 0);
   git(["merge", "-q", "--ff-only", "task"], { cwd: p.dir });
   const landed = p.go(p.dir, ["push-check"]);
-  assert.equal(landed.code, 0, landed.stdout);
+  assert.equal(landed.code, 3, landed.stdout);
   assert.match(landed.stdout, /: met, recorded at /);
   // The landing's own run on that tree is not run again.
   assert.match(p.go(p.dir, ["test", "fast"]).stdout, /not run again/);
@@ -926,7 +927,7 @@ test("cli: a red run of either kind on HEAD's tree stops --tested; a fast run co
   const again = q.go(q.dir, ["test", "fast"]);
   assert.match(again.stdout, /Recorded: fast run/);
   assert.equal(q.ran(), "fast fast");
-  assert.equal(q.go(q.dir, ["push-check"]).code, 0);
+  assert.equal(q.go(q.dir, ["push-check"]).code, 3);
   const { readRuns } = await import("../checks/test-runs.mjs");
   const { loadConfig } = await import("../core/config.mjs");
   const runs = readRuns(q.dir, loadConfig({ cwd: q.dir, env: {} })).runs;
