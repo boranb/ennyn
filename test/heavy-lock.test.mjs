@@ -8,10 +8,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, rmdirSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { cpus, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { LOG_MAX, OLD_LOCK_MS, deadLock, dropRecorded, processStart, runLocked } from "../core/heavy-lock.mjs";
+import { LOG_MAX, OLD_LOCK_MS, ROOM_DEFAULTS, deadLock, dropRecorded, judgeRoom, processStart, readRoom, roomThresholds, runLocked } from "../core/heavy-lock.mjs";
 
 const CLI = fileURLToPath(new URL("../scripts/ennyn.mjs", import.meta.url));
 const LOCKED_SH = fileURLToPath(new URL("__fixtures__/locked.sh", import.meta.url));
@@ -60,11 +60,19 @@ function box(t) {
 }
 
 /**
+ * Thresholds no machine falls short of, for the runs that test the queue, not the room: the test machine may be short.
+ * The room itself is tested with readings given to runLocked, never by filling the machine.
+ */
+const ANY_ROOM = { ENNYN_LOCK_MIN_MEMORY: "0", ENNYN_LOCK_MAX_LOAD: "1000", ENNYN_LOCK_MIN_DISK: "0" };
+/** A machine with room. @returns {import("../core/heavy-lock.mjs").Room} */
+const roomy = () => ({ memory: { value: 50 }, swap: { value: 0 }, load: { value: 0.1 }, disk: [{ dir: "/tmp", read: { value: 100 } }] });
+
+/**
  * A process the test starts, with its output gathered and its end awaited.
  * @param {string} program @param {string[]} args @param {{ cwd: string, lock: string }} at
  */
 function run(program, args, { cwd, lock }) {
-  const child = spawn(program, args, { cwd, env: { ...process.env, ENNYN_LOCK_DIR: lock }, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(program, args, { cwd, env: { ...process.env, ...ANY_ROOM, ENNYN_LOCK_DIR: lock }, stdio: ["ignore", "pipe", "pipe"] });
   if (child.pid !== undefined) track(child.pid);
   let stdout = "";
   let stderr = "";
@@ -420,7 +428,7 @@ test("lock: the holder keeps its lock's mtime fresh while the run lives, so lock
   const at = box(t);
   const release = join(at.dir, "release");
   const env = { ...process.env, ENNYN_LOCK_DIR: at.lock };
-  const running = runLocked({ command: holdUntil(release)[0], args: holdUntil(release).slice(1), limitMs: 60_000, cwd: at.dir, env, refreshMs: 100 });
+  const running = runLocked({ command: holdUntil(release)[0], args: holdUntil(release).slice(1), limitMs: 60_000, cwd: at.dir, env, refreshMs: 100, room: roomy });
   const dir = join(at.lock, "suite.lock");
   await until(() => record(at.lock), "holder record");
   const first = statSync(dir, { bigint: true }).mtimeNs;
@@ -539,7 +547,7 @@ test("lock: a record that names another process with this pid is not this run's,
   const release = join(at.dir, "release");
   const env = { ...process.env, ENNYN_LOCK_DIR: at.lock };
   const said = [];
-  const running = runLocked({ command: holdUntil(release)[0], args: holdUntil(release).slice(1), limitMs: 60_000, cwd: at.dir, env, say: (s) => said.push(s.key) });
+  const running = runLocked({ command: holdUntil(release)[0], args: holdUntil(release).slice(1), limitMs: 60_000, cwd: at.dir, env, say: (s) => said.push(s.key), room: roomy });
   const rec = await until(() => record(at.lock), "holder record");
   writeFileSync(join(at.lock, "suite.lock.holder"), JSON.stringify({ ...rec, holder: { pid: process.pid, start: "another start" } }));
   writeFileSync(release, "");
@@ -553,7 +561,7 @@ test("lock: a record that cannot be read at release leaves the lock, and says it
   const release = join(at.dir, "release");
   const env = { ...process.env, ENNYN_LOCK_DIR: at.lock };
   const said = [];
-  const running = runLocked({ command: holdUntil(release)[0], args: holdUntil(release).slice(1), limitMs: 60_000, cwd: at.dir, env, say: (s) => said.push(s.key) });
+  const running = runLocked({ command: holdUntil(release)[0], args: holdUntil(release).slice(1), limitMs: 60_000, cwd: at.dir, env, say: (s) => said.push(s.key), room: roomy });
   await until(() => record(at.lock), "holder record");
   const holderPath = join(at.lock, "suite.lock.holder");
   rmSync(holderPath);
@@ -729,5 +737,203 @@ test("lock: a queue that is a symbolic link is refused and said: no ticket writt
     assert.ok(!existsSync(join(at.dir, "ran")), "the command never ran");
     assert.ok(!existsSync(join(at.lock, "suite.lock")), "the lock was never taken");
     assert.deepEqual(readdirSync(elsewhere).sort(), [...kept].sort());
+  }
+});
+
+/** A reader's file system: the text each path holds, null for none. @param {Record<string, string>} files */
+const files = (files) => (/** @type {string} */ path) => files[path] ?? null;
+const MEMINFO = "MemTotal:       16000000 kB\nMemFree:          100000 kB\nMemAvailable:    4000000 kB\nSwapTotal:       2000000 kB\nSwapFree:         500000 kB\n";
+const DISK = { statfs: () => ({ bavail: 2_500_000, bsize: 4096 }), dirs: ["/t"] };
+
+test("lock room: each platform's readings, as the system prints them, and a reading that fails is unmeasured", () => {
+  // macOS: sysctl's two lines, as this machine printed them (kern.memorystatus_level 9, the figure memory_pressure gave).
+  const mac = readRoom({ platform: "darwin", run: () => "9\ntotal = 15360.00M  used = 14068.81M  free = 1291.19M  (encrypted)\n", load: () => [6.87, 8.93, 10.58], cpus: 10, ...DISK });
+  assert.deepEqual(mac.memory, { value: 9 });
+  assert.equal(Number((/** @type {{ value: number }} */ (mac.swap)).value.toFixed(1)), 91.6);
+  assert.equal(Number((/** @type {{ value: number }} */ (mac.load)).value.toFixed(3)), 0.687);
+  assert.deepEqual(mac.disk, [{ dir: "/t", read: { value: 10.24 } }]);
+  // No swap at all is none used.
+  assert.deepEqual(readRoom({ platform: "darwin", run: () => "40\ntotal = 0.00M  used = 0.00M  free = 0.00M\n", ...DISK }).swap, { value: 0 });
+  // sysctl that fails or prints something else: both unmeasured, never a number.
+  for (const out of [null, "", "high\nnothing", "140\ntotal = x"]) {
+    const r = readRoom({ platform: "darwin", run: () => out, ...DISK });
+    assert.ok("unmeasured" in r.memory && "unmeasured" in r.swap, JSON.stringify(out));
+  }
+  // Linux: MemAvailable over MemTotal, swap used over SwapTotal (shown, never judged).
+  const host = readRoom({ platform: "linux", read: files({ "/proc/meminfo": MEMINFO }), load: () => [3, 0, 0], cpus: 4, ...DISK });
+  assert.deepEqual([host.memory, host.swap, host.load], [{ value: 25 }, { value: 75 }, { value: 0.75 }]);
+  // In a container whose own limit leaves less, the container's share counts; "max" is no limit.
+  const box = (max, current) => readRoom({ platform: "linux", read: files({ "/proc/meminfo": MEMINFO, "/sys/fs/cgroup/memory.max": max, "/sys/fs/cgroup/memory.current": current }), ...DISK }).memory;
+  assert.deepEqual(box("1000\n", "900\n"), { value: 10 });
+  assert.deepEqual(box("max\n", "900\n"), { value: 25 });
+  assert.deepEqual(box("1000\n", "2000\n"), { value: 0 });
+  // The inactive page cache in memory.stat is reclaimed by the kernel: not counted as used (a 2 GiB container with
+  // 1.5 GiB of it read 5% free). No memory.stat: the use as it stands.
+  const G = 2 ** 30;
+  const ROOMY = "MemTotal:       16000000 kB\nMemAvailable:   12800000 kB\n";
+  const v2 = (/** @type {Record<string, string>} */ more) => readRoom({ platform: "linux", read: files({ "/proc/meminfo": ROOMY, "/sys/fs/cgroup/memory.max": `${2 * G}\n`, "/sys/fs/cgroup/memory.current": `${Math.round(1.9 * G)}\n`, ...more }), ...DISK }).memory;
+  const pct = (/** @type {import("../core/heavy-lock.mjs").Reading} */ r) => Math.round("value" in r ? r.value : NaN);
+  assert.equal(pct(v2({ "/sys/fs/cgroup/memory.stat": `anon 1000\ninactive_file ${1 * G}\nactive_file 10\n` })), 55);
+  assert.equal(pct(v2({ "/sys/fs/cgroup/memory.stat": `inactive_file ${1.5 * G}\n` })), 80, "the container's share, up to the host's");
+  assert.equal(pct(v2({})), 5, "no memory.stat: the use as it stands");
+  // cgroup v1: memory/memory.limit_in_bytes and usage_in_bytes, less memory.stat's total_inactive_file; v1's "no limit"
+  // is a number past the host's memory, and the host's share counts.
+  const v1 = (/** @type {string} */ limit, /** @type {string} */ usage, /** @type {string | undefined} */ stat) =>
+    readRoom({ platform: "linux", read: files({ "/proc/meminfo": MEMINFO, "/sys/fs/cgroup/memory/memory.limit_in_bytes": limit, "/sys/fs/cgroup/memory/memory.usage_in_bytes": usage, ...(stat ? { "/sys/fs/cgroup/memory/memory.stat": stat } : {}) }), ...DISK }).memory;
+  assert.deepEqual(v1("1000\n", "950\n"), { value: 5 });
+  assert.deepEqual(v1("1000\n", "950\n", "cache 900\ntotal_inactive_file 850\n"), { value: 25 });
+  assert.deepEqual(v1("9223372036854771712\n", "950\n"), { value: 25 });
+  assert.deepEqual(readRoom({ platform: "linux", read: files({ "/proc/meminfo": "MemTotal: 1 kB\nSwapTotal: 0 kB\n" }), ...DISK }).swap, { value: 0 });
+  const none = readRoom({ platform: "linux", read: files({}), ...DISK });
+  assert.ok("unmeasured" in none.memory && "unmeasured" in none.swap);
+  // The load average is the host's: divided by the host's CPUs (os.cpus), never a cpuset's narrower count.
+  assert.deepEqual(readRoom({ platform: "linux", read: files({}), load: () => [cpus().length, 0, 0], ...DISK }).load, { value: 1 });
+  // Windows: os.freemem over os.totalmem; no load (os.loadavg is always 0 there), no swap.
+  const win = readRoom({ platform: "win32", free: () => 4, total: () => 16, load: () => [0, 0, 0], ...DISK });
+  assert.deepEqual(win.memory, { value: 25 });
+  assert.ok("unmeasured" in win.load && "unmeasured" in win.swap);
+  // A load or a disk reading that throws is unmeasured.
+  const broken = readRoom({ platform: "darwin", run: () => null, load: () => { throw new Error("no load"); }, statfs: () => { throw Object.assign(new Error("EACCES: permission denied"), { code: "EACCES" }); }, dirs: ["/a", "/a", "/b"] });
+  assert.deepEqual(broken.load, { unmeasured: "no load" });
+  assert.deepEqual(broken.disk.map((d) => d.dir), ["/a", "/b"], "a folder named twice is read once");
+  assert.ok(broken.disk.every((d) => "unmeasured" in d.read));
+});
+
+test("lock room: a reading on its threshold has room, one past it is short, and an unmeasured one is never short", () => {
+  const at = (/** @type {Partial<Record<"memory" | "swap" | "load" | "disk", number | string>>} */ v) => {
+    const r = (/** @type {number | string | undefined} */ x, /** @type {number} */ d) => (typeof x === "string" ? { unmeasured: x } : { value: x ?? d });
+    return judgeRoom({ memory: r(v.memory, 50), swap: r(v.swap, 0), load: r(v.load, 0.1), disk: [{ dir: "/t", read: r(v.disk, 100) }] }, ROOM_DEFAULTS);
+  };
+  // Accept: on the threshold, or on the right side of it.
+  for (const v of [{}, { memory: 15 }, { swap: 100 }, { load: 1.5 }, { disk: 5 }, { memory: 100, swap: 0, load: 0, disk: 1e6 }]) assert.deepEqual(at(v).short, [], JSON.stringify(v));
+  // Reject: past it, each alone.
+  assert.deepEqual(at({ memory: 14.9 }).short, ["memory 14.9% free (min 15%)"]);
+  // Swap is shown, never judged: pages swapped out stay out after the pressure ends (half memory free, 95% swap used).
+  assert.deepEqual(at({ memory: 50, swap: 95 }).short, []);
+  assert.match(at({ swap: 95 }).text, /swap 95% used \(not judged\)/);
+  assert.deepEqual(at({ load: 1.51 }).short, ["load 1.51 per CPU (max 1.5)"]);
+  assert.deepEqual(at({ disk: 4.99 }).short, ["disk /t 4.99 GB free (min 5 GB)"]);
+  assert.deepEqual(at({ memory: 14.999 }).short, ["memory 15% free (min 15%)"], "a value is shown to two places, judged whole");
+  assert.equal(at({ memory: 9, load: 2 }).short.length, 2);
+  // Unmeasured: named, never short.
+  const u = at({ memory: "sysctl failed", load: "os.loadavg is always 0 on Windows" });
+  assert.deepEqual(u.short, []);
+  assert.deepEqual(u.unmeasured, ["memory (sysctl failed)", "load (os.loadavg is always 0 on Windows)"]);
+  assert.match(u.text, /memory \(sysctl failed\): unmeasured/);
+});
+
+test("lock room: thresholds come from the option, else the variable, else the default; a value out of bounds is refused", () => {
+  assert.deepEqual(roomThresholds({}, {}), { thresholds: { ...ROOM_DEFAULTS }, set: [] });
+  const r = roomThresholds({ "min-memory": "20", "max-load": "1.5" }, { ENNYN_LOCK_MIN_MEMORY: "5", ENNYN_LOCK_MIN_DISK: "0" });
+  assert.deepEqual(r.thresholds, { ...ROOM_DEFAULTS, minMemory: 20, minDisk: 0 });
+  // Set away from the default: said; the default given again is not.
+  assert.deepEqual(r.set, ["--min-memory=20", "ENNYN_LOCK_MIN_DISK=0"]);
+  for (const [opts, env] of [[{ "min-memory": "101" }, {}], [{ "min-memory": "-1" }, {}], [{ "max-load": "0" }, {}], [{}, { ENNYN_LOCK_MAX_LOAD: "abc" }], [{}, { ENNYN_LOCK_MIN_DISK: "" }], [{ "min-disk": true }, {}]]) {
+    assert.throws(() => roomThresholds(/** @type {any} */ (opts), env), /must be a number/, JSON.stringify([opts, env]));
+  }
+});
+
+test("lock room: short of room the job keeps its place and waits, says what is short once, and runs once there is room", async (t) => {
+  const at = box(t);
+  const env = { ...process.env, ENNYN_LOCK_DIR: at.lock };
+  /** @type {import("../core/heavy-lock.mjs").Said[]} */
+  const said = [];
+  let reads = 0;
+  const short = { memory: { value: 9 }, swap: { value: 91.6 }, load: { value: 0.7 }, disk: [{ dir: "/t", read: { value: 100 } }] };
+  const room = () => (++reads <= 3 ? short : roomy());
+  const ran = join(at.dir, "ran");
+  const running = runLocked({ command: append(ran, "ran")[0], args: append(ran, "ran").slice(1), limitMs: 60_000, cwd: at.dir, env, say: (s) => said.push(s), room });
+  await until(() => reads >= 2, "a second look at the room");
+  // While short: its ticket stays first in the queue, the lock is not taken, and nothing ran.
+  assert.equal(tickets(at.lock).length, 1);
+  assert.ok(!existsSync(join(at.lock, "suite.lock")), "the lock is not taken while short");
+  assert.ok(!existsSync(ran));
+  assert.equal(await running, 0);
+  assert.equal(readFileSync(ran, "utf8"), "ran\n");
+  const keys = said.map((s) => s.key);
+  assert.deepEqual(keys.filter((k) => k.startsWith("lock.room")), ["lock.roomShort", "lock.roomAdmitted"], JSON.stringify(said));
+  assert.ok(!keys.includes("lock.waiting"), "a wait for room is not a wait for the turn");
+  assert.equal(said[0].vars?.short, "memory 9% free (min 15%)");
+  assert.match(String(said.find((s) => s.key === "lock.roomAdmitted")?.vars?.room), /^memory 50% free \(min 15%\), swap 0% used/);
+  const [line] = logLines(at.lock);
+  assert.equal(line.short, "memory 9% free (min 15%)");
+  assert.match(line.room, /^memory 50% free/);
+});
+
+test("lock room: a job short of room past its own limit starts anyway and says so; one that cannot read the room is not held", async (t) => {
+  const at = box(t);
+  const env = { ...process.env, ENNYN_LOCK_DIR: at.lock };
+  /** @type {string[]} */
+  const said = [];
+  const t0 = performance.now();
+  const short = () => ({ memory: { value: 1 }, swap: { value: 0 }, load: { value: 0 }, disk: [] });
+  assert.equal(await runLocked({ command: "true", args: [], limitMs: 1_500, cwd: at.dir, env, say: (s) => said.push(s.key), room: short }), 0);
+  assert.ok(performance.now() - t0 >= 1_500, "it waited its limit first");
+  assert.deepEqual(said.filter((k) => k.startsWith("lock.room")), ["lock.roomShort", "lock.roomCeiling"]);
+  assert.equal(logLines(at.lock)[0].short, "memory 1% free (min 15%)");
+  // A reader that throws, or readings that cannot be made: said once as unmeasured, and the run starts at once.
+  for (const room of [() => { throw new Error("EACCES"); }, () => ({ memory: { unmeasured: "sysctl failed" }, swap: { unmeasured: "sysctl failed" }, load: { unmeasured: "x" }, disk: [] })]) {
+    /** @type {import("../core/heavy-lock.mjs").Said[]} */
+    const heard = [];
+    assert.equal(await runLocked({ command: "true", args: [], limitMs: 60_000, cwd: at.dir, env, say: (s) => heard.push(s), room: /** @type {any} */ (room) }), 0);
+    assert.deepEqual(heard.map((s) => s.key), ["lock.roomUnmeasured"]);
+  }
+});
+
+test("lock room: the CLI refuses a threshold out of bounds before it takes a ticket, and says a threshold set away from its default", async (t) => {
+  const at = box(t);
+  for (const args of [["--min-memory", "101", "--", "true"], ["--max-load", "0", "--", "true"], ["--min-disk", "lots", "--", "true"]]) {
+    const r = await lock(args, { cwd: at.dir, lock: at.lock }).ended;
+    assert.equal(r.code, 2, `${args.join(" ")}: ${r.stderr}`);
+    assert.match(r.stderr, /must be a number/);
+  }
+  // Swap is never judged: no option for it.
+  const swap = await lock(["--max-swap", "90", "--", "true"], { cwd: at.dir, lock: at.lock }).ended;
+  assert.equal(swap.code, 2, swap.stderr);
+  assert.match(swap.stderr, /unknown option --max-swap/);
+  assert.ok(!existsSync(at.lock), "a usage error takes no ticket");
+  // The test's own runs set every threshold away from its default: each is said.
+  const r = await lock(["--min-disk", "0", "--", "true"], { cwd: at.dir, lock: at.lock }).ended;
+  assert.equal(r.code, 0, r.stderr);
+  assert.match(r.stderr, /room thresholds set away from the defaults: ENNYN_LOCK_MIN_MEMORY=0, ENNYN_LOCK_MAX_LOAD=1000, --min-disk=0/);
+});
+
+test("lock room: a waiter behind another reads no room and starts no wait for it: its limit of waiting begins at the head", async (t) => {
+  const at = box(t);
+  const env = { ...process.env, ENNYN_LOCK_DIR: at.lock };
+  mkdirSync(join(at.lock, "queue"), { recursive: true });
+  // A locked.sh waiter ahead, alive.
+  const ahead = spawn("sleep", ["300"], { stdio: "ignore" });
+  track(ahead.pid ?? 0);
+  const aheadTicket = join(at.lock, "queue", `0000000001.000000-${ahead.pid}`);
+  writeFileSync(aheadTicket, "");
+  /** @type {string[]} */
+  const said = [];
+  let reads = 0;
+  const room = () => (reads++, roomy());
+  const running = runLocked({ command: "true", args: [], limitMs: 60_000, cwd: at.dir, env, say: (s) => said.push(s.key), room });
+  await until(() => said.includes("lock.waiting"), "the wait for the turn");
+  await new Promise((r) => setTimeout(r, 1_200));
+  assert.equal(reads, 0, "no room read behind another waiter");
+  rmSync(aheadTicket);
+  assert.equal(await running, 0);
+  assert.equal(reads, 1, "read once, at the head");
+  assert.deepEqual(said.filter((k) => k.startsWith("lock.room")), []);
+});
+
+test("lock room: macOS's sysctl is run by its own path, never one found earlier on PATH", (t) => {
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "en-sysctl-")));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const marker = join(dir, "ran");
+  // A planted sysctl that would report all memory free.
+  writeFileSync(join(dir, "sysctl"), `#!/bin/sh\necho ran > "${marker}"\nprintf '100\\ntotal = 1.00M  used = 0.00M  free = 1.00M\\n'\n`, { mode: 0o755 });
+  const path = process.env.PATH;
+  process.env.PATH = `${dir}:${path}`;
+  try {
+    const r = readRoom({ platform: "darwin", dirs: [] });
+    assert.ok(!existsSync(marker), "the sysctl on PATH ran");
+    assert.notDeepEqual(r.memory, { value: 100 });
+  } finally {
+    process.env.PATH = path;
   }
 });

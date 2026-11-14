@@ -24,11 +24,17 @@
  *
  * Each run adds one JSON line to `lock.log` in the folder (command, cwd, waited ms, ran ms, its end), written while
  * the lock is held; past LOG_MAX bytes the log moves to `lock.log.1` first, so the two hold at most twice that.
+ *
+ * The head of the queue takes a free lock only when the machine has room (readRoom, judgeRoom): free memory, swap
+ * used, the 1-minute load per logical CPU and the free space where the run writes, each against its threshold. While
+ * one is short it keeps its ticket, first in the queue, and looks again at each poll; past its own limit of waiting it
+ * starts anyway and says so, so the queue never stops for good. A reading that cannot be made is said as unmeasured
+ * and never holds a job: a lock that waits for good on a reading it cannot make is worse than none.
  */
-import { spawn, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { appendFileSync, existsSync, linkSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmdirSync, statSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
-import { constants, homedir } from "node:os";
+import { appendFileSync, existsSync, linkSync, lstatSync, mkdirSync, readFileSync, readdirSync, renameSync, rmdirSync, statSync, statfsSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { constants, cpus as hostCpus, freemem, homedir, loadavg, tmpdir, totalmem } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -61,6 +67,169 @@ const PS_LIMIT_MS = 5_000;
 
 const RUNNER = fileURLToPath(new URL("../impact/reference-run.mjs", import.meta.url));
 const SIGNALS = /** @type {const} */ (["SIGINT", "SIGTERM", "SIGHUP"]);
+
+/**
+ * The room a job is admitted with. Memory: macOS's free-memory level (kern.memorystatus_level, the figure
+ * `memory_pressure` prints), Linux's MemAvailable share, or a container's own room where it leaves less; load: the
+ * 1-minute load average per logical CPU of the host; disk: GB (10^9 bytes) free to an unprivileged user on the volumes
+ * of the temporary folder and of the run's folder. Each has an option and a variable (ROOM_KNOBS). Swap is shown and
+ * never judged: swapped pages stay out after the pressure ends (and macOS adds swap files as they fill: 1024M became
+ * 2048M at 684M to 1054M used), so its share says what was short, not what is.
+ */
+export const ROOM_DEFAULTS = Object.freeze({ minMemory: 15, maxLoad: 1.5, minDisk: 5 });
+/** @typedef {{ minMemory: number, maxLoad: number, minDisk: number }} Thresholds */
+/** Each threshold's option, its variable and its bounds. */
+export const ROOM_KNOBS = Object.freeze(
+  /** @type {const} */ ({
+    minMemory: { option: "min-memory", env: "ENNYN_LOCK_MIN_MEMORY", max: 100 },
+    maxLoad: { option: "max-load", env: "ENNYN_LOCK_MAX_LOAD", max: 1000 },
+    minDisk: { option: "min-disk", env: "ENNYN_LOCK_MIN_DISK", max: 1_000_000 },
+  }),
+);
+/** macOS's sysctl by its own path: one found through PATH (node_modules/.bin, Homebrew) would decide admission, and a PATH without /usr/sbin (cron, launchd) would leave memory unmeasured. */
+const SYSCTL = "/usr/sbin/sysctl";
+/** How long a reading's program may take. */
+const READ_LIMIT_MS = 5_000;
+
+/**
+ * The thresholds an option, else its variable, else the default gives, and the ones set away from the default (said
+ * at each run, so none is changed without a word). A value that is not a number in its bounds throws.
+ * @param {Record<string, string | true | undefined>} opts by option name @param {NodeJS.ProcessEnv} [env]
+ * @returns {{ thresholds: Thresholds, set: string[] }}
+ */
+export function roomThresholds(opts, env = process.env) {
+  const thresholds = /** @type {Thresholds} */ ({ ...ROOM_DEFAULTS });
+  const set = [];
+  for (const [key, knob] of /** @type {[keyof Thresholds, (typeof ROOM_KNOBS)[keyof Thresholds]][]} */ (Object.entries(ROOM_KNOBS))) {
+    const [from, value] = opts[knob.option] !== undefined ? [`--${knob.option}`, opts[knob.option]] : env[knob.env] !== undefined ? [knob.env, env[knob.env]] : [null, undefined];
+    if (from === null) continue;
+    const n = typeof value === "string" && /^\d+(\.\d+)?$/.test(value) ? Number(value) : NaN;
+    if (!(n >= 0 && n <= knob.max) || (key === "maxLoad" && n === 0)) throw new Error(`${from} must be a number from ${key === "maxLoad" ? "above 0" : "0"} to ${knob.max}, not ${JSON.stringify(value)}`);
+    thresholds[key] = n;
+    if (n !== ROOM_DEFAULTS[key]) set.push(`${from}=${value}`);
+  }
+  return { thresholds, set };
+}
+
+/** @typedef {{ value: number } | { unmeasured: string }} Reading */
+/** @typedef {{ memory: Reading, swap: Reading, load: Reading, disk: { dir: string, read: Reading }[] }} Room */
+
+/** @param {string} path @returns {string | null} */
+function readText(path) {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/** @param {string} command @param {string[]} args @returns {string | null} */
+function runText(command, args) {
+  try {
+    return execFileSync(command, args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: READ_LIMIT_MS, killSignal: "SIGKILL" });
+  } catch {
+    return null;
+  }
+}
+
+/** A reading of a value, or why there is none. @param {number | null} value @param {string} why */
+const reading = (value, why) => (value !== null && Number.isFinite(value) ? { value } : { unmeasured: why });
+
+/**
+ * The machine's room now. macOS: one `/usr/sbin/sysctl -n kern.memorystatus_level vm.swapusage`; Linux: /proc/meminfo,
+ * and the cgroup's limit and use at the top of the process's cgroup tree, which inside a container are the container's
+ * own (v2 memory.max and memory.current, v1 memory/memory.limit_in_bytes and memory.usage_in_bytes), less the inactive
+ * page cache its memory.stat names, which the kernel reclaims (as docker stats reads it); the smaller share of host and
+ * container counts. A v2 process whose limit sits below the top of the tree it sees (a cgroup namespace not used) is
+ * read by the host's share: a stated limit. Windows: os.freemem over os.totalmem, no swap, and no load (os.loadavg is
+ * always 0 there). A reading that fails is `unmeasured`, with why; none throws.
+ * @param {{ platform?: string, read?: (path: string) => string | null, run?: (command: string, args: string[]) => string | null, load?: () => number[], cpus?: number, free?: () => number, total?: () => number, statfs?: (path: string) => { bavail: number, bsize: number }, dirs?: string[] }} [io]
+ * @returns {Room}
+ */
+export function readRoom({ platform = process.platform, read = readText, run = runText, load = loadavg, cpus = hostCpus().length, free = freemem, total = totalmem, statfs = statfsSync, dirs = [tmpdir()] } = {}) {
+  /** @type {Reading} */
+  let memory = { unmeasured: `not read on ${platform}` };
+  /** @type {Reading} */
+  let swap = { unmeasured: `not read on ${platform}` };
+  if (platform === "darwin") {
+    const [level = "", usage = ""] = (run(SYSCTL, ["-n", "kern.memorystatus_level", "vm.swapusage"]) ?? "").split("\n");
+    memory = reading(/^\d+$/.test(level.trim()) && Number(level) <= 100 ? Number(level) : null, "sysctl kern.memorystatus_level gave no percentage");
+    const m = /total = ([\d.]+)M\s+used = ([\d.]+)M/.exec(usage);
+    swap = reading(m ? (Number(m[1]) > 0 ? (Number(m[2]) / Number(m[1])) * 100 : 0) : null, "sysctl vm.swapusage gave no total and used");
+  } else if (platform === "linux") {
+    const info = read("/proc/meminfo") ?? "";
+    const kb = (/** @type {string} */ name) => {
+      const m = new RegExp(`^${name}:\\s+(\\d+) kB$`, "m").exec(info);
+      return m ? Number(m[1]) : null;
+    };
+    const [memTotal, available, swapTotal, swapFree] = [kb("MemTotal"), kb("MemAvailable"), kb("SwapTotal"), kb("SwapFree")];
+    let share = memTotal && available !== null ? (available / memTotal) * 100 : null;
+    const num = (/** @type {string | null} */ t) => (t !== null && /^\d+$/.test(t.trim()) ? Number(t) : null);
+    const statOf = (/** @type {string | null} */ t, /** @type {string} */ key) => num(new RegExp(`^${key} (\\d+)$`, "m").exec(t ?? "")?.[1] ?? null);
+    const cg = "/sys/fs/cgroup";
+    const v2max = read(`${cg}/memory.max`);
+    const [max, current, inactive] =
+      v2max !== null
+        ? [num(v2max), num(read(`${cg}/memory.current`)), statOf(read(`${cg}/memory.stat`), "inactive_file")]
+        : [num(read(`${cg}/memory/memory.limit_in_bytes`)), num(read(`${cg}/memory/memory.usage_in_bytes`)), statOf(read(`${cg}/memory/memory.stat`), "total_inactive_file")];
+    // "max" (v2) is no limit, and v1's "no limit" is a number past the host's memory, which the smaller share drops.
+    if (share !== null && max && current !== null) share = Math.min(share, (Math.max(0, max - Math.max(0, current - (inactive ?? 0))) / max) * 100);
+    memory = reading(share, "/proc/meminfo gave no MemTotal and MemAvailable");
+    swap = reading(swapTotal === 0 ? 0 : swapTotal && swapFree !== null ? ((swapTotal - swapFree) / swapTotal) * 100 : null, "/proc/meminfo gave no SwapTotal and SwapFree");
+  } else if (platform === "win32") {
+    try {
+      memory = reading(total() > 0 ? (free() / total()) * 100 : null, "os.totalmem gave 0");
+    } catch (e) {
+      memory = { unmeasured: String(/** @type {Error} */ (e).message) };
+    }
+  }
+  /** @type {Reading} */
+  let perCpu = { unmeasured: "os.loadavg is always 0 on Windows" };
+  if (platform !== "win32") {
+    try {
+      // The load average is the host's, whatever CPUs a container may use: divided by the host's CPUs, not
+      // availableParallelism(), which a cpuset narrows (a 2-CPU container on a busy 64-CPU host would always read short).
+      perCpu = reading(cpus > 0 ? load()[0] / cpus : null, "no logical CPU count");
+    } catch (e) {
+      perCpu = { unmeasured: String(/** @type {Error} */ (e).message) };
+    }
+  }
+  const disk = [...new Set(dirs)].map((dir) => {
+    try {
+      const s = statfs(dir);
+      return { dir, read: reading((s.bavail * s.bsize) / 1e9, "statfs gave no free blocks") };
+    } catch (e) {
+      return { dir, read: /** @type {Reading} */ ({ unmeasured: String(/** @type {Error} */ (e).message) }) };
+    }
+  });
+  return { memory, swap, load: perCpu, disk };
+}
+
+/**
+ * The room against the thresholds: the readings as text, the short ones, the unmeasured ones (never short).
+ * @param {Room} room @param {Thresholds} t
+ * @returns {{ text: string, short: string[], unmeasured: string[] }}
+ */
+export function judgeRoom(room, t) {
+  /** @type {string[]} */
+  const parts = [];
+  /** @type {string[]} */
+  const short = [];
+  /** @type {string[]} */
+  const unmeasured = [];
+  /** @param {string} name @param {Reading} r @param {(v: number) => string} text @param {(v: number) => boolean} isShort */
+  const one = (name, r, text, isShort) => {
+    if ("unmeasured" in r) return void unmeasured.push(`${name} (${r.unmeasured})`);
+    parts.push(`${name} ${text(r.value)}`);
+    if (isShort(r.value)) short.push(`${name} ${text(r.value)}`);
+  };
+  const round = (/** @type {number} */ v) => String(Number(v.toFixed(2)));
+  one("memory", room.memory, (v) => `${round(v)}% free (min ${t.minMemory}%)`, (v) => v < t.minMemory);
+  one("swap", room.swap, (v) => `${round(v)}% used (not judged)`, () => false);
+  one("load", room.load, (v) => `${round(v)} per CPU (max ${t.maxLoad})`, (v) => v > t.maxLoad);
+  for (const d of room.disk) one(`disk ${d.dir}`, d.read, (v) => `${round(v)} GB free (min ${t.minDisk} GB)`, (v) => v < t.minDisk);
+  return { text: [...parts, ...unmeasured.map((u) => `${u}: unmeasured`)].join(", "), short, unmeasured };
+}
 
 /** The lock folder. @param {NodeJS.ProcessEnv} [env] */
 export const lockDir = (env = process.env) => resolve(env.ENNYN_LOCK_DIR || join(homedir(), ".ennyn-lock"));
@@ -332,10 +501,12 @@ function log(dir, entry) {
 
 /**
  * @typedef {{ key: string, vars?: Record<string, string | number> }} Said
- * @param {{ command: string, args: string[], limitMs: number, cwd?: string, env?: NodeJS.ProcessEnv, say?: (s: Said) => void, graceMs?: number, refreshMs?: number }} o
+ * @param {{ command: string, args: string[], limitMs: number, cwd?: string, env?: NodeJS.ProcessEnv, say?: (s: Said) => void, graceMs?: number, refreshMs?: number, room?: () => Room, thresholds?: Thresholds }} o
+ *   `room`: the machine's room now (a test gives its own); `thresholds`: what counts as room. The wait for room ends at
+ *   `limitMs`, the run's own limit, and the run then starts anyway.
  * @returns {Promise<number>} the run's exit status: its own, 124 stopped at the limit, 128+n ended or interrupted by signal n
  */
-export async function runLocked({ command, args, limitMs, cwd = process.cwd(), env = process.env, say = () => {}, graceMs = GRACE_MS, refreshMs = REFRESH_MS }) {
+export async function runLocked({ command, args, limitMs, cwd = process.cwd(), env = process.env, say = () => {}, graceMs = GRACE_MS, refreshMs = REFRESH_MS, room = () => readRoom({ dirs: [tmpdir(), cwd] }), thresholds = ROOM_DEFAULTS }) {
   const dir = lockDir(env);
   const queue = join(dir, "queue");
   const lock = join(dir, "suite.lock");
@@ -376,6 +547,12 @@ export async function runLocked({ command, args, limitMs, cwd = process.cwd(), e
   const known = new Set();
   /** The record this waiter last read living, by its bytes. */
   const memo = { text: "", pids: /** @type {number[]} */ ([]), at: 0 };
+  /** When the head of the queue first read the machine short of room; the readings it was admitted on; what was short. */
+  let shortSince = /** @type {number | null} */ (null);
+  let admittedOn = "";
+  let shortOn = "";
+  let unmeasuredSaid = false;
+  let ceilingSaid = false;
   try {
     // Wait for the turn: the first live ticket takes the lock. A dead ennyn holder's lock any ennyn waiter may drop,
     // claimed first, so a locked.sh waiter at the head of the queue is not left behind it; a lock with no record of
@@ -388,7 +565,30 @@ export async function runLocked({ command, args, limitMs, cwd = process.cwd(), e
         return (offSignals(onSignal), 1);
       }
       const mine = live[0] === ownName;
-      if (mine) {
+      let roomWait = false;
+      // Room is read at the head of the queue with the lock free: nobody else's turn waits on it.
+      if (mine && !existsSync(lock)) {
+        let judged;
+        try {
+          judged = judgeRoom(room(), thresholds);
+        } catch (e) {
+          judged = { text: "", short: [], unmeasured: [`room (${/** @type {Error} */ (e).message})`] };
+        }
+        if (judged.unmeasured.length && !unmeasuredSaid) say({ key: "lock.roomUnmeasured", vars: { what: judged.unmeasured.join(", ") } });
+        unmeasuredSaid ||= judged.unmeasured.length > 0;
+        admittedOn = judged.text;
+        if (judged.short.length) {
+          if (shortSince === null) {
+            shortSince = performance.now();
+            shortOn = judged.short.join(", ");
+            say({ key: "lock.roomShort", vars: { short: shortOn, minutes: limitMs / 60_000 } });
+          }
+          roomWait = performance.now() - shortSince < limitMs;
+          if (!roomWait && !ceilingSaid) say({ key: "lock.roomCeiling", vars: { minutes: limitMs / 60_000, short: judged.short.join(", ") } });
+          ceilingSaid ||= !roomWait;
+        } else ceilingSaid = false;
+      }
+      if (mine && !roomWait) {
         try {
           mkdirSync(lock);
           break;
@@ -408,7 +608,7 @@ export async function runLocked({ command, args, limitMs, cwd = process.cwd(), e
         if (done instanceof Error && !dropFailSaid) say({ key: "lock.dropFailed", vars: { error: String(done.message) } });
         if (done instanceof Error) dropFailSaid = true;
       }
-      if (!waited) say({ key: "lock.waiting", vars: { dir } });
+      if (!waited && !roomWait) say({ key: "lock.waiting", vars: { dir } });
       waited = true;
       try {
         await sleep(POLL_MS, undefined, { signal: nap.signal });
@@ -463,6 +663,7 @@ export async function runLocked({ command, args, limitMs, cwd = process.cwd(), e
     }, refreshMs);
     // Said only after a wait: a lock taken at once says nothing, and the run's output is all there is.
     if (waited) say({ key: "lock.taken", vars: { seconds: (waitedMs / 1000).toFixed(1) } });
+    if (shortSince !== null && !ceilingSaid) say({ key: "lock.roomAdmitted", vars: { room: admittedOn } });
     let end = "";
     let left = false;
     /** @type {number | undefined} */
@@ -514,7 +715,7 @@ export async function runLocked({ command, args, limitMs, cwd = process.cwd(), e
     if (end === "stopped") say({ key: "lock.stopped", vars: { minutes: limitMs / 60_000 } });
     try {
       const text = [command, ...args].join(" ");
-      log(dir, { at, command: text.length > COMMAND_MAX ? `${text.slice(0, COMMAND_MAX)}…` : text, cwd, waitedMs, ranMs: Math.round(performance.now() - start), end, ...(left ? { left: "stopped" } : {}) });
+      log(dir, { at, command: text.length > COMMAND_MAX ? `${text.slice(0, COMMAND_MAX)}…` : text, cwd, waitedMs, ranMs: Math.round(performance.now() - start), end, ...(left ? { left: "stopped" } : {}), room: admittedOn, ...(shortSince !== null ? { short: shortOn } : {}) });
     } catch (e) {
       say({ key: "lock.logFailed", vars: { error: String(/** @type {Error} */ (e).message) } });
     }

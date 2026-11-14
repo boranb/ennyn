@@ -488,7 +488,9 @@ const CASES = [
     },
   },
   // The lock reads git only for the language of its lines; its folder is the copy's own, so runs side by side never wait.
-  { args: ["lock", "--", process.execPath, "-e", "0"], writes: true, env: { ENNYN_LOCK_DIR: ".git/lock" } },
+  // Thresholds no machine falls short of: a machine short of room would hold every cell to the run's limit. The room is
+  // still read, so a read that fails under it is said.
+  { args: ["lock", "--min-memory", "0", "--max-load", "1000", "--min-disk", "0", "--", process.execPath, "-e", "0"], writes: true, env: { ENNYN_LOCK_DIR: ".git/lock" } },
   { args: ["worktrees"], setup: (repo) => worktrees(repo) },
   { args: ["worktrees", "--remove"], writes: true, setup: (repo) => worktrees(repo) },
   { args: ["gate-record", "--start", START, "--exit", "0", "--commit", "HEAD"], writes: true },

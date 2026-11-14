@@ -40,7 +40,7 @@ import { recordWrite, uninstall, writtenPath } from "../setup/uninstall.mjs";
 import { instructionBudget, readBudgets, recordBudget, previousBudget, replacedAt } from "../setup/budget.mjs";
 import { journalPath, MAX_TIMEOUT_MS, MutationError, parseMutants, restoreJournal, runMutants, summarizeMutants } from "../metrics/mutation.mjs";
 import { markedWorktrees, removeWorktree, verdict } from "../plan/worktrees.mjs";
-import { DEFAULT_LIMIT_MIN, MAX_LIMIT_MIN, STOPPED_EXIT, runLocked } from "../core/heavy-lock.mjs";
+import { DEFAULT_LIMIT_MIN, MAX_LIMIT_MIN, ROOM_DEFAULTS, ROOM_KNOBS, STOPPED_EXIT, roomThresholds, runLocked } from "../core/heavy-lock.mjs";
 import { READ_LINE_MAX, ALIASES, TranscriptError, agentUsage, claudeConfigDir, defaultSession, namedFolder, projectFolder, projectsDir } from "../adapters/claude-code/agent-usage.mjs";
 
 export const USAGE = `Usage: ennyn <command> [options]
@@ -99,7 +99,10 @@ Commands:
   lock [--limit <minutes>] -- <command> [args...]   run a heavy job (a whole suite, a mutation run, a lab, a platform image) when its turn
                                                     comes in this machine's one queue (ENNYN_LOCK_DIR, else ~/.ennyn-lock), under a time
                                                     limit (default ${DEFAULT_LIMIT_MIN}, at most ${MAX_LIMIT_MIN}): at it the run's process group
-                                                    gets SIGTERM, then SIGKILL; exit as the command does, ${STOPPED_EXIT} when the limit stopped it
+                                                    gets SIGTERM, then SIGKILL; exit as the command does, ${STOPPED_EXIT} when the limit stopped it.
+                                                    The turn waits for room, at most the limit: --min-memory <% free> (${ROOM_DEFAULTS.minMemory}),
+                                                    --max-load <per CPU> (${ROOM_DEFAULTS.maxLoad}), --min-disk <GB> (${ROOM_DEFAULTS.minDisk}), or ENNYN_LOCK_MIN_MEMORY,
+                                                    ENNYN_LOCK_MAX_LOAD, ENNYN_LOCK_MIN_DISK; swap is shown, never judged
   worktrees [--remove] [<path>...]                  the worktrees the cycle marked (a lock whose reason is ennyn:<cycle>), each with whether
                                                     removing it loses nothing, or why not; --remove removes those that pass, checked again first,
                                                     never with --force; paths: only those. Exit 1 when one could not be checked or removed
@@ -1839,7 +1842,7 @@ const COMMANDS = {
 
   async lock(args) {
     const cut = args.indexOf("--");
-    const { opts, help } = parseArgs(cut === -1 ? args : args.slice(0, cut), { options: ["limit"] });
+    const { opts, help } = parseArgs(cut === -1 ? args : args.slice(0, cut), { options: ["limit", ...Object.values(ROOM_KNOBS).map((k) => k.option)] });
     if (help) return (out(USAGE), 0);
     const [command, ...rest] = cut === -1 ? [] : args.slice(cut + 1);
     if (command === undefined || command === "") throw new UsageError("lock takes -- <command> [args...]");
@@ -1849,6 +1852,12 @@ const COMMANDS = {
       minutes = Number(opts.limit);
       if (!(minutes > 0) || minutes > MAX_LIMIT_MIN) throw new UsageError(`--limit must be above 0 and at most ${MAX_LIMIT_MIN}`);
     }
+    let room;
+    try {
+      room = roomThresholds(opts);
+    } catch (e) {
+      throw new UsageError(/** @type {Error} */ (e).message);
+    }
     // The language of the project the command runs in, when there is one: the lock itself reads no project.
     let lang = "en";
     try {
@@ -1857,7 +1866,8 @@ const COMMANDS = {
       // English outside a project.
     }
     const say = (/** @type {import("../core/heavy-lock.mjs").Said} */ s) => err(t(s.key, s.vars ?? {}, lang));
-    return runLocked({ command, args: rest, limitMs: Math.round(minutes * 60_000), say });
+    if (room.set.length) say({ key: "lock.roomSet", vars: { set: room.set.join(", ") } });
+    return runLocked({ command, args: rest, limitMs: Math.round(minutes * 60_000), say, thresholds: room.thresholds });
   },
 
   worktrees(args) {
