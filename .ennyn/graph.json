@@ -5927,7 +5927,7 @@
       "value": "low",
       "cost": "S",
       "cluster": "security",
-      "title": "SECURITY.md says what uninstall-hook deletes (the unchanged hook and the state dir under the git dir) and what ennyn lock deletes and signals (queue tickets, its own process group), with its stated limits: a run with no limit after the lock and its runner both get SIGKILL, ENNYN_LOCK_DIR must be the user's own folder (record and log writes follow a planted link); today only docs/modules.md says so",
+      "title": "SECURITY.md says what uninstall-hook deletes (the unchanged hook and the state dir under the git dir) and what ennyn lock deletes and signals (queue tickets, its own process group), with its stated limits: a run with no limit after the lock and its runner both get SIGKILL, ENNYN_LOCK_DIR must be the user's own folder (record and log writes follow a planted link); today only docs/modules.md says so. Same limit, from cycle 34: a name planted in the queue holds every waiter (an empty ticket naming a live pid stays first for good; a ticket-shaped FIFO naming one blocks the read in ticketLives, and the waiter's signal handlers with it; nothing is deleted: T2 security review, evidence gap 1); no document says it",
       "source": "cycle 2026-11-13 (33) security audit: row c33-t4-sec-r1-02"
     },
     {
@@ -6030,7 +6030,7 @@
       "cost": "S",
       "cluster": "security",
       "gate": "beside",
-      "title": "push-check-exit-zero-not-ok: low findings left. tested-met-asked: push.md and the usage say exit 3 for every met and asked push, while a given --tested turns the same state into exit 1 (c34-t1-code-r1-01). modules-exits: docs/modules.md's test-run record contract lists push-check's exits without 3 (c34-t1-sec-r1-01)",
+      "title": "push-check-exit-zero-not-ok: low findings left. tested-met-asked: push.md and the usage say exit 3 for every met and asked push, while a given --tested turns the same state into exit 1 (c34-t1-code-r1-01). modules-exits: docs/modules.md's test-run record contract lists push-check's exits without 3 (c34-t1-sec-r1-01). help-exit: push.md step 2 says exit 0 comes only with the may-push line, while push-check --help (also after --tested <h>) exits 0 with the usage alone; say so there (T1 security review, evidence gap 1)",
       "source": "review of cycle 2026-11-14 (34)"
     },
     {
@@ -7218,6 +7218,42 @@
       "source": "discoverability review, 2026-10-27, one-off scan",
       "since": 13,
       "reason": "merged into external-audit-before-release (2026-11-11)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "locked-sh-sweep-own-names",
+      "title": "The hand-written locked.sh still removes every name in the queue that is no live ticket and follows a queue that is a symbolic link, as ennyn lock did before 1644a39",
+      "value": "low",
+      "cost": "S",
+      "cluster": "method",
+      "source": "T2 author report, cycle 2026-11-14 (34): probe-queue.sh",
+      "since": 34,
+      "reason": "the lock script is a local file outside the repository, not product code, so no commit here can close it; ennyn lock, the product's way into the same queue, holds the fix (1644a39)."
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "lock-queue-link-each-poll",
+      "title": "ennyn lock checks that the queue is no symbolic link once, before its ticket is written; a queue swapped for a link while a waiter waits is not refused by that check",
+      "value": "low",
+      "cost": "S",
+      "cluster": "method",
+      "source": "T2 author report (impact table) and T2 security review, cycle 2026-11-14 (34)",
+      "since": 34,
+      "reason": "Measured as held without it: a waiter whose queue is swapped for a link ends at its own-ticket check before any unlink behind the link (T2 security review probe), docs/modules.md states the refusal as before the ticket is written, and the untested order of that check is already own-ticket-order in heavy-lock-design-decision."
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "short-stop-after-pass-window",
+      "title": "test:short breaks on any run with a stop set, also one that ended 0: a stop between the child's exit and its close event skips guards' accounting run and prints test:short passed, exit 0",
+      "value": "low",
+      "cost": "S",
+      "cluster": "method",
+      "source": "T4 correctness review round 1, cycle 2026-11-14 (34): counted, not listed (low confidence); labs stop-after-pass.mjs, nodetest-late-stop.mjs",
+      "since": 34,
+      "reason": "Low confidence, counted and not listed (skills/cycle/finding-schema.md): only a stand-in child that exits 0 reached it, while real node --test exits 1 on a stop even after its tests passed, which leaves the instant between the child's exit and its close event."
     }
   ]
 }
