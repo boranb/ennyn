@@ -78,7 +78,7 @@
     },
     {
       "id": "release-0-1-0",
-      "title": "Release v0.1.0: final read of both READMEs, CHANGELOG section, version in package.json, package-lock.json and plugin.json, tag; README and SECURITY.md name the one source to install from and what a genuine copy never holds (binaries, runtime dependencies, install scripts); docs/evidence.md's heading 'Gates stop recurrence, prose does not' is scoped to the origin project, with Ennyn's own table of proposal-born gates beside it; docs/related-work.md drops 'None is built yet' (findings-ledger is built), says which of the table's nodes are, and credits this review's ideas in its table, before publishing: Anthropic's post added its credit to Sapling's Mononoke only in an update of October 15; docs/related-work.md's spec-kit row names assess, bug and the workflow engine, and says its claim holds for core only: community extensions (spec-gates, vurnix, spec-kit-tdd) now run checks as code. The rest of the graph waits for after this release Trimmed 2026-11-11 on the user's ask. Moved to 0.2: fresh-session-run (an unattended runner nobody has measured), secret-output-mask and secret-transcript-probe (the probe's answers serve only the mask), kept-folder-closing (stopped in cycle 31, its branch kept), cycle-record. Merged, each declined with its carrier named: walking-skeleton-first, no-bypass-trial, history-secret-scan. Cycle 32 is the last cycle for these needs: what does not land in it moves to 0.2, except a finding that stops a scenario of docs/acceptance.md At most five findings join after this trim; a sixth is the user's decision First of the five: lock-wait-on-fs-error (2026-11-11, a done need's command hangs on Linux) Cycle 32 (2026-11-13): fault-matrix-scoped, engines-floor-22 and greenfield-intake landed; one-decision-one-site moved to 0.2 after its measurement refuted the literal count",
+      "title": "Release v0.1.0: final read of both READMEs, CHANGELOG section, version in package.json, package-lock.json and plugin.json, tag; README and SECURITY.md name the one source to install from and what a genuine copy never holds (binaries, runtime dependencies, install scripts); docs/evidence.md's heading 'Gates stop recurrence, prose does not' is scoped to the origin project, with Ennyn's own table of proposal-born gates beside it; docs/related-work.md drops 'None is built yet' (findings-ledger is built), says which of the table's nodes are, and credits this review's ideas in its table, before publishing: Anthropic's post added its credit to Sapling's Mononoke only in an update of October 15; docs/related-work.md's spec-kit row names assess, bug and the workflow engine, and says its claim holds for core only: community extensions (spec-gates, vurnix, spec-kit-tdd) now run checks as code. The rest of the graph waits for after this release Trimmed 2026-11-11 on the user's ask. Moved to 0.2: fresh-session-run (an unattended runner nobody has measured), secret-output-mask and secret-transcript-probe (the probe's answers serve only the mask), kept-folder-closing (stopped in cycle 31, its branch kept), cycle-record. Merged, each declined with its carrier named: walking-skeleton-first, no-bypass-trial, history-secret-scan. Cycle 32 is the last cycle for these needs: what does not land in it moves to 0.2, except a finding that stops a scenario of docs/acceptance.md At most five findings join after this trim; a sixth is the user's decision First of the five: lock-wait-on-fs-error (2026-11-11, a done need's command hangs on Linux) Cycle 32 (2026-11-13): fault-matrix-scoped, engines-floor-22 and greenfield-intake landed; one-decision-one-site moved to 0.2 after its measurement refuted the literal count Second of the five: platform-run-before-landing (the user, 2026-11-14: a request). The final README read: the platform paragraph names the date and commit each platform was last measured, WSL and native Windows unless measured again at the release (no Windows machine at hand, 2026-11-14)",
       "status": "planned",
       "value": "high",
       "cost": "S",
@@ -111,7 +111,8 @@
         "push-check-recorded-suite",
         "heavy-job-limit",
         "engines-floor-22",
-        "lock-wait-on-fs-error"
+        "lock-wait-on-fs-error",
+        "platform-run-before-landing"
       ],
       "gate": "user",
       "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release); read 2026-11-01: the post now opens 'Updated October 15 to include more detail on the projects that pioneered many of the techniques we use in Scion.', and The Pragmatic Engineer (2026-10-22) reports the attribution came after a public complaint; an audit of requests against the graph, 2026-11-01: five had no node in the release needs: a project started from nothing (a request, 2026-10-29: 15 nodes, 0 done), leftovers (a request, 2026-10-29: 14 nodes, 0 done), secrets in chat (a request, 2026-10-28: 12 nodes, 1 done), less code and no repetition (a request, a request, 2026-10-25), findings that can wait (a request, 2026-10-25). The smallest piece of each entered the needs. spec-gates' README: 'Spec Kit is a guidance layer'; 2026-11-05, the choice was left to the orchestrator: kill-own-pid-only, plugin-update-path and win-kill-waits-exit join the needs, observed on Windows",
@@ -5785,7 +5786,7 @@
       "status": "planned",
       "needs": [],
       "id": "cycle-record",
-      "title": "The closing records one line per cycle in the metrics log ({\"kind\":\"cycle\",\"n\":32,\"start\":...,\"close\":...,\"planned\":4,\"landed\":3,\"stopped\":1,\"findings\":83,\"previousFix\":32}), read from the journal and the ledger, through ennyn journal close --record (or budget --record, whichever reads less)",
+      "title": "The closing records one line per cycle in the metrics log ({\"kind\":\"cycle\",\"n\":32,\"start\":...,\"close\":...,\"planned\":4,\"landed\":3,\"stopped\":1,\"findings\":83,\"previousFix\":32}), read from the journal and the ledger, through ennyn journal close --record (or budget --record, whichever reads less), and the lock's totals in the cycle's window from the lock log (runs, waited, ran)",
       "value": "medium",
       "cost": "S",
       "cluster": "metrics",
@@ -6017,7 +6018,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "title": "Before its first test run, the author agent writes in the task file where its change can break (at most three places, each with the platform it would break on and what would show it: macOS where the cycle runs, Linux in node:22 and the Node 22.0/git 2.34 floor image, WSL, native Windows for the hooks README.md says were measured there) and what it is unsure of; the review step sets that list beside what every run the change went through found (the local suite, the containers, the Windows or WSL check when the change touches one, the review), and every break nobody predicted goes into the findings ledger as unpredicted, with its platform, so the classes and platforms the author keeps missing show up in the recurrence ladder. A platform the change touches but no run measured is said as unmeasured, never as passed. Lands after 0.1.0 (not a release need)",
+      "title": "Before its first test run, the author agent writes in the task file where its change can break (at most three places, each with the platform it would break on, from the platform runs the project's handoff names, and what would show it; a project that names none says the one it runs on) and what it is unsure of; the review step sets that list beside what every run the change went through found (the fast test, the platform runs its brief named, the review), and every break nobody predicted goes into the findings ledger as unpredicted, with its platform, so the classes and platforms the author keeps missing show up in the recurrence ladder. A platform the change touches but no run measured is said as unmeasured, never as passed. Lands after 0.1.0 (not a release need)",
       "source": "the user, 2026-11-14: a request; Fable evaluation, 2026-11-14"
     },
     {
@@ -6099,6 +6100,39 @@
       "cluster": "security",
       "title": "core/heavy-lock.mjs is at the fix-loop brake (stand-in-for-the-fact in cycles 31, 33 and 34; 11 rows, a round-2 previous-fix in 34): the lock decides from stand-ins, markers in a shared folder and readings of machine state. Decide on the top two rungs: a construct that refuses what it cannot read (the room reader in a module of its own, one reader per platform, each answering unreadable instead of a default; a ticket record that holds pid and start time, not a name) or removing the need (the queue gone for one lock file held by a process the OS reaps). Its leftover defects go into that decision, not patches: log-at-end (room wait and admission reach lock.log only in the run's end line, c34-t5-code-r1-06, c34-t5-sec-r1-04), empty-env (an empty ENNYN_LOCK_* variable refuses every run, c34-t5-sec-r1-05), own-ticket-order (a mutant moving the own-ticket check after the sweep loop survives, T2 security review), load-lag (the 1-minute load average lags a job that just ended, T5 author). Or say the limit and decline them",
       "source": "cycle 2026-11-14 (34) convergence: fix-loop brake, skills/cycle/report-formats.md"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 34,
+      "id": "platform-run-before-landing",
+      "value": "high",
+      "cost": "S",
+      "cluster": "cycle",
+      "title": "task-brief.md sends every platform run to the release; a task's changed tests run on the platforms it touches before it lands. Line 20: 'A platform run the handoff names (another operating system, a container image, the oldest supported runtime) runs before a task lands, on the test files the task adds or changes, when the task touches what differs there (paths, processes, signals, shells, the file system, a tool's version): red there is the task's finding, before the main branch moves. The brief names which runs, or none and why; a platform the change touches and no run reaches is said as unmeasured in the report, never as passed. The whole matrix runs before a release, never at the closing.' Line 77 (Landing): ', and the platform runs its brief names' after every slow gate the task touches. A one-task run, author sonnet, one reviewer",
+      "source": "the user, 2026-11-14: a request; Fable decisions, 2026-11-14, a kept folder outside the repository"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 34,
+      "id": "platform-runs-named",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "init",
+      "title": "init asks which platforms the project's documents say it runs on and writes one run per platform in the handoff (a command, or unmeasured and why); the release node's title names them, and doctor says a platform the documents claim that no run names",
+      "source": "the user, 2026-11-14: a request; Fable decisions, 2026-11-14, a kept folder outside the repository"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 34,
+      "id": "release-needs-all-gated",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "plan",
+      "title": "ennyn status and ennyn core say when every open need of the release node carries a gate: a cycle closes none of them, and the cycle plan asks the user before it picks",
+      "source": "the user, 2026-11-14: a request; Fable decisions, 2026-11-14, a kept folder outside the repository"
     }
   ],
   "done": [
