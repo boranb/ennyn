@@ -122,7 +122,7 @@ Tüm ayarlar tek bir dosyada durur: `/ennyn:init`'in sizin için yazdığı `.en
 
 `language` (`en` ya da `tr`) raporların ve agent'ın cevaplarının dilini belirler. Commit mesajları `commitMsg.language` ayarına uyar; böylece Türkçe konuşup İngilizce commit atabilirsiniz. Hook, `commitMsg.types` içindeki commit tiplerini kabul eder. `commitMsg.fixType` ise önceki commit'leri onaran fix'lere ayrılmış tiptir; `ennyn rework` de bu fix'leri sayar. `/ennyn:init` commit tiplerini ve fix tipini ayarlar; ikisi de kendi talimatlarınızdaki commit kurallarından öncelikli olur. Anahtarların tam listesi [DESIGN.md](DESIGN.md) dosyasında (İngilizce).
 
-İş grafı bir JSON dosyasıdır (ya da ES modülü): açık görevler ve bitmiş görevler için iki ayrı dizi içerir. Field adları ayarlanabildiği için Ennyn'i elinizdeki bir grafa yönlendirebilirsiniz.
+İş grafı bir JSON dosyasıdır (ya da ES modülü; onu okuyan komutlar modülü içe aktarıp çalıştırır, bu yüzden klonlanan bir projenin graf modülü incelenecek koddur): açık görevler ve bitmiş görevler için iki ayrı dizi içerir. Field adları ayarlanabildiği için Ennyn'i elinizdeki bir grafa yönlendirebilirsiniz.
 
 ## Ennyn ne zaman uymaz
 

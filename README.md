@@ -122,7 +122,7 @@ All settings live in one file, `.ennyn/config.json`, which `/ennyn:init` writes 
 
 `language` (`en` or `tr`) sets the language of reports and of the agent's replies. Commit messages follow `commitMsg.language`, so you can talk in Turkish and commit in English. The hook accepts the commit types in `commitMsg.types`, and `commitMsg.fixType` is the type reserved for repairs of earlier commits, the ones `ennyn rework` counts. `/ennyn:init` sets the types and the fix type, and they override any commit rules in your own instructions. The full list of keys is in [DESIGN.md](DESIGN.md).
 
-The work graph is a JSON file (or an ES module) with two arrays, one for open tasks and one for done tasks. Field names can be configured, so you can point Ennyn at a graph you already have.
+The work graph is a JSON file (or an ES module; the commands that read it import and run that module, so a cloned project's graph module is code to review) with two arrays, one for open tasks and one for done tasks. Field names can be configured, so you can point Ennyn at a graph you already have.
 
 ## When Ennyn does not fit
 
