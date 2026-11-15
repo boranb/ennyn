@@ -5,7 +5,7 @@ description: Run one development cycle of four tasks picked from the project's w
 
 # Cycle — four tasks, measured
 
-No `.ennyn/` yet: run the init skill first. Project settings come from `.ennyn/config.json` (`language`: the language of every report and commit message you write). `node "${CLAUDE_PLUGIN_ROOT}/scripts/ennyn.mjs" --help` lists the commands used below.
+No `.ennyn/` yet: run `/ennyn:init` first. Project settings come from `.ennyn/config.json` (`language`: the language of every report and commit message you write). `node "${CLAUDE_PLUGIN_ROOT}/scripts/ennyn.mjs" --help` lists the commands used below.
 
 A node or fix asked for alone: [one-task.md](one-task.md).
 

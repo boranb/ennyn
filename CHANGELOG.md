@@ -2,6 +2,7 @@
 
 ## Unreleased (0.0.x)
 
+- The cycle skill names `/ennyn:init` where it said "the init skill": Claude Code has a built-in skill of that name.
 - The cycle runs a platform run its task brief names (another operating system, a container image, the oldest supported runtime) before the task lands, on the test files the task adds or changes, when the task touches what differs there; a platform no run reaches is reported as unmeasured, never as passed. The whole matrix still runs before a release.
 - `ennyn lock` admits a heavy job only when the machine has room: free memory (macOS `kern.memorystatus_level` read by `/usr/sbin/sysctl`; Linux `MemAvailable`, or a cgroup v2 or v1 limit less its reclaimable file cache), load per host CPU and 5 GB of free disk. It waits up to the job's own `--limit` and logs the reading; swap is shown, never judged. `--min-memory`, `--max-load`, `--min-disk` and `ENNYN_LOCK_MIN_MEMORY`, `ENNYN_LOCK_MAX_LOAD`, `ENNYN_LOCK_MIN_DISK` set the thresholds.
 - `ennyn push-check` exits 0 only where the cycle may push by itself (`push.mode` `after-closing` and the closing's own checks agree); a push that is ready but asked of the user exits 3, one not ready 1. `skills/cycle/push.md` reads the exit.
