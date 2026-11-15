@@ -198,6 +198,7 @@
   "cli.depsNamesUnread": "security.deps, adı UTF-8 olmayan {n} hazırlanmış yolda denetlenmedi ({paths}): git'e bu adlarla sorulamıyor, bu yüzden commit reddedildi. Onlara UTF-8 ad verin ya da bu commit'in dışında bırakın.",
   "cli.depsUnmeasured": "security.deps denetlenmedi: hazırlanmış kilit dosyaları okunamadı ({error}).",
   "deps.lockUnread": "{path} denetlenmedi: {reason}",
+  "deps.unreadNew": "{path}: bu commit denetimin okuyamadığı bir dosya getiriyor ({reason}), npm onu yine de okur: npm'e neyi kurdurduğu ya da çalıştırdığı bilinmiyor; en çok 16 MB, düz bir UTF-8 dosya yapın",
   "deps.pkgUnread": "{path}: npm çektiği bağımlılıklar için {where} dosyasını okur, denetim okuyamadı: onu düz UTF-8 JSON olarak yeniden yaz",
   "deps.pkgUnreadStill": "{path}, denetimin okuyamadığı {where} dosyasına karşı denetlenmedi",
   "deps.overrideNotLifted": "{path}: package.json'daki bir override bu retleri kaldırmaz ({where}): denetim npm'in okuyabileceği her belirtimi, override edileni de yargılar",

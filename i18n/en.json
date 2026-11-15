@@ -198,6 +198,7 @@
   "cli.depsNamesUnread": "security.deps was not checked in {n} staged path(s) whose names are not UTF-8 ({paths}): git cannot be asked for them by name, so this commit is refused. Give them UTF-8 names, or leave them out of this commit.",
   "cli.depsUnmeasured": "security.deps was not checked: the staged lock files could not be read ({error}).",
   "deps.lockUnread": "{path} was not checked: {reason}",
+  "deps.unreadNew": "{path}: this commit brings a file the check cannot read ({reason}), and npm reads it all the same: what it makes npm install or run is not known; make it a plain UTF-8 file of at most 16 MB",
   "deps.pkgUnread": "{path}: npm reads {where} for the dependencies it fetches, and the check could not: write it again as plain UTF-8 JSON",
   "deps.pkgUnreadStill": "{path} was not checked against {where}, which the check cannot read",
   "deps.overrideNotLifted": "{path}: an override in package.json does not lift these refusals ({where}): the check judges every spec npm may read, an overridden one too",

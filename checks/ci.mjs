@@ -1501,7 +1501,7 @@ const show = (s) => shown(s).text;
  * Whether the commit brings what the index holds under a name: its bytes, its object or its kind differ from HEAD's.
  * @param {import("../core/git.mjs").StagedVersion} v
  */
-const brings = (v) => (v.staged && v.head ? !v.staged.equals(v.head) : v.oid === undefined || v.oid !== v.headOid || v.unread !== v.headUnread);
+export const brings = (v) => (v.staged && v.head ? !v.staged.equals(v.head) : v.oid === undefined || v.oid !== v.headOid || v.unread !== v.headUnread);
 
 /**
  * The hook's errors and warnings for the CI files of a commit: one error per rule a file breaks, its first three

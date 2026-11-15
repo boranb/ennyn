@@ -30,6 +30,7 @@
 import { isUtf8 } from "node:buffer";
 import { posix } from "node:path";
 import { matchAny } from "../core/glob.mjs";
+import { brings } from "./ci.mjs";
 import { t, tShown } from "../core/i18n.mjs";
 
 /**
@@ -1280,12 +1281,14 @@ const UNREAD_KEYS = { all: "deps.unread", age: "deps.unreadAge", adoption: "deps
 /**
  * The hook's errors and warnings for the lock files and `.npmrc` files a commit stages (`versions` from
  * stagedVersions; the caller passes only the `.npmrc` files npm reads), in path order: per file, one error per
- * rule its new entries (or new lines) break, the first three places; what was not checked is a warning. A file
- * the commit deletes is skipped. A HEAD version that cannot be read is said, and every entry (or line) then
- * counts as new. One time budget, and one answer meter, for every request of the commit. Values from the files
- * are shown as one line each (tShown). `beside(dir)` gives the `.npmrc` beside a lock that `versions` does not
- * hold, asked only for an entry with no resolved URL; `kinds(paths)` says, for repository paths, what the index
- * holds there (`tracked`, `absent`, `symlink`, `submodule` on the way).
+ * rule its new entries (or new lines) break, the first three places; what was not checked is a warning, but a file
+ * npm reads and the check cannot (not UTF-8 text, a symbolic link, past 16 MB) is an error when the commit brings
+ * it (`brings`: its bytes, object or kind differ from HEAD's). A file the commit deletes is skipped. A HEAD version
+ * that cannot be read is said, and every entry (or line) then counts as new. One time budget, and one answer meter,
+ * for every request of the commit. Values from the files are shown as one line each (tShown). `beside(dir)` gives
+ * the `.npmrc` beside a lock that `versions` does not hold, asked only for an entry with no resolved URL;
+ * `kinds(paths)` says, for repository paths, what the index holds there (`tracked`, `absent`, `symlink`,
+ * `submodule` on the way).
  * @param {Map<string, import("../core/git.mjs").StagedVersion>} versions
  * @param {DepsRule} rule
  * @param {string} lang
@@ -1301,6 +1304,13 @@ export async function depsMessages(versions, rule, lang, { now = Date.now(), bes
   const signal = AbortSignal.timeout(rule.timeout * 1000);
   const meter = { held: 0 };
   const said = (/** @type {string} */ path, /** @type {Reason} */ reason) => warnings.push(tShown("deps.lockUnread", { path: [path], reason: reasonText(reason, lang) }, lang));
+  // A file npm reads all the same and the check cannot (not UTF-8 text, a symbolic link, past 16 MB): refused when the
+  // commit brings it, as ciMessages refuses a CI file; said when HEAD holds it as it is (principle 7). The others
+  // (a submodule, a conflict not resolved, an object not on this machine, a read that failed) are said, as there.
+  const unreadFile = (/** @type {string} */ path, /** @type {import("../core/git.mjs").StagedVersion} */ v, /** @type {string} */ key) => {
+    if ((key === "notText" || key === "symlink" || key === "large") && brings(v)) errors.push(tShown("deps.unreadNew", { path: [path], reason: reasonText({ key }, lang) }, lang));
+    else said(path, { key });
+  };
   // The .npmrc npm reads beside each lock, as the commit holds it (`.npmrc` itself before another case of it):
   // it names the registry npm asks for an entry with no resolved URL.
   /** @type {Map<string, import("../core/git.mjs").StagedVersion>} */
@@ -1332,7 +1342,7 @@ export async function depsMessages(versions, rule, lang, { now = Date.now(), bes
     // A package.json is read beside its lock, for the root's dependencies.
     if (pkgJsonPath(path)) continue;
     if (v.unread) {
-      said(path, { key: v.unread });
+      unreadFile(path, v, v.unread);
       continue;
     }
     if (npmrcPath(path) && v.head && !v.headUnread) {
@@ -1342,7 +1352,7 @@ export async function depsMessages(versions, rule, lang, { now = Date.now(), bes
     if (!v.staged) continue;
     const text = lockText(v.staged);
     if (text === null) {
-      said(path, { key: "notText" });
+      unreadFile(path, v, "notText");
       continue;
     }
     const before = v.head ? lockText(v.head) : null;

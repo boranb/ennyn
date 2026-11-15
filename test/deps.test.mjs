@@ -639,10 +639,18 @@ test("deps no resolved: an entry with no resolved URL is the tarball of the regi
     // A resolved holding a version or a tag is a registry spec npm resolves itself: refused.
     const tagged = await at({ "package-lock.json": lock({ "node_modules/minimist": { version: "1.2.8", resolved: "latest", integrity: SEALS["1.2.8"] } }), ".npmrc": `registry=${reg.origin}\n` });
     assert.match(tagged.errors.join("\n"), /1 new entries come from a source the check cannot prove.*minimist@1\.2\.8 \(latest: neither/);
-    // The .npmrc beside the lock that cannot be read: unmeasured, said, never refused and never clean.
-    const unread = await depsMessages(new Map([["package-lock.json", { staged: Buffer.from(bare), head: Buffer.from(lock({})) }], [".npmrc", { staged: null, head: null, unread: "symlink" }]]), r, "en");
+    // The .npmrc beside the lock that cannot be read, as HEAD holds it: its entries unmeasured, said, never refused and never clean.
+    const link = { staged: null, head: null, unread: /** @type {const} */ ("symlink"), headUnread: /** @type {const} */ ("symlink"), oid: "a".repeat(40), headOid: "a".repeat(40) };
+    const unread = await depsMessages(new Map([["package-lock.json", { staged: Buffer.from(bare), head: Buffer.from(lock({})) }], [".npmrc", link]]), r, "en");
     assert.deepEqual(unread.errors, []);
     assert.match(unread.warnings.join("\n"), /unmeasured for 1 new versions \(no resolved URL and the \.npmrc beside the lock could not be read\): minimist@1\.2\.7/);
+    // The commit brings it (another target): refused, and its entries are still said.
+    const retargeted = await depsMessages(new Map([["package-lock.json", { staged: Buffer.from(bare), head: Buffer.from(lock({})) }], [".npmrc", { ...link, oid: "b".repeat(40) }]]), r, "en");
+    assert.deepEqual(retargeted.errors, [".npmrc: this commit brings a file the check cannot read (a symbolic link), and npm reads it all the same: what it makes npm install or run is not known; make it a plain UTF-8 file of at most 16 MB"]);
+    assert.match(retargeted.warnings.join("\n"), /no resolved URL and the \.npmrc beside the lock could not be read/);
+    // No object known on either side: nothing shows HEAD holds it as it is, so it counts as brought.
+    const blind = await depsMessages(new Map([["package-lock.json", { staged: Buffer.from(bare), head: Buffer.from(lock({})) }], [".npmrc", { staged: null, head: null, unread: /** @type {const} */ ("symlink"), headUnread: /** @type {const} */ ("symlink") }]]), r, "en");
+    assert.equal(blind.errors.length, 1);
     // The .npmrc a loader gives (one the commit does not stage) is read once per directory, and only when an entry needs it.
     let asked = 0;
     const loaded = (/** @type {string} */ text) => depsMessages(new Map([["package-lock.json", { staged: Buffer.from(text), head: Buffer.from(lock({})) }]]), r, "en", { beside: () => (asked++, { staged: Buffer.from(`registry=${reg.origin}\nscope=\n`) }) });
@@ -984,15 +992,17 @@ test("deps hook: a lock change that brings an install script, another package's 
     assert.match(young.stderr, /1 new versions are used by few, under 1% .*minimist@0\.0\.1 \(0\.00%; 45\)/);
     // The bypass marker loosens the shape of the message, not the lock.
     assert.equal((await r.check("chore: deps [commit-shape-allow: testing the marker]\n")).status, 1);
-    // A lock that cannot be read, and a deleted one, pass; the first says so.
+    // A lock that is text and no JSON (npm ci refuses conflict markers), and a deleted one, pass; the first says so.
     r.put({ "package-lock.json": `<<<<<<< HEAD\n${lock({})}=======\n>>>>>>> side\n` });
     const conflict = await r.check();
     assert.equal(conflict.status, 0);
     assert.match(conflict.stderr, /package-lock\.json was not checked: not JSON/);
-    // UTF-16 with no byte order mark is valid UTF-8, and no JSON a reader could trust.
+    // UTF-16 with no byte order mark: its NUL bytes make it no text the check reads, and the commit brings it.
     writeFileSync(join(r.dir, "package-lock.json"), Buffer.from(lock({}), "utf16le"));
     git(["add", "package-lock.json"], { cwd: r.dir });
-    assert.match((await r.check()).stderr, /package-lock\.json was not checked: not UTF-8 text/);
+    const wide = await r.check();
+    assert.equal(wide.status, 1);
+    assert.match(wide.stderr, /package-lock\.json: this commit brings a file the check cannot read \(not UTF-8 text\)/);
     git(["rm", "-q", "-f", "package-lock.json"], { cwd: r.dir });
     assert.equal((await r.check()).status, 0);
   } finally {
@@ -1249,6 +1259,81 @@ test("deps hook: HEAD's lock it cannot read is said, and every entry the commit 
   } finally {
     await reg.close();
   }
+});
+
+test("deps hook: a lock or .npmrc the commit brings that the check cannot read and npm can (not UTF-8 text, a symbolic link, past 16 MB) is refused; the same file HEAD holds is said", async (t) => {
+  // Nothing is asked: offline, and the registry is a port no test serves.
+  const r = repo("http://127.0.0.1:9", { online: false });
+  const brought = (/** @type {string} */ path, /** @type {string} */ reason) => new RegExp(`${path.replace(/\./g, "\\.")}: this commit brings a file the check cannot read \\(${reason}\\), and npm reads it all the same`);
+  const said = (/** @type {string} */ path, /** @type {string} */ reason) => new RegExp(`^${path.replace(/\./g, "\\.")} was not checked: ${reason}$`, "m");
+  const verdict = async (/** @type {RegExp} */ want, /** @type {number} */ status, /** @type {string} */ what) => {
+    const out = await r.check();
+    if (out.status !== status || !want.test(out.stderr)) t.diagnostic(`${what}: ${out.status} ${out.stderr}`);
+    assert.equal(out.status, status, what);
+    assert.match(out.stderr, want, what);
+    if (status === 0) assert.doesNotMatch(out.stderr, /this commit brings a file the check cannot read/, what);
+  };
+  // The lab's lock: a new entry with an install script, and one byte that is not UTF-8.
+  const scripted = Buffer.concat([Buffer.from(lock(entry("http://127.0.0.1:9", "nat", "1.0.0", { hasInstallScript: true }))), Buffer.from([0xff])]);
+  r.put({ "package.json": "{}\n", "elsewhere.json": lock({}), "package-lock.json": lock({}) });
+  r.commit();
+  // A link only intended to add (`git add -N`): the index lists it, the commit does not carry it, nothing to judge.
+  r.put({ "package.json": '{ "name": "intent" }\n' });
+  symlinkSync("elsewhere.json", join(r.dir, "npm-shrinkwrap.json"));
+  git(["add", "-N", "npm-shrinkwrap.json"], { cwd: r.dir });
+  const intent = await r.check();
+  assert.equal(intent.status, 0, intent.stderr);
+  assert.doesNotMatch(intent.stderr, /npm-shrinkwrap\.json/);
+  git(["rm", "-q", "--cached", "npm-shrinkwrap.json"], { cwd: r.dir });
+  rmSync(join(r.dir, "npm-shrinkwrap.json"));
+  r.put({ "package.json": "{}\n" });
+  r.put({ "package-lock.json": scripted });
+  await verdict(brought("package-lock.json", "not UTF-8 text"), 1, "a lock brought not UTF-8");
+  r.commit();
+  // HEAD holds it; a staged package.json brings the lock into the check, unchanged.
+  r.put({ "package.json": '{ "name": "demo" }\n' });
+  await verdict(said("package-lock.json", "not UTF-8 text"), 0, "the same bytes at HEAD");
+  r.put({ "package-lock.json": Buffer.concat([scripted, Buffer.from([0xfe])]) });
+  await verdict(brought("package-lock.json", "not UTF-8 text"), 1, "an edit of it brings it again");
+  // A lock that is a symbolic link: from a regular file, held, then pointed elsewhere.
+  rmSync(join(r.dir, "package-lock.json"));
+  symlinkSync("elsewhere.json", join(r.dir, "package-lock.json"));
+  git(["add", "-A"], { cwd: r.dir });
+  await verdict(brought("package-lock.json", "a symbolic link"), 1, "a regular lock turned into a link");
+  r.commit();
+  r.put({ "package.json": '{ "name": "other" }\n' });
+  await verdict(said("package-lock.json", "a symbolic link"), 0, "the same link at HEAD");
+  rmSync(join(r.dir, "package-lock.json"));
+  symlinkSync("package.json", join(r.dir, "package-lock.json"));
+  git(["add", "-A"], { cwd: r.dir });
+  await verdict(brought("package-lock.json", "a symbolic link"), 1, "a link pointed elsewhere");
+  // A link made a regular file that is not UTF-8: another kind, brought.
+  rmSync(join(r.dir, "package-lock.json"));
+  r.put({ "package-lock.json": scripted });
+  await verdict(brought("package-lock.json", "not UTF-8 text"), 1, "a link made bytes that are not UTF-8");
+  // The lab's .npmrc: a registry the rule refuses, read by npm past a comment line holding a byte that is not UTF-8.
+  r.put({ "package-lock.json": lock({}), ".npmrc": "registry=http://evil.invalid/\n" });
+  await verdict(/\.npmrc: points npm at a registry/, 1, "the registry line alone is refused");
+  r.put({ ".npmrc": Buffer.from("registry=http://evil.invalid/\n; \xff\n", "latin1") });
+  await verdict(brought(".npmrc", "not UTF-8 text"), 1, "an .npmrc brought not UTF-8");
+  r.commit();
+  // HEAD holds that .npmrc: a lock change whose entry names its tarball does not read it, and passes.
+  r.put({ "package-lock.json": lock({ "node_modules/a": { version: "1.0.0", resolved: "http://127.0.0.1:9/a/-/a-1.0.0.tgz", integrity: "sha512-x" } }) });
+  const held = await r.check();
+  assert.equal(held.status, 0, held.stderr);
+  rmSync(join(r.dir, ".npmrc"));
+  symlinkSync("elsewhere.json", join(r.dir, ".npmrc"));
+  git(["add", "-A"], { cwd: r.dir });
+  await verdict(brought(".npmrc", "a symbolic link"), 1, "an .npmrc brought as a link");
+  git(["rm", "-q", "-f", ".npmrc"], { cwd: r.dir });
+  r.commit();
+  // Past 16 MB, one file, freed after: brought, then held.
+  r.put({ "package-lock.json": `${lock({}).slice(0, -2)}${" ".repeat(16 * 1024 * 1024)}}\n` });
+  await verdict(brought("package-lock.json", "past 16 MB"), 1, "a lock brought past 16 MB");
+  r.commit();
+  r.put({ "package.json": '{ "name": "third" }\n' });
+  await verdict(said("package-lock.json", "past 16 MB"), 0, "the same lock past 16 MB at HEAD");
+  rmSync(r.dir, { recursive: true, force: true });
 });
 
 test("deps hook: what the lock brings stands when the message check throws, and a name that is not UTF-8 is refused, escaped", async () => {

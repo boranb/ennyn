@@ -27,6 +27,9 @@ import { startsWithMark, wideEncoding, wideLines } from "./encoding.mjs";
 /** The largest file read whole to be decoded as UTF-16 or UTF-32; past it, git's own lines are still read. */
 export const WIDE_LIMIT = 16 * 1024 * 1024;
 
+/** The empty blob's object name, SHA-1 and SHA-256: what an entry `git add -N` leaves names, whatever its mode. */
+const EMPTY_BLOBS = new Set(["e69de29bb2d1d6434b8b29ae775ad8c2e48c5391", "473a0f4c3be8a93681a267e3b1e9a7dcda1185436fe141f7749120a303721813"]);
+
 const LEAKY_ENV = ["GIT_DIR", "GIT_INDEX_FILE", "GIT_WORK_TREE", "GIT_PREFIX", "GIT_COMMON_DIR"];
 /** Environment that changes what git prints or how it reads a path, removed for every call. */
 const SHAPING_ENV = ["GIT_DIFF_OPTS", "GIT_EXTERNAL_DIFF", "GIT_ICASE_PATHSPECS", "GIT_GLOB_PATHSPECS", "GIT_NOGLOB_PATHSPECS", "GIT_LITERAL_PATHSPECS"];
@@ -1492,12 +1495,23 @@ export function stagedVersions(cwd, paths, { env } = {}) {
       at = eol + 1 + Number(m[2]) + 1;
     }
   }
-  // `git add -N` leaves an entry that reads as the empty file, and no tree holds it: `diff --cached` does not list it as
-  // there (2.56, 2.34.1), and a real empty file it does. One HEAD holds the same way is no change to list.
-  const empty = unique.filter((p) => out.get(p)?.staged?.length === 0 && out.get(p)?.head?.length !== 0);
+  // `git add -N` leaves an entry that names the empty blob in the mode of what is there (a file, a link, a submodule:
+  // 100644, 120000, 160000), and no tree holds it: `diff --cached` does not list it as there (2.56, 2.34.1), and a
+  // real empty file it does. Such an entry is not in the commit: no version, nothing unread. One HEAD holds the same
+  // way (same object, same kind) is no change to list.
+  const empty = unique.filter((p) => {
+    const v = /** @type {StagedVersion} */ (out.get(p));
+    return v.oid !== undefined && EMPTY_BLOBS.has(v.oid) && v.unread !== "unmerged" && !(v.headOid === v.oid && v.headUnread === v.unread);
+  });
   if (empty.length) {
     const held = new Set(splitNul(gitBytes(["-c", "core.precomposeUnicode=false", "diff", "--cached", "--name-only", "--no-renames", "--diff-filter=d", "-z", "--", ...empty], { cwd, env: readEnv, keepIndex: Boolean(index) })).map((b) => b.toString("utf8")));
-    for (const p of empty) if (!held.has(p)) /** @type {StagedVersion} */ (out.get(p)).staged = null;
+    for (const p of empty.filter((p) => !held.has(p))) {
+      const v = /** @type {StagedVersion} */ (out.get(p));
+      v.staged = null;
+      delete v.unread;
+      delete v.oid;
+      delete v.wrongType;
+    }
   }
   return out;
 }

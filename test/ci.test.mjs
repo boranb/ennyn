@@ -1191,6 +1191,35 @@ test("ci files: a symbolic link or a file past 16 MB the commit brings is refuse
   symlinkSync("../../y\n", join(made.dir, ".github", "workflows", "x.yml"));
   git(["add", "-A"], { cwd: made.dir });
   assert.equal(made.check("--hook").status, 1);
+  // A link or a submodule only intended to add (`git add -N`): the commit does not carry it, so it is not refused.
+  const intent = repo();
+  intent.stage({ ".github/workflows/c.yml": PINNED });
+  mkdirSync(join(intent.dir, ".github", "workflows"), { recursive: true });
+  symlinkSync("../../elsewhere.txt", join(intent.dir, ".github", "workflows", "x.yml"));
+  mkdirSync(join(intent.dir, ".github", "workflows", "s.yml"));
+  assert.equal(spawnSync("git", ["init", "-q"], { cwd: join(intent.dir, ".github", "workflows", "s.yml") }).status, 0);
+  assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "s"], { cwd: join(intent.dir, ".github", "workflows", "s.yml") }).status, 0);
+  git(["add", "-N", ".github/workflows/x.yml", ".github/workflows/s.yml"], { cwd: intent.dir });
+  const listed = git(["ls-files", "-s", ".github/workflows"], { cwd: intent.dir });
+  assert.match(listed, /^120000 \S+ 0\t\.github\/workflows\/x\.yml$/m);
+  assert.match(listed, /^160000 \S+ 0\t\.github\/workflows\/s\.yml$/m);
+  // Read as no version at all: no code, no object.
+  assert.deepEqual([...stagedVersions(intent.dir, [".github/workflows/x.yml", ".github/workflows/s.yml"]).values()], [{ staged: null, head: null }, { staged: null, head: null }]);
+  const left = intent.check("--hook");
+  assert.equal(left.status, 0, left.stderr);
+  assert.doesNotMatch(left.stderr, /this commit brings/);
+  // Over an empty file HEAD holds (the same object, another kind), git lists it deleted: no version, nothing brought.
+  const over = repo();
+  over.stage({ ".github/workflows/e.yml": "" });
+  assert.equal(over.commit("chore: an empty workflow", "--no-verify").status, 0);
+  git(["rm", "-q", "--cached", ".github/workflows/e.yml"], { cwd: over.dir });
+  rmSync(join(over.dir, ".github", "workflows", "e.yml"));
+  symlinkSync("../../elsewhere.txt", join(over.dir, ".github", "workflows", "e.yml"));
+  git(["add", "-N", ".github/workflows/e.yml"], { cwd: over.dir });
+  assert.equal(stagedVersions(over.dir, [".github/workflows/e.yml"]).get(".github/workflows/e.yml")?.unread, undefined);
+  const gone = over.check("--hook");
+  assert.equal(gone.status, 0, gone.stderr);
+  assert.doesNotMatch(gone.stderr, /this commit brings/);
   // A submodule's entry: said.
   const sub = repo();
   assert.equal(spawnSync("git", ["update-index", "--add", "-z", "--index-info"], { cwd: sub.dir, input: `160000 ${"b".repeat(40)}\t.github/workflows/s.yml\0` }).status, 0);
