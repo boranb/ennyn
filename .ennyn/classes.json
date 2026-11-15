@@ -62,7 +62,8 @@
         "new: closed pipe kills before cleanup",
         "new: stop passed on in a form the child does not handle",
         "new: shell state handed by environment that the shell resets at start",
-        "new: verdict read by output shape, not by what the host does with it"
+        "new: verdict read by output shape, not by what the host does with it",
+        "new: config layer unmeasured"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, the stored-message scope held and other git readers did not. Named in cycle 2."
     },
@@ -1149,6 +1150,28 @@
         "new: test cleanup kills the parent only"
       ],
       "judged": "Named in cycle 34 by the orchestrator, from rows of the cycle's lock and test-runner tasks."
+    },
+    {
+      "id": "unproven-input-said-passes",
+      "says": "A gate meets an input it cannot prove and says so, but lets it through, while the program that reads the input next acts on it as if it were proven.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: unproven source said and let through"
+      ],
+      "judged": "Named in cycle 37 by the orchestrator, from the free-route audit's deps findings 2 and 3 (a resolved outside npm's layout on a listed origin, a no-resolved entry a user's config may route)."
+    },
+    {
+      "id": "remedy-not-followable",
+      "says": "A message's remedy, followed exactly as it is written, does not reach the state the message names.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: remedy text not followable as written"
+      ],
+      "judged": "Named in cycle 37 by the orchestrator, from a round-one correctness row (a hint joining two config lines into one)."
     }
   ]
 }

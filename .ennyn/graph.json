@@ -853,11 +853,11 @@
       "status": "planned",
       "needs": [],
       "id": "deps-unproven-listed",
-      "title": "A tarball on a listed registry in another layout (GitHub Packages /download/, Artifactory scoped or another repository on the host) is said, not proven: prove its identity through that registry's own API",
-      "value": "medium",
+      "title": "A tarball on a listed registry in another layout (GitHub Packages /download/, GitLab's project registry with the scope repeated in the file segment, Artifactory scoped or another repository on the host) is refused since cycle 37 unless security.deps.sources names its exact resolved, one loosening per version: prove its identity through that registry's own API or a layout measured on the real host (GitLab first: three public locks hold its shape, c37-cr-gitlab-project-registry-scoped), so such projects need no sources line per version",
+      "value": "high",
       "cost": "M",
       "cluster": "security",
-      "source": "cycle 2026-10-25 (10), deps-allowed-hosts (round 2: refusing them broke private packages)",
+      "source": "cycle 2026-10-25 (10), deps-allowed-hosts (round 2: refusing them broke private packages); amended cycle 2026-11-16 (37): deps-said-entries-refused made these shapes refused (c37-t1-correctness-r1-01)",
       "since": 10
     },
     {
@@ -6141,17 +6141,6 @@
       "since": 35
     },
     {
-      "id": "deps-said-entries-refused",
-      "title": "security.deps says and passes two shapes of a new lock entry that npm installs: a resolved on a listed origin outside npm's exact layout after a listed URL (another repository of the host, or registry.npmjs.org's %2Etgz and %2F spellings, which it serves with the same bytes: registryOf unproven, checks/deps.mjs:507-509, :769), and an entry with no resolved beside an .npmrc that names a listed registry with no scope= (noResolvedUser, :670-698, :751; the refusal's own hint leads there). Both refuse: security.deps.sources naming the exact resolved is the opt-in for another layout; the no-resolved hint prints registry= and an empty scope=; a version 1 entry with no resolved never passes. The wrong warning text ('in no layout that names the package and version') goes",
-      "status": "planned",
-      "value": "high",
-      "cost": "M",
-      "cluster": "security",
-      "needs": [],
-      "source": "free-route audit of 2026-11-15 on 42d3c77 (four security reviewers, labs kept outside the repository), triaged by Fable the same day",
-      "since": 35
-    },
-    {
       "id": "ci-pr-ref-through-input",
       "title": "security.ci misses a pull_request_target workflow that hands the pull request's head to a local action or reusable workflow through a with: input not named ref or repository (head:, sha:): checks/ci.mjs:1304 skips the key and prExpression (:826-839) does not read inputs.<name> in the callee. Caller side: under pull_request_target a with: value on a local uses that holds the pull request ref refuses. DESIGN.md's ci Not-seen names input taint inside a callee (node ci-input-taint-callee)",
       "status": "planned",
@@ -6390,8 +6379,8 @@
       "value": "medium",
       "cost": "S",
       "cluster": "docs",
-      "title": "DESIGN.md is at the fix-loop brake (cycle 36, a round-2 previous-fix in the security.deps.paths row): the row is one hand-written line of what the gate refuses, says and does not see, and each gate change adds a clause that drifts from the code; the held-link-target gap went in wider than measured (said when a package.json is staged, read when the target is itself a lock path: c36-t1-correctness-r2-01). Decide on the top two rungs: a test that holds each listed shape to a cell of test/verdicts/deps.json (a construct that refuses a sentence it cannot tie to a cell), or remove the need (the said/refused lists written from the verdict corpus); or say the limit and decline the rest. No patch nodes",
-      "source": "cycle 2026-11-15 (36) convergence: fix-loop brake, skills/cycle/report-formats.md"
+      "title": "DESIGN.md is at the fix-loop brake (cycle 36, a round-2 previous-fix in the security.deps.paths row): the row is one hand-written line of what the gate refuses, says and does not see, and each gate change adds a clause that drifts from the code; the held-link-target gap went in wider than measured (said when a package.json is staged, read when the target is itself a lock path: c36-t1-correctness-r2-01). Cycle 37 added one more: the Not-seen sentence on npm_config_* says only entries with no resolved can be sent to another registry, where npm 10.9.9 also fetches a registry.npmjs.org-resolved tarball from an overriding registry (environment or a user's registry=; integrity still binds the bytes) (c37-t1-correctness-r2-01). Decide on the top two rungs: a test that holds each listed shape to a cell of test/verdicts/deps.json (a construct that refuses a sentence it cannot tie to a cell), or remove the need (the said/refused lists written from the verdict corpus); or say the limit and decline the rest. No patch nodes",
+      "source": "cycle 2026-11-15 (36) convergence: fix-loop brake, skills/cycle/report-formats.md; amended cycle 2026-11-16 (37) convergence"
     },
     {
       "status": "planned",
@@ -6449,6 +6438,75 @@
       "cluster": "init",
       "title": "A doctor line holds a verdict and one reason; the rest goes behind a flag (the ask-rule and push-hook lines ran to hundreds of words each in the acceptance run). Gate: a line-length test",
       "source": "acceptance run of 2026-11-15 on 42d3c77 (docs/acceptance.md S1-S8 on a small public npm library, fresh install, shipped text alone), triaged by Fable the same day"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 37,
+      "id": "deps-said-entries-refused-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "gate": "beside",
+      "title": "deps-said-entries-refused: low findings left. hint-join: the no-resolved hint joins two .npmrc lines with ', ' (registry=<url>/, scope=), and written as one line npm reads a registry of <url>/,%20scope= (fails closed: refused as unlisted) (c37-t1-correctness-r1-02). Gap beside it: registry[]= or scope[]= followed by a plain line is read as the plain line; npm 10.9.9 crashes and fetches nothing",
+      "source": "cycle 2026-11-16 (37) review of deps-said-entries-refused"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 37,
+      "id": "deps-npmrc-weakened-beside-held",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "title": "security.deps says nothing when a commit drops scope= (or the registry line, or the whole .npmrc) beside a lock whose held entries have no resolved: an agent tidying an 'empty' scope= line reopens a user's config routing for every such entry. Say it as scriptsGuardDropped says a dropped ignore-scripts line (integrity checked when each entry came in still binds the bytes). Cells sec-npmrc-scope-dropped-*, sec-npmrc-deleted-* in a kept folder outside the repository",
+      "source": "cycle 2026-11-16 (37) review of deps-said-entries-refused, security r1 evidence gap"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 37,
+      "id": "deps-held-npmrc-unread-no-resolved",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "title": "security.deps only says a new no-resolved entry beside an .npmrc HEAD holds unreadable (a submodule, a link): principle 7 keeps the held file a warning, but the entry is what the commit brings and its registry is unproven. Decide: refuse the brought entry when the .npmrc that routes it cannot be read, held or not",
+      "source": "cycle 2026-11-16 (37) review of deps-said-entries-refused, author's path table item 11"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 37,
+      "id": "deps-unproven-hint-registries",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "title": "security.deps' refusal for another repository on a listed Artifactory or Nexus host names only security.deps.sources (one line per version), though listing that repository's URL in security.deps.registries would prove each entry by layout: name both in the hint, registries first",
+      "source": "cycle 2026-11-16 (37) review of deps-said-entries-refused, author's impact table S3"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 37,
+      "id": "deps-env-registry-unread",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "title": "npm's environment layer (npm_config_registry, npm_config_scope, set by CI or exported by a parent npm to its lifecycle scripts) outranks the project's .npmrc, and no commit hook can read the environment npm ci later runs in (measured npm 10.9.9, a kept folder outside the repository; integrity still binds the bytes, nested2.sh). Question for Fable: is DESIGN's Not-seen line the answer, or does security.ci read workflow env and setup-node registry-url for these keys?",
+      "source": "cycle 2026-11-16 (37) review of deps-said-entries-refused, author's proposed node and security r1 (c37-t1-security-r1-02)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 37,
+      "id": "deps-said-reasons-pinned",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "mechanization": true,
+      "sourceClass": "unproven-input-said-passes",
+      "title": "A test lists every reason key judgeEntry and depsMessages may return as said for a new lock entry (today bundled, shrinkwrap, noResolvedUnread and the registry's no-answer), each with why npm fetches nothing it did not prove or why the user decided so, and fails when a new said key appears: in cycle 37 two said keys (unproven, noResolvedUser) let through entries npm installs (c37-t1-audit-r0-01, -02). Then delete the prose in DESIGN.md that lists what is said by hand",
+      "source": "cycle 2026-11-16 (37) convergence: recurring class unproven-input-said-passes (2 rows, tied with claim-outruns-evidence and doc-lags-code, whose two rows went to deps-row-wording-design-decision)"
     }
   ],
   "done": [
@@ -7412,6 +7470,13 @@
       "status": "done",
       "finished": "2026-11-15",
       "cluster": "evidence"
+    },
+    {
+      "id": "deps-said-entries-refused",
+      "title": "security.deps refuses a new lock entry whose resolved is on a listed origin but not npm's tarball right after a listed URL, spelt as npm writes it (another repository of the host, GitHub Packages' /download/, GitLab's scope-in-file layout, %2Etgz, %2D, .TGZ; security.deps.sources naming the exact resolved is the opt-in, a loosening), a no-resolved entry whose registry a user's config may choose (the hint prints the lines npm 10.9.9 obeys: registry=<url>/ and scope=, or @scope:registry=<url>/), and a version 1 entry with no resolved; DESIGN.md, SECURITY.md, docs/modules.md, catalogs; test/verdicts/deps.json 379 to 481 cells; one-task run, cycle 37 (df479c0)",
+      "status": "done",
+      "finished": "2026-11-16",
+      "cluster": "security"
     }
   ],
   "declined": [
