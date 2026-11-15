@@ -23,18 +23,6 @@
       "since": 0
     },
     {
-      "id": "second-project-cycles",
-      "title": "Run cycles on a second project from its own session and record the convergence numbers against the baseline; the next run uses the shipped text alone, with no hand-written brief, and every line a person or an orchestrator has to add is recorded as a product defect: fresh-agent-per-task landed on 2026-10-31 (7fd12bb), after the trials of 2026-10-29, so the loop to be released has not run outside this repository One task of the run uses init's no-bypass mode (absorbs no-bypass-trial), and the report lists what broke. The run follows docs/acceptance.md: eight scenarios from a fresh install, each done by a command's exit; a finding that stops a scenario joins the release needs, any other becomes a node with a gate and waits",
-      "status": "planned",
-      "value": "high",
-      "cost": "L",
-      "cluster": "evidence",
-      "needs": [],
-      "gate": "user",
-      "source": "docs/evidence.md, Open questions; set up but not committed in the second project (2026-10-18); init committed and cycle 1 run 2026-10-29: real 14 · fix-introduced 10 · pre-existing 10 · gate-caught 3, new classes by round 13/8/0; findings are the nodes with that source; cycle 2: real 16 · fix-introduced 10 · pre-existing 12 · gate-caught 2, new classes by round 14/4/0; a task was left for cycle 3 at the context limit the cycle set itself (850K); cycle 3 (a new session): real 20 · fix-introduced 16 · pre-existing 17 · gate-caught 8, new classes by round 11/4/0; the first mechanization task ran (picked by hand), and its gate turned red on 6, 42 and 14 cases when past defects were put back; a third project (TypeScript, npm, CI) ran init and one cycle the same day: real 5 · fix-introduced 3 · pre-existing 9 · gate-caught 2, new classes by round 4/0; deps read 540 lock entries (53 known advisories, none refused, none unmeasured), the CI checks stopped no commit (a commit that only added permissions passed), mutate's --check with esbuild parsed .ts/.tsx (0 invalid); read 2026-11-01, see brief-rules-in-skill",
-      "since": 0
-    },
-    {
       "id": "rework-thresholds-check",
       "title": "Hand-check rework links on a second project: are the strong-link thresholds still 60-67% precise there?",
       "status": "planned",
@@ -2781,7 +2769,7 @@
       "status": "planned",
       "needs": [],
       "id": "disk-use-record",
-      "title": "budget --record also records the disk use of the cycle's worktrees, its temp roots and Ennyn's state folder, and the cycle report says the growth; Ennyn's own state and logs stay within a size the config names. No agent tool measures this, and users report tool folders of tens to hundreds of gigabytes",
+      "title": "budget --record also records the disk use of the cycle's worktrees, its temp roots and Ennyn's state folder, and the cycle report says the growth; Ennyn's own state and logs stay within a size the config names. No agent tool measures this, and users report tool folders of tens to hundreds of gigabytes. Acceptance run 2026-11-15: the state folder under the git dir reached about 1.2 GB after two cycles of a small library (review trees, mutation copies with node_modules), nothing reported it",
       "value": "medium",
       "cost": "S",
       "cluster": "metrics",
@@ -3367,7 +3355,8 @@
         "cycle-journal",
         "secret-agent-setup",
         "push-setting",
-        "one-task-run"
+        "one-task-run",
+        "cycle-wake-lock"
       ],
       "id": "fresh-session-run",
       "title": "ennyn run --cycles N (or --each task) from the terminal: each cycle or task is one claude -p with the cycle skill, a new process and so a new context. --cycles is required, there is no open-ended loop; a budget cap goes to --max-budget-usd. It runs doctor first and stops at the first red: non-zero exit, a stopped task, a gate that needs the user, the plan's limit, the budget; it prints why and what is next, and keeps a log in the state dir. It spawns only the claude on PATH. It decides from the journal, never from the model's words, and a run with no new commit and no node change ends the loop. With compact it resumes by session id, never --continue. Pushes follow push.mode. A -p run cannot ask, so it needs a mode that does not prompt (the no-bypass mode or the user's own bypass), and it says so when it has neither. Measure first: a task with subagents completes in -p, an ask rule refuses rather than hangs, hooks and the plugin load without --bare, and what breaks if --bare becomes the default for -p. If this threatens the release date it moves to the next version, ahead of everything else there; the 5-hour usage window does not end the run. The run reads claude -p's stream-json events, never the model's words: a rate_limit_event whose status is rejected and whose resetsAt is at most 5 hours away makes it wait until that time plus a minute and go on from the journal, and the cycle it cut does not count against --cycles; a later resetsAt (a weekly window), no resetsAt, or errorCode credits_required stops it as before, saying when the window resets. At a seam, when the last event said allowed_warning with a resetsAt within 5 hours, it starts no new cycle before that time. No threshold key: the warning is the server's. rateLimitType and unifiedWindows are in 2.1.310's schema but not in the docs, so they are not read. Measure first: what -p does when it is refused (exit status, whether the event comes before the result), at what use the server sends allowed_warning, and that a cycle cut mid-task resumes from the journal. A stopped task still ends the run: the next cycle could take the same node again, or build on work the user has not seen. It reports a silent stall (no stream event and no journal line for longer than the longest past step) and stops nothing by itself",
@@ -4353,7 +4342,7 @@
       "status": "planned",
       "needs": [],
       "id": "budget-record-follow-up",
-      "title": "The closing's follow-up commit takes a fresh budget record (report-formats.md, leftovers answered), and every budget record counts as a cycle for security.everyCycles, so the follow-up moves the next security audit one cycle early (measured: 'due in 2 cycles' became 'due in 1'); a record at a follow-up should carry the cycle's mark or replace the closing's",
+      "title": "The closing's follow-up commit takes a fresh budget record (report-formats.md, leftovers answered), and every budget record counts as a cycle for security.everyCycles, so the follow-up moves the next security audit one cycle early (measured: 'due in 2 cycles' became 'due in 1'); a record at a follow-up should carry the cycle's mark or replace the closing's. Measured again in the acceptance run 2026-11-15 (S6): the follow-up commit after the closing's questions took a record that counted as another cycle",
       "value": "medium",
       "cost": "S",
       "cluster": "plan",
@@ -4478,7 +4467,7 @@
       "status": "planned",
       "needs": [],
       "id": "cycle-wake-lock",
-      "title": "The cycle keeps the machine awake while its agents run and lets go at the closing or when it stops: SetThreadExecutionState on Windows, caffeinate on macOS, systemd-inhibit on Linux, one process recorded so a later session can stop it; task-brief.md names sleep only as a way agents get lost; no fixed limit while the journal is open",
+      "title": "The cycle keeps the machine awake while its agents run and lets go at the closing or when it stops: SetThreadExecutionState on Windows, caffeinate on macOS, systemd-inhibit on Linux, one process recorded so a later session can stop it; task-brief.md names sleep only as a way agents get lost; no fixed limit while the journal is open. Acceptance run 2026-11-15 (S7): task-brief.md's background caffeinate -t 7200 held a claude -p run open 47 minutes after its report; two were started, no PID recorded, the agent probed for it by name; stopped by PID by hand",
       "value": "medium",
       "cost": "S",
       "cluster": "method",
@@ -5272,7 +5261,7 @@
       "status": "planned",
       "needs": [],
       "id": "kept-folder-closing",
-      "title": "The closing says what becomes of the cycle's kept folder (task-brief.md, Keeping the work, names the folder but not its end): it keeps what a later cycle, an audit or a person reads (ledger, briefs, impact tables, measurements, rows, every reviewer's and author's untracked probes and labs) and removes what git gives back (a reviewer's or lab's clone of a commit the repository holds: its tracked files go, its untracked files stay), each removal only after a check that nothing it holds is lost (the commit reachable, the untracked files kept); a live cycle folder left beside its kept copy goes without asking once a comparison shows nothing only it holds, a file only it holds first copied over; anything not proven a copy is asked. The report says the folder's size before and after. Cycle 31 stopped it after three review rounds (branch c31/t2 at 3292a98, worktree the cycle's worktree kept; brief, impact table, 20 author rows and every reviewer lab in the cycle folder): the design held in round 3 (no finding: bundle pin, move aside then lsof then recheck, home-folder rule, git-dir allow list), but the orchestrator's gate was red twice: test/fault-injection.test.mjs with its new kept cells ran 1956 s alone, past the file's 1800 s limit (the file-read matrix cancelled) and with hang cells in other commands under load. The restart: cut the kept cells to what the matrix must hold, then the two round-3 gaps (lsof's can't-opendir warning read as no process; HOME=/ lets volume roots through)",
+      "title": "The closing says what becomes of the cycle's kept folder (task-brief.md, Keeping the work, names the folder but not its end): it keeps what a later cycle, an audit or a person reads (ledger, briefs, impact tables, measurements, rows, every reviewer's and author's untracked probes and labs) and removes what git gives back (a reviewer's or lab's clone of a commit the repository holds: its tracked files go, its untracked files stay), each removal only after a check that nothing it holds is lost (the commit reachable, the untracked files kept); a live cycle folder left beside its kept copy goes without asking once a comparison shows nothing only it holds, a file only it holds first copied over; anything not proven a copy is asked. The report says the folder's size before and after. Cycle 31 stopped it after three review rounds (branch c31/t2 at 3292a98, worktree the cycle's worktree kept; brief, impact table, 20 author rows and every reviewer lab in the cycle folder): the design held in round 3 (no finding: bundle pin, move aside then lsof then recheck, home-folder rule, git-dir allow list), but the orchestrator's gate was red twice: test/fault-injection.test.mjs with its new kept cells ran 1956 s alone, past the file's 1800 s limit (the file-read matrix cancelled) and with hang cells in other commands under load. The restart: cut the kept cells to what the matrix must hold, then the two round-3 gaps (lsof's can't-opendir warning read as no process; HOME=/ lets volume roots through). Acceptance run 2026-11-15: about 1.2 GB after two cycles of a small library; nothing prunes a closed cycle's folder",
       "value": "medium",
       "cost": "S",
       "cluster": "method",
@@ -5396,7 +5385,7 @@
       "status": "planned",
       "needs": [],
       "id": "kill-reader-design-decision",
-      "title": "The kill reader stops taking shape patches: decide, measured on the transcript replay, between an allow list (a small grammar read whole; a kill word in any text outside it refused, its over-refusals counted on the replay) and the reader as it stands under the habit threat model; then the push reader's open shape nodes get the same replay verdict (a shape no agent writes by habit is declined)",
+      "title": "The kill reader stops taking shape patches: decide, measured on the transcript replay, between an allow list (a small grammar read whole; a kill word in any text outside it refused, its over-refusals counted on the replay) and the reader as it stands under the habit threat model; then the push reader's open shape nodes get the same replay verdict (a shape no agent writes by habit is declined). Acceptance run 2026-11-15 (S6): pkill -0 <name> (signal 0, a liveness probe) is refused by the kill hook; count it as an over-refusal on the replay (pgrep and kill -0 <pid> pass)",
       "value": "high",
       "cost": "S",
       "cluster": "security",
@@ -5878,7 +5867,7 @@
       "since": 32,
       "id": "new-project-design-decision",
       "cluster": "init",
-      "title": "skills/init/new-project.md is at the fix-loop brake (8 rows in cycle 32, one a previous-fix in round 2): a design decision on the top two rungs, no patch nodes. Option A, a construct: the intake's answers are written by a CLI command (ennyn init --product) that refuses an answer it cannot place, keeps the Product: line and the chosen lint and typecheck commands in config keys, and reads earlier answers on a rerun. Option B, remove the need: the intake shrinks to the one question the first commit cannot do without, and the rest stays the user's to write. Leftover defects it carries, not fixed one by one: a rerun repeats the intake; the closing's handoff rewrite drops the Product: line; lint and typecheck choices kept only as prose; no guard pins the intake rules; line 18 'in one message' beside the two-message exception; what a question tool returns after askUserQuestionTimeout is unmeasured (the stand-in model on 127.0.0.1 can measure it)"
+      "title": "skills/init/new-project.md is at the fix-loop brake (8 rows in cycle 32, one a previous-fix in round 2): a design decision on the top two rungs, no patch nodes. Option A, a construct: the intake's answers are written by a CLI command (ennyn init --product) that refuses an answer it cannot place, keeps the Product: line and the chosen lint and typecheck commands in config keys, and reads earlier answers on a rerun. Option B, remove the need: the intake shrinks to the one question the first commit cannot do without, and the rest stays the user's to write. Leftover defects it carries, not fixed one by one: a rerun repeats the intake; the closing's handoff rewrite drops the Product: line; lint and typecheck choices kept only as prose; no guard pins the intake rules; line 18 'in one message' beside the two-message exception; what a question tool returns after askUserQuestionTimeout is unmeasured (the stand-in model on 127.0.0.1 can measure it). Leftover defect from the acceptance run 2026-11-15 (S3): with a git repository the first commit holds the setup files only and leaves README.md and LICENSE untracked; without one, init committed them"
     },
     {
       "status": "planned",
@@ -6416,6 +6405,50 @@
       "sourceClass": "unreadable-shape-passes",
       "title": "A test walks every commit-msg gate that reads staged files (security.ci, security.deps, security.secrets, review.forbidden) over each kind stagedVersions marks unread (notText, symlink, large, submodule, unmerged, notBlob, failed) and over brought or held, and fails where a shape the runner or npm still reads is said and passed when the commit brings it: in cycle 36 deps said what ci already refused (c36-t1-audit-r0-01), and a held link's target and a parent folder made a link were never read (c36-t1-security-r1-01, -03). Then delete the prose that asks each gate to mirror ci by hand",
       "source": "cycle 2026-11-15 (36) convergence: recurring class unreadable-shape-passes (3 rows)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 36,
+      "id": "init-hook-before-sandbox",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "init",
+      "title": "Init in no-bypass mode writes its sandbox block to settings.local.json before it installs the commit-msg hook, so its own sandbox refuses the write to .git/hooks/commit-msg and the setup commit goes in unchecked; the user had to run install-hook with ! (S7). Install the hook and make the setup commit before the block is written. Gate: S7's init in claude -p ends with the hook installed",
+      "source": "acceptance run of 2026-11-15 on 42d3c77 (docs/acceptance.md S1-S8 on a small public npm library, fresh install, shipped text alone), triaged by Fable the same day"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 36,
+      "id": "no-bypass-block-covers-cycle",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "title": "Init's no-bypass block lets a cycle's own steps run without a prompt: Read of the plugin root, writes to the state dir under the git dir and to the lock folder, a temp folder, api.osv.dev when deps runs online; the closing report lists every kind of refused call. S7 measured 30 refused calls in claude -p (each a prompt interactively) and the report named 2 kinds. Absorbs the lock-folder sandbox finding; done together with worktrees-folder-key. Gate: S7 rerun in claude -p with no denial on Ennyn's own steps, or docs/agent-mode.md names each one left",
+      "source": "acceptance run of 2026-11-15 on 42d3c77 (docs/acceptance.md S1-S8 on a small public npm library, fresh install, shipped text alone), triaged by Fable the same day"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 36,
+      "id": "uninstall-says-what-goes",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "init",
+      "title": "uninstall-hook lists .ennyn/classes.json among what stays (S8 left it out), prints the state dir's size and contents before removing it, and asks while a cycle journal is open or a marked worktree or rows file lies in it (it deleted about 1.2 GB in one go). Sibling of security-md-lock-uninstall. Gate: test/setup.test.mjs cases",
+      "source": "acceptance run of 2026-11-15 on 42d3c77 (docs/acceptance.md S1-S8 on a small public npm library, fresh install, shipped text alone), triaged by Fable the same day"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 36,
+      "id": "doctor-short-lines",
+      "value": "low",
+      "cost": "S",
+      "cluster": "init",
+      "title": "A doctor line holds a verdict and one reason; the rest goes behind a flag (the ask-rule and push-hook lines ran to hundreds of words each in the acceptance run). Gate: a line-length test",
+      "source": "acceptance run of 2026-11-15 on 42d3c77 (docs/acceptance.md S1-S8 on a small public npm library, fresh install, shipped text alone), triaged by Fable the same day"
     }
   ],
   "done": [
@@ -7372,6 +7405,13 @@
       "status": "done",
       "finished": "2026-11-15",
       "cluster": "security"
+    },
+    {
+      "id": "second-project-cycles",
+      "title": "Run 2026-11-15 at 42d3c77 on a small public npm library (520 commits, mocha), fresh install, all eight scenarios of docs/acceptance.md passed by their done lines (S5 with --from), shipped text alone. Cycle 1 (one task): found in review 5 · fix-introduced 1 · pre-existing 2 · gate-caught 0 · escaped 0/0; new classes 4/1/0. Cycle 2 (four tasks, security audit included): 7 · 7 · 15 · 4 · escaped new 0, old 2; new classes 5/4/0; the fix-loop brake fired on the project's test file. No-bypass task (second clone): 0 · 0 · 1 · 0, one review round, 30 refused calls. Baseline cycle 1 of 2026-10-29: 14 · 10 · 10 · 3; classes 13/8/0. Lines a person added: --from in S5, the ! install-hook in S7, stopping caffeinate by PID; each a node or doc fix; none stopped a scenario. Limits: driven non-interactively by an agent in the developer's role; interactive prompts, a real version update and Windows not measured",
+      "status": "done",
+      "finished": "2026-11-15",
+      "cluster": "evidence"
     }
   ],
   "declined": [

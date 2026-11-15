@@ -65,7 +65,7 @@ Each scenario names who runs it, the start state, the steps in the user's words,
   4. Read the review: two rounds at most.
   5. Check the commit message for its structured lines.
   6. Read the closing: convergence and handoff. Expect to be asked before any push.
-- **Done:** `node "${CLAUDE_PLUGIN_ROOT}/scripts/ennyn.mjs" convergence --cycle <N>` exits 0; `ennyn push-check` says the push needs the user's approval; nothing was pushed.
+- **Done:** `node "${CLAUDE_PLUGIN_ROOT}/scripts/ennyn.mjs" convergence --cycle <N> --from <HEAD at the start>` exits 0; `ennyn push-check` says the push needs the user's approval; nothing was pushed.
 - **Covered by:** `test/journal.test.mjs`, `test/method-walk.test.mjs`, `test/findings.test.mjs` (part: the journal, the failure count and the ledger).
 
 ## S6. A cycle of four tasks to its closing
