@@ -2,7 +2,7 @@
 
 This page looks at the open-source tools people use most to make coding agents faster and more careful, as they stood in October 2026: Claude Code plugins and skill packs, spec-driven workflows, agent harnesses, tools that check AI-written code, and tools that fetch web pages or map a codebase for an agent. For each one it records how it works, what Ennyn took from it, and what Ennyn left out and why.
 
-Star counts and dates are from 2026-10-27, and from 2026-10-28 for the scraping and code-graph tools. These projects change every week, so read the tables as a snapshot. The studies Ennyn's design rests on are in [evidence.md](evidence.md); newer ones found in this pass are listed at the end and move there once each is read in full.
+Star counts and dates are from 2026-10-27, from 2026-10-28 for the scraping and code-graph tools, and from 2026-11-14 for the tools added on 2026-11-15. These projects change every week, so read the tables as a snapshot. The studies Ennyn's design rests on are in [evidence.md](evidence.md); newer ones found in this pass are listed at the end and move there once each is read in full.
 
 ## Where Ennyn sits
 
@@ -24,6 +24,8 @@ Ennyn starts from the other end. A lesson that keeps coming back becomes a check
 | tdd-guard (2.4k), continued as probity | A PreToolUse hook asks a model to judge each write against the latest test results and blocks code with no failing test behind it. Its docs list the ways around it: writing files through Bash and editing the guard's own state. | A demo |
 | agents (42k), [SuperClaude](https://github.com/SuperClaude-Org/SuperClaude_Framework) (24k), ECC (291k) | Large catalogs of agents, skills and commands. | Structural validation; speed and token savings claimed |
 | [GoogleChrome/modern-web-guidance](https://github.com/GoogleChrome/modern-web-guidance) (7.9k on 2026-11-13) | One skill whose description tells the agent to run its CLI first on every web task. The CLI searches 209 guides offline and prints the one asked for. A scan finds dated patterns for about a fifth of the guides, and each finding carries the rule for dropping it. Guides for unstable browser features are found by search but printed only after an opt-in in a committed file. The CLI is fetched at its latest version on every call and reports the agent's search queries to its vendor unless switched off. The install repository is a publish target: source, tests and evals live in a second one. | Each task run with and without the skill on full applications by three agents; Playwright graders that must pass on a reference solution and fail on the untouched application; dated results per agent and model |
+| agent-skills (117k on 2026-11-14) | 25 skills for specifying, building, verifying and shipping. An optional hook pair, not registered by the plugin, answers the agent's web fetches from cached copies in a folder of the project. | Three tiers of evals. `claude plugin eval` cases come in pairs: one where a skill must fire and one where it must stay quiet, with the model pinned and the Claude Code version recorded. A run counts as finished only on a successful final result with no permission denial and a result for every tool call. Dated fire rates per description change, including a router change that dropped one skill from 6 of 6 to 1 of 12 with no change to the skill |
+| skills (324k on 2026-11-14) | 39 skills a developer uses daily. A `SCOPE.md` bar: an idea stays open only if it describes a failure seen in a real session and matches nothing already rejected. Each rejection is a file in `.out-of-scope/` with a lasting reason and a list of the later requests that matched it; one of them lists five requests about skill names that clash with a host's built-in commands. | None found |
 
 ### Spec and planning workflows
 
@@ -37,6 +39,7 @@ Ennyn starts from the other end. A lesson that keeps coming back becomes a check
 | [humanlayer/humanlayer](https://github.com/humanlayer/humanlayer) (13k) | Research, plan, implement, with the context compacted in between ([advanced-context-engineering-for-coding-agents](https://github.com/humanlayer/advanced-context-engineering-for-coding-agents)). Since October 2026 the repository carries hook scripts, not registered in its checked-in settings: checks before the agent stops, and a refusal of test, typecheck or lint output piped to `head`, `grep`, `tail` and similar tools. | Case studies |
 | [Kiro](https://kiro.dev) (AWS) | Steering files loaded always, by file match, by hand, or when the request matches their description; requirements written in EARS form; property tests generated from those requirements. | Vendor posts |
 | [google/elephant-goldfish-model](https://github.com/google/elephant-goldfish-model) (15.6k on 2026-11-09) | One agent holds the context and drafts a design document; fresh subagents read only the document and the files it links, through five review stages with a human gate after each. Reviewers rate findings Blocker, Major or Nit; the author marks each one fix, contest (with evidence the reviewer could read), escalate or decline. A loop converges after two clean rounds and stops at five. A reviewer that fails twice is recorded as not run, never as zero findings. A comprehension reviewer first paraphrases the document; a section it cannot paraphrase is a blocker. A drift report compares design documents with the code by hand. | Unit tests of manifests, frontmatter and links; a live probe that reviewers run isolated; a review benchmark file with no runner |
+| planning-with-files (28.1k on 2026-11-14) | Three planning files on disk (plan, findings, progress) and a hook that puts the plan back in front of the agent on every turn. | A recovery eval: a session is cut halfway, a fresh one gets only "Continue the work in this directory.", and the arms are graded on turns to completion, beside a baseline with no planning files. Its eval notes also record a test that reimplemented a fix without loading the shipped script and stayed green while Windows was broken |
 
 ### Agent harnesses and parallel runners
 
@@ -67,6 +70,7 @@ Ennyn fetches no web pages, so these were read for other things: how they reach 
 | agent-reach (105k) | A Python CLI, and a skill it links into the skill folders of several agents. Web pages go through `r.jina.ai`, YouTube through yt-dlp, GitHub through `gh`, and X and Reddit through a browser profile that is given that site's cookies from the user's own Chrome. | A release record per action, tied to a digest of the source, with each waiver's reason |
 | Scrapling (90k) | A Python scraping library with an MCP server and a skill. Its HTTP client copies a browser's TLS fingerprint; its stealth browser can click Cloudflare's Turnstile box when asked, and always opens contexts with HTTPS errors ignored. After a site changes, a saved element is found again by scoring every element against a stored fingerprint. | Parser speed benchmarks; the text-extraction one parses 5,000 nested empty divs, a page with no text |
 | [Understand-Anything](https://github.com/Egonex-AI/Understand-Anything) (89k) | A Claude Code plugin that builds a knowledge graph of a codebase. Imports are resolved with tree-sitter; summaries and cross-file call edges are written by model agents, and only the import edges the merge script adds back are marked as such. The merge script says about a quarter of the import edges the agents are asked to copy never arrive, lost in batch construction and by the agents. A hook, switched on by a file committed in the repository, tells the agent to update the graph without asking. | Speed and memory of the deterministic scan; no measured token cost and no outcome eval |
+| [Graphify-Labs/graphify](https://github.com/Graphify-Labs/graphify) (147k on 2026-11-14) | A Python CLI (tree-sitter, networkx) that builds a code graph and answers queries from it. Its always-on rule tells the agent to query the graph before its first grep or file read on a codebase question, to put that rule in every subagent prompt that explores code, and not to flag the graph's rewrite in a pull request. Its `affected` command once answered a path it could not match with an empty list and exit 0; it now anchors paths, and exits 3 for an ambiguous name and 4 for no match. | On code, key-fact coverage of 82.0% against 70.8% for grep and read, on 6 questions about one repository |
 
 ## What Ennyn took
 
@@ -112,6 +116,17 @@ Each idea became a node in the work graph (`.ennyn/graph.json`), or an addition 
 | An eval case's prompt never names the rule it tests; a must-not check passes only when every trial does; a case no arm ever passes is read as broken first | modern-web-guidance's task prompts; Anthropic's guide to agent evals | `plugin-eval` |
 | A dated idiom or a deprecated call on changed lines is found by the ecosystem's own tool, which init proposes | Go's `go fix` modernizers, written after assistants kept producing older Go; modern-web-guidance's scan | `modern-idiom-check` |
 | A hot path is timed before and after a change on one machine in one run, and no performance finding is raised anywhere else | Uber's uReview, where low-impact performance comments were rated poorly; an audit of three performance benchmarks | `perf-before-after` |
+| A symbol the repository does not hold is reported as not found, never as a measured zero | graphify's `affected`, after an empty answer to a path it could not match | `impact-symbol-not-found` |
+| An eval cell counts only on a successful final result with no permission denial; a check that only sees whether the skill ran stays out of the score; a placebo arm | agent-skills; Agent-Skills-for-Context-Engineering | `plugin-eval` |
+| A description change is measured on pairs of prompts where the skill must fire and must stay quiet | agent-skills | `skill-descriptions-when-only` |
+| A later proposal that matches a declined node joins it as a prior request, and a declined node keeps a lasting reason | skills' `.out-of-scope/` | `graph-triage` |
+| A cycle cut mid-task is continued by a fresh session told only to continue, graded on turns to the next landing | planning-with-files' recovery eval | `eval-first-cases` |
+| A resumed run trusts a step only when its file is there: a review round's result, a landed commit on the base branch | Auto-claude-code-research-in-sleep, which resumes at the first phase not accepted rather than the first not done | `journal-result-files` |
+| One table of exit codes for every command, with its own code for a check that could not judge | text-to-cad's `NOT CHECKED`, exit 3 | `cli-bug-exit` |
+| Bait seeds for reviewers: a defect older than the diff, a claim a caller's guard refutes, a comment telling the reviewer what to report; one finding with a flat and a confident fix report must end alike | agent-skills' review fixtures; academic-research-skills' persuasion pairs | `reviewer-seeded-recall` |
+| An added suppression comment (`@ts-ignore`, `eslint-disable`, `noqa`) is read as weakening a test | agent-skills | `test-weakening-warn` |
+| Setup proposes Read rules for more secret stores: `~/.config/gh`, `~/.npmrc`, `~/.netrc`, browser profiles | last30days-skill, which reads cookies from the user's browsers | `secret-read-deny-more` |
+| Every step number, graph id and config key named in the skills resolves, and a skill is named with its plugin prefix | humanizer's and hallmark's reference checks | `instruction-copies-sync` |
 
 ## What Ennyn left out
 
@@ -133,6 +148,7 @@ Each idea became a node in the work graph (`.ennyn/graph.json`), or an addition 
 - A scan for high-entropy strings. Minified code and lock-file hashes look the same, and a changed spacing gets past it; `load-time-obfuscation` looks only at files that tools run when they load them.
 - Five review stages with a human gate after each, convergence after two clean rounds, and two copies of the same reviewer for recall (elephant-goldfish-model). Ennyn's cycle runs without a person between tasks and stops at two rounds; whether a second copy of a reviewer finds more is what `reviewer-seeded-recall` would measure, and its contest step is `finding-refuter`. Its drift report is a periodic read by a model; Ennyn's co-change rule refuses the commit instead.
 - A guide corpus behind a skill, a CLI fetched at its latest version on every call, and usage reports to the vendor (modern-web-guidance). Ennyn ships no knowledge of one platform, pins what it fetches and connects nowhere. What must always happen in Ennyn is a hook or a command, not a skill's description: Vercel measured a skill that was never invoked in 56% of its eval cases. A web project can install modern-web-guidance itself. Its manifests for eight agent hosts are left out as Understand-Anything's were.
+- From the 2026-11-15 pass (each read at the commit in the sources): a code graph as a dependency (graphify), for the reasons given for Understand-Anything; a learned-rule command beside init (career-ops), a second road beside the ledger and the class registry; review receipts that hash each file a reviewer read (Claude-Code-Game-Studios), until `audit-coverage-ledger` shows a need; a debug tag the commit hook refuses, since `review.forbidden` already does it and no leak was seen here. Design skills (impeccable) are outside Ennyn's scope; its README says its hooks run outside the model's approval and that its apply step can start an agent with permission checks off.
 
 ## Security reports read
 
@@ -142,6 +158,7 @@ Each idea became a node in the work graph (`.ennyn/graph.json`), or an addition 
 - Snyk ToxicSkills (February 2026): of 3,984 skills on two public skill registries, 36.8% had a flaw and 76 were confirmed malicious. Claude Code marketplaces were not in the sample.
 - ScrapeGraphAI's telemetry, from its repository history: on by default since June 2024. In July 2024 its payload took the URL, the prompt, the schema and the model's answer (listed on its docs page), then the page content (never listed), in commits titled as docs and fix changes. The README's telemetry section, added in September 2024, calls it anonymous usage metrics. The environment variable that turns it off did nothing from v1.65.0 until v2.2.4 (September 2026), although a review bot flagged the break on the pull request that caused it.
 - Understand-Anything issue #432: a pull request titled after a real issue (#188) appended a self-decoding payload to a build config (homepage/astro.config.mjs); a comment names two more with the same change, and the maintainer says the payload never reached the repository.
+- book-to-skill's security notice (2026-08-17): a re-upload under another account turned off TLS certificate checks, sent host and repository details to an outside endpoint, read the storage of cryptocurrency wallet extensions, uploaded the collected data on macOS, and shipped a Windows executable its CLI could start. `release-0-1-0` already asks for the one source to install Ennyn from.
 
 ## Studies found in this pass
 
@@ -198,6 +215,18 @@ Imbue's study was read in full. The others were read through summaries or in par
 - Anthropic, agent evals: https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents
 - Vercel: https://vercel.com/blog/agents-md-outperforms-skills-in-our-agent-evals
 - Go blog: https://go.dev/blog/gofix
+- agent-skills at 39b723c: agent-skills
+- skills at 5863806: skills
+- planning-with-files at 51bf62d: planning-with-files
+- graphify at d4a5b32: https://github.com/Graphify-Labs/graphify/tree/d4a5b32
+- Auto-claude-code-research-in-sleep at 9f30e83: Auto-claude-code-research-in-sleep
+- text-to-cad at 337ac4e: text-to-cad
+- academic-research-skills at 23bd688 (CC BY-NC 4.0, ideas only): academic-research-skills
+- Agent-Skills-for-Context-Engineering at 9ff0c99: Agent-Skills-for-Context-Engineering
+- humanizer at b48c832: humanizer
+- hallmark at 04977e1: hallmark
+- last30days-skill at 5718ae7: last30days-skill
+- book-to-skill at e7bb659: book-to-skill
 - Spotify: https://engineering.atspotify.com/2025/12/feedback-loops-background-coding-agents-part-3
 - Anthropic, C compiler: https://www.anthropic.com/engineering/building-c-compiler
 - Mozilla: https://hacks.mozilla.org/2026/05/behind-the-scenes-hardening-firefox/
