@@ -6105,17 +6105,6 @@
       "status": "planned",
       "needs": [],
       "since": 34,
-      "id": "platform-run-before-landing",
-      "value": "high",
-      "cost": "S",
-      "cluster": "cycle",
-      "title": "task-brief.md sends every platform run to the release; a task's changed tests run on the platforms it touches before it lands. Line 20: 'A platform run the handoff names (another operating system, a container image, the oldest supported runtime) runs before a task lands, on the test files the task adds or changes, when the task touches what differs there (paths, processes, signals, shells, the file system, a tool's version): red there is the task's finding, before the main branch moves. The brief names which runs, or none and why; a platform the change touches and no run reaches is said as unmeasured in the report, never as passed. The whole matrix runs before a release, never at the closing.' Line 77 (Landing): ', and the platform runs its brief names' after every slow gate the task touches. A one-task run, author sonnet, one reviewer",
-      "source": "the user, 2026-11-14: a request; Fable decisions, 2026-11-14, a kept folder outside the repository"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 34,
       "id": "platform-runs-named",
       "value": "medium",
       "cost": "M",
@@ -7075,6 +7064,13 @@
       "status": "done",
       "finished": "2026-11-14",
       "cluster": "security"
+    },
+    {
+      "id": "platform-run-before-landing",
+      "title": "skills/cycle/task-brief.md: a platform run the handoff names runs before a task lands, on the test files the task adds or changes, when the task touches what differs there; the brief names the runs or none and why; a platform no run reaches is unmeasured, never passed; the whole matrix stays before a release; the Landing row counts the brief's platform runs after the slow-gate fallback; pins in test/short.test.mjs, test/method-walk.test.mjs, guard short-method-platform; one-task run, cycle 35 (6dc9de4)",
+      "status": "done",
+      "finished": "2026-11-15",
+      "cluster": "cycle"
     }
   ],
   "declined": [
