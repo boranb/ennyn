@@ -9,9 +9,11 @@
  * listed registry whose tarball path, in npm's layout (`…/<name>/-/<name without scope>-<version>.tgz`), names
  * another package or version fails, as does one with no integrity, two digests of one algorithm, an integrity
  * that is not the registry's, or install scripts the registry's manifest shows and the lock leaves out. A path
- * in another layout proves nothing. Before the name is read, the source must have one meaning the check can
- * prove (judgeEntry): a listed registry's tarball, a path inside the repository the index tracks, an exact
- * `sources` entry, or no `resolved` and a registry the `.npmrc` beside the lock names. Everything else fails,
+ * in another layout or spelling on a listed origin proves nothing and fails. Before the name is read, the source
+ * must have one meaning the check can prove (judgeEntry): a listed registry's tarball, a path inside the
+ * repository the index tracks, an exact `sources` entry, or no `resolved` and a registry the `.npmrc` beside the
+ * lock decides over a user's and the machine's `.npmrc` (a lock of version 2 or later; the environment, which
+ * outranks it, is not read). Everything else fails,
  * whatever npm would make of it: re-reading npm-package-arg's spellings is how a gate opens holes. A staged
  * `.npmrc` that points npm at a registry no list names fails too, read as npm reads it. `allow` and `allowScripts` name an identity the tarball path
  * proves (or, for scripts, an exact `resolved`), never a name the lock merely writes.
@@ -34,9 +36,10 @@ import { brings } from "./ci.mjs";
 import { t, tShown } from "../core/i18n.mjs";
 
 /**
- * @typedef {{ key: string, name: string, version: string, resolved: string | null, integrity: string | null, scripts: boolean, bundled: boolean, odd?: { field: string, kind: string, raw?: string } | null, spec?: { from: string, dir: string, raw?: string, tag?: string, overridden?: true }, shrinkwrap?: true, wrapped?: true }} LockEntry
+ * @typedef {{ key: string, name: string, version: string, resolved: string | null, integrity: string | null, scripts: boolean, bundled: boolean, odd?: { field: string, kind: string, raw?: string } | null, spec?: { from: string, dir: string, raw?: string, tag?: string, overridden?: true }, shrinkwrap?: true, wrapped?: true, v1?: true }} LockEntry
  *   `spec`: a dependency's spec npm may fetch from, as a `resolved` (specsOf), not the lock's entry; `shrinkwrap`:
- *   it carries its own npm-shrinkwrap.json (`hasShrinkwrap`), `wrapped`: it sits under one that does
+ *   it carries its own npm-shrinkwrap.json (`hasShrinkwrap`), `wrapped`: it sits under one that does; `v1`: read from a
+ *   version 1 lock's `dependencies` tree
  * @typedef {{ paths: string[], cooldownDays: number, minShare: number, minWeekly: number, allow: string[], allowScripts: string[], sources: string[], online: boolean, timeout: number, registries: Record<string, string | null>, advisories: string, advisoryRegistries: string[] }} DepsRule
  * @typedef {{ key: string, vars?: Record<string, string | number>, inner?: Reason }} Reason why something was not measured: `deps.reason.<key>`, after `inner`'s
  * @typedef {{ held: number }} Meter the answer bytes held at once in one run
@@ -438,7 +441,7 @@ export function lockEntries(text, { pkg, folders = () => undefined } = {}) {
   };
   walk(deps, "", 0);
   const bundled = bundledIn(tree, { reconstruct: true });
-  return { entries: entries.map((e) => ({ ...e, bundled: bundled(e.key) })), links, ...specsOf(tree, pkg, folders), v1: true };
+  return { entries: entries.map((e) => ({ ...e, bundled: bundled(e.key), v1: /** @type {const} */ (true) })), links, ...specsOf(tree, pkg, folders), v1: true };
 }
 
 /** name@version, or the name alone for an entry with no version (a link, a version 1 source). @param {LockEntry} e */
@@ -477,10 +480,13 @@ const decoded = (s) => {
  * The registry an entry was resolved from: a URL `registries` lists (an origin, or an origin and a path, as
  * Artifactory and Nexus serve one), when `resolved` is, right after that URL, npm's tarball of this very package
  * and version (`/<name>/-/<name without scope>-<version>.tgz`, a scope's slash written or encoded): `{ origin,
- * registry }`, the registry asked about it being that configured URL, never one the lock spells. Otherwise why it
- * is not asked: `refuse` when npm's layout at the end of the path names another package or version; another
- * place on a listed origin (another repository of a shared registry, GitHub Packages' `/download/…`) proves
- * nothing and is said.
+ * registry }`, the registry asked about it being that configured URL, never one the lock spells. The path is
+ * compared as npm writes it, the scope's slash alone written or encoded (`%2f`, as a registry may serve it and npm
+ * then writes it): another spelling of that tarball (`%2Etgz`, `%2D`, `.TGZ`, a trailing `/`) is no proof, whatever
+ * the host serves there. Otherwise why it is not asked: `refuse` when npm's layout at the end of the path names
+ * another package or version; any other place on a listed origin (another repository of a shared registry,
+ * GitHub Packages' `/download/…`, another spelling) is `unproven`, which judgeEntry refuses unless `sources`
+ * names that exact `resolved`.
  * @param {LockEntry} e @param {DepsRule} rule
  * @returns {{ origin: string, registry: string } | { reason: Reason, refuse?: boolean }}
  */
@@ -504,11 +510,19 @@ export function registryOf(e, rule) {
   const mismatch = { reason: { key: "mismatch", vars: { path: `${url.pathname}${url.search}${url.hash}`, want } }, refuse: true };
   if (url.search || url.hash) return mismatch;
   const right = registry ? /^\/((?:@[^/]+(?:\/|%2[fF]))?[^/]+)\/-\/([^/]+)\.tgz$/.exec(href.slice(registry.length)) : null;
-  if (right && decoded(right[1]) === e.name && decoded(right[2]) === file) return { origin: url.origin, registry };
+  if (right && right[1].replace(/^(@[^/%]+)%2[fF]/, "$1/") === e.name && right[2] === file) return { origin: url.origin, registry };
   const end = LAYOUT.exec(url.pathname);
   if (end && !(decoded(end[2]) === e.name && decoded(end[3]) === file)) return mismatch;
   return { reason: { key: "unproven", vars: { path: url.pathname } } };
 }
+
+/**
+ * The `.npmrc` lines that decide which registry npm asks for a package with no `resolved`, over a user's and the
+ * global `.npmrc` (npm 10.9.9, measured; the environment outranks them): a scoped package's own `@scope:registry`; else `registry` and an empty
+ * `scope`, which a user's `scope` would otherwise route through its own `@scope:registry`.
+ * @param {string} name @param {string} url a registry URL with no trailing slash
+ */
+const decidingLines = (name, url) => (name.startsWith("@") ? `${name.slice(0, name.indexOf("/"))}:registry=${url}/` : `registry=${url}/, scope=`);
 
 /** npm's default registry: what it asks for an entry with no `resolved` when no config names another. */
 export const DEFAULT_REGISTRY = "https://registry.npmjs.org";
@@ -624,10 +638,12 @@ export const shownSource = (s) =>
  * package's own `@scope:registry`, else that of the project's `scope` (which takes every other package, an
  * unscoped one too), else `registry`; an empty value is none. Read once for every entry. The project's config
  * decides only what it sets: where it leaves the package's `@scope:registry`, the `scope` line or the scope's
- * registry unset, a user's config may set it, which the check does not read (`user`: judgeEntry says an entry it
- * would prove, `noResolvedUser`); with no `.npmrc` naming a registry, what npm asks is not told (`noResolvedNone`). A value npm's ini reads as no
- * plain text (`true`, `false`, `null`, a `key[]` list) is refused (`noResolvedPlain`), as is one from the
- * environment.
+ * registry unset, a user's or the global `.npmrc` may set it, and npm 10.9.9 then asks that one (measured: a project
+ * line, an empty one too, overrides both; `npm_config_*` in the environment outranks the project's, and is not
+ * read either), which the check does not read (`user`: judgeEntry refuses an entry it
+ * would prove, `noResolvedUser`, naming the lines that decide it); with no `.npmrc` naming a registry, what npm asks
+ * is not told (`noResolvedNone`). A value npm's ini reads as no plain text (`true`, `false`, `null`, a `key[]` list)
+ * is refused (`noResolvedPlain`), as is one from the environment.
  * @param {{ staged: Buffer | null, unread?: string } | undefined} npmrc
  * @returns {(name: string) => { url: string, user?: string } | { reason: Reason }} `user`: the key the project
  *   leaves to a user's config on the way to `url`
@@ -706,11 +722,15 @@ export function registryResolver(npmrc) {
  * name); (b) `inside`, a link's directory or `file:` and a path inside the repository (the caller then asks the
  * index whether a commit holds it); (c) `sourced`, the exact `resolved` in `sources`, in a form with one reading
  * (sourceForm; a tarball still needs its integrity); (d) `listed`, no `resolved`, an exact version and a name
- * the registry serves, proven as the tarball of the registry the `.npmrc` beside the lock names (`registry`).
+ * the registry serves, in a lock of version 2 or later, proven as the tarball of the registry the `.npmrc` beside
+ * the lock names (`registry`) with no key on the way left to a user's config.
  * Everything else is refused, naming what was seen and what to do: a field of the wrong kind, a host or path no
- * list names, git, a registry spec, another package's tarball (`mismatch`). Said: an entry inside a dependency's
- * tarball (`bundled`, fetched by nobody), another layout on a listed registry (only the identity is unproven),
- * and an `.npmrc` beside the lock that could not be read.
+ * list names, git, a registry spec, another package's tarball (`mismatch`), any other place or spelling on a
+ * listed origin (`unproven`: `sources` naming the exact `resolved` is the opt-in), no `resolved` where the
+ * `.npmrc` beside the lock names no registry or leaves one key on the way open (`noResolvedNone`,
+ * `noResolvedUser`: the lines that decide it are printed) and no `resolved` in a version 1 lock, which npm fills in
+ * from whatever registry it is set to (`noResolvedV1`). Said: an entry inside a dependency's tarball (`bundled`,
+ * fetched by nobody) and an `.npmrc` beside the lock that could not be read.
  * @param {LockEntry} e @param {DepsRule} rule
  * @param {{ lockDir?: string, registry?: { url: string, user?: string } | { reason: Reason }, link?: boolean }} [opts]
  * @returns {{ listed: LockEntry } | { sourced: LockEntry, sealed: boolean } | { inside: string, tarball: boolean } | { refuse: "unlisted" | "git" | "mismatch", reason: Reason } | { said: Reason }}
@@ -739,17 +759,21 @@ export function judgeEntry(e, rule, { lockDir = "", registry = { reason: { key: 
   if (e.resolved === null) {
     if (!exactVersion(e.version)) return { refuse: "unlisted", reason: { key: "noResolvedVersion", vars: { version: shownSource(e.version) || "—" } } };
     if (!NAME.test(e.name)) return { refuse: "unlisted", reason: { key: "noResolvedName", vars: { name: shownSource(e.name) } } };
+    // npm ci fills a version 1 entry's missing resolved in from whatever registry it is set to, and the lock records no install scripts.
+    if (e.v1) return { refuse: "unlisted", reason: { key: "noResolvedV1" } };
+    const file = lockDir ? `${lockDir}/.npmrc` : ".npmrc";
     if ("reason" in registry) {
-      // A .npmrc that could not be read is unmeasured, never refused; one read that proves nothing is refused, with the line to write.
-      const file = lockDir ? `${lockDir}/.npmrc` : ".npmrc";
-      const reason = { ...registry.reason, vars: { ...registry.reason.vars, file, registry: Object.keys(rule.registries)[0] ?? DEFAULT_REGISTRY } };
+      // A .npmrc that could not be read is unmeasured, never refused; one read that proves nothing is refused, with the lines to write.
+      /** @type {Reason} */
+      const reason = { ...registry.reason, vars: { ...registry.reason.vars, file } };
+      if (reason.key === "noResolvedNone") reason.vars = { ...reason.vars, lines: decidingLines(e.name, Object.keys(rule.registries)[0] ?? DEFAULT_REGISTRY) };
       return registry.reason.key === "noResolvedUnread" ? { said: reason } : { refuse: "unlisted", reason };
     }
     // Proven only right after a registry the list names, as that URL (registryOf), never a prefix of one; a key on
-    // the way that a user's config may set leaves it unproven, said.
+    // the way that a user's config may set leaves it open: refused, with the lines that decide it.
     const proven = { ...e, resolved: `${registry.url}/${e.name}/-/${e.name.replace(/^@[^/]+\//, "")}-${e.version}.tgz` };
     if (!(Object.hasOwn(rule.registries, registry.url) && "origin" in registryOf(proven, rule))) return { refuse: "unlisted", reason: { key: "noResolvedUnlisted", vars: { from: shownSource(registry.url) } } };
-    return registry.user ? { said: { key: "noResolvedUser", vars: { what: registry.user, file: lockDir ? `${lockDir}/.npmrc` : ".npmrc" } } } : { listed: proven };
+    return registry.user ? { refuse: "unlisted", reason: { key: "noResolvedUser", vars: { what: registry.user, file, lines: decidingLines(e.name, registry.url) } } } : { listed: proven };
   }
   const url = canonicalUrl(e.resolved);
   if (url) {
@@ -765,9 +789,9 @@ export function judgeEntry(e, rule, { lockDir = "", registry = { reason: { key: 
     const where = registryOf({ ...e, version }, rule);
     if ("origin" in where) return { listed: { ...e, version } };
     if (where.refuse) return { refuse: "mismatch", reason: where.reason };
-    // Another layout on a registry the list names (GitHub Packages' /download/…, another repository of the host):
-    // the registry is the project's, only the identity is unproven.
-    return where.reason.key === "unproven" ? { said: where.reason } : { refuse: "unlisted", reason: where.reason };
+    // Another place or spelling on a registry the list names (another repository of the host, GitHub Packages'
+    // /download/…, %2Etgz): what the host serves there is not known. The exact resolved in sources is the opt-in.
+    return { refuse: "unlisted", reason: where.reason.key === "unproven" ? { key: "sourcesExact", inner: where.reason } : where.reason };
   }
   if (e.resolved.startsWith("file:")) {
     const at = pathFromLock(e.resolved.slice(5), lockDir);

@@ -266,7 +266,7 @@ test("deps identity: an entry is the registry's tarball of its own name and vers
   assert.equal(refused({ resolved: "https://registry.npmjs.org.evil.example/a/-/a-1.0.0.tgz" })[0], false);
   // A registry under a path (Artifactory, Nexus) is the URL the config lists: right after it, npm's layout proves
   // the package, and that configured URL is what is asked. Another repository on the same host, a prefix the lock
-  // spells (even on npmjs), or another layout (GitHub Packages) proves nothing: said, never refused, never asked.
+  // spells (even on npmjs), or another layout (GitHub Packages) proves nothing: unproven, never asked (judgeEntry refuses it).
   const prefixed = rule({ registries: { "https://corp.example/artifactory/api/npm/npm": null } });
   assert.deepEqual(registryOf(e({ name: "@s/a", resolved: "https://corp.example/artifactory/api/npm/npm/@s/a/-/a-1.0.0.tgz" }), prefixed), { origin: "https://corp.example", registry: "https://corp.example/artifactory/api/npm/npm" });
   const wrong = /** @type {any} */ (registryOf(e({ resolved: "https://corp.example/artifactory/api/npm/npm/evil/-/evil-0.0.1.tgz" }), prefixed));
@@ -283,7 +283,13 @@ test("deps identity: an entry is the registry's tarball of its own name and vers
   assert.deepEqual(unproven("https://registry.npmjs.org/evil/a/-/a-1.0.0.tgz", r), [undefined, "unproven"]);
   assert.deepEqual(unproven("https://corp.example/download/@s/a/1.0.0/0123abcd", prefixed), [undefined, "unproven"]);
   const github = /** @type {any} */ (registryOf(e({ name: "@s/a", resolved: "https://corp.example/download/@s/a/1.0.0/0123abcd" }), prefixed));
-  assert.equal(reasonText(github.reason, "en"), "/download/@s/a/1.0.0/0123abcd is in no layout that names the package and version, so its identity is not proven");
+  assert.equal(reasonText(github.reason, "en"), "/download/@s/a/1.0.0/0123abcd is on a listed registry's origin but is not npm's tarball path right after a listed registry URL: the check cannot tell what the host serves there");
+  // The path as npm writes it: the scope's slash alone may be encoded, as a registry serves it and npm 10.9.9 then
+  // writes it; every other spelling of the same tarball is unproven, whatever the host serves there.
+  assert.deepEqual(registryOf(e({ name: "@s/a", resolved: "https://registry.npmjs.org/@s%2Fa/-/a-1.0.0.tgz" }), r), { origin: "https://registry.npmjs.org", registry: "https://registry.npmjs.org" });
+  const spellings = ["a/-/a-1.0.0%2Etgz", "a/-/a%2D1.0.0.tgz", "%61/-/a-1.0.0.tgz", "a/-/a-1.0.0.TGZ", "a/-/a-1.0.0.tgz/", "a/-/a-1.0.0.tgz;x", "a%2F-%2Fa-1.0.0.tgz", "a//-/a-1.0.0.tgz", "/a/-/a-1.0.0.tgz"];
+  assert.deepEqual(spellings.map((p) => unproven(`https://registry.npmjs.org/${p}`, r)[1]), spellings.map(() => "unproven"));
+  assert.equal(/** @type {any} */ (registryOf(e({ name: "@s/a", resolved: "https://registry.npmjs.org/%40s%2Fa/-/a-1.0.0.tgz" }), r)).reason.key, "unproven");
 });
 
 /** A full commit id. */
@@ -397,8 +403,12 @@ test("deps verdicts by source: an entry passes only on a reading with one meanin
     ["http://registry.npmjs.org/x/-/x-1.0.0.tgz", "", "refused unlisted"],
     ["https://registry.npmjs.org./x/-/x-1.0.0.tgz", "", "refused unlisted"],
     ["https://registry.npmjs.org/evil/-/evil-1.0.0.tgz", "", "refused mismatch"],
-    ["https://registry.npmjs.org/prefix/x/-/x-1.0.0.tgz", "", "said"],
-    ["https://corp.example/download/x/1.0.0/abc", "", "said"],
+    // another place or spelling on a listed origin: what the host serves there is not known
+    ["https://registry.npmjs.org/prefix/x/-/x-1.0.0.tgz", "", "refused unlisted"],
+    ["https://corp.example/download/x/1.0.0/abc", "", "refused unlisted"],
+    ["https://corp.example/other/x/-/x-1.0.0.tgz", "", "refused unlisted"],
+    ["https://registry.npmjs.org/x/-/x-1.0.0%2Etgz", "", "refused unlisted"],
+    ["https://registry.npmjs.org/x/-/x%2D1.0.0.tgz", "", "refused unlisted"],
     ["https://github.com/o/r/archive/main.tar.gz", "", "refused unlisted"],
     // git in every spelling, pinned or not
     [`git+ssh://git@github.com/o/r.git#${SHA}`, "", "refused git"],
@@ -470,10 +480,10 @@ test("deps verdicts by source: an entry passes only on a reading with one meanin
   const reasonOf = (/** @type {Partial<import("../checks/deps.mjs").LockEntry>} */ x) => /** @type {any} */ (judgeEntry({ key: "node_modules/x", name: "x", version: "1.0.0", resolved: null, integrity: "sha512-x", scripts: false, bundled: false, ...x }, r, { registry: proven(x.name ?? "x") })).reason?.key;
   assert.deepEqual([reasonOf({ name: "foo@https://evil.example/x#" }), reasonOf({ version: "^1" })], ["noResolvedName", "noResolvedVersion"]);
   // The registry as npm-registry-fetch picks it: the package's own scope, the project's scope, then registry. What
-  // the project leaves unset a user's config may set: an entry it would prove is said, one it refuses still refused.
+  // the project leaves unset a user's config may set (npm 10.9.9 then asks that one): refused either way.
   const picked = (/** @type {string} */ rc, /** @type {string} */ name) => {
     const j = /** @type {any} */ (judgeEntry({ key: `node_modules/${name}`, name, version: "1.0.0", resolved: null, integrity: "sha512-x", scripts: false, bundled: false }, r, { registry: registryResolver({ staged: Buffer.from(rc) })(name) }));
-    return "listed" in j ? j.listed.resolved.replace(/\/[^/]+\/-\/.*$|\/@[^/]+\/[^/]+\/-\/.*$/, "") : `${"said" in j ? "said" : "refused"} ${(j.said ?? j.reason).key}`;
+    return "listed" in j ? j.listed.resolved.replace(/\/[^/]+\/-\/.*$|\/@[^/]+\/[^/]+\/-\/.*$/, "") : `${"said" in j ? "said" : "refused"} ${(j.said ?? j.reason).key}${"reason" in j && j.reason.vars?.lines ? ` ${j.reason.vars.lines}` : ""}`;
   };
   assert.deepEqual(
     [
@@ -490,7 +500,20 @@ test("deps verdicts by source: an entry passes only on a reading with one meanin
       picked("registry=https://registry.npmjs.org/\nscope[]=a\nscope[]=corp\n@corp:registry=https://corp.example/npm\n", "x"),
       picked('registry=https://registry.npmjs.org/\nscope="null"\n', "x"),
     ],
-    ["said noResolvedUser", "https://registry.npmjs.org", "https://corp.example/npm", "said noResolvedUser", "said noResolvedUser", "https://corp.example/npm", "https://corp.example/npm", "https://registry.npmjs.org", "refused noResolvedUnlisted", "refused noResolvedPlain", "refused noResolvedPlain", "refused noResolvedPlain"],
+    [
+      "refused noResolvedUser registry=https://registry.npmjs.org/, scope=",
+      "https://registry.npmjs.org",
+      "https://corp.example/npm",
+      "refused noResolvedUser registry=https://registry.npmjs.org/, scope=",
+      "refused noResolvedUser @other:registry=https://registry.npmjs.org/",
+      "https://corp.example/npm",
+      "https://corp.example/npm",
+      "https://registry.npmjs.org",
+      "refused noResolvedUnlisted",
+      "refused noResolvedPlain",
+      "refused noResolvedPlain",
+      "refused noResolvedPlain",
+    ],
   );
   // A name no registry serves, on a listed registry's tarball: refused, never said as another layout.
   assert.equal(verdict({ name: ".hidden", resolved: "https://registry.npmjs.org/.hidden/-/.hidden-1.0.0.tgz" }), "refused unlisted");
@@ -502,7 +525,13 @@ test("deps verdicts by source: an entry passes only on a reading with one meanin
   assert.deepEqual(/** @type {any} */ (judgeEntry({ key: "node_modules/l", name: "l", version: "", resolved: "../dir.tgz", integrity: null, scripts: false, bundled: false }, rule({ sources: ["../dir.tgz"] }), { link: true })).sealed, false);
   assert.equal(verdict({}, "", false), "listed");
   const none = /** @type {any} */ (judgeEntry({ key: "node_modules/x", name: "x", version: "1.0.0", resolved: null, integrity: "sha512-x", scripts: false, bundled: false }, r, { registry: registryResolver(undefined)("x") }));
-  assert.equal(reasonText(none.reason, "en"), "no resolved URL and no .npmrc beside the lock naming its registry: add the line registry=https://registry.npmjs.org/ to .npmrc");
+  assert.equal(reasonText(none.reason, "en"), "no resolved URL and no .npmrc beside the lock naming its registry: add these lines to .npmrc: registry=https://registry.npmjs.org/, scope=");
+  const noneScoped = /** @type {any} */ (judgeEntry({ key: "node_modules/@s/x", name: "@s/x", version: "1.0.0", resolved: null, integrity: "sha512-x", scripts: false, bundled: false }, r, { registry: registryResolver(undefined)("@s/x") }));
+  assert.equal(reasonText(noneScoped.reason, "en"), "no resolved URL and no .npmrc beside the lock naming its registry: add these lines to .npmrc: @s:registry=https://registry.npmjs.org/");
+  // A version 1 entry with no resolved: refused whatever the .npmrc says; one of version 2 (packages read) is not.
+  const v1 = lockEntries(JSON.stringify({ lockfileVersion: 1, dependencies: { x: { version: "1.0.0", integrity: "sha512-x" } } })).entries ?? [];
+  const v2 = lockEntries(JSON.stringify({ lockfileVersion: 2, packages: { "": {}, "node_modules/x": { version: "1.0.0", integrity: "sha512-x" } }, dependencies: { x: { version: "1.0.0", resolved: "https://evil.example/x.tgz" } } })).entries ?? [];
+  assert.deepEqual([...v1, ...v2].map((x) => /** @type {any} */ (judgeEntry(x, r, { registry: proven(x.name) })).reason?.key ?? "listed"), ["noResolvedV1", "listed"]);
   // A field of another kind than npm reads is refused, never read as absent.
   for (const odd of [{ field: "resolved", kind: "array" }, { field: "resolved", kind: "object" }, { field: "version", kind: "number" }, { field: "link", kind: "string" }]) assert.equal(verdict({ odd, resolved: "https://registry.npmjs.org/x/-/x-1.0.0.tgz" }), "refused unlisted");
   // A link is a directory, never a spec: packages/a is the project's own folder, not a GitHub repository.
@@ -563,10 +592,9 @@ test("deps sources: an entry from a place no list names fails, a git dependency 
   assert.deepEqual(extra.errors.length, 1, extra.errors.join("\n"));
   assert.match(extra.errors[0], /1 new entries hold two digests of one algorithm.*twice@1\.0\.0/);
   assert.deepEqual(extra.warnings, []);
-  // Another layout on a listed registry (GitHub Packages' /download/…): the registry is the project's, only the identity is unproven: said.
+  // Another layout on a listed registry (GitHub Packages' /download/…): what the host serves there is not known: refused, sources the opt-in (above).
   const ghp = await check(lock({ "node_modules/@o/p": { version: "1.0.0", resolved: `${LISTED}/download/@o/p/1.0.0/abcdef`, integrity: "sha512-x" } }), r);
-  assert.deepEqual(ghp.errors, []);
-  assert.match(ghp.warnings.join("\n"), /\/download\/@o\/p\/1\.0\.0\/abcdef is in no layout that names the package and version/);
+  assert.match(ghp.errors.join("\n"), /1 new entries come from a source the check cannot prove.*@o\/p@1\.0\.0 \(\/download\/@o\/p\/1\.0\.0\/abcdef is on a listed registry's origin.*; listing this exact resolved in security\.deps\.sources is for the user to decide\)/);
   // lockfileVersion 1 keeps the source in `version`: read as the spec it is.
   const v1 = JSON.stringify({ lockfileVersion: 1, dependencies: { g: { version: `git+https://github.com/o/g.git#${SHA}`, from: "git+https://github.com/o/g.git" }, t: { version: "https://evil.example/t-1.0.0.tgz", integrity: "sha512-x" }, f: { version: "file:../f" } } });
   const old = await check(v1, r);
@@ -594,10 +622,11 @@ test("deps no resolved: an entry with no resolved URL is the tarball of the regi
     const named = await at({ "package-lock.json": bare, ".npmrc": `registry=${reg.origin}/\nscope=\n` });
     assert.match(named.errors.join("\n"), /1 new versions are younger than 7 days.*minimist@1\.2\.7/);
     assert.ok(reg.hits.includes("GET /minimist"));
-    // With no scope line a user's config may send it elsewhere: said, and not asked.
+    // With no scope line a user's config may send it elsewhere: refused with the lines, and not asked.
+    const hitsBefore = reg.hits.length;
     const unscoped = await at({ "package-lock.json": bare, ".npmrc": `registry=${reg.origin}/\n` });
-    assert.deepEqual(unscoped.errors, []);
-    assert.match(unscoped.warnings.join("\n"), /minimist@1\.2\.7|\.npmrc leaves scope unset/);
+    assert.match(unscoped.errors.join("\n"), /minimist@1\.2\.7 \(no resolved URL, and \.npmrc leaves scope unset.*add these lines to \.npmrc: registry=.*\/, scope=\)/);
+    assert.equal(reg.hits.length, hitsBefore);
     // None beside the lock (one in another directory is not the one npm reads for it): npm would ask what a user's
     // config names, which the check does not read; refused, and no name leaves the machine.
     const before = reg.hits.length;
@@ -606,7 +635,7 @@ test("deps no resolved: an entry with no resolved URL is the tarball of the regi
     assert.equal(reg.hits.length, before);
     // The advice names the line and the file to write it in.
     const nested = await at({ "app/package-lock.json": bare });
-    assert.match(nested.errors.join("\n"), new RegExp(`add the line registry=${reg.origin.replace(/[.]/g, "\\.")}/ to app/\\.npmrc`));
+    assert.ok(nested.errors.join("\n").includes(`add these lines to app/.npmrc: registry=${reg.origin}/, scope=)`), nested.errors.join("\n"));
     // A scope's registry is the one for its packages; the lock in a directory reads the .npmrc there.
     const scoped = await at({ "app/package-lock.json": lock({ "node_modules/@scope/minimist": { version: "1.2.7", integrity: SEALS["1.2.7"] } }), "app/.npmrc": `registry=https://evil.example/\n@scope:registry=${reg.origin}\n` });
     assert.match(scoped.errors.join("\n"), /app\/package-lock\.json: 1 new versions are younger than 7 days.*@scope\/minimist@1\.2\.7/);
@@ -1156,7 +1185,7 @@ test("deps hook: a path inside the repository holds what the commit holds only w
     const blob = (/** @type {string} */ text) => git(["hash-object", "-w", "--stdin"], { cwd: r.dir, input: text }).trim();
     git(["rm", "-q", "--cached", ".npmrc"], { cwd: r.dir });
     git(["update-index", "--add", "--cacheinfo", `100644,${blob("registry=https://evil.example/\n")},.NPMRC`], { cwd: r.dir });
-    git(["update-index", "--add", "--cacheinfo", `100644,${blob(`registry=${reg.origin}\n`)},.npmrc`], { cwd: r.dir });
+    git(["update-index", "--add", "--cacheinfo", `100644,${blob(`registry=${reg.origin}\nscope=\n`)},.npmrc`], { cwd: r.dir });
     git(["checkout", "-q", "HEAD", "--", "package-lock.json"], { cwd: r.dir });
     r.commit();
     // Only the lock is staged (a case-insensitive work tree holds one of the two names).
@@ -1519,7 +1548,7 @@ test("deps command: outside a repository the .npmrc beside a lock is the work tr
     mkdirSync(join(dir, ".ennyn"));
     writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ security: { deps: { registries: { [osv.origin]: null }, advisories: osv.origin, advisoryRegistries: [osv.origin] } } }));
     writeFileSync(join(dir, "package.json"), JSON.stringify({ dependencies: { minimist: "1" } }));
-    writeFileSync(join(dir, ".npmrc"), `registry=${osv.origin}\n`);
+    writeFileSync(join(dir, ".npmrc"), `registry=${osv.origin}\nscope=\n`);
     writeFileSync(join(dir, "package-lock.json"), lock({ "node_modules/minimist": { version: "1.2.8", integrity: "sha512-x" } }));
     const out = await cli(["deps"], dir);
     assert.ok(!/✗/.test(out.stdout), out.stdout);
@@ -1774,6 +1803,70 @@ test("deps hook: two digests of one algorithm fail, and an .npmrc counts only wh
     r.commit();
     r.put({ "app/.npmrc": "registry=https://evil.example/\n" });
     assert.match((await r.check()).stderr, /app\/\.npmrc: points npm at a registry/);
+  } finally {
+    await reg.close();
+  }
+});
+
+test("deps hook: a tarball on a listed origin outside npm's layout, and an entry with no resolved whose registry the project's .npmrc leaves open, are refused with what makes them pass", async () => {
+  const reg = await npm();
+  try {
+    const O = reg.origin;
+    const sealed = (/** @type {string} */ resolved) => lock({ "node_modules/minimist": { version: "1.2.8", resolved, integrity: SEALS["1.2.8"] } });
+    // Another repository of a listed host: what it serves there, the check cannot tell.
+    const host = repo(O, { registries: { [`${O}/npm-virtual`]: null } });
+    host.put({ "package-lock.json": sealed(`${O}/npm-local/minimist/-/minimist-1.2.8.tgz`) });
+    const other = await host.check();
+    assert.equal(other.status, 1, other.stderr);
+    assert.match(other.stderr, /1 new entries come from a source the check cannot prove.*minimist@1\.2\.8 \(\/npm-local\/minimist\/-\/minimist-1\.2\.8\.tgz is on a listed registry's origin but is not npm's tarball path right after a listed registry URL.*; listing this exact resolved in security\.deps\.sources is for the user to decide\)/);
+    // A spelling npm never writes for that tarball, even one the registry serves with the same bytes.
+    const spelt = repo(O);
+    for (const resolved of [`${O}/minimist/-/minimist-1.2.8%2Etgz`, `${O}/minimist/-/minimist%2D1.2.8.tgz`, `${O}/minimist/-/minimist-1.2.8.TGZ`]) {
+      spelt.put({ "package-lock.json": sealed(resolved) });
+      const out = await spelt.check();
+      assert.equal(out.status, 1, resolved);
+      assert.match(out.stderr, /1 new entries come from a source the check cannot prove/, resolved);
+    }
+    assert.ok(!reg.hits.length, reg.hits.join(" "));
+    // The exact resolved in sources is the project's word: sourced, sealed by its integrity.
+    const named = repo(O, { sources: [`${O}/npm-local/minimist/-/minimist-1.2.8.tgz`] });
+    named.put({ "package-lock.json": sealed(`${O}/npm-local/minimist/-/minimist-1.2.8.tgz`) });
+    assert.deepEqual(await named.check(), { status: 0, stdout: "", stderr: "" });
+    // No resolved: registry= alone leaves scope to a user's config; the hint names every line that decides it.
+    const bare = (/** @type {string} */ name, v1 = false) =>
+      v1 ? JSON.stringify({ name: "demo", lockfileVersion: 1, requires: true, dependencies: { [name]: { version: "1.2.8", integrity: SEALS["1.2.8"] } } }) : lock({ [`node_modules/${name}`]: { version: "1.2.8", integrity: SEALS["1.2.8"] } });
+    const open = repo(O);
+    open.put({ "package-lock.json": bare("minimist"), ".npmrc": `registry=${O}/\n` });
+    const user = await open.check();
+    assert.equal(user.status, 1, user.stderr);
+    assert.ok(user.stderr.includes(`minimist@1.2.8 (no resolved URL, and .npmrc leaves scope unset, so a user's config may choose its registry, which the check does not read: add these lines to .npmrc: registry=${O}/, scope=)`), user.stderr);
+    // A scoped package's own registry key decides it, whatever scope says.
+    open.put({ "package-lock.json": bare("@scope/minimist"), ".npmrc": `registry=${O}/\nscope=\n` });
+    const scoped = await open.check();
+    assert.equal(scoped.status, 1, scoped.stderr);
+    assert.ok(scoped.stderr.includes(`@scope/minimist@1.2.8 (no resolved URL, and .npmrc leaves @scope:registry unset, so a user's config may choose its registry, which the check does not read: add these lines to .npmrc: @scope:registry=${O}/)`), scoped.stderr);
+    assert.ok(!reg.hits.length, reg.hits.join(" "));
+    // The lines the hints print: listed, and asked of that registry.
+    open.put({ "package-lock.json": bare("minimist"), ".npmrc": `registry=${O}/\nscope=\n` });
+    assert.deepEqual(await open.check(), { status: 0, stdout: "", stderr: "" });
+    assert.ok(reg.hits.includes("GET /minimist"), reg.hits.join(" "));
+    open.put({ "package-lock.json": bare("@scope/minimist"), ".npmrc": `@scope:registry=${O}/\n` });
+    assert.deepEqual(await open.check(), { status: 0, stdout: "", stderr: "" });
+    assert.ok(reg.hits.includes("GET /@scope%2Fminimist"), reg.hits.join(" "));
+    // A version 1 lock: npm fills a missing resolved in from the registry it is set to, and the lock records no install scripts.
+    open.put({ "package-lock.json": bare("minimist", true), ".npmrc": `registry=${O}/\nscope=\n` });
+    const v1 = await open.check();
+    assert.equal(v1.status, 1, v1.stderr);
+    assert.match(v1.stderr, /minimist@1\.2\.8 \(no resolved URL in a version 1 lock.*write the lock again with npm 7 or later\)/);
+    // No .npmrc at all: the same lines.
+    const none = repo(O);
+    none.put({ "package-lock.json": bare("minimist") });
+    assert.ok((await none.check()).stderr.includes(`minimist@1.2.8 (no resolved URL and no .npmrc beside the lock naming its registry: add these lines to .npmrc: registry=${O}/, scope=)`));
+    // The command judges as the hook does.
+    host.commit();
+    const cmd = await cli(["deps"], host.dir);
+    assert.equal(cmd.status, 1);
+    assert.match(cmd.stdout, /minimist@1\.2\.8.*\/npm-local\/minimist\/-\/minimist-1\.2\.8\.tgz is on a listed registry's origin/);
   } finally {
     await reg.close();
   }
