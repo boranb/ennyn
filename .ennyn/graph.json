@@ -6152,17 +6152,6 @@
       "since": 35
     },
     {
-      "id": "deps-unread-file-refused",
-      "title": "security.deps passes a commit whose staged lock file or .npmrc it cannot read but npm can: one byte that is not UTF-8, a symbolic link, past 16 MB (checks/deps.mjs:1334-1346 only say it); the next npm ci installs and runs the new entry's install script. As checks/ci.mjs:1529 does and principle 7 says: a lock or .npmrc the commit brings that is not text, a symbolic link or too large refuses; a warning only when HEAD already holds it. The deps row of DESIGN.md and SECURITY.md change in the same commit",
-      "status": "planned",
-      "value": "high",
-      "cost": "S",
-      "cluster": "security",
-      "needs": [],
-      "source": "free-route audit of 2026-11-15 on 42d3c77 (four security reviewers, labs kept outside the repository), triaged by Fable the same day",
-      "since": 35
-    },
-    {
       "id": "deps-said-entries-refused",
       "title": "security.deps says and passes two shapes of a new lock entry that npm installs: a resolved on a listed origin outside npm's exact layout after a listed URL (another repository of the host, or registry.npmjs.org's %2Etgz and %2F spellings, which it serves with the same bytes: registryOf unproven, checks/deps.mjs:507-509, :769), and an entry with no resolved beside an .npmrc that names a listed registry with no scope= (noResolvedUser, :670-698, :751; the refusal's own hint leads there). Both refuse: security.deps.sources naming the exact resolved is the opt-in for another layout; the no-resolved hint prints registry= and an empty scope=; a version 1 entry with no resolved never passes. The wrong warning text ('in no layout that names the package and version') goes",
       "status": "planned",
@@ -6337,6 +6326,96 @@
       "needs": [],
       "source": "free-route audit of 2026-11-15 on 42d3c77 (four security reviewers, labs kept outside the repository), triaged by Fable the same day",
       "since": 35
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 36,
+      "id": "deps-held-link-target-unread",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "title": "security.deps passes a commit that changes only the file a held lock or .npmrc link points to: HEAD holds package-lock.json -> locks/root.json, the commit stages locks/root.json with a new install-script entry, the hook judges the link (unchanged) and never the target, and npm ci in a clone ran the postinstall; the .npmrc variant set registry to another host. Judge the target the index holds as the lock (or refuse a lock link whose target the commit changes), staged package.json or not; then switch the three known cells in test/verdicts/deps.json (r1sec-held-symlink-*) to gap or refused; the Not-seen lines that state the gap go with it",
+      "source": "cycle 2026-11-15 (36) review of deps-unread-file-refused, security r1 (c36-t1-security-r1-01), labs in a kept folder outside the repository (shapes.mjs, npmrun.mjs); default config, normal use (a monorepo lock link)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 36,
+      "id": "deps-npmrc-case-folder-unread",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "title": "security.deps never reads an .npmrc beside a lock in a folder of another case (sub/.npmrc beside Sub/package-lock.json): the folder compare and the indexNames pathspec in scripts/ennyn.mjs are case-sensitive while lockPath and npmrcPath are not; on a case-insensitive checkout npm reads it (registry set to another host). Needs a hand-built index or a commit from a case-sensitive system. Saved probes for test/verdicts/deps.json: a kept folder outside the repository",
+      "source": "cycle 2026-11-15 (36) review of deps-unread-file-refused, security r1 (c36-t1-security-r1-02)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 36,
+      "id": "deps-lock-parent-link-custom-paths",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "title": "security.deps reads a lock path whose parent folder the commit turns into a link as a deleted lock (checks/deps.mjs: no staged version, skipped) while npm in that folder reads the link's lock; only with security.deps.paths naming the path itself (the default **/package-lock.json judges the link's target as its own lock). Saved probe for test/verdicts/deps.json: a kept folder outside the repository",
+      "source": "cycle 2026-11-15 (36) review of deps-unread-file-refused, security r1 (c36-t1-security-r1-03)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 36,
+      "id": "ci-test-silent-stop-node22",
+      "value": "high",
+      "cost": "S",
+      "cluster": "tests",
+      "title": "In the node:22 image (Node 22.23.5, git 2.39.5, user node) node --test test/ci.test.mjs ends partway with exit 0 and fail 0 (after 23, 35, 45 and 57 of 75 tests in four runs, on main e8b26f9 too); the floor image and macOS run all 75. A green Linux run hides tests that never ran: measure the cause, and make a run that ends short of its tests fail (the runner's test count against the file's)",
+      "source": "cycle 2026-11-15 (36) review of deps-unread-file-refused, author's node:22 runs, logs a kept folder outside the repository, linux3.log, linux3-main.log; cause not measured"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 36,
+      "id": "headless-run-keeps-turn",
+      "value": "high",
+      "cost": "S",
+      "cluster": "cycle",
+      "title": "In a terminal runner (claude -p) the orchestrator's background agents and commands die about 10 minutes after its turn ends: an author's tool call came back rejected (13:46 -> 13:56Z) and its mutation run was killed (14:53 -> 15:03Z), cycle 36. skills/cycle/one-task.md and task-brief.md say the orchestrator stays in its turn while an agent works (the Agent call in the foreground, or a wait on the agent's transcript in foreground calls under 10 minutes), and an agent keeps its own long jobs waited for in the foreground",
+      "source": "cycle 2026-11-15 (36) review of deps-unread-file-refused, orchestrator's measurement (two windows of 10 min to the second; the mechanism is a guess); state in a kept folder outside the repository"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 36,
+      "id": "staged-versions-ita-design-decision",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "title": "core/git.mjs stagedVersions is at the fix-loop brake (cycle 36, a round-2 previous-fix): it tells an entry git add -N left from one the commit carries by a stand-in, the entry's absence from diff --cached, which a submodule ignore setting (.gitmodules ignore = all, diff.ignoreSubmodules) also causes, so a gitlink naming the empty blob id is dropped silently where it was said (c36-t1-security-r2-01; --ignore-submodules=none lists it on git 2.56 and 2.34.1). Decide on the top two rungs: read the intent-to-add flag git itself keeps (a construct that refuses an entry it cannot classify), or remove the need (the gates never reading an entry the commit does not write); or say the limit and decline the rest. No patch nodes",
+      "source": "cycle 2026-11-15 (36) convergence: fix-loop brake, skills/cycle/report-formats.md"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 36,
+      "id": "deps-row-wording-design-decision",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "docs",
+      "title": "DESIGN.md is at the fix-loop brake (cycle 36, a round-2 previous-fix in the security.deps.paths row): the row is one hand-written line of what the gate refuses, says and does not see, and each gate change adds a clause that drifts from the code; the held-link-target gap went in wider than measured (said when a package.json is staged, read when the target is itself a lock path: c36-t1-correctness-r2-01). Decide on the top two rungs: a test that holds each listed shape to a cell of test/verdicts/deps.json (a construct that refuses a sentence it cannot tie to a cell), or remove the need (the said/refused lists written from the verdict corpus); or say the limit and decline the rest. No patch nodes",
+      "source": "cycle 2026-11-15 (36) convergence: fix-loop brake, skills/cycle/report-formats.md"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 36,
+      "id": "gate-unread-kinds-walk",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "mechanization": true,
+      "sourceClass": "unreadable-shape-passes",
+      "title": "A test walks every commit-msg gate that reads staged files (security.ci, security.deps, security.secrets, review.forbidden) over each kind stagedVersions marks unread (notText, symlink, large, submodule, unmerged, notBlob, failed) and over brought or held, and fails where a shape the runner or npm still reads is said and passed when the commit brings it: in cycle 36 deps said what ci already refused (c36-t1-audit-r0-01), and a held link's target and a parent folder made a link were never read (c36-t1-security-r1-01, -03). Then delete the prose that asks each gate to mirror ci by hand",
+      "source": "cycle 2026-11-15 (36) convergence: recurring class unreadable-shape-passes (3 rows)"
     }
   ],
   "done": [
@@ -7286,6 +7365,13 @@
       "status": "done",
       "finished": "2026-11-15",
       "cluster": "cycle"
+    },
+    {
+      "id": "deps-unread-file-refused",
+      "title": "security.deps refuses a lock or .npmrc the commit brings that it cannot read and npm can (not UTF-8 text, a symbolic link, past 16 MB), as security.ci does (brings shared from checks/ci.mjs); one HEAD holds unchanged stays said; stagedVersions drops an entry git add -N left in any mode (ci too); DESIGN.md, SECURITY.md, docs/modules.md, test/verdicts/deps.json 356 to 379 cells, guards verdicts-deps-unread-brought and -held; one-task run, cycle 36 (db882db)",
+      "status": "done",
+      "finished": "2026-11-15",
+      "cluster": "security"
     }
   ],
   "declined": [

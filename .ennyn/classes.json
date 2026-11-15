@@ -537,7 +537,8 @@
         "new: decision branch with no test input",
         "new: corpus does not reach each deciding line",
         "new: corpus misses shapes a reader may later widen to",
-        "new: test does not pin a name pattern's anchor"
+        "new: test does not pin a name pattern's anchor",
+        "new: shared predicate's fail-closed branch untested"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },

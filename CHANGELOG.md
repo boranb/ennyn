@@ -2,6 +2,8 @@
 
 ## Unreleased (0.0.x)
 
+- Security: `security.deps` refuses a lock file or `.npmrc` the commit brings that npm reads and the check cannot (not UTF-8 text, a symbolic link, past 16 MB), as `security.ci` does for a workflow; the same file HEAD holds and the commit leaves alone is still said. A lock or `.npmrc` HEAD holds as a link whose target the commit changes is not judged (DESIGN.md, Not seen).
+- `security.ci`, `security.deps`: an entry `git add -N` left as a link or a submodule is no longer refused as brought.
 - Docs: what the audit of 2026-11-15 found the gates do not hold: `status` also runs a `.mjs` graph module; `push.mode` `after-closing` approves a push, not a url; the kill hook reads kill programs only, not docker, tmux, pm2, launchctl or osascript stops, and trusts a PID file by its shape; the message secret scan skips template-looking and below-scissors lines whatever the cleanup mode; more shapes in security.ci's and security.deps's Not seen lists.
 - The cycle skill names `/ennyn:init` where it said "the init skill": Claude Code has a built-in skill of that name.
 - The cycle runs a platform run its task brief names (another operating system, a container image, the oldest supported runtime) before the task lands, on the test files the task adds or changes, when the task touches what differs there; a platform no run reaches is reported as unmeasured, never as passed. The whole matrix still runs before a release.
