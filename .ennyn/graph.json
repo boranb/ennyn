@@ -49,7 +49,7 @@
     },
     {
       "id": "plugin-eval",
-      "title": "claude plugin eval cases that run the same tasks with and without the plugin and compare the outcome; each case states what is checked deterministically (commands that must and must not run, such as git push without approval or a commit with an assistant trailer; text the answer must and must not hold; an approval asked or a refusal given; a cap on tool calls), a judge only for what no check reads; each arm runs with only the plugin under test and proves it (a fresh directory outside any repository, CLAUDE.md, auto memory and user settings off, strict MCP, a pinned model, the plugin by --plugin-dir; a finished cell's transcript read for what the arm was given), a spending cap per arm, runs resumable per case, trial and arm, arms interleaved case by case; every deterministic check ships a passing and a failing reference that a self-test proves with no model call before any paid run; a cell that runs commands runs in a sandbox (no network beyond the model's API, an empty environment, writes only in the cell's directory); results name the date, CLI and model versions, cases, trials and cost, and say their limits; no git hook fires in an eval run (2.1.310: GIT_CONFIG_COUNT forces core.hooksPath=/dev/null and hook.*.enabled=false, and execution.env takes only EVAL_* keys), so Ennyn's commit gate is not compared there, only what the agent does; arms' PATH starts with the git path (test/eval/git-path.mjs) in a folder the arms can read (the plugin's); an arm cannot git init or clone a working copy, so repositories come from the scaffold; the arm's cwd lies inside the eval's own home repository; whether the without-plugin arm can read the plugin folder, and so the git path, is not measured: if not, the arms are not comparable; a host or infrastructure failure is an outcome of its own, never the plugin arm's failure, reported with a strict and a completed-only figure; each finished cell is keyed by a hash of its inputs (case text, arm, plugin commit, CLI and model versions, check code), and an unreadable result store stops the run instead of starting over A case's prompt never names the rule, gate or command it tests, so what is read is whether the agent gets there unasked; a must-not check (a push without approval, a commit with an assistant trailer) passes a cell only when every trial passes, never on a median; a case no arm passes in any trial is read as a broken case before it is read as a result",
+      "title": "claude plugin eval cases that run the same tasks with and without the plugin and compare the outcome; each case states what is checked deterministically (commands that must and must not run, such as git push without approval or a commit with an assistant trailer; text the answer must and must not hold; an approval asked or a refusal given; a cap on tool calls), a judge only for what no check reads; each arm runs with only the plugin under test and proves it (a fresh directory outside any repository, CLAUDE.md, auto memory and user settings off, strict MCP, a pinned model, the plugin by --plugin-dir; a finished cell's transcript read for what the arm was given), a spending cap per arm, runs resumable per case, trial and arm, arms interleaved case by case; every deterministic check ships a passing and a failing reference that a self-test proves with no model call before any paid run; a cell that runs commands runs in a sandbox (no network beyond the model's API, an empty environment, writes only in the cell's directory); results name the date, CLI and model versions, cases, trials and cost, and say their limits; no git hook fires in an eval run (2.1.310: GIT_CONFIG_COUNT forces core.hooksPath=/dev/null and hook.*.enabled=false, and execution.env takes only EVAL_* keys), so Ennyn's commit gate is not compared there, only what the agent does; arms' PATH starts with the git path (test/eval/git-path.mjs) in a folder the arms can read (the plugin's); an arm cannot git init or clone a working copy, so repositories come from the scaffold; the arm's cwd lies inside the eval's own home repository; whether the without-plugin arm can read the plugin folder, and so the git path, is not measured: if not, the arms are not comparable; a host or infrastructure failure is an outcome of its own, never the plugin arm's failure, reported with a strict and a completed-only figure; each finished cell is keyed by a hash of its inputs (case text, arm, plugin commit, CLI and model versions, check code), and an unreadable result store stops the run instead of starting over A case's prompt never names the rule, gate or command it tests, so what is read is whether the agent gets there unasked; a must-not check (a push without approval, a commit with an assistant trailer) passes a cell only when every trial passes, never on a median; a case no arm passes in any trial is read as a broken case before it is read as a result. A cell is finished only on a terminal success with no permission denial and a result for every tool call; a grader that only reads whether the Skill tool ran stays out of the two-arm score; one placebo arm and one case where no change is right",
       "status": "planned",
       "value": "high",
       "cost": "L",
@@ -60,7 +60,7 @@
         "eval-arm-reads-home",
         "eval-keychain-exec"
       ],
-      "source": "README.md, roadmap 0.2; cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): deterministic checks carry most of the score there, a judge the rest; reviews of ponytail and i-have-adhd (open-source agent skills, MIT), 2026-10-25: each published a result its own SessionStart hook had leaked into the baseline (ponytail's 2026-06-17 run superseded; i-have-adhd's README warns of its always-on flag); i-have-adhd's agent-owned-edit case could not pass under --tools \"\" and still counted against both arms; cycle 2026-10-26 (12): ennyn core picks it as the oldest node and says to split it first (plugin-eval-selftest); cycle 2026-10-28 (14), eval-git-macos (b244cfd); reviews of ScrapeGraphAI's paper repository (separate schema-rejected outcome, strict and accepted-only metrics) and Scrapling's spider checkpoints (an unreadable checkpoint logs an error and the crawl starts fresh instead of stopping), 2026-10-28; review of GoogleChrome/modern-web-guidance (Apache-2.0, 4dd9683, read 2026-11-13): 'Prompts avoid naming APIs or features, testing whether the agent can naturally discover and apply the right guides'; Anthropic, 'Demystifying evals for AI agents' (2026-01-09; raw copy sha256 05cbe5c7f543906c, read in part 2026-11-13): 'pass^k measures the probability that all k trials succeed', 'a 0% pass rate across many trials (i.e. 0% pass@100) is most often a signal of a broken task, not an incapable agent', 'One-sided evals create one-sided optimization'",
+      "source": "README.md, roadmap 0.2; cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): deterministic checks carry most of the score there, a judge the rest; reviews of ponytail and i-have-adhd (open-source agent skills, MIT), 2026-10-25: each published a result its own SessionStart hook had leaked into the baseline (ponytail's 2026-06-17 run superseded; i-have-adhd's README warns of its always-on flag); i-have-adhd's agent-owned-edit case could not pass under --tools \"\" and still counted against both arms; cycle 2026-10-26 (12): ennyn core picks it as the oldest node and says to split it first (plugin-eval-selftest); cycle 2026-10-28 (14), eval-git-macos (b244cfd); reviews of ScrapeGraphAI's paper repository (separate schema-rejected outcome, strict and accepted-only metrics) and Scrapling's spider checkpoints (an unreadable checkpoint logs an error and the crawl starts fresh instead of stopping), 2026-10-28; review of GoogleChrome/modern-web-guidance (Apache-2.0, 4dd9683, read 2026-11-13): 'Prompts avoid naming APIs or features, testing whether the agent can naturally discover and apply the right guides'; Anthropic, 'Demystifying evals for AI agents' (2026-01-09; raw copy sha256 05cbe5c7f543906c, read in part 2026-11-13): 'pass^k measures the probability that all k trials succeed', 'a 0% pass rate across many trials (i.e. 0% pass@100) is most often a signal of a broken task, not an incapable agent', 'One-sided evals create one-sided optimization'; read 2026-11-15 (agent-skills scripts/lib/execution-status.js:3-44, evals/README.md:69; Agent-Skills-for-Context-Engineering effectiveness/README.md:40,43)",
       "since": 0
     },
     {
@@ -115,7 +115,7 @@
         "platform-run-before-landing"
       ],
       "gate": "user",
-      "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release); read 2026-11-01: the post now opens 'Updated October 15 to include more detail on the projects that pioneered many of the techniques we use in Scion.', and The Pragmatic Engineer (2026-10-22) reports the attribution came after a public complaint; an audit of requests against the graph, 2026-11-01: five had no node in the release needs: a project started from nothing (a request, 2026-10-29: 15 nodes, 0 done), leftovers (a request, 2026-10-29: 14 nodes, 0 done), secrets in chat (a request, 2026-10-28: 12 nodes, 1 done), less code and no repetition (a request, a request, 2026-10-25), findings that can wait (a request, 2026-10-25). The smallest piece of each entered the needs. spec-gates' README: 'Spec Kit is a guidance layer'; 2026-11-05, the choice was left to the orchestrator: kill-own-pid-only, plugin-update-path and win-kill-waits-exit join the needs, observed on Windows",
+      "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release); read 2026-11-01: the post now opens 'Updated October 15 to include more detail on the projects that pioneered many of the techniques we use in Scion.', and The Pragmatic Engineer (2026-10-22) reports the attribution came after a public complaint; an audit of requests against the graph, 2026-11-01: five had no node in the release needs: a project started from nothing (a request, 2026-10-29: 15 nodes, 0 done), leftovers (a request, 2026-10-29: 14 nodes, 0 done), secrets in chat (a request, 2026-10-28: 12 nodes, 1 done), less code and no repetition (a request, a request, 2026-10-25), findings that can wait (a request, 2026-10-25). The smallest piece of each entered the needs. spec-gates' README: 'Spec Kit is a guidance layer'; 2026-11-05, the choice was left to the orchestrator: kill-own-pid-only, plugin-update-path and win-kill-waits-exit join the needs, observed on Windows; read 2026-11-15: book-to-skill's SECURITY-NOTICE.md (2026-08-17) names a re-upload under another account that sends host data out, reads wallet stores and ships a Windows executable",
       "since": 0
     },
     {
@@ -175,13 +175,13 @@
     },
     {
       "id": "readme-twins-gaps",
-      "title": "README twin test: 4-space indented code, ```` fences and an unclosed fence that hides later headings are not compared",
+      "title": "README twin test: 4-space indented code, ```` fences and an unclosed fence that hides later headings are not compared. The test pins what both READMEs hold today: no em or en dash, no curly quote",
       "status": "planned",
       "value": "low",
       "cost": "S",
       "cluster": "gates",
       "needs": [],
-      "source": "review, cycle 2026-10-20 (3), gate-readme-twins",
+      "source": "review, cycle 2026-10-20 (3), gate-readme-twins; read 2026-11-15 (humanizer SKILL.md:197)",
       "since": 3
     },
     {
@@ -444,11 +444,11 @@
         "hook-trust-audit"
       ],
       "id": "agent-setup-risk",
-      "title": "init-scan and doctor judge the project's agent setup: broad allow rules (Bash(*)), hooks that run remote scripts, MCP servers and plugins from unpinned sources, a Claude Code version below a known fix (2.1.179: plugin auto-update checkout); allow rules ranked by what they reach: read-only, local writes, many files or systems at once, and actions that leave the machine or cannot be undone (push, publish, deploy, a network fetch piped to a shell), the last warned about whenever no prompt guards them; a plugin hook that installs packages or rebuilds native modules at run time (npm install from a hook on first run or after a Node change), and an MCP server started with npx -y and no version, which fetches whatever the registry serves at each start; also hook text that tells the agent not to ask, and a committed file that switches such a hook on (Understand-Anything's .ua/config.json autoUpdate turns on hooks saying 'Do not ask the user for confirmation — just do it.'); a skill whose allowed-tools grant Bash and whose body installs with no pinned version (npx -y, npm install -g x@latest, curl | sh); an instruction to fetch and follow a document from a branch or releases/latest URL. Measured 2026-10-28: a committed settings.json with enabledPlugins, extraKnownMarketplaces, Bash(*) and a SessionStart hook echoing that text, and an .mcp.json with npx -y, passed the commit hook and doctor said nothing; init-scan lists only the hook event names (setup/scan.mjs:957-985)",
+      "title": "init-scan and doctor judge the project's agent setup: broad allow rules (Bash(*)), hooks that run remote scripts, MCP servers and plugins from unpinned sources, a Claude Code version below a known fix (2.1.179: plugin auto-update checkout); allow rules ranked by what they reach: read-only, local writes, many files or systems at once, and actions that leave the machine or cannot be undone (push, publish, deploy, a network fetch piped to a shell), the last warned about whenever no prompt guards them; a plugin hook that installs packages or rebuilds native modules at run time (npm install from a hook on first run or after a Node change), and an MCP server started with npx -y and no version, which fetches whatever the registry serves at each start; also hook text that tells the agent not to ask, and a committed file that switches such a hook on (Understand-Anything's .ua/config.json autoUpdate turns on hooks saying 'Do not ask the user for confirmation — just do it.'); a skill whose allowed-tools grant Bash and whose body installs with no pinned version (npx -y, npm install -g x@latest, curl | sh); an instruction to fetch and follow a document from a branch or releases/latest URL. Measured 2026-10-28: a committed settings.json with enabledPlugins, extraKnownMarketplaces, Bash(*) and a SessionStart hook echoing that text, and an .mcp.json with npx -y, passed the commit hook and doctor said nothing; init-scan lists only the hook event names (setup/scan.mjs:957-985). Also: a hook answering a tool call from a committed cache file, instruction text that copies itself into subagent prompts or tells reviewers what not to flag, a tool registering a git merge driver, a SessionStart hook calling the network, a plugin shipping its own permission policy",
       "value": "high",
       "cost": "M",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (8), user: security; 2026 plugin and hook findings (trusted channel, permission rewrites, Plugin4Shell); cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): tools carry risk tiers, the highest never run without a person's approval; review of context-mode (MIT), 2026-10-25: hooks/ensure-deps.mjs runs npm install of a native module on first run and rebuilds it when the Node ABI changes; its README offers an MCP-only install as npx -y context-mode; review of Understand-Anything (MIT, 4e6d329), agent-reach (MIT, 14c2134) and ScrapeGraphAI's just-scrape skill (allowed-tools: Bash with npm install -g just-scrape@latest), 2026-10-28; measured with fixture repositories",
+      "source": "cycle 2026-10-24 (8), user: security; 2026 plugin and hook findings (trusted channel, permission rewrites, Plugin4Shell); cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): tools carry risk tiers, the highest never run without a person's approval; review of context-mode (MIT), 2026-10-25: hooks/ensure-deps.mjs runs npm install of a native module on first run and rebuilds it when the Node ABI changes; its README offers an MCP-only install as npx -y context-mode; review of Understand-Anything (MIT, 4e6d329), agent-reach (MIT, 14c2134) and ScrapeGraphAI's just-scrape skill (allowed-tools: Bash with npm install -g just-scrape@latest), 2026-10-28; measured with fixture repositories; read 2026-11-15 (agent-skills hooks/sdd-cache-pre.sh:97; graphify always_on/claude-md.md:6,10, hooks.py:1003; academic-research-skills ars_update_check.sh:176)",
       "since": 8
     },
     {
@@ -1233,11 +1233,11 @@
         "plugin-eval"
       ],
       "id": "eval-first-cases",
-      "title": "First eval cases, each with a passing and a failing reference: a bug reported on one caller of a shared function, counted fixed only when the shared function is (does the impact table's S1/S2 do what ponytail's root-cause rule did?); a multi-turn scenario in one resumed session (the style holds across a topic switch and after compaction, a push is asked before it runs, a third 'still broken' turn stops patching); the session's own tests run against mutants of the code it wrote (ennyn mutate), counting what they catch; an arm with the smallest-change row, judged on the lines it delivers and on the hidden safety checks, so a lean rule that drops a guard shows; the terse style is run beside normal on the same cases, so a correctness drop shows before it is offered; claude plugin eval's free tool_order grader checks the protocol's order (tests, mutate, commit); the default arm uses only free graders",
+      "title": "First eval cases, each with a passing and a failing reference: a bug reported on one caller of a shared function, counted fixed only when the shared function is (does the impact table's S1/S2 do what ponytail's root-cause rule did?); a multi-turn scenario in one resumed session (the style holds across a topic switch and after compaction, a push is asked before it runs, a third 'still broken' turn stops patching); the session's own tests run against mutants of the code it wrote (ennyn mutate), counting what they catch; an arm with the smallest-change row, judged on the lines it delivers and on the hidden safety checks, so a lean rule that drops a guard shows; the terse style is run beside normal on the same cases, so a correctness drop shows before it is offered; claude plugin eval's free tool_order grader checks the protocol's order (tests, mutate, commit); the default arm uses only free graders. Two more: pressure on a must-not rule (sunk cost, authority, time); a cycle cut mid-task that a fresh session continues, graded on turns to the next landing and no redone work, beside a no-journal baseline",
       "value": "high",
       "cost": "M",
       "cluster": "evidence",
-      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: trace-transfer, root-cause fix 1 of 6 without its rule and 6 of 6 with (Sonnet 4.6, Opus 4.8); injected bugs caught by the agent's own tests, 46% without and 66% with; i-have-adhd (MIT): evals/scenarios/persistence-topic-switch-stop, a six-turn resumed session; context-mode (MIT) README: aggressive brevity prompts have been reported to degrade coding and reasoning benchmarks (Moonshot AI on kimi-k2.5, opencode issue 20258)",
+      "source": "review of ponytail (an open-source agent skill, MIT), 2026-10-25: trace-transfer, root-cause fix 1 of 6 without its rule and 6 of 6 with (Sonnet 4.6, Opus 4.8); injected bugs caught by the agent's own tests, 46% without and 66% with; i-have-adhd (MIT): evals/scenarios/persistence-topic-switch-stop, a six-turn resumed session; context-mode (MIT) README: aggressive brevity prompts have been reported to degrade coding and reasoning benchmarks (Moonshot AI on kimi-k2.5, opencode issue 20258); read 2026-11-15 (agent-skills evals/fixtures; planning-with-files docs/evals.md:243)",
       "since": 11
     },
     {
@@ -1593,11 +1593,11 @@
       "status": "planned",
       "needs": [],
       "id": "skill-descriptions-when-only",
-      "title": "Skill descriptions say only when to use the skill: cycle's 424-character description summarizes the workflow (an agent follows the summary instead of reading the skill) and names an odd trigger, 'phase run'; budget shrinks with it",
+      "title": "Skill descriptions say only when to use the skill: cycle's 424-character description summarizes the workflow (an agent follows the summary instead of reading the skill) and names an odd trigger, 'phase run'; budget shrinks with it. A description change is measured on prompt pairs where the skill must fire and must stay quiet",
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "source": "superpowers skills/writing-skills/references/discovery.md, 2026-10-27; cycle 2026-11-04 (20) task one-task-run: Claude Code 2.1.97 cuts a listed description at 250 characters (MAX_LISTING_DESC_CHARS), the docs say 1,536; the clause added for a one-task run invoked the skill in 1 of 4 prompts in a lab (2.1.97, claude-opus-4-6), row c20-t4-code-r2-03",
+      "source": "superpowers skills/writing-skills/references/discovery.md, 2026-10-27; cycle 2026-11-04 (20) task one-task-run: Claude Code 2.1.97 cuts a listed description at 250 characters (MAX_LISTING_DESC_CHARS), the docs say 1,536; the clause added for a one-task run invoked the skill in 1 of 4 prompts in a lab (2.1.97, claude-opus-4-6), row c20-t4-code-r2-03; read 2026-11-15 (agent-skills evals/README.md:71-81)",
       "since": 13
     },
     {
@@ -2056,11 +2056,11 @@
       "status": "planned",
       "needs": [],
       "id": "source-quote-check",
-      "title": "A graph node or doc that quotes a source quotes a saved raw copy (curl, gh or git, with the URL, date, HTTP status and sha256 recorded), never WebFetch's output, which its tool description says 'answers `prompt` against it using a small fast model'. A local check finds each quoted span in the saved copy after whitespace and quote-mark normalization, refuses a challenge or login page as the copy, and on a later re-check reports a moved quote with its similarity score and fails when the quote is gone. 2b02166 fixed five misquoted sources; which tool produced them was not measured; the first check passes only an exact match after that normalization, never a score: a 0.97 similarity threshold rates a 285-character quote with 'sınırlı olarak' changed to 'sınırlı olmaksızın' (limited to unlimited) at 0.984 against its source and calls it found; a quote missing from its own source is also searched in the other saved copies, so a wrong attribution is named as one",
+      "title": "A graph node or doc that quotes a source quotes a saved raw copy (curl, gh or git, with the URL, date, HTTP status and sha256 recorded), never WebFetch's output, which its tool description says 'answers `prompt` against it using a small fast model'. A local check finds each quoted span in the saved copy after whitespace and quote-mark normalization, refuses a challenge or login page as the copy, and on a later re-check reports a moved quote with its similarity score and fails when the quote is gone. 2b02166 fixed five misquoted sources; which tool produced them was not measured; the first check passes only an exact match after that normalization, never a score: a 0.97 similarity threshold rates a 285-character quote with 'sınırlı olarak' changed to 'sınırlı olmaksızın' (limited to unlimited) at 0.984 against its source and calls it found; a quote missing from its own source is also searched in the other saved copies, so a wrong attribution is named as one. A re-check ends as current, stale, contradicted or unsupported; an unfetchable source is unsupported; a homepage or search URL is no source",
       "value": "high",
       "cost": "M",
       "cluster": "evidence",
-      "source": "review of ScrapeGraphAI, agent-reach and Scrapling, 2026-10-28: ScrapeGraphAI warns when expected words are missing from fetched text (parse_node.py), agent-reach refuses challenge pages before returning text (channels/web.py), Scrapling finds a saved element again by a similarity score (parser.py); none of them checks a quote; a third-party quote-check script read 2026-10-29 (all rights reserved; read, nothing copied) uses a 0.97 similarity threshold; the 0.984 was re-measured with its word-window method",
+      "source": "review of ScrapeGraphAI, agent-reach and Scrapling, 2026-10-28: ScrapeGraphAI warns when expected words are missing from fetched text (parse_node.py), agent-reach refuses challenge pages before returning text (channels/web.py), Scrapling finds a saved element again by a similarity score (parser.py); none of them checks a quote; a third-party quote-check script read 2026-10-29 (all rights reserved; read, nothing copied) uses a 0.97 similarity threshold; the 0.984 was re-measured with its word-window method; read 2026-11-15: last30days freshness.py:389,417,463; distilly quality_check.py:78",
       "since": 14
     },
     {
@@ -2166,22 +2166,22 @@
       "status": "planned",
       "needs": [],
       "id": "instruction-copies-sync",
-      "title": "Tests keep the copies of instruction text in step: every ennyn.mjs command and flag named in skills/, agents/, both READMEs and DESIGN.md exists in the usage text; the finding fields listed in the three agents equal skills/cycle/finding-schema.md; the sentences that carry a safety rule (ask before a push, never push from init) stay in the skills; placeholders in skill shell lines are quoted (--files <paths>, commit-check <file>)",
+      "title": "Tests keep the copies of instruction text in step: every ennyn.mjs command and flag named in skills/, agents/, both READMEs and DESIGN.md exists in the usage text; the finding fields listed in the three agents equal skills/cycle/finding-schema.md; the sentences that carry a safety rule (ask before a push, never push from init) stay in the skills; placeholders in skill shell lines are quoted (--files <paths>, commit-check <file>). Also: a skill is named with its plugin prefix wherever prose or the usage text names it (scripts/ennyn.mjs:49 says /init); every 'step N', 'section N', graph id, class id and config key named in skills/ and docs/ resolves; every 'Claude Code 2.1.x' sentence names a version a reference record holds",
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "source": "review of ScrapeGraphAI (MIT, 194055e) and Understand-Anything (MIT, 4e6d329), 2026-10-28: ScrapeGraphAI keeps near-copies of one prompt, and five of the per-chunk copies (four in use) have no {question} slot; Understand-Anything's contract tests pin load-bearing skill sentences, and a test refuses unquoted path placeholders (PR #557, after issue #481)",
+      "source": "review of ScrapeGraphAI (MIT, 194055e) and Understand-Anything (MIT, 4e6d329), 2026-10-28: ScrapeGraphAI keeps near-copies of one prompt, and five of the per-chunk copies (four in use) have no {question} slot; Understand-Anything's contract tests pin load-bearing skill sentences, and a test refuses unquoted path placeholders (PR #557, after issue #481); read 2026-11-15 (humanizer scripts/validate-package.py:129-139; hallmark refcheck.mjs:46)",
       "since": 14
     },
     {
       "status": "planned",
       "needs": [],
       "id": "cli-bug-exit",
-      "title": "An Ennyn bug is not a failed check: an unexpected TypeError, ReferenceError, RangeError or SyntaxError in the CLI prints an 'ennyn bug' line with the first stack frame and exits with a code of its own. Today an unexpected error falls through to 'ennyn <cmd>: <message>' and exit 1 (scripts/ennyn.mjs:1492-1494), the code a failed check uses, so a cycle can report Ennyn's crash as a project finding",
+      "title": "An Ennyn bug is not a failed check: an unexpected TypeError, ReferenceError, RangeError or SyntaxError in the CLI prints an 'ennyn bug' line with the first stack frame and exits with a code of its own. Today an unexpected error falls through to 'ennyn <cmd>: <message>' and exit 1 (scripts/ennyn.mjs:1492-1494), the code a failed check uses, so a cycle can report Ennyn's crash as a project finding. One exit table for every command in docs/modules.md (pass, fail, usage, not judged, bug), set before the numbers are relied on",
       "value": "medium",
       "cost": "S",
       "cluster": "gates",
-      "source": "review of Scrapling (BSD-3-Clause, 0336400), 2026-10-28: its MCP tool wrapper returns expected errors to the agent and raises programming errors (core/ai/server.py:207-217), with tests for both",
+      "source": "review of Scrapling (BSD-3-Clause, 0336400), 2026-10-28: its MCP tool wrapper returns expected errors to the agent and raises programming errors (core/ai/server.py:207-217), with tests for both; read 2026-11-15 (text-to-cad skills/cad/SKILL.md:525)",
       "since": 14
     },
     {
@@ -2375,11 +2375,11 @@
         "findings-ledger"
       ],
       "id": "reviewer-seeded-recall",
-      "title": "Measure the reviewers' recall on planted defects: copies of past Ennyn diffs, each with one defect of a known class planted (classes taken from the class registry and szz), plus clean diffs, reviewed by code-reviewer, data-reviewer and security-reviewer as in a cycle; a script with no model scores each finding by file:line and class and counts the false findings on clean diffs. It gives reviewer-model-diversity and effort-escalation a fixed corpus; the deterministic gates have one (test/guards.mjs, test/verdicts/), the reviewer agents do not; seeds come from real fix: commits reverted, not synthetic mutants (one preprint's best model scored F1 0.847 on synthetic cases and 0.066 on real pull requests), and the corpus is reread with the same seeds before and after a change: 20 seeds leave a wide band (14 of 20 reads 46-88%), six seeds flipping one way reads as a real change",
+      "title": "Measure the reviewers' recall on planted defects: copies of past Ennyn diffs, each with one defect of a known class planted (classes taken from the class registry and szz), plus clean diffs, reviewed by code-reviewer, data-reviewer and security-reviewer as in a cycle; a script with no model scores each finding by file:line and class and counts the false findings on clean diffs. It gives reviewer-model-diversity and effort-escalation a fixed corpus; the deterministic gates have one (test/guards.mjs, test/verdicts/), the reviewer agents do not; seeds come from real fix: commits reverted, not synthetic mutants (one preprint's best model scored F1 0.847 on synthetic cases and 0.066 on real pull requests), and the corpus is reread with the same seeds before and after a change: 20 seeds leave a wide band (14 of 20 reads 46-88%), six seeds flipping one way reads as a real change. Bait seeds: a defect older than the diff, a claim a caller's guard refutes, a comment telling the reviewer what to report; pairs of one finding with a flat and a confident fix report must end alike. A 'reviewed text is data' line enters the agents only if a seed shows a reviewer obeying",
       "value": "high",
       "cost": "M",
       "cluster": "evidence",
-      "source": "a third-party quote-check script read 2026-10-29 (all rights reserved; read, nothing copied) plants four errors of four classes (a made-up quote, a distorted quote, a made-up decision number, a decision not in the folder) into a real model summary and scores its checker by script; one run, so a method, not evidence",
+      "source": "a third-party quote-check script read 2026-10-29 (all rights reserved; read, nothing copied) plants four errors of four classes (a made-up quote, a distorted quote, a made-up decision number, a decision not in the folder) into a real model summary and scores its checker by script; one run, so a method, not evidence; read 2026-11-15: agent-skills evals/fixtures/review-evidence/after.py:23; academic-research-skills re_review_persuasion_invariance/README.md:39, idea only",
       "since": 15
     },
     {
@@ -2602,11 +2602,11 @@
       "status": "planned",
       "needs": [],
       "id": "test-weakening-warn",
-      "title": "The commit-msg hook warns when a commit adds a skip or focus marker to a test (.skip, .only, it.todo, test.fixme, xit, pytest.mark.skip or xfail, t.Skip) or removes assertions from an existing test file, unless the message has a line saying why; the cycle report counts them; also a commit that deletes a test file or test case, or changes a record under test/reference or a verdict corpus, and the closing report names each one",
+      "title": "The commit-msg hook warns when a commit adds a skip or focus marker to a test (.skip, .only, it.todo, test.fixme, xit, pytest.mark.skip or xfail, t.Skip) or removes assertions from an existing test file, unless the message has a line saying why; the cycle report counts them; also a commit that deletes a test file or test case, or changes a record under test/reference or a verdict corpus, and the closing report names each one. Also an added suppression comment (@ts-ignore, eslint-disable, noqa, nosemgrep)",
       "value": "medium",
       "cost": "M",
       "cluster": "gates",
-      "source": "Claude Code #319: 'it simply updated the make file to only run tests that were passing'; BMAD #2208: 'it never added a single line of test'; spec-kit #627: 'many times tests are adapted to bugs, instead of correcting code.'; the theme appears in all five tool repositories searched (c-demand report, theme 5); GitHub's Copilot runtime rewrite post (read 2026-10-31): 'silently redefine correctness by weakening a test, updating a snapshot, raising a compatibility baseline, or applying an escape-hatch label'; one port deleted the end-to-end test of what it dropped, 'prompting a new rule that agents must not change E2E tests without explicit consent'",
+      "source": "Claude Code #319: 'it simply updated the make file to only run tests that were passing'; BMAD #2208: 'it never added a single line of test'; spec-kit #627: 'many times tests are adapted to bugs, instead of correcting code.'; the theme appears in all five tool repositories searched (c-demand report, theme 5); GitHub's Copilot runtime rewrite post (read 2026-10-31): 'silently redefine correctness by weakening a test, updating a snapshot, raising a compatibility baseline, or applying an escape-hatch label'; one port deleted the end-to-end test of what it dropped, 'prompting a new rule that agents must not change E2E tests without explicit consent'; read 2026-11-15 (agent-skills floor-guard.md:94)",
       "since": 15
     },
     {
@@ -3013,11 +3013,11 @@
       "status": "planned",
       "needs": [],
       "id": "reviewer-long-justification",
-      "title": "code-reviewer.md names two more breakers: a workaround that needs a paragraph-long comment to justify it, and a stub or placeholder standing where the task asked for behaviour. Run with reviewer-seeded-recall, so the line stays only if it finds something",
+      "title": "code-reviewer.md names two more breakers: a workaround that needs a paragraph-long comment to justify it, and a stub or placeholder standing where the task asked for behaviour. Run with reviewer-seeded-recall, so the line stays only if it finds something. A third: a test whose expected value is computed the way the code computes it",
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "source": "Bun's rewrite post (read 2026-10-31): 'If you need a paragraph-long comment to justify why the workaround is OK, the code is wrong — fix the code.'; it also says the agent read compile-all-crates as 'stub out the functions with compilation errors'. One anecdote, unmeasured there",
+      "source": "Bun's rewrite post (read 2026-10-31): 'If you need a paragraph-long comment to justify why the workaround is OK, the code is wrong — fix the code.'; it also says the agent read compile-all-crates as 'stub out the functions with compilation errors'. One anecdote, unmeasured there; read 2026-11-15 (skills tdd/SKILL.md:31)",
       "since": 16
     },
     {
@@ -3364,11 +3364,11 @@
         "one-task-run"
       ],
       "id": "fresh-session-run",
-      "title": "ennyn run --cycles N (or --each task) from the terminal: each cycle or task is one claude -p with the cycle skill, a new process and so a new context. --cycles is required, there is no open-ended loop; a budget cap goes to --max-budget-usd. It runs doctor first and stops at the first red: non-zero exit, a stopped task, a gate that needs the user, the plan's limit, the budget; it prints why and what is next, and keeps a log in the state dir. It spawns only the claude on PATH. It decides from the journal, never from the model's words, and a run with no new commit and no node change ends the loop. With compact it resumes by session id, never --continue. Pushes follow push.mode. A -p run cannot ask, so it needs a mode that does not prompt (the no-bypass mode or the user's own bypass), and it says so when it has neither. Measure first: a task with subagents completes in -p, an ask rule refuses rather than hangs, hooks and the plugin load without --bare, and what breaks if --bare becomes the default for -p. If this threatens the release date it moves to the next version, ahead of everything else there; the 5-hour usage window does not end the run. The run reads claude -p's stream-json events, never the model's words: a rate_limit_event whose status is rejected and whose resetsAt is at most 5 hours away makes it wait until that time plus a minute and go on from the journal, and the cycle it cut does not count against --cycles; a later resetsAt (a weekly window), no resetsAt, or errorCode credits_required stops it as before, saying when the window resets. At a seam, when the last event said allowed_warning with a resetsAt within 5 hours, it starts no new cycle before that time. No threshold key: the warning is the server's. rateLimitType and unifiedWindows are in 2.1.310's schema but not in the docs, so they are not read. Measure first: what -p does when it is refused (exit status, whether the event comes before the result), at what use the server sends allowed_warning, and that a cycle cut mid-task resumes from the journal. A stopped task still ends the run: the next cycle could take the same node again, or build on work the user has not seen",
+      "title": "ennyn run --cycles N (or --each task) from the terminal: each cycle or task is one claude -p with the cycle skill, a new process and so a new context. --cycles is required, there is no open-ended loop; a budget cap goes to --max-budget-usd. It runs doctor first and stops at the first red: non-zero exit, a stopped task, a gate that needs the user, the plan's limit, the budget; it prints why and what is next, and keeps a log in the state dir. It spawns only the claude on PATH. It decides from the journal, never from the model's words, and a run with no new commit and no node change ends the loop. With compact it resumes by session id, never --continue. Pushes follow push.mode. A -p run cannot ask, so it needs a mode that does not prompt (the no-bypass mode or the user's own bypass), and it says so when it has neither. Measure first: a task with subagents completes in -p, an ask rule refuses rather than hangs, hooks and the plugin load without --bare, and what breaks if --bare becomes the default for -p. If this threatens the release date it moves to the next version, ahead of everything else there; the 5-hour usage window does not end the run. The run reads claude -p's stream-json events, never the model's words: a rate_limit_event whose status is rejected and whose resetsAt is at most 5 hours away makes it wait until that time plus a minute and go on from the journal, and the cycle it cut does not count against --cycles; a later resetsAt (a weekly window), no resetsAt, or errorCode credits_required stops it as before, saying when the window resets. At a seam, when the last event said allowed_warning with a resetsAt within 5 hours, it starts no new cycle before that time. No threshold key: the warning is the server's. rateLimitType and unifiedWindows are in 2.1.310's schema but not in the docs, so they are not read. Measure first: what -p does when it is refused (exit status, whether the event comes before the result), at what use the server sends allowed_warning, and that a cycle cut mid-task resumes from the journal. A stopped task still ends the run: the next cycle could take the same node again, or build on work the user has not seen. It reports a silent stall (no stream event and no journal line for longer than the longest past step) and stops nothing by itself",
       "value": "high",
       "cost": "M",
       "cluster": "method",
-      "source": "the user, 2026-11-01: a request. Claude Code docs read raw 2026-11-01: in -p, user-invoked skills work when the prompt holds /skill-name; --max-budget-usd stops a print-mode run; --bare 'will become the default for -p in a future release'. In spec-kit's 935 records: 11 ask for fresh context between steps, 27 on running out of context (#752, #50, #1401), 8 for a loop (#1490 and discussion #1723 on Ralph). docs/related-work.md leaves open-ended loops out, so this one is bounded. Read raw the same day: the original loop and a popular ralph repository (22k stars) start a new process per iteration, and that one ends on a phrase in the output; the official ralph-loop plugin loops 'inside your current session', so its context does not renew; another ralph repository (9.7k) has a circuit breaker, needs two signals to exit, and moved to --resume <session_id> after #151 on session hijacking; the user, 2026-11-02: a request. An /overnight skill pauses at 85% of the 5-hour window and resumes at the reset. Without this a subscriber's run ends at the first limit, and --max-budget-usd counts dollars, not the window. Docs read raw the same day (agent-sdk/typescript.md, HTTP 200): SDKRateLimitEvent, 'Emitted when the session encounters a rate limit.', with status allowed, allowed_warning or rejected, resetsAt and utilization; the status line's rate_limits.five_hour reaches interactive sessions only. Not taken from the skill: asking other models when the agent says it is stuck (Ennyn escalates on a failed mechanical check, effort-escalation), going on after a stopped task, a clock cutoff (--cycles bounds the run)",
+      "source": "the user, 2026-11-01: a request. Claude Code docs read raw 2026-11-01: in -p, user-invoked skills work when the prompt holds /skill-name; --max-budget-usd stops a print-mode run; --bare 'will become the default for -p in a future release'. In spec-kit's 935 records: 11 ask for fresh context between steps, 27 on running out of context (#752, #50, #1401), 8 for a loop (#1490 and discussion #1723 on Ralph). docs/related-work.md leaves open-ended loops out, so this one is bounded. Read raw the same day: the original loop and a popular ralph repository (22k stars) start a new process per iteration, and that one ends on a phrase in the output; the official ralph-loop plugin loops 'inside your current session', so its context does not renew; another ralph repository (9.7k) has a circuit breaker, needs two signals to exit, and moved to --resume <session_id> after #151 on session hijacking; the user, 2026-11-02: a request. An /overnight skill pauses at 85% of the 5-hour window and resumes at the reset. Without this a subscriber's run ends at the first limit, and --max-budget-usd counts dollars, not the window. Docs read raw the same day (agent-sdk/typescript.md, HTTP 200): SDKRateLimitEvent, 'Emitted when the session encounters a rate limit.', with status allowed, allowed_warning or rejected, resetsAt and utilization; the status line's rate_limits.five_hour reaches interactive sessions only. Not taken from the skill: asking other models when the agent says it is stuck (Ennyn escalates on a failed mechanical check, effort-escalation), going on after a stopped task, a clock cutoff (--cycles bounds the run); read 2026-11-15 (Auto-claude-code-research-in-sleep watchdog.py:312-329)",
       "since": 17
     },
     {
@@ -3662,7 +3662,7 @@
       "status": "planned",
       "needs": [],
       "id": "skill-size-codex-cap",
-      "title": "test/plugin.test.mjs holds 8 KiB, not Codex's 8,000 bytes: the skill was 12 bytes over after a rebase, and a test passed",
+      "title": "test/plugin.test.mjs holds 8 KiB, not Codex's 8,000 bytes: the skill was 12 bytes over after a rebase, and a test passed. A byte ceiling for on-demand skill files too (task-brief.md is 20,602 bytes)",
       "value": "low",
       "cost": "S",
       "cluster": "distribution",
@@ -4822,11 +4822,11 @@
       "status": "planned",
       "needs": [],
       "id": "plugin-version-from-commit",
-      "title": "A change to Ennyn reaches an installed copy without a reinstall: ship .claude-plugin/plugin.json with no version, so Claude Code versions the install by commit and claude plugin update follows each commit; change release step 2 and claude plugin tag to match, and say what a user on a pinned version sees",
+      "title": "A change to Ennyn reaches an installed copy without a reinstall: ship .claude-plugin/plugin.json with no version, so Claude Code versions the install by commit and claude plugin update follows each commit; change release step 2 and claude plugin tag to match, and say what a user on a pinned version sees. Counter-evidence: Codex, Copilot and VS Code reinstall only when plugin.json's version changes",
       "value": "low",
       "cost": "S",
       "cluster": "distribution",
-      "source": "cycle 2026-11-06 (24), plugin-update-path: measured on Claude Code 2.1.310 (probe4 in the cycle's kept folder) that with no version the install is named by a 12-character commit and update follows it; the node's first clause, left out of ebad47d because it changes the release step in .claude/CLAUDE.md; the choice was left to the orchestrator, 2026-11-06: version stays and the node is not a release need: a public user should get a change at a release, not at every commit to main, and ebad47d already keeps commits checked after a reinstall; worth it only for a development install",
+      "source": "cycle 2026-11-06 (24), plugin-update-path: measured on Claude Code 2.1.310 (probe4 in the cycle's kept folder) that with no version the install is named by a 12-character commit and update follows it; the node's first clause, left out of ebad47d because it changes the release step in .claude/CLAUDE.md; the choice was left to the orchestrator, 2026-11-06: version stays and the node is not a release need: a public user should get a change at a release, not at every commit to main, and ebad47d already keeps commits checked after a reinstall; worth it only for a development install; read 2026-11-15 (agent-skills .agents/install-block.md:9)",
       "since": 24
     },
     {
@@ -5055,11 +5055,11 @@
       "status": "planned",
       "needs": [],
       "id": "journal-result-files",
-      "title": "Each reviewer round and each task result is written to a state-dir file named by task and round, and the cycle checks the file is there before the next step; the part of cycle-journal cut for scope",
+      "title": "Each reviewer round and each task result is written to a state-dir file named by task and round, and the cycle checks the file is there before the next step; the part of cycle-journal cut for scope. Done is not accepted: past review needs the round's result file, landed needs the commit on the base branch, and a resumed run reviews an authored task with no recorded review",
       "value": "medium",
       "cost": "M",
       "cluster": "cycle",
-      "source": "cycle 2026-11-06 (25), T1 cycle-journal: cut for scope",
+      "source": "cycle 2026-11-06 (25), T1 cycle-journal: cut for scope; read 2026-11-15 (Auto-claude-code-research-in-sleep resumable-runs.md:29,35)",
       "since": 25
     },
     {
@@ -5808,11 +5808,11 @@
       "status": "planned",
       "needs": [],
       "id": "graph-triage",
-      "title": "After the release, triage the open nodes in batches of about 60 by cluster through node-verdict, the low/S ones first; the user decides each batch The first step needs no reading: every open node of low value gets a gate, so no cycle picks it alone; it closes beside a task that touches the same file or on a user's report",
+      "title": "After the release, triage the open nodes in batches of about 60 by cluster through node-verdict, the low/S ones first; the user decides each batch The first step needs no reading: every open node of low value gets a gate, so no cycle picks it alone; it closes beside a task that touches the same file or on a user's report. A declined node keeps a lasting reason, and a later matching proposal joins it as a prior request (doctor matches the same id only, plan/mechanization.mjs:275)",
       "value": "medium",
       "cost": "M",
       "cluster": "plan",
-      "source": "roadmap review 2026-11-11 (decisions.md in the keep folder)",
+      "source": "roadmap review 2026-11-11 (decisions.md in the keep folder); read 2026-11-15 (skills triage/OUT-OF-SCOPE.md:49)",
       "since": 32
     },
     {
@@ -6122,6 +6122,28 @@
       "cluster": "plan",
       "title": "ennyn status and ennyn core say when every open need of the release node carries a gate: a cycle closes none of them, and the cycle plan asks the user before it picks",
       "source": "the user, 2026-11-14: a request; Fable decisions, 2026-11-14, a kept folder outside the repository"
+    },
+    {
+      "id": "impact-symbol-not-found",
+      "title": "ennyn impact answers a symbol the repository does not hold as measured: --symbol buildImpactTabel prints S1 'no references outside tests' and S2 'none of the 0 other referencing files', exit 0 (impact/table.mjs:331). A symbol with no hit in the repository makes S1 and S2 'unmeasured: symbol not found', with a test; a symbol the task is about to add reads the same, which is true",
+      "status": "planned",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "impact",
+      "needs": [],
+      "source": "read 2026-11-15 (measured on e24458c; graphify affected.py:88)",
+      "since": 35
+    },
+    {
+      "id": "secret-read-deny-more",
+      "title": "secret-setup's Read deny list is .env*, ~/.ssh and ~/.aws (setup/secret-setup.mjs:25-29); it also proposes ~/.config/gh, ~/.npmrc, ~/.netrc and browser profile stores, and doctor names the missing ones",
+      "status": "planned",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "needs": [],
+      "source": "read 2026-11-15 (last30days cookie_extract.py:3)",
+      "since": 35
     }
   ],
   "done": [
