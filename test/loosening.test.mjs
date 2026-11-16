@@ -517,7 +517,7 @@ test("loosening hook: a failure past the reading skips nothing, and how git clea
   const c = spawnSync(process.execPath, [CLI, "commit-check", "--hook", ".git/MSG"], { cwd: r.dir, encoding: "utf8", env });
   assert.equal(c.status, 1, c.stderr);
   assert.match(c.stderr, /This commit loosens security\.deps\.allowScripts,/);
-  assert.match(c.stderr, /this commit's message was not checked, nor its review\.forbidden lines \(fatal: injected\)/, "the message check that fell away is said");
+  assert.match(c.stderr, /this commit message's shape was not checked \(fatal: injected\); review\.forbidden/, "the message check that fell away is said");
   put(r.dir, { ".git/MSG": `chore: x\n\n${LINE} ${KEY}\n` });
   // The marker is what says this line stays: unknown, the line cannot count, and the refusal says why.
   const line = spawnSync(process.execPath, [CLI, "commit-check", "--hook", ".git/MSG"], { cwd: r.dir, encoding: "utf8", env });

@@ -248,17 +248,21 @@ export function checkCommitShape(message, opts) {
   const res = withSecrets(message, shapeOf(message, opts), opts);
   // Also for a message the shape check reads as empty: with --allow-empty-message git commits it anyway.
   if (!opts.addedLines) return res;
-  const rules = opts.config.review.forbidden;
-  const lang = opts.config.language;
-  const wideUnread = opts.wideUnread ?? new Map();
-  let scan;
-  try {
-    scan = forbiddenScan(opts.addedLines, rules, opts.exempt, wideUnread);
-  } catch (e) {
-    // The scan's own failure, not the message's: the hook weighs it as a gate's (gateFailed).
-    throw Object.assign(/** @type {Error} */ (e), { gate: "review.forbidden" });
-  }
-  const { hits, unread } = scan;
+  const { errors, warnings } = forbiddenResult(opts.addedLines, opts.config, opts.exempt, opts.wideUnread);
+  const out = warnings.length ? { ...res, warnings: [...(res.warnings ?? []), ...warnings] } : res;
+  return errors.length ? { ...out, ok: false, errors: [...errors, ...res.errors] } : out;
+}
+
+/**
+ * review.forbidden on the lines a commit adds, whatever its message: one error per rule broken, and a warning for
+ * what could not be compared. The hook runs it apart from the message's shape, so no throw there skips it.
+ * @param {Map<string, AddedLine[]>} added @param {any} config @param {string[]} [exempt] @param {Map<string, string>} [wideUnread]
+ * @returns {{ errors: string[], warnings: string[] }} a throw is the scan's own failure: the hook weighs it as a gate's (gateFailed)
+ */
+export function forbiddenResult(added, config, exempt, wideUnread = new Map()) {
+  const rules = config.review.forbidden;
+  const lang = config.language;
+  const { hits, unread } = forbiddenScan(added, rules, exempt, wideUnread);
   const banned = forbiddenErrors(hits, rules, lang);
   // What could not be compared is said, never counted as clean; the commit is not refused for it. Text files
   // are named; binary files are counted, so a text file is not lost among them.
@@ -273,8 +277,7 @@ export function checkCommitShape(message, opts) {
       ...(wide.length ? [t("shape.forbiddenWideUnread", { ...vars, where: where(wide), reason: String(wideUnread.get(wide[0])) }, lang)] : []),
     ];
   });
-  const out = unsure.length ? { ...res, warnings: [...(res.warnings ?? []), ...unsure] } : res;
-  return banned.length ? { ...out, ok: false, errors: [...banned, ...res.errors] } : out;
+  return { errors: banned, warnings: unsure };
 }
 
 /** A staged path as a line of a report shows it: any secret in it cut, a control character escaped. @param {string} path */
@@ -301,9 +304,11 @@ function withSecrets(message, res, opts) {
  * The message as the secret scan reads it: as given, a superset of what any cleanup stores (the hook cannot see
  * `--cleanup=verbatim` on the command line), cut where git cuts it, at its scissors line; with the editor's
  * status template, its file lines (a tab after the comment marker) are git's own list of names, read as names.
- * @param {string} message @param {{ comment?: string, cut?: boolean }} how
+ * `comment` null: how git cleans the message is unknown, so it is read whole, with no cut and no line left out.
+ * @param {string} message @param {{ comment?: string | null, cut?: boolean }} how
  */
 function scannedMessage(message, { comment = "#", cut = false }) {
+  if (comment === null) return message;
   const at = cut ? scissorsAt(message, comment) : -1;
   const text = at === -1 ? message : message.slice(0, at);
   return templateShown(text, comment) ? text.split("\n").map((l) => (l.startsWith(`${comment}\t`) ? "" : l)).join("\n") : text;
@@ -313,9 +318,9 @@ function scannedMessage(message, { comment = "#", cut = false }) {
  * One error for the secrets the commit adds: in its files (`hits`, or found in `secretLines`), the names it adds
  * (`names`, by default `secretLines`' paths) and, given `message`, the message (scannedMessage): the first three
  * places, each with its kind and never the secret; in a merge, how many the other side brings. None when except
- * holds a catch-all (secretsOff). Apart from the message's own check, so the hook can stand by what the files
- * bring when reading how git cleans the message fails.
- * @param {{ config: any, hits?: import("./secrets.mjs").SecretHit[], names?: string[], secretLines?: Map<string, AddedLine[]>, keyFiles?: Map<string, Buffer>, message?: string, comment?: string, cut?: boolean }} opts
+ * holds a catch-all (secretsOff). Apart from the message's own check, so the hook can stand by what the files and
+ * the message bring when that check fails; `comment` null when how git cleans the message could not be read.
+ * @param {{ config: any, hits?: import("./secrets.mjs").SecretHit[], names?: string[], secretLines?: Map<string, AddedLine[]>, keyFiles?: Map<string, Buffer>, message?: string, comment?: string | null, cut?: boolean }} opts
  * @returns {string[]}
  */
 export function secretErrors(opts) {
@@ -349,6 +354,7 @@ export function markerUse(message, config, foldTarget) {
 }
 
 /**
+ * The message's own shape, its content gates aside (secretErrors, forbiddenResult): what checkCommitShape adds them to.
  * @param {string} message raw commit message (as given to a commit-msg hook)
  * @param {{ config: any, stagedPaths?: string[], cleanup?: "strip" | "whitespace" | "verbatim" | "scissors", cut?: boolean, comment?: string, foldTarget?: { message: string, paths: string[] } | null, ownSubject?: boolean, alsoChanged?: string[] }} opts
  *   `cleanup` is git's mode for this commit: "whitespace" when the message came from `-m` / `-F`.
@@ -360,7 +366,7 @@ export function markerUse(message, config, foldTarget) {
  * @returns {{ ok: boolean, errors: string[], warnings?: string[], skipped?: string, marker?: string }} `warnings`: staged paths whose
  *   documents (review.cochange) are not staged; they never fail the check; `marker`: the reason read where the marker decided
  */
-function shapeOf(message, { config, stagedPaths = [], cleanup = "strip", cut, comment = "#", foldTarget = null, ownSubject = true, alsoChanged = [] }) {
+export function shapeOf(message, { config, stagedPaths = [], cleanup = "strip", cut, comment = "#", foldTarget = null, ownSubject = true, alsoChanged = [] }) {
   const lang = config.language;
   const cm = config.commitMsg;
   const rv = config.review;

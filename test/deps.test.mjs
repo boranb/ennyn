@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import { gzipSync } from "node:zlib";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ANSWER_LIMIT, HELD_LIMIT, advisoriesOf, depsMessages, fetchJson, lockEntries, lockPath, newEntries, npmrcEntries, npmrcFindings, scriptsGuardDropped, judgeEntry, pathInside, pkgJson, pkgPathOf, folderKeys, reasonText, registryOf, registryResolver, registryVerdicts, shownSource, sourceForm, specSource, thresholdPercent } from "../checks/deps.mjs";
 import { git, indexKinds } from "../core/git.mjs";
@@ -1368,12 +1368,17 @@ test("deps hook: a lock or .npmrc the commit brings that the check cannot read a
 test("deps hook: what the lock brings stands when the message check throws, and a name that is not UTF-8 is refused, escaped", async () => {
   const reg = await npm();
   try {
-    // A skipSubjects pattern that does not compile: the message cannot be checked; the lock was.
-    const r = repo(reg.origin, { online: false }, { commitMsg: { skipSubjects: ["("] } });
+    // How git cleans the message cannot be read: the message's shape cannot be checked; the lock was.
+    const r = repo(reg.origin, { online: false });
     r.put({ "package-lock.json": lock(entry(reg.origin, "nat", "1.0.0", { hasInstallScript: true })) });
-    const thrown = await r.check();
+    const bin = mkdtempSync(join(tmpdir(), "en-deps-git-"));
+    const real = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+    writeFileSync(join(bin, "git"), `#!/bin/sh\ncase " $* " in *" --get-regexp "*) echo "fatal: injected" >&2; exit 128 ;; esac\nexec "${real}" "$@"\n`, { mode: 0o755 });
+    writeFileSync(join(r.dir, ".git", "MSG"), "chore: deps\n");
+    const thrown = await cli(["commit-check", "--hook", ".git/MSG"], r.dir, { ...process.env, PATH: `${bin}${delimiter}${process.env.PATH}` });
     assert.equal(thrown.status, 1);
     assert.match(thrown.stderr, /1 new packages run install scripts/);
+    assert.match(thrown.stderr, /shape was not checked \(fatal: injected\)/);
     const named = repo(reg.origin);
     const hash = git(["hash-object", "-w", "--stdin"], { cwd: named.dir, input: lock({}) });
     const name = Buffer.from([...Buffer.from("app‮"), 0xff, ...Buffer.from("/package-lock.json")]);

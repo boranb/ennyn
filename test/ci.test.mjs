@@ -433,15 +433,13 @@ test("ci round one: the hook reads past a HEAD it cannot read, names security.ci
   assert.equal(replaced.status, 1);
   assert.match(replaced.stderr, /ci\.yml: 1 new uses/);
   writeFileSync(join(r.dir, ".git", "MSG"), "chore: ci\n");
-  // A pattern in the config that does not compile: the message goes unchecked, the workflow's errors stand.
-  put(r.dir, { ".ennyn/config.json": JSON.stringify({ commitMsg: { skipSubjects: ["("] } }) });
-  git(["add", ".ennyn/config.json"], { cwd: r.dir });
-  assert.equal(r.commit("chore: config", "--no-verify", ".ennyn/config.json").status, 0);
-  const broken = r.check("--hook");
+  // How git cleans the message cannot be read: the message's shape goes unchecked, the workflow's errors stand.
+  const env = fakeGit('case " $* " in *" --get-regexp "*) echo "fatal: injected" >&2; exit 128 ;; esac');
+  const broken = spawnSync(process.execPath, [CLI, "commit-check", "--hook", ".git/MSG"], { cwd: r.dir, encoding: "utf8", env });
   assert.equal(broken.status, 1);
   assert.match(broken.stderr, /ci\.yml: 1 new uses/);
-  assert.match(broken.stderr, /this commit's message was not checked, nor its review\.forbidden lines \(.*\); security\.ci, security\.deps and security\.secrets ran/);
-  assert.doesNotMatch(broken.stderr, /not its lines/, "three gates ran");
+  assert.match(broken.stderr, /this commit message's shape was not checked \(fatal: injected\); review\.forbidden, security\.ci, security\.deps and security\.secrets ran/);
+  assert.doesNotMatch(broken.stderr, /not its lines/, "every gate ran");
   // paths [] turns the check off.
   put(r.dir, { ".ennyn/config.json": JSON.stringify({ security: { ci: { paths: [] } } }) });
   git(["add", ".ennyn/config.json"], { cwd: r.dir });
@@ -1345,7 +1343,7 @@ test("gate failure: the secret scan keeps to the same rule: a name no argument h
   assert.match(found.stderr, /secret\.txt:1 \(npm-token/);
 });
 
-test("gate failure: a throw of the forbidden scan refuses a commit it reads, and a pattern the message check cannot compile still passes", () => {
+test("gate failure: a throw of the forbidden scan refuses a commit it reads, and a held skipSubjects pattern that does not compile costs only the message's shape, said", () => {
   const r = repo();
   r.stage({ ".ennyn/config.json": JSON.stringify({ review: { forbidden: [{ text: "NEEDLE", paths: ["**"] }] } }), "a.txt": "é\n" });
   const fault = `data:text/javascript,const real=String.prototype.normalize;String.prototype.normalize=function(f){if(String(this).includes("é"))throw new RangeError("stopped here");return real.call(this,f)};`;
@@ -1353,9 +1351,14 @@ test("gate failure: a throw of the forbidden scan refuses a commit it reads, and
   const hook = spawnSync(process.execPath, ["--import", fault, CLI, "commit-check", "--hook", ".git/MSG"], { cwd: r.dir, encoding: "utf8" });
   assert.equal(hook.status, 1, hook.stderr);
   assert.match(hook.stderr, /review\.forbidden was not checked, so this commit is refused: .*\(stopped here\)/);
+  // By hand the throw itself fails the command.
+  const hand = spawnSync(process.execPath, ["--import", fault, CLI, "commit-check", ".git/MSG"], { cwd: r.dir, encoding: "utf8" });
+  assert.deepEqual([hand.status, /^ennyn commit-check: .*stopped here/m.test(hand.stderr)], [1, true], hand.stderr);
   r.stage({ ".ennyn/config.json": JSON.stringify({ commitMsg: { skipSubjects: ["("] } }) });
   assert.equal(r.commit("chore: config", "--no-verify", ".ennyn/config.json").status, 0);
-  assert.equal(r.check("--hook").status, 0);
+  const held = r.check("--hook");
+  assert.equal(held.status, 0, held.stderr);
+  assert.match(held.stderr, /this commit message's shape was not checked \(Invalid regular expression: .*\); review\.forbidden, security\.ci, security\.deps and security\.secrets ran/);
 });
 
 test("gate failure: a throw of the deps check refuses a commit that brings a lock, naming the gate", () => {

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LINE_PATTERNS, SecretScanner, keyCandidates, masked, secretHits } from "../checks/secrets.mjs";
-import { checkCommitShape } from "../checks/commit-shape.mjs";
+import { checkCommitShape, secretErrors } from "../checks/commit-shape.mjs";
 import { loadConfig, ConfigError } from "../core/config.mjs";
 import { git } from "../core/git.mjs";
 import { installHook } from "../setup/hook.mjs";
@@ -311,6 +311,16 @@ test("secrets round two: the commit message git will store is scanned, and a nam
   assert.equal(checkCommitShape(`feat: x\n\n${TOKENS.npm}\n`, { config: loadConfig({ cwd: mkdtempSync(join(tmpdir(), "en-sec-off-")), env: {}, override: { security: { secrets: { except: ["**"] } } } }), cleanup: "whitespace" }).ok, true);
 });
 
+test("secrets: with how git cleans the message unknown, the message is scanned whole: no template line left out, no cut at a scissors line", () => {
+  const config = loadConfig({ cwd: mkdtempSync(join(tmpdir(), "en-sec-raw-")), env: {} });
+  const template = `feat: publish\n#\n# Changes to be committed:\n#\tdeleted:    tokens/${TOKENS.npm}.json\n#\n`;
+  const scissors = `feat: publish\n# ------------------------ >8 ------------------------\n${TOKENS.npm}\n`;
+  assert.deepEqual([secretErrors({ config, message: template }), secretErrors({ config, message: scissors, cut: true })], [[], []]);
+  // No marker is taken for one: not even a scissors line written with "null" for it.
+  const spelled = `feat: publish\nnull ------------------------ >8 ------------------------\n${TOKENS.npm}\n`;
+  for (const message of [template, scissors, spelled]) assert.match(secretErrors({ config, message, comment: null, cut: true })[0] ?? "", /the commit message, line \d \(npm-token/);
+});
+
 test("secrets round two: a review.forbidden error escapes a path's control characters too", () => {
   const config = loadConfig({ cwd: mkdtempSync(join(tmpdir(), "en-sec-fb-")), env: {}, override: { review: { forbidden: [{ text: "debugger", paths: ["**"] }] } } });
   const res = checkCommitShape("feat: x\n", { config, addedLines: new Map([["lib/x\x1b[2Kok.js", [{ line: 1, text: "debugger" }]]]) });
@@ -539,13 +549,20 @@ test("secrets round two (mutation): the budget is spent as files are read, and w
   rmSync(dir, { recursive: true, force: true });
 });
 
-test("secrets round two: when the message check fails (a pattern that does not compile), the secrets the files hold still refuse the commit", () => {
-  const { put, commit } = repo({ commitMsg: { skipSubjects: ["("] } });
+test("secrets round two: when the message's shape check fails, the secrets the files and the message hold still refuse the commit", () => {
+  const { dir, put } = repo();
   put({ "deploy.sh": `export NPM_TOKEN=${TOKENS.npm}\n` });
-  const r = commit("-m", "feat: deploy");
+  // How git cleans the message cannot be read: the message is scanned whole.
+  const bin = mkdtempSync(join(tmpdir(), "en-sec-git-"));
+  const real = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+  writeFileSync(join(bin, "git"), `#!/bin/sh\ncase " $* " in *" --get-regexp "*) echo "fatal: injected" >&2; exit 128 ;; esac\nexec "${real}" "$@"\n`, { mode: 0o755 });
+  // git puts its own directory first on a hook's PATH: the check is run as the hook runs it, with the git above.
+  writeFileSync(join(dir, ".git", "MSG"), `feat: deploy\n\n# ${TOKENS.github}\n`);
+  const r = spawnSync(process.execPath, [CLI, "commit-check", "--hook", ".git/MSG"], { cwd: dir, encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
   assert.equal(r.status, 1, r.stderr);
-  assert.match(r.stderr, /the config does not load|was not checked/);
+  assert.match(r.stderr, /shape was not checked \(fatal: injected\)/);
   assert.match(r.stderr, /deploy\.sh:1 \(npm-token/);
+  assert.match(r.stderr, /the commit message, line 3 \(github-token/);
 });
 
 test("secrets round three: review.forbidden reads as on main, under no budget: a 40 MB file under its paths with one line changed is refused", () => {

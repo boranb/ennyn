@@ -207,7 +207,7 @@ test("hook: an amend! commit is checked for the message it will put into history
   assert.equal(commit(dir, "amend! feat: base\n\nfeat: better base").status, 0);
 });
 
-test("hook: a pattern in the config that does not compile warns instead of locking commits", () => {
+test("hook: a skipSubjects pattern that does not compile, held in the config, costs only the message's shape: said, the commit goes on", () => {
   const dir = repo();
   installHook({ cwd: dir, cliPath: CLI });
   writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ commitMsg: { skipSubjects: ["^(Merge "] } }));
@@ -215,7 +215,7 @@ test("hook: a pattern in the config that does not compile warns instead of locki
   git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--no-verify", "-m", "chore: a pattern past the hook"], { cwd: dir });
   const r = commit(dir, "anything");
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stderr, /was not checked/);
+  assert.match(r.stderr, /this commit message's shape was not checked \(Invalid regular expression: .*\); review\.forbidden, security\.ci, security\.deps and security\.secrets ran/);
 });
 
 test("hook: amend! and squash! are checked as the message history will hold, with the target's paths", () => {
@@ -2287,7 +2287,7 @@ test("an empty core.hooksPath runs no hook, whatever lies at the top of the work
   assert.equal(readFileSync(join(dir, ".git", "hooks", "commit-msg"), "utf8"), stray);
 });
 
-test("a line that ends in CR is not the printed line: doctor warns, and a bare call there lands a secret, the shell handing --hook a path with the CR in it", async () => {
+test("a line that ends in CR is not the printed line: doctor warns, and a bare call there cannot read its message, the shell handing --hook a path with the CR in it, yet the secret is refused", async () => {
   const { home } = plugged();
   const env = outside({ HOME: home });
   const line = hookModule.hookLine(CLI);
@@ -2296,7 +2296,11 @@ test("a line that ends in CR is not the printed line: doctor warns, and a bare c
   }
   const bare = ownHook(`#!/bin/sh\n${line.replace(" || exit $?", "")}\r\n`);
   assert.deepEqual(await hookKeys(bare, { HOME: home }), ["doctor.hookUnread"]);
-  assert.equal(commitIn(bare, "feat: x", TOKEN, env).status, 0, "the oracle: the check could not read its argument");
+  // The oracle: the check could not read its argument. A message not read costs only the message's own checks.
+  const crPath = commitIn(bare, "feat: x", TOKEN, env);
+  assert.equal(crPath.status, 1, crPath.stderr);
+  assert.match(crPath.stderr, /COMMIT_EDITMSG\\u000d could not be read \(ENOENT: .*\), so this commit's message was not checked/);
+  assert.match(crPath.stderr, /token\.js:1 \(github-token/);
   // The same line with LF line ends, for both its forms.
   assert.deepEqual(await hookKeys(ownHook(`#!/bin/sh\n${line}\n`), { HOME: home }), ["doctor.hookOk"]);
   assert.deepEqual(await hookKeys(ownHook(`${hookModule.hookLine(CLI, join(home, ".claude", "plugins", "data", "ennyn-test"))}\n`), { HOME: home }), ["doctor.hookOk"]);
@@ -2583,4 +2587,181 @@ test("hook follows the plugin: install-hook writes the record from the session o
   const lbGlobal = hooked(lbData, join(base, "lb-hooks"));
   assert.equal(withEnv(sessionEnv(lbData, lbRoot), () => installHook({ cwd: lbGlobal, cliPath: CLI })).restored, true);
   assert.equal(record(lbData), `${lbRoot}\n`);
+});
+
+/**
+ * What git's own call of the hook cannot be made to fail by a commit, made to fail by a preload: the message file's
+ * read (T_MSG_FAULT: toolong, as Node 22 fails a file past its longest string, measured in a 512 MB lab; toolarge, as
+ * its fs fails a file past 2 GiB, not reached here; or an errno),
+ * a git call whose arguments hold T_GIT_FAULT (one through execFileSync ends as past its 64 MB buffer, one through
+ * spawnSync as a git that fails), and any split of a text that holds T_SPLIT_FAULT (a throw of our own code on it). A hook of the test's own runs the CLI with it: git puts its own directory first on
+ * a hook's PATH, so no git on PATH can stand in, and Ennyn's hook drops NODE_OPTIONS.
+ */
+const MSG_FAULTS = `import fs from "node:fs";
+import cp from "node:child_process";
+import { basename } from "node:path";
+import { syncBuiltinESMExports } from "node:module";
+const msg = process.env.T_MSG_FAULT;
+if (msg) {
+  const real = fs.readFileSync;
+  fs.readFileSync = function (p, ...rest) {
+    if (typeof p !== "string" || basename(p) !== "COMMIT_EDITMSG") return real.call(this, p, ...rest);
+    if (msg === "toolong") throw Object.assign(new Error("Cannot create a string longer than 0x1fffffe8 characters"), { code: "ERR_STRING_TOO_LONG" });
+    if (msg === "toolarge") throw Object.assign(new RangeError("File size (3000000000) is greater than 2 GiB"), { code: "ERR_FS_FILE_TOO_LARGE" });
+    throw Object.assign(new Error(msg + ": injected, open '" + p + "'"), { code: msg, errno: -1, syscall: "open", path: p });
+  };
+}
+const marked = process.env.T_SPLIT_FAULT;
+if (marked) {
+  const split = String.prototype.split;
+  String.prototype.split = function (...args) {
+    if (String(this).includes(marked)) throw new RangeError("stopped here");
+    return split.apply(this, args);
+  };
+}
+const fault = process.env.T_GIT_FAULT;
+if (fault) {
+  const { execFileSync, spawnSync } = cp;
+  cp.execFileSync = function (file, args, ...rest) {
+    if (file === "git" && args.includes(fault)) throw Object.assign(new Error("spawnSync git ENOBUFS"), { code: "ENOBUFS", errno: -55, syscall: "spawnSync git", status: 0, signal: "SIGTERM", stdout: Buffer.alloc(0), stderr: Buffer.alloc(0) });
+    return execFileSync.call(this, file, args, ...rest);
+  };
+  cp.spawnSync = function (file, args, ...rest) {
+    if (file === "git" && args.includes(fault)) return { status: 128, signal: null, stdout: "", stderr: "fatal: injected\\n", output: null, pid: 0 };
+    return spawnSync.call(this, file, args, ...rest);
+  };
+}
+syncBuiltinESMExports();
+`;
+
+/** A repository whose commit-msg hook runs the CLI under MSG_FAULTS, with a review.forbidden rule on src/. */
+function faultRepo() {
+  const dir = mkdtempSync(join(tmpdir(), "en-hook-msg-"));
+  const aside = mkdtempSync(join(tmpdir(), "en-hook-pre-"));
+  writeFileSync(join(aside, "faults.mjs"), MSG_FAULTS);
+  git(["init", "-q", "-b", "main"], { cwd: dir });
+  mkdirSync(join(dir, ".ennyn"));
+  writeFileSync(join(dir, ".ennyn", "config.json"), JSON.stringify({ commitMsg: { types: ["feat", "fix", "chore"], fixType: "fix" }, review: { forbidden: [{ text: "NEEDLE", paths: ["src/**"] }] } }));
+  git(["add", "-A"], { cwd: dir });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--no-verify", "-m", "chore: start"], { cwd: dir });
+  const hook = join(dir, ".git", "hooks", "commit-msg");
+  mkdirSync(dirname(hook), { recursive: true });
+  writeFileSync(hook, `#!/bin/sh\nexec "${process.execPath}" --import "${join(aside, "faults.mjs")}" "${CLI}" commit-check --hook "$1"\n`, { mode: 0o755 });
+  let start = git(["rev-parse", "HEAD"], { cwd: dir });
+  /** Stages `files`, commits with `message` under `env`, and leaves the repository at its start. @param {Record<string, string>} files @param {string} message @param {Record<string, string>} env */
+  const commit = (files, message, env) => {
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(dir, path)), { recursive: true });
+      writeFileSync(join(dir, path), text);
+    }
+    git(["add", "-A"], { cwd: dir });
+    const r = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", message], { cwd: dir, encoding: "utf8", env: { ...process.env, ...env } });
+    const landed = git(["rev-parse", "HEAD"], { cwd: dir }) !== start;
+    git(["reset", "-q", "--hard", start], { cwd: dir });
+    return { status: r.status, stderr: r.stderr, landed };
+  };
+  /** From here on HEAD is where each commit starts. */
+  const mark = () => (start = git(["rev-parse", "HEAD"], { cwd: dir }));
+  /** commit-check run by hand on `message`, under the same faults, with `files` staged. @param {Record<string, string>} files @param {string} message @param {Record<string, string>} env */
+  const hand = (files, message, env) => {
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(dir, path)), { recursive: true });
+      writeFileSync(join(dir, path), text);
+    }
+    git(["add", "-A"], { cwd: dir });
+    writeFileSync(join(dir, ".git", "MSG"), message);
+    const r = spawnSync(process.execPath, ["--import", join(aside, "faults.mjs"), CLI, "commit-check", ".git/MSG"], { cwd: dir, encoding: "utf8", env: { ...process.env, ...env } });
+    git(["reset", "-q", "--hard", start], { cwd: dir });
+    return r;
+  };
+  return { dir, commit, mark, hand };
+}
+
+test("hook: a message the hook cannot read skips no gate on what the commit brings; too long to be a string refuses, a fault of the machine is said", () => {
+  const r = faultRepo();
+  const clean = { "src/a.txt": "fine\n" };
+  const loosens = { ".ennyn/config.json": JSON.stringify({ commitMsg: { types: ["feat", "fix", "chore"], fixType: "fix" } }) };
+  const approved = "chore: drop the rule\n\nUser-Approved-Loosening: review.forbidden";
+  // Read as usual: nothing new is said.
+  assert.deepEqual(r.commit(clean, "feat: a", {}), { status: 0, stderr: "", landed: true });
+  const long = r.commit({ "src/a.txt": "NEEDLE\n" }, "feat: a", { T_MSG_FAULT: "toolong" });
+  assert.deepEqual([long.status, long.landed], [1, false]);
+  assert.match(long.stderr, /^ennyn: commit refused: \S*COMMIT_EDITMSG is too long for the hook to read \(Cannot create a string longer than 0x1fffffe8 characters\), so the message's own checks did not run\. One cause is a verbose commit .*: commit without it, with git commit --no-verbose or git -c commit\.verbose=false commit\.$/m);
+  assert.match(long.stderr, /src\/a\.txt:1 adds "NEEDLE"/);
+  assert.deepEqual([r.commit(clean, "feat: a", { T_MSG_FAULT: "toolong" }).landed], [false], "a message no string can hold is the committer's pick");
+  const large = r.commit(clean, "feat: a", { T_MSG_FAULT: "toolarge" });
+  assert.deepEqual([large.status, large.landed, /COMMIT_EDITMSG is too long for the hook to read \(File size/.test(large.stderr)], [1, false, true], large.stderr);
+  for (const code of ["ENOENT", "EACCES", "EISDIR"]) {
+    const said = r.commit(clean, "feat: a", { T_MSG_FAULT: code });
+    assert.deepEqual([said.status, said.landed], [0, true], `${code}: ${said.stderr}`);
+    assert.match(said.stderr, new RegExp(`COMMIT_EDITMSG could not be read \\(${code}: injected, .*\\), so this commit's message was not checked, nor the secrets it holds, and no User-Approved-Loosening line in it counts; review\\.forbidden, security\\.ci, security\\.deps and security\\.secrets ran`));
+    const banned = r.commit({ "src/a.txt": "NEEDLE\n" }, "feat: a", { T_MSG_FAULT: code });
+    assert.deepEqual([banned.status, banned.landed, /src\/a\.txt:1 adds "NEEDLE"/.test(banned.stderr)], [1, false, true], `${code}: ${banned.stderr}`);
+  }
+  const secret = r.commit({ "lib/token.js": `export const token = "${SECRET}";\n` }, "feat: a", { T_MSG_FAULT: "EACCES" });
+  assert.deepEqual([secret.status, secret.landed, /lib\/token\.js:1 \(github-token/.test(secret.stderr)], [1, false, true], secret.stderr);
+  // No line of a message not read counts: the approval is not seen, the loosening is refused.
+  assert.equal(r.commit(loosens, approved, {}).landed, true, "read, the line counts");
+  const loose = r.commit(loosens, approved, { T_MSG_FAULT: "ENOENT" });
+  assert.deepEqual([loose.status, loose.landed, /This commit loosens review\.forbidden/.test(loose.stderr)], [1, false, true], loose.stderr);
+});
+
+test("hook: a throw of the message's shape check skips no content gate: a squash! whose target cannot be read, and how git cleans the message unread", () => {
+  const r = faultRepo();
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--no-verify", "--allow-empty", "-m", "feat: big"], { cwd: r.dir });
+  r.mark();
+  // The target's message past git's buffer, as a commit can make it (lab r3): the shape is said, not refused.
+  const fold = { T_GIT_FAULT: "--format=%B" };
+  const plain = r.commit({ "src/b.txt": "more\n" }, "squash! feat: big\n\nmore", fold);
+  assert.deepEqual([plain.status, plain.landed], [0, true], plain.stderr);
+  assert.match(plain.stderr, /this commit message's shape was not checked \(git log: its output was larger than 64 MB\); review\.forbidden, security\.ci, security\.deps and security\.secrets ran, the last on the message too\./);
+  const banned = r.commit({ "src/b.txt": "NEEDLE\n" }, "squash! feat: big\n\nmore", fold);
+  assert.deepEqual([banned.status, banned.landed, /src\/b\.txt:1 adds "NEEDLE"/.test(banned.stderr)], [1, false, true], banned.stderr);
+  const told = r.commit({ "src/b.txt": "more\n" }, `squash! feat: big\n\n${SECRET}`, fold);
+  assert.deepEqual([told.status, told.landed, /the commit message, line 3 \(github-token/.test(told.stderr)], [1, false, true], told.stderr);
+  // git's comment marker unread: the message is scanned whole, and the forbidden rule still reads the lines.
+  const mode = { T_GIT_FAULT: "--get-regexp" };
+  const secret = r.commit({ "src/c.txt": "fine\n" }, `feat: c\n\n${SECRET}`, mode);
+  assert.deepEqual([secret.status, secret.landed], [1, false], secret.stderr);
+  assert.match(secret.stderr, /this commit message's shape was not checked \(fatal: injected\)/);
+  assert.match(secret.stderr, /the commit message, line 3 \(github-token/);
+  // Read whole: a line shaped as git's status template is no line to leave out while git's marker is unknown.
+  const template = r.commit({ "src/c.txt": "fine\n" }, `feat: c\n\n#\n#\t${SECRET}`, mode);
+  assert.deepEqual([template.status, template.landed, /the commit message, line 4 \(github-token/.test(template.stderr)], [1, false, true], template.stderr);
+  assert.deepEqual([r.commit({ "src/c.txt": "NEEDLE\n" }, "feat: c", mode).landed, r.commit({ "src/c.txt": "fine\n" }, "feat: c", mode).landed], [false, true]);
+  // A throw of the message's secret scan is our code on the commit's text: refused, as gateFailed weighs it.
+  const thrown = r.commit({ "src/c.txt": "fine\n" }, "feat: c\n\nSPLIT-HERE", { T_SPLIT_FAULT: "SPLIT-HERE" });
+  assert.deepEqual([thrown.status, thrown.landed], [1, false], thrown.stderr);
+  assert.match(thrown.stderr, /security\.secrets was not checked, so this commit is refused: part of what it brings could not be read \(stopped here\)/);
+  // By hand every failure fails the command, as it is.
+  const handMode = r.hand({ "src/c.txt": "fine\n" }, "feat: c\n", mode);
+  assert.deepEqual([handMode.status, /^ennyn commit-check: .*fatal: injected/m.test(handMode.stderr)], [1, true], handMode.stderr);
+});
+
+test("hook: a skipSubjects pattern that does not compile costs only the message's shape: held at HEAD the gates still refuse, said on a clean commit; bringing one or repairing it loosens nothing unasked", () => {
+  const types = { types: ["feat", "fix", "chore"], fixType: "fix" };
+  const rule = { forbidden: [{ text: "NEEDLE", paths: ["src/**"] }] };
+  const held = (/** @type {string[]} */ skip) => JSON.stringify({ commitMsg: { ...types, skipSubjects: skip }, review: rule });
+  const said = /this commit message's shape was not checked \(Invalid regular expression: \/\^wip\(\/: Unterminated group\)/;
+  // Held at HEAD, landed past the hook (--no-verify stands in for a rebase, or a config from before).
+  const r = faultRepo();
+  writeFileSync(join(r.dir, ".ennyn", "config.json"), held(["^Merge ", "^wip("]));
+  git(["add", "-A"], { cwd: r.dir });
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--no-verify", "-m", "chore: skip wip"], { cwd: r.dir });
+  r.mark();
+  const banned = r.commit({ "src/a.txt": "NEEDLE\n" }, "feat: a", {});
+  assert.deepEqual([banned.status, banned.landed, /src\/a\.txt:1 adds "NEEDLE"/.test(banned.stderr), said.test(banned.stderr)], [1, false, true, true], banned.stderr);
+  const told = r.commit({ "src/a.txt": "fine\n" }, `feat: a\n\n${SECRET}`, {});
+  assert.deepEqual([told.status, told.landed, /the commit message, line 3 \(github-token/.test(told.stderr)], [1, false, true], told.stderr);
+  const clean = r.commit({ "src/a.txt": "fine\n" }, "feat: a", {});
+  assert.deepEqual([clean.status, clean.landed, said.test(clean.stderr)], [0, true, true], clean.stderr);
+  // The repair that also turns the secret scan off and drops the rule, with no approval line: refused as a loosening.
+  const loose = { ".ennyn/config.json": JSON.stringify({ commitMsg: { ...types, skipSubjects: ["^Merge "] }, security: { secrets: { except: ["**"] } }, review: { forbidden: [] } }), "src/t.js": `const t = "${SECRET}";\nNEEDLE\n` };
+  const repair = r.commit(loose, "chore: repair the skip subject", {});
+  assert.deepEqual([repair.status, repair.landed], [1, false], repair.stderr);
+  assert.match(repair.stderr, /This commit loosens review\.forbidden, security\.secrets\.except/);
+  // Brought by a commit, with no approval line: a member added is a loosening.
+  const fresh = faultRepo();
+  const brought = fresh.commit({ ".ennyn/config.json": held(["^Merge ", "^wip("]) }, "chore: skip wip", {});
+  assert.deepEqual([brought.status, brought.landed, /This commit loosens commitMsg\.skipSubjects/.test(brought.stderr)], [1, false, true], brought.stderr);
 });

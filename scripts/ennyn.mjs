@@ -14,7 +14,7 @@ import { CONFIG_PATH, loadConfig, ConfigError } from "../core/config.mjs";
 import { HOOK_INDEX_ENV, HOOK_READ_ENV, MISSING_OBJECT, NAMES_BUFFER, READ_BUDGET, blobBytes, diffGroups, git, gitMaybe, headCommit, hookElsewhere, indexEntries, indexKinds, indexNames, machineFault, mergeHeads, projectRoot, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, stagedVersionsEach, stateRoot, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
 import { ends, jsonShown, shown, t, tShown, unshownEscaped } from "../core/i18n.mjs";
 import { matchAny } from "../core/glob.mjs";
-import { checkCommitShape, foldTarget, nameShown, secretErrors, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
+import { foldTarget, forbiddenResult, nameShown, secretErrors, shapeOf, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
 import { ciCallees, ciMessages } from "../checks/ci.mjs";
 import { advisoriesOf, depsMessages, dirOf, judgeEntry, judgeLock, lockEntries, lockPath, lockText, npmrcFindings, npmrcPath, pkgJson, pkgJsonPath, pkgPathOf, reasonText, registryOf, registryResolver } from "../checks/deps.mjs";
 import { readIfThere, readRegular } from "../core/files.mjs";
@@ -890,15 +890,17 @@ const COMMANDS = {
       return (err(tShown("cli.hookConfigRefused", { path: process.env.ENNYN_CONFIG || CONFIG_PATH, error }, "en")), 1);
     }
     const cfg = read.cfg;
-    let message;
+    // The message as git gave it. The hook that cannot read it (a file too long to be a string, one that is gone) still
+    // runs every gate on what the commit brings, and weighs the message's own checks below; by hand the command fails.
+    /** @type {string | null} */
+    let message = null;
+    /** @type {unknown} */
+    let messageUnread = null;
     try {
       message = readFileSync(positional[0], "utf8");
     } catch (e) {
-      const error = oneLine(/** @type {Error} */ (e).message);
-      // The hook lets the commit through when it cannot read its own message, and says so; a gate's read is gateFailed's.
-      if (opts.hook) return (err(t("cli.hookMessageUnreadable", { path: positional[0], error }, cfg.language)), 0);
-      err(t("cli.cannotRead", { path: positional[0], error }, cfg.language));
-      return 1;
+      if (!opts.hook) return (err(t("cli.cannotRead", { path: positional[0], error: oneLine(/** @type {Error} */ (e).message) }, cfg.language)), 1);
+      messageUnread = e;
     }
     // An ENNYN_CONFIG naming no file, with no config tracked: the defaults would check another project's rules, so
     // the hook says nothing was checked.
@@ -912,18 +914,31 @@ const COMMANDS = {
     // said now: nothing a gate below does can skip it. The approval line is read on the narrowest reading of what git
     // may store, comment lines out and cut at a scissors line: `--cleanup=` and `-v` reach no hook, and a line that may
     // not be stored must not count. A line that would have stayed costs moving it, and nothing else.
+    // How git will clean the message, read once for the loosening check and the message's own. A failure is said by the
+    // shape check below; run by hand it fails the command there.
+    /** @type {ReturnType<typeof hookCommitMode> | null} */
+    let mode = null;
+    /** @type {unknown} */
+    let modeError = null;
+    if (message !== null) {
+      try {
+        mode = hookCommitMode({ cwd, message, env: process.env });
+      } catch (e) {
+        modeError = e;
+      }
+    }
     let loosens = false;
     if (read.keys.length) {
-      /** @type {string | null} */
-      let comment = null;
-      let unknown = "";
-      try {
-        ({ comment } = hookCommitMode({ cwd, message, env: process.env }));
-      } catch (e) {
-        // The message check below asks git the same and says so. With the marker unknown no line can be told from a comment git drops.
-        unknown = oneLine(String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message));
+      /** @type {string[]} */
+      let refused;
+      // A message not read holds no approval line.
+      if (message === null) refused = looseningErrors(read.keys, "", cfg.language);
+      else if (mode) refused = looseningErrors(read.keys, storedMessage(message, "strip", mode.comment, true), cfg.language);
+      else {
+        // With the marker unknown no line can be told from a comment git drops.
+        const error = oneLine(String(/** @type {Error & { stderr?: unknown }} */ (modeError).stderr || /** @type {Error} */ (modeError).message));
+        refused = [tShown("shape.looseningNoComment", { keys: read.keys.join(", "), error, line: LOOSENING_LINE }, cfg.language)];
       }
-      const refused = comment === null ? [tShown("shape.looseningNoComment", { keys: read.keys.join(", "), error: unknown, line: LOOSENING_LINE }, cfg.language)] : looseningErrors(read.keys, storedMessage(message, "strip", comment, true), cfg.language);
       for (const e of refused) err(e);
       loosens = refused.length > 0;
     }
@@ -1129,27 +1144,56 @@ const COMMANDS = {
         gateFailed(e, cfg.language, unchecked, "security.deps", "cli.depsUnmeasured", {}, depsNamed.some(brings));
       }
     }
-    let res;
-    try {
-      const { cleanup, comment, cut } = hookCommitMode({ cwd, message, env: process.env });
-      const fold = foldTarget(cwd, message, cleanup, comment, cut);
-      if (fold.missed) err(t("cli.foldNotFound", { subject: fold.subject, where: t(`cli.foldWhere.${fold.missed}`, {}, cfg.language) }, cfg.language));
-      res = checkCommitShape(message, { config: cfg, stagedPaths: staged, cleanup, cut, comment, foldTarget: fold.target, addedLines, exempt, wideUnread });
-    } catch (e) {
-      // A git that fails, or a pattern in the config that does not compile, is no reason to lock commits either:
-      // the commit goes through, and the message says it was not checked. That is the message's rule; a gate's own
-      // read is gateFailed's: said only for a fault of the machine, refused for what the commit's content can pick.
-      if (!opts.hook) throw e;
-      const error = /** @type {Error & { stderr?: unknown, gate?: string }} */ (e);
-      if (error.gate) gateFailed(e, cfg.language, unchecked, error.gate, "cli.forbiddenUnmeasured");
-      else err(t("cli.hookMessageUnchecked", { error: masked(typeof error.stderr === "string" ? error.stderr.trim().split("\n")[0] : error.message) }, cfg.language));
-      // What the files bring was read apart from the message: it still stands, the secrets they hold too.
-      for (const x of [...unchecked, ...ci.errors, ...ci.warnings, ...deps.errors, ...deps.warnings, ...secrets.errors]) err(x);
-      return loosens || unchecked.length || ci.errors.length || deps.errors.length || secrets.errors.length ? 1 : 0;
+    // review.forbidden and the secrets the message holds are about content, not the message's shape: each runs apart
+    // from it, so no throw of the shape check below skips them.
+    /** @type {{ errors: string[], warnings: string[] }} */
+    let forbidden = { errors: [], warnings: [] };
+    if (addedLines) {
+      try {
+        forbidden = forbiddenResult(addedLines, cfg, exempt, wideUnread);
+      } catch (e) {
+        if (!opts.hook) throw e;
+        gateFailed(e, cfg.language, unchecked, "review.forbidden", "cli.forbiddenUnmeasured");
+      }
     }
-    for (const e of [...unchecked, ...ci.errors, ...deps.errors, ...secrets.errors, ...res.errors]) err(e);
-    for (const w of [...(res.warnings ?? []), ...ci.warnings, ...deps.warnings]) err(w);
-    return res.ok && !loosens && !unchecked.length && !ci.errors.length && !deps.errors.length && !secrets.errors.length ? 0 : 1;
+    /** @type {string[]} */
+    let messageSecrets = [];
+    if (message !== null) {
+      try {
+        // With how git cleans it unknown, the message is read whole: a superset of what any cleanup stores.
+        messageSecrets = secretErrors({ config: cfg, message, comment: mode ? mode.comment : null, cut: mode?.cut ?? false });
+      } catch (e) {
+        if (!opts.hook) throw e;
+        gateFailed(e, cfg.language, unchecked, "security.secrets", "cli.messageSecretsUnmeasured");
+      }
+    }
+    /** @type {{ ok: boolean, errors: string[], warnings?: string[] }} */
+    let res = { ok: true, errors: [] };
+    if (message === null) {
+      // The message's own checks cannot run: weighed as a gate's read (gateFailed), said for a fault of the machine,
+      // refused for a failure the message itself can pick. One too long to be a string is refused in words of its own
+      // that name a way out: a verbose commit of a large change puts its whole diff in the file.
+      const code = /** @type {{ code?: unknown } | null} */ (messageUnread)?.code;
+      if (code === "ERR_STRING_TOO_LONG" || code === "ERR_FS_FILE_TOO_LARGE") unchecked.push(t("cli.hookMessageTooLong", { path: positional[0], error: oneLine(String(/** @type {Error} */ (messageUnread).message)) }, cfg.language));
+      else gateFailed(messageUnread, cfg.language, unchecked, t("cli.messageGate", {}, cfg.language), "cli.hookMessageUnreadable", { path: positional[0], paths: positional[0] });
+    } else {
+      try {
+        if (!mode) throw modeError;
+        const { cleanup, comment, cut } = mode;
+        const fold = foldTarget(cwd, message, cleanup, comment, cut);
+        if (fold.missed) err(t("cli.foldNotFound", { subject: fold.subject, where: t(`cli.foldWhere.${fold.missed}`, {}, cfg.language) }, cfg.language));
+        res = shapeOf(message, { config: cfg, stagedPaths: staged, cleanup, cut, comment, foldTarget: fold.target });
+      } catch (e) {
+        // The shape alone: a git that fails is no reason to lock commits, so the hook says it was not checked. Every gate
+        // on what the commit brings, the message's secrets among them, ran apart from it.
+        if (!opts.hook) throw e;
+        const error = /** @type {Error & { stderr?: unknown }} */ (e);
+        err(t("cli.hookMessageUnchecked", { error: masked(typeof error.stderr === "string" ? error.stderr.trim().split("\n")[0] : error.message) }, cfg.language));
+      }
+    }
+    for (const e of [...unchecked, ...ci.errors, ...deps.errors, ...secrets.errors, ...forbidden.errors, ...messageSecrets, ...res.errors]) err(e);
+    for (const w of [...(res.warnings ?? []), ...forbidden.warnings, ...ci.warnings, ...deps.warnings]) err(w);
+    return res.ok && !loosens && !unchecked.length && !ci.errors.length && !deps.errors.length && !secrets.errors.length && !forbidden.errors.length && !messageSecrets.length ? 0 : 1;
   },
 
   async deps(args) {
