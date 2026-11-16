@@ -3,7 +3,8 @@
  * measured way into a repository in 2026: an action named by a tag or branch runs whatever that name points
  * to when the job starts (tags of popular actions were moved to code that read the runners' secrets); a
  * pull_request_target workflow that checks out the pull request's code runs a stranger's code with this
- * repository's secrets and a write token, also through a reusable workflow or a local action it calls; a
+ * repository's secrets and a write token, also through a reusable workflow or a local action it calls or hands that
+ * code to in a `with:` input of any name (the callee is judged on its own text, where `inputs.<name>` is unread); a
  * workflow that sets no permissions gets the repository's default token, which may write.
  *
  * What is refused is what the commit adds: the staged CI files are compared with HEAD's, so what is already
@@ -814,13 +815,21 @@ const NOT_STEPS = new Set(["with", "env", "inputs", "outputs", "secrets", "vars"
 const PR_REF = /refs\/pull\/|(?:^|[^\w])pull\/(?:\$\{\{[^}\n]{0,400}\}\}|[^/\s]+)\/(?:head|merge)\b/i;
 
 /**
+ * The fields of `github.event.pull_request` that name no code: its base, and those GitHub gives as a number, a
+ * count, a flag, a time, an id or an enum (the pull_request webhook payload's schema, octokit/webhooks
+ * payload-schemas common/pull-request, user and author_association), and state, labels, html_url. A branch called
+ * backport-<n> is not the pull request's. Any other field counts, an object holding a login or text too.
+ */
+const NO_CODE = ["base", "number", "state", "draft", "labels", "html_url", "id", "node_id", "additions", "deletions", "changed_files", "commits", "comments", "review_comments", "author_association", "merged", "mergeable", "mergeable_state", "rebaseable", "maintainer_can_modify", "locked", "active_lock_reason", "created_at", "updated_at", "closed_at", "merged_at", "user.id", "user.type"];
+const PR_FIELD = new RegExp(`github\\.event\\.pull_request\\.(?!(?:${NO_CODE.map((f) => f.replace(".", "\\.")).join("|")})\\b)`);
+
+/**
  * Whether a text holds an expression on the pull request's own code: its head, number, merge commit or ref
- * (anything under `github.event.pull_request` but its base and the fields that name no code — number, state,
- * draft, labels, html_url: a branch called backport-<n> is not the pull request's; the author's login, title or
- * body still count, they can name a fork or a ref), `github.head_ref`, `github.event.after` (a synchronize event's
- * head), and the number where the expression builds a ref from it (`pull` in it, or format() or join()).
- * Contexts are read without case, `['x']` as `.x`. One
- * pass: an expression that does not close ends it.
+ * (any field of `github.event.pull_request` but those NO_CODE names: the author's login, title or body still count,
+ * they can name a fork or a ref), the whole of it in `toJSON` (of `github`, `github.event` or the pull request: the
+ * text holds the head), `github.head_ref`, `github.event.after` (a synchronize event's head), and the number where
+ * the expression builds a ref from it (`pull` in it, or format() or join()). Contexts are read without case, `['x']`
+ * as `.x`. One pass: an expression that does not close ends it.
  * @param {string} text
  */
 export function prExpression(text) {
@@ -831,7 +840,7 @@ export function prExpression(text) {
     const e = text.slice(at + 3, end).toLowerCase().replace(/\[\s*(['"])([^'"\]]*)\1\s*\]/g, ".$2").replace(/\s+/g, "");
     // The number alone names no code (a branch called backport-<n> is not the pull request's): only inside
     // `pull/<n>/head` or `refs/pull/<n>`, which PR_REF reads.
-    if (/github\.event\.pull_request\.(?!base\.|number\b|state\b|draft\b|labels\b|html_url\b)|github\.head_ref|github\.event\.after\b/.test(e)) return true;
+    if (PR_FIELD.test(e) || /github\.head_ref|github\.event\.after\b|tojson\(github(?:\.event(?:\.pull_request)?)?\)/.test(e)) return true;
     // A ref built from the number (`format('refs/{0}/{1}/merge', 'pull', github.event.number)`).
     if (/github\.event\.(?:pull_request\.)?number\b/.test(e) && /pull|format\(|join\(/.test(e.replace(/github\.event\.pull_request/g, ""))) return true;
   }
@@ -846,9 +855,10 @@ export function prExpression(text) {
 export const ciKind = (path) => (/^\.github\/workflows\/[^/]+$/.test(path) ? "workflow" : /(^|\/)action\.ya?ml$/.test(path) ? "action" : "workflow");
 
 /**
- * @typedef {{ uses: { n: number, at: number, job: string, value: string, pinned: boolean, from?: string }[], pwn: { n: number, at: number, what: string }[], unpermitted: { job: string, n: number }[], writeAll: { where: string, n: number }[], unread: { n: number, what: string, text?: string }[], targeted: boolean, callees: { n: number, path: string }[], loose: { job: string, n: number, at: number, dir: string, from: string }[], stopped?: boolean }} Findings
+ * @typedef {{ uses: { n: number, at: number, job: string, value: string, pinned: boolean, from?: string }[], pwn: { n: number, at: number, what: string, to?: string, reach?: string[] }[], unpermitted: { job: string, n: number }[], writeAll: { where: string, n: number }[], unread: { n: number, what: string, text?: string }[], targeted: boolean, callees: { n: number, path: string }[], loose: { job: string, n: number, at: number, dir: string, from: string }[], stopped?: boolean }} Findings
  *   `at`: the entry's place in the reading, the order steps run in (a line holds several in a flow collection);
- *   `stopped`: the reading threw (fileFindings)
+ *   `stopped`: the reading threw (fileFindings); a `pwn`'s `to`: the local callee a `with:` hands the pull request's code to, `reach` (ciSet): the
+ *   files of the set that callee reaches, itself included
  */
 
 /** git commands that bring code into the work tree or the index. */
@@ -1222,7 +1232,8 @@ export function runFetches(lines, names) {
  * directory it names (`from` names that checkout; a job's own `uses: ./…` workflow comes from the caller's commit,
  * never from the workspace); `pwn`: when a pull_request_target trigger reaches the file (the word anywhere outside
  * comments and block scalars, or `targeted` for a file such a workflow calls), each place that checks out the pull
- * request's code; `unpermitted`: with no top-level `permissions`, each job with none of its own; `writeAll`;
+ * request's code, and each value holding it that a `with:` hands to a local callee under any input's name, `ref`
+ * and `repository` too (`to`: that callee's `uses`); `unpermitted`: with no top-level `permissions`, each job with none of its own; `writeAll`;
  * `unread`: what the reading could not follow; `callees`: the local reusable workflows and actions it uses.
  * @param {string} text
  * @param {"workflow" | "action"} kind
@@ -1281,7 +1292,7 @@ export function ciFindingsOf({ entries, unread }, kind, { targeted: forced = fal
       return { n: e.n, at, job: jobOf(e), value, pinned: !e.unread && e.value !== null && pinnedUses(value) && !under, ...(under ? { from: under.from } : {}) };
     });
   const callees = uses.filter((u) => u.value.startsWith("./")).map((u) => ({ n: u.n, path: localPath(u.value) }));
-  /** @type {{ n: number, at: number, what: string }[]} */
+  /** @type {Findings["pwn"]} */
   const pwn = [];
   // The trigger's name in any case (GitHub's parser takes `on:` as any text), in a block scalar too under `on`.
   const targeted = forced || (kind === "workflow" && entries.some((e) => (!e.block || e.path[0] === "on") && [e.key, e.value].some((s) => s && /\bpull_request_target\b/i.test(s))));
@@ -1300,8 +1311,20 @@ export function ciFindingsOf({ entries, unread }, kind, { targeted: forced = fal
         }
       }
     }
+    // The local actions and reusable workflows a step or a job calls, by the sequence item and the keys of its `uses`:
+    // a `with:` of that step or job hands its values to that callee.
+    /** @type {Map<string, string>} */
+    const handedTo = new Map();
+    for (const u of uses) if (u.value.startsWith("./")) handedTo.set(JSON.stringify([entries[u.at].item, ...entries[u.at].path.slice(0, -1)]), u.value);
     for (const [at, e] of entries.entries()) {
-      if ((e.key === "ref" || e.key === "repository") && e.value && holdsRef(e.value, tainted)) pwn.push({ n: e.n, at, what: `${e.key}: ${e.value}` });
+      // The pull request's code handed to a local callee under any input's name, `ref` and `repository` too: the callee
+      // is judged on its own text, where `${{ inputs.<name> }}` names nothing of the pull request, so the hand-off is
+      // refused here, and carries its callee (ciSet gives it the files that callee reaches). Elsewhere a `ref:` or a
+      // `repository:` holding the ref is a checkout's.
+      const callee = e.key !== null && e.value && e.path.at(-2) === "with" ? handedTo.get(JSON.stringify([e.item, ...e.path.slice(0, -2)])) : undefined;
+      if (e.value && (callee !== undefined || e.key === "ref" || e.key === "repository") && holdsRef(e.value, tainted)) {
+        pwn.push(callee !== undefined ? { n: e.n, at, what: `${callee} with ${e.key}: ${e.value}`, to: callee } : { n: e.n, at, what: `${e.key}: ${e.value}` });
+      }
       if (e.key === "allow-unsafe-pr-checkout" && /^(true|yes|on|y)$/i.test(e.value ?? "")) pwn.push({ n: e.n, at, what: `allow-unsafe-pr-checkout: ${e.value}` });
       // A run's lines as YAML gives them to the shell (a folded block joined, a literal one kept).
       if (e.key === "run" && e.value !== null) for (const f of runFetches(e.value.split("\n"), new Set(tainted))) pwn.push({ n: e.block ? e.n + 1 + f.k : e.n, at, what: f.what });
@@ -1350,7 +1373,7 @@ function fileFindings(text, kind, opts) {
  * The findings of a set of CI files read together: a pull_request_target workflow's local callees (reusable
  * workflows, local actions, and theirs, however deep) are read as reached by that trigger, and what they check
  * out counts in their own file, naming the caller. A callee the set does not hold, or whose reading stopped, is in
- * `missing`.
+ * `missing`. Each hand-off (`pwn.to`) gets its `reach`: the files of the set its callee reaches, however deep.
  * @param {Map<string, string>} files path → text
  * @returns {{ findings: Map<string, Findings>, missing: { path: string, n: number, callee: string }[] }}
  */
@@ -1417,13 +1440,37 @@ export function ciSet(files) {
         const had = new Set(own.pwn.map((x) => x.what));
         for (const p of reached.pwn) {
           const what = `${p.what} (reached from ${caller})`;
-          if (!had.has(what)) own.pwn.push({ n: p.n, at: p.at, what }), had.add(what);
+          if (!had.has(what)) own.pwn.push({ ...p, what }), had.add(what);
         }
         for (const x of reached.callees) next.push({ from: path, ...x });
       }
       wave = next;
     }
   }
+  // A hand-off's reach: the callee it names and every local callee read from there, as the files of the set; what
+  // runs the code handed is any of them, so a commit that brings one makes the hand-off new (ciMessages).
+  /** @type {Map<string, string[]>} */
+  const reaches = new Map();
+  const reachOf = (/** @type {string} */ to) => {
+    const known = reaches.get(to);
+    if (known) return known;
+    /** @type {Set<string>} */
+    const seen = new Set();
+    for (let wave = [localPath(to)]; wave.length; ) {
+      /** @type {string[]} */
+      const next = [];
+      for (const c of wave) {
+        const path = resolve(c);
+        if (!path || seen.has(path)) continue;
+        seen.add(path);
+        for (const x of /** @type {Findings} */ (findings.get(path)).callees) next.push(x.path);
+      }
+      wave = next;
+    }
+    reaches.set(to, [...seen]);
+    return [...seen];
+  };
+  for (const f of findings.values()) for (const p of f.pwn) if (p.to) p.reach = reachOf(p.to);
   return { findings, missing };
 }
 
@@ -1551,9 +1598,25 @@ export function ciMessages(versions, lang) {
   const b = ciSet(before);
   for (const [path, found] of a.findings) {
     const intro = ciIntroduced(found, b.findings.get(path) ?? null);
+    // A hand-off HEAD holds is new when the commit brings a file of its callee's reach: that file makes it run the code.
+    // Said apart, naming the files brought, since the line it points at is one the commit did not touch.
+    const fresh = new Set(intro.pwn);
+    const brought = (/** @type {string} */ r) => {
+      const v = versions.get(r);
+      return v !== undefined && brings(v);
+    };
+    const renewed = found.pwn.filter((p) => !fresh.has(p) && p.reach?.some(brought));
     const vars = { path: name(path) };
     if (intro.unpinned.length) errors.push(t("ci.unpinned", { ...vars, n: intro.unpinned.length, where: places(intro.unpinned, (u) => (u.from ? `${u.value} ← ${u.from}` : u.value)) }, lang));
-    if (intro.pwn.length) errors.push(t("ci.pwn", { ...vars, where: places(intro.pwn, (p) => p.what.slice(0, 120)) }, lang));
+    // A checkout, and a hand-off to a local callee, each with its own remedy.
+    for (const [key, to] of /** @type {const} */ ([["ci.pwn", false], ["ci.pwnInput", true]])) {
+      const list = intro.pwn.filter((p) => Boolean(p.to) === to);
+      if (list.length) errors.push(t(key, { ...vars, where: places(list, (p) => p.what.slice(0, 120)) }, lang));
+    }
+    if (renewed.length) {
+      const files = [...new Set(renewed.flatMap((p) => (p.reach ?? []).filter(brought)))];
+      errors.push(t("ci.pwnReach", { ...vars, where: places(renewed, (p) => p.what.slice(0, 120)), files: files.slice(0, 3).map(name).join(", ") + (files.length > 3 ? t("shape.cochangeMore", { n: files.length - 3 }, lang) : "") }, lang));
+    }
     if (intro.unpermitted.length) errors.push(t("ci.permissions", { ...vars, where: places(intro.unpermitted, (j) => j.job) }, lang));
     if (intro.writeAll.length) errors.push(t("ci.writeAll", { ...vars, where: places(intro.writeAll, (w) => w.where || t("ci.top", {}, lang)) }, lang));
     // A text HEAD holds brings no form, whichever mode's reading stopped on it.

@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { MAX_TEXT, ciCallees, ciFindings, ciIntroduced, ciKind, ciMessages, ciSet, ciText, localPath, pinnedUses, stripComment, yamlRead } from "../checks/ci.mjs";
+import { MAX_TEXT, ciCallees, ciFindings, ciIntroduced, ciKind, ciMessages, ciSet, ciText, localPath, pinnedUses, prExpression, stripComment, yamlRead } from "../checks/ci.mjs";
 import { git, stagedVersions } from "../core/git.mjs";
 import { loadConfig, ConfigError } from "../core/config.mjs";
 import { checkSetup } from "../setup/doctor.mjs";
@@ -1723,4 +1723,159 @@ test("gate scope: a throw of the deps check is said for a commit that adds and c
   const hook = spawnSync(process.execPath, ["--import", fault, CLI, "commit-check", "--hook", ".git/MSG"], { cwd: r.dir, encoding: "utf8" });
   assert.equal(hook.status, 0, hook.stderr);
   assert.match(hook.stderr, /security\.deps was not checked: the staged lock files could not be read \(stopped here\)/);
+});
+
+/** A pull_request_target workflow and a local action that checks out what it is handed: `with` holds the step's inputs. */
+const HAND = {
+  wf: (/** @type {string} */ withText, on = "pull_request_target") => `on: ${on}\npermissions:\n  contents: read\njobs:\n  build:\n    runs-on: x\n    steps:\n      - uses: actions/checkout@${SHA}\n      - uses: ./.github/actions/build\n        with:\n${withText}`,
+  action: `inputs:\n  head:\n    required: true\nruns:\n  using: composite\n  steps:\n    - uses: actions/checkout@${SHA}\n      with:\n        ref: \${{ inputs.head }}\n    - run: npm ci && npm test\n      shell: bash\n`,
+  head: "${{ github.event.pull_request.head.sha }}",
+};
+const PR = ".github/workflows/pr.yml";
+const BUILD = ".github/actions/build/action.yml";
+
+test("ci hand-off: the pull request's code handed to a local action or reusable workflow under any input's name is found, in every spelling the ref rule reads", () => {
+  const pwnOf = (/** @type {Record<string, string>} */ files) => [...ciSet(new Map(Object.entries(files))).findings].flatMap(([p, f]) => f.pwn.map((x) => `${p}:${x.n} ${x.what}${x.to ? ` -> ${x.to}` : ""}`));
+  const step = (/** @type {string} */ w, on = "pull_request_target") => ({ [PR]: HAND.wf(w, on), [BUILD]: HAND.action });
+  const at11 = (/** @type {string} */ what) => [`${PR}:11 ./.github/actions/build with ${what} -> ./.github/actions/build`];
+  assert.deepEqual(pwnOf(step(`          head: ${HAND.head}\n`)), at11(`head: ${HAND.head}`));
+  assert.deepEqual(pwnOf(step(`          "head": '${HAND.head}'\n`)), at11(`head: ${HAND.head}`), "quoted key and value");
+  assert.deepEqual(pwnOf(step(`          branch: \${{ github.head_ref }}\n`)), at11("branch: ${{ github.head_ref }}"));
+  assert.deepEqual(pwnOf(step(`          head: \${{ format('refs/pull/{0}/head', github.event.number) }}\n`)).length, 1, "a ref built from the number");
+  assert.deepEqual(pwnOf(step(`          head: \${{ GitHub.Event['pull_request']['head']['sha'] }}\n`)).length, 1, "a context in other case, indexed");
+  assert.deepEqual(pwnOf(step(`          head: |\n            ${HAND.head}\n`)).length, 1, "a block scalar");
+  assert.deepEqual(pwnOf({ [PR]: HAND.wf("").replace("        with:\n", `        with: { head: "${HAND.head}" }\n`), [BUILD]: HAND.action }), [`${PR}:10 ./.github/actions/build with head: ${HAND.head} -> ./.github/actions/build`], "a flow mapping");
+  assert.deepEqual(pwnOf({ [PR]: HAND.wf("").replace("      - uses: ./.github/actions/build\n        with:\n", `      - with:\n          head: ${HAND.head}\n        uses: ./.github/actions/build\n`), [BUILD]: HAND.action }).length, 1, "with before uses");
+  assert.deepEqual(pwnOf({ [PR]: HAND.wf(`          head: *h\n`).replace("jobs:", `x: &h ${HAND.head}\njobs:`), [BUILD]: HAND.action }).length, 1, "an alias of an anchored value");
+  // Through a name the file sets to the ref: an env, a $GITHUB_ENV line.
+  assert.deepEqual(pwnOf(step(`          head: \${{ env['H'] }}\n`)).length, 0, "no env holds it");
+  assert.deepEqual(pwnOf({ [PR]: HAND.wf(`          head: \${{ env['H'] }}\n`).replace("jobs:", `env:\n  H: ${HAND.head}\njobs:`), [BUILD]: HAND.action }).length, 1, "an env of the file holds it");
+  assert.deepEqual(pwnOf({ [PR]: HAND.wf(`          head: \${{ env.H }}\n`).replace("      - uses: ./", `      - run: echo "H=${HAND.head}" >> "$GITHUB_ENV"\n      - uses: ./`), [BUILD]: HAND.action }).length, 1, "a $GITHUB_ENV name");
+  // A job's with on a local reusable workflow.
+  const job = `on: pull_request_target\npermissions:\n  contents: read\njobs:\n  build:\n    uses: ./.github/workflows/build.yml\n    with:\n      sha: ${HAND.head}\n    secrets: inherit\n`;
+  const reusable = `on:\n  workflow_call:\n    inputs:\n      sha:\n        type: string\npermissions: {}\njobs:\n  b:\n    runs-on: x\n    steps:\n      - uses: actions/checkout@${SHA}\n        with:\n          ref: \${{ inputs.sha }}\n      - run: npm ci\n`;
+  assert.deepEqual(pwnOf({ [PR]: job, ".github/workflows/build.yml": reusable }), [`${PR}:8 ./.github/workflows/build.yml with sha: ${HAND.head} -> ./.github/workflows/build.yml`]);
+  // ref: keeps its one finding; a callee that forwards the ref deeper is refused as reached; one that forwards its input is not.
+  assert.deepEqual(pwnOf(step(`          ref: ${HAND.head}\n`)), at11(`ref: ${HAND.head}`), "ref: on a local uses is one hand-off");
+  const outer = (/** @type {string} */ value) => `inputs:\n  head: {}\nruns:\n  using: composite\n  steps:\n    - uses: ./.github/actions/build\n      with:\n        head: ${value}\n`;
+  const deep = { [PR]: `on: pull_request_target\npermissions:\n  contents: read\njobs:\n  a:\n    runs-on: x\n    steps:\n      - uses: ./.github/actions/outer\n`, ".github/actions/outer/action.yml": outer(HAND.head), [BUILD]: HAND.action };
+  assert.deepEqual(pwnOf(deep), [`.github/actions/outer/action.yml:8 ./.github/actions/build with head: ${HAND.head} (reached from ${PR}) -> ./.github/actions/build`]);
+  assert.deepEqual(pwnOf({ ...deep, ".github/actions/outer/action.yml": outer("${{ inputs.head }}") }), [], "an input forwarded: the callee side is not read");
+  // Not found: other triggers, a remote uses, a value naming no code, no uses.
+  for (const on of ["pull_request", "push", "workflow_dispatch"]) assert.deepEqual(pwnOf(step(`          head: ${HAND.head}\n`, on)), [], on);
+  for (const w of ["number: ${{ github.event.pull_request.number }}", "n: ${{ github.event.number }}", "base: ${{ github.event.pull_request.base.sha }}", "sha: ${{ github.sha }}", "url: ${{ github.event.pull_request.html_url }}"]) assert.deepEqual(pwnOf(step(`          ${w}\n`)), [], w);
+  assert.deepEqual(pwnOf({ [PR]: HAND.wf(`          head: ${HAND.head}\n`).replace("./.github/actions/build", `some/action@${SHA}`) }), [], "a remote action");
+  assert.deepEqual(pwnOf({ [PR]: job.replace("./.github/workflows/build.yml", `o/r/.github/workflows/build.yml@${SHA}`) }), [], "a remote reusable workflow");
+  assert.deepEqual(pwnOf({ [PR]: HAND.wf(`          head: ${HAND.head}\n`).replace("      - uses: ./.github/actions/build\n", "      - name: no uses\n") }), [], "a with on a step that uses nothing");
+  // A step's env is no with: a local action's run reading it is another rule's (not read).
+  assert.deepEqual(pwnOf({ [PR]: HAND.wf("          x: 1\n").replace("        with:\n", `        env:\n          HEAD: ${HAND.head}\n        with:\n`), [BUILD]: HAND.action }), [], "a step's env");
+});
+
+test("ci hand-off hook: a commit that hands the pull request's code to a local callee is refused, saying where it goes and what to pass; other triggers and the number pass", async () => {
+  const r = repo();
+  r.stage({ [PR]: HAND.wf(`          head: ${HAND.head}\n`), [BUILD]: HAND.action });
+  const step = r.check("--hook");
+  assert.equal(step.status, 1);
+  assert.match(step.stderr, /pr\.yml: a pull_request_target workflow hands the pull request's head or ref, or a value that may name them .*line 11 \(\.\/\.github\/actions\/build with head: \$\{\{ github\.event\.pull_request\.head\.sha \}\}\); pass the number/);
+  assert.doesNotMatch(step.stderr, /checks out the pull request's code/);
+  // A checkout and a hand-off in one file: each is said once, under its own remedy.
+  r.stage({ [PR]: HAND.wf(`          head: ${HAND.head}\n`).replace(`checkout@${SHA}\n`, `checkout@${SHA}\n        with:\n          ref: ${HAND.head}\n`) });
+  const both = r.check("--hook").stderr.split("\n");
+  assert.deepEqual(both.filter((l) => /checks out the pull request's code/.test(l)).map((l) => l.match(/line .*?\)/)?.[0]), ["line 10 (ref: ${{ github.event.pull_request.head.sha }})"]);
+  assert.deepEqual(both.filter((l) => /hands the pull request's head or ref/.test(l)).map((l) => l.match(/line .*?\)/)?.[0]), ["line 13 (./.github/actions/build with head: ${{ github.event.pull_request.head.sha }})"]);
+  // A job's with on a local reusable workflow.
+  r.stage({ [PR]: `on: pull_request_target\npermissions:\n  contents: read\njobs:\n  build:\n    uses: ./.github/workflows/build.yml\n    with:\n      sha: ${HAND.head}\n`, ".github/workflows/build.yml": `on: workflow_call\npermissions: {}\njobs:\n  b:\n    runs-on: x\n    steps:\n      - uses: actions/checkout@${SHA}\n        with:\n          ref: \${{ inputs.sha }}\n` });
+  assert.match(r.check("--hook").stderr, /pr\.yml: a pull_request_target workflow hands .*line 8 \(\.\/\.github\/workflows\/build\.yml with sha: /);
+  git(["rm", "-q", "--cached", ".github/workflows/build.yml"], { cwd: r.dir });
+  // Through an env of the file.
+  r.stage({ [PR]: HAND.wf("          head: ${{ env.H }}\n").replace("jobs:", `env:\n  H: ${HAND.head}\njobs:`) });
+  assert.match(r.check("--hook").stderr, /pr\.yml: a pull_request_target workflow hands .*\(\.\/\.github\/actions\/build with head: \$\{\{ env\.H \}\}\)/);
+  // A callee that forwards the ref deeper: refused in its own file, as reached.
+  r.stage({ [PR]: HAND.wf("").replace("./.github/actions/build\n        with:\n", "./.github/actions/outer\n"), ".github/actions/outer/action.yml": `runs:\n  using: composite\n  steps:\n    - uses: ./.github/actions/build\n      with:\n        head: ${HAND.head}\n` });
+  const reached = r.check("--hook");
+  assert.equal(reached.status, 1);
+  assert.match(reached.stderr, /outer\/action\.yml: a pull_request_target workflow hands .*line 6 \(\.\/\.github\/actions\/build with head: .*reached from \.github\/workflows\/pr\.yml\)/);
+  git(["rm", "-q", "--cached", ".github/actions/outer/action.yml"], { cwd: r.dir });
+  // The same caller under pull_request, and the number under pull_request_target, pass.
+  r.stage({ [PR]: HAND.wf(`          head: ${HAND.head}\n`, "pull_request") });
+  const plain = r.check("--hook");
+  assert.equal(plain.status, 0, plain.stderr);
+  r.stage({ [PR]: HAND.wf("          number: ${{ github.event.pull_request.number }}\n") });
+  const number = r.check("--hook");
+  assert.equal(number.status, 0, number.stderr);
+  // What HEAD holds is not new: committed past the hook, the same line, moved, passes.
+  r.stage({ [PR]: HAND.wf(`          head: ${HAND.head}\n`) });
+  assert.equal(r.commit("chore: held", "--no-verify").status, 0);
+  // doctor counts what the tracked files hold.
+  assert.ok((await checkSetup({ cwd: r.dir, env: {} })).items.some((i) => i.key === "doctor.ciPwn" && i.level === "warn"));
+  r.stage({ [PR]: HAND.wf(`          head: ${HAND.head}\n`).replace("      - uses: actions/checkout", "      - run: echo moved\n      - uses: actions/checkout") });
+  const moved = r.check("--hook");
+  assert.equal(moved.status, 0, moved.stderr);
+});
+
+test("ci pr fields: a number, count, flag, time, id or enum of the pull request names no code; the whole pull request or event in toJSON does", () => {
+  const counted = (/** @type {string} */ x) => prExpression(`\${{ ${x} }}`);
+  for (const f of ["id", "node_id", "additions", "deletions", "changed_files", "commits", "comments", "review_comments", "author_association", "merged", "mergeable", "mergeable_state", "rebaseable", "maintainer_can_modify", "locked", "active_lock_reason", "created_at", "updated_at", "closed_at", "merged_at", "user.id", "user.type", "base.sha", "number", "labels"]) assert.equal(counted(`github.event.pull_request.${f}`), false, f);
+  for (const f of ["head.sha", "title", "body", "user.login", "merged_by.login", "assignees", "milestone", "idx", "user.idx", "user_id", "base_x", "merge_commit_sha", "comments_url"]) assert.equal(counted(`github.event.pull_request.${f}`), true, f);
+  for (const x of ["toJSON(github.event.pull_request)", "toJSON(github.event)", "toJSON(github)", "ToJSON( GitHub['event'] )", "toJSON(github.event.pull_request.head)", "fromJSON(toJSON(github.event)).pull_request.head.sha"]) assert.equal(counted(x), true, x);
+  for (const x of ["toJSON(github.event.pull_request.base)", "toJSON(github.event.pull_request.labels)", "github.event.pull_request != null", "github.event.pull_request", "toJSON(github.event.issue)"]) assert.equal(counted(x), false, x);
+});
+
+test("ci hand-off held: a hand-off HEAD holds is new when the commit brings a file its callee reaches, and stays held otherwise", () => {
+  const SAFE = "inputs:\n  head: {}\nruns:\n  using: composite\n  steps:\n    - run: echo hi\n      shell: bash\n";
+  const handed = HAND.wf(`          head: ${HAND.head}\n`);
+  const refused = (/** @type {{ check: (...f: string[]) => { status: number | null, stderr: string } }} */ r, /** @type {string} */ file) => {
+    const out = r.check("--hook");
+    assert.equal(out.status, 1, out.stderr);
+    const line = out.stderr.split("\n").find((l) => l.includes("already hands")) ?? "";
+    assert.match(line, /^\.github\/workflows\/pr\.yml: a pull_request_target workflow already hands .*\(line 11 \(\.\/\.github\/actions\/build with head: /, out.stderr);
+    assert.ok(line.includes(`this commit brings ${file}, which that call reaches`), line);
+    assert.doesNotMatch(out.stderr, /workflow hands/, "said once, as the reach's");
+  };
+  // The callee turns into a checkout, or comes new, or moves to action.yaml.
+  const a = repo();
+  a.stage({ [PR]: handed, [BUILD]: SAFE });
+  assert.equal(a.commit("chore: held", "--no-verify").status, 0);
+  a.stage({ [BUILD]: HAND.action });
+  refused(a, BUILD);
+  git(["rm", "-q", "-f", BUILD], { cwd: a.dir });
+  a.stage({ ".github/actions/build/action.yaml": HAND.action });
+  refused(a, ".github/actions/build/action.yaml");
+  const b = repo();
+  b.stage({ [PR]: handed });
+  assert.equal(b.commit("chore: held", "--no-verify").status, 0);
+  b.stage({ [BUILD]: HAND.action });
+  refused(b, BUILD);
+  // A deeper callee changed, the caller and the first callee held.
+  const c = repo();
+  const outer = "inputs:\n  head: {}\nruns:\n  using: composite\n  steps:\n    - uses: ./.github/actions/deep\n      with:\n        head: ${{ inputs.head }}\n";
+  c.stage({ [PR]: handed, [BUILD]: outer, ".github/actions/deep/action.yml": SAFE });
+  assert.equal(c.commit("chore: held", "--no-verify").status, 0);
+  c.stage({ ".github/actions/deep/action.yml": HAND.action });
+  refused(c, ".github/actions/deep/action.yml");
+  // A commit that brings no file of the reach: the held hand-off stays held.
+  git(["reset", "-q", "--hard"], { cwd: c.dir });
+  c.stage({ ".github/workflows/other.yml": PINNED });
+  const other = c.check("--hook");
+  assert.equal(other.status, 0, other.stderr);
+});
+
+test("ci hand-off held ref key: a ref: handed to a local callee is a hand-off with its reach, so a held one is new when the commit turns the callee into a checkout", () => {
+  const r = repo();
+  const callee = (/** @type {string} */ body) => `inputs:\n  ref: {}\nruns:\n  using: composite\n  steps:\n${body}`;
+  r.stage({ [PR]: HAND.wf(`          ref: ${HAND.head}\n`), [BUILD]: callee('    - run: echo "${{ inputs.ref }}"\n      shell: bash\n') });
+  assert.equal(r.commit("chore: held", "--no-verify").status, 0);
+  r.stage({ [BUILD]: callee(`    - uses: actions/checkout@${SHA}\n      with:\n        ref: \${{ inputs.ref }}\n    - run: npm ci\n      shell: bash\n`) });
+  const out = r.check("--hook");
+  assert.equal(out.status, 1, out.stderr);
+  const lines = out.stderr.split("\n").filter((l) => l.includes("pull_request_target"));
+  assert.deepEqual(lines.map((l) => l.match(/line \d+ \(\S+ with ref:/)?.[0]), ["line 11 (./.github/actions/build with ref:"], "one finding, the hand-off's");
+  assert.ok(lines[0].includes(`this commit brings ${BUILD}, which that call reaches`), lines[0]);
+  // A ref: on a remote uses stays a checkout's, with no reach: a callee changed beside it renews nothing.
+  const remote = repo();
+  remote.stage({ [PR]: HAND.wf("          x: 1\n").replace(`checkout@${SHA}\n`, `checkout@${SHA}\n        with:\n          ref: ${HAND.head}\n`), [BUILD]: HAND.action });
+  assert.equal(remote.commit("chore: held", "--no-verify").status, 0);
+  remote.stage({ [BUILD]: HAND.action.replace("npm ci", "npm ci --ignore-scripts") });
+  const held = remote.check("--hook");
+  assert.equal(held.status, 0, held.stderr);
 });

@@ -136,7 +136,7 @@ function* walk(x, trail = []) {
  * with no permissions, a write-all; each step's or job's unpinned `uses` by its job and its place in the steps (a
  * local path counts as unpinned when an earlier step placed another repository's code over it); each local callee;
  * with the trigger, or `targeted` (a callee a pull_request_target workflow reaches), each place that checks out the
- * pull request's code. Places are `<job>#<step>`, the step's index in its job's steps, or the keys above it.
+ * pull request's code or hands it to a local callee through a `with:` input. Places are `<job>#<step>`, the step's index in its job's steps, or the keys above it.
  * @param {Node} doc @param {{ targeted?: boolean }} [opts]
  */
 export function githubPlaces(doc, { targeted: forced = false } = {}) {
@@ -204,6 +204,14 @@ export function githubPlaces(doc, { targeted: forced = false } = {}) {
       if ((key === "ref" || key === "repository") && holdsRef(s, tainted)) out.add(`pwn ${placeOf(v, trail)} ${key}`);
       if (key === "allow-unsafe-pr-checkout" && /^(true|yes|on|y)$/i.test(s)) out.add(`pwn ${placeOf(v, trail)} ${key}`);
       if (key === "run" && runFetches(s.split("\n"), new Set(tainted)).length) out.add(`pwn ${placeOf(v, trail)} run`);
+    }
+    // A `with:` value holding the pull request's ref, under any other input's name, handed to a local callee.
+    for (const [job, j] of all(doc, "jobs").flatMap(pairsOf)) {
+      const steps = all(j, "steps").flatMap((s) => (isSeq(s) ? /** @type {Node[]} */ (s.q) : []));
+      for (const [node, at] of [[j, `${job}#-`], ...steps.map((st, k) => [st, `${job}#${k}`])]) {
+        if (!all(node, "uses").some((u) => text(u)?.startsWith("./"))) continue;
+        for (const [key, x] of all(node, "with").flatMap(pairsOf)) if (key !== "ref" && key !== "repository" && holdsRef(text(x) ?? "", tainted)) out.add(`pwn ${at} ${key}`);
+      }
     }
   }
   return out;
