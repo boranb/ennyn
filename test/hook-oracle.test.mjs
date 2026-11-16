@@ -3,8 +3,9 @@
  *
  * Does doctor call a commit-msg hook wired only when the check really runs and stops the commit? Each cell is a
  * repository of its own, the hook in its place and `ennyn doctor` run as a user runs it. Behind a ✓ comes a real
- * `git commit` of a real token (made at run time, test/secret-shapes.mjs), with its own identity: the secret must stay
- * out of HEAD and the refusal must name its kind, so a hook that fails for another reason is no pass. A `wired` cell is
+ * `git commit` of a real token (made at run time, test/secret-shapes.mjs) in a file and in the message, with its own
+ * identity: the secret must stay out of HEAD and the refusal must name it in both places, so a hook that fails for
+ * another reason, or whose check loses the message or the files, is no pass. A `wired` cell is
  * what install-hook printed and must read ✓: without those nothing here would be tried. Any other cell warns today; a
  * warning is never a false ✓ and stops no commit, so it costs a doctor run, and its commit runs only once a reader
  * starts to pass it (test/guards.mjs shows that each group fails then). A known landing is a gap cell: it names an open
@@ -25,6 +26,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { loadConfig } from "../core/config.mjs";
 import { GIT_FLOOR, gitVersion, parseVersion, versionAtLeast } from "../core/git.mjs";
+import { t } from "../core/i18n.mjs";
 import { loadGraph } from "../plan/mechanization.mjs";
 import { HOOK_MARKER, hookBlock, hookLine, hookScript, printedCheck, recordPluginRoot } from "../setup/hook.mjs";
 import { ownHome } from "./own-home.mjs";
@@ -83,10 +85,11 @@ const CALL = LINE.slice(0, -" || exit $?".length);
  *   hooksPath?: string | null | ((dir: string) => string),
  *   prepare?: (dir: string) => void | string | Promise<void | string>,
  *   front?: (dir: string) => string,
+ *   control?: boolean,
  * }} Cell
  *   `file`: where the hook stands, `hooks/commit-msg` by default; `hooksPath`: core.hooksPath, `hooks` by default, null for
  *   none; `prepare`: what else the cell needs, and the directory doctor and the commit run in if it is not the cell's;
- *   `front`: a PATH entry that stands first.
+ *   `front`: a PATH entry that stands first; `control`: the commit runs whatever doctor says, to try the judge.
  */
 
 /** A `node` of the tree's that exits 0 and leaves a mark: what a package with no install script can link. */
@@ -140,14 +143,20 @@ function limited(seconds, command, opts) {
 }
 
 /**
- * A real commit, within the limit.
+ * A real commit of the token in the message too (line 3, below the subject and a blank line), within the limit.
  * @param {string} cwd @param {NodeJS.ProcessEnv} env
  * @returns {Promise<string>} what git said
  */
 async function realCommit(cwd, env) {
-  const r = await limited(COMMIT_LIMIT_S, ["git", "commit", "-q", "-m", "feat: add token"], { cwd, env });
+  const r = await limited(COMMIT_LIMIT_S, ["git", "commit", "-q", "-m", "feat: add token", "-m", TOKENS.github], { cwd, env });
   return r.limited ? `git commit ran past its limit of ${COMMIT_LIMIT_S} s` : r.stderr.trim();
 }
+
+/**
+ * The token's two places as the check names them when it refuses: the staged file's, and the message's from the catalog.
+ * A check that lost either one names only the other.
+ */
+const REFUSED = [`src/token.js:1 (${KIND.github}`, `${t("shape.secretMessage", { line: 3 }).split("{shown}")[0]}${KIND.github}`];
 
 /** @typedef {Awaited<ReturnType<typeof attempt>>} Attempt */
 
@@ -170,21 +179,21 @@ async function attempt(cell) {
   // doctor exits 1 on a ✗: its words are the answer, as they are a user's.
   const doctor = await run(process.execPath, [CLI, "doctor"], { cwd, env, encoding: "utf8" }).catch((e) => e);
   const reads = /^✓ commit-msg hook: checks every message/m.test(doctor.stdout ?? "");
-  if (!reads && !cell.gap) return { cell, reads, landed: null, stopped: null, ran: false, said: String(doctor.stdout ?? doctor.message).split("\n").filter((l) => /commit-msg hook/.test(l)).join(" ") };
+  if (!reads && !cell.gap && !cell.control) return { cell, reads, landed: null, stopped: null, ran: false, said: String(doctor.stdout ?? doctor.message).split("\n").filter((l) => /commit-msg hook/.test(l)).join(" ") };
   write(join(cwd, "src", "token.js"), `export const token = "${TOKENS.github}";\n`);
   await git(cwd, ["add", "src/token.js"]);
   const ran = planted(dir);
   rmSync(ran, { force: true });
   const said = await realCommit(cwd, env);
   const landed = (await git(cwd, ["ls-tree", "HEAD", "src/token.js"])).stdout.trim() !== "";
-  return { cell, reads, landed, stopped: !landed && said.includes(KIND.github), ran: existsSync(ran), said };
+  return { cell, reads, landed, stopped: !landed && REFUSED.every((r) => said.includes(r)), ran: existsSync(ran), said };
 }
 
 /** What is wrong with one cell's run: a false ✓, or printed text that reads no ✓. @param {Attempt} r */
 function wrong({ cell, reads, landed, stopped, said }) {
   if (cell.wired && !reads) return [`${cell.name}: what install-hook printed reads no ✓ (${said})`];
   if (!reads || stopped) return [];
-  return [`false ✓: ${cell.name}: doctor reads it as wired, and a real commit ${landed ? "landed the secret" : `was not stopped by the check (${said.slice(0, 160)})`}`];
+  return [`false ✓: ${cell.name}: doctor reads it as wired, and a real commit ${landed ? "landed the secret" : `was not refused by the check in the file and in the message (${said.slice(0, 160)})`}`];
 }
 
 /** @param {Cell[]} cells */
@@ -439,6 +448,14 @@ test("hook oracle: each known landing lands as recorded, named by an open node o
   write(join(empty, "root"), "");
   const failed = await attempt(wired("a record with nothing in it", `${SH}${hookLine(CLI, empty)}\n`));
   assert.deepEqual([failed.reads, failed.landed, failed.stopped, wrong(failed).length], [true, false, false, 1], failed.said);
+  // A check that loses the message, or the files, refuses the token in the other place: no stop, if doctor read it as wired.
+  for (const [name, text, more] of /** @type {const} */ ([
+    ["cd away first: the message lost", `${SH}cd tools\n${LINE}\n`, { prepare: toolSh }],
+    ["another index in front: the files lost", `${SH}GIT_INDEX_FILE=/dev/null ${LINE}\n`, {}],
+  ])) {
+    const lost = await attempt(warned(name, text, { ...more, control: true }));
+    assert.deepEqual([lost.landed, lost.stopped, lost.said.includes(KIND.github), wrong({ ...lost, reads: true }).length], [false, false, true, 1], `${name}: ${lost.said}`);
+  }
   assert.deepEqual(out, []);
 });
 
