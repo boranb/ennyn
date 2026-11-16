@@ -6141,17 +6141,6 @@
       "since": 35
     },
     {
-      "id": "ci-pr-ref-through-input",
-      "title": "security.ci misses a pull_request_target workflow that hands the pull request's head to a local action or reusable workflow through a with: input not named ref or repository (head:, sha:): checks/ci.mjs:1304 skips the key and prExpression (:826-839) does not read inputs.<name> in the callee. Caller side: under pull_request_target a with: value on a local uses that holds the pull request ref refuses. DESIGN.md's ci Not-seen names input taint inside a callee (node ci-input-taint-callee)",
-      "status": "planned",
-      "value": "high",
-      "cost": "M",
-      "cluster": "security",
-      "needs": [],
-      "source": "free-route audit of 2026-11-15 on 42d3c77 (four security reviewers, labs kept outside the repository), triaged by Fable the same day",
-      "since": 35
-    },
-    {
       "id": "message-unread-file-gates",
       "title": "commit-check returns 0 before any gate when the message file cannot be read as a string (ERR_STRING_TOO_LONG past 536,870,888 characters, padded with comment lines git strips after the hook: scripts/ennyn.mjs:895-899), and review.forbidden and the message secret scan run inside the shape check (checks/commit-shape.mjs:248-256), so a throw there (a squash! target past 64 MB, an approved skipSubjects member that does not compile) skips them. One rule: a failure to read or check the message never returns before, or without, the file gates; the forbidden scan moves out of the shape check; configFrom rejects a skipSubjects pattern that does not compile. Drop rule: not started by 2026-11-21, it becomes DESIGN.md sentences and nodes. After it lands, S4 of docs/acceptance.md is rerun by hand on the release tree",
       "status": "planned",
@@ -6252,24 +6241,24 @@
     },
     {
       "id": "ci-expression-gaps",
-      "title": "security.ci misses ${{ fromJSON(toJSON(github.event)).pull_request.head.sha }} and ${{ join(github.event.*.head.sha, '') }}, and a registry dependency changed in package.json alone passes silently (the design leans on npm ci refusing an out-of-sync lock and does not say so). Named in DESIGN.md's Not-seen now; read them, or keep them said",
+      "title": "security.ci misses ${{ join(github.event.*.head.sha, '') }}, and a registry dependency changed in package.json alone passes silently (the design leans on npm ci refusing an out-of-sync lock and does not say so). Named in DESIGN.md's Not-seen; read them, or keep them said. The JSON round trip (fromJSON(toJSON(github.event))) is refused since cycle 38; the expression shapes cycle 38's reviewers found are in ci-pr-code-design-decision",
       "status": "planned",
       "value": "low",
       "cost": "S",
       "cluster": "security",
       "needs": [],
-      "source": "free-route audit of 2026-11-15 on 42d3c77 (four security reviewers, labs kept outside the repository), triaged by Fable the same day",
+      "source": "free-route audit of 2026-11-15 on 42d3c77 (four security reviewers, labs kept outside the repository), triaged by Fable the same day; amended cycle 2026-11-16 (38) review of ci-pr-ref-through-input",
       "since": 35
     },
     {
       "id": "ci-input-taint-callee",
-      "title": "After ci-pr-ref-through-input refuses at the caller: a with: value holding the pull request ref taints inputs.<name> inside the local callee, so a callee that is safe on its own is judged by what its callers pass",
+      "title": "After ci-pr-ref-through-input refuses at the caller: a with: value holding the pull request ref taints inputs.<name> inside the local callee, so a callee that is safe on its own is judged by what its callers pass. Since cycle 38 a held hand-off is refused for any edit in its callee's reach, the callee's repair and a pinned SHA bump included, until the caller passes the number (c38-t1-correctness-r2-01; the message names the brought file): tainting inputs.<name> in the callee would refuse only a callee that fetches or checks out what it is handed",
       "status": "planned",
-      "value": "low",
+      "value": "medium",
       "cost": "M",
       "cluster": "security",
       "needs": [],
-      "source": "free-route audit of 2026-11-15 on 42d3c77 (four security reviewers, labs kept outside the repository), triaged by Fable the same day",
+      "source": "free-route audit of 2026-11-15 on 42d3c77 (four security reviewers, labs kept outside the repository), triaged by Fable the same day; amended cycle 2026-11-16 (38) review of ci-pr-ref-through-input (c38-t1-correctness-r2-01)",
       "since": 35
     },
     {
@@ -6346,8 +6335,8 @@
       "value": "high",
       "cost": "S",
       "cluster": "tests",
-      "title": "In the node:22 image (Node 22.23.5, git 2.39.5, user node) node --test test/ci.test.mjs ends partway with exit 0 and fail 0 (after 23, 35, 45 and 57 of 75 tests in four runs, on main e8b26f9 too); the floor image and macOS run all 75. A green Linux run hides tests that never ran: measure the cause, and make a run that ends short of its tests fail (the runner's test count against the file's)",
-      "source": "cycle 2026-11-15 (36) review of deps-unread-file-refused, author's node:22 runs, logs a kept folder outside the repository, linux3.log, linux3-main.log; cause not measured"
+      "title": "In the node:22 image (Node 22.23.5, git 2.39.5, user node) node --test test/ci.test.mjs ends partway with exit 0 and fail 0 (after 23, 35, 45 and 57 of 75 tests in four runs, on main e8b26f9 too); the floor image and macOS run all 75. A green Linux run hides tests that never ran: measure the cause, and make a run that ends short of its tests fail (the runner's test count against the file's). Cycle 38: node:22 stopped at 29 of 77 and 40 of 79; the node:22.0.0 image ran 77 of 77 once, then stopped at 48 of 79 twice: not limited to node:22 (a kept folder outside the repository)",
+      "source": "cycle 2026-11-15 (36) review of deps-unread-file-refused, author's node:22 runs, logs a kept folder outside the repository, linux3.log, linux3-main.log; cause not measured; amended cycle 2026-11-16 (38) review of ci-pr-ref-through-input, author's Linux runs"
     },
     {
       "status": "planned",
@@ -6379,8 +6368,8 @@
       "value": "medium",
       "cost": "S",
       "cluster": "docs",
-      "title": "DESIGN.md is at the fix-loop brake (cycle 36, a round-2 previous-fix in the security.deps.paths row): the row is one hand-written line of what the gate refuses, says and does not see, and each gate change adds a clause that drifts from the code; the held-link-target gap went in wider than measured (said when a package.json is staged, read when the target is itself a lock path: c36-t1-correctness-r2-01). Cycle 37 added one more: the Not-seen sentence on npm_config_* says only entries with no resolved can be sent to another registry, where npm 10.9.9 also fetches a registry.npmjs.org-resolved tarball from an overriding registry (environment or a user's registry=; integrity still binds the bytes) (c37-t1-correctness-r2-01). Decide on the top two rungs: a test that holds each listed shape to a cell of test/verdicts/deps.json (a construct that refuses a sentence it cannot tie to a cell), or remove the need (the said/refused lists written from the verdict corpus); or say the limit and decline the rest. No patch nodes",
-      "source": "cycle 2026-11-15 (36) convergence: fix-loop brake, skills/cycle/report-formats.md; amended cycle 2026-11-16 (37) convergence"
+      "title": "DESIGN.md is at the fix-loop brake (cycle 36, a round-2 previous-fix in the security.deps.paths row): the row is one hand-written line of what the gate refuses, says and does not see, and each gate change adds a clause that drifts from the code; the held-link-target gap went in wider than measured (said when a package.json is staged, read when the target is itself a lock path: c36-t1-correctness-r2-01). Cycle 37 added one more: the Not-seen sentence on npm_config_* says only entries with no resolved can be sent to another registry, where npm 10.9.9 also fetches a registry.npmjs.org-resolved tarball from an overriding registry (environment or a user's registry=; integrity still binds the bytes) (c37-t1-correctness-r2-01). Decide on the top two rungs: a test that holds each listed shape to a cell of test/verdicts/deps.json (a construct that refuses a sentence it cannot tie to a cell), or remove the need (the said/refused lists written from the verdict corpus); or say the limit and decline the rest. No patch nodes Cycle 38 adds the security.ci.paths row: three of the cycle's five claim-outruns-evidence rows were its sentences (a whole object as JSON, a held hand-off, then the reach clause naming 'a file that callee reaches' where only the CI files of the walk count: c38-t1-security-r2-01, round 2 previous-fix). The cycle-38 run bound each new ci sentence to a cell of test/verdicts/ci.json by hand (Fable's rule): the decision covers both rows",
+      "source": "cycle 2026-11-15 (36) convergence: fix-loop brake, skills/cycle/report-formats.md; amended cycle 2026-11-16 (37) convergence; amended cycle 2026-11-16 (38) convergence"
     },
     {
       "status": "planned",
@@ -6488,17 +6477,6 @@
       "status": "planned",
       "needs": [],
       "since": 37,
-      "id": "deps-env-registry-unread",
-      "value": "medium",
-      "cost": "M",
-      "cluster": "security",
-      "title": "npm's environment layer (npm_config_registry, npm_config_scope, set by CI or exported by a parent npm to its lifecycle scripts) outranks the project's .npmrc, and no commit hook can read the environment npm ci later runs in (measured npm 10.9.9, a kept folder outside the repository; integrity still binds the bytes, nested2.sh). Question for Fable: is DESIGN's Not-seen line the answer, or does security.ci read workflow env and setup-node registry-url for these keys?",
-      "source": "cycle 2026-11-16 (37) review of deps-said-entries-refused, author's proposed node and security r1 (c37-t1-security-r1-02)"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 37,
       "id": "deps-said-reasons-pinned",
       "value": "high",
       "cost": "S",
@@ -6507,6 +6485,41 @@
       "sourceClass": "unproven-input-said-passes",
       "title": "A test lists every reason key judgeEntry and depsMessages may return as said for a new lock entry (today bundled, shrinkwrap, noResolvedUnread and the registry's no-answer), each with why npm fetches nothing it did not prove or why the user decided so, and fails when a new said key appears: in cycle 37 two said keys (unproven, noResolvedUser) let through entries npm installs (c37-t1-audit-r0-01, -02). Then delete the prose in DESIGN.md that lists what is said by hand",
       "source": "cycle 2026-11-16 (37) convergence: recurring class unproven-input-said-passes (2 rows, tied with claim-outruns-evidence and doc-lags-code, whose two rows went to deps-row-wording-design-decision)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 38,
+      "id": "ci-pr-code-design-decision",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "title": "checks/ci.mjs is at the fix-loop brake (cycle 38: round 2 found two previous-fix rows on lines round 1 wrote). The pull request's code is found by hand-reading GitHub's expression language and the YAML around it (prExpression, PR_REF, the tainted names, local paths), and each fix finds the next spelling. Leftovers: the ref:/repository: key matched in one case while input names are read without case (c38-t1-author-r0-03); a step env: holding the ref on a local action is not tainted in the callee (c38-t1-author-r0-04); no test pins that a with: belongs to its own step's uses (c38-t1-correctness-r1-03); a local uses read only as ./ while the runner also takes .\\ (c38-t1-security-r1-03, pre-existing); flags under head (head.repo.fork) refused as code (c38-t1-correctness-r2-03). Gaps beside them: a matrix value holding the head, env.h where H is set, $/ self-repository uses (runner feature flag), toJSON(github.event.*), fromJSON(env.X) of a JSON env, taint through $( … ), a toJSON(github) env on a line that fetches main refused. Decide on the top two rungs: a construct that refuses what it cannot read (an allow list of the expressions a pull_request_target workflow may hand on, everything else refused), or remove the need (refuse any local hand-off of github.event under pull_request_target, or judge with GitHub's own expression parser); or say the limit and decline the rest. No patch nodes",
+      "source": "cycle 2026-11-16 (38) review of ci-pr-ref-through-input; convergence fix-loop brake, skills/cycle/report-formats.md"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 38,
+      "id": "ci-test-staged-state-asserted",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "tests",
+      "mechanization": true,
+      "sourceClass": "test-built-on-assumption",
+      "title": "test/ci.test.mjs is at rung 2 (previous-fix rows in cycles 36 and 38): its hook tests build the staged state with hand-written git steps and trust it, and a step that left a file in place (git rm --cached, then a later add restaging it) made a test check a state it never reached (c38-t1-author-r2-01). A test or helper that asserts the index (git ls-files --stage) matches the set each hook test means before it commits",
+      "source": "cycle 2026-11-16 (38) review of ci-pr-ref-through-input; convergence recurrence ladder, rung 2"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 38,
+      "id": "reference-ay-add-split",
+      "value": "low",
+      "cost": "S",
+      "cluster": "tests",
+      "title": "node test/reference/actions-yaml.mjs add fetches, restores, builds and runs in one call, which cannot fit a 10-minute foreground limit when NuGet stalls (restore hung 9 minutes on a cut download, twice, 2026-11-16): split it into steps with a kept restore volume, as the cycle-38 author's ay-split.mjs did (a kept folder outside the repository)",
+      "source": "cycle 2026-11-16 (38) review of ci-pr-ref-through-input, author's proposed node"
     }
   ],
   "done": [
@@ -7477,6 +7490,13 @@
       "status": "done",
       "finished": "2026-11-16",
       "cluster": "security"
+    },
+    {
+      "id": "ci-pr-ref-through-input",
+      "title": "security.ci refuses, under pull_request_target, a with: value holding the pull request's code handed to a local action or reusable workflow under any input's name (ref: and repository: included, one finding each; also from a callee reached from one), and a held hand-off when the commit brings a CI file its callee reaches (ci.pwnReach names the file); prExpression also reads toJSON of the pull request, the event or github, and no longer counts the pull request's ids, counts, flags, times and enums (NO_CODE); DESIGN.md's ci row, docs/modules.md, catalogs; test/verdicts/ci.json 499 to 529 cells, none of the 499 moved; actions-yaml reference 24 cells; one-task run, cycle 38 (f9e7090)",
+      "status": "done",
+      "finished": "2026-11-16",
+      "cluster": "security"
     }
   ],
   "declined": [
@@ -7656,6 +7676,18 @@
       "source": "T4 correctness review round 1, cycle 2026-11-14 (34): counted, not listed (low confidence); labs stop-after-pass.mjs, nodetest-late-stop.mjs",
       "since": 34,
       "reason": "Low confidence, counted and not listed (skills/cycle/finding-schema.md): only a stand-in child that exits 0 reached it, while real node --test exits 1 on a stop even after its tests passed, which leaves the instant between the child's exit and its close event."
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 37,
+      "id": "deps-env-registry-unread",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "title": "npm's environment layer (npm_config_registry, npm_config_scope, set by CI or exported by a parent npm to its lifecycle scripts) outranks the project's .npmrc, and no commit hook can read the environment npm ci later runs in (measured npm 10.9.9, a kept folder outside the repository; integrity still binds the bytes, nested2.sh). Question for Fable: is DESIGN's Not-seen line the answer, or does security.ci read workflow env and setup-node registry-url for these keys?",
+      "source": "cycle 2026-11-16 (37) review of deps-said-entries-refused, author's proposed node and security r1 (c37-t1-security-r1-02)",
+      "reason": "Fable, 2026-11-16: an entry with no integrity is already an error (checks/deps.mjs:1439-1440) and every entry that passes is sealed to its bytes; a full reader of the environment layer cannot be built (workflow env, repository and organization variables, the runner, a parent npm, the shell, --registry), and it would be a second hand-made model of npm's config layers; DESIGN.md's Not-seen line is the answer."
     }
   ]
 }

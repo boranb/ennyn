@@ -2,6 +2,7 @@
 
 ## Unreleased (0.0.x)
 
+- Security: `security.ci` refuses, under `pull_request_target`, a `with:` value holding the pull request's ref (also `toJSON` of the pull request, the event or `github`), under any input's name, `ref:` included, handed to a local action or reusable workflow; a hand-off HEAD already holds is refused when the commit brings a CI file its callee reaches, naming that file. The pull request's ids, counts, flags, times and enums no longer count as its code.
 - Security: `security.deps` refuses a new lock entry whose `resolved` is on a listed registry's origin but not npm's tarball right after a listed URL, spelt as npm writes it (another repository, GitHub Packages' `/download/`, GitLab's project registry, `%2Etgz`, `%2D`), unless `security.deps.sources` names it; an entry with no `resolved` is refused when the `.npmrc` beside the lock leaves `scope` or its `@scope:registry` to a user's config, and the hint prints the lines that decide it (`registry=<url>/` and `scope=`, or `@scope:registry=<url>/`); a version 1 entry with no `resolved` is refused.
 - Security: `security.deps` refuses a lock file or `.npmrc` the commit brings that npm reads and the check cannot (not UTF-8 text, a symbolic link, past 16 MB), as `security.ci` does for a workflow; the same file HEAD holds and the commit leaves alone is still said. A lock or `.npmrc` HEAD holds as a link whose target the commit changes is not judged (DESIGN.md, Not seen).
 - `security.ci`, `security.deps`: an entry `git add -N` left as a link or a submodule is no longer refused as brought.
