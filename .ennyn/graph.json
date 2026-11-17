@@ -6319,17 +6319,6 @@
       "status": "planned",
       "needs": [],
       "since": 36,
-      "id": "headless-run-keeps-turn",
-      "value": "high",
-      "cost": "S",
-      "cluster": "cycle",
-      "title": "In a terminal runner (claude -p) the orchestrator's background agents and commands die about 10 minutes after its turn ends: an author's tool call came back rejected (13:46 -> 13:56Z) and its mutation run was killed (14:53 -> 15:03Z), cycle 36. skills/cycle/one-task.md and task-brief.md say the orchestrator stays in its turn while an agent works (the Agent call in the foreground, or a wait on the agent's transcript in foreground calls under 10 minutes), and an agent keeps its own long jobs waited for in the foreground. Release need from 2026-11-17 (Fable): the release's own runs hit it",
-      "source": "cycle 2026-11-15 (36) review of deps-unread-file-refused, orchestrator's measurement (two windows of 10 min to the second; the mechanism is a guess); state in a kept folder outside the repository"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 36,
       "id": "staged-versions-ita-design-decision",
       "value": "medium",
       "cost": "S",
@@ -6631,6 +6620,30 @@
       "cluster": "security",
       "title": "The hook's first location check applies machineFault in its catch instead of letting the commit through on any error (audit lead hook-location-catch-passes-picked-errno: an argument-list-too-long error from an oversized author name on an amended commit; a few hundred bytes of window on macOS with a ~1 MiB ident). Measure first whether git exports GIT_AUTHOR_* to hooks; the fix changes every commit's failure path, so after the tag",
       "source": "cloudflare/security-audit-skill quick run of 2026-11-17 (static-only, target 84cecfc, kept research folder 2026-11-17-cloudflare/run-1), triaged by Fable the same day"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 42,
+      "id": "snapshot-script-inline-refused",
+      "value": "low",
+      "cost": "S",
+      "cluster": "cycle",
+      "title": "task-brief.md's snapshot script (Keeping the work), run inline as sh -c '…', came back refused in a terminal runner (Claude Code 2.1.310: could not check the script for dangerous removals); written to a file and run as sh <file> it ran. The text says to save it to a file in the kept folder and run it from there, or ships it as a script",
+      "source": "cycle 2026-11-17 (42) author of headless-run-keeps-turn, measured in its worktree"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 42,
+      "id": "turn-wait-command",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "cycle",
+      "mechanization": true,
+      "sourceClass": "tool-model-drifts",
+      "title": "skills/cycle/task-brief.md reached rung 2 in cycle 42 (9 previous-fix rows; recurring class tool-model-drifts, 5 rows): its 'Its turn' bullet and 'Long jobs' row describe Claude Code's runtime from reading (meta.json finished, parentAgentId, the print-mode ceiling, a call moved to the background, the blocked leading sleep), and each round found the tool answering otherwise. Cause: the method text models a tool's internals in prose. Next rung, a construct: an ennyn.mjs wait <agent id | exit file> command does the bounded foreground wait (finished, child transcripts, the exit file, the bound) and says unmeasured on a meta or transcript shape it cannot read, tested against recorded 2.1.310 transcripts; task-brief.md then names the command and drops the tool's fields",
+      "source": "cycle 2026-11-17 (42) convergence: recurring class tool-model-drifts, rung 2 on skills/cycle/task-brief.md"
     }
   ],
   "done": [
@@ -7633,6 +7646,13 @@
     {
       "id": "push-ask-never-holds-turn",
       "title": "Under push.mode ask a push never holds a turn: skills/cycle/push.md step 3 ends the closing first (report, handoff, journal close, then journal wait \"push: N commits, <hash>\" as the turn's last call) and asks the push question as its last words, nothing waiting on it; a waiting push holds nothing (journal start drops the line, the next closing writes it again with the new count, one later push sends all of it); git push only on a yes in the same exchange, HEAD still the hash asked about, alone and the turn's last call, the same push retried once outside the sandbox on that yes; never on an earlier or standing yes (that is after-closing). SKILL.md section 1 and step 7, report-formats.md's Push line, handover.md (route (1) plan mode in a later turn), journal.md; init's push question names each answer's cost, under after-closing that a bare push needs no yes at any other time, tested or not. Pins in test/plugin.test.mjs, 21 guards; review 2 rounds; one-task run, cycle 41 (43ce98c)",
+      "status": "done",
+      "finished": "2026-11-17",
+      "cluster": "cycle"
+    },
+    {
+      "id": "headless-run-keeps-turn",
+      "title": "In a terminal runner the orchestrator keeps its turn while work runs: skills/cycle/task-brief.md 'Its turn' (claude -p stops background work CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS after the last turn, 600000 ms in Claude Code 2.1.310, read in the binary; cycle 36's two losses match it; the Agent call in the foreground or bounded foreground waits on subagents/agent-<id>.meta.json finished or the job's exit file, then the agent's last message read; SendMessage clears finished; 30 minutes with no line in its or a child's transcript is Lost or waiting; the runner keeps the default ceiling) and the 'Long jobs' row for authors and reviewers (bounded poll loops, a call moved to the background is no wait, a background job's own timeout, a rejected call retried once only under CLAUDE_CODE_SESSION_ATTENDED=0, a refusal with a reason answered by it); one-task.md points there. Pins in test/plugin.test.mjs, 21 guards; review 2 rounds; one-task run, cycle 42 (011ba7b)",
       "status": "done",
       "finished": "2026-11-17",
       "cluster": "cycle"
