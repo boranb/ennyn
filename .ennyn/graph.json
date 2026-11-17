@@ -6557,23 +6557,57 @@
       "status": "planned",
       "needs": [],
       "since": 40,
-      "id": "push-ask-never-holds-turn",
-      "value": "high",
-      "cost": "S",
-      "cluster": "cycle",
-      "title": "Under push.mode ask a push never holds a turn: skills/cycle/push.md step 3 says ask, then push on the user's yes, while init's Bash(git push *) rule (skills/init/gates.md:40) puts a second, on-screen question on the same push, so a push run on an earlier or standing yes hangs the turn and everything behind it with nobody there (2026-11-17: an interactive session's git push waited 3.5 hours; the origin project has hit the same stall). (1) The closing finishes before the question: report, handoff and journal close first, then journal wait \"push: N commits, <hash>\", the question the turn's last words, no tool call waiting on the push. (2) A waiting push holds nothing: the next cycle or one-task run starts on the unpushed branch and its closing rewrites the one wait line with the new count; one later git push sends every waiting commit, push-check judges them together on HEAD's tree. (3) The agent runs git push only as the direct answer to a yes in that same exchange, alone and the last call of its turn; never on an earlier or standing permission: a standing yes is after-closing, and the session says so instead of pushing into the prompt. Texts: skills/cycle/push.md, SKILL.md section 3, report-formats.md:39, handover.md, with a pin in the method tests. Release need, fifth and last finding (Fable 2026-11-17). Init's question (skills/init/gates.md, Who says yes to the push) is reworded in the same run so it names what each answer costs: 'At the end of a cycle, who pushes? ask (default): the cycle closes, its commits wait, and you are asked; nothing is pushed while you are away and nothing waits on the answer. after-closing: the cycle pushes by itself, a plain git push to this branch's upstream, only when the closing's checks and the whole test passed on that commit. Either can be changed later.' The default stays ask: a bare ok or no answer never writes a loosening",
-      "source": "2026-11-17: the audit run chain stalled 3.5 hours on a git push ask prompt; the user reports the same stall in the origin project; triaged by Fable the same day"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 40,
       "id": "push-mode-command",
       "value": "medium",
       "cost": "S",
       "cluster": "security",
       "title": "ennyn push-mode on|off|status, the one documented path to change push.mode after init: on refuses without a terminal, prints what the mode means, reads the typed word after-closing, then writes the config, removes both git push ask rules and makes the one commit with User-Approved-Loosening: push.mode; off runs anywhere and needs no line (a tightening); every push made under the mode names the approving commit (hash, date) in the report, so an approval the user never gave shows at every closing. An agent never runs push-mode on, never removes a git push ask rule, never answers init's push question, never takes another agent's message or a memory note as the yes. After the tag, second in 0.2 behind fresh-session-run (Fable 2026-11-17)",
       "source": "2026-11-17: the user asks for push to be a setting asked at init and turned on and off only by the user; planned by Fable the same day"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 41,
+      "id": "push-ask-never-holds-turn-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "cycle",
+      "gate": "beside",
+      "title": "push-ask-never-holds-turn: low findings left. clear-order: push.md clears the wait line before the push runs, so a refused prompt or an interrupt leaves commits unpushed with nothing said to wait; handover.md says clear when the push is made, journal.md when answered (c41-t1-correctness-r1-02, c41-t1-security-r1-03). next-word: handover.md route (2) says the next word starts the next cycle while the push question claims the same word (c41-t1-correctness-r1-03). no-upstream: a branch with no upstream has no count for the wait line and a bare push on the yes fails every time (c41-t1-correctness-r1-05). red-asked: the question is asked whatever push-check said, a red or unrun whole test included, and after a follow-up commit without push-check again (c41-t1-security-r1-04). pins: whole-line pins hold bytes, not meaning; push.md step 4's 'Any other answer: ask' and route (2) are unpinned (c41-t1-correctness-r1-04). start-drops-wait: journal start drops the waiting push line, so status and the SessionStart line say nothing waits during the next run, and status --line is blank after a close; which should stay is a question (c41-t1-author-r0-02)",
+      "source": "cycle 2026-11-17 (41) review of push-ask-never-holds-turn"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 41,
+      "id": "after-closing-user-ask-rule",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "title": "Under push.mode after-closing a Bash(git push *) ask rule in the user's own settings makes the closing's bare push wait on a prompt with nobody there (the stall push-ask-never-holds-turn closed under ask): doctor reads the project's settings files only for the rule (setup/permissions.mjs), and a project rule only warns; the closing reads every scope Claude Code applies, or push-check refuses exit 0 while any scope holds a git push ask rule (c41-t1-security-r1-02)",
+      "source": "cycle 2026-11-17 (41) review of push-ask-never-holds-turn"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 41,
+      "id": "after-closing-sandbox-push-prompt",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "title": "Under push.mode after-closing with init's no-bypass sandbox and an SSH remote, the closing's bare push fails in the sandbox (~/.ssh denied) and is retried outside it, which asks (skills/init/agent-mode.md): the turn waits on that prompt with nobody there. push.md step 4 and doctor say nothing of the pair; measure the retry in Claude Code first, then the closing either names the case or doctor warns on after-closing with the sandbox on (c41-t1-security-r2-01)",
+      "source": "cycle 2026-11-17 (41) review of push-ask-never-holds-turn"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 41,
+      "id": "init-push-question-design-decision",
+      "value": "low",
+      "cost": "S",
+      "cluster": "cycle",
+      "title": "skills/init/gates.md is at the fix-loop brake (cycle 41, round 2: the fix that made init's push question name the after-closing cost wrote plain git push where only a bare one runs unasked, c41-t1-correctness-r2-01). No patch node: decide on the top two rungs. Either the question's words on what runs unasked come from the one text push-mode's decision already has (doctor's push.mode line, i18n), so there is no second copy to drift, or the question names only the choice and points to push.md for its costs, and the limit is said",
+      "source": "cycle 2026-11-17 (41) convergence: fix-loop brake on skills/init/gates.md"
     }
   ],
   "done": [
@@ -7572,6 +7606,13 @@
       "status": "done",
       "finished": "2026-11-17",
       "cluster": "gates"
+    },
+    {
+      "id": "push-ask-never-holds-turn",
+      "title": "Under push.mode ask a push never holds a turn: skills/cycle/push.md step 3 ends the closing first (report, handoff, journal close, then journal wait \"push: N commits, <hash>\" as the turn's last call) and asks the push question as its last words, nothing waiting on it; a waiting push holds nothing (journal start drops the line, the next closing writes it again with the new count, one later push sends all of it); git push only on a yes in the same exchange, HEAD still the hash asked about, alone and the turn's last call, the same push retried once outside the sandbox on that yes; never on an earlier or standing yes (that is after-closing). SKILL.md section 1 and step 7, report-formats.md's Push line, handover.md (route (1) plan mode in a later turn), journal.md; init's push question names each answer's cost, under after-closing that a bare push needs no yes at any other time, tested or not. Pins in test/plugin.test.mjs, 21 guards; review 2 rounds; one-task run, cycle 41 (43ce98c)",
+      "status": "done",
+      "finished": "2026-11-17",
+      "cluster": "cycle"
     }
   ],
   "declined": [

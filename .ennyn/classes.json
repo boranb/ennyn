@@ -417,7 +417,8 @@
         "new: heuristic position rule too wide",
         "new: shell expansion not modelled",
         "new: program runs its words",
-        "new: chosen command stored where commands are not read"
+        "new: chosen command stored where commands are not read",
+        "new: check reads one settings scope of several"
       ]
     },
     {
@@ -657,7 +658,8 @@
         "new: recursive helper without declared type",
         "new: written file left out of the commit list",
         "new: branch decided by an answer asked in the same message",
-        "new: earlier answers not consulted on rerun"
+        "new: earlier answers not consulted on rerun",
+        "new: state dropped at a reset"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet.",
       "nodes": [
