@@ -1,6 +1,6 @@
 {
  "version": 1,
- "code": "b43506bdd9ea80e199234802c2edd258394bdf33dd36607f3349ce8e3f0acac2",
+ "code": "b32beee16035a466d3a3e1aaaa10e1320d546e0614277fd795a097e8574a4062",
  "tests": {
   "test/agents.test.mjs": {
    "reads": [
@@ -559,6 +559,7 @@
     "test/reference/precompact.mjs",
     "test/reference/pretooluse.mjs",
     "test/repo-facts.mjs",
+    "test/report-formats-walk.test.mjs",
     "test/run.mjs",
     "test/run.test.mjs",
     "test/secret-setup.test.mjs",
@@ -570,6 +571,7 @@
     "test/short.test.mjs",
     "test/side-copy.test.mjs",
     "test/style.test.mjs",
+    "test/tally.mjs",
     "test/verdicts.mjs",
     "test/verdicts.test.mjs",
     "test/worktree-oracle.test.mjs",
@@ -1167,6 +1169,7 @@
     "test/reference/pretooluse.json",
     "test/reference/pretooluse.mjs",
     "test/repo-facts.mjs",
+    "test/report-formats-walk.test.mjs",
     "test/run.mjs",
     "test/run.test.mjs",
     "test/secret-setup.test.mjs",
@@ -1178,6 +1181,7 @@
     "test/short.test.mjs",
     "test/side-copy.test.mjs",
     "test/style.test.mjs",
+    "test/tally.mjs",
     "test/verdicts.mjs",
     "test/verdicts.test.mjs",
     "test/verdicts/bans.json",
@@ -1447,6 +1451,7 @@
     "test/reference/precompact.mjs",
     "test/reference/pretooluse.mjs",
     "test/repo-facts.mjs",
+    "test/report-formats-walk.test.mjs",
     "test/run.mjs",
     "test/run.test.mjs",
     "test/secret-setup.test.mjs",
@@ -1458,6 +1463,7 @@
     "test/short.test.mjs",
     "test/side-copy.test.mjs",
     "test/style.test.mjs",
+    "test/tally.mjs",
     "test/verdicts.mjs",
     "test/verdicts.test.mjs",
     "test/worktree-oracle.test.mjs",
@@ -2155,12 +2161,25 @@
     "spawnSync sandbox-exec: no ENNYN_READS"
    ]
   },
+  "test/report-formats-walk.test.mjs": {
+   "reads": [
+    "i18n/en.json",
+    "skills/cycle/report-formats.md",
+    "test/findings.test.mjs",
+    "test/hermetic.mjs",
+    "test/hostile.mjs",
+    "test/report-formats-walk.test.mjs"
+   ],
+   "dirs": [],
+   "unseen": []
+  },
   "test/run.test.mjs": {
    "reads": [
     "test/hermetic.mjs",
     "test/hostile.mjs",
     "test/run.mjs",
-    "test/run.test.mjs"
+    "test/run.test.mjs",
+    "test/tally.mjs"
    ],
    "dirs": [],
    "unseen": []
@@ -2506,6 +2525,7 @@
     "test/reference/pretooluse.json",
     "test/reference/pretooluse.mjs",
     "test/repo-facts.mjs",
+    "test/report-formats-walk.test.mjs",
     "test/run.mjs",
     "test/run.test.mjs",
     "test/secret-setup.test.mjs",
@@ -2517,6 +2537,7 @@
     "test/short.test.mjs",
     "test/side-copy.test.mjs",
     "test/style.test.mjs",
+    "test/tally.mjs",
     "test/verdicts.mjs",
     "test/verdicts.test.mjs",
     "test/verdicts/bans.json",
