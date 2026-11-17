@@ -1926,8 +1926,11 @@ test("wrong object type: an entry that names a tree, a commit or a tag is the co
     assert.match(c.stderr, new RegExp(`does not load \\(an object of type ${kind}\\)`));
     assert.doesNotMatch(c.stderr, /what it loosens was not read/);
     assert.equal(r.commit("not typed").status, 1, `${kind}: HEAD's rules ran`);
+    // The user's line answers the loosening; the entry is still no file, which security.secrets refuses by name.
     const line = r.commit(`chore: x\n\n${LINE} ${CONFIG}\n`);
-    assert.equal(line.status, 0, `${kind}: the user's line names the file: ${line.stderr}`);
+    assert.doesNotMatch(line.stderr, /This commit loosens/, `${kind}: the user's line names the file: ${line.stderr}`);
+    assert.equal(line.status, 1, `${kind}: ${line.stderr}`);
+    assert.match(line.stderr, new RegExp(`security\\.secrets was not checked, so this commit is refused: "\\.ennyn/config\\.json" could not be read \\(an object of type ${kind} is staged there`));
   }
   // At the place the variable names, in a project with none at the default place.
   const moved = repo(null);

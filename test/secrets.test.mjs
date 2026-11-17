@@ -434,6 +434,106 @@ test("secrets: a submodule's new commit is no object this repository should hold
   rmSync(dir, { recursive: true, force: true });
 });
 
+test("secrets: a staged file entry that names no blob is the commit's own content: refused by name, the files beside it still read; a git that fails is said; HEAD's version unread cancels no hit", () => {
+  const { dir, commit } = repo();
+  const head = () => git(["rev-parse", "HEAD"], { cwd: dir });
+  const first = head();
+  const tree = git(["rev-parse", "HEAD^{tree}"], { cwd: dir });
+  const index = (/** @type {string} */ mode, /** @type {string} */ oid, /** @type {Buffer} */ name) =>
+    assert.equal(spawnSync("git", ["update-index", "--add", "-z", "--index-info"], { cwd: dir, input: Buffer.concat([Buffer.from(`${mode} ${oid}\t`), name, Buffer.from("\0")]) }).status, 0);
+  // The audit's fixture: a new entry `a` that names a tree, sorted before a new file with a token. git commits it.
+  index("100644", tree, Buffer.from("a"));
+  writeFileSync(join(dir, "z.txt"), `t = ${TOKENS.github}\n`);
+  git(["add", "z.txt"], { cwd: dir });
+  const added = commit("-m", "feat: x");
+  assert.equal(added.status, 1, added.stderr);
+  assert.match(added.stderr, /security\.secrets was not checked, so this commit is refused: "a" could not be read \(an object of type tree is staged there, not a file\)/);
+  assert.match(added.stderr, /z\.txt:1 \(github-token/);
+  assert.doesNotMatch(added.stderr, /not checked in \d+ staged path/);
+  assert.equal(head(), first, "nothing was committed");
+  // Changed to a commit object under a name git cannot be asked for: read by its objects, where git's own failure
+  // would read as the machine's.
+  git(["rm", "-q", "--cached", "a", "z.txt"], { cwd: dir });
+  const odd = Buffer.from([...Buffer.from("lib/"), 0xff, ...Buffer.from(".js")]);
+  const blob = (/** @type {string} */ text) => spawnSync("git", ["hash-object", "-w", "--stdin"], { cwd: dir, input: text, encoding: "utf8" }).stdout.trim();
+  const one = blob("one\n");
+  index("100644", one, odd);
+  assert.equal(commit("--no-verify", "-m", "feat: a file").status, 0);
+  index("100644", first, odd);
+  const changed = commit("-m", "feat: x");
+  assert.equal(changed.status, 1, changed.stderr);
+  assert.match(changed.stderr, /refused: "lib\/\ufffd\.js" could not be read \(an object of type commit is staged there, not a file\)/);
+  // Control: a git whose cat-file --batch fails, with every object a blob, is the machine's: said, the commit goes on.
+  index("100644", one, odd);
+  writeFileSync(join(dir, "z.txt"), `t = ${TOKENS.github}\n`);
+  git(["add", "z.txt"], { cwd: dir });
+  const bin = mkdtempSync(join(tmpdir(), "en-sec-type-bin-"));
+  const real = spawnSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).stdout.trim();
+  const fake = (/** @type {string} */ when) => writeFileSync(join(bin, "git"), `#!/bin/sh\ncase " $* " in ${when}) echo "fatal: injected" >&2; exit 128 ;; esac\nexec '${real}' "$@"\n`);
+  fake('*" --batch "*');
+  chmodSync(join(bin, "git"), 0o755);
+  writeFileSync(join(dir, "msg"), "feat: x\n");
+  const hook = () => spawnSync(process.execPath, [CLI, "commit-check", "--hook", "msg"], { cwd: dir, encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+  const machine = hook();
+  assert.equal(machine.status, 0, machine.stderr);
+  assert.match(machine.stderr, /security\.secrets was not checked in 1 staged path\(s\) \("z\.txt"\): git cat-file: fatal: injected/);
+  assert.doesNotMatch(machine.stderr, /refused/);
+  // HEAD's version of a file read by its objects fails: every hit of the new version counts (cycle 44's audit lead: the
+  // whole file was said unread at exit 0).
+  git(["rm", "-q", "--cached", "z.txt"], { cwd: dir });
+  index("100644", blob(`one\nt = ${TOKENS.npm}\n`), odd);
+  fake(`*" cat-file blob ${one} "*`);
+  const unread = hook();
+  assert.equal(unread.status, 1, unread.stderr);
+  assert.match(unread.stderr, /lib\/\ufffd\.js:2 \(npm-token/);
+  assert.match(unread.stderr, /HEAD's version of 1 staged path\(s\) \("lib\/\ufffd\.js"\) could not be read \(fatal: injected\)/);
+  // The types' own call failing: said by the hook, the files still read; by hand the command fails.
+  const plain = repo();
+  plain.put({ "y.txt": "one\n" });
+  assert.equal(plain.commit("--no-verify", "-m", "feat: y").status, 0);
+  plain.put({ "y.txt": "two\n" });
+  const asked = git(["rev-parse", ":y.txt"], { cwd: plain.dir });
+  writeFileSync(join(bin, "git"), `#!/bin/sh\ncase " $* " in *" --batch-check "*) in=$(cat); if [ "$in" = "${asked}" ]; then echo "fatal: injected" >&2; exit 128; fi; printf '%s\\n' "$in" | exec '${real}' "$@" ;; esac\nexec '${real}' "$@"\n`);
+  writeFileSync(join(plain.dir, "msg"), "feat: y\n");
+  const types = (/** @type {string[]} */ ...args) => spawnSync(process.execPath, [CLI, "commit-check", ...args, "msg"], { cwd: plain.dir, encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } });
+  const typesHook = types("--hook");
+  assert.equal(typesHook.status, 0, typesHook.stderr);
+  assert.match(typesHook.stderr, /security\.secrets was not checked for staged entries that name no file: the objects' types could not be read \(fatal: injected\); the files were still read\./);
+  const typesHand = types();
+  assert.equal(typesHand.status, 1, typesHand.stderr);
+  assert.match(typesHand.stderr, /fatal: injected/);
+  // With the types unread, an entry naming a tree sorted before a secret stops the stream: the content's failure,
+  // refused, not taken for the machine's (cycle 44 review). The fake fails every batch-check but stagedChanges', which
+  // asks for y.txt's HEAD object too.
+  const yOld = git(["rev-parse", "HEAD:y.txt"], { cwd: plain.dir });
+  plain.put({ "z.txt": `t = ${TOKENS.github}\n` });
+  git(["update-index", "--add", "--cacheinfo", `100644,${git(["rev-parse", "HEAD^{tree}"], { cwd: plain.dir })},a`], { cwd: plain.dir });
+  writeFileSync(join(bin, "git"), `#!/bin/sh\ncase " $* " in *" --batch-check "*) in=$(cat); case "$in" in *"${yOld}"*) ;; *) echo "fatal: injected" >&2; exit 128 ;; esac; printf '%s\\n' "$in" | exec '${real}' "$@" ;; esac\nexec '${real}' "$@"\n`);
+  const blind = types("--hook");
+  assert.equal(blind.status, 1, blind.stderr);
+  assert.match(blind.stderr, /the objects' types could not be read \(fatal: injected\)/);
+  assert.match(blind.stderr, /security\.secrets was not checked, so this commit is refused: "a", "msg", "z\.txt" could not be read \(git cat-file: cat-file wrote something other than the blob/);
+  // With the types unread and nothing but blobs staged, a stream git killed (memory pressure) is the machine's: said.
+  git(["rm", "-q", "--cached", "a"], { cwd: plain.dir });
+  plain.put({ "z.txt": "plain\n" });
+  writeFileSync(join(bin, "git"), `#!/bin/sh\ncase " $* " in *" --batch-check "*) in=$(cat); case "$in" in *"${yOld}"*) ;; *) echo "fatal: injected" >&2; exit 128 ;; esac; printf '%s\\n' "$in" | exec '${real}' "$@" ;; *" --batch "*) kill -9 $$ ;; esac\nexec '${real}' "$@"\n`);
+  const killed = types("--hook");
+  assert.equal(killed.status, 0, killed.stderr);
+  assert.match(killed.stderr, /the objects' types could not be read \(fatal: injected\)/);
+  assert.match(killed.stderr, /security\.secrets was not checked in 2 staged path\(s\) \("msg", "z\.txt"\): git cat-file: killed by SIGKILL/);
+  assert.doesNotMatch(killed.stderr, /refused/);
+  // With the types read, a header the stream rejects after all (an object gone between the two calls) is git's: said.
+  const zNew = git(["rev-parse", ":z.txt"], { cwd: plain.dir });
+  writeFileSync(join(bin, "git"), `#!/bin/sh\ncase " $* " in *" --batch "*) in=$(cat); case "$in" in *"${zNew}"*) for o in $in; do echo "$o missing"; done; exit 0 ;; esac; printf '%s\\n' "$in" | exec '${real}' "$@" ;; esac\nexec '${real}' "$@"\n`);
+  const gone = types("--hook");
+  assert.equal(gone.status, 0, gone.stderr);
+  assert.match(gone.stderr, /security\.secrets was not checked in 2 staged path\(s\) \("msg", "z\.txt"\): git cat-file: cat-file wrote something other than the blob: "[0-9a-f]+ missing"/);
+  assert.doesNotMatch(gone.stderr, /refused|types could not be read/);
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(plain.dir, { recursive: true, force: true });
+  rmSync(bin, { recursive: true, force: true });
+});
+
 test("secrets: doctor counts security.secrets among the rules only the hook checks, unless except names every path", async () => {
   const dir = mkdtempSync(join(tmpdir(), "en-sec-doc-"));
   git(["init", "-q", "-b", "main"], { cwd: dir });

@@ -11,7 +11,7 @@ import { readFileSync, readdirSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { CONFIG_PATH, loadConfig, ConfigError } from "../core/config.mjs";
-import { HOOK_INDEX_ENV, HOOK_READ_ENV, MISSING_OBJECT, NAMES_BUFFER, READ_BUDGET, blobBytes, diffGroups, git, gitMaybe, headCommit, hookElsewhere, indexEntries, indexKinds, indexNames, machineFault, mergeHeads, projectRoot, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, stagedVersionsEach, stateRoot, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
+import { HOOK_INDEX_ENV, HOOK_READ_ENV, MISSING_OBJECT, NAMES_BUFFER, READ_BUDGET, batchCheck, blobBytes, diffGroups, git, gitMaybe, headCommit, hookElsewhere, indexEntries, indexKinds, indexNames, machineFault, mergeHeads, projectRoot, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedVersions, stagedVersionsEach, stateRoot, streamStagedBlobs, streamStagedDiff, unpushedCount } from "../core/git.mjs";
 import { ends, jsonShown, shown, t, tShown, unshownEscaped } from "../core/i18n.mjs";
 import { matchAny } from "../core/glob.mjs";
 import { foldTarget, forbiddenResult, nameShown, secretErrors, shapeOf, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
@@ -225,6 +225,9 @@ function gateFailed(e, lang, unchecked, gate, key, vars = {}, brought = true) {
   else unchecked.push(t("cli.gateRefused", { gate, what: vars.paths ?? t("cli.gateWhatUnnamed", {}, lang), error }, lang));
 }
 
+/** The words streamStagedBlobs (core/git.mjs) stops with at a header that names no blob: the secret scan's one stream failure the content picks. */
+const NOT_A_BLOB = "cat-file wrote something other than the blob";
+
 /** Every item of `more` on the end of `list`: a list a file can make long is not spread into a call. @template T @param {T[]} list @param {T[]} more */
 const append = (list, more) => {
   for (const x of more) list.push(x);
@@ -289,6 +292,45 @@ async function secretScan(cwd, cfg, before, notUtf8, hook, brought) {
     else past.push(p);
   }
   if (past.length) say("cli.secretsPastBudget", { n: past.length, paths: namesShown(past), mb: READ_BUDGET / 1024 / 1024 });
+  // A read that fails or is stopped loses its own paths and the next one still runs. Each loss is weighed by who can
+  // pick it (gateFailed): one the commit's content can pick refuses the commit, by name; a fault of the machine is
+  // said, a line for each reason. By hand, saying it fails.
+  /** @type {Map<string, string>} */
+  const unread = new Map();
+  /** HEAD's version of a file read whole, not read: context, said (DESIGN.md principle 7). @type {Map<string, string>} */
+  const headUnread = new Map();
+  const lost = (/** @type {string[]} */ paths, /** @type {unknown} */ e, machine = machineFault(e)) => {
+    if (hook && !machine) return gateFailed(e, lang, unchecked, "security.secrets", "cli.secretsReadFailed", { paths: namesShown([...paths].sort()) });
+    for (const p of paths) unread.set(p, reason(e));
+  };
+  // A file's mode on an object that is no blob (`update-index --cacheinfo`; git commits it, and fsck calls the tree
+  // broken) is the commit's own content, which no read of a file's bytes can take: in cat-file's one stream it would
+  // stop the files after it, and read alone it fails as git's failure would. So the types are asked first, in one
+  // call: each such path refuses the commit by name and stays out of the reads, and the rest are read. A failure of
+  // this call is weighed as any read, and the reads go on without the types (`typesRead` false).
+  const typed = [...planned].filter((p) => changes.get(p)?.oid && !changes.get(p)?.newMissing);
+  let typesRead = true;
+  if (typed.length) {
+    try {
+      /** @type {Map<string, string>} */
+      const types = new Map();
+      for (const l of batchCheck(cwd, [...new Set(typed.map((p) => /** @type {any} */ (changes.get(p)).oid))], { env: process.env })) {
+        const m = /^([0-9a-f]+) (\w+) \d+$/.exec(l);
+        if (m) types.set(m[1], m[2]);
+      }
+      /** @type {Map<string, string[]>} */
+      const other = new Map();
+      for (const p of typed) {
+        const type = types.get(/** @type {any} */ (changes.get(p)).oid);
+        if (type && type !== "blob") other.set(type, [...(other.get(type) ?? []), p]), planned.delete(p);
+      }
+      for (const [type, paths] of other) lost(paths, new Error(t("cli.secretsNotBlob", { type }, lang)), false);
+    } catch (e) {
+      if (!hook) throw e;
+      typesRead = false;
+      gateFailed(e, lang, unchecked, "security.secrets", "cli.secretsTypesUnread");
+    }
+  }
   // A file the commit adds is read whole from cat-file (git's diff would hold each of its lines in memory to
   // compare with nothing), and so is a changed one whose HEAD object a partial clone lacks; the others from the diff,
   // by pathspec, in diffGroups' calls.
@@ -306,27 +348,29 @@ async function secretScan(cwd, cfg, before, notUtf8, hook, brought) {
     if (path !== current) scan.file((current = path));
     scan.line(n, bytes);
   };
-  // A read that fails or is stopped loses its own paths, said, and the next one still runs: a file git is slow to
-  // diff gets a call of its own (diffGroups), so it costs one limit, and is then read whole. By hand, saying it fails.
-  /** @type {Map<string, string>} */
-  const unread = new Map();
-  const lost = (/** @type {string[]} */ paths, /** @type {unknown} */ e) => {
-    for (const p of paths) unread.set(p, reason(e));
-  };
+  // A file git is slow to diff gets a call of its own (diffGroups), so it costs one limit, and is then read whole.
   /**
    * A changed file read whole by its objects, its new object's lines scanned as one file's, in place of what its
    * diff read before it stopped: a hit counts unless its secret is in the old object, which HEAD already holds
-   * (wherever the commit moves it). No old object (a partial clone lacks it): every hit counts, as in a file the
-   * commit adds.
+   * (wherever the commit moves it). No old object (a partial clone lacks it), or one that could not be read (said):
+   * every hit counts, as in a file the commit adds.
    * @param {string} p
    */
   const readWhole = (p) => {
     const c = /** @type {import("../core/git.mjs").StagedChange} */ (changes.get(p));
     // A submodule's commit holds no lines here.
     if (!c.oid) return;
+    /** @type {Buffer | null} */
+    let before = null;
+    if (c.oldOid && !c.oldMissing) {
+      try {
+        before = blobBytes(cwd, c.oldOid);
+      } catch (e) {
+        headUnread.set(p, reason(e));
+      }
+    }
     try {
       const fresh = blobBytes(cwd, c.oid);
-      const before = c.oldOid && !c.oldMissing ? blobBytes(cwd, c.oldOid) : null;
       scan.hits = scan.hits.filter((h) => h.path !== p);
       const from = scan.hits.length;
       scan.file((current = p));
@@ -346,12 +390,18 @@ async function secretScan(cwd, cfg, before, notUtf8, hook, brought) {
   try {
     // A change whose new object is not on this machine (a partial clone) is said, and git is not asked for it.
     const absent = [...planned].filter((p) => changes.get(p)?.newMissing);
-    if (absent.length) lost(absent, new Error(MISSING_OBJECT));
+    // The partial clone's, said as before: outside one git refuses to commit an entry whose object is missing (2.56.0:
+    // "invalid object"), before the hook runs.
+    if (absent.length) lost(absent, new Error(MISSING_OBJECT), true);
     const blobs = added.filter((p) => !changes.get(p)?.missing).sort();
     try {
       await streamStagedBlobs(cwd, blobs.map((p) => ({ path: p, oid: /** @type {any} */ (changes.get(p)).oid })), { env: process.env, onLine });
     } catch (e) {
-      lost(blobs, e);
+      // With the types read, every object here is a blob, so what stops the stream is git's: an exit, a signal, its
+      // limit, no start. Its error carries no status or signal for machineFault to read, so it is weighed here. With
+      // the types unread, one stop is the content's: a header that names no blob (NOT_A_BLOB, streamStagedBlobs'
+      // own words), refused; every other stop is still git's, said.
+      lost(blobs, e, typesRead || !String(/** @type {Error} */ (e)?.message).includes(NOT_A_BLOB));
     }
     const asked = changed.filter((p) => !unasked.has(p) && !changes.get(p)?.missing);
     for (const group of diffGroups(asked, changes)) {
@@ -370,6 +420,7 @@ async function secretScan(cwd, cfg, before, notUtf8, hook, brought) {
     scan.close();
   }
   for (const [why, paths] of byReason(unread)) say("cli.secretsReadFailed", { n: paths.length, paths: namesShown(paths.sort()), error: why });
+  for (const [why, paths] of byReason(headUnread)) say("cli.secretsHeadUnread", { n: paths.length, paths: namesShown(paths.sort()), error: why });
   try {
     // A path asked that no header named (a pathspec that matched nothing) was not read.
     const unseen = changed.filter((p) => !shownPaths.has(p) && !unread.has(p));
