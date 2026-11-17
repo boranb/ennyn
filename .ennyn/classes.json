@@ -113,6 +113,12 @@
           "file": "test/fault-fs.mjs",
           "action": "past-defects",
           "proof": "Every command runs with each file read failing, and must fail or say so."
+        },
+        {
+          "commit": "dc9a6e51975b7deda2ad20f3cdead59a3d35a352",
+          "file": "test/run.test.mjs",
+          "action": "red-green",
+          "proof": "The runners (npm test, test:short, its record) fail a run where a test file process ended before its run did or ran no test, read from a reporter tally per file. It holds no hand run of one file, and on Node before 22.12 no file ending after a top-level await."
         }
       ],
       "nodes": [
@@ -615,6 +621,12 @@
           "file": "test/method-walk.test.mjs",
           "action": "red-green",
           "proof": "The failure count of the cycle task brief is written as data and walked: one answer per state and event, every path ends within a measured bound, and every sentence of the section is claimed, with guard mutants. It holds that one section and no other procedure."
+        },
+        {
+          "commit": "4bd1817bf60c0d61686146ce31d54b301fd3be19",
+          "file": "test/report-formats-walk.test.mjs",
+          "action": "red-green",
+          "proof": "The convergence table and the By age list of the cycle report formats are written as data and tied by title to the tests that run each line, with guard mutants, so a line changed in the text or a test renamed fails until both follow. It holds that table and list and no other procedure."
         }
       ],
       "linked": [

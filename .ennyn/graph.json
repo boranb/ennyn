@@ -103,7 +103,9 @@
         "platform-run-before-landing",
         "headless-run-keeps-turn",
         "cycle-wake-lock",
-        "push-ask-never-holds-turn"
+        "push-ask-never-holds-turn",
+        "fault-slow-diff-linux-count",
+        "tally-late-registration"
       ],
       "gate": "user",
       "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release); read 2026-11-01: the post now opens 'Updated October 15 to include more detail on the projects that pioneered many of the techniques we use in Scion.', and The Pragmatic Engineer (2026-10-22) reports the attribution came after a public complaint; an audit of requests against the graph, 2026-11-01: five had no node in the release needs: a project started from nothing (a request, 2026-10-29: 15 nodes, 0 done), leftovers (a request, 2026-10-29: 14 nodes, 0 done), secrets in chat (a request, 2026-10-28: 12 nodes, 1 done), less code and no repetition (a request, a request, 2026-10-25), findings that can wait (a request, 2026-10-25). The smallest piece of each entered the needs. spec-gates' README: 'Spec Kit is a guidance layer'; 2026-11-05, the choice was left to the orchestrator: kill-own-pid-only, plugin-update-path and win-kill-waits-exit join the needs, observed on Windows; read 2026-11-15: book-to-skill's SECURITY-NOTICE.md (2026-08-17) names a re-upload under another account that sends host data out, reads wallet stores and ships a Windows executable",
@@ -4687,19 +4689,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "report-formats-walked",
-      "title": "A pointer test for skills/cycle/report-formats.md's 'One row, one column' table and 'By age' list: each row's number and condition named in the data and tied to findings.test.mjs's convergence-table tests, so a text change the tests do not follow fails; the walk itself already runs there",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "gates",
-      "mechanization": true,
-      "sourceClass": "procedure-leaves-case-open",
-      "source": "cycle 2026-11-05 (23), method-rules-walked's step two, left by T3 and its review (c23-t3-code-r1-07)",
-      "since": 23
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "method-walk-escalation-matrix",
       "title": "test/method-walk.test.mjs walks escalation's ran outcomes as rows of their own (another model, unknown, empty, exit 1, only the session's, stronger models) instead of two author kinds, cheaper and dropped",
       "value": "low",
@@ -6297,17 +6286,6 @@
       "status": "planned",
       "needs": [],
       "since": 36,
-      "id": "ci-test-silent-stop-node22",
-      "value": "high",
-      "cost": "S",
-      "cluster": "tests",
-      "title": "In the node:22 image (Node 22.23.5, git 2.39.5, user node) node --test test/ci.test.mjs ends partway with exit 0 and fail 0 (after 23, 35, 45 and 57 of 75 tests in four runs, on main e8b26f9 too); the floor image and macOS run all 75. A green Linux run hides tests that never ran: measure the cause, and make a run that ends short of its tests fail (the runner's test count against the file's). Cycle 38: node:22 stopped at 29 of 77 and 40 of 79; the node:22.0.0 image ran 77 of 77 once, then stopped at 48 of 79 twice: not limited to node:22 (a kept folder outside the repository)",
-      "source": "cycle 2026-11-15 (36) review of deps-unread-file-refused, author's node:22 runs, logs a kept folder outside the repository, linux3.log, linux3-main.log; cause not measured; amended cycle 2026-11-16 (38) review of ci-pr-ref-through-input, author's Linux runs"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 36,
       "id": "staged-versions-ita-design-decision",
       "value": "medium",
       "cost": "S",
@@ -6490,17 +6468,6 @@
     {
       "status": "planned",
       "needs": [],
-      "since": 39,
-      "id": "brief-force-exit-cuts-runs",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "method",
-      "title": "node --test --test-force-exit ends a run before tests registered after a top-level await, or in later files, finish, at exit 0, and the briefs' rule (every node --test run carries --test-force-exit) puts it on every run: in cycle 39 hook.test.mjs ran 45 of 71 top-level tests on Linux, setup + verdicts 87 of 126 and setup alone 109 of 111 on the Mac, ci once 75 of 80, and a --test-name-pattern run of hook.test.mjs ran 0 tests and passed. npm test and test:short do not use the flag. Change the rule (the flag off, or a count check that fails a short run) and the handoff's brief line; the ci-test-silent-stop-node22 stops may be the same cause",
-      "source": "cycle 2026-11-17 (39) review of message-unread-file-gates, author's proposed node (a kept folder outside the repository, linux2/summary.txt)"
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "since": 40,
       "id": "tests-real-home-writes-lows",
       "value": "low",
@@ -6519,7 +6486,7 @@
       "cost": "S",
       "cluster": "tests",
       "title": "test/fault-injection.test.mjs \"fault matrix: a file git is slow to diff is named unread…\" fails in node:22 (Linux, git 2.39.5, user node): it expects \"and 1 more adds what reads as a secret\", Linux prints \"and 2 more\"; red on 84cecfc too (twice each, a kept folder outside the repository), green on macOS. Cause not measured. Full npm run test:linux before the release is red until it is fixed",
-      "source": "cycle 2026-11-17 (40), author measurement while landing tests-real-home-writes (c40-t1-author-r1-02)"
+      "source": "cycle 2026-11-17 (40), author measurement while landing tests-real-home-writes (c40-t1-author-r1-02); a need of release-0-1-0 from cycle 44's closing (Fable, 2026-11-17: release step 3's npm run test:linux is red until it is fixed)"
     },
     {
       "status": "planned",
@@ -6587,17 +6554,6 @@
       "cluster": "cycle",
       "title": "skills/init/gates.md is at the fix-loop brake (cycle 41, round 2: the fix that made init's push question name the after-closing cost wrote plain git push where only a bare one runs unasked, c41-t1-correctness-r2-01). No patch node: decide on the top two rungs. Either the question's words on what runs unasked come from the one text push-mode's decision already has (doctor's push.mode line, i18n), so there is no second copy to drift, or the question names only the choice and points to push.md for its costs, and the limit is said",
       "source": "cycle 2026-11-17 (41) convergence: fix-loop brake on skills/init/gates.md"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 41,
-      "id": "secret-scan-unread-refused",
-      "value": "high",
-      "cost": "S",
-      "cluster": "security",
-      "title": "security.secrets weighs a failed read of brought content with gateFailed instead of saying it and passing: the audit's lead secret-scan-read-failure-said (a staged entry pointing at a directory object breaks the read; the hook warns and exits 0, so a secret in a file sorted after it goes unscanned) contradicts DESIGN principle 7 and SECURITY.md's 'the rest is still checked' on a default-on gate; a failed read of HEAD's old object no longer cancels the new object's hits. Measure first: the audit's variant-1 fixture as a red test; if git or the hook already refuses, decline with the measurement. Scope scripts/ennyn.mjs only, no otherType change in core/git.mjs (staged-versions-ita-design-decision). Release need beyond the five findings of the audit node, taken by Fable under the 2026-11-14 delegation",
-      "source": "cloudflare/security-audit-skill quick run of 2026-11-17 (static-only, target 84cecfc, kept research folder 2026-11-17-cloudflare/run-1), triaged by Fable the same day"
     },
     {
       "status": "planned",
@@ -6671,6 +6627,74 @@
       "sourceClass": "procedure-leaves-case-open",
       "title": "skills/cycle/handover.md reached rung 2 (procedure-leaves-case-open in cycles 41 and 43: a closing step with no word for one of its states: the push's wait line cleared before the push ran, the wake stop for a held session with no record). Cause: the closing's steps are prose, each written for the case at hand, and nothing lists the states a step meets. Next rung above the prose rule: a test that detects: as test/method-walk.test.mjs does for the failure count, a table of the closing's states (push waiting or not, wake record there or not, session held or not, journal open or closed) with the line of handover.md, push.md or task-brief.md each state reads, failing when a state has none",
       "source": "cycle 2026-11-17 (43) closing: convergence's rung 2 on skills/cycle/handover.md"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 44,
+      "id": "tally-late-registration",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "tests",
+      "title": "On Node before 22.12 (node:22.0.0, the floor image npm run test:linux runs first, and 22.3 to 22.9) no per-file summary comes, so the count check reads queued against ended top-level tests: a file whose process ends after a top-level await, before it registers the rest of its tests, still passes (test/run.test.mjs asserts that pass as the stated limit; measured in node:22.0.0 and node:22.9.0, cycle 44). Three files register after a top-level await (eval-selftest, worktrees, hook). Close it on the floor, or make the floor image's run fail loud",
+      "source": "cycle 2026-11-17 (44) review of ci-test-silent-stop-node22 (c44-t2-code-r1-02) and the author's proposed node; Fable, 2026-11-17: go, joins release-0-1-0 as the floor residue of ci-test-silent-stop-node22"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 44,
+      "id": "verdicts-non-blob-entry",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "title": "The verdict corpus (test/verdicts.mjs) can stage a symlink or a gitlink but no file-mode entry naming a tree, commit or tag, so security.secrets' refusal of such an entry (cycle 44) is pinned only by test/secrets.test.mjs: add that input form and its cells (a tree entry before and after a secret, the type check failed with a tree entry before a secret)",
+      "source": "cycle 2026-11-17 (44) secret-scan-unread-refused: author and both reviewers (probes in the kept folder cycle-44 rev/t1-code/lab and rev/t1-sec/lab)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 44,
+      "id": "stream-blobs-error-status",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "title": "core/git.mjs streamStagedBlobs rejects with no exit status or signal, so machineFault cannot weigh it, and secretScan tells a stream stopped at a non-blob header only by the stream's message text (NOT_A_BLOB in scripts/ennyn.mjs copies core/git.mjs's words). Rung-up action for scripts/ennyn.mjs (convergence rung 2, cycle 44: previous-fix rows of the secret scan's read weighing): a typed stream error (notBlob, exit, signal, silence) read by kind, never by text. One measured row inside it: the stream's 60 s silence limit is also reached when the scanner itself is slow (7 s for 64 MB idle, about 1.3x margin under the 6x load slowdown a comment records) and is then read as git's fault: measure scan time on the floor image under load",
+      "source": "cycle 2026-11-17 (44) secret-scan-unread-refused: author's proposed node, security review r1 evidence gap 2, closing's rung 2 on scripts/ennyn.mjs; Fable, 2026-11-17: go"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 44,
+      "id": "test-hand-run-count",
+      "value": "low",
+      "cost": "S",
+      "cluster": "tests",
+      "title": "A hand run of one test file (node --test x.test.mjs, as briefs and container runs use) has no count check; let node test/run.mjs take files so a brief's hand run gets the same tally (test/tally.mjs) and fails a run that ends short",
+      "source": "cycle 2026-11-17 (44) ci-test-silent-stop-node22: author's impact table, left-out piece; Fable, 2026-11-17: go"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 44,
+      "id": "commit-shape-one-composition",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "gates",
+      "title": "Since 85c51a7, checkCommitShape and withSecrets (checks/commit-shape.mjs) have no production caller: commit-check --hook composes shapeOf, secretErrors and forbiddenResult itself, while 108 test uses exercise the other composition, which the hook never runs; docs/modules.md:21 still presents checkCommitShape as the entry point. Remove the second copy: the hook calls one composition, or the composition goes and its tests move to the hook's; docs/modules.md follows",
+      "source": "cycle 2026-11-17 (44) security audit, lean item; Fable, 2026-11-17: go"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 44,
+      "id": "tally-event-shapes-recorded",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "tests",
+      "mechanization": true,
+      "sourceClass": "fix-narrows-reading",
+      "title": "test/tally.mjs and test/run.mjs reached convergence rung 2 (cycle 44: each round found another Node-version difference in node --test's reporter events: the file a helper's tests are named by, no per-file summary before 22.12, node's own entry for a file with no test). Cause: the check reads reporter events whose shape differs by Node version, designed before each version was measured. Rung-up action, a construct that refuses: a Node-version allow list the tally checks before counting (an unmeasured version fails the run loud), fed by the recorded events of 22.0.0, 22.9, 22.12, 22.23 and 24 as a reference corpus replayed by a test of the tally",
+      "source": "cycle 2026-11-17 (44) closing: convergence's rung 2 on test/tally.mjs and test/run.mjs; Fable, 2026-11-17: go, amended to the construct rung"
     }
   ],
   "done": [
@@ -7690,6 +7714,34 @@
       "status": "done",
       "finished": "2026-11-17",
       "cluster": "method"
+    },
+    {
+      "id": "secret-scan-unread-refused",
+      "title": "security.secrets weighs what it cannot read of brought content: one cat-file --batch-check asks the type of every planned new object first, a file-mode entry naming a tree, commit or tag is refused by name and left out of the reads so the files beside it are still scanned; each lost read is weighed (gateFailed refuses a content-picked failure, a machine fault is said); with the types unread, only a stream stopped at a header that names no blob is refused, told by the stream's own words (NOT_A_BLOB, a copy of core/git.mjs's text: stream-blobs-error-status), any other stop said; a failed read of HEAD's version is said and every hit of the new version counts. DESIGN principle 7 and SECURITY.md say so; test/secrets.test.mjs, one loosening.test.mjs expectation moved (an approval line approves a loosening, not an entry that is no file). Review 2 rounds, failures 1; cycle 44 (51b4d24)",
+      "status": "done",
+      "finished": "2026-11-17",
+      "cluster": "security"
+    },
+    {
+      "id": "ci-test-silent-stop-node22",
+      "title": "Cause measured: --test-force-exit drops the test file process's buffered stdout (23 to 59 KB) at the forced exit on Linux, so node --test read a cut report and passed the file at exit 0 (node:22 and node:22.0.0, 26 to 58 of 80; without the flag 80/80 three times each). npm test, test:short and its --record now run node --test with a reporter tally (test/tally.mjs) and fail a run where a test file's process ended before its run did (no summary of its own) or ran no test; on Node before 22.12, which sends no per-file summary, each queued top-level test must end and a file node passed for having no test fails. Measured in node:22.0.0, 22.9.0, 22.12.0, 22.23.5, 24.22.1. Review 2 rounds, failures 1; cycle 44 (dc9a6e5)",
+      "status": "done",
+      "finished": "2026-11-17",
+      "cluster": "tests"
+    },
+    {
+      "id": "report-formats-walked",
+      "title": "test/report-formats-walk.test.mjs writes skills/cycle/report-formats.md's 'One row, one column' table and 'By age' list as data (lead sentences, numbers, conditions, columns) tied by exact title to the test/findings.test.mjs tests that run them; drift in the text, the data or the titles fails (a row or item added, dropped, reworded, renumbered; an item after a blank line; a convergence-section title naming a line the data does not tie it to); 34 guards. No prose rule deleted: none existed only as prose. Mechanization for procedure-leaves-case-open. Review 2 rounds, failures 1; cycle 44 (4bd1817)",
+      "status": "done",
+      "finished": "2026-11-17",
+      "cluster": "gates"
+    },
+    {
+      "id": "brief-force-exit-cuts-runs",
+      "title": "Closed with ci-test-silent-stop-node22: the runners now fail a run that ends short (test/tally.mjs), and the handoff's brief line no longer asks for --test-force-exit (the flag cuts the report on Linux); hand runs compare # tests with the file's count (test-hand-run-count would give them the counted runner). Cycle 44 (dc9a6e5 and the closing)",
+      "status": "done",
+      "finished": "2026-11-17",
+      "cluster": "method"
     }
   ],
   "declined": [
@@ -7881,6 +7933,18 @@
       "title": "npm's environment layer (npm_config_registry, npm_config_scope, set by CI or exported by a parent npm to its lifecycle scripts) outranks the project's .npmrc, and no commit hook can read the environment npm ci later runs in (measured npm 10.9.9, a kept folder outside the repository; integrity still binds the bytes, nested2.sh). Question for Fable: is DESIGN's Not-seen line the answer, or does security.ci read workflow env and setup-node registry-url for these keys?",
       "source": "cycle 2026-11-16 (37) review of deps-said-entries-refused, author's proposed node and security r1 (c37-t1-security-r1-02)",
       "reason": "Fable, 2026-11-16: an entry with no integrity is already an error (checks/deps.mjs:1439-1440) and every entry that passes is sealed to its bytes; a full reader of the environment layer cannot be built (workflow env, repository and organization variables, the runner, a parent npm, the shell, --registry), and it would be a second hand-made model of npm's config layers; DESIGN.md's Not-seen line is the answer."
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 44,
+      "id": "report-formats-rules-walked",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "title": "Pointer data for skills/cycle/report-formats.md's paragraphs under the convergence table (Declined, Brief, A gate, Duplicates, New classes per round, Recurring class), each tied to its findings tests",
+      "source": "cycle 2026-11-17 (44) report-formats-walked, author's proposed node",
+      "reason": "Fable, 2026-11-17: the table's pointer test caught no drift on the real files when first written; more pointer data without a measured catch is not worth a slot"
     }
   ]
 }
