@@ -16,6 +16,8 @@ Asked for one task alone, the cycle takes it under the same protocol and closes 
 
 **The task** runs in a fresh agent on a common brief and a task brief, as a task of a cycle does, in a marked worktree ([task-brief.md](task-brief.md)); on a restart the consolidated brief replaces the task brief and the common brief stays. The session is the orchestrator: the plan, step 7, the verdicts, the failure count, the landing. The session that reruns a verdict's numbers and lands the commit is not the one that wrote it, and a restart takes a fresh agent anyway. A host with no subagents: as task-brief.md says.
 
+**A runner in a terminal** keeps its turn while the agent works: task-brief.md, What the orchestrator keeps, **Its turn**.
+
 **Protocol:** section 2 of `SKILL.md`, every step, split between the agent and the session as in a cycle.
 
 **Its number:** the run is a cycle of one task. It takes the next number after the handoff's last cycle, and the next cycle follows it. That number is every row's `cycle`, the rows' ids (`c<N>-t1-…`), the worktree mark (`ennyn:<N>`) and `ennyn.mjs convergence --cycle <N>`, so the command counts this run's rows and no other's. Under the last cycle's number, the counts of a closed cycle would change.
