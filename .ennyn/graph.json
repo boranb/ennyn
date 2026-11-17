@@ -1136,7 +1136,8 @@
         "deps-said-entries-refused",
         "ci-pr-ref-through-input",
         "message-unread-file-gates",
-        "tests-real-home-writes"
+        "tests-real-home-writes",
+        "secret-scan-unread-refused"
       ],
       "id": "external-audit-before-release",
       "title": "Before v0.1.0, run cloudflare/security-audit-skill at a pinned commit, read in full first, on Ennyn: standard profile, scoped to what ennyn audit lists, output outside the repository, with an agent budget the user sets. Confirmed findings are fixed, needs-validation ones become nodes, and its findings are compared with what Ennyn's own audits found, as a measure of what Ennyn's method misses Free route first: free scanners (Semgrep's free rules, gitleaks or trufflehog over history, OSV-Scanner), GitHub's free code and secret scanning once public, and a full pass of Ennyn's own security reviewers and labs; the report says what that route cannot cover (an independent outside eye), to be asked of the community after release. The user, 2026-11-11: a request. Absorbs history-secret-scan: the history pass of test/hygiene's findings() and secretHits() runs in the same step, right before the repository goes public. Its dependency on secret-held-today is dropped; that node waits for 0.2. Run 2026-11-15 on 42d3c77: gitleaks over 333 commits (one test template), OSV-Scanner (a suppressed advisory of a test-only probe), Semgrep's free rules (67 results, none to act on), four security reviewers (14 confirmed, 2 unvalidated). Fable's triage: five runs before the tag (the needs), the rest nodes; cloudflare/security-audit-skill runs once as the other method. Reports and decisions in the kept research folder 2026-11-15-audit",
@@ -5381,7 +5382,7 @@
       "status": "planned",
       "needs": [],
       "id": "kill-reader-design-decision",
-      "title": "The kill reader stops taking shape patches: decide, measured on the transcript replay, between an allow list (a small grammar read whole; a kill word in any text outside it refused, its over-refusals counted on the replay) and the reader as it stands under the habit threat model; then the push reader's open shape nodes get the same replay verdict (a shape no agent writes by habit is declined). Acceptance run 2026-11-15 (S6): pkill -0 <name> (signal 0, a liveness probe) is refused by the kill hook; count it as an over-refusal on the replay (pgrep and kill -0 <pid> pass)",
+      "title": "The kill reader stops taking shape patches: decide, measured on the transcript replay, between an allow list (a small grammar read whole; a kill word in any text outside it refused, its over-refusals counted on the replay) and the reader as it stands under the habit threat model; then the push reader's open shape nodes get the same replay verdict (a shape no agent writes by habit is declined). Acceptance run 2026-11-15 (S6): pkill -0 <name> (signal 0, a liveness probe) is refused by the kill hook; count it as an over-refusal on the replay (pgrep and kill -0 <pid> pass). Audit 2026-11-17 (cloudflare quick run): count on the replay a for- or read-bound PID-file key (for f in /tmp/*.pid; do kill $(cat \"$f\"); done passes where kill $(cat /tmp/*.pid) is refused) and kill-port@<spec> (npx kill-port@latest 3000 passes where npx kill-port 3000 is refused); no shape patches",
       "value": "high",
       "cost": "S",
       "cluster": "security",
@@ -6182,7 +6183,7 @@
     },
     {
       "id": "kill-bulk-stops",
-      "title": "The kill hook judges kill programs only: docker stop|kill|rm -f fed by a substitution, tmux kill-server, tmux kill-session -a, pm2 kill and delete|stop all, launchctl kill and osascript quit pass, and a PID file is trusted by shape (kill $(cat tmp/pids/server.pid) stops a server the agent did not start). Measure how often agents write these in the transcript corpus first; then refuse the bulk forms and trust PID files only under the state dir or the cycle's temp paths",
+      "title": "The kill hook judges kill programs only: docker stop|kill|rm -f fed by a substitution, tmux kill-server, tmux kill-session -a, pm2 kill and delete|stop all, launchctl kill and osascript quit pass, and a PID file is trusted by shape (kill $(cat tmp/pids/server.pid) stops a server the agent did not start). Measure how often agents write these in the transcript corpus first; then refuse the bulk forms and trust PID files only under the state dir or the cycle's temp paths. Audit 2026-11-17: a PID file read in a for or while-read loop is the same root (PID file trusted by shape)",
       "status": "planned",
       "value": "medium",
       "cost": "M",
@@ -6470,7 +6471,7 @@
       "value": "medium",
       "cost": "M",
       "cluster": "security",
-      "title": "checks/ci.mjs is at the fix-loop brake (cycle 38: round 2 found two previous-fix rows on lines round 1 wrote). The pull request's code is found by hand-reading GitHub's expression language and the YAML around it (prExpression, PR_REF, the tainted names, local paths), and each fix finds the next spelling. Leftovers: the ref:/repository: key matched in one case while input names are read without case (c38-t1-author-r0-03); a step env: holding the ref on a local action is not tainted in the callee (c38-t1-author-r0-04); no test pins that a with: belongs to its own step's uses (c38-t1-correctness-r1-03); a local uses read only as ./ while the runner also takes .\\ (c38-t1-security-r1-03, pre-existing); flags under head (head.repo.fork) refused as code (c38-t1-correctness-r2-03). Gaps beside them: a matrix value holding the head, env.h where H is set, $/ self-repository uses (runner feature flag), toJSON(github.event.*), fromJSON(env.X) of a JSON env, taint through $( … ), a toJSON(github) env on a line that fetches main refused. Decide on the top two rungs: a construct that refuses what it cannot read (an allow list of the expressions a pull_request_target workflow may hand on, everything else refused), or remove the need (refuse any local hand-off of github.event under pull_request_target, or judge with GitHub's own expression parser); or say the limit and decline the rest. No patch nodes",
+      "title": "checks/ci.mjs is at the fix-loop brake (cycle 38: round 2 found two previous-fix rows on lines round 1 wrote). The pull request's code is found by hand-reading GitHub's expression language and the YAML around it (prExpression, PR_REF, the tainted names, local paths), and each fix finds the next spelling. Leftovers: the ref:/repository: key matched in one case while input names are read without case (c38-t1-author-r0-03); a step env: holding the ref on a local action is not tainted in the callee (c38-t1-author-r0-04); no test pins that a with: belongs to its own step's uses (c38-t1-correctness-r1-03); a local uses read only as ./ while the runner also takes .\\ (c38-t1-security-r1-03, pre-existing); flags under head (head.repo.fork) refused as code (c38-t1-correctness-r2-03). Gaps beside them: a matrix value holding the head, env.h where H is set, $/ self-repository uses (runner feature flag), toJSON(github.event.*), fromJSON(env.X) of a JSON env, taint through $( … ), a toJSON(github) env on a line that fetches main refused. Decide on the top two rungs: a construct that refuses what it cannot read (an allow list of the expressions a pull_request_target workflow may hand on, everything else refused), or remove the need (refuse any local hand-off of github.event under pull_request_target, or judge with GitHub's own expression parser); or say the limit and decline the rest. No patch nodes. Leftover from the audit of 2026-11-17 (ci-reader-superlinear-run-cost): run rules have no work budget (clones, defines, alias replay), so a crafted workflow run line makes the reader quadratic and every commit touching a CI file hangs, ennyn doctor too; it fails closed (deps-bundle-quadratic is the precedent)",
       "source": "cycle 2026-11-16 (38) review of ci-pr-ref-through-input; convergence fix-loop brake, skills/cycle/report-formats.md"
     },
     {
@@ -6608,6 +6609,28 @@
       "cluster": "cycle",
       "title": "skills/init/gates.md is at the fix-loop brake (cycle 41, round 2: the fix that made init's push question name the after-closing cost wrote plain git push where only a bare one runs unasked, c41-t1-correctness-r2-01). No patch node: decide on the top two rungs. Either the question's words on what runs unasked come from the one text push-mode's decision already has (doctor's push.mode line, i18n), so there is no second copy to drift, or the question names only the choice and points to push.md for its costs, and the limit is said",
       "source": "cycle 2026-11-17 (41) convergence: fix-loop brake on skills/init/gates.md"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 41,
+      "id": "secret-scan-unread-refused",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "title": "security.secrets weighs a failed read of brought content with gateFailed instead of saying it and passing: the audit's lead secret-scan-read-failure-said (a staged entry pointing at a directory object breaks the read; the hook warns and exits 0, so a secret in a file sorted after it goes unscanned) contradicts DESIGN principle 7 and SECURITY.md's 'the rest is still checked' on a default-on gate; a failed read of HEAD's old object no longer cancels the new object's hits. Measure first: the audit's variant-1 fixture as a red test; if git or the hook already refuses, decline with the measurement. Scope scripts/ennyn.mjs only, no otherType change in core/git.mjs (staged-versions-ita-design-decision). Release need beyond the five findings of the audit node, taken by Fable under the 2026-11-14 delegation",
+      "source": "cloudflare/security-audit-skill quick run of 2026-11-17 (static-only, target 84cecfc, kept research folder 2026-11-17-cloudflare/run-1), triaged by Fable the same day"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 41,
+      "id": "hook-location-catch-weighed",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "title": "The hook's first location check applies machineFault in its catch instead of letting the commit through on any error (audit lead hook-location-catch-passes-picked-errno: an argument-list-too-long error from an oversized author name on an amended commit; a few hundred bytes of window on macOS with a ~1 MiB ident). Measure first whether git exports GIT_AUTHOR_* to hooks; the fix changes every commit's failure path, so after the tag",
+      "source": "cloudflare/security-audit-skill quick run of 2026-11-17 (static-only, target 84cecfc, kept research folder 2026-11-17-cloudflare/run-1), triaged by Fable the same day"
     }
   ],
   "done": [
