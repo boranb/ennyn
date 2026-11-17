@@ -917,11 +917,13 @@ test("fault matrix: a call that walks the history or the whole tree gets the lon
 
 test("fault matrix: a file git is slow to diff is named unread, and every other file is still scanned and judged", async () => {
   if (!chosen("commit-check")) return;
-  // git computes a file's whole diff before it writes any of it: 4 MB of short lines reordered took 5.8 s at load 7
-  // and 50 s at load 75, past the 2 s limit of this run. Real git, real content.
+  // The two diffs that name the slow file (review.forbidden's and the secret scan's) are held by the fake git before
+  // git writes anything, so the 2 s limit stops both on any machine. Real git was not slow enough to rely on: 4 MB of
+  // short lines reordered, its -U0 diff took 2.3 s in node:22 and 2.5 to 3 s on macOS (cycle 45), and one that ends
+  // in time counts the moved secret HEAD already holds. Past DIFF_GROUP (1 MiB), the file gets a call of its own.
   const repo = realpathSync(mkdtempSync(join(tmpdir(), "en-fault-slow-")));
   git(["init", "-q", "-b", "main"], { cwd: repo });
-  const lines = Array.from({ length: 600_000 }, (_, i) => `L${i.toString(36).padStart(5, "0")}`);
+  const lines = Array.from({ length: 200_000 }, (_, i) => `L${i.toString(36).padStart(5, "0")}`);
   // A secret HEAD already holds, which the reordering moves: no new one.
   lines.push(`const old = "${TOKENS.npm}";`);
   put(repo, {
@@ -933,12 +935,8 @@ test("fault matrix: a file git is slow to diff is named unread, and every other 
   });
   git(["add", "-A"], { cwd: repo });
   git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--no-verify", "-m", "feat: start"], { cwd: repo });
-  let seed = 7;
-  for (let i = lines.length - 1; i > 0; i--) {
-    seed = (seed * 1103515245 + 12345) % 2147483648;
-    const j = Math.floor((seed / 2147483648) * (i + 1));
-    [lines[i], lines[j]] = [lines[j], lines[i]];
-  }
+  // A diff that ended would show the moved secret as an added line; read whole, it is in the old object.
+  lines.unshift(/** @type {string} */ (lines.pop()));
   // A token before the slow file, one in it and one after it, one in a file the commit adds, a ban after it.
   put(repo, {
     "a.txt": `one\nconst a = "${TOKENS.github}";\n`,
@@ -950,16 +948,18 @@ test("fault matrix: a file git is slow to diff is named unread, and every other 
   git(["add", "-A"], { cwd: repo });
   writeFileSync(join(repo, "MSG"), "feat: add a thing\n");
   const hook = () => {
+    const box = mkdtempSync(join(tmpdir(), "en-fault-slow-run-"));
     const r = spawnSync(process.execPath, ["--import", FAULT_FS, CLI, "commit-check", "--hook", "MSG"], {
       cwd: repo,
-      env: { ...process.env, ENNYN_FAULT_GIT_LIMIT_MS: String(HANG_LIMIT_MS) },
+      env: { ...process.env, PATH: `${FAKE}${delimiter}${process.env.PATH}`, ENNYN_REAL_GIT: REAL_GIT, ENNYN_FAULT_DIR: box, ENNYN_FAULT_MATCH: " -- big.txt ", ENNYN_FAULT_GIT_LIMIT_MS: String(HANG_LIMIT_MS) },
       encoding: "utf8",
-      timeout: 300_000,
+      timeout: HANG_WATCHDOG_MS,
       killSignal: "SIGKILL",
     });
-    return { status: r.status, text: `${r.stdout}\n${r.stderr}` };
+    return { status: r.status, text: `${r.stdout}\n${r.stderr}`, held: endHeld(box) };
   };
-  const { status, text } = hook();
+  const { status, text, held } = hook();
+  assert.equal(held, 2, "both diffs of big.txt held");
   assert.equal(status, 1, `refused:\n${text}`);
   assert.doesNotMatch(text, /did not show/);
   // review.forbidden names the slow file unread, with the limit that stopped it. The secret scan reads it whole
@@ -974,8 +974,9 @@ test("fault matrix: a file git is slow to diff is named unread, and every other 
   // With only changed files, all past one call's size: still a call of its own for the slow one.
   git(["rm", "-q", "--cached", "new.txt"], { cwd: repo });
   const changed = hook();
+  assert.equal(changed.held, 2, "both diffs of big.txt held");
   assert.equal(changed.status, 1, `refused:\n${changed.text}`);
-  assert.match(changed.text, /big\.txt:600002 \(github-token/);
+  assert.match(changed.text, /big\.txt:200002 \(github-token/);
   assert.doesNotMatch(changed.text, /big\.txt:\d+ \(npm-token/);
   assert.match(changed.text, /z\.txt:2 \(github-token/);
 });
