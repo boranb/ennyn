@@ -6,6 +6,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpat
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { TEST_FILE_MARK } from "./hermetic.mjs";
 import { OVERRIDE, TALLY, concurrency, containerCpus, nodeReporter, readMachine, runPassingStops, tallyArgs, unfinished, wholeArgs } from "./run.mjs";
 
 test("concurrency: half the physical cores, at least 1", () => {
@@ -327,6 +328,15 @@ test("count: the tally keeps each started file's own summary, and each top-level
   }
 });
 
+/** The real setup (test/hermetic.mjs and the hostile machine it imports) in a runner's copy, in place of a stand-in. @param {string} dir */
+function setupCopy(dir) {
+  copyFileSync(fileURLToPath(new URL("./hermetic.mjs", import.meta.url)), join(dir, "test", "hermetic.mjs"));
+  copyFileSync(fileURLToPath(new URL("./hostile.mjs", import.meta.url)), join(dir, "test", "hostile.mjs"));
+}
+
+/** test/hermetic.mjs's line for a test file of the copy whose process ended at exit 0 before it finished loading. @param {string} name */
+const ENDED_EARLY = (name) => new RegExp(`test/hermetic\\.mjs: \\S*/test/${name}\\.test\\.mjs: its process ended at exit 0 before the file finished loading`);
+
 /** Whether this Node's test files send a summary of their own (Node 22.0.0's do not), by a reporter of this test's own. */
 function summariesCome() {
   const dir = mkdtempSync(join(tmpdir(), "en-run-summary-"));
@@ -344,7 +354,7 @@ function summariesCome() {
 test("count: a run where a test file's process ends at exit 0 before its tests do fails, and says which file", () => {
   const summaries = summariesCome();
   const dir = runnerCopy("en-run-count-");
-  writeFileSync(join(dir, "test", "hermetic.mjs"), "");
+  setupCopy(dir);
   const two = 'import { test } from "node:test";\ntest("same name", () => {});\ntest("same name", () => {});\n';
   writeFileSync(join(dir, "test", "a.test.mjs"), two);
   // A test file that is a link: node --test names the link, the test's own place is the file it reaches.
@@ -357,6 +367,8 @@ test("count: a run where a test file's process ends at exit 0 before its tests d
   /** @type {NodeJS.ProcessEnv} */
   const env = { ...process.env, [OVERRIDE]: "2" };
   delete env.NODE_TEST_CONTEXT;
+  // The mark this test file's own setup left: the files of the run under it are test files of their own.
+  delete env[TEST_FILE_MARK];
   const run = () => spawnSync(process.execPath, [join(dir, "test", "run.mjs")], { cwd: tmpdir(), env, encoding: "utf8" });
   const whole = run();
   assert.equal(whole.status, 0, whole.stdout + whole.stderr);
@@ -376,8 +388,8 @@ test("count: a run where a test file's process ends at exit 0 before its tests d
   assert.match(short.stderr, said);
   assert.equal(short.stderr.match(/^not every test ran/gm)?.length, 1, "only the file that ended early is named");
 
-  // A process that ends before it registers a test fails the run on every Node: by its missing summary, or where
-  // none come (before 22.12) because node passes the file itself, which it does only for a file that reported no test.
+  // A process that ends before it registers a test fails the run on every Node: test/hermetic.mjs sees it end before
+  // the file finished loading, and where files send summaries its summary is missing too.
   for (const [text, label] of [
     ["process.exit(0);\n", "at once"],
     ["await new Promise((r) => setTimeout(r, 20));\nprocess.exit(0);\n", "after a top-level await"],
@@ -385,14 +397,29 @@ test("count: a run where a test file's process ends at exit 0 before its tests d
     writeFileSync(join(dir, "test", "b.test.mjs"), text);
     const none = run();
     assert.equal(none.status, 1, `${label}: ${none.stdout}${none.stderr}`);
-    assert.match(none.stderr, summaries ? /^not every test ran: test\/b\.test\.mjs: its process ended before its run did/m : /^not every test ran: test\/b\.test\.mjs: it ran no test /m, label);
+    assert.match(none.stdout + none.stderr, ENDED_EARLY("b"), label);
+    if (summaries) assert.match(none.stderr, /^not every test ran: test\/b\.test\.mjs: its process ended before its run did/m, label);
   }
-  // One that ends after a top-level await, before the rest of its tests: where files send summaries the run fails;
-  // where none come, every test queued ended, and the run passes (the limit test/tally.mjs states).
+  // One that ends after a top-level await, before the rest of its tests: every test queued ended, and where none come
+  // (before 22.12) the count alone would pass it. test/hermetic.mjs, in the file's own process, sees the process end
+  // at exit 0 before the file finished loading: it names the file and fails it, on every Node.
   writeFileSync(join(dir, "test", "b.test.mjs"), 'import { test } from "node:test";\ntest("early", () => {});\nawait new Promise((r) => setTimeout(r, 50));\nprocess.exit(0);\ntest("late", () => {});\n');
   const late = run();
-  assert.equal(late.status, summaries ? 1 : 0, late.stdout + late.stderr);
+  assert.equal(late.status, 1, late.stdout + late.stderr);
+  assert.match(late.stdout + late.stderr, ENDED_EARLY("b"));
+  assert.equal((late.stdout + late.stderr).match(/its process ended at exit 0 before the file finished loading/g)?.length, 1, "only the file that ended early is named");
   if (summaries) assert.match(late.stderr, /^not every test ran: test\/b\.test\.mjs: its process ended before its run did/m);
+  // One that registers a test in a callback and ends by an explicit exit before it: loaded, every test queued ended,
+  // and no summary on Node before 22.12. The process ended before node's run did (no beforeExit), on every Node.
+  writeFileSync(join(dir, "test", "b.test.mjs"), 'import { test } from "node:test";\ntest("early", () => {});\nsetTimeout(() => process.exit(0), 30);\nsetTimeout(() => test("late", () => {}), 100);\n');
+  const timer = run();
+  assert.equal(timer.status, 1, timer.stdout + timer.stderr);
+  assert.match(timer.stdout + timer.stderr, /test\/hermetic\.mjs: \S*\/test\/b\.test\.mjs: its process ended at exit 0 by an explicit exit before its run did/);
+  writeFileSync(join(dir, "test", "b.test.mjs"), 'import { test } from "node:test";\ntest("early", () => {});\nawait new Promise((r) => setTimeout(r, 50));\nprocess.exit(0);\ntest("late", () => {});\n');
+  // The file's own exit, not the count: node --test alone, with the setup, fails it too.
+  const alone = spawnSync(process.execPath, ["--test", "--import", "./test/hermetic.mjs", "test/b.test.mjs"], { cwd: dir, env, encoding: "utf8" });
+  assert.equal(alone.status, 1, alone.stdout + alone.stderr);
+  assert.match(alone.stdout + alone.stderr, ENDED_EARLY("b"));
 
   // A name pattern that matches no test, as test:short's run of guards' accounting test is made: no run, on every Node.
   rmSync(join(dir, "test", "b.test.mjs"));
@@ -411,6 +438,41 @@ test("count: a run where a test file's process ends at exit 0 before its tests d
   const failed = run();
   assert.equal(failed.status, 1, failed.stdout + failed.stderr);
   assert.doesNotMatch(failed.stderr, /not every test ran/);
+});
+
+test("count: the end check of test/hermetic.mjs reads only a test file's own process, loads the file once and after the setup, and leaves other ends to node", () => {
+  const dir = runnerCopy("en-run-ended-");
+  setupCopy(dir);
+  // The file's top level runs once, after the setup moved it to an empty directory, and it awaits before its test.
+  writeFileSync(join(dir, "test", "once.test.mjs"), 'import { test } from "node:test";\nimport { basename } from "node:path";\nglobalThis.LOADS = (globalThis.LOADS ?? 0) + 1;\nconst at = basename(process.cwd());\nawait new Promise((r) => setTimeout(r, 20));\ntest("loaded once, after the setup", () => {\n  if (globalThis.LOADS !== 1 || !at.startsWith("en-cwd-")) throw new Error(`loads ${globalThis.LOADS}, started in ${at}`);\n});\n');
+  // A program a test starts with the setup and the test's environment, which ends itself after a top-level await, as a
+  // CLI may: its exit is its own.
+  writeFileSync(join(dir, "cli.mjs"), "await new Promise((r) => setTimeout(r, 20));\nprocess.exit(0);\n");
+  const hermetic = pathToFileURL(join(dir, "test", "hermetic.mjs")).href;
+  writeFileSync(join(dir, "test", "child.test.mjs"), `import { test } from "node:test";\nimport { spawnSync } from "node:child_process";\ntest("a child keeps its exit", () => {\n  const r = spawnSync(process.execPath, ["--import", ${JSON.stringify(hermetic)}, ${JSON.stringify(join(dir, "cli.mjs"))}], { encoding: "utf8" });\n  if (r.status !== 0) throw new Error(\`exit \${r.status}: \${r.stderr}\`);\n});\n`);
+  /** @type {NodeJS.ProcessEnv} */
+  const env = { ...process.env, [OVERRIDE]: "2" };
+  delete env.NODE_TEST_CONTEXT;
+  delete env[TEST_FILE_MARK];
+  const run = () => spawnSync(process.execPath, [join(dir, "test", "run.mjs")], { cwd: tmpdir(), env, encoding: "utf8" });
+  const good = run();
+  assert.equal(good.status, 0, good.stdout + good.stderr);
+  assert.match(good.stdout, /^(?:#|ℹ) pass 2$/m);
+  assert.doesNotMatch(good.stdout + good.stderr, /finished loading/);
+  // The same program run by hand with the setup, outside any test run: its exit is its own too.
+  const hand = spawnSync(process.execPath, ["--import", hermetic, join(dir, "cli.mjs")], { env, encoding: "utf8" });
+  assert.equal(hand.status, 0, hand.stderr);
+  // A process under the test context with no file to load (node -e): nothing to watch, and it runs as it would.
+  const inline = spawnSync(process.execPath, ["--import", hermetic, "-e", "process.exit(0)"], { env: { ...env, NODE_TEST_CONTEXT: "child-v8" }, encoding: "utf8" });
+  assert.equal(inline.status, 0, inline.stderr);
+
+  // A file that throws as it loads, and one that ends with a code of its own: node fails each, and the check says nothing.
+  writeFileSync(join(dir, "test", "throws.test.mjs"), 'import { test } from "node:test";\ntest("before", () => {});\nawait new Promise((r) => setTimeout(r, 20));\nthrow new Error("this file does not load");\n');
+  writeFileSync(join(dir, "test", "exits.test.mjs"), 'import { test } from "node:test";\ntest("before", () => {});\nawait new Promise((r) => setTimeout(r, 20));\nprocess.exit(3);\n');
+  const bad = run();
+  assert.equal(bad.status, 1, bad.stdout + bad.stderr);
+  assert.match(bad.stdout + bad.stderr, /this file does not load/);
+  assert.doesNotMatch(bad.stdout + bad.stderr, /finished loading/);
 });
 
 /** Whether a process this test started is still there (signal 0 only). @param {number} pid */

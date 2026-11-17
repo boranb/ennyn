@@ -10,11 +10,14 @@
  * so a process that ends early, before or after it registers its tests, or a report cut in the pipe, has none; tests
  * a shared helper registers for a file, which node names by the helper's path, count in that file's summary. A
  * --test-force-exit run that ends after a top-level await, before the rest of its tests are registered, still sends
- * one, counting only the early tests: no runner passes the flag, only a hand run can. A run where no summary came,
+ * one, counting only the early tests (no runner passes the flag, only a hand run can). A run where no summary came,
  * not even the run's own, is read by its tests instead: each top-level test queued, by the file node names it with,
- * must end, and node passes a file itself only when it reported no test. That reading cannot see a process that
- * ends after a top-level await, before it registers the rest. Loaded in the node --test process itself: Node's
- * modules only.
+ * must end, and node passes a file itself only when it reported no test. That reading cannot see a process that ends
+ * before it registers the rest of its tests: test/hermetic.mjs, loaded into each file's process, fails that process
+ * itself when it ends at exit 0 before the file finished loading, or by an explicit exit before node's run in it
+ * ended, on every Node. Still unseen there: a file whose own exit listener sets the code back to 0, a process whose
+ * loop drains with a test still to register (an unref'd timer), and under --test-force-exit an explicit exit once the
+ * file has loaded. Loaded in the node --test process itself: Node's modules only.
  */
 
 import { realpathSync } from "node:fs";

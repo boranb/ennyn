@@ -22,7 +22,7 @@ import { chmodSync, closeSync, mkdirSync, mkdtempSync, openSync, readdirSync, re
 import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join, normalize, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 // A test that reads a file by a path relative to the working directory (npm test starts at the top) reads the
@@ -221,3 +221,46 @@ for (const name of ["spawn", "spawnSync", "execFile", "execFileSync", "exec", "e
   cp[name] = guarded;
 }
 syncBuiltinESMExports();
+
+// A test file's process that ends at exit 0 before node's run in it ended never ran the tests it had yet to register
+// or run, and node --test passes it. Where no file sends a summary of its own (Node before 22.12, the floor), every
+// test it had queued may have ended, so test/tally.mjs cannot see it either. Two ends are refused here:
+// - before the file finished loading (a process.exit after a top-level await): the file's main module is imported by
+//   its URL, which node shares with its own load of the entry (the file is evaluated once, after this setup), and
+//   until that import settles the file has not loaded;
+// - by an explicit exit once it loaded, before the event loop drained (no beforeExit came): a process.exit(0) in a
+//   timer, a callback or a test while tests were still to be registered or run. A run node --test ends itself
+//   (--test-force-exit, which no runner passes) has no beforeExit either, and only the first is refused there.
+// A file that throws as it loads keeps node's own failure; an end with a code of its own is left to node. Not seen: a
+// process whose loop drains with tests still to register (an unref'd timer), and a file's own exit listener that
+// sets the code back to 0 after this one. A second --import named after this file runs
+// after the file has loaded.
+// Only a test file's own process: node --test starts it with NODE_TEST_CONTEXT=child-v8, which every process the file
+// starts inherits too, so the file's process leaves TEST_FILE_MARK for them, and a process that finds it is no test
+// file. A run started from inside a test file (a test of the runner) reaches its files' processes only when it drops
+// the mark, as it drops NODE_TEST_CONTEXT.
+export const TEST_FILE_MARK = "ENNYN_TEST_FILE_PID";
+const entry = process.argv[1];
+if (process.env.NODE_TEST_CONTEXT === "child-v8" && !process.env[TEST_FILE_MARK] && entry) {
+  process.env[TEST_FILE_MARK] = String(process.pid);
+  // node refuses --test-force-exit in NODE_OPTIONS (exit 9): on the command line only.
+  const forced = process.execArgv.includes("--test-force-exit");
+  let loaded = false;
+  let drained = false;
+  const settled = () => {
+    loaded = true;
+  };
+  import(pathToFileURL(entry).href).then(settled, settled);
+  process.on("beforeExit", () => {
+    drained = true;
+  });
+  process.on("exit", (code) => {
+    if (code !== 0) return;
+    let why = "";
+    if (!loaded) why = "its process ended at exit 0 before the file finished loading, so the tests it registers after that point never ran";
+    else if (!drained && !forced) why = "its process ended at exit 0 by an explicit exit before its run did, so the tests it had yet to register or run never ran";
+    if (!why) return;
+    process.stderr.write(`test/hermetic.mjs: ${entry}: ${why}\n`);
+    process.exitCode = 1;
+  });
+}

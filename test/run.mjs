@@ -10,7 +10,9 @@
  * node --test passes a test file whose process exits 0, however many of its tests reported. runCounted reads what
  * each file's process told of its run (test/tally.mjs): a run where a file's process ended before its run did, or
  * ran no test, fails; on a Node that sends no summary per file (before 22.12), a run where a test a file queued did
- * not end, or that ran no test.
+ * not end, or that ran no test. A file's process that ends at exit 0 before the file finished loading, or by an
+ * explicit exit before node's run in it ended, so before it registered or ran the rest of its tests, fails in that
+ * process: test/hermetic.mjs gives it exit 1, on every Node (its header names what it still cannot see).
  */
 
 import { execFileSync, spawn } from "node:child_process";

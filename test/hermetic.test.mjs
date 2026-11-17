@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { basename, delimiter, join, dirname, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { hostileHome } from "./hostile.mjs";
-import { takeRefused } from "./hermetic.mjs";
+import { TEST_FILE_MARK, takeRefused } from "./hermetic.mjs";
 import { wholeArgs } from "./run.mjs";
 import { hookCommitMode } from "../checks/commit-shape.mjs";
 
@@ -134,6 +134,41 @@ test("hermetic: a test file that fetches off the machine fails, whatever its cod
   assert.equal(run.status, 1, run.stdout + run.stderr);
   assert.match(run.stdout + run.stderr, /1 fetch\(es\) off the machine refused:[^]*a fetch of "registry\.example" refused/);
   assert.doesNotMatch(run.stdout + run.stderr, /not ok 1 - fetches/);
+});
+
+test("hermetic: a test file whose process ends at exit 0 before its file loaded, or by an explicit exit before its run did, fails and says which", () => {
+  const dir = mkdtempSync(join(tmpdir(), "en-herm-end-"));
+  const files = {
+    // A process.exit after a top-level await: the test below it was never registered.
+    late: 'import { test } from "node:test";\ntest("early", () => {});\nawait new Promise((r) => setTimeout(r, 30));\nprocess.exit(0);\ntest("late", () => {});\n',
+    // Loaded, then ended by a timer before a test a later timer registers.
+    timer: 'import { test } from "node:test";\ntest("early", () => {});\nsetTimeout(() => process.exit(0), 30);\nsetTimeout(() => test("late", () => {}), 100);\n',
+    ok: 'import { test } from "node:test";\ntest("a", () => {});\ntest("b", async () => { await new Promise((r) => setTimeout(r, 20)); });\n',
+  };
+  for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, `${name}.test.mjs`), text);
+  // NODE_TEST_CONTEXT and the mark this file's own process left: with either, the inner run's file is no test file.
+  const { NODE_TEST_CONTEXT: _, [TEST_FILE_MARK]: __, ...env } = process.env;
+  const run = (/** @type {string} */ name, /** @type {string[]} */ more = []) => {
+    const r = spawnSync(process.execPath, ["--test", ...more, "--import", pathToFileURL(join(ROOT, "test", "hermetic.mjs")).href, join(dir, `${name}.test.mjs`)], { cwd: dir, env, encoding: "utf8" });
+    return { status: r.status, out: r.stdout + r.stderr };
+  };
+  const loadLine = /test\/hermetic\.mjs: \S*late\.test\.mjs: its process ended at exit 0 before the file finished loading/;
+  const exitLine = /test\/hermetic\.mjs: \S*timer\.test\.mjs: its process ended at exit 0 by an explicit exit before its run did/;
+  const late = run("late");
+  assert.equal(late.status, 1, late.out);
+  assert.match(late.out, loadLine);
+  const timer = run("timer");
+  assert.equal(timer.status, 1, timer.out);
+  assert.match(timer.out, exitLine);
+  assert.doesNotMatch(timer.out, /finished loading/);
+  const ok = run("ok");
+  assert.equal(ok.status, 0, ok.out);
+  assert.doesNotMatch(ok.out, /test\/hermetic\.mjs:/);
+  // node --test --test-force-exit ends the process itself once the run is over, with no beforeExit: only a file that
+  // had not loaded is refused there.
+  const forced = run("ok", ["--test-force-exit"]);
+  assert.equal(forced.status, 0, forced.out);
+  assert.match(run("late", ["--test-force-exit"]).out, loadLine);
 });
 
 test("hermetic: a test file's temporary directories are gone when it ends, an unreadable one too", () => {
