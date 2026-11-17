@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, writeFileSync, mkdirSync, symlinkSync, chmodSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname, delimiter, relative } from "node:path";
+import { join, dirname, delimiter, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { git, parseVersion, versionAtLeast, GIT_FLOOR } from "../core/git.mjs";
 import { DEFAULTS, loadConfig } from "../core/config.mjs";
@@ -24,8 +24,12 @@ import {
 } from "../setup/scan.mjs";
 import { askReport, checkSetup, pipes, worktreesIgnored } from "../setup/doctor.mjs";
 import { shown, t, tShown } from "../core/i18n.mjs";
+import { ownHome } from "./own-home.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+// The doctor tests write the global git ignore under the home: one of this file's own, or it refuses to run.
+const { root: ROOT, home: HOME } = ownHome("en-setup-");
+const SELF = join(dirname(CLI), "..", "test", "setup.test.mjs");
 const cfg = () => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "en-s-")), env: {} });
 const pat = () => pathPatterns(DEFAULTS, []).re;
 
@@ -57,6 +61,42 @@ function repo() {
 
 /** @param {number} n @param {(i: number) => string} f */
 const many = (n, f) => Array.from({ length: n }, (_, i) => f(i));
+
+test("setup: run with a home outside the temporary folder it refuses, before any write", () => {
+  const tmp = mkdtempSync(join(ROOT, "tmp-"));
+  const { NODE_TEST_CONTEXT, ...env } = process.env;
+  const r = spawnSync(process.execPath, ["--test-name-pattern=^no such test$", SELF], { env: { ...env, HOME: join(sep, "no", "such", "home"), TMPDIR: tmp }, encoding: "utf8" });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /refuses to run: HOME/);
+  assert.deepEqual(readdirSync(tmp), []);
+});
+
+test("setup: ownHome takes away every variable a write follows out of the home, so install-hook run from a plugin session leaves the session's record alone", () => {
+  const top = dirname(dirname(CLI));
+  const session = () => {
+    const data = mkdtempSync(join(ROOT, "data-"));
+    writeFileSync(join(data, "root"), "/sentinel/root\n");
+    const vars = { ENNYN_PLUGIN_DATA: data, ENNYN_PLUGIN_ROOT: top, CLAUDE_PLUGIN_DATA: data, CLAUDE_PLUGIN_ROOT: top, CLAUDE_ENV_FILE: join(data, "env"), CLAUDE_CONFIG_DIR: join(data, "config"), ENNYN_LOCK_DIR: join(data, "lock") };
+    return { data, env: { ...process.env, HOME: mkdtempSync(join(ROOT, "inherited-")), ...vars } };
+  };
+  const install = (/** @type {NodeJS.ProcessEnv} */ env) => spawnSync(process.execPath, [CLI, "install-hook"], { cwd: repo().dir, encoding: "utf8", env });
+  const read = (/** @type {string} */ data) => readFileSync(join(data, "root"), "utf8");
+  // Kept, the session's variables make install-hook write the record: else what follows would prove nothing.
+  const kept = session();
+  install(kept.env);
+  assert.notEqual(read(kept.data), "/sentinel/root\n");
+  const taken = session();
+  const git = { GIT_DIR: join(taken.data, "repo.git"), GIT_WORK_TREE: taken.data, GIT_INDEX_FILE: join(taken.data, "index"), GIT_CONFIG_PARAMETERS: "'core.hooksPath'='hooks'" };
+  const env = { ...taken.env, ...git };
+  ownHome("en-setup-session-", env);
+  const names = ["ENNYN_PLUGIN_DATA", "ENNYN_PLUGIN_ROOT", "CLAUDE_PLUGIN_DATA", "CLAUDE_PLUGIN_ROOT", "CLAUDE_ENV_FILE", "CLAUDE_CONFIG_DIR", "ENNYN_LOCK_DIR", ...Object.keys(git)];
+  assert.deepEqual(names.filter((k) => k in env), []);
+  assert.deepEqual([env.GIT_CONFIG_NOSYSTEM, env.GIT_CEILING_DIRECTORIES], [process.env.GIT_CONFIG_NOSYSTEM, process.env.GIT_CEILING_DIRECTORIES]);
+  const r = install(env);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(read(taken.data), "/sentinel/root\n");
+  assert.deepEqual(readdirSync(taken.data), ["root"]);
+});
 
 test("fix label: every candidate compiles without flags; the first is the default", () => {
   assert.equal(FIX_CANDIDATES[0].pattern, DEFAULTS.metrics.fixSubject);
@@ -1653,7 +1693,7 @@ test("doctor: the worktrees line says what git said, its source, its remedy; a q
   git(["config", "core.excludesFile", relative(excludes.dir, named)], { cwd: excludes.dir });
   assert.deepEqual(await line(excludes.dir), { level: "warn", key: "doctor.worktreesLocal", vars: at(relative(excludes.dir, named), 1, ".claude/") });
   // The global ignore file core.excludesFile defaults to.
-  const global = join(String(process.env.XDG_CONFIG_HOME), "git", "ignore");
+  const global = join(HOME, ".config", "git", "ignore");
   mkdirSync(dirname(global), { recursive: true });
   writeFileSync(global, ".claude/worktrees\n");
   c.after(() => rmSync(global, { force: true }));

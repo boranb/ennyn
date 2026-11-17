@@ -1,15 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { chmodSync, lstatSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, realpathSync, statSync, existsSync, rmSync, symlinkSync } from "node:fs";
+import { chmodSync, lstatSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, realpathSync, statSync, existsSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname, relative } from "node:path";
+import { join, dirname, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { git } from "../core/git.mjs";
 import * as hookModule from "../setup/hook.mjs";
 import { BLOCK_MARKER, HOOK_MARKER, hookBlock, hookLine as printedLine, hookScript, hookStatus, idleReason, installHook, namesCheck, printedCheck } from "../setup/hook.mjs";
+import { ownHome } from "./own-home.mjs";
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+// A test here writes the plugin's record under the home: one of this file's own, or it refuses to run.
+const { root: ROOT, home: HOME } = ownHome("en-hook-");
+const FILE = join(dirname(CLI), "..", "test", "hook.test.mjs");
 
 /** What husky 9.1.7's index.js writes as .husky/_/commit-msg. */
 const HUSKY_STUB = '#!/usr/bin/env sh\n. "$(dirname "$0")/h"';
@@ -34,6 +38,15 @@ function commit(dir, message) {
   git(["add", "-A"], { cwd: dir });
   return spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", message], { cwd: dir, encoding: "utf8" });
 }
+
+test("hook: run with a home outside the temporary folder it refuses, before any write", () => {
+  const tmp = mkdtempSync(join(ROOT, "tmp-"));
+  const { NODE_TEST_CONTEXT, ...env } = process.env;
+  const r = spawnSync(process.execPath, ["--test-name-pattern=^no such test$", FILE], { env: { ...env, HOME: join(sep, "no", "such", "home"), TMPDIR: tmp }, encoding: "utf8" });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /refuses to run: HOME/);
+  assert.deepEqual(readdirSync(tmp), []);
+});
 
 test("hook: installs once, runs on every commit, rejects an untyped subject and lets a typed one through", () => {
   const dir = repo();
@@ -373,7 +386,7 @@ test("doctor audit: review.impactRequiredGlobs with no hook is a rule on paper t
 test("install-hook audit (review): for every hook state doctor and install-hook agree: a ✓ is nothing to do, a warning is fixed or refused with why", async () => {
   const { checkSetup } = await import("../setup/doctor.mjs");
   /** @param {string} dir */
-  const hookLine = async (dir) => (await checkSetup({ cwd: dir, env: { HOME: process.env.HOME, PATH: process.env.PATH } })).items.find((i) => i.key.startsWith("doctor.hook"));
+  const hookLine = async (dir) => (await checkSetup({ cwd: dir, env: { HOME, PATH: process.env.PATH } })).items.find((i) => i.key.startsWith("doctor.hook"));
   /** @param {string} dir */
   const install = (dir) => spawnSync(process.execPath, [CLI, "install-hook"], { cwd: dir, encoding: "utf8" });
   /** @param {(dir: string) => void} make */
@@ -476,7 +489,7 @@ test("install-hook audit (review): for every hook state doctor and install-hook 
       want: /** @type {string} */ (want),
       says: /** @type {RegExp} */ (says),
       make: (/** @type {string} */ d) => {
-        hookModule.recordPluginRoot(join(/** @type {string} */ (process.env.HOME), ".claude", "plugins", "data", "ennyn-ennyn"), SELF);
+        hookModule.recordPluginRoot(join(HOME, ".claude", "plugins", "data", "ennyn-ennyn"), SELF);
         mkdirSync(join(d, ".githooks"));
         writeFileSync(join(d, ".githooks", "commit-msg"), `${before}${hookBlock("/x/plugins/data/ennyn-ennyn")}`, { mode: 0o755 });
         git(["config", "core.hooksPath", ".githooks"], { cwd: d });

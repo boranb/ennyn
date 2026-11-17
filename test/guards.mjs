@@ -363,6 +363,7 @@ export const GATES = [
         new: "  const deaf = (globalThis.streams = (globalThis.streams ?? 0) + 1) % 2 === 1;\n  const heard = () => void (deaf || timer.refresh());\n",
         pattern: "fault matrix control: a git call that never ends",
       },
+      { id: "fault-home", why: "the matrix run on the caller's home: install-hook at its top rewrites a plugin session's record", file: "test/fault-injection.test.mjs", old: 'const { root: ROOT } = ownHome("en-fault-");\n', new: 'const ROOT = mkdtempSync(join(tmpdir(), "en-fault-"));\n', pattern: "fault matrix control: run with a home outside" },
     ],
     others: {
       "fault matrix: with any file read failing (no permission, a directory in its place), a command fails or says so":

@@ -33,15 +33,18 @@
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { availableParallelism, tmpdir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { delimiter, dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { git } from "../core/git.mjs";
 import { USAGE } from "../scripts/ennyn.mjs";
+import { ownHome } from "./own-home.mjs";
 import { TOKENS } from "./secret-shapes.mjs";
 
+// install-hook runs at the top, with this process's environment: a home of the file's own, or it refuses to run.
+const { root: ROOT } = ownHome("en-fault-");
 const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
 /** Loaded into every run: counts the file reads, and fails the one a cell names. */
 const FAULT_FS = join(dirname(fileURLToPath(import.meta.url)), "fault-fs.mjs");
@@ -1228,6 +1231,15 @@ test("fault matrix control: ENNYN_FAULT_COMMANDS picks the cases it names, every
   assert.ok(r.status !== 0 && r.status !== null, `exit ${r.status}: ${r.stderr}`);
   assert.match(r.stderr, /ENNYN_FAULT_COMMANDS names no case: kept\. The names: init-scan, .*\block\b.*hook:plugin-root/);
   assert.doesNotMatch(r.stdout, /^(ok|not ok) /m, "no test ran");
+});
+
+test("fault matrix control: run with a home outside the temporary folder it refuses, before any write", () => {
+  const tmp = mkdtempSync(join(ROOT, "tmp-"));
+  const { NODE_TEST_CONTEXT, ...env } = process.env;
+  const r = spawnSync(process.execPath, ["--test-name-pattern=^no such test$", fileURLToPath(import.meta.url)], { env: { ...env, HOME: join(sep, "no", "such", "home"), TMPDIR: tmp }, encoding: "utf8" });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /refuses to run: HOME/);
+  assert.deepEqual(readdirSync(tmp), []);
 });
 
 test("fault matrix control: the judge flags each way a run can hide a failure", () => {
