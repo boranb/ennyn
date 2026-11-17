@@ -1,6 +1,6 @@
 {
  "version": 1,
- "code": "f8ad93ba3ff0ce09cc0c83b5fdb191dd9d920b378c20734bff70af80ca131ad6",
+ "code": "001701e691d8547f7a08db2bdfaaf6bf678ff929eef73c4048f9f43545565ff0",
  "tests": {
   "test/agents.test.mjs": {
    "reads": [
@@ -2292,6 +2292,7 @@
     "setup/uninstall.mjs",
     "test/hermetic.mjs",
     "test/hostile.mjs",
+    "test/own-home.mjs",
     "test/setup.test.mjs"
    ],
    "dirs": [
