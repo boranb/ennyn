@@ -955,7 +955,7 @@ export const NOT_GATES = {
   "test/ci.test.mjs": CLI_ONLY,
   "test/push-spellings.test.mjs": { reason: "runs the push reader on its corpus and the PreToolUse hook on temporary projects, on a copy of the plugin's files for a broken catalog; reads the header and SECURITY.md for the stated limits", allow: '"\\.\\./(adapters/claude-code/(hooks/)?push-spellings\\.mjs|SECURITY\\.md|)", import\\.meta\\.url|"\\.\\.", import\\.meta\\.url' },
   "test/kill-targets.test.mjs": { reason: "runs the kill reader on its corpus and the PreToolUse hook on temporary projects, on a copy of the plugin's files for a broken catalog; reads the header and SECURITY.md for the stated limits; makes a shell box in a child node inside a sandbox; runs its own box tests and the push reader's, from the top, in a child node with the box made to throw", allow: '"\\.\\./(adapters/claude-code/(hooks/)?kill-targets\\.mjs|SECURITY\\.md|)", import\\.meta\\.url|"\\.\\.", import\\.meta\\.url|"\\./shell-box\\.mjs", import\\.meta\\.url' },
-  "test/run.test.mjs": { reason: "runs npm test's runner on a copy in a temporary folder", allow: '"\\./run\\.mjs", import\\.meta\\.url' },
+  "test/run.test.mjs": { reason: "runs npm test's runner and its reporter on a copy in a temporary folder", allow: '"\\./(?:run|tally)\\.mjs", import\\.meta\\.url' },
   "test/compact-boundary.test.mjs": { reason: "runs the PreCompact hook on temporary projects", allow: '"\\.\\./adapters/claude-code/hooks/compact-boundary\\.mjs", import\\.meta\\.url' },
   "test/bypass.test.mjs": CLI_ONLY,
   "test/leftovers.test.mjs": CLI_ONLY,

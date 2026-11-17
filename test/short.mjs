@@ -4,7 +4,8 @@
  * not. The whole suite (`npm test`) is not replaced: it runs once at a cycle's closing, before the push, slow files
  * included; a landing runs this and the slow files the task touches. A path list here decides how early a slow
  * file's failure is seen, never whether it runs. Its runs take the whole suite's concurrency limit and start through
- * npm test's own runner (test/run.mjs): a stop to this script reaches the run under it, and no later run starts.
+ * npm test's own runner (test/run.mjs): a stop to this script reaches the run under it, and no later run starts, and
+ * a run whose test files did not all run every test they queued fails.
  *
  * The lists are narrow on purpose. The import closure of scripts/ennyn.mjs is nearly the whole tree, and a list that
  * matches every code change would make this the whole suite. Each one names what its file guards. With guards left
@@ -40,7 +41,7 @@ import { readIfThere } from "../core/files.mjs";
 import { git, gitMaybe } from "../core/git.mjs";
 import { matchAny } from "../core/glob.mjs";
 import { GATES } from "./guards.mjs";
-import { runPassingStops, suiteConcurrency } from "./run.mjs";
+import { runCounted, suiteConcurrency } from "./run.mjs";
 
 const { registerHooks } = nodeModule;
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -309,9 +310,10 @@ export async function record(root) {
     chmodSync(join(dir, "bin", "node"), 0o755);
     const env = { ...process.env, ENNYN_READS: dir, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${self}`.trim(), PATH: `${join(dir, "bin")}${delimiter}${process.env.PATH ?? ""}` };
     delete env.ENNYN_READS_TEST;
-    const run = await runPassingStops(["--test", `--test-concurrency=${n}`, "--import", "./test/hermetic.mjs", ...short], { cwd: root, env });
+    const run = await runCounted(["--test", `--test-concurrency=${n}`, "--import", "./test/hermetic.mjs", ...short], { cwd: root, env });
     if (run.status !== 0) {
       console.error(`the recording run ${run.status === null ? `did not finish (${run.error?.message ?? run.signal})` : `failed, exit ${run.status}`}; ${READS} is not written`);
+      for (const line of run.unfinished) console.error(`not every test ran: ${line}`);
       return 1;
     }
     /** @type {Record<string, { reads: Set<string>, dirs: Set<string>, unseen: Set<string> }>} */
@@ -359,16 +361,18 @@ async function main(argv) {
   if (n === null) return 2;
   // node --test with no file runs every test file it finds.
   const runs = [...(files.length ? [{ name: "test files", args: files }] : []), ...(accounting ? [{ name: "guards' accounting test", args: [`--test-name-pattern=${ACCOUNTING}`, GUARDS] }] : [])];
-  /** @type {({ name: string } & Awaited<ReturnType<typeof runPassingStops>>)[]} */
+  /** @type {({ name: string } & Awaited<ReturnType<typeof runCounted>>)[]} */
   const ended = [];
   for (const { name, args } of runs) {
-    const run = await runPassingStops(["--test", `--test-concurrency=${n}`, "--import", "./test/hermetic.mjs", ...args], { cwd: ROOT });
+    const run = await runCounted(["--test", `--test-concurrency=${n}`, "--import", "./test/hermetic.mjs", ...args], { cwd: ROOT });
     ended.push({ name, ...run });
     // A stop is the whole command's: the run it reached has ended, and no later run starts.
     if (run.stop) break;
   }
   // Again at the end: the run's output pushes the first copy out of a reader's tail.
   say();
+  // A run node passed that did not run every test it queued: why, before the words that say it failed.
+  for (const run of ended) for (const line of run.unfinished) console.log(`${run.name}: not every test ran: ${line}`);
   // The words carry the verdict: a later run's summary hides an earlier failure, and a pipe into tail loses the exit code.
   for (const run of ended) console.log(`${run.name}: ${run.status === 0 ? "passed" : run.status === null ? `did not finish, ${run.error?.message ?? run.signal}` : `failed, exit ${run.status}`}`);
   const bad = ended.find((run) => run.status !== 0);

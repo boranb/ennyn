@@ -343,6 +343,7 @@ function copy(tests) {
   copyFileSync(join(ROOT, "test", "short.mjs"), join(dir, "test", "short.mjs"));
   copyFileSync(join(ROOT, "test", "guards.mjs"), join(dir, "test", "guards.mjs"));
   copyFileSync(join(ROOT, "test", "run.mjs"), join(dir, "test", "run.mjs"));
+  copyFileSync(join(ROOT, "test", "tally.mjs"), join(dir, "test", "tally.mjs"));
   commit(dir, "the script");
   git(["branch", "-q", "-f", "main", "work"], { cwd: dir });
   return dir;
@@ -469,7 +470,7 @@ test("short: --list says the same and runs nothing; anything else it does not kn
 
 test("short: after the reports one line per run says how it ended, and the last line says passed or failed", () => {
   /** @param {string} name */
-  const act = (name) => `const how = process.env.${name};\nif (how === "fail") throw new Error("no");\nif (how === "kill") process.kill(process.ppid, "SIGKILL");\n`;
+  const act = (name) => `const how = process.env.${name};\nif (how === "fail") throw new Error("no");\nif (how === "kill") process.kill(process.ppid, "SIGKILL");\nif (how === "exit") return new Promise(() => setTimeout(() => process.exit(0), 50));\n`;
   const accounting = "guards: every test that reads this repository has guards; a stand-in";
   const dir = copy({
     "test/a.test.mjs": `import { test } from "node:test";\ntest("a", () => {\n${act("SHORT_FIRST")}});\n`,
@@ -485,6 +486,16 @@ test("short: after the reports one line per run says how it ended, and the last 
       assert.deepEqual(r.stdout.trimEnd().split("\n").slice(-3), [`test files: ${WORDS[first]}`, `guards' accounting test: ${WORDS[second]}`, `test:short ${clean ? "passed" : "failed"}`], `${first}, ${second}`);
       assert.equal(r.status, clean ? 0 : 1, `${first}, ${second}`);
     }
+  }
+
+  // A file's process that ends at exit 0 before its test does: node --test passes it, the command does not, and says why.
+  for (const [first, second] of [["exit", "pass"], ["pass", "exit"]]) {
+    const r = run(script, dir, [], { SHORT_FIRST: first, SHORT_SECOND: second });
+    const cut = first === "exit" ? "test files" : "guards' accounting test";
+    assert.deepEqual(r.stdout.trimEnd().split("\n").slice(-3), [`test files: ${first === "exit" ? "failed, exit 1" : "passed"}`, `guards' accounting test: ${second === "exit" ? "failed, exit 1" : "passed"}`, "test:short failed"], `${first}, ${second}`);
+    const file = first === "exit" ? "test/a.test.mjs" : GUARDS;
+    assert.match(r.stdout, new RegExp(`^${cut}: not every test ran: ${file.replace(/\./g, "\\.")}: (?:its process ended before its run did \\(it sent no summary\\).*|0 of 1 tests reported; its process ended before "[^"]+")$`, "m"), `${first}, ${second}`);
+    assert.equal(r.status, 1, `${first}, ${second}`);
   }
 
   // One run, when guards comes back: one line, and the words say the same.
@@ -848,6 +859,7 @@ test("short: --record writes what each short-suite file read, in the node childr
     "test/d.test.mjs": t(
       [
         "if (process.env.SHORT_FAIL) throw new Error('fails');",
+        "if (process.env.SHORT_EXIT) process.exit(0);",
         'const away = mkdtempSync(join(tmpdir(), "en-away-"));',
         'let r = spawnSync("git", ["-C", away, "--version"], { cwd: top, encoding: "utf8" });',
         ok,
@@ -928,6 +940,11 @@ test("short: --record writes what each short-suite file read, in the node childr
   const failed = run(script, dir, ["--record"], { SHORT_FAIL: "1" });
   assert.equal(failed.status, 1);
   assert.match(failed.stderr, /the recording run failed, exit 1; test\/reads\.json is not written/);
+  assert.equal(readFileSync(join(dir, READS), "utf8"), "kept\n");
+  // A file's process that ends at exit 0 before its test does: node --test passes the run, the recording does not.
+  const cut = run(script, dir, ["--record"], { SHORT_EXIT: "1" });
+  assert.equal(cut.status, 1, cut.stdout + cut.stderr);
+  assert.match(cut.stderr, /the recording run failed, exit 1; test\/reads\.json is not written\nnot every test ran: test\/d\.test\.mjs: /);
   assert.equal(readFileSync(join(dir, READS), "utf8"), "kept\n");
   writeFileSync(join(dir, READS), before);
 });

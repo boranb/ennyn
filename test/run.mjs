@@ -5,14 +5,19 @@
  * second suite beside this one: half the physical cores, at least 1; inside a container (its cgroup's CPU quota and
  * cpuset) no more than half the CPUs it may use; a quarter of the logical CPUs where the physical count cannot be read.
  * ENNYN_TEST_CONCURRENCY, a positive integer, wins; any other value stops the run. test/short.mjs uses the same limit,
- * and starts its runs through runPassingStops, so a stop reaches its runs as it reaches npm test's.
+ * and starts its runs through runCounted, so a stop reaches its runs as it reaches npm test's.
+ *
+ * node --test passes a test file whose process exits 0, however many of its tests reported. runCounted reads what
+ * each file's process told of its run (test/tally.mjs): a run where a file's process ended before its run did, or
+ * ran no test, fails; on a Node that sends no summary per file (before 22.12), a run where a test a file queued did
+ * not end, or that ran no test.
  */
 
 import { execFileSync, spawn } from "node:child_process";
-import { readFileSync, realpathSync } from "node:fs";
-import { availableParallelism, constants } from "node:os";
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { availableParallelism, constants, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const OVERRIDE = "ENNYN_TEST_CONCURRENCY";
@@ -167,12 +172,111 @@ export function runPassingStops(args, { cwd = ROOT, env = process.env } = {}) {
   });
 }
 
+/**
+ * The report node --test gives when none is named, which naming a second reporter replaces: spec on a terminal and
+ * TAP elsewhere through Node 22, spec everywhere from Node 23.
+ * @param {boolean} terminal @param {string} [version] Node's, "22.23.4"
+ */
+export function nodeReporter(terminal, version = process.versions.node) {
+  return Number(version.split(".")[0]) >= 23 || terminal ? "spec" : "tap";
+}
+
+/** The reporter that counts each file's tests, as a URL: node --test imports it from its own working directory. */
+export const TALLY = pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), "tally.mjs")).href;
+
+/**
+ * node --test arguments for a counted run: Node's own report on stdout as before, the tally into `file`.
+ * @param {string} file @param {boolean} [terminal]
+ */
+export const tallyArgs = (file, terminal = process.stdout.isTTY === true) => ["--test-reporter", nodeReporter(terminal), "--test-reporter-destination", "stdout", "--test-reporter", TALLY, "--test-reporter-destination", file];
+
+/**
+ * Why not every test of a run ran, one line each, from the tally's text (test/tally.mjs). Where file processes send
+ * summaries: a file whose process sent none (it ended before its run did, or its report was cut), or whose run had
+ * no test. Where none came (Node before 22.12): a top-level test queued that did not end, or a file node passed
+ * itself, which it does only when the file reported no test. Either way a tally that is missing or not of its
+ * shape. Empty when the run is whole.
+ * @param {string | null} text
+ * @returns {string[]}
+ */
+export function unfinished(text) {
+  const unread = (/** @type {string} */ why) => [`the count of tests could not be read (${why}), so the run is not taken as whole`];
+  if (text === null) return unread("the tally was not written or cannot be read");
+  /** @type {any} */
+  let tally;
+  try {
+    tally = JSON.parse(text);
+  } catch {
+    return unread("the tally is not JSON");
+  }
+  const record = (/** @type {unknown} */ v) => v !== null && typeof v === "object" && !Array.isArray(v);
+  const count = (/** @type {unknown} */ n) => Number.isSafeInteger(n) && /** @type {number} */ (n) >= 0;
+  const names = (/** @type {unknown} */ v) => Array.isArray(v) && v.every((x) => typeof x === "string");
+  const shaped =
+    record(tally) &&
+    tally.version === 2 &&
+    typeof tally.summaries === "boolean" &&
+    record(tally.files) &&
+    record(tally.paths) &&
+    Object.values(tally.files).every((f) => record(f) && typeof f.name === "string" && typeof f.bare === "boolean" && (f.summary === null || (record(f.summary) && count(f.summary.tests) && count(f.summary.topLevel)))) &&
+    Object.values(tally.paths).every((p) => record(p) && typeof p.name === "string" && names(p.queued) && names(p.ended));
+  if (!shaped) return unread("the tally is not of its shape");
+  /** @type {string[]} */
+  const out = [];
+  if (tally.summaries) {
+    for (const { name, summary } of /** @type {{ name: string, summary: { topLevel: number } | null }[]} */ (Object.values(tally.files))) {
+      if (summary === null) out.push(`${name}: its process ended before its run did (it sent no summary), so the tests after the last one reported never ran or never reported`);
+      else if (summary.topLevel === 0) out.push(`${name}: it ran no test (none was registered, or none matched)`);
+    }
+    return out;
+  }
+  for (const { name, bare } of /** @type {{ name: string, bare: boolean }[]} */ (Object.values(tally.files))) {
+    if (bare) out.push(`${name}: it ran no test (none was registered, or none matched)`);
+  }
+  for (const { name, queued, ended } of /** @type {{ name: string, queued: string[], ended: string[] }[]} */ (Object.values(tally.paths))) {
+    // By name, each as often as it was queued: two tests may share one.
+    const left = [...ended];
+    const missing = queued.filter((t) => {
+      const i = left.indexOf(t);
+      if (i === -1) return true;
+      left.splice(i, 1);
+      return false;
+    });
+    if (missing.length) out.push(`${name}: ${queued.length - missing.length} of ${queued.length} tests reported; its process ended before ${JSON.stringify(missing[0])}${missing.length > 1 ? ` and ${missing.length - 1} more` : ""}`);
+  }
+  return out;
+}
+
+/**
+ * runPassingStops for a node --test run, with each file's tests counted: `unfinished` says why not every test ran,
+ * and a run node passed with exit 0 that did not run them all has status 1.
+ * @param {string[]} args node's arguments, `--test` first @param {{ cwd?: string, env?: NodeJS.ProcessEnv }} [options]
+ * @returns {Promise<Awaited<ReturnType<typeof runPassingStops>> & { unfinished: string[] }>}
+ */
+export async function runCounted(args, options) {
+  const dir = mkdtempSync(join(tmpdir(), "ennyn-tally-"));
+  try {
+    const file = join(dir, "tally.json");
+    const run = await runPassingStops([args[0], ...tallyArgs(file), ...args.slice(1)], options);
+    let text = null;
+    try {
+      text = readFileSync(file, "utf8");
+    } catch {}
+    const left = unfinished(text);
+    return { ...run, status: run.status === 0 && left.length ? 1 : run.status, unfinished: left };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 async function main() {
   const n = suiteConcurrency();
   if (n === null) return void (process.exitCode = 2);
-  const { status, signal, error } = await runPassingStops(wholeArgs(n));
+  const { status, signal, error, unfinished: left } = await runCounted(wholeArgs(n));
   if (error) console.error(`the suite did not start: ${error.message}`);
   if (signal) console.error(`the suite did not finish: ${signal}`);
+  // After node's summary, whose counts hold only the tests that reported.
+  for (const line of left) console.error(`not every test ran: ${line}`);
   // A signal's end reads as a shell gives it, 128 plus its number.
   process.exitCode = signal ? 128 + constants.signals[signal] : (status ?? 1);
 }
