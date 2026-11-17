@@ -737,7 +737,8 @@
         "new: reclaimable cache counted as used memory",
         "new: share of a growing total read as a shortage",
         "new: share of a slow-draining total read as a shortage",
-        "new: kill target filled by a name lookup through a file"
+        "new: kill target filled by a name lookup through a file",
+        "new: state of an abandoned read joins its redo"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate.",
       "gates": [

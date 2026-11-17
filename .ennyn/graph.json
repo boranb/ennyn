@@ -6481,17 +6481,6 @@
       "status": "planned",
       "needs": [],
       "since": 40,
-      "id": "fault-slow-diff-linux-count",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "tests",
-      "title": "test/fault-injection.test.mjs \"fault matrix: a file git is slow to diff is named unread…\" fails in node:22 (Linux, git 2.39.5, user node): it expects \"and 1 more adds what reads as a secret\", Linux prints \"and 2 more\"; red on 84cecfc too (twice each, a kept folder outside the repository), green on macOS. Cause not measured. Full npm run test:linux before the release is red until it is fixed",
-      "source": "cycle 2026-11-17 (40), author measurement while landing tests-real-home-writes (c40-t1-author-r1-02); a need of release-0-1-0 from cycle 44's closing (Fable, 2026-11-17: release step 3's npm run test:linux is red until it is fixed)"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 40,
       "id": "own-home-design-decision",
       "value": "medium",
       "cost": "S",
@@ -6769,6 +6758,42 @@
       "cluster": "cycle",
       "source": "the user, 2026-11-17: a request; sources that allow no reuse are read for ideas only, rules in Ennyn's words with the source as reference; open-licensed text may be adapted with attribution. Planned by Fable for 0.2, after the v0.1.0 tag; no release need. a kept folder outside the repository section 4.1, 29 tells with the repositories naming each (unslop 620163e CC BY 4.0, impeccable d41d986 Apache-2.0, taste-skill f6b7657 MIT, ui-ux-pro-max-skill e59ff37 MIT, awesome-design-md fcc7028, design.md 1ed38aa Apache-2.0, web-interface-guidelines 434b7f9 MIT, userinterface-wiki 256a954 MIT, anthropics/skills frontend-design e4bb5d9 Apache-2.0): rows 1 to 21 are named by three or more; section 4.2 the disagreements; 4.8 licences: unslop's LICENSE section 3 and signs.md:122 'Keep this credit in copies and adaptations'; frontend-design SKILL.md:45 'All traits are legitimate for some briefs'; taste-skill CHANGELOG.md:196 'v2 7.7, no skill 7.8', the reason every file here has a decline line; 4.9 risks: impeccable's hooks and live mode (it starts claude with bypass permissions), taste-skill's Stop hook holding the parent session, ui-ux-pro-max's update sending the ambient token",
       "since": 45
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 45,
+      "id": "read-whole-pending-window",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "title": "scripts/ennyn.mjs secretScan's readWhole filters scan.hits by its path and takes `from` before scan.file(p) flushes the pending window (up to LOOKAHEAD lines) of the stream read before it. Measured: (a) a group of one whose diff stops after its output was read names a secret twice (count only); (b) when the previous streamed file adds a token the read-whole file's HEAD object holds, that hit lands after `from` and is dropped by the read-whole file's old object: the hook exits 0 with the secret unrefused (control with another token refuses it). Reach: a diff stopped by its limit, a non-UTF-8 name, a partial clone's missing HEAD object. Fix shape, to be measured: scan.close() first, then the path filter, then `from`; the two lab probes (kept folder cycle-45: lab/m1/src probe 'c45 probe: a held diff of one file', labs/t1/probe2) become its tests",
+      "source": "cycle 2026-11-17 (45) fault-slow-diff-linux-count: orchestrator's measurement (c45-t1-orch-r0-02) and the author's (c45-t1-author-r0-01); Fable, 2026-11-17: go, after 0.1.0, first node of the next cycle"
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "read-whole-pending-window"
+      ],
+      "since": 45,
+      "id": "secret-moved-held-two-readings",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "title": "For the same staged content the secret scan's diff path counts a secret HEAD already holds that the commit moves (an added line of the -U0 diff), while the read-whole fallback drops it: whether a commit whose only secret is a moved held one is refused depends on whether git's diff ended within its limit (2.3 s against 2 s measured, cycle 45). One reading on both paths, readWhole's: on the diff path, filter a file's hits against its old object, read only when that file has hits",
+      "source": "cycle 2026-11-17 (45) fault-slow-diff-linux-count, orchestrator's cause measurement; Fable, 2026-11-17: go, a defect, not a choice made on purpose, after 0.1.0"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 45,
+      "id": "fault-slow-diff-linux-count-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "tests",
+      "gate": "beside",
+      "title": "fault-slow-diff-linux-count: low findings left. fixture-size: the slow-diff test's file shrank from 4 MB to 1.4 MB, so a whole-file fallback read capped above 1.4 MB (a later bound in readWhole) now passes it where the old test failed (c45-t1-sec-r1-01)",
+      "source": "cycle 2026-11-17 (45) review of fault-slow-diff-linux-count, round 1"
     }
   ],
   "done": [
@@ -7816,6 +7841,13 @@
       "status": "done",
       "finished": "2026-11-17",
       "cluster": "method"
+    },
+    {
+      "id": "fault-slow-diff-linux-count",
+      "title": "Cause measured (cycle 45, limit sweep in node:22 and on macOS): the slow-diff test relied on real git taking past the 2 s limit to diff a 4 MB reordered file; its -U0 diff ends at 2.25-2.3 s in node:22 (git 2.39.5) and 2.5-3 s on macOS, and under 2 s in cycle 40's VM, where review.forbidden's diff was stopped and the secret scan's ended: an ended diff counts the moved secret HEAD already holds, the fifth place ('and 2 more'). The test's assumption, not the product: the matrix's fake git now holds both diffs naming the slow file before git writes anything (held count asserted), the file shrinks to 1.4 MB (still past DIFF_GROUP). Same count at limits 0.5-5 s on macOS, 1 and 3 s in node:22 and the floor image (22.0.0, git 2.34.1); guards slow-diff-* killed 3/3. Review 1 round, failures 0; cycle 45 (2437829)",
+      "status": "done",
+      "finished": "2026-11-17",
+      "cluster": "tests"
     }
   ],
   "declined": [

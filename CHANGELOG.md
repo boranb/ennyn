@@ -2,6 +2,7 @@
 
 ## Unreleased (0.0.x)
 
+- Tests: the fault matrix's slow-diff test holds the slow file's diffs itself instead of relying on git's speed, so it gives the same result on Linux and macOS.
 - `skills/cycle/report-formats.md`'s convergence table and its By age list are pinned: `test/report-formats-walk.test.mjs` writes each line's number, conditions and column as data, tied to the `test/findings.test.mjs` tests that run them, and holds every title of its convergence sections that names a line to that line. A row, item or condition added, dropped, reworded or renumbered fails until the data and those tests' titles follow.
 - Security: the commit-msg hook's secret scan refuses a staged file entry whose object is no blob (a tree, commit or tag), naming it, and still reads the files beside it; before, such an entry let every added file through unread. A failed read of HEAD's version of a file no longer cancels the scan of its new version.
 - Tests: `npm test`, `npm run test:short` and its `--record` fail a run where a test file's process ended before its run did (it sent no summary of its own), or a file ran no test; node --test passed such a file at exit 0 (a `--test-force-exit` run on Linux cut the report of `test/ci.test.mjs` at 23 to 59 of 80). On Node before 22.12, which sends no summary per file, each queued test must end and a file that ran no test fails; `npm run test:linux` fails the same way through `npm test`.
