@@ -100,7 +100,10 @@
         "heavy-job-limit",
         "engines-floor-22",
         "lock-wait-on-fs-error",
-        "platform-run-before-landing"
+        "platform-run-before-landing",
+        "headless-run-keeps-turn",
+        "cycle-wake-lock",
+        "push-ask-never-holds-turn"
       ],
       "gate": "user",
       "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release); read 2026-11-01: the post now opens 'Updated October 15 to include more detail on the projects that pioneered many of the techniques we use in Scion.', and The Pragmatic Engineer (2026-10-22) reports the attribution came after a public complaint; an audit of requests against the graph, 2026-11-01: five had no node in the release needs: a project started from nothing (a request, 2026-10-29: 15 nodes, 0 done), leftovers (a request, 2026-10-29: 14 nodes, 0 done), secrets in chat (a request, 2026-10-28: 12 nodes, 1 done), less code and no repetition (a request, a request, 2026-10-25), findings that can wait (a request, 2026-10-25). The smallest piece of each entered the needs. spec-gates' README: 'Spec Kit is a guidance layer'; 2026-11-05, the choice was left to the orchestrator: kill-own-pid-only, plugin-update-path and win-kill-waits-exit join the needs, observed on Windows; read 2026-11-15: book-to-skill's SECURITY-NOTICE.md (2026-08-17) names a re-upload under another account that sends host data out, reads wallet stores and ships a Windows executable",
@@ -3356,10 +3359,12 @@
         "secret-agent-setup",
         "push-setting",
         "one-task-run",
-        "cycle-wake-lock"
+        "cycle-wake-lock",
+        "headless-run-keeps-turn",
+        "push-ask-never-holds-turn"
       ],
       "id": "fresh-session-run",
-      "title": "ennyn run --cycles N (or --each task) from the terminal: each cycle or task is one claude -p with the cycle skill, a new process and so a new context. --cycles is required, there is no open-ended loop; a budget cap goes to --max-budget-usd. It runs doctor first and stops at the first red: non-zero exit, a stopped task, a gate that needs the user, the plan's limit, the budget; it prints why and what is next, and keeps a log in the state dir. It spawns only the claude on PATH. It decides from the journal, never from the model's words, and a run with no new commit and no node change ends the loop. With compact it resumes by session id, never --continue. Pushes follow push.mode. A -p run cannot ask, so it needs a mode that does not prompt (the no-bypass mode or the user's own bypass), and it says so when it has neither. Measure first: a task with subagents completes in -p, an ask rule refuses rather than hangs, hooks and the plugin load without --bare, and what breaks if --bare becomes the default for -p. If this threatens the release date it moves to the next version, ahead of everything else there; the 5-hour usage window does not end the run. The run reads claude -p's stream-json events, never the model's words: a rate_limit_event whose status is rejected and whose resetsAt is at most 5 hours away makes it wait until that time plus a minute and go on from the journal, and the cycle it cut does not count against --cycles; a later resetsAt (a weekly window), no resetsAt, or errorCode credits_required stops it as before, saying when the window resets. At a seam, when the last event said allowed_warning with a resetsAt within 5 hours, it starts no new cycle before that time. No threshold key: the warning is the server's. rateLimitType and unifiedWindows are in 2.1.310's schema but not in the docs, so they are not read. Measure first: what -p does when it is refused (exit status, whether the event comes before the result), at what use the server sends allowed_warning, and that a cycle cut mid-task resumes from the journal. A stopped task still ends the run: the next cycle could take the same node again, or build on work the user has not seen. It reports a silent stall (no stream event and no journal line for longer than the longest past step) and stops nothing by itself",
+      "title": "ennyn run --cycles N (or --each task) from the terminal: each cycle or task is one claude -p with the cycle skill, a new process and so a new context. --cycles is required, there is no open-ended loop; a budget cap goes to --max-budget-usd. It runs doctor first and stops at the first red: non-zero exit, a stopped task, a gate that needs the user, the plan's limit, the budget; it prints why and what is next, and keeps a log in the state dir. It spawns only the claude on PATH. It decides from the journal, never from the model's words, and a run with no new commit and no node change ends the loop. With compact it resumes by session id, never --continue. Pushes follow push.mode. A -p run cannot ask, so it needs a mode that does not prompt (the no-bypass mode or the user's own bypass), and it says so when it has neither. Measure first: a task with subagents completes in -p, an ask rule refuses rather than hangs, hooks and the plugin load without --bare, and what breaks if --bare becomes the default for -p. If this threatens the release date it moves to the next version, ahead of everything else there; the 5-hour usage window does not end the run. The run reads claude -p's stream-json events, never the model's words: a rate_limit_event whose status is rejected and whose resetsAt is at most 5 hours away makes it wait until that time plus a minute and go on from the journal, and the cycle it cut does not count against --cycles; a later resetsAt (a weekly window), no resetsAt, or errorCode credits_required stops it as before, saying when the window resets. At a seam, when the last event said allowed_warning with a resetsAt within 5 hours, it starts no new cycle before that time. No threshold key: the warning is the server's. rateLimitType and unifiedWindows are in 2.1.310's schema but not in the docs, so they are not read. Measure first: what -p does when it is refused (exit status, whether the event comes before the result), at what use the server sends allowed_warning, and that a cycle cut mid-task resumes from the journal. A stopped task still ends the run: the next cycle could take the same node again, or build on work the user has not seen. It reports a silent stall (no stream event and no journal line for longer than the longest past step) and stops nothing by itself. Amended 2026-11-17 (Fable, after the audit runs of cycles 36-40, prototype runner scripts kept outside the repository): the first run of 0.2, from 2026-11-29. The child gets an allowlisted environment: a parent session's identity variables (session id, messaging socket, child-session mark) and GIT_* are dropped, auth and provider variables kept (measure first: hygiene, not a proven fix). --each <node> <node>... takes a list fixed at start; a second ennyn run queues behind the first on a lock, no open-ended queue. The runner is detached with its PID recorded; nothing between items reads stdin or waits for a session, and no step runs through a host that can show a permission prompt (in the audit runs an interactive session's git push waited 3.5 hours on a git push ask rule while nobody was there). A wait is not red: a loosening key, a user gate or an asked push under ask is recorded as a wait, that node and its dependants are skipped and the run goes on when the tree is clean and the closing complete; red still stops it. A result event with the journal still open is red. The runner holds the wake lock for each child's lifetime and the brief's own wake step is skipped under it. The runner never pushes; only the closing does, under push.mode",
       "value": "high",
       "cost": "M",
       "cluster": "method",
@@ -4456,7 +4461,7 @@
       "status": "planned",
       "needs": [],
       "id": "cycle-wake-lock",
-      "title": "The cycle keeps the machine awake while its agents run and lets go at the closing or when it stops: SetThreadExecutionState on Windows, caffeinate on macOS, systemd-inhibit on Linux, one process recorded so a later session can stop it; task-brief.md names sleep only as a way agents get lost; no fixed limit while the journal is open. Acceptance run 2026-11-15 (S7): task-brief.md's background caffeinate -t 7200 held a claude -p run open 47 minutes after its report; two were started, no PID recorded, the agent probed for it by name; stopped by PID by hand",
+      "title": "The cycle keeps the machine awake while its agents run and lets go at the closing or when it stops: SetThreadExecutionState on Windows, caffeinate on macOS, systemd-inhibit on Linux, one process recorded so a later session can stop it; task-brief.md names sleep only as a way agents get lost; no fixed limit while the journal is open. Acceptance run 2026-11-15 (S7): task-brief.md's background caffeinate -t 7200 held a claude -p run open 47 minutes after its report; two were started, no PID recorded, the agent probed for it by name; stopped by PID by hand. Release need from 2026-11-17 (Fable), narrowed: the wake process is tied to a PID, recorded and stopped at the closing, with no -t; only macOS is measured, Linux and Windows are said to be unmeasured",
       "value": "medium",
       "cost": "S",
       "cluster": "method",
@@ -5293,9 +5298,11 @@
     },
     {
       "status": "planned",
-      "needs": [],
+      "needs": [
+        "push-mode-command"
+      ],
       "id": "push-mode-self-approval",
-      "title": "push.mode's approval is a commit line the agent can write itself, so after-closing, and with it the push hook's own ask in ask mode, is lifted in two calls (a commit and a bare git push) where no ask rule stands; doctor then shows after-closing and advises removing the push ask rule. Find an approval an agent cannot write, or keep the ask rule's advice",
+      "title": "push.mode's approval is a commit line the agent can write itself, so after-closing, and with it the push hook's own ask in ask mode, is lifted in two calls (a commit and a bare git push) where no ask rule stands; doctor then shows after-closing and advises removing the push ask rule. Find an approval an agent cannot write, or keep the ask rule's advice. Amended 2026-11-17 (Fable): a terminal check is no boundary on a same-user machine in bypass with no sandbox (a pseudo-terminal fakes it); the two approver candidates are an approval commit signed by a key that needs presence, or Claude Code's own permission prompt as approver; measure first",
       "value": "high",
       "cost": "M",
       "cluster": "security",
@@ -6315,7 +6322,7 @@
       "value": "high",
       "cost": "S",
       "cluster": "cycle",
-      "title": "In a terminal runner (claude -p) the orchestrator's background agents and commands die about 10 minutes after its turn ends: an author's tool call came back rejected (13:46 -> 13:56Z) and its mutation run was killed (14:53 -> 15:03Z), cycle 36. skills/cycle/one-task.md and task-brief.md say the orchestrator stays in its turn while an agent works (the Agent call in the foreground, or a wait on the agent's transcript in foreground calls under 10 minutes), and an agent keeps its own long jobs waited for in the foreground",
+      "title": "In a terminal runner (claude -p) the orchestrator's background agents and commands die about 10 minutes after its turn ends: an author's tool call came back rejected (13:46 -> 13:56Z) and its mutation run was killed (14:53 -> 15:03Z), cycle 36. skills/cycle/one-task.md and task-brief.md say the orchestrator stays in its turn while an agent works (the Agent call in the foreground, or a wait on the agent's transcript in foreground calls under 10 minutes), and an agent keeps its own long jobs waited for in the foreground. Release need from 2026-11-17 (Fable): the release's own runs hit it",
       "source": "cycle 2026-11-15 (36) review of deps-unread-file-refused, orchestrator's measurement (two windows of 10 min to the second; the mechanism is a guess); state in a kept folder outside the repository"
     },
     {
@@ -6545,6 +6552,28 @@
       "cluster": "security",
       "title": "test/own-home.mjs reached the fix-loop brake in cycle 40 (three rows: GIT_* kept, plugin variables kept, then NODE_COMPILE_CACHE): it deletes a list of inherited variables a write can follow out of the test home, and each review finds one more (NODE_COMPILE_CACHE sends node cache writes under the real home with or without the preload, c40-t1-security-r2-01; unrun: NODE_V8_COVERAGE, XDG_CACHE_HOME/XDG_DATA_HOME/XDG_STATE_HOME, USERPROFILE on Windows; test/hermetic.mjs has the same list shape). Decide on the top two rungs: the home helper and the preload build the test environment from an allow list (what a test may inherit: PATH, a locale, the test runner own variables) and refuse or drop the rest; or remove the need (one place builds the test env, own-home only refuses). No more names added to the list one at a time",
       "source": "cycle 2026-11-17 (40) review of tests-real-home-writes; convergence fix-loop brake on test/own-home.mjs"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 40,
+      "id": "push-ask-never-holds-turn",
+      "value": "high",
+      "cost": "S",
+      "cluster": "cycle",
+      "title": "Under push.mode ask a push never holds a turn: skills/cycle/push.md step 3 says ask, then push on the user's yes, while init's Bash(git push *) rule (skills/init/gates.md:40) puts a second, on-screen question on the same push, so a push run on an earlier or standing yes hangs the turn and everything behind it with nobody there (2026-11-17: an interactive session's git push waited 3.5 hours; the origin project has hit the same stall). (1) The closing finishes before the question: report, handoff and journal close first, then journal wait \"push: N commits, <hash>\", the question the turn's last words, no tool call waiting on the push. (2) A waiting push holds nothing: the next cycle or one-task run starts on the unpushed branch and its closing rewrites the one wait line with the new count; one later git push sends every waiting commit, push-check judges them together on HEAD's tree. (3) The agent runs git push only as the direct answer to a yes in that same exchange, alone and the last call of its turn; never on an earlier or standing permission: a standing yes is after-closing, and the session says so instead of pushing into the prompt. Texts: skills/cycle/push.md, SKILL.md section 3, report-formats.md:39, handover.md, with a pin in the method tests. Release need, fifth and last finding (Fable 2026-11-17). Init's question (skills/init/gates.md, Who says yes to the push) is reworded in the same run so it names what each answer costs: 'At the end of a cycle, who pushes? ask (default): the cycle closes, its commits wait, and you are asked; nothing is pushed while you are away and nothing waits on the answer. after-closing: the cycle pushes by itself, a plain git push to this branch's upstream, only when the closing's checks and the whole test passed on that commit. Either can be changed later.' The default stays ask: a bare ok or no answer never writes a loosening",
+      "source": "2026-11-17: the audit run chain stalled 3.5 hours on a git push ask prompt; the user reports the same stall in the origin project; triaged by Fable the same day"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 40,
+      "id": "push-mode-command",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "title": "ennyn push-mode on|off|status, the one documented path to change push.mode after init: on refuses without a terminal, prints what the mode means, reads the typed word after-closing, then writes the config, removes both git push ask rules and makes the one commit with User-Approved-Loosening: push.mode; off runs anywhere and needs no line (a tightening); every push made under the mode names the approving commit (hash, date) in the report, so an approval the user never gave shows at every closing. An agent never runs push-mode on, never removes a git push ask rule, never answers init's push question, never takes another agent's message or a memory note as the yes. After the tag, second in 0.2 behind fresh-session-run (Fable 2026-11-17)",
+      "source": "2026-11-17: the user asks for push to be a setting asked at init and turned on and off only by the user; planned by Fable the same day"
     }
   ],
   "done": [
