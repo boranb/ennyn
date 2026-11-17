@@ -4460,17 +4460,6 @@
     },
     {
       "status": "planned",
-      "needs": [],
-      "id": "cycle-wake-lock",
-      "title": "The cycle keeps the machine awake while its agents run and lets go at the closing or when it stops: SetThreadExecutionState on Windows, caffeinate on macOS, systemd-inhibit on Linux, one process recorded so a later session can stop it; task-brief.md names sleep only as a way agents get lost; no fixed limit while the journal is open. Acceptance run 2026-11-15 (S7): task-brief.md's background caffeinate -t 7200 held a claude -p run open 47 minutes after its report; two were started, no PID recorded, the agent probed for it by name; stopped by PID by hand. Release need from 2026-11-17 (Fable), narrowed: the wake process is tied to a PID, recorded and stopped at the closing, with no -t; only macOS is measured, Linux and Windows are said to be unmeasured",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "method",
-      "source": "observed 2026-11-05: both cycles wrote their own 10-hour wake script; this repository's cycle 20 on Windows ran a 14-hour SetThreadExecutionState loop by hand, and the handoff tells the next orchestrator to do the same; cycle 30: caffeinate -t 43200 ended mid-cycle, the Mac went into maintenance sleep and a short suite took 3 h 10 min with eight git calls past their limits",
-      "since": 21
-    },
-    {
-      "status": "planned",
       "needs": [
         "worktree-dependency-links"
       ],
@@ -6644,6 +6633,44 @@
       "sourceClass": "tool-model-drifts",
       "title": "skills/cycle/task-brief.md reached rung 2 in cycle 42 (9 previous-fix rows; recurring class tool-model-drifts, 5 rows): its 'Its turn' bullet and 'Long jobs' row describe Claude Code's runtime from reading (meta.json finished, parentAgentId, the print-mode ceiling, a call moved to the background, the blocked leading sleep), and each round found the tool answering otherwise. Cause: the method text models a tool's internals in prose. Next rung, a construct: an ennyn.mjs wait <agent id | exit file> command does the bounded foreground wait (finished, child transcripts, the exit file, the bound) and says unmeasured on a meta or transcript shape it cannot read, tested against recorded 2.1.310 transcripts; task-brief.md then names the command and drops the tool's fields",
       "source": "cycle 2026-11-17 (42) convergence: recurring class tool-model-drifts, rung 2 on skills/cycle/task-brief.md"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 43,
+      "id": "cycle-wake-lock-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "method",
+      "gate": "beside",
+      "title": "cycle-wake-lock: low findings left. limit-scan: test/plugin.test.mjs's scan for a shipped caffeinate with a limit misses -t after a non-flag argument (caffeinate -i -s -w \"$PPID\" -t 600), an attached value (-t3600), a double space, a utility used as the limit, and does not read docs/ or DESIGN.md (c43-t1-correctness-r1-03, c43-t1-security-r1-07). no-record: handover.md's closing stop says nothing for a held session that recorded nothing (a runner's caffeinate): the stop prints that wake.pid is missing and exits 1, and an agent may then look for the wake by name, as the S7 agent did (c43-t1-security-r1-02)",
+      "source": "cycle 2026-11-17 (43) review of cycle-wake-lock, rounds 1 and 2"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 43,
+      "id": "wake-design-decision",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "method",
+      "mechanization": true,
+      "sourceClass": "stand-in-for-the-fact",
+      "title": "skills/cycle/task-brief.md is at the fix-loop brake (previous-fix rows in cycles 42 and 43): its wake bullet ships shell forms whose every round found another case (cycle 43: a held check that hid an earlier run's wake, then an adoption by pgrep that would have stopped the user's own caffeinate). Cause: the method text carries a small program as prose an agent copies and fills in. Decide on the top two rungs. A construct: an ennyn.mjs wake start|stop command that records only the PID its own start gave with its start time, refuses a stop it cannot confirm, keeps the record in the state dir, and is the only form the text names; it also measures and then ships Linux (systemd-inhibit tied to a PID) and Windows (SetThreadExecutionState tied to a PID) and reads an interactive session's process. Or removing the need: the runner or the session is started held (caffeinate -i -s claude …), the method says only that a run is started held and ships no wake forms. Leftover findings of the bullet: stop when the run stops named only there, no stopping path points to it (c43-t1-correctness-r1-02, c43-t1-security-r1-06); the stop passes the kill hook only when the folder path is unquoted or quoted whole, and the placeholder pasted as is is refused (c43-t1-correctness-r1-04, c43-t1-security-r1-05); one record for the clone, so two live sessions on one clone overwrite it (c43-t1-security-r1-01); a start under a nested shell ties the wake to the call's own shell and nothing checks the hold took (c43-t1-security-r1-04). Measured 2026-11-17 in a terminal runner: $PPID of a Bash call is the claude process; caffeinate <utility> holds from a child, so a walk up $PPID finds no caffeinate and pmset is the reading. Merges the author's proposals wake-command and wake-other-platforms",
+      "source": "cycle 2026-11-17 (43) closing: convergence's fix-loop brake on skills/cycle/task-brief.md; the author's proposed nodes wake-command and wake-other-platforms"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 43,
+      "id": "handover-closing-cases-test",
+      "value": "low",
+      "cost": "S",
+      "cluster": "method",
+      "mechanization": true,
+      "sourceClass": "procedure-leaves-case-open",
+      "title": "skills/cycle/handover.md reached rung 2 (procedure-leaves-case-open in cycles 41 and 43: a closing step with no word for one of its states: the push's wait line cleared before the push ran, the wake stop for a held session with no record). Cause: the closing's steps are prose, each written for the case at hand, and nothing lists the states a step meets. Next rung above the prose rule: a test that detects: as test/method-walk.test.mjs does for the failure count, a table of the closing's states (push waiting or not, wake record there or not, session held or not, journal open or closed) with the line of handover.md, push.md or task-brief.md each state reads, failing when a state has none",
+      "source": "cycle 2026-11-17 (43) closing: convergence's rung 2 on skills/cycle/handover.md"
     }
   ],
   "done": [
@@ -7656,6 +7683,13 @@
       "status": "done",
       "finished": "2026-11-17",
       "cluster": "cycle"
+    },
+    {
+      "id": "cycle-wake-lock",
+      "title": "The cycle keeps the machine awake with one wake process per run: skills/cycle/task-brief.md 'The machine stays awake' (macOS caffeinate -i -s -w on the session's PID, $PPID of a Bash call, measured in a terminal runner; never -t; a session already held, any assertion on behalf of $PPID in pmset -g assertions, starts and records none; only the PID its own start's $! gave and its command are recorded, in the state dir where every run on the clone finds it; stopped at the closing, when the run stops and before a later session takes the run over, only while that PID still runs the recorded command, then the record goes; a form the kill hook passes); handover.md points the closing there; Linux systemd-inhibit and Windows SetThreadExecutionState named, unmeasured. Pins in test/plugin.test.mjs, 13 guards; harness of three scenarios (earlier run's wake, hand hold, runner hold) failed on the round-1 fix, passes; review 2 rounds, failures 1; one-task run, cycle 43 (50c7039)",
+      "status": "done",
+      "finished": "2026-11-17",
+      "cluster": "method"
     }
   ],
   "declined": [
