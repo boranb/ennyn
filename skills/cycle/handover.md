@@ -2,6 +2,8 @@
 
 Only at a seam: after section 3's last step, or a one-task run's closing, once the state is on disk (the closing's commit made, `journal close` written: [journal.md](journal.md)) and no agent runs. Never mid-cycle, where the hold on compaction stays, and never at a share of the context used.
 
+Before the closing's last message, the run's wake process is stopped by its recorded PID: [task-brief.md](task-brief.md), **The machine stays awake**.
+
 No tool lets a session clear itself: the closing's last message names the step and the user takes it. Which one, the config's `context.afterCycle` says:
 
 | Value | The closing's last message |

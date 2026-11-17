@@ -18,6 +18,7 @@ import { FILE_TOOLS } from "../adapters/claude-code/hooks/side-copy-rules.mjs";
 import { askRules, OFFERED, outwardCommands } from "../setup/permissions.mjs";
 import { projectFiles } from "../setup/scan.mjs";
 import { formatConvergence } from "../metrics/convergence.mjs";
+import { killTarget } from "../adapters/claude-code/kill-targets.mjs";
 
 // What `claude plugin validate --strict` checks, for machines without the claude CLI.
 // Origin: a ": " inside an unquoted agent description made the YAML unparsable, and
@@ -426,6 +427,25 @@ test("plugin: a skill links every file of its tree beside its SKILL.md, and ever
     assert.deepEqual(linked(read(path)), files.filter((f) => f !== path).map((f) => posix.relative(folder, f)).sort(), path);
     for (const f of files) for (const target of linked(read(f))) assert.ok(existsSync(join(ROOT, dirname(f), target)), `${f}: ${target}`);
   }
+});
+
+test("plugin: the machine stays awake on one wake process tied to the session's PID, recorded, stopped by that PID at the closing while the PID still runs it", () => {
+  // Cycles 30 to 42 kept the machine awake by hand with caffeinate -t: one limit ran out mid-cycle, one held a finished
+  // claude -p run open 47 minutes, two ran at once, and the PIDs lived only in state files (node cycle-wake-lock).
+  // The forms were measured on macOS; Linux and Windows are named, unmeasured.
+  const holds = (/** @type {string} */ file, /** @type {string} */ line) => assert.ok(read(file).split("\n").includes(line), `${file}: ${line}`);
+  const bullet = "- **The machine stays awake** from the first agent on, by one wake process for the run, tied to the session's process so it ends with it, never with a limit (`-t`: cycle 30's ran out mid-cycle). macOS, where a Bash call's `$PPID` is the session's `claude` (measured in a terminal runner; an interactive session's is unmeasured): `pmset -g assertions | grep -qE \"on behalf of (.*\\(pid $PPID\\)|Process ID $PPID)\\$\" || { caffeinate -i -s -w \"$PPID\" </dev/null >/dev/null 2>&1 & echo $! > <state dir>/wake.pid; echo \"caffeinate -i -s -w $PPID\" > <state dir>/wake.cmd; }`. A session already held awake (a runner's `caffeinate`, a hand hold, a wake an earlier start left) starts none and records none. The record is in the state dir (`paths.stateDir`), where every run on this clone finds it, and holds only the PID this start's `$!` gave. The call returns at once and the process keeps no pipe of it (one started in the background with `-t 7200` held a finished `claude -p` run open 47 minutes). It is stopped by the recorded PID at the closing ([handover.md](handover.md)), when the run stops, and before a later session that takes the run over starts its own, only while that PID still runs the recorded command (after a restart it may be another's), and the record goes: `pid=$(cat <state dir>/wake.pid) && [ \"$(ps -o command= -p \"$pid\")\" = \"$(cat <state dir>/wake.cmd)\" ] && kill \"$pid\"; rm -f <state dir>/wake.pid <state dir>/wake.cmd`, a form the kill hook passes. Linux (`systemd-inhibit`) and Windows (`SetThreadExecutionState`) take the same rule; no form is measured there.";
+  holds("skills/cycle/task-brief.md", bullet);
+  // The closing reads handover.md (section 3, step 7): the stop is found there, SKILL.md stays under its cut.
+  holds("skills/cycle/handover.md", "Before the closing's last message, the run's wake process is stopped by its recorded PID: [task-brief.md](task-brief.md), **The machine stays awake**.");
+  // The stop is a form the kill hook lets through: one it refused would leave the wake process running.
+  const spans = [...bullet.matchAll(/`([^`]+)`/g)].map((m) => m[1].replaceAll("<state dir>", "/repo/.git/ennyn"));
+  const stop = spans.find((s) => /\bkill\b/.test(s));
+  assert.ok(stop, "the stop form");
+  assert.equal(killTarget(stop), null, stop);
+  // No shipped text starts a caffeinate with a limit.
+  const shipped = [...skills.flatMap(({ name }) => readdirSync(join(ROOT, "skills", name)).map((f) => `skills/${name}/${f}`)), ...agents.map((a) => a.path), "README.md", "README.tr.md"];
+  for (const f of shipped) assert.doesNotMatch(read(f), /caffeinate(?: -[a-z]+)* -[a-z]*t\b/, f);
 });
 
 test("plugin: the snapshot script in task-brief.md keeps an unfinished tree in a ref, and fails where it keeps nothing", () => {
