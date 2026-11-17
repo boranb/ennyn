@@ -1133,25 +1133,6 @@
     },
     {
       "status": "planned",
-      "needs": [
-        "deps-unread-file-refused",
-        "deps-said-entries-refused",
-        "ci-pr-ref-through-input",
-        "message-unread-file-gates",
-        "tests-real-home-writes",
-        "secret-scan-unread-refused"
-      ],
-      "id": "external-audit-before-release",
-      "title": "Before v0.1.0, run cloudflare/security-audit-skill at a pinned commit, read in full first, on Ennyn: standard profile, scoped to what ennyn audit lists, output outside the repository, with an agent budget the user sets. Confirmed findings are fixed, needs-validation ones become nodes, and its findings are compared with what Ennyn's own audits found, as a measure of what Ennyn's method misses Free route first: free scanners (Semgrep's free rules, gitleaks or trufflehog over history, OSV-Scanner), GitHub's free code and secret scanning once public, and a full pass of Ennyn's own security reviewers and labs; the report says what that route cannot cover (an independent outside eye), to be asked of the community after release. The user, 2026-11-11: a request. Absorbs history-secret-scan: the history pass of test/hygiene's findings() and secretHits() runs in the same step, right before the repository goes public. Its dependency on secret-held-today is dropped; that node waits for 0.2. Run 2026-11-15 on 42d3c77: gitleaks over 333 commits (one test template), OSV-Scanner (a suppressed advisory of a test-only probe), Semgrep's free rules (67 results, none to act on), four security reviewers (14 confirmed, 2 unvalidated). Fable's triage: five runs before the tag (the needs), the rest nodes; cloudflare/security-audit-skill runs once as the other method. Reports and decisions in the kept research folder 2026-11-15-audit",
-      "value": "high",
-      "cost": "M",
-      "cluster": "security",
-      "gate": "user",
-      "source": "user, 2026-10-25: a request; review of cloudflare/security-audit-skill (MIT, c1c8a8c): a skill with no hooks or install scripts and two zero-dependency validators; its README: one run found about half of what repeated runs found",
-      "since": 11
-    },
-    {
-      "status": "planned",
       "needs": [],
       "id": "duplicate-code",
       "title": "Copies a commit adds get a warning from the commit-msg hook that names where the other copy is: a top-level definition (function, class, exported constant) whose name, ignoring case, `_` and `-`, another tracked source file already defines, and a block of N or more meaningful lines (whitespace collapsed; blank, comment and brace lines skipped) that another tracked source file already holds. The same check runs over the cycle's whole range at its end, since rebase and cherry-pick run no commit-msg hook and parallel tasks cannot see each other's helpers; doctor counts the copies the tree holds. A helper rewritten under another name with other text is not found, and the warning says so",
@@ -7857,6 +7838,13 @@
       "status": "done",
       "finished": "2026-11-18",
       "cluster": "tests"
+    },
+    {
+      "id": "external-audit-before-release",
+      "title": "Closed 2026-11-18 with every need done: the free route (2026-11-15, 42d3c77: gitleaks over tree and 333 commits, OSV-Scanner, Semgrep free rules, four security reviewers; 14 confirmed, 2 unvalidated) and one cloudflare/security-audit-skill run (2026-11-17, c1c8a8c, quick profile, static only with no sandbox, 84cecfc; 5 leads, 0 confirmed). Fixes: deps-unread-file-refused (db882db), deps-said-entries-refused (df479c0), ci-pr-ref-through-input (f9e7090), message-unread-file-gates (85c51a7), tests-real-home-writes (096b5df), secret-scan-unread-refused (51b4d24, the one cloudflare lead measured; the free route had missed it in a gate it audited). Four leads stay as nodes (kill-reader-design-decision, kill-bulk-stops, ci-pr-code-design-decision, hook-location-catch-weighed); SECURITY.md states both runs and asks for an outside review after the release, which the free route cannot give. The absorbed history pass (gitleaks and test/hygiene findings() and secretHits() over every commit, blob and path) still runs after history-author-address rewrites history, right before the repository goes public (2026-11-17 calendar). Report: kept research folder 2026-11-17-audit-close",
+      "status": "done",
+      "finished": "2026-11-18",
+      "cluster": "security"
     }
   ],
   "declined": [
