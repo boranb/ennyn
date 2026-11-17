@@ -6621,17 +6621,6 @@
       "status": "planned",
       "needs": [],
       "since": 44,
-      "id": "tally-late-registration",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "tests",
-      "title": "On Node before 22.12 (node:22.0.0, the floor image npm run test:linux runs first, and 22.3 to 22.9) no per-file summary comes, so the count check reads queued against ended top-level tests: a file whose process ends after a top-level await, before it registers the rest of its tests, still passes (test/run.test.mjs asserts that pass as the stated limit; measured in node:22.0.0 and node:22.9.0, cycle 44). Three files register after a top-level await (eval-selftest, worktrees, hook). Close it on the floor, or make the floor image's run fail loud",
-      "source": "cycle 2026-11-17 (44) review of ci-test-silent-stop-node22 (c44-t2-code-r1-02) and the author's proposed node; Fable, 2026-11-17: go, joins release-0-1-0 as the floor residue of ci-test-silent-stop-node22"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 44,
       "id": "verdicts-non-blob-entry",
       "value": "low",
       "cost": "S",
@@ -6794,6 +6783,19 @@
       "gate": "beside",
       "title": "fault-slow-diff-linux-count: low findings left. fixture-size: the slow-diff test's file shrank from 4 MB to 1.4 MB, so a whole-file fallback read capped above 1.4 MB (a later bound in readWhole) now passes it where the old test failed (c45-t1-sec-r1-01)",
       "source": "cycle 2026-11-17 (45) review of fault-slow-diff-linux-count, round 1"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 46,
+      "id": "stated-limit-names-its-node",
+      "value": "low",
+      "cost": "M",
+      "cluster": "method",
+      "mechanization": true,
+      "sourceClass": "doc-lags-code",
+      "title": "doc-lags-code came three times in cycle 46 (tally-late-registration): a test still asserting the limit the change closed, the not-gate allow list missing the test's new reads of the repository, and the class registry's proof still stating the closed limit; the same limit was written in six places (test/tally.mjs and test/run.mjs headers, DESIGN.md, CHANGELOG, a class proof, the handoff) and only the handoff named the node that would close it. Two of three were caught by a gate already; the stated limits were found by reading. Two rungs, in order: (1) a convention and a grep-shaped test: a sentence in a comment, DESIGN.md or a class proof that states a limit (not yet, until, left to, unseen) carries an open node id; (2) in the existing closing step, not a new gate, a check over tracked text only (git ls-files: scratch and keep folders never count) lists every text that names a node now done, and the closing fails unless each is changed or kept with why. Sibling of one-decision-one-site (one limit written six times is its case too). After 0.1.0 (Fable, 2026-11-18)",
+      "source": "cycle 2026-11-17 (46) closing: convergence's most recurring class (doc-lags-code, 3 rows: c46-t1-author-r0-01, -03, -04)"
     }
   ],
   "done": [
@@ -7848,6 +7850,13 @@
       "status": "done",
       "finished": "2026-11-17",
       "cluster": "tests"
+    },
+    {
+      "id": "tally-late-registration",
+      "title": "Closed on the floor (cycle 46, measured before the brief on Node 22.0.0, 22.9.0, 22.12.0, 22.23.4): failing the floor run by version would have kept test:linux red. test/hermetic.mjs, in each test file's own process only (NODE_TEST_CONTEXT=child-v8 and no ENNYN_TEST_FILE_PID mark, which it leaves for the processes the file starts), imports the file's entry and fails an exit at code 0 before that import settled (a process.exit after a top-level await), or, outside --test-force-exit, an explicit exit at code 0 before node's run drained (no beforeExit: a test registered in a timer, IIFE or then chain, an exit in a test or hook), each with its own line naming the file, on every Node. run.test.mjs's stated-limit assertion flipped; hermetic.test.mjs pins both with five guards. Stated limits: a file's own exit listener resetting the code, a test registered in an unref'd timer, an explicit exit after load under --test-force-exit. Linux: node:22 and the floor image (22.0.0, git 2.34.1) green on the changed files; the late probe through the runner fails there now (passed on the base). Mutation first 11/13, last 17/18 (one equivalent). Review 2 rounds (r1: 1 medium fixed, 1 low), failures 0; cycle 46 (b230b42)",
+      "status": "done",
+      "finished": "2026-11-18",
+      "cluster": "tests"
     }
   ],
   "declined": [
@@ -8051,6 +8060,19 @@
       "title": "Pointer data for skills/cycle/report-formats.md's paragraphs under the convergence table (Declined, Brief, A gate, Duplicates, New classes per round, Recurring class), each tied to its findings tests",
       "source": "cycle 2026-11-17 (44) report-formats-walked, author's proposed node",
       "reason": "Fable, 2026-11-17: the table's pointer test caught no drift on the real files when first written; more pointer data without a measured catch is not worth a slot"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 46,
+      "id": "tally-late-registration-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "tests",
+      "gate": "beside",
+      "title": "tally-late-registration: low findings left. later-preload: test/hermetic.mjs imports the test file's entry, so a second --import named after it on the command line now runs after the file loaded (a hand run only: every runner names one --import, and test:short --record's reads.mjs comes first through NODE_OPTIONS); stated in hermetic's comment, nothing pins hermetic as the last preload (c46-t1-code-r1-01)",
+      "source": "cycle 2026-11-17 (46) review of tally-late-registration, round 1",
+      "reason": "Fable, 2026-11-18: reachable only by a hand run that names a second --import after test/hermetic.mjs; the one runner (wholeArgs, test:short) names one, and test:short --record's reads.mjs comes first through NODE_OPTIONS; the limit is stated in hermetic's own comment. Reopen only if a second runner or a second --import appears"
     }
   ]
 }

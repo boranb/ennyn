@@ -20,9 +20,12 @@
         }
       ],
       "nodes": [
-        "doc-cochange"
+        "doc-cochange",
+        "stated-limit-names-its-node"
       ],
       "linked": [
+        "new: test asserts the behaviour the change replaces",
+        "new: new repository read left out of the not-gate allow list",
         "new: volatile number in a durable document",
         "new: stated reason outlived by a method change",
         "new: ordered protocol not reconciled with a split of who runs which step",
@@ -119,6 +122,12 @@
           "file": "test/run.test.mjs",
           "action": "red-green",
           "proof": "The runners (npm test, test:short, its record) fail a run where a test file process ended before its run did or ran no test, read from a reporter tally per file. It holds no hand run of one file, and on Node before 22.12 no file ending after a top-level await."
+        },
+        {
+          "commit": "b230b42fe44ef23c7a35fe01d55222a6e73625f0",
+          "file": "test/hermetic.test.mjs",
+          "action": "red-green",
+          "proof": "A test file process fails an exit at code 0 before its file loaded or, outside --test-force-exit, before node ran to its end, on every Node. It holds no exit listener that resets the code and no test registered in an unref timer."
         }
       ],
       "nodes": [
