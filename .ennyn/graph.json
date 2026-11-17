@@ -3945,17 +3945,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "test-home-writes",
-      "title": "test/hook.test.mjs:479 writes the plugin record under HOME, so run with no preload it rewrites the real one: route it through test/own-home.mjs, which refuses a HOME outside the temp folder",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "gates",
-      "source": "cycle 2026-11-02 (18), review of reader-harness-keep: rewrote the record in a fake home; pre-existing",
-      "since": 18
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "git-copy-races-maintenance",
       "title": "A test that copies or deletes a repository races the commit's detached git maintenance: set gc.auto=0 and maintenance.auto=false in the tests' repositories. Candidates: test/input-shapes.test.mjs (ENOTEMPTY at landing), test/fault-injection.test.mjs:478, test/side-copy.test.mjs:90, 418, 926 (cp ENOENT at start)",
       "value": "medium",
@@ -6141,17 +6130,6 @@
       "since": 35
     },
     {
-      "id": "tests-real-home-writes",
-      "title": "test/setup.test.mjs:1656 builds join(String(process.env.XDG_CONFIG_HOME), 'git', 'ignore'), then writes and removes it: run without test/hermetic.mjs it made undefined/git/ in the checkout (found 2026-11-15, three days old), and on a machine with XDG_CONFIG_HOME set it overwrites and deletes the user's global git ignore. test/hook.test.mjs:479 writes the plugin record under the real $HOME/.claude/plugins/data/ennyn-ennyn. Both take their home from test/own-home.mjs or refuse to run",
-      "status": "planned",
-      "value": "high",
-      "cost": "S",
-      "cluster": "security",
-      "needs": [],
-      "source": "free-route audit of 2026-11-15 on 42d3c77 (four security reviewers, labs kept outside the repository), triaged by Fable the same day",
-      "since": 35
-    },
-    {
       "id": "message-secret-template-forgery",
       "title": "The message secret scan blanks every '#<TAB>' line whenever a line holds the comment marker alone (scannedMessage, checks/commit-shape.mjs:306), whatever the cleanup mode; with -m/-F git keeps them, so a token on such a line is stored. Blank them only under cleanup strip or scissors with the editor",
       "status": "planned",
@@ -6252,14 +6230,16 @@
     },
     {
       "id": "test-home-write-gate",
-      "title": "A hygiene gate: no test writes under HOME or XDG_CONFIG_HOME without test/own-home.mjs (tests-real-home-writes found two by grep, one only after it had left a folder for three days)",
+      "title": "A hygiene gate: no test writes under HOME or XDG_CONFIG_HOME without test/own-home.mjs (tests-real-home-writes found two by grep, one only after it had left a folder for three days). Input from cycle 40: the sweep found no other suite file writing under the inherited home; files without ownHome rely on the preload alone, which (unmeasured) keeps ENNYN_LOCK_DIR and ENNYN_PLUGIN_ROOT; a path built from the env ownHome has set reads the same as one built from ownHome (two equivalent mutants), so only a source-text check tells them apart",
       "status": "planned",
       "value": "medium",
       "cost": "S",
       "cluster": "security",
       "needs": [],
       "source": "free-route audit of 2026-11-15 on 42d3c77 (four security reviewers, labs kept outside the repository), triaged by Fable the same day",
-      "since": 35
+      "since": 35,
+      "mechanization": true,
+      "sourceClass": "one-site-escaping"
     },
     {
       "id": "leftovers-empty-dirs",
@@ -6531,6 +6511,40 @@
       "cluster": "method",
       "title": "node --test --test-force-exit ends a run before tests registered after a top-level await, or in later files, finish, at exit 0, and the briefs' rule (every node --test run carries --test-force-exit) puts it on every run: in cycle 39 hook.test.mjs ran 45 of 71 top-level tests on Linux, setup + verdicts 87 of 126 and setup alone 109 of 111 on the Mac, ci once 75 of 80, and a --test-name-pattern run of hook.test.mjs ran 0 tests and passed. npm test and test:short do not use the flag. Change the rule (the flag off, or a count check that fails a short run) and the handoff's brief line; the ci-test-silent-stop-node22 stops may be the same cause",
       "source": "cycle 2026-11-17 (39) review of message-unread-file-gates, author's proposed node (a kept folder outside the repository, linux2/summary.txt)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 40,
+      "id": "tests-real-home-writes-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "gate": "beside",
+      "title": "tests-real-home-writes: low findings left. refusal-cwd: the refusal tests of setup, hook and fault-injection (and hook-oracle, which they copy) look only in their own TMPDIR, not in the inherited XDG folder or working folder a write before ownHome would reach (c40-t1-security-r1-02)",
+      "source": "cycle 2026-11-17 (40) review of tests-real-home-writes"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 40,
+      "id": "fault-slow-diff-linux-count",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "tests",
+      "title": "test/fault-injection.test.mjs \"fault matrix: a file git is slow to diff is named unread…\" fails in node:22 (Linux, git 2.39.5, user node): it expects \"and 1 more adds what reads as a secret\", Linux prints \"and 2 more\"; red on 84cecfc too (twice each, a kept folder outside the repository), green on macOS. Cause not measured. Full npm run test:linux before the release is red until it is fixed",
+      "source": "cycle 2026-11-17 (40), author measurement while landing tests-real-home-writes (c40-t1-author-r1-02)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 40,
+      "id": "own-home-design-decision",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "title": "test/own-home.mjs reached the fix-loop brake in cycle 40 (three rows: GIT_* kept, plugin variables kept, then NODE_COMPILE_CACHE): it deletes a list of inherited variables a write can follow out of the test home, and each review finds one more (NODE_COMPILE_CACHE sends node cache writes under the real home with or without the preload, c40-t1-security-r2-01; unrun: NODE_V8_COVERAGE, XDG_CACHE_HOME/XDG_DATA_HOME/XDG_STATE_HOME, USERPROFILE on Windows; test/hermetic.mjs has the same list shape). Decide on the top two rungs: the home helper and the preload build the test environment from an allow list (what a test may inherit: PATH, a locale, the test runner own variables) and refuse or drop the rest; or remove the need (one place builds the test env, own-home only refuses). No more names added to the list one at a time",
+      "source": "cycle 2026-11-17 (40) review of tests-real-home-writes; convergence fix-loop brake on test/own-home.mjs"
     }
   ],
   "done": [
@@ -7515,6 +7529,20 @@
       "status": "done",
       "finished": "2026-11-17",
       "cluster": "security"
+    },
+    {
+      "id": "tests-real-home-writes",
+      "title": "test/setup.test.mjs, test/hook.test.mjs and test/fault-injection.test.mjs take their home from test/own-home.mjs at their top and refuse to run with a HOME outside the temporary folder, before any write (a test in each; guard fault-home): run without test/hermetic.mjs they no longer rewrite and delete the global git ignore (or make undefined/git/ in the working folder) or rewrite the plugin record. ownHome also drops the plugin session, Claude Code, lock and GIT_* variables (but GIT_CONFIG_NOSYSTEM and GIT_CEILING_DIRECTORIES) a write could follow out of the home (review r1: ENNYN_PLUGIN_DATA let install-hook rewrite the real record). Mutation first 21/23, last 21/23 (two equivalent); node:22 setup 113, hook 72 top-level, the seven own-home files; one-task run, cycle 40 (096b5df)",
+      "status": "done",
+      "finished": "2026-11-17",
+      "cluster": "security"
+    },
+    {
+      "id": "test-home-writes",
+      "title": "closed with tests-real-home-writes, cycle 40 (096b5df): hook.test.mjs writes the plugin record under a home of its own",
+      "status": "done",
+      "finished": "2026-11-17",
+      "cluster": "gates"
     }
   ],
   "declined": [

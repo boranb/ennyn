@@ -92,7 +92,8 @@
         "new: test reads repository outside its listed allowance",
         "new: test reads a platform-only interface",
         "new: inherited test scope breaks guard verdicts",
-        "new: gate on live machine state reached by tests that never set it"
+        "new: gate on live machine state reached by tests that never set it",
+        "new: test result differs by platform, cause unmeasured"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, it came back as tests that lean on the machine's identity, found at the Linux run. Named in cycle 3."
     },
@@ -335,7 +336,8 @@
         "new: rule checked on one row of a duplicate chain",
         "new: boundary leaves a path-bound channel open",
         "new: boundary fences one channel of an effect another channel reaches",
-        "new: second runner of untrusted texts outside the gate"
+        "new: second runner of untrusted texts outside the gate",
+        "new: denylist of write-place variables misses one"
       ],
       "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict; no gate, both nodes are open. Named in cycle 8 as one-site escape or twin fix."
     },
