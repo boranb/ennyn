@@ -19,7 +19,7 @@ Read in one turn, once `ennyn.mjs doctor` shows no ✗ (else stop: say why): the
 | Mechanization ×1 | `ennyn.mjs mechanization` | A node with `mechanization: true`: turn a recurring defect class into a gate, test, type or lint, then delete the matching prose rule. None ready → the slot becomes a third core task. A graph it or `core` refuses (exit 1, reasons on stderr) is fixed first. |
 | Legacy audit ×1 | `ennyn.mjs audit`: the security audit unless it answers not due; else the audit queue (oldest / never audited / hit by a shared change) | Security audit: every path it lists, with a path table (every way to reach what each protects). Else re-check a feature: invalid/empty/max input, permission denied, network failure, repeated action, refresh, stale data, then [lean items](lean-audit.md). Findings: [finding-schema.md](finding-schema.md), Outcome. |
 
-A critical problem (crash, data loss, auth break, blocker) may replace one core slot. Write the plan as [report-formats.md](report-formats.md) shows. Do not wait for approval between tasks; push only on the user's yes.
+A critical problem (crash, data loss, auth break, blocker) may replace one core slot. Write the plan as [report-formats.md](report-formats.md) shows. Do not wait for approval between tasks; push only on the user's yes in the same exchange.
 
 ## 2. Task protocol (every task, in order)
 
@@ -49,4 +49,4 @@ Never report an unrun test, command or check as done: write `not applicable`. A 
 4. **Retire lessons:** in one lesson file touched this cycle, mark each lesson keep/update/merge/delete; delete the prose of any lesson whose rationale now lives in a test or gate.
 5. **Security checks:** `ennyn.mjs deps`, doctor's CI line (none: no CI file), and after step 6's commit `ennyn.mjs leftovers` and the handoff's leftover command (none: unmeasured); each is reported as found, clean or unmeasured (naming what did not run), never clean by default. A finding is fixed now or becomes a graph node.
 6. **Budget:** after the cycle's last edit, `ennyn.mjs budget --record`; add `--security-audit` only when this cycle's audit was the security audit. Commit the metrics log with the graph and the handoff. Text loaded every session that grew needs a reason in the report. A repeated rule keeps one copy, in the narrowest file that loads where it is needed.
-7. **Push:** `ennyn.mjs worktrees --remove`; `ennyn.mjs test whole`, once (red: task-brief.md's Landing row); `ennyn.mjs push-check`; **ask** for push approval ([push.md](push.md)). Then [handover.md](handover.md).
+7. **Push:** `ennyn.mjs worktrees --remove`; `ennyn.mjs test whole`, once (red: task-brief.md's Landing row); `ennyn.mjs push-check`; [handover.md](handover.md); under `ask` the closing ends first, the push question its last words ([push.md](push.md)).
