@@ -54,6 +54,8 @@ Sonra projenizde `/ennyn:init` çalıştırın. Komut repoyu tarar, birkaç soru
 
 Ennyn'in reposu public olana kadar marketplace'i yerel bir klondan `claude plugin marketplace add ./ennyn` ile ekleyin, sonra yukarıdaki install komutunu çalıştırın.
 
+Ennyn'i yalnızca `github.com/boranb/ennyn` adresinden kurun: yukarıdaki komutlarla ya da bir klondan. Asıl Ennyn'de çalıştırılabilir dosya, çalışma zamanı bağımlılığı ya da kurulum script'i yoktur. Çalıştırılabilir dosya getiren ya da sizden bir kurulum programı çalıştırmanızı isteyen bir kopya Ennyn değildir.
+
 ### Güncelleme
 
 ```sh
@@ -78,7 +80,7 @@ Plugin'i kaldırmak, hook'un plugin sürümünü okuduğu veri klasörünü de s
 
 `skills/cycle/` klasöründeki, döngüyü yürüten cycle skill'i [Agent Skills](https://agentskills.io) formatındadır ama CLI'yi `${CLAUDE_PLUGIN_ROOT}` üzerinden çağırır; bu değişkeni yalnızca Claude Code tanımlar. Başka bir agent'la kullanmak için `CLAUDE_PLUGIN_ROOT` değişkenini bir Ennyn klonunun path'ine ayarlayın. CLI, Node 22 ya da üstünü ve git 2.34 ya da üstünü ister, bağımlılığı yoktur. Ennyn klonunun içinden `node scripts/ennyn.mjs --help` komutların listesini verir. README'nin geri kalanında geçen `ennyn`, projenizin içinden çalıştırılan bu script'in kısaltmasıdır.
 
-Ennyn Linux'ta ve macOS'ta, Windows'ta da WSL üzerinden çalışır; test takımı orada geçer (Ubuntu 22.04, git 2.34.1). Doğrudan Windows'ta (Git for Windows 2.47.1, Git Bash, PowerShell 7) push hook'u, commit-msg hook'u, gate gevşetme kontrolü ve plugin'in sürüm kaydı ölçüldü ve tutuyor, [SECURITY.md](SECURITY.md)'nin söylediği gibi; test takımı orada geçmez, sıkıştırma hook'u yalnız bir test projesinde denendi, diğer hook'lar ölçülmedi.
+Ennyn Linux'ta ve macOS'ta, Windows'ta da WSL üzerinden çalışır; test takımının tamamı orada en son 2026-11-09'da, `fcb194f` commit'inde geçti (Ubuntu 22.04, git 2.34.1). Doğrudan Windows'ta (Git for Windows 2.47.1, Git Bash, PowerShell 7) push hook'u, commit-msg hook'u, gate gevşetme kontrolü ve plugin'in sürüm kaydı en son 2026-11-05'te, `7f2a70b` commit'inde ölçüldü ve tutuyor, [SECURITY.md](SECURITY.md)'nin söylediği gibi; test takımı orada geçmez, sıkıştırma hook'u yalnız bir test projesinde denendi, diğer hook'lar ölçülmedi.
 
 ## Bir döngü nasıl işler
 

@@ -54,6 +54,8 @@ Then run `/ennyn:init` in your project. It scans the repository, asks a few ques
 
 Until Ennyn's repository is public, add the marketplace from a local clone with `claude plugin marketplace add ./ennyn`, then run the install command above.
 
+Install Ennyn only from `github.com/boranb/ennyn`, with the commands above or from a clone. The real thing has no binaries, no runtime dependencies and no install scripts. A copy that ships an executable, or asks you to run a setup program, is not Ennyn.
+
 ### Update
 
 ```sh
@@ -78,7 +80,7 @@ Uninstalling the plugin also deletes its data folder, where the hook looks up th
 
 The cycle skill in `skills/cycle/` follows the [Agent Skills](https://agentskills.io) format, but it calls the CLI through `${CLAUDE_PLUGIN_ROOT}`, which only Claude Code sets. To use it with another agent, set `CLAUDE_PLUGIN_ROOT` to the path of an Ennyn clone. The CLI needs Node 22 or later and git 2.34 or later, and has no dependencies. From the Ennyn clone, `node scripts/ennyn.mjs --help` lists its commands. Elsewhere in this README, `ennyn` is short for that script, run from your project.
 
-Ennyn runs on Linux and macOS, and on Windows through WSL, where the test suite passes (Ubuntu 22.04, git 2.34.1). On native Windows (Git for Windows 2.47.1, Git Bash, PowerShell 7) the push hook, the commit-msg hook, the gate-loosening check and the plugin's version record were measured and hold, as [SECURITY.md](SECURITY.md) says; the test suite does not pass there, the compaction hook was only tried on a test project, and the other hooks were not measured.
+Ennyn runs on Linux and macOS, and on Windows through WSL, where the whole test suite last passed on 2026-11-09, at commit `fcb194f` (Ubuntu 22.04, git 2.34.1). On native Windows (Git for Windows 2.47.1, Git Bash, PowerShell 7) the push hook, the commit-msg hook, the gate-loosening check and the plugin's version record were last measured on 2026-11-05, at commit `7f2a70b`, and hold, as [SECURITY.md](SECURITY.md) says; the test suite does not pass there, the compaction hook was only tried on a test project, and the other hooks were not measured.
 
 ## How a cycle runs
 
