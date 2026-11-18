@@ -1,7 +1,12 @@
 # Changelog
 
-## Unreleased (0.0.x)
+## Unreleased
 
+## 0.1.0 (2026-11-18)
+
+First public release.
+
+- History was rewritten before the public release; earlier commit hashes no longer resolve.
 - Docs: README and SECURITY.md name the one place to install Ennyn from and what a genuine copy never holds, and date the last WSL and native Windows measurements with their commits; SECURITY.md says which release gets fixes, what `uninstall-hook` deletes, and what the audits of 2026-11-15 and 2026-11-17 covered and left open, with the outside review still missing.
 - Tests: the fault matrix's slow-diff test holds the slow file's diffs itself instead of relying on git's speed, so it gives the same result on Linux and macOS.
 - `skills/cycle/report-formats.md`'s convergence table and its By age list are pinned: `test/report-formats-walk.test.mjs` writes each line's number, conditions and column as data, tied to the `test/findings.test.mjs` tests that run them, and holds every title of its convergence sections that names a line to that line. A row, item or condition added, dropped, reworded or renumbered fails until the data and those tests' titles follow.
