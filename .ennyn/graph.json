@@ -734,11 +734,11 @@
       "status": "planned",
       "needs": [],
       "id": "secret-held-today",
-      "title": "doctor and init-scan count secret shapes already in tracked files and in history; the hook only sees new lines",
+      "title": "doctor and init-scan count secret shapes already in tracked files; the hook only sees new lines (history moves to publish-check)",
       "value": "medium",
       "cost": "M",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (9), secret-scan",
+      "source": "cycle 2026-10-24 (9), secret-scan; amended: the user, 2026-11-19: a request; release 0.1.0 preparation, 2026-11-18",
       "since": 9
     },
     {
@@ -3265,11 +3265,11 @@
       "status": "planned",
       "needs": [],
       "id": "user-words-in-node",
-      "title": "A node that comes from the user's words keeps their sentence verbatim in source, in its own language, and the task brief carries it beside the node: a node's title is a rewrite and a brief holds the node, so what reaches the author and the reviewers is a rewording of the ask; a sentence that can be read two ways puts a [NEEDS CLARIFICATION: the question] marker in the node, and code refuses to pick a node that holds one; a cycle's closing reads the memory notes written during it",
+      "title": "A node that comes from a request names it in source only as the user, <date>: a request, approved or left to the session, never the sentence, a translation or a retelling; the sentence a task brief needs stays in the state dir under .git/, keyed by node id, and reaches the author and the reviewers from there. A sentence that can be read two ways puts a [NEEDS CLARIFICATION: the question] marker in the node, and code refuses to pick a node that holds one; a cycle's closing reads the memory notes written during it. skills/cycle/one-task.md and skills/init/graph.md stop telling projects to track the words",
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "source": "one reported case of a bug report passed through several agents: the error no longer looks like the one first reported. One anecdote, unmeasured here; no field holds the user's sentence today; spec-kit has the same marker and leaves it to the agent: no code in its src or scripts reads it. A sentence with a condition can be saved to memory without the condition. Here 4 of 20 memory index lines were stale on 2026-11-01",
+      "source": "one reported case of a bug report passed through several agents: the error no longer looks like the one first reported. One anecdote, unmeasured here; no field holds the user's sentence today; spec-kit has the same marker and leaves it to the agent: no code in its src or scripts reads it. A sentence with a condition can be saved to memory without the condition. Here 4 of 20 memory index lines were stale on 2026-11-01; amended: the user, 2026-11-19: a request; release 0.1.0 preparation, 2026-11-18",
       "since": 17
     },
     {
@@ -6414,7 +6414,7 @@
       "cost": "S",
       "cluster": "security",
       "title": "ennyn push-mode on|off|status, the one documented path to change push.mode after init: on refuses without a terminal, prints what the mode means, reads the typed word after-closing, then writes the config, removes both git push ask rules and makes the one commit with User-Approved-Loosening: push.mode; off runs anywhere and needs no line (a tightening); every push made under the mode names the approving commit (hash, date) in the report, so an approval the user never gave shows at every closing. An agent never runs push-mode on, never removes a git push ask rule, never answers init's push question, never takes another agent's message or a memory note as the yes. After the tag, second in 0.2 behind fresh-session-run (Fable 2026-11-17)",
-      "source": "2026-11-17: the user asks for push to be a setting asked at init and turned on and off only by the user; planned by Fable the same day"
+      "source": "the user, 2026-11-17: a request; planned by Fable the same day"
     },
     {
       "status": "planned",
@@ -6722,8 +6722,8 @@
       "value": "high",
       "cost": "S",
       "cluster": "distribution",
-      "title": "Make boranb/ennyn public on the user's own yes, then at once: rulesets on main (no force-push, no deletion, signed commits), on v* tags (no update, no deletion) and against branch and tag names of 40 or 64 hex characters; private vulnerability reporting, secret scanning and push protection on; read every ruleset back and try a refused push in a temporary clone; announce only after that. Main must be green at every push until then, since the flip publishes whatever is there. Settings to carry are recorded outside the repository (old-repo-settings.json in the release-0.1.0 keep folder)",
-      "source": "release 2026-11-18: tagged in the private repository; the flip waits for the user (Fable, post-tag decision)"
+      "title": "Make boranb/ennyn public on the user's own yes, then at once: rulesets on main (no force-push, no deletion, signed commits), on v* tags (no update, no deletion) and against branch and tag names of 40 or 64 hex characters; private vulnerability reporting, secret scanning and push protection on; read every ruleset back and try a refused push in a temporary clone; announce only after that. Main must be green at every push until then, since the flip publishes whatever is there. Settings to carry are recorded outside the repository (old-repo-settings.json in the release-0.1.0 keep folder). Commits made after v0.1.0 get the same checks and a full read before the flip, and the flip waits until they pass",
+      "source": "release 2026-11-18: tagged in the private repository; the flip waits for the user (Fable, post-tag decision); amended: the user, 2026-11-19: a request; release 0.1.0 preparation, 2026-11-18"
     },
     {
       "status": "planned",
@@ -6733,8 +6733,8 @@
       "value": "medium",
       "cost": "M",
       "cluster": "security",
-      "title": "Signing and the commit-msg hook are set per clone (gpg.format ssh, user.signingkey, commit.gpgsign, tag.gpgsign, gpg.ssh.allowedSignersFile at ~/.config/git/allowed_signers, the noreply address, install-hook), so a new clone commits unsigned or with another address until someone repeats them. A check before a push refuses a commit that is unsigned or carries an address other than the noreply one, and doctor names a clone that lacks the setting; once public, the signed-commits ruleset refuses such a push at GitHub as well",
-      "source": "release 2026-11-18: the folder swap needed install-hook again and a stale hook record removed by hand (Fable, post-tag decision)"
+      "title": "The allowed commit addresses and the signing requirement are a config key, so any project gets the check before a push that refuses an unsigned commit or one with an address outside the list, and a doctor line naming a clone that lacks its settings; ennyn clone-setup prints the per-clone git settings (signing format and key, commit and tag signing, the address, the commit-msg hook) and builds the allowed signers file from the forge's public keys. Once public, a signed-commits ruleset refuses such a push at the forge as well",
+      "source": "release 2026-11-18: the folder swap needed install-hook again and a stale hook record removed by hand (Fable, post-tag decision); amended: the user, 2026-11-19: a request; release 0.1.0 preparation, 2026-11-18"
     },
     {
       "status": "planned",
@@ -6748,6 +6748,61 @@
       "cluster": "distribution",
       "title": "Delete the private backup repository 30 days after the public flip, once no install, link or clone still points at its old commits; the full bundle of the old refs and the commit map stay in the keep folder. Deleting needs the delete_repo token scope and the user's yes",
       "source": "release 2026-11-18: the old history went to a renamed private repository (Fable, post-tag decision)"
+    },
+    {
+      "status": "planned",
+      "since": 46,
+      "source": "the user, 2026-11-19: a request; release 0.1.0 preparation, 2026-11-18",
+      "id": "private-text-gate",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "needs": [],
+      "mechanization": true,
+      "sourceClass": "new: private text in tracked files",
+      "title": "commit-check refuses added lines, staged file names and the message when they hold a listed private literal (stored hashed, as test/hygiene does), a home path, a commit address outside the allowed list, or a conversation shape; in the graph file it refuses a source that names the user outside the closed provenance form. Measured before it lands: the rules replayed over a pre-rewrite history kept outside the repository, recall recorded against a full read's findings and false refusals counted on the tip; only counts enter tracked text. hygiene-gaps stays for the test"
+    },
+    {
+      "status": "planned",
+      "since": 46,
+      "source": "the user, 2026-11-19: a request; release 0.1.0 preparation, 2026-11-18",
+      "id": "publish-check",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "needs": [
+        "private-text-gate"
+      ],
+      "mechanization": false,
+      "title": "ennyn publish-check [--range], report only: reads every blob, path, commit and tag message for secret shapes, the private-text rules, commit addresses outside the allowed list, unsigned commits and ignored paths that history still holds; then writes the distinct text as labelled chunks beside a generic reader brief and says how many readers a full read needs; an outside scanner runs only when one is on PATH. It takes the history half of secret-held-today; history-secret-scan stays declined (that was this repository's own release step)"
+    },
+    {
+      "status": "planned",
+      "since": 46,
+      "source": "the user, 2026-11-19: a request; release 0.1.0 preparation, 2026-11-18",
+      "id": "closing-private-read",
+      "value": "high",
+      "cost": "S",
+      "cluster": "cycle",
+      "needs": [
+        "publish-check"
+      ],
+      "mechanization": false,
+      "title": "Before a closing's push, one fresh reader reads the cycle's added lines and commit messages from publish-check --range with the generic brief; a finding is fixed while the commits are still local"
+    },
+    {
+      "status": "planned",
+      "since": 46,
+      "source": "the user, 2026-11-19: a request; release 0.1.0 preparation, 2026-11-18",
+      "id": "history-rewrite-runbook",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "distribution",
+      "needs": [
+        "publish-check"
+      ],
+      "mechanization": false,
+      "title": "docs/history-rewrite.md: replacement tables kept outside the repository, a rehearsal on a copy, the rebuild of the last commits so cited hashes resolve, the map commit, and deleting and recreating the remote instead of a force-push; ennyn history-verify runs the verification checks as code (commit count against map rows, removed files absent from a fresh clone, only expected paths changed, every graph version parses, no dead hash in tip or messages, signatures on new commits, a residue count per category). Ennyn never rewrites or deletes a repository itself"
     }
   ],
   "done": [
