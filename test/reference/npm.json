@@ -1,5 +1,5 @@
 {
-  "npm": {"npm":"10.9.7","arborist":"8.0.4","npm-package-arg":"12.0.2","pacote":"19.0.2","@npmcli/config":"9.0.0"},
+  "npm": {"npm":"10.9.9","arborist":"8.0.5","npm-package-arg":"12.0.2","pacote":"19.0.2","@npmcli/config":"9.0.0"},
   "unmeasured": 35,
   "cells": [
     {"id":"v-r1-tarball-of-another-package","from":"test/verdicts/deps.json r1-tarball-of-another-package, root dependencies added","lock":{"name":"d","lockfileVersion":3,"packages":{"":{"dependencies":{"lodash":"4.17.21"}},"node_modules/lodash":{"version":"4.17.21","resolved":"{{registry}}/evil-pkg/-/evil-pkg-0.0.1.tgz","integrity":"sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="}}},"npm":{"ci":"ok","at":{"node_modules/lodash":{"kind":"remote","url":"http://127.0.0.1:4873/evil-pkg/-/evil-pkg-0.0.1.tgz","spec":"lodash@http://127.0.0.1:4873/evil-pkg/-/evil-pkg-0.0.1.tgz"}}}},
