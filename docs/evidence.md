@@ -161,7 +161,7 @@ A third project, by the same author, covered those the same day with init and on
 
 ## Reading the convergence columns
 
-The first 15 cycles on Ennyn itself wrote four numbers. Their sums, read from the 15 closing handoffs, are 438, 407, 321 and 178. The columns changed after that. By the research's reading of the handoffs, a judgement and not a count of rows, all 438 "real escapes" were caught by a reviewer before the commit, so they had not escaped the loop; and what each column held had moved from cycle to cycle. Each column now has one definition, in `skills/cycle/report-formats.md`, and each finding lands in one column. The numbers already written, here and in the handoffs, stay as they are. A new cycle compares with them this way:
+The first 15 cycles on Ennyn itself wrote four numbers. Their sums, read from the 15 closing handoffs, are 438, 407, 321 and 178. The handoffs are working notes kept outside this repository, so these sums cannot be recounted from it. The columns changed after that. By the research's reading of the handoffs, a judgement and not a count of rows, all 438 "real escapes" were caught by a reviewer before the commit, so they had not escaped the loop; and what each column held had moved from cycle to cycle. Each column now has one definition, in `skills/cycle/report-formats.md`, and each finding lands in one column. The numbers already written, here and in the handoffs, stay as they are. A new cycle compares with them this way:
 
 | Written then | Sum, 15 cycles | Written now | How to compare |
 |---|---|---|---|
