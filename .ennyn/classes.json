@@ -7,13 +7,13 @@
       "state": "open",
       "gates": [
         {
-          "commit": "8f1aa9108dee1bd6a9728c361538301526922a55",
+          "commit": "6f04584cea8489ac340c2f9c7e84cb0ebf34a5fc",
           "file": "checks/commit-shape.mjs",
           "action": "advice",
           "proof": "commit-check warns when a path changes and none of its documents do; any document touched meets it, and it never stops a commit."
         },
         {
-          "commit": "58e260ef5c6c94af8f336c34b97850082976841b",
+          "commit": "4d671cfd7ff7a182e98fb59b07c9e2df39ca9d63",
           "file": "test/findings-format.test.mjs",
           "action": "red-green",
           "proof": "The row format's fields, closed sets and bounds are compared with the validator's, with guard mutants. It holds that one document, and landed in cycle 16 with nothing shown yet."
@@ -44,7 +44,7 @@
       "state": "partial",
       "gates": [
         {
-          "commit": "5ad52d54eefff1b456442e0e519e9bfe29c4b60c",
+          "commit": "c2592ea57dae5ce70508690ee2334d01e9c24ddd",
           "file": "test/git-oracle.test.mjs",
           "action": "real-program",
           "proof": "Real git makes the inputs, and the code's reading is compared with what git stored."
@@ -76,7 +76,7 @@
       "state": "partial",
       "gates": [
         {
-          "commit": "5afbee995a08aad2ab38e574ebc564a5122fbb09",
+          "commit": "a6a1deccf9f407e24f8eaf550b7a726f07f9ffca",
           "file": "test/hostile.mjs",
           "action": "past-defects",
           "proof": "Every test file runs on a hostile machine, then a setup clears it."
@@ -106,25 +106,25 @@
       "state": "partial",
       "gates": [
         {
-          "commit": "00e94a773257bc8b56077e20d1fb85cbb23d2a64",
+          "commit": "054aa03d11df9266b95284e53b99e32f55bc364a",
           "file": "test/fault-injection.test.mjs",
           "action": "past-defects",
           "proof": "Every command runs with each git call failing, and must fail or say so."
         },
         {
-          "commit": "e636ee6207cb50db7adb3a65a536045191f36045",
+          "commit": "bf3a7ec61928251053d881d7462e36404a5ffe48",
           "file": "test/fault-fs.mjs",
           "action": "past-defects",
           "proof": "Every command runs with each file read failing, and must fail or say so."
         },
         {
-          "commit": "dc9a6e51975b7deda2ad20f3cdead59a3d35a352",
+          "commit": "7188f1c1e67fdd5e2a6ff7d5695a42de6fee19fb",
           "file": "test/run.test.mjs",
           "action": "red-green",
           "proof": "The runners (npm test, test:short, its record) fail a run where a test file process ended before its run did or ran no test, read from a reporter tally per file. It holds no hand run of one file, and on Node before 22.12 no file ending after a top-level await."
         },
         {
-          "commit": "b230b42fe44ef23c7a35fe01d55222a6e73625f0",
+          "commit": "ac6807f10cdd24f1519ae318997cb15ada63eb68",
           "file": "test/hermetic.test.mjs",
           "action": "red-green",
           "proof": "A test file process fails an exit at code 0 before its file loaded or, outside --test-force-exit, before node ran to its end, on every Node. It holds no exit listener that resets the code and no test registered in an unref timer."
@@ -164,13 +164,13 @@
       "state": "partial",
       "gates": [
         {
-          "commit": "71f95438fa59d2626a3280e17d7627b6c27b9643",
+          "commit": "93a2d9eb0c01ca8d1d4e78b01f3e5cb53e2c0a66",
           "file": "test/guards.mjs",
           "action": "ban-list",
           "proof": "Every gate test has guard mutants, and a test file that reads the repository must be listed."
         },
         {
-          "commit": "f70715151de7170ed93371c84bd5c1cb7a502f21",
+          "commit": "d90dbb2743f627de08cac13588a179757a904830",
           "file": "test/guards.test.mjs",
           "action": "ban-list",
           "proof": "A kill is the named test failing, not any failure of the file."
@@ -212,13 +212,13 @@
       "state": "partial",
       "gates": [
         {
-          "commit": "d103af15cee8fcc44545f9a03f8d1dee89820c77",
+          "commit": "2647acd290ca89ad37e6219d7937e72d35a66099",
           "file": "test/input-shapes.test.mjs",
           "action": "past-defects",
           "proof": "The commit-msg hook is fed every input shape it may not read, and must refuse it or say what went unread."
         },
         {
-          "commit": "5555a5ca49e0e49b78087994473b234e4ddae4bd",
+          "commit": "f726b8e7f91a829752180b4ab7fe4b59ef9ab934",
           "file": "core/git.mjs",
           "action": "past-defects",
           "proof": "Under the hook a failed read of what a commit adds or changes refuses, unless it is a machine's fault, in four gates; test/ci.test.mjs and the fault matrix."
@@ -264,19 +264,19 @@
       "state": "partial",
       "gates": [
         {
-          "commit": "d103af15cee8fcc44545f9a03f8d1dee89820c77",
+          "commit": "2647acd290ca89ad37e6219d7937e72d35a66099",
           "file": "test/input-shapes.test.mjs",
           "action": "past-defects",
           "proof": "Giant files are among the shapes the hook is fed, as the handoff of cycle 7 proposed."
         },
         {
-          "commit": "cc1d553a1d58962b7c12c73392b52ebad838f65a",
+          "commit": "aa88d648d42494b8e79709356edcf06797a1d854",
           "file": "test/secrets.test.mjs",
           "action": "past-defects",
           "proof": "Every secret pattern takes time linear in the line, on long lines built to make one backtrack."
         },
         {
-          "commit": "9783fcb14bf20373505612c9c301eafe5833e3e6",
+          "commit": "e745e9efba91f64df46ce4a694e91f09245c9de1",
           "file": "test/ci.test.mjs",
           "action": "past-defects",
           "proof": "Every workflow joiner and run rule takes time linear in the text, on texts built to make one rescan."
@@ -306,7 +306,7 @@
       "state": "partial",
       "gates": [
         {
-          "commit": "acef97b3ff824272fb1d5260c62228db9c98b492",
+          "commit": "bcaa921b523daebc858ea218bce6e5de453d3337",
           "file": "test/verdicts.test.mjs",
           "action": "past-defects",
           "proof": "Reviewers' probes stay as cells with their verdicts, and a test fails when a verdict moves."
@@ -362,7 +362,7 @@
       "state": "partial",
       "gates": [
         {
-          "commit": "acef97b3ff824272fb1d5260c62228db9c98b492",
+          "commit": "bcaa921b523daebc858ea218bce6e5de453d3337",
           "file": "test/verdicts.test.mjs",
           "action": "past-defects",
           "proof": "The verdict corpus holds two of the four cases the handoff of cycle 9 names, as cells; the other two are not in it."
@@ -396,25 +396,25 @@
       "state": "partial",
       "gates": [
         {
-          "commit": "9996f2528535896b5332ec387b259c0e11f4ed6d",
+          "commit": "2260a4987c14508692d49fe392415efecb96c455",
           "file": "test/reference/npm.mjs",
           "action": "real-program",
           "proof": "npm's own reading of the lock cells is recorded, and the gate is compared with it place by place."
         },
         {
-          "commit": "b37a1e79bb391e86ef41b330a5f8fdc289cdbf40",
+          "commit": "c8fed76dad34ef6705be6415f9ebd708d2a81cae",
           "file": "test/reference/claude-code.mjs",
           "action": "real-program",
           "proof": "Claude Code's own reading of the rule cells is recorded, and the model is compared with it place by place."
         },
         {
-          "commit": "d572b9bd348e87152a8a9ccf2fab9e21fc9076b2",
+          "commit": "f5489b7a513e8f0afc165d634cfb33179da7deb1",
           "file": "test/reference/markdown.mjs",
           "action": "real-program",
           "proof": "The Markdown readers are replayed against the parser Claude Code holds."
         },
         {
-          "commit": "9783fcb14bf20373505612c9c301eafe5833e3e6",
+          "commit": "e745e9efba91f64df46ce4a694e91f09245c9de1",
           "file": "test/reference/actions-yaml.mjs",
           "action": "real-program",
           "proof": "The workflow reader is held to the reading of the runner's own parser."
@@ -451,7 +451,7 @@
       "state": "partial",
       "gates": [
         {
-          "commit": "d572b9bd348e87152a8a9ccf2fab9e21fc9076b2",
+          "commit": "f5489b7a513e8f0afc165d634cfb33179da7deb1",
           "file": "test/reference/markdown.mjs",
           "action": "red-green",
           "proof": "A cell's id holds plain words and each place it prints is JSON quoted; the reference-md-judge-quote guard fails when that quoting goes."
@@ -567,7 +567,7 @@
       "state": "open",
       "gates": [
         {
-          "commit": "f59fbdc9eeca7bac82dea207ba8eda38b9c38aa8",
+          "commit": "962ac3dd449b569278067d30ec65d23cf50367c4",
           "file": "test/classes-seed.test.mjs",
           "action": "red-green",
           "proof": "A gate row's commit must have touched its file and an entry that claims a gate must have one standing, with guard mutants. It holds the registry's own rows and no other statement."
@@ -620,19 +620,19 @@
       "state": "partial",
       "gates": [
         {
-          "commit": "7fd12bb4f20a44d8487366b48e0e47f676f07b80",
+          "commit": "084171fd73a0e5d012eeb5c4fb27f18697596f38",
           "file": "test/plugin.test.mjs",
           "action": "red-green",
           "proof": "A skill must link every file of its tree and each link must lead to a file, with guard mutants, so a step cannot name a file that is gone. It holds a skill's links and no other gap."
         },
         {
-          "commit": "13d6f936f0d1083313434f6affc01b0cf031b368",
+          "commit": "dfc8625bdc4c02a065bfc7b8162d81b4b67ead20",
           "file": "test/method-walk.test.mjs",
           "action": "red-green",
           "proof": "The failure count of the cycle task brief is written as data and walked: one answer per state and event, every path ends within a measured bound, and every sentence of the section is claimed, with guard mutants. It holds that one section and no other procedure."
         },
         {
-          "commit": "4bd1817bf60c0d61686146ce31d54b301fd3be19",
+          "commit": "9ad53dc26b9e705ea9a2a701bf78133e17d599bb",
           "file": "test/report-formats-walk.test.mjs",
           "action": "red-green",
           "proof": "The convergence table and the By age list of the cycle report formats are written as data and tied by title to the tests that run each line, with guard mutants, so a line changed in the text or a test renamed fails until both follow. It holds that table and list and no other procedure."
@@ -752,7 +752,7 @@
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate.",
       "gates": [
         {
-          "commit": "bccbd14363abf302656ec8e000834206f23fe258",
+          "commit": "8ee99c2906d118b0939fb414af68e5f1ffc3959c",
           "file": "test/compact-boundary.test.mjs",
           "action": "red-green",
           "proof": "Holds what the first design read from a last reply or an estimate, by reproducers run with and without the hook: a hold no longer rests on a guessed window."
@@ -971,7 +971,7 @@
       "state": "partial",
       "gates": [
         {
-          "commit": "59135da0ca49eb5dc8dd6e55da475979797bcf10",
+          "commit": "ff0c5fa4e4e117e4fef75ea6fb25acc611dcb04b",
           "file": "checks/loosening.mjs",
           "action": "past-defects",
           "proof": "The hook reads every gate key from the commit's own config, and a commit that loosens one needs the user's line; test/loosening.test.mjs."

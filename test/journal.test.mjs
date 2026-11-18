@@ -391,7 +391,7 @@ test("status: a start record that cannot be read leaves the journal shown, HEAD 
   const json = cli(dir, "status", "--json");
   assert.equal(json.status, 1);
   assert.deepEqual((({ cycle, head, minutes }) => ({ cycle, head, minutes }))(JSON.parse(json.stdout)), { cycle: 9, head: null, minutes: null });
-  // The status line names neither HEAD nor time, so the record's state does not reach it: exit 0, nothing on stderr (at a916a53 it failed).
+  // The status line names neither HEAD nor time, so the record's state does not reach it: exit 0, nothing on stderr (at b9a407d it failed).
   const line = cli(dir, "status", "--line");
   assert.equal(line.status, 0, line.stderr);
   assert.equal(line.stdout, "cycle 9 · 0/1 landed · 60% · A review r2\n");

@@ -38,7 +38,7 @@ const TOKEN = "np" + "m_" + "q7Rk2LmVx9TbWc4ZsHn8JyPd3FgAe6Ku5Qo1";
 
 /** Where the registry's list opens, and a real old commit, for constructed entries. */
 const CLASSES_HEAD = '"classes": [';
-const OLD_COMMIT = "5ad52d54eefff1b456442e0e519e9bfe29c4b60c";
+const OLD_COMMIT = "c2592ea57dae5ce70508690ee2334d01e9c24ddd";
 /** The list with one constructed entry at its head. @param {Record<string, unknown>} fields */
 const constructed = (fields) => `${CLASSES_HEAD}\n    ${JSON.stringify({ id: "constructed", says: "A constructed class.", state: "open", ...fields })},`;
 

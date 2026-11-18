@@ -948,7 +948,7 @@ test("shell box: what a text sees of the files outside the box's folders is its 
 
 test("kill reader's harness: with no boundary every test that makes a box ends, failing on the throw, with nothing left open", () => {
   // Each test file as node runs it alone: a server or a sleeper a test opened before the box threw and never closed
-  // keeps the file from ending (main 12097c8 in WSL: kill-targets sat on an open server until stopped).
+  // keeps the file from ending (main 526f54b in WSL: kill-targets sat on an open server until stopped).
   const top = fileURLToPath(new URL("..", import.meta.url));
   for (const [file, pattern] of [
     ["test/kill-targets.test.mjs", "^shell box|^kill reader: (a real bash agrees|the differential judge)"],
