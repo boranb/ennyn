@@ -1368,7 +1368,7 @@
       "value": "low",
       "cost": "S",
       "cluster": "gates",
-      "source": "cycle 2026-10-26 (12), a full run of reference-claude-code's branch at load 50-110; cycle 2026-11-01 (16): ENOTEMPTY again, in whole suites and in guards' baseline, 8 of 8 alone",
+      "source": "cycle 2026-10-26 (12), a full run of reference-claude-code's branch at load 50-110; cycle 2026-11-01 (16): ENOTEMPTY again, in whole suites and in guards' baseline, 8 of 8 alone; 2026-11-18: guards baseline of input-shapes failed once in the post-commit fast run after the npm reference re-record (1754/1755, inner run # fail 1 in 18.5 s; its tail names neither ENOTEMPTY nor a time limit, so the cause is unread), test:short before it 1755/1755; same as cycle 40 closing (alone 3/3)",
       "since": 12
     },
     {
