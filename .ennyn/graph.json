@@ -65,53 +65,6 @@
       "since": 0
     },
     {
-      "id": "release-0-1-0",
-      "title": "Release v0.1.0: final read of both READMEs, CHANGELOG section, version in package.json, package-lock.json and plugin.json, tag; README and SECURITY.md name the one source to install from and what a genuine copy never holds (binaries, runtime dependencies, install scripts); docs/evidence.md's heading 'Gates stop recurrence, prose does not' is scoped to the origin project, with Ennyn's own table of proposal-born gates beside it; docs/related-work.md drops 'None is built yet' (findings-ledger is built), says which of the table's nodes are, and credits this review's ideas in its table, before publishing: Anthropic's post added its credit to Sapling's Mononoke only in an update of October 15; docs/related-work.md's spec-kit row names assess, bug and the workflow engine, and says its claim holds for core only: community extensions (spec-gates, vurnix, spec-kit-tdd) now run checks as code. The rest of the graph waits for after this release Trimmed 2026-11-11 on the user's ask. Moved to 0.2: fresh-session-run (an unattended runner nobody has measured), secret-output-mask and secret-transcript-probe (the probe's answers serve only the mask), kept-folder-closing (stopped in cycle 31, its branch kept), cycle-record. Merged, each declined with its carrier named: walking-skeleton-first, no-bypass-trial, history-secret-scan. Cycle 32 is the last cycle for these needs: what does not land in it moves to 0.2, except a finding that stops a scenario of docs/acceptance.md At most five findings join after this trim; a sixth is the user's decision First of the five: lock-wait-on-fs-error (2026-11-11, a done need's command hangs on Linux) Cycle 32 (2026-11-13): fault-matrix-scoped, engines-floor-22 and greenfield-intake landed; one-decision-one-site moved to 0.2 after its measurement refuted the literal count Second of the five: platform-run-before-landing (the user, 2026-11-14: a request). The final README read: the platform paragraph names the date and commit each platform was last measured, WSL and native Windows unless measured again at the release (no Windows machine at hand, 2026-11-14)",
-      "status": "planned",
-      "value": "high",
-      "cost": "S",
-      "cluster": "distribution",
-      "needs": [
-        "second-project-cycles",
-        "external-audit-before-release",
-        "readme-scope-glossary",
-        "history-author-address",
-        "finding-triage",
-        "greenfield-detect",
-        "greenfield-first-commit",
-        "no-test-command-stop",
-        "greenfield-intake",
-        "smallest-change-row",
-        "one-task-run",
-        "uninstall-path",
-        "node-verdict",
-        "secret-agent-setup",
-        "push-setting",
-        "cycle-journal",
-        "session-handover",
-        "escalate-on-gate-failure",
-        "impact-scoped-tests",
-        "windows-verdict",
-        "kill-own-pid-only",
-        "plugin-update-path",
-        "win-kill-waits-exit",
-        "convergence-fix-loop-per-file",
-        "push-check-recorded-suite",
-        "heavy-job-limit",
-        "engines-floor-22",
-        "lock-wait-on-fs-error",
-        "platform-run-before-landing",
-        "headless-run-keeps-turn",
-        "cycle-wake-lock",
-        "push-ask-never-holds-turn",
-        "fault-slow-diff-linux-count",
-        "tally-late-registration"
-      ],
-      "gate": "user",
-      "source": "user plan: open source after the second-project trial; the repository stays private until then; review of ponytail (MIT), 2026-10-25: its README names its only sources and says a copy that ships .exe or .dll files is not its own; an outside audit with another method before the release (external-audit-before-release); read 2026-11-01: the post now opens 'Updated October 15 to include more detail on the projects that pioneered many of the techniques we use in Scion.', and The Pragmatic Engineer (2026-10-22) reports the attribution came after a public complaint; an audit of requests against the graph, 2026-11-01: five had no node in the release needs: a project started from nothing (a request, 2026-10-29: 15 nodes, 0 done), leftovers (a request, 2026-10-29: 14 nodes, 0 done), secrets in chat (a request, 2026-10-28: 12 nodes, 1 done), less code and no repetition (a request, a request, 2026-10-25), findings that can wait (a request, 2026-10-25). The smallest piece of each entered the needs. spec-gates' README: 'Spec Kit is a guidance layer'; 2026-11-05, the choice was left to the orchestrator: kill-own-pid-only, plugin-update-path and win-kill-waits-exit join the needs, observed on Windows; read 2026-11-15: book-to-skill's SECURITY-NOTICE.md (2026-08-17) names a re-upload under another account that sends host data out, reads wallet stores and ships a Windows executable",
-      "since": 0
-    },
-    {
       "id": "bypass-first-parent",
       "title": "bypass --from counts commits merged in from other branches (also a start reached only through a merge's second parent); first-parent would count nothing in a PR workflow: decide per project, or report merged-in commits apart",
       "status": "planned",
@@ -1522,7 +1475,6 @@
     {
       "status": "planned",
       "needs": [
-        "release-0-1-0",
         "hooks-project-gate"
       ],
       "id": "directory-submission",
@@ -1536,9 +1488,7 @@
     },
     {
       "status": "planned",
-      "needs": [
-        "release-0-1-0"
-      ],
+      "needs": [],
       "id": "launch-writeup",
       "title": "At the release: the 21-cycle study as an article (fixing review findings introduced 99 defects, first drafts missed 80; the origin project stays unnamed), then launch posts, and pull requests to two community lists of Claude Code plugins; GitHub topics and the social preview image set before; awesome-claude-code takes a descriptive description (10–500 characters, not promotional, not addressed to the reader), submitted by a person through the web form, category Agent Orchestration > SDLC",
       "value": "medium",
@@ -3310,20 +3260,6 @@
       "cluster": "gates",
       "source": "cycle 2026-11-01 (16): PID 4018 found by an author, stopped by hand; which run left it is not known, the cause is a reading",
       "since": 16
-    },
-    {
-      "status": "planned",
-      "needs": [
-        "second-project-cycles",
-        "external-audit-before-release"
-      ],
-      "id": "history-author-address",
-      "title": "Before the repository becomes public, every commit's author and committer address becomes the account's GitHub noreply address; the name stays. It runs once, as the last history change, with no worktree and no peer session open: git filter-repo rewrites the headers and the hashes in commit messages, then one commit maps old hashes to new ones in .ennyn/ (508 mentions at 9ec1da7, in the ledger, graph, class registry, metrics log and handoff), with the map kept outside the repository; doctor, npm test and test:linux pass on the result. A force-push leaves the old commits on GitHub, so the rewritten history goes to a new repository under the same name, and the old one is renamed and stays private as the backup, each step with the user's approval on the day. New commits use the noreply address from then on, and plugin installs that point at old commits are redone",
-      "value": "high",
-      "cost": "M",
-      "cluster": "distribution",
-      "source": "user, 2026-11-01: a request. Measured then: the address is in commit headers only, in no file and no commit message at any point in history; 660 hash mentions in tracked files, 508 of them in .ennyn/, 151 in a test fixture; related: account-hardening, history-secret-scan; the user, 2026-11-05: a request; in the same rewrite, before the repository is public, the working files leave the history: .ennyn/handoff.md, .ennyn/handoff-archive.md and the user's chat quotes in graph sources and findings rows; which files exactly is settled then, with the README and docs/evidence.md claims that cite them; a delete in a new commit leaves them in every older commit, and a rewrite after the repository is public leaves them in every clone and fork",
-      "since": 17
     },
     {
       "status": "planned",
@@ -6777,6 +6713,41 @@
       "sourceClass": "doc-lags-code",
       "title": "doc-lags-code came three times in cycle 46 (tally-late-registration): a test still asserting the limit the change closed, the not-gate allow list missing the test's new reads of the repository, and the class registry's proof still stating the closed limit; the same limit was written in six places (test/tally.mjs and test/run.mjs headers, DESIGN.md, CHANGELOG, a class proof, the handoff) and only the handoff named the node that would close it. Two of three were caught by a gate already; the stated limits were found by reading. Two rungs, in order: (1) a convention and a grep-shaped test: a sentence in a comment, DESIGN.md or a class proof that states a limit (not yet, until, left to, unseen) carries an open node id; (2) in the existing closing step, not a new gate, a check over tracked text only (git ls-files: scratch and keep folders never count) lists every text that names a node now done, and the closing fails unless each is changed or kept with why. Sibling of one-decision-one-site (one limit written six times is its case too). After 0.1.0 (Fable, 2026-11-18)",
       "source": "cycle 2026-11-17 (46) closing: convergence's most recurring class (doc-lags-code, 3 rows: c46-t1-author-r0-01, -03, -04)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 46,
+      "id": "public-flip",
+      "value": "high",
+      "cost": "S",
+      "cluster": "distribution",
+      "title": "Make boranb/ennyn public on the user's own yes, then at once: rulesets on main (no force-push, no deletion, signed commits), on v* tags (no update, no deletion) and against branch and tag names of 40 or 64 hex characters; private vulnerability reporting, secret scanning and push protection on; read every ruleset back and try a refused push in a temporary clone; announce only after that. Main must be green at every push until then, since the flip publishes whatever is there. Settings to carry are recorded outside the repository (old-repo-settings.json in the release-0.1.0 keep folder)",
+      "source": "release 2026-11-18: tagged in the private repository; the flip waits for the user (Fable, post-tag decision)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 46,
+      "id": "clone-setup-guard",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "title": "Signing and the commit-msg hook are set per clone (gpg.format ssh, user.signingkey, commit.gpgsign, tag.gpgsign, gpg.ssh.allowedSignersFile at ~/.config/git/allowed_signers, the noreply address, install-hook), so a new clone commits unsigned or with another address until someone repeats them. A check before a push refuses a commit that is unsigned or carries an address other than the noreply one, and doctor names a clone that lacks the setting; once public, the signed-commits ruleset refuses such a push at GitHub as well",
+      "source": "release 2026-11-18: the folder swap needed install-hook again and a stale hook record removed by hand (Fable, post-tag decision)"
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "public-flip"
+      ],
+      "since": 46,
+      "id": "backup-repo-delete",
+      "value": "low",
+      "cost": "S",
+      "cluster": "distribution",
+      "title": "Delete the private backup repository 30 days after the public flip, once no install, link or clone still points at its old commits; the full bundle of the old refs and the commit map stay in the keep folder. Deleting needs the delete_repo token scope and the user's yes",
+      "source": "release 2026-11-18: the old history went to a renamed private repository (Fable, post-tag decision)"
     }
   ],
   "done": [
@@ -7845,6 +7816,20 @@
       "status": "done",
       "finished": "2026-11-18",
       "cluster": "security"
+    },
+    {
+      "id": "history-author-address",
+      "title": "Closed 2026-11-18: history rewritten before the public release; earlier commit hashes no longer resolve",
+      "status": "done",
+      "finished": "2026-11-18",
+      "cluster": "distribution"
+    },
+    {
+      "id": "release-0-1-0",
+      "title": "Closed 2026-11-18: v0.1.0 tagged (signed) on cb958ae in the private repository. The version bump broke the plugin-version guard, which named 0.0.1 itself; d319395 lets it read any version. Final tree: npm test 1755/1755, test:linux 1646/1646 at the floor and on Node 24 (the floor image failed once on apt-get, network; the rerun passed), test:reference, typecheck and validate:plugin; S8 run for real: the marketplace re-cloned over the rewritten history and two installs moved from 0.0.1 to 0.1.0. Going public is the node public-flip",
+      "status": "done",
+      "finished": "2026-11-18",
+      "cluster": "distribution"
     }
   ],
   "declined": [
