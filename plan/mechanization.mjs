@@ -4,8 +4,8 @@
  * best ready node flagged `mechanization: true`, and for the core slots the
  * oldest node of the highest value (pickOldest).
  *
- * Ready = flagged, not done, not declined, gate open (or no gate field), every `needs` id done
- * (listed in the done export, or an open node carrying the done status).
+ * Ready = flagged, not done, not declined, gate open (or no gate field), not held (no clarification
+ * marker), every `needs` id done (listed in the done export, or an open node carrying the done status).
  * Score = value / cost, value and cost words mapped to their weights;
  * ties break by id so the pick is deterministic. The mechanization slot ranks by its class's
  * recent recurrence over cost first (rankMechanization), the caller giving the counts.
@@ -183,7 +183,60 @@ export function doneIds(graph, config) {
 }
 
 /**
- * Open nodes that can start now (not done, not declined, gate open, every need done), best first.
+ * The clarification marker: a request that reads two ways puts `[NEEDS CLARIFICATION: <the question>]` in its node
+ * instead of a guess. Exact apart from the spaces after the colon: upper case, both brackets, the colon. The question is
+ * the text up to the first `]`, and may be empty: an empty one holds the node too, the safe way.
+ */
+const CLARIFY = /\[NEEDS CLARIFICATION:\s*([^\]]*)\]/;
+
+/**
+ * The question a node waits on: the first clarification marker in any string the node holds, at any depth (a field of
+ * any name, a list, an object in it), fields in their order; null when it holds none. Keys, numbers and booleans are
+ * no text of the node. Walked with a stack of its own and a seen set: a module may build a node that holds itself, or
+ * one nested deeper than the call stack.
+ * @param {GraphNode} node
+ * @returns {string | null}
+ */
+export function clarification(node) {
+  /** @type {unknown[]} */
+  const stack = [node];
+  const seen = new Set();
+  while (stack.length) {
+    const v = stack.pop();
+    if (typeof v === "string") {
+      const m = CLARIFY.exec(v);
+      if (m) return m[1].trim();
+    } else if (v !== null && typeof v === "object" && !seen.has(v)) {
+      seen.add(v);
+      const values = Object.values(v);
+      for (let i = values.length - 1; i >= 0; i--) stack.push(values[i]);
+    }
+  }
+  return null;
+}
+
+/**
+ * The held nodes: open, not done, not declined, holding a clarification marker. They wait on the user's answer, never
+ * picked, and the picks name each with its question. In the list's order.
+ * @param {Graph} graph
+ * @param {any} config
+ * @returns {{ node: GraphNode, question: string }[]}
+ */
+export function heldNodes(graph, config) {
+  const f = config.graph.fields;
+  const declined = declinedIds(graph, config);
+  /** @type {{ node: GraphNode, question: string }[]} */
+  const out = [];
+  for (const node of graph.open) {
+    if (node[f.status] === config.graph.doneStatus || declined.has(node[f.id])) continue;
+    const question = clarification(node);
+    if (question !== null) out.push({ node, question });
+  }
+  return out;
+}
+
+/**
+ * Open nodes that can start now (not done, not declined, gate open, not held, every need done), best first.
  * @param {Graph} graph
  * @param {any} config
  * @returns {GraphNode[]}
@@ -198,6 +251,7 @@ export function readyNodes(graph, config) {
     if (n[f.status] === doneStatus || declined.has(n[f.id])) return false;
     const gate = n[f.gate];
     if (gate !== undefined && gate !== openGateValue) return false;
+    if (clarification(n) !== null) return false;
     return needsOf(n, config).every((id) => done.has(id));
   });
 
@@ -428,7 +482,8 @@ export function byAge(nodes, config) {
  * nodes). This slot takes the oldest node (byAge) of the highest value. A node that waits on open needs
  * gives the slot the nearest ready one, the needs in their listed order, so a first step split from a large
  * node and needed by it keeps that node's age. Flagged nodes are the mechanization slot's: never a pick,
- * though a way may pass one; a closed gate ends a way. Each node is grouped by value once, and one already
+ * though a way may pass one; a closed gate or a held node (heldNodes) ends a way, and is never the old node
+ * the slot serves: its work waits on the gate or the answer. Each node is grouped by value once, and one already
  * walked to nothing is not walked again: the pick is linear in the graph.
  * @param {Graph} graph
  * @param {any} config
@@ -442,11 +497,12 @@ export function pickOldest(graph, config) {
   const declined = declinedIds(graph, config);
   const waiting = graph.open.filter((n) => n[f.status] !== doneStatus && !declined.has(n[f.id]));
   const byId = new Map(waiting.map((n) => [n[f.id], n]));
-  const gateOpen = (/** @type {GraphNode} */ n) => n[f.gate] === undefined || n[f.gate] === openGateValue;
+  const held = new Set(heldNodes(graph, config).map((h) => h.node));
+  const passable = (/** @type {GraphNode} */ n) => (n[f.gate] === undefined || n[f.gate] === openGateValue) && !held.has(n);
   /** @type {Map<number, GraphNode[]>} */
   const levels = new Map();
   for (const n of byAge(waiting, config)) {
-    if (!core(n) || !gateOpen(n)) continue;
+    if (!core(n) || !passable(n)) continue;
     const w = weight(n[f.value], VALUE_WEIGHTS);
     const level = levels.get(w);
     if (level) level.push(n);
@@ -463,7 +519,7 @@ export function pickOldest(graph, config) {
         if (ready.has(queue[i])) return { node: queue[i], oldest };
         for (const id of needsOf(queue[i], config)) {
           const need = byId.get(id);
-          if (need && !seen.has(need) && !dead.has(need) && gateOpen(need)) seen.add(need), queue.push(need);
+          if (need && !seen.has(need) && !dead.has(need) && passable(need)) seen.add(need), queue.push(need);
         }
       }
       for (const n of queue) dead.add(n);

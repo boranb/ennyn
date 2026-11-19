@@ -10,7 +10,7 @@ One common brief for the cycle, one short brief per task, read first, in one tur
 
 | Part | Content |
 |---|---|
-| **Task** | the node, its slot, where its evidence is, what to deliver, the commit type |
+| **Task** | the node, its slot, where its evidence is, what to deliver, the commit type; when the task needs the user's sentence, the absolute path of the file that keeps it (**The user's sentence** below), never its words, and that its text goes into nothing the agent writes |
 | **Model** | the author's, named in the brief and set on the Agent call (`model`; Claude Code takes the call's, then the agent's own frontmatter, then `CLAUDE_CODE_SUBAGENT_MODEL`, then the session's): the session's for code, gates and security, `sonnet` for method text and docs. Reviewers never run below the session's: their agents say `model: inherit`, their Agent call passes no `model`, and `CLAUDE_CODE_SUBAGENT_MODEL_FORCE` stays unset (it overrides `inherit`). Ennyn's `scout` (quotes, `path:line`, no judgment) and `summarizer` (a long log's failures with their lines) run on `haiku`, for an author or reviewer's reads. A call's `model` can be dropped without a word (claude-code#100082: 1,149 of 1,371 subagents ran on the parent's): read the model that ran from the agent's transcript, not from the call |
 | **Impact table** | its path, or `not needed` and why; a core task gets a path either way: its smallest-change row is answered there before the first edit, with the five rows or without them, and set against the diff before the commit. The agent writes what it learns there |
 | **Gate** | the check that exercises this change end to end, in one line, by command: a browser check for a UI change, the project's harness for a money path, a test file otherwise; for an audit, the audited feature's own check; for a security audit, the suites of the gates it touches, named in the brief; for a mechanization task, in words, what it will build, until its report names the command. `none` and why for a task with nothing to run. It runs beside the test that proves a fix, never instead |
@@ -26,6 +26,8 @@ One common brief for the cycle, one short brief per task, read first, in one tur
 
 Leave out the plan for other tasks; mark a guess at a cause or a fix as a guess.
 
+**The user's sentence.** A node that comes from a request names it only by date ([report-formats.md](report-formats.md), **An ask of the user**), so no tracked file holds what the user said. When a task needs the sentence itself, the orchestrator writes it once, as given, to `words/<node id>.txt` in the state dir (`paths.stateDir`: under `.git/`, never tracked), and the author's Task row and each reviewer's brief name that file by its absolute path. It is the main checkout's file: a state dir under `.git/` resolves through the common git dir (`git rev-parse --path-format=absolute --git-common-dir`, then the part of `paths.stateDir` after `.git`), so from a linked worktree it is the file the orchestrator wrote (measured with git 2.56.0: Ennyn's `resolveStateDir` gives the main checkout's `.git/ennyn` there). The node id names the file only in the form `ennyn.mjs journal` takes a node in (letters, digits, `.`, `-`, `_`, the first a letter or digit, at most 80), so no `/`, leading dot or `..` leaves the folder; doctor checks only that an id is there, so for an id of any other form the sentence is not written, and the brief says so. Its text goes into no tracked file (code, a comment, a test name), no commit message, no row, no proposed node's title or source and no report: the author and the reviewers write the ask in their own words, at class level.
+
 ## What the orchestrator keeps
 
 - **The plan, the graph, the handoff.** An agent hands back what they should say.
@@ -37,6 +39,8 @@ Leave out the plan for other tasks; mark a guess at a cause or a fix as a guess.
 ## How a reviewer is briefed
 
 It does not get the author's reasoning. It works in a **folder of its own**, on a real copy of the commit, and its probes and harnesses stay there for the author to rerun. Its brief carries the **Long jobs** row, as an author's does. All findings of a round go to the author in one message.
+
+When the author's Task row names the file of the user's sentence (**The user's sentence** above), the reviewer's brief names the same absolute path, never its words, and that its text goes into nothing the reviewer writes.
 
 ## Keeping the work
 

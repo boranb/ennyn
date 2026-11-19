@@ -9,7 +9,7 @@
  */
 
 import { loadConfig, ConfigError } from "../core/config.mjs";
-import { loadGraph, readyNodes, readyMechanization, graphProblems, GraphError } from "../plan/mechanization.mjs";
+import { loadGraph, readyNodes, readyMechanization, graphProblems, heldNodes, GraphError } from "../plan/mechanization.mjs";
 import { MAYBE_TEST_COMMAND, MIN_HISTORY, TEST_COMMAND, indexMatches, recentCommits, productionSubjects, projectCommands, projectFiles, remotesByHost } from "./scan.mjs";
 import { askRules, capped, ghApplies, outwardCommands, GH_COMMANDS, SETTINGS, SETTINGS_LIMIT } from "./permissions.mjs";
 import { secretSetup } from "./secret-setup.mjs";
@@ -520,6 +520,9 @@ export async function checkSetup({ cwd, env = process.env, self = OWN_ROOT }) {
     const mech = readyMechanization(graph, config).length;
     if (core + mech === 0) add("warn", "doctor.readyNone");
     else add("ok", "doctor.ready", { core, mech });
+    // A held node waits on the user's answer: named, so the count is not read as all there is.
+    const held = heldNodes(graph, config).map((h) => String(h.node[f.id]));
+    if (held.length) add("warn", "doctor.held", { n: held.length, list: held });
   }
   // The cycle reads the handoff, and writes it at its end: a link a commit holds would lead that read and that
   // write anywhere. Looked at as the graph is read; none there yet is fine.

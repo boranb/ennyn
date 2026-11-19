@@ -28,7 +28,7 @@ import { bypassUses } from "../metrics/bypass.mjs";
 import { leftovers, readStart, recordStart, startPath } from "../metrics/leftovers.mjs";
 import { STEPS, journalAt, statusOf, tasksFit, taskWord, writeEvent } from "../plan/cycle-journal.mjs";
 import { gateLogPath, readAttempts, recordAttempt, summarizeAttempts, KINDS } from "../metrics/gate-log.mjs";
-import { byAge, costWeight, doneIds, graphProblems, loadGraph, needsOf, pickMechanization, pickOldest, readyMechanization, readyNodes, scoreNode, splitAt, splitFirst, GraphError } from "../plan/mechanization.mjs";
+import { byAge, costWeight, doneIds, graphProblems, heldNodes, loadGraph, needsOf, pickMechanization, pickOldest, readyMechanization, readyNodes, scoreNode, splitAt, splitFirst, GraphError } from "../plan/mechanization.mjs";
 import { LINK_RULE, SUBMODULE_RULE, auditAnswer, cycleRecords, markCovers, readLog, securityDue, sensitivePaths } from "../plan/audit.mjs";
 import { scanProject, MIN_HISTORY } from "../setup/scan.mjs";
 import { cannotFail, checkSetup, pipes } from "../setup/doctor.mjs";
@@ -194,6 +194,19 @@ async function pickable(cwd, cfg) {
   for (const p of problems) err(`${p.level === "fail" ? "✗" : "!"} ${tShown(p.key, p.vars, cfg.language)}`);
   if (problems.some((p) => p.level === "fail")) return (err(t("mechanization.refused", {}, cfg.language)), null);
   return graph;
+}
+
+/**
+ * Each held node of one slot (heldNodes: a clarification marker), named on stderr with its question, so a node the pick
+ * leaves for the user's answer is never dropped unsaid. `flagged`: the mechanization slot's, else the core slots'.
+ * @param {import("../plan/mechanization.mjs").Graph} graph @param {any} cfg @param {boolean} flagged
+ */
+function sayHeld(graph, cfg, flagged) {
+  const f = cfg.graph.fields;
+  for (const { node, question } of heldNodes(graph, cfg)) {
+    if ((node[f.mechanization] === true) !== flagged) continue;
+    err(`! ${tShown(question === "" ? "pick.heldBlank" : "pick.held", { id: String(node[f.id]), question }, cfg.language)}`);
+  }
 }
 
 /** The paths a map holds, by the reason each was not read. @param {Map<string, string>} unread @returns {Map<string, string[]>} */
@@ -1688,6 +1701,7 @@ const COMMANDS = {
       for (const n of open) out(tShown(n[f.cluster] === undefined ? "core.valueItem" : "core.valueItemCluster", { id: String(n[f.id]), cost: String(n[f.cost] ?? "?"), cluster: String(n[f.cluster]) }, lang));
       return 0;
     }
+    sayHeld(graph, cfg, false);
     const pick = pickOldest(graph, cfg);
     const split = pick !== null && splitFirst(pick.node, cfg);
     // The other slot: the rest of the ready core nodes by value/cost, the first few and every one that ties with the last.
@@ -1722,6 +1736,7 @@ const COMMANDS = {
     if (!graph) return 1;
     const f = cfg.graph.fields;
     const lang = cfg.language;
+    sayHeld(graph, cfg, true);
     const ready = readyMechanization(graph, cfg);
     // The slot ranks by how often each node's class recurred lately; a ledger that cannot say is never read as none.
     /** @type {ReturnType<typeof recentRecurrence> | null} */

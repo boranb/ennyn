@@ -453,6 +453,50 @@ test("cli: core names the oldest node of the highest value and the best of the r
   assert.deepEqual([one.byScore, one.more, one.oldest.split], [[], 0, false]);
 });
 
+test("cli: core and mechanization name each held node of their slot with its question, never pick it, and doctor counts what they pick", () => {
+  const p = project();
+  mkdirSync(join(p.dir, ".ennyn"));
+  const write = (/** @type {unknown} */ graph) => writeFileSync(join(p.dir, ".ennyn", "graph.json"), JSON.stringify(graph));
+  const h = "! held, not picked: h waits on the user's answer to [NEEDS CLARIFICATION: which file?]";
+  const m = "! held, not picked: m holds [NEEDS CLARIFICATION: ] with no question; write the question to ask the user, or take the marker out";
+  write({
+    nodes: [
+      { id: "h", value: "high", cost: "S", title: "Export [NEEDS CLARIFICATION: which file?]" },
+      { id: "m", value: "high", cost: "S", mechanization: true, source: "the user, 2026-11-19: a request [NEEDS CLARIFICATION: ]" },
+      { id: "w", value: "high", cost: "S", needs: ["h"] },
+      { id: "a", value: "low", cost: "S" },
+      { id: "n", value: "low", cost: "S", mechanization: true },
+      { id: "d", status: "done", title: "[NEEDS CLARIFICATION: done?]" },
+    ],
+    done: [],
+  });
+  const lines = (/** @type {string} */ s) => s.split("\n").filter((l) => l.startsWith("! held"));
+  const core = run(p.dir, "core");
+  assert.deepEqual([core.code, core.stdout], [0, "oldest: a (low, S)\nby score: no other ready core node\n"]);
+  assert.deepEqual(lines(core.stderr), [h], "the core slots' held node only; w waits on it and is not held itself");
+  const json = run(p.dir, "core", "--json");
+  assert.deepEqual([json.code, JSON.parse(json.stdout).oldest.node.id, lines(json.stderr)], [0, "a", [h]]);
+  const mech = run(p.dir, "mechanization");
+  assert.deepEqual([mech.code, mech.stdout], [0, "n (score 1.00)\n"]);
+  assert.deepEqual(lines(mech.stderr), [m]);
+  const mjson = run(p.dir, "mechanization", "--json");
+  assert.deepEqual([mjson.code, JSON.parse(mjson.stdout).node.id, lines(mjson.stderr)], [0, "n", [m]]);
+  const doctor = run(p.dir, "doctor").stdout;
+  assert.match(doctor, /^✓ ready: 1 core, 1 mechanization$/m);
+  assert.match(doctor, /^! held: 2 open nodes hold a \[NEEDS CLARIFICATION: …\] marker and are not picked until the user answers: h, m$/m);
+  // Only held nodes left: nothing picked, each still named.
+  write({ nodes: [{ id: "h", value: "high", title: "Export [NEEDS CLARIFICATION: which file?]" }, { id: "m", mechanization: true, source: "[NEEDS CLARIFICATION: ]" }], done: [] });
+  const none = run(p.dir, "core");
+  assert.deepEqual([none.code, none.stdout, lines(none.stderr)], [0, "No ready core node.\n", [h]]);
+  const mnone = run(p.dir, "mechanization");
+  assert.deepEqual([mnone.code, mnone.stdout, lines(mnone.stderr)], [0, "No ready mechanization node.\n", [m]]);
+  assert.match(run(p.dir, "doctor").stdout, /^! ready: no open node can start \(each is done, gated, held or waiting on needs\); a cycle has nothing to pick$/m);
+  // No marker: no held line anywhere.
+  write({ nodes: [{ id: "a", title: "[needs clarification: which?]" }], done: [] });
+  assert.deepEqual(lines(run(p.dir, "core").stderr), []);
+  assert.doesNotMatch(run(p.dir, "doctor").stdout, /held/);
+});
+
 test("cli: push-check says unmeasured without upstream and warns above the threshold; it exits 1 while what the push needs is unmeasured or not met", () => {
   const p = project({ push: { warnAtUnpushed: 1 } });
   p.commit({ "a.txt": "1" }, "c1");

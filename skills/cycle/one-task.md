@@ -8,9 +8,9 @@ Asked for one task alone, the cycle takes it under the same protocol and closes 
 
 **Start** as section 1 does: `ennyn.mjs doctor` shows no ✗ (else stop); the config, the handoff and the graph are read in one turn; `ennyn.mjs leftovers --start` notes HEAD.
 
-**A node named:** an open node of the graph. Done, or no such id: stop and say so; never take a near id for it. Not ready (a `needs` not done, a closed gate): say why, and go on only on the user's plain yes.
+**A node named:** an open node of the graph. Done, or no such id: stop and say so; never take a near id for it. Not ready (a `needs` not done, a closed gate): say why, and go on only on the user's plain yes. Held (it holds `[NEEDS CLARIFICATION: …]`: doctor's `doctor.held` line at the start names it, and `ennyn.mjs core`, or `ennyn.mjs mechanization` for a flagged node, gives its question on stderr): no yes takes it as it stands; ask the question, and go on only once the answer has replaced the marker ([report-formats.md](report-formats.md), **An ask of the user**).
 
-**A fix in words:** an open node that already asks for it is the task; else write it first as a node at the end of the list, dated (`graph.fields.since`), its source the user's words and the date. The reviewers check the change against a node's ask, and the rows and the closing name it.
+**A fix in words:** an open node that already asks for it is the task; else write it first as a node at the end of the list, dated (`graph.fields.since`), its source `the user, <YYYY-MM-DD>: a request`, never their sentence ([report-formats.md](report-formats.md), **An ask of the user**). A request that can be read two ways gets `[NEEDS CLARIFICATION: <the question>]` in the node instead of a guess, and the question goes to the user: no pick takes the node until the answer, written as the node's ask, replaces the marker. The reviewers check the change against a node's ask, and the rows and the closing name it.
 
 **Nobody to ask** (a runner in a terminal): where this file asks, the run stops and says why.
 

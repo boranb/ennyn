@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../core/config.mjs";
 import { t, tShown } from "../core/i18n.mjs";
-import { byAge, costWeight, sinceOf, splitAt, graphProblems, loadGraph, pickMechanization, pickOldest, rankMechanization, readyMechanization, readyNodes, scoreNode, splitFirst, GraphError } from "../plan/mechanization.mjs";
+import { byAge, clarification, costWeight, heldNodes, sinceOf, splitAt, graphProblems, loadGraph, pickMechanization, pickOldest, rankMechanization, readyMechanization, readyNodes, scoreNode, splitFirst, GraphError } from "../plan/mechanization.mjs";
 import { cycleRecords, folded, lineKey, markCovers, securityDue, sensitivePaths, uncovered } from "../plan/audit.mjs";
 
 const cfg = (override = {}) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-p-")), env: {}, override });
@@ -312,6 +312,126 @@ test("oldest: a chain tens of thousands long, every node a candidate and its end
   assert.deepEqual(oldest([...values, { id: "free", value: 0.5 }]), ["free", "free"]);
   const onto = Array.from({ length: 20_000 }, (_, i) => ({ id: `f${i}`, value: 20_000 - i + 1, needs: ["G"] }));
   assert.deepEqual(oldest([...onto, { id: "G", gate: "user", value: 1 }, { id: "free", value: 0.5 }]), ["free", "free"]);
+});
+
+// The clarification marker: a request that reads two ways puts [NEEDS CLARIFICATION: <the question>] in its node,
+// and the node waits on the user's answer: held, never picked, named with its question.
+/** Held: the marker, in any string the node holds, and the question it carries. */
+const HELD = [
+  ["in the title", { id: "t", title: "Export the report [NEEDS CLARIFICATION: CSV or JSON?]" }, "CSV or JSON?"],
+  ["in the source", { id: "s", title: "Export the report", source: "the user, 2026-11-19: a request [NEEDS CLARIFICATION: which report?]" }, "which report?"],
+  ["the empty question", { id: "e", title: "Export [NEEDS CLARIFICATION: ]" }, ""],
+  ["no space after the colon", { id: "n", title: "[NEEDS CLARIFICATION:before or after the sync?]" }, "before or after the sync?"],
+  ["in a field of the project's own", { id: "f", notes: "[NEEDS CLARIFICATION: who runs it?]" }, "who runs it?"],
+  ["in a string of a list", { id: "a", tags: ["ui", "[NEEDS CLARIFICATION: which screen?]"] }, "which screen?"],
+  ["deep in an object", { id: "o", meta: { ask: { text: "[NEEDS CLARIFICATION: deep?]" } } }, "deep?"],
+  ["two markers: the first in field order", { id: "2", title: "[NEEDS CLARIFICATION: first?]", source: "[NEEDS CLARIFICATION: second?]" }, "first?"],
+  ["the question up to the first closing bracket", { id: "b", title: "[NEEDS CLARIFICATION: a [b] c?]" }, "a [b"],
+];
+/** Not held: near spellings, and what holds no string. */
+const FREE = [
+  ["no brackets", { id: "nb", title: "NEEDS CLARIFICATION: which?" }],
+  ["lower case", { id: "lc", title: "[needs clarification: which?]" }],
+  ["mixed case", { id: "mc", title: "[Needs Clarification: which?]" }],
+  ["no colon", { id: "nc", title: "[NEEDS CLARIFICATION which?]" }],
+  ["not closed", { id: "uc", title: "[NEEDS CLARIFICATION: which?" }],
+  ["the words alone", { id: "w", title: "the ask needs clarification" }],
+  ["a key, not a value", { id: "k", "[NEEDS CLARIFICATION: key?]": 1 }],
+  ["no string but the id", { id: "nm", value: 3, cost: 1, mechanization: false, needs: [] }],
+];
+
+test("clarification: the accept and reject corpus, the marker in any string a node holds", () => {
+  const c = cfg();
+  for (const [why, node, question] of HELD) {
+    assert.equal(clarification(node), question, why);
+    assert.deepEqual(readyNodes({ open: [node], done: [] }, c), [], `${why}: never ready`);
+    assert.deepEqual(heldNodes({ open: [node], done: [] }, c).map((h) => [h.node, h.question]), [[node, question]], why);
+  }
+  for (const [why, node] of FREE) {
+    assert.equal(clarification(node), null, why);
+    assert.deepEqual(readyNodes({ open: [node], done: [] }, c), [node], `${why}: ready`);
+    assert.deepEqual(heldNodes({ open: [node], done: [] }, c), [], why);
+  }
+});
+
+test("clarification: a held node is no ready node of either slot, and doctor's counts agree with the picks", () => {
+  const c = cfg();
+  const open = [
+    { id: "h", value: "high", cost: "S", title: "[NEEDS CLARIFICATION: which file?]" },
+    { id: "m", value: "high", cost: "S", mechanization: true, source: "[NEEDS CLARIFICATION: which class?]" },
+    { id: "a", value: "low", cost: "S" },
+    { id: "n", value: "low", cost: "S", mechanization: true },
+  ];
+  assert.deepEqual(readyNodes({ open, done: [] }, c).map((n) => n.id), ["a", "n"]);
+  assert.deepEqual(readyMechanization({ open, done: [] }, c).map((n) => n.id), ["n"]);
+  assert.equal(pickMechanization({ open, done: [] }, c)?.id, "n");
+  assert.deepEqual(rankMechanization({ open, done: [] }, c, (n) => (n.id === "m" ? 9 : 0)).map((n) => n.id), ["n"], "a recurring class does not lift a held node");
+  assert.deepEqual(oldest(open), ["a", "a"]);
+  assert.deepEqual(heldNodes({ open, done: [] }, c).map((h) => [h.node.id, h.question]), [["h", "which file?"], ["m", "which class?"]]);
+  // Only held nodes left: nothing to pick, and each is named.
+  assert.equal(oldest(open.slice(0, 2)), null);
+  assert.equal(pickMechanization({ open: open.slice(0, 2), done: [] }, c), null);
+  assert.deepEqual(heldNodes({ open: open.slice(0, 2), done: [] }, c).map((h) => h.node.id), ["h", "m"]);
+});
+
+test("clarification: a marker on a done or declined node holds nothing, and a node that needs a done one is ready", () => {
+  const c = cfg();
+  const mark = "[NEEDS CLARIFICATION: was it?]";
+  const graph = {
+    open: [{ id: "d", status: "done", title: mark }, { id: "x", needs: ["d", "e"] }, { id: "r", title: mark }],
+    done: [{ id: "e", title: mark }],
+    declined: [{ id: "r", reason: "no", title: mark }],
+  };
+  assert.deepEqual(readyNodes(graph, c).map((n) => n.id), ["x"]);
+  assert.deepEqual(heldNodes(graph, c), [], "a finished or refused node waits on no answer");
+});
+
+test("clarification: a node that needs a held node waits, and the oldest way ends at a held node", () => {
+  const c = cfg();
+  const mark = (/** @type {string} */ q) => `[NEEDS CLARIFICATION: ${q}]`;
+  // A need held: the node waits, as on any open need; the held node is named, the waiting one is not.
+  const open = [{ id: "p", value: "high", needs: ["h"] }, { id: "h", value: "low", title: mark("which?") }, { id: "q", value: "low" }];
+  assert.deepEqual(readyNodes({ open, done: [] }, c).map((n) => n.id), ["q"]);
+  assert.deepEqual(heldNodes({ open, done: [] }, c).map((h) => h.node.id), ["h"]);
+  assert.deepEqual(oldest(open), ["q", "q"], "p's way ends at h");
+  // Nor is the way walked on past a held need: what it needs does not serve the node above it.
+  const past = [{ id: "p", value: "high", needs: ["h"] }, { id: "h", title: mark("which?"), needs: ["x"] }, { id: "x", value: "low" }, { id: "next", value: "high" }];
+  assert.deepEqual(oldest(past), ["next", "next"]);
+  assert.deepEqual(oldest(past.map((n) => (n.id === "h" ? { id: "h", needs: ["x"] } : n))), ["x", "p"], "the control: no marker, the way goes through");
+  // The oldest node itself held: never the slot's old node, nor served through a ready need of its own.
+  const own = [{ id: "old", value: "high", source: mark("for whom?"), needs: ["step"] }, { id: "step", value: "low" }, { id: "young", value: "high" }];
+  assert.deepEqual(oldest(own), ["young", "young"]);
+  assert.deepEqual(oldest(own.map((n) => (n.id === "old" ? { id: "old", value: "high", needs: ["step"] } : n))), ["step", "old"], "the control: no marker");
+  // A held node on the way to a ready node by another need: the other need serves.
+  assert.deepEqual(oldest([{ id: "p", value: "high", needs: ["h", "r"] }, { id: "h", title: mark("?") }, { id: "r", value: "low" }]), ["r", "p"]);
+});
+
+test("clarification: configured field names; held nodes in the list's order", () => {
+  const c = cfg({ graph: { fields: { id: "kimlik", status: "durum", title: "baslik", mechanization: "mekanizasyon" }, doneStatus: "tamam" } });
+  const open = [
+    { kimlik: "b", baslik: "[NEEDS CLARIFICATION: iki?]" },
+    { kimlik: "a", baslik: "[NEEDS CLARIFICATION: bir?]", mekanizasyon: true },
+    { kimlik: "t", baslik: "[NEEDS CLARIFICATION: bitti?]", durum: "tamam" },
+    { kimlik: "z" },
+  ];
+  assert.deepEqual(heldNodes({ open, done: [] }, c).map((h) => [h.node.kimlik, h.question]), [["b", "iki?"], ["a", "bir?"]]);
+  assert.deepEqual(readyNodes({ open, done: [] }, c).map((n) => n.kimlik), ["z"]);
+});
+
+test("clarification: a node a module builds with a loop or a deep nest is read without the call stack", { timeout: 30_000 }, () => {
+  /** @type {any} */
+  const loop = { id: "l", title: "plain" };
+  loop.self = loop;
+  loop.list = [loop, { back: loop }];
+  assert.equal(clarification(loop), null);
+  loop.list.push("[NEEDS CLARIFICATION: found?]");
+  assert.equal(clarification(loop), "found?");
+  /** @type {any} */
+  let deep = { text: "[NEEDS CLARIFICATION: bottom?]" };
+  for (let i = 0; i < 100_000; i++) deep = { next: deep };
+  assert.equal(clarification({ id: "d", deep }), "bottom?");
+  const wide = { id: "w", list: Array.from({ length: 300_000 }, (_, i) => String(i)) };
+  assert.equal(clarification(wide), null);
 });
 
 test("loadGraph: JSON and module graphs with configured export names", async () => {
