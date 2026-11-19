@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A node that holds `[NEEDS CLARIFICATION: <question>]` in any of its strings is never picked: `core` and `mechanization` name it with its question, and doctor warns. A node made from a request names it in `source` only as `the user, <date>: a request` (or `approved`, `left to the session`); the sentence a brief needs stays under the state dir, and the closing reads the host's memory notes changed during the cycle.
+- `ennyn audit` counts the security audits recorded before the history rewrite again: their coverage keys follow the rewritten metrics lines.
+
 ## 0.1.0 (2026-11-18)
 
 First public release.

@@ -1738,7 +1738,7 @@
       "value": "high",
       "cost": "S",
       "cluster": "distribution",
-      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn; Codex's own code read 2026-10-28, the cut tails measured with tail -c; cycle 2026-11-01 (16): skills/cycle/SKILL.md stands at 7,969 bytes; skills/init/SKILL.md does not, and no test caps either at 8,000; cycle 2026-11-01 (17): skills/cycle/SKILL.md stands near 8,000 bytes after two tasks, and skills/init/SKILL.md at 8,191 of the test's 8,192; cycle 2026-11-02 (18): skills/init/SKILL.md stands at 8,186 of the test's 8,192 after seven wording cuts, skills/cycle/SKILL.md at 7,998; cycle 2026-11-02 (19): skills/cycle/SKILL.md at 7,990 bytes after four tasks edited it, each cutting as much as it added",
+      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn; Codex's own code read 2026-10-28, the cut tails measured with tail -c; cycle 2026-11-01 (16): skills/cycle/SKILL.md stands at 7,969 bytes; skills/init/SKILL.md does not, and no test caps either at 8,000; cycle 2026-11-01 (17): skills/cycle/SKILL.md stands near 8,000 bytes after two tasks, and skills/init/SKILL.md at 8,191 of the test's 8,192; cycle 2026-11-02 (18): skills/init/SKILL.md stands at 8,186 of the test's 8,192 after seven wording cuts, skills/cycle/SKILL.md at 7,998; cycle 2026-11-02 (19): skills/cycle/SKILL.md at 7,990 bytes after four tasks edited it, each cutting as much as it added; cycle 2026-11-19 (47): skills/cycle/SKILL.md 8,182 and skills/init/SKILL.md 8,191 bytes, both past the 8,000 cut; user-words-in-node put its closing rules in report-formats.md behind a pointer for want of room (the proposed cycle-skill-room folded here, Fable)",
       "since": 13
     },
     {
@@ -2286,7 +2286,7 @@
       "mechanization": true,
       "sourceClass": "one question answered in several places drifts apart, and a fix reaches only one of them",
       "title": "A gate for one decision answered in several places: the impact table's S1 row is answered by a command that lists every function and literal answering the same question as the changed one (same regex or string literals, same called predicates, near-duplicate bodies across modules), and a test fails when a change edits one of a known group of sibling sites and not the others, or adds a new near-duplicate of a decision with no entry in a sibling list; then delete the prose that asks reviewers to look for siblings Narrowed 2026-11-11 (decisions.md in the keep folder): keep only the command that answers the S1 row, every function and literal in the repository that answers the same question as the changed one (same string literals or regex sources, same called predicate); the near-duplicate-body heuristic and the sibling-group test are dropped, because review.cochange already holds the groups that change together and a heuristic reader is the design that fell in cycles 18, 19 and 31; then delete the prose that asks reviewers to look for siblings. Measured in cycle 32 before any edit (the stop condition held): over five named sibling pairs the strict reading found 1 and 1 in part, the lenient one 4 of 6 at up to 66 hits a run, and no too-common cutoff separates the literals to keep (budget 7 files, foreign 3) from the ones to drop (hex 7-8, ETIMEDOUT 3). Moved to 0.2: it needs a design that is not a literal or regex count; the proposed one-decision-one-site-corpus folds in here",
-      "source": "cycle 2026-10-28 (14) convergence: the class recurred in all four tasks, ~10 times, all caught by reviewers: two joiners and three anchor sites in the YAML reader (one got the fix), the judge sharing the rules it measures, a recorder missing its sibling's trace check, the hooks finding the project apart from the CLI, a link filter and the loader disagreeing, the metrics-log predicate not shared by audit and doctor, a paid-run block on one of two paths, hook text left saying the old thing; cycle 2026-10-31 (15): again in all four tasks: the fix label's twins in init and doctor, recentCommits beside readLog, the machine-path advice in five message keys, doctor's reading of the record and of the PATH filter beside the block's",
+      "source": "cycle 2026-10-28 (14) convergence: the class recurred in all four tasks, ~10 times, all caught by reviewers: two joiners and three anchor sites in the YAML reader (one got the fix), the judge sharing the rules it measures, a recorder missing its sibling's trace check, the hooks finding the project apart from the CLI, a link filter and the loader disagreeing, the metrics-log predicate not shared by audit and doctor, a paid-run block on one of two paths, hook text left saying the old thing; cycle 2026-10-31 (15): again in all four tasks: the fix label's twins in init and doctor, recentCommits beside readLog, the machine-path advice in five message keys, doctor's reading of the record and of the PATH filter beside the block's; cycle 2026-11-19 (47), rows c47-t1-sec-r1-01 and c47-t1-code-r1-05: a prose site in skills/ answered the question the changed code answers",
       "gate": "user"
     },
     {
@@ -3260,17 +3260,6 @@
       "cluster": "gates",
       "source": "cycle 2026-11-01 (16): PID 4018 found by an author, stopped by hand; which run left it is not known, the cause is a reading",
       "since": 16
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "user-words-in-node",
-      "title": "A node that comes from a request names it in source only as the user, <date>: a request, approved or left to the session, never the sentence, a translation or a retelling; the sentence a task brief needs stays in the state dir under .git/, keyed by node id, and reaches the author and the reviewers from there. A sentence that can be read two ways puts a [NEEDS CLARIFICATION: the question] marker in the node, and code refuses to pick a node that holds one; a cycle's closing reads the memory notes written during it. skills/cycle/one-task.md and skills/init/graph.md stop telling projects to track the words",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "method",
-      "source": "one reported case of a bug report passed through several agents: the error no longer looks like the one first reported. One anecdote, unmeasured here; no field holds the user's sentence today; spec-kit has the same marker and leaves it to the agent: no code in its src or scripts reads it. A sentence with a condition can be saved to memory without the condition. Here 4 of 20 memory index lines were stale on 2026-11-01; amended: the user, 2026-11-19: a request; release 0.1.0 preparation, 2026-11-18",
-      "since": 17
     },
     {
       "status": "planned",
@@ -6793,7 +6782,7 @@
     {
       "status": "planned",
       "since": 46,
-      "source": "the user, 2026-11-19: a request; release 0.1.0 preparation, 2026-11-18",
+      "source": "the user, 2026-11-19: a request; release 0.1.0 preparation, 2026-11-18; cycle 2026-11-19 (47), orchestrator finding c47-t1-orch-r0-01: the map of a8677b8 left every covers key naming no line, ennyn audit read 39 uncovered cycles for 2, re-keyed in 439d3e1",
       "id": "history-rewrite-runbook",
       "value": "medium",
       "cost": "M",
@@ -6802,7 +6791,30 @@
         "publish-check"
       ],
       "mechanization": false,
-      "title": "docs/history-rewrite.md: replacement tables kept outside the repository, a rehearsal on a copy, the rebuild of the last commits so cited hashes resolve, the map commit, and deleting and recreating the remote instead of a force-push; ennyn history-verify runs the verification checks as code (commit count against map rows, removed files absent from a fresh clone, only expected paths changed, every graph version parses, no dead hash in tip or messages, signatures on new commits, a residue count per category). Ennyn never rewrites or deletes a repository itself"
+      "title": "docs/history-rewrite.md: replacement tables kept outside the repository, a rehearsal on a copy, the rebuild of the last commits so cited hashes resolve, the map commit, and deleting and recreating the remote instead of a force-push; ennyn history-verify runs the verification checks as code (commit count against map rows, removed files absent from a fresh clone, only expected paths changed, every graph version parses, no dead hash in tip or messages, signatures on new commits, a residue count per category). Ennyn never rewrites or deletes a repository itself. Amended cycle 47 (2026-11-19): a hash map changes every tracked line that holds a hash, and with it every record keyed by a digest of such a line. The runbook lists those records before the rewrite and re-keys them in the map commit, in line order (the key of old line n becomes the key of new line n). history-verify fails on a security-audit mark whose covers names a key no line of the metrics log has, and compares ennyn audit's answer (uncovered cycles, due or not) taken before the rewrite with the one after: any difference fails"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 47,
+      "id": "user-words-in-node-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "method",
+      "gate": "beside",
+      "title": "user-words-in-node: low findings left, in order. (e) near-miss spellings of the clarification marker (lower case, a full-width colon) are silently not held and nothing names them: hold on the folded reading (NFKC, any case, either colon), since held is the safe side, and doctor names it. (a) the marker walk follows object links, so in a .mjs graph module whose nodes share an object one marker holds every linked node under another's question (c47-t1-code-r1-02): the walk stops at a value that is itself another open node. (b) a node that names the marker in prose, with brackets, is held (c47-t1-code-r1-03): one line in report-formats.md's An ask of the user says prose names it 'the clarification marker', without brackets. (c) skills/init/new-project.md:20 defaults the product note's first answer to a retelling of the user's first words (c47-t1-code-r1-05): the default becomes one line in the agent's own words. (g) the words file is never removed: one line in skills/cycle/handover.md that the closing removes words/<id>.txt for each node it marks done. (h) unmeasured: Claude Code lists .git among protected directories, so writing words/<id>.txt may prompt even in bypass mode: one write in bypass and one in -p, before fresh-session-run lands; if it prompts, the write moves into an ennyn command, which takes (g) and reopens the declined id check. Closes beside held-in-json (same two files). Declined (Fable, 2026-11-19): the quadratic marker match (a hostile graph only; a .mjs graph already runs code) and a code check of the id at the words write (task-brief.md states the id form)",
+      "source": "cycle 2026-11-19 (47) review of user-words-in-node, round 1, and the security reviewer's evidence gaps; Fable, 2026-11-19"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 47,
+      "id": "held-in-json",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "plan",
+      "title": "core --json and mechanization --json carry held: [{id, question}] for the nodes the clarification marker holds; today they are named only on stderr, in a localized line no program can read, and the unattended runner is the first reader that cannot ask. After private-text-gate, before fresh-session-run (no needs edge: its design decides whether it reads the field)",
+      "source": "cycle 2026-11-19 (47) author's proposed node for user-words-in-node; Fable, 2026-11-19: go"
     }
   ],
   "done": [
@@ -7885,6 +7897,13 @@
       "status": "done",
       "finished": "2026-11-18",
       "cluster": "distribution"
+    },
+    {
+      "id": "user-words-in-node",
+      "title": "Closed 2026-11-19 (cycle 47, one task) in 1122ae1: a node holding the clarification marker in any string is never picked (core, mechanization and the oldest way leave it; core and mechanization name it with its question; doctor warns); a request's node names it in source only in the closed form; the sentence a brief needs stays under the state dir as words/<id>.txt, named by path; the closing reads the memory notes changed during the cycle; one .claude/CLAUDE.md line. Review 2 rounds (3 medium fixed in round 1), mutation 21/21",
+      "status": "done",
+      "finished": "2026-11-19",
+      "cluster": "method"
     }
   ],
   "declined": [

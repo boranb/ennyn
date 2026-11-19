@@ -801,7 +801,8 @@
         "new: unknown value read as a string",
         "new: stop by a PID whose handle is closed",
         "new: kill by a PID whose process has ended",
-        "new: link target decoded as text"
+        "new: link target decoded as text",
+        "new: marker read through a linked node"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
