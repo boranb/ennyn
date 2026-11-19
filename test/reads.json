@@ -1,6 +1,6 @@
 {
  "version": 1,
- "code": "87095d3ade638242da116bf665bf338a4f0dcaed48cab51ddb2b7bb82d16402a",
+ "code": "4e2170c2cef5747a0375352d3c3cb299a3c3abb2f36fac2830cc90632a29a817",
  "tests": {
   "test/agents.test.mjs": {
    "reads": [
@@ -978,8 +978,6 @@
     ".ennyn/config.json",
     ".ennyn/findings.jsonl",
     ".ennyn/graph.json",
-    ".ennyn/handoff-archive.md",
-    ".ennyn/handoff.md",
     ".ennyn/metrics.jsonl",
     ".github/workflows/test.yml",
     ".gitignore",
@@ -1822,7 +1820,6 @@
     "setup/scan.mjs",
     "setup/secret-setup.mjs",
     "side-copy/map-path.mjs",
-    "skills/.DS_Store",
     "skills/cycle/SKILL.md",
     "skills/cycle/design-brief.md",
     "skills/cycle/finding-schema.md",
@@ -1874,12 +1871,10 @@
     "metrics",
     "output-styles",
     "plan",
-    "schema",
     "scripts",
     "setup",
     "side-copy",
     "skills",
-    "skills/.DS_Store/SKILL.md",
     "skills/cycle",
     "skills/init",
     "styles",
@@ -2334,8 +2329,6 @@
     ".ennyn/config.json",
     ".ennyn/findings.jsonl",
     ".ennyn/graph.json",
-    ".ennyn/handoff-archive.md",
-    ".ennyn/handoff.md",
     ".ennyn/metrics.jsonl",
     ".github/workflows/test.yml",
     ".gitignore",
