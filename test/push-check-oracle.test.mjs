@@ -12,7 +12,9 @@
  *   green, or the commit `--tested` names holding HEAD's tree with no red run on it in the record;
  * - a clean tree: `git status --porcelain` empty;
  * - the mode: `push.mode` after-closing in HEAD's `.ennyn/config.json` and the work tree's, and the approval line on the
- *   last commit that changed the file.
+ *   last commit that changed the file;
+ * - who wrote what the push sends (`commits` in HEAD's config): each commit of `@{u}..HEAD` by an address the list
+ *   holds, and with `signed` one `git verify-commit -v` calls good, for the committer's own address.
  *
  * "May push" is exit 0 with the line that says so (`push.modeRecorded`, `push.modeTested`). The test fails where
  * push-check says it may push and a fact does not hold, where every fact holds and it asks, and where it exits 0, in
@@ -51,20 +53,27 @@ const cli = (cwd, args, env = {}) => spawnSync(process.execPath, [CLI, ...args],
 
 const APPROVAL = "User-Approved-Loosening: push.mode";
 
+/** A signing key made here, and an allowed-signers file that lists it for the corpus's address t@t. */
+const KEY = join(DIR, "key");
+const keygen = spawnSync("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-C", "t", "-f", KEY], { encoding: "utf8" });
+if (keygen.status !== 0) throw new Error(`ssh-keygen: ${keygen.stderr}`);
+const SIGNERS = join(DIR, "allowed_signers");
+writeFileSync(SIGNERS, `t@t namespaces="git" ${readFileSync(`${KEY}.pub`, "utf8").trim().split(" ").slice(0, 2).join(" ")}\n`);
+
 /**
  * A corpus repository: a bare upstream, a checkout of main tracking it with a pushed commit that sets the config, and
  * a second commit not pushed yet. Nothing is recorded. `before`: a commit ahead of the config's, so a clone of depth 2
  * is shallow and still holds the approval.
  */
 class Repo {
-  /** @param {string} name @param {{ mode?: string, approve?: boolean, upstream?: boolean, before?: boolean }} [o] */
-  constructor(name, { mode = "after-closing", approve = true, upstream = true, before = false } = {}) {
+  /** @param {string} name @param {{ mode?: string, approve?: boolean, upstream?: boolean, before?: boolean, commits?: object }} [o] */
+  constructor(name, { mode = "after-closing", approve = true, upstream = true, before = false, commits } = {}) {
     this.bare = join(DIR, `${name}.git`);
     this.dir = join(DIR, name);
     g(DIR, ["init", "-q", "--bare", "-b", "main", this.bare]);
     g(DIR, ["init", "-q", "-b", "main", this.dir]);
     if (before) this.commit("chore: zero", { "z.txt": "z\n" });
-    this.put({ ".ennyn/config.json": JSON.stringify({ push: { mode }, commands: { fastTest: 'exit "$T_EXIT"', wholeTest: 'exit "$T_EXIT"' } }), "a.txt": "1\n" });
+    this.put({ ".ennyn/config.json": JSON.stringify({ push: { mode }, commands: { fastTest: 'exit "$T_EXIT"', wholeTest: 'exit "$T_EXIT"' }, ...(commits ? { commits } : {}) }), "a.txt": "1\n" });
     this.commit(`chore: push by itself${approve ? `\n\n${APPROVAL}` : ""}`);
     g(this.dir, ["remote", "add", "origin", this.bare]);
     g(this.dir, ["push", "-q", ...(upstream ? ["-u"] : []), "origin", "main"]);
@@ -85,6 +94,12 @@ class Repo {
   test(kind, exit) {
     const r = cli(this.dir, ["test", kind, "--again"], { T_EXIT: String(exit) });
     if (r.status !== exit || !/Recorded/.test(r.stdout)) throw new Error(`ennyn test ${kind} recorded nothing: ${r.status} ${r.stdout}${r.stderr}`);
+  }
+  /** HEAD made again, signed with the corpus's key, read through its allowed-signers file. */
+  sign() {
+    g(this.dir, ["config", "gpg.ssh.allowedSignersFile", SIGNERS]);
+    g(this.dir, ["-c", "gpg.format=ssh", "-c", `user.signingkey=${KEY}.pub`, "commit", "-q", "--amend", "--no-edit", "-S"]);
+    return this;
   }
   /** A second bare repository. @param {string} name */
   other(name) {
@@ -242,6 +257,14 @@ const CASES = [
     // push.md: a shallow clone always asks, whatever history it holds.
     known: { none: { [ASKS]: "a shallow clone asks" }, HEAD: { [ASKS]: "a shallow clone asks" } },
   },
+  { name: "green, commits.signed, an unsigned commit", build: () => ((r) => (g(r.dir, ["config", "gpg.ssh.allowedSignersFile", SIGNERS]), r.test("whole", 0), r))(new Repo("unsigned", { commits: { signed: true } })) },
+  { name: "green, commits.signed, every commit signed by a listed key", build: () => ((r) => (r.sign().test("whole", 0), r))(new Repo("signed", { commits: { addresses: ["T@t"], signed: true } })) },
+  { name: "green, commits.signed, signed with no allowed-signers file", build: () => ((r) => (r.sign(), g(r.dir, ["config", "--unset", "gpg.ssh.allowedSignersFile"]), r.test("whole", 0), r))(new Repo("signed-unread", { commits: { signed: true } })) },
+  { name: "green, commits.addresses without the committer's", build: () => ((r) => (r.test("whole", 0), r))(new Repo("address", { commits: { addresses: ["o@t"] } })) },
+  {
+    name: "green, commits.signed, ask, every commit signed by a listed key",
+    build: () => ((r) => (r.sign().test("whole", 0), r))(new Repo("signed-ask", { mode: "ask", commits: { addresses: ["t@t"], signed: true } })),
+  },
   {
     name: "green, the upstream branch deleted",
     // git refuses to delete a bare repository's current branch unless it is told to (2.56.0).
@@ -308,8 +331,26 @@ function facts(dir, word) {
   const work = join(dir, ".ennyn", "config.json");
   const mode = modeOf(atHead.status === 0 ? atHead.out : null) === "after-closing" && modeOf(existsSync(work) ? readFileSync(work, "utf8") : null) === "after-closing" ? "after-closing" : "ask";
   const approved = gq(dir, ["log", "-1", "--format=%B", "HEAD", "--", ".ennyn/config.json"]).out.split("\n").includes(APPROVAL);
-  const may = mode === "after-closing" && approved && sends && (recorded || worded) && clean;
-  return { may, sends, ahead, recorded, worded, red, clean, mode, approved, dry: dry.status };
+  // commits.*: each commit the push sends, by an address the list holds, and signed good for its committer by git's own check.
+  const rule = (() => {
+    try {
+      return atHead.status === 0 ? JSON.parse(atHead.out).commits ?? {} : {};
+    } catch {
+      return {};
+    }
+  })();
+  const listed = (rule.addresses ?? []).map((/** @type {string} */ a) => a.toLowerCase());
+  const own = (/** @type {string} */ h) => {
+    const [author, committer] = g(dir, ["log", "-1", "--format=%ae%n%ce", h]).toLowerCase().split("\n");
+    if (listed.length && !(listed.includes(author) && listed.includes(committer))) return false;
+    if (!rule.signed) return true;
+    const v = gq(dir, ["verify-commit", "-v", h]);
+    return v.status === 0 && /Good "git" signature for (\S+) with/.exec(v.err)?.[1]?.toLowerCase() === committer;
+  };
+  const shallow = g(dir, ["rev-parse", "--is-shallow-repository"]) === "true";
+  const written = (!listed.length && !rule.signed) || (remote !== null && !shallow && gq(dir, ["rev-parse", "--verify", "-q", "@{u}"]).status === 0 && lines(g(dir, ["rev-list", "@{u}..HEAD"])).every(own));
+  const may = mode === "after-closing" && approved && sends && (recorded || worded) && clean && written;
+  return { may, sends, ahead, recorded, worded, red, clean, mode, approved, written, dry: dry.status };
 }
 
 test("push-check oracle: it says the cycle may push only where the push sends the tested tree's commit from a clean tree, and asks nowhere else the facts allow", (t) => {

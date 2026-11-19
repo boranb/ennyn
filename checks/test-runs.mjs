@@ -138,7 +138,8 @@ export function lastRun(runs, tree, kind, fits) {
  * code globs match needs a green whole run on HEAD's tree, any other change a green fast (or whole) one. It fetches
  * the upstream remote first, unless `fetch` is false, and a branch behind its upstream gets no need: it rebases first.
  * @param {string} cwd the repository's top @param {any} config @param {{ fetch?: boolean }} [opts]
- * @returns {{ unmeasured: string } | { fetched: string | null, behind: number, ahead: number, need: "fast" | "whole" | null, code: string | null, tree: string, last: Run | null, red: Run | null, met: boolean }}
+ * @returns {{ unmeasured: string } | { upstream: string, fetched: string | null, behind: number, ahead: number, need: "fast" | "whole" | null, code: string | null, tree: string, last: Run | null, red: Run | null, met: boolean }}
+ *   `upstream`: the full ref the push goes to, whose `..HEAD` is what it sends (commits.* reads the same range);
  *   `fetched`: null when the fetch ran, else why not; `need` null with nothing to push; `red`: the last red run on the tree
  */
 export function pushNeeds(cwd, config, { fetch = true } = {}) {
@@ -180,5 +181,5 @@ export function pushNeeds(cwd, config, { fetch = true } = {}) {
   const last = need ? lastRun(runs, tree, need, (base) => within(cwd, base, at)) : null;
   // Any red run on this tree, of either kind and whatever its base: the caller's --tested word does not stand against it.
   const red = runs.filter((r) => r.tree === tree && r.exit !== 0).at(-1) ?? null;
-  return { fetched, behind, ahead, need, code, tree, last, red, met: need !== null && last !== null && last.exit === 0 };
+  return { upstream, fetched, behind, ahead, need, code, tree, last, red, met: need !== null && last !== null && last.exit === 0 };
 }

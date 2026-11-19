@@ -26,6 +26,7 @@ import { t, tShown } from "../core/i18n.mjs";
 import { literalGlob, matchAny } from "../core/glob.mjs";
 import { secretsOff } from "../checks/secrets.mjs";
 import { closingPush } from "../checks/push-mode.mjs";
+import { cloneGaps, commitRule } from "../checks/commit-identity.mjs";
 import { checkProofs, loadClasses, registryLine } from "../metrics/classes.mjs";
 import { ledgerLine, loadLedger } from "../metrics/findings.mjs";
 
@@ -639,6 +640,19 @@ export async function checkSetup({ cwd, env = process.env, self = OWN_ROOT }) {
     else if (push.head !== push.work) add("warn", "doctor.pushModeSplit", { head: push.head, work: push.work });
     add("ok", push.mode === "after-closing" ? "doctor.pushModeAfter" : "doctor.pushModeAsk", {});
     if (push.mode === "after-closing" && !push.ok) add("warn", "doctor.pushModeHeld", { why: { shown: push.said.map((l) => tShown(l.key, l.vars, config.language)).join(" ") } });
+    // commits.*: push-check refuses what this clone's settings would make (checks/commit-identity.mjs); unset, no line.
+    const rule = commitRule(config);
+    if (rule) {
+      try {
+        const { gaps, key } = cloneGaps(cwd, rule);
+        if (gaps.length) add("warn", "doctor.cloneGaps", { settings: gaps });
+        else if (key === "unlisted") add("warn", "doctor.cloneKeyUnlisted", {});
+        else if (key !== null && key !== "listed") add("unmeasured", "doctor.cloneKeyUnmeasured", { why: key.unmeasured });
+        else add("ok", "doctor.cloneOk", {});
+      } catch (e) {
+        add("unmeasured", "doctor.cloneUnmeasured", { error: oneLine(e) });
+      }
+    }
     askReport(cwd, files, add, { configured: Boolean(config.configPath), pushMode: push.mode });
     worktreesReport(cwd, add);
     secretReport(cwd, env, add);

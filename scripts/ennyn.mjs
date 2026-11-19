@@ -21,6 +21,8 @@ import { readIfThere, readRegular } from "../core/files.mjs";
 import { SecretScanner, masked, secretsOff } from "../checks/secrets.mjs";
 import { ConfigPicked, ConfigUnread, LOOSENING_LINE, commitConfig, looseningErrors } from "../checks/loosening.mjs";
 import { closingPush } from "../checks/push-mode.mjs";
+import { commitRule, commitsRefused, pushRule } from "../checks/commit-identity.mjs";
+import { API, apiBase, isAddress, isLogin, noreplyLogin, setupCommands, signersPath, signersText, signingKeys, writeSigners } from "../setup/clone-setup.mjs";
 import { cleanTree, lastRun, pushNeeds, readRuns, recordRun, runBase, within } from "../checks/test-runs.mjs";
 import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
 import { REWORK_DAYS, reworkRate } from "../metrics/szz.mjs";
@@ -93,6 +95,11 @@ Commands:
                                                     may push by itself (after-closing), 3 when what the push needs is met and the user is asked, 1 when
                                                     behind, not met, unmeasured or refused; --tested <rev>: your word that the whole test passed on that
                                                     commit, read when the record holds no run of what the push needs
+  clone-setup [--login <login>] [--address <a>]     print the git settings this clone needs for commits.* (signing format and key, commit and tag
+                                                    signing, user.email, the allowed-signers file, the commit-msg hook) as commands to run; it runs
+                                                    none. With commits.signed, build the allowed-signers file in the state dir from the SSH signing
+                                                    keys GitHub lists for --login (else the login a GitHub noreply address in commits.addresses names),
+                                                    each for --address (else the list's only address); exit 1 when it could not, the file unchanged
   test fast|whole [--again]                         run commands.fastTest or commands.wholeTest from the top and record its result by HEAD's tree when the
                                                     work tree is clean before and after; a green run already recorded on the tree is not run again
                                                     (--again: run it); exit as the command does
@@ -1875,12 +1882,42 @@ const COMMANDS = {
       }
       ready = !needs.behind && (needs.need === null || needs.met);
     }
+    // Who wrote what the push sends, and whether it is signed (commits.*): a refusal, or a range not read, is exit 1 in
+    // every mode, whatever the tests say. The rule is the strictest of the work tree's, HEAD's and the upstream's
+    // config (pushRule): an edit not committed, ENNYN_CONFIG or a loosening inside the range does not take it off.
+    let identityOk = true;
+    const unread = (/** @type {unknown} */ e) => {
+      out(t("push.commitsUnmeasured", { why: masked(String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message).trim().split("\n")[0]) }, lang));
+      identityOk = false;
+    };
+    /** @type {ReturnType<typeof pushRule>} */
+    let rule = null;
+    try {
+      rule = pushRule(cwd, cfg, "unmeasured" in needs ? null : needs.upstream);
+    } catch (e) {
+      unread(e);
+    }
+    if (rule) {
+      try {
+        if ("unmeasured" in needs) throw new Error(needs.unmeasured);
+        const { checked, refused } = commitsRefused(cwd, rule, needs.upstream);
+        if (refused.length) {
+          out(t("push.commitsRefused", { n: refused.length, total: checked }, lang));
+          for (const r of refused) out(`  ${r.hash.slice(0, 12)} ${r.why.map((w) => t(w.key, w.vars, lang)).join("; ")}`);
+          out(t("push.commitsSetup", {}, lang));
+        } else out(t("push.commitsOk", { n: checked }, lang));
+        identityOk = !refused.length;
+      } catch (e) {
+        unread(e);
+      }
+    }
     // The push itself: by the user's yes, or with after-closing by the cycle (checks/push-mode.mjs), on a commit whose
     // tree the record holds green, or one the caller names as tested, with nothing uncommitted. Either is a word:
     // a record line is a file any process here can write. Under ask neither pushes.
     // Exit 0 is only the line that says the cycle may push (push.md, step 4, pushes on it); ready but asked is 3.
     const push = closingPush(cwd);
     for (const l of push.said) out(t(l.key, l.vars, lang));
+    if (!identityOk) return 1;
     if (!push.ok) return opts.tested !== undefined || !ready ? 1 : 3;
     const clean = () => git(["status", "--porcelain=v1", "-z", "--untracked-files=normal", "--ignore-submodules=none"], { cwd }) === "";
     if (!("unmeasured" in needs) && ready && needs.met) {
@@ -1897,6 +1934,49 @@ const COMMANDS = {
     if (!clean()) return (out(t("push.modeDirty", {}, lang)), 1);
     out(t("push.modeTested", { head: now.slice(0, 12), branch: String(push.branch) }, lang));
     return 0;
+  },
+
+  async "clone-setup"(args) {
+    const { opts, help } = parseArgs(args, { options: ["login", "address"] });
+    if (help) return (out(USAGE), 0);
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    const lang = cfg.language;
+    const rule = commitRule(cfg);
+    if (!rule) return (out(t("cloneSetup.unset", {}, lang)), 0);
+    const given = opts.login === undefined ? null : String(opts.login);
+    if (given !== null && !isLogin(given)) throw new UsageError("--login takes a GitHub login: letters, digits and single hyphens, at most 39");
+    if (opts.address !== undefined && !isAddress(String(opts.address))) throw new UsageError("--address takes an address such as a@example.test");
+    const listed = /** @type {string[]} */ (cfg.commits.addresses);
+    const derived = noreplyLogin(listed);
+    // The address the keys are written for, and user.email: named, the one the noreply address names, the list's
+    // only one, or with no list the clone's own user.email.
+    const email = gitMaybe(["config", "--get", "user.email"], { cwd, absent: [1] });
+    const address = opts.address !== undefined ? String(opts.address) : given === null && derived ? derived.address : listed.length === 1 ? listed[0] : !listed.length && email && isAddress(email) ? email : null;
+    if (address !== null && rule.addresses && !rule.addresses.includes(address.toLowerCase())) throw new UsageError(`--address ${address} is not in commits.addresses`);
+    // A login read from a noreply address answers for that address alone: another one takes --login, the user's word.
+    const login = given ?? (derived && address !== null && address.toLowerCase() === derived.address.toLowerCase() ? derived.login : null);
+    const signers = signersPath(cwd, cfg);
+    const commands = setupCommands({ address, signed: rule.signed, signingKey: gitMaybe(["config", "--get", "user.signingkey"], { cwd, absent: [1] }), signers, cli: fileURLToPath(import.meta.url), pluginData: process.env.ENNYN_PLUGIN_DATA || null });
+    out(t("cloneSetup.commands", { addresses: listed.join(", ") || "any", signed: String(rule.signed) }, lang));
+    for (const c of commands) out(`  ${c}`);
+    let code = 0;
+    if (address === null) (out(t("cloneSetup.noAddress", {}, lang)), (code = 1));
+    if (!rule.signed) return code;
+    if (login === null) return (out(t("cloneSetup.noLogin", {}, lang)), 1);
+    if (address === null) return 1;
+    const api = apiBase(process.env);
+    if ("refused" in api) return (out(t("cloneSetup.baseRefused", { base: api.refused }, lang)), 1);
+    if (api.base !== API) out(t("cloneSetup.base", { base: api.base }, lang));
+    const got = await signingKeys(login, { base: api.base });
+    if ("failed" in got) return (out(t(got.failed.key, { ...got.failed.vars, login, path: signers }, lang)), out(t("cloneSetup.unchanged", { path: signers }, lang)), 1);
+    try {
+      writeSigners(cwd, signers, signersText(address, got.keys));
+    } catch (e) {
+      return (out(t("cloneSetup.unwritten", { path: signers, error: /** @type {Error} */ (e).message.split("\n")[0] }, lang)), 1);
+    }
+    out(t("cloneSetup.written", { n: got.keys.length, login, address, path: signers }, lang));
+    return code;
   },
 
   test(args) {

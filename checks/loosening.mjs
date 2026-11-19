@@ -66,6 +66,9 @@ const MOVES = new Map(/** @type {[string, (a: any, b: any) => boolean][]} */ ([
   ["push.mode", (_, b) => b !== "ask"],
   // A path no glob matches needs only a fast run before a push (push-check).
   ["push.codeGlobs", shrinks],
+  // push-check refuses a commit by an address outside the list: one added lets its commits through, none turns it off.
+  ["commits.addresses", (a, b) => a.length > 0 && (b.length === 0 || grows(a, b))],
+  ["commits.signed", (a, b) => a && !b],
   // The commands whose green run push-check reads (`ennyn test`): a set command changed or taken away; setting one
   // where none was set is not.
   ["commands.fastTest", (a) => typeof a === "string"],

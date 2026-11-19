@@ -49,6 +49,8 @@ export const READERS = [
   { module: "adapters/claude-code/rules-index.mjs", program: "Claude Code", harness: "test/reference.test.mjs", test: CC_CELLS, kind: "record" },
   { module: "checks/ci.mjs", program: "Actions YAML", harness: "test/reference.test.mjs", test: "reference: every Actions YAML cell compares as recorded", kind: "record" },
   { module: "checks/commit-shape.mjs", program: "git", harness: "test/git-oracle.test.mjs", test: "oracle: the commit-msg hook computes the message git stores", kind: "live" },
+  { module: "checks/commit-identity.mjs", program: "git", harness: "test/push-check-oracle.test.mjs", test: "push-check oracle: it says the cycle may push only where", kind: "live" },
+  { module: "checks/commit-identity.mjs", program: "git", harness: "test/clone-setup.test.mjs", test: "commits: push-check refuses each commit the push sends", kind: "live" },
   { module: "checks/deps.mjs", program: "npm", harness: "test/reference.test.mjs", test: "reference: every npm cell compares as recorded", kind: "record" },
   { module: "checks/push-mode.mjs", program: "git", harness: "test/cli.test.mjs", test: "cli: push-check reads git config as git push does", kind: "live" },
   { module: "checks/test-runs.mjs", program: "git", harness: "test/cli.test.mjs", test: "cli: test records a run by HEAD's tree on a clean work tree", kind: "live" },
@@ -113,6 +115,7 @@ export const NOT_READERS = {
   "metrics/findings.mjs": `${OWN}; git's answers taken whole`,
   "metrics/gate-log.mjs": `${OWN}; git's answer taken whole`,
   "plan/mechanization.mjs": OWN,
+  "setup/clone-setup.mjs": "reads GitHub's JSON answer by the shape its REST docs give, refused whole otherwise; the allowed-signers lines it writes git verifies with in test/clone-setup.test.mjs",
   "setup/uninstall.mjs": `${OWN} (the install record) and file bytes by sha256; the hook and the settings are read through hook.mjs and permissions.mjs; the lines it names in a hook are advice, no verdict on what sh runs`,
   "plan/cycle-journal.mjs": `${OWN} (the cycle journal); git's answers taken whole`,
 };

@@ -93,6 +93,10 @@ export const DEFAULTS = Object.freeze({
   // codeGlobs: a push whose commits change a path these match needs a green whole run on its tree, any other a fast
   // one (push-check); every path by default.
   push: { warnAtUnpushed: 20, mode: "ask", codeGlobs: ["**"] },
+  // Who may write the commits a push sends, and whether each is signed (checks/commit-identity.mjs): push-check refuses
+  // a commit whose author or committer address `addresses` does not hold, compared without case, and with `signed` one
+  // git does not verify as signed by a key the clone's allowed-signers file lists for its committer. [] and false: unset.
+  commits: { addresses: [], signed: false },
   security: {
     // Every this many cycles the audit slot is a security audit of the sensitive paths (plan/audit.mjs, `ennyn
     // audit`); 0 turns it off.
@@ -159,6 +163,9 @@ export const DEFAULTS = Object.freeze({
   },
 });
 
+/** What `commits.addresses` takes: an address with no character an allowed-signers file reads as syntax. */
+export const ADDRESS = /^[A-Za-z0-9._%+=-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*$/;
+
 /** How a cycle's push is decided: `ask` the user, or `after-closing`, by itself once the closing's checks passed. */
 export const PUSH_MODES = ["ask", "after-closing"];
 
@@ -188,6 +195,7 @@ export const STRING_LISTS = new Set([
   "security.deps.advisoryRegistries",
   "security.secrets.except",
   "push.codeGlobs",
+  "commits.addresses",
   "sideCopy.roots",
   "impact.fakeGlobs",
   "impact.fixtureGlobs",
@@ -471,6 +479,11 @@ export function configFrom(text, { cwd, configPath, override }) {
   const wholeTest = /** @type {any} */ (cfg).commands.wholeTest;
   if (typeof wholeTest === "string" && (wholeTest.trim() === "" || /[\r\n\0]/.test(wholeTest))) problems.push(`"commands.wholeTest" must be a command on one line, or null`);
   if (!/** @type {any} */ (cfg).push.codeGlobs.every((/** @type {unknown} */ g) => typeof g === "string" && g !== "")) problems.push(`"push.codeGlobs" must be a list of globs`);
+  // An address of plain letters, digits and . _ % + = - around one @: an allowed-signers file reads a comma, a quote,
+  // a space and * ? ! in a principal as syntax, and a key written for such an address would be trusted for others.
+  const addresses = /** @type {unknown[]} */ (/** @type {any} */ (cfg).commits.addresses);
+  const badAddresses = addresses.filter((a) => typeof a !== "string" || !ADDRESS.test(a));
+  if (badAddresses.length) problems.push(`"commits.addresses" entries must be addresses such as a@example.test (letters, digits and . _ % + = - around one @): ${badAddresses.map((a) => JSON.stringify(a)).join(", ")}`);
   const split = /** @type {any} */ (cfg).planner.splitAbove;
   if (split !== null && !(Number.isFinite(split) && split > 0)) problems.push(`"planner.splitAbove" must be a number above 0, or null`);
   const every = /** @type {any} */ (cfg).security.everyCycles;

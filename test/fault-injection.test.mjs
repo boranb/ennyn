@@ -317,6 +317,25 @@ function agentsSession(repo) {
 }
 
 /**
+ * commits.* set in the copy's config, committed: one listed address, signing asked; `clone`: the clone's git settings
+ * for it too, an allowed-signers file there.
+ * @param {string} repo @param {boolean} [clone]
+ */
+function commitsSet(repo, clone = false) {
+  const path = join(repo, ".ennyn", "config.json");
+  writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, "utf8")), commits: { addresses: ["t@t"], signed: true } }));
+  // One date: push-check names the commit by its hash, the same in every run.
+  const date = "2026-01-20 12:00:00 +0000";
+  git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--no-verify", "-am", "chore: commits"], { cwd: repo, env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } });
+  if (!clone) return;
+  // A key of the right shape, listed for the clone's address: doctor reads both files, and the clean run's line is a ✓.
+  const key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFaultMatrixFixtureKeyNotARealOne0000000";
+  writeFileSync(join(repo, ".git", "key.pub"), `${key} t\n`);
+  writeFileSync(join(repo, ".git", "allowed_signers"), `t@t namespaces="git" ${key}\n`);
+  for (const [k, v] of [["commit.gpgsign", "true"], ["tag.gpgsign", "true"], ["user.signingkey", ".git/key.pub"], ["gpg.format", "ssh"], ["gpg.ssh.allowedSignersFile", ".git/allowed_signers"], ["user.email", "t@t"]]) git(["config", k, v], { cwd: repo });
+}
+
+/**
  * A start record and the journal events `calls` gives, written by the CLI as the orchestrator writes them; the start
  * record's time and each event's time are set to one value, so every run reads the same.
  * @param {string} repo @param {string[][]} calls
@@ -480,6 +499,12 @@ const CASES = [
   { args: ["mutate", "--restore"], writes: true },
   // The fetch writes the copy's git dir. Ahead of its upstream by a commit that changes code: the record holds no run.
   { args: ["push-check"], writes: true },
+  // commits.* set: the commits the push sends are read (their addresses, signatures and raw headers), and so is the
+  // clone's git config for doctor and clone-setup; with no login clone-setup asks no forge.
+  { args: ["push-check"], writes: true, setup: (repo) => commitsSet(repo) },
+  // The clone holds every setting: the clean run's line is a ✓, and a read that fails turns it into one "?" line.
+  { args: ["doctor"], setup: (repo) => commitsSet(repo, true) },
+  { args: ["clone-setup"], setup: (repo) => commitsSet(repo) },
   // A run recorded by HEAD's tree: each read of the tree before and after it must be said, never recorded.
   {
     args: ["test", "fast"],
