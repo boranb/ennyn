@@ -3,6 +3,7 @@
   "paths": { "handoff": ".ennyn/handoff.md" },
   "commands": { "fastTest": "npm run test:short", "wholeTest": "npm test" },
   "push": { "codeGlobs": ["**/*.mjs", "**/*.cjs", "**/*.js", "**/package.json"] },
+  "commits": { "addresses": ["61060561+boranb@users.noreply.github.com"], "signed": true },
   "commitMsg": {
     "language": "en",
     "types": ["feat", "fix", "docs", "test", "refactor", "chore"],
