@@ -15,9 +15,10 @@ import { HOOK_INDEX_ENV, HOOK_READ_ENV, MISSING_OBJECT, NAMES_BUFFER, READ_BUDGE
 import { ends, jsonShown, shown, t, tShown, unshownEscaped } from "../core/i18n.mjs";
 import { matchAny } from "../core/glob.mjs";
 import { foldTarget, forbiddenResult, nameShown, secretErrors, shapeOf, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
+import { anyTextRule, lineHits, literalEntry, literalsPath, newLines, privateErrors, privateShown, readLiterals, sourceHits, textRules } from "../checks/private-text.mjs";
 import { ciCallees, ciMessages } from "../checks/ci.mjs";
 import { advisoriesOf, depsMessages, dirOf, judgeEntry, judgeLock, lockEntries, lockPath, lockText, npmrcFindings, npmrcPath, pkgJson, pkgJsonPath, pkgPathOf, reasonText, registryOf, registryResolver } from "../checks/deps.mjs";
-import { readIfThere, readRegular } from "../core/files.mjs";
+import { readIfThere, readRegular, writeState } from "../core/files.mjs";
 import { SecretScanner, masked, secretsOff } from "../checks/secrets.mjs";
 import { ConfigPicked, ConfigUnread, LOOSENING_LINE, commitConfig, looseningErrors } from "../checks/loosening.mjs";
 import { closingPush } from "../checks/push-mode.mjs";
@@ -56,6 +57,8 @@ Commands:
                                                     out of a hook Ennyn did not write, and list what stays (config, graph, handoff, logs, ask rules)
   budget [--json] [--record [--security-audit]]     instruction text loaded every session / by path, rule lines repeated across files; --record appends to paths.metricsLog, --security-audit marks the cycle's security audit
   commit-check [--hook] <message-file>              check commit message shape (commit-msg hook; --hook: a config that does not load warns instead of failing)
+  private-text add [--exact]                        add the words on stdin, one a line, to this clone's private list (hashed, in the state dir): commit-check
+                                                    refuses them in added lines, added names and the message; a word matches in any case unless --exact
   deps [--json]                                     known advisories (OSV), install scripts and unlisted sources of the lock files; exit 1 unless all measured clean
   impact --symbol <s> [--files a,b]                 five-row impact table (markdown)
   rework [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--days N] [--json]
@@ -472,6 +475,99 @@ async function secretScan(cwd, cfg, before, notUtf8, hook, brought) {
     gateFailed(e, lang, unchecked, "security.secrets", "cli.secretsUnmeasured");
   }
   return done([...unchecked, ...secretErrors({ config: cfg, hits: scan.hits, names })]);
+}
+
+/**
+ * security.privateText for one commit (checks/private-text.mjs): the lines it adds to the files it brings, the names it
+ * adds and the message, against the clone's list of words and the config's switches; the graph's sources it adds. The
+ * list is this machine's file, not the commit's: one that cannot be read is said, never read as empty. A read of what
+ * the commit brings that fails is weighed by gateFailed, as review.forbidden's; a staged graph that is no JSON is the
+ * commit's own content, refused. Run by hand, each of these fails the command.
+ * @param {{ cwd: string, cfg: any, hook: boolean, staged: string[], notUtf8: string[], brings: (p: string) => boolean, addedNames: Set<string>, message: string | null, mode: { cleanup: "strip" | "whitespace" | "verbatim" | "scissors", comment: string, cut: boolean } | null, unchecked: string[], gateRead: (paths: string[], gate: string, key: string) => Map<string, import("../core/git.mjs").StagedVersion> }} o
+ * @returns {string[]}
+ */
+function privateTextErrors({ cwd, cfg, hook, staged, notUtf8, brings, addedNames, message, mode, unchecked, gateRead }) {
+  const lang = cfg.language;
+  const GATE = "security.privateText";
+  /** @param {string} said */
+  const refuse = (said) => {
+    if (!hook) throw new Error(said);
+    unchecked.push(said);
+  };
+  /** @type {import("../checks/private-text.mjs").Literals | null} */
+  let literals = null;
+  try {
+    literals = readLiterals(cwd, cfg);
+  } catch (e) {
+    const said = t("cli.privateListUnread", { error: oneLine(String(/** @type {Error} */ (e).message)) }, lang);
+    if (!hook) throw new Error(said);
+    err(said);
+  }
+  const rules = textRules(cfg, literals);
+  const shownNames = (/** @type {string[]} */ list) => list.slice(0, 3).map((p) => privateShown(p, rules)).join(", ");
+  const graphPath = relative(cwd, resolve(cwd, cfg.paths.graph)).split(sep).join("/");
+  const graphOn = cfg.security.privateText.provenance && graphPath.endsWith(".json") && staged.includes(graphPath) && brings(graphPath);
+  if (!anyTextRule(rules) && !graphOn) return [];
+  /** @type {Map<string, import("../core/git.mjs").AddedLine[]>} */
+  let lines = new Map();
+  if (anyTextRule(rules)) {
+    const brought = staged.filter(brings);
+    const unnamed = brought.filter((p) => notUtf8.includes(p));
+    if (unnamed.length) refuse(t("cli.privateNamesUnread", { n: unnamed.length, paths: shownNames(unnamed) }, lang));
+    const asked = brought.filter((p) => !notUtf8.includes(p));
+    /** @type {Map<string, string>} */
+    const unread = new Map();
+    try {
+      if (asked.length) lines = stagedAddedLines(cwd, asked, { env: process.env, ...(hook ? { unread } : {}) });
+    } catch (e) {
+      if (!hook) throw e;
+      gateFailed(e, lang, unchecked, GATE, "cli.privateUnmeasured");
+    }
+    for (const [why, paths] of byReason(unread)) err(t("cli.privateReadFailed", { n: paths.length, paths: shownNames(paths), error: why }, lang));
+    // A line with a hit that HEAD's file already holds was moved, not written (newLines). HEAD's versions are read only
+    // for files with a hit; one that cannot be read keeps its hits.
+    const hit = [...lines].filter(([, ls]) => ls.some((l) => lineHits(l.text, rules).length)).map(([p]) => p);
+    if (hit.length) {
+      /** @type {Map<string, string | null>} */
+      const heads = new Map();
+      // Unread, a path keeps every hit, and that is said: the refusal may then name a line a move explains.
+      /** @type {Map<string, string>} */
+      const headUnread = new Map();
+      try {
+        const read = stagedVersionsEach(cwd, hit, { env: process.env });
+        for (const [p, v] of read.versions) {
+          heads.set(p, v.head && !v.headUnread ? v.head.toString("utf8") : null);
+          if (v.headUnread) headUnread.set(p, v.headUnread);
+        }
+        for (const p of read.unaskable) headUnread.set(p, t("cli.ciCalleesNoName", {}, lang));
+        for (const f of read.failed) headUnread.set(f.path, oneLine(String(/** @type {Error & { stderr?: unknown }} */ (f.error).stderr || /** @type {Error} */ (f.error).message)));
+      } catch (e) {
+        if (!hook) throw e;
+        for (const p of hit) headUnread.set(p, oneLine(String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message)));
+      }
+      for (const [why, paths] of byReason(headUnread)) err(t("cli.privateHeadUnread", { n: paths.length, paths: shownNames(paths), error: why }, lang));
+      lines = newLines(lines, heads);
+    }
+  }
+  /** @type {{ path: string, hits: { line: number, length: number }[] } | undefined} */
+  let graph;
+  if (graphOn && !notUtf8.includes(graphPath)) {
+    const v = gateRead([graphPath], GATE, "cli.privateGraphUnread").get(graphPath);
+    if (v?.unread) refuse(t("cli.privateGraphNotRead", { path: privateShown(graphPath, rules), why: v.unread }, lang));
+    else if (v?.staged) {
+      try {
+        graph = { path: graphPath, hits: sourceHits(v.staged.toString("utf8"), v.head && !v.headUnread ? v.head.toString("utf8") : null, cfg) };
+      } catch (e) {
+        refuse(t("cli.privateGraphNotJson", { path: privateShown(graphPath, rules), error: oneLine(String(/** @type {Error} */ (e).message)) }, lang));
+      }
+    }
+  }
+  // As git will store it (hookCommitMode: commit.cleanup, the comment marker, the scissors), unlike the secret scan's
+  // superset: a line git strips (the editor's template, `# On branch <name>`) reaches no history. With how git cleans
+  // it unknown, whole. A --cleanup= on the command line reaches no hook: --cleanup=verbatim with the editor stores
+  // comment lines this does not read.
+  const text = message !== null && anyTextRule(rules) ? (mode ? storedMessage(message, mode.cleanup, mode.comment, mode.cut) : message) : undefined;
+  return privateErrors({ rules, lang, lines, names: anyTextRule(rules) ? [...addedNames] : [], message: text, graph });
 }
 
 // Every line written passes unshownEscaped: a value that reached a line without tShown (an error that quotes a
@@ -1024,11 +1120,14 @@ const COMMANDS = {
     /** Staged names the commit deletes. */
     /** @type {Set<string>} */
     let deleted = new Set();
+    /** Staged names the commit adds. */
+    /** @type {Set<string>} */
+    let addedNames = new Set();
     try {
       // Outside a repository nothing is staged: the message is all there is to check.
       if (repoPath("--git-dir", { cwd }) !== null) {
         const listed = stagedNames(cwd, { env: process.env });
-        ({ paths: staged, notUtf8, deleted } = listed);
+        ({ paths: staged, notUtf8, deleted, added: addedNames } = listed);
         if (listed.deletedUnread) err(t("cli.stagedDeletedUnread", { mb: NAMES_BUFFER / 1024 / 1024 }, cfg.language));
       }
     } catch (e) {
@@ -1238,6 +1337,7 @@ const COMMANDS = {
         gateFailed(e, cfg.language, unchecked, "security.secrets", "cli.messageSecretsUnmeasured");
       }
     }
+    const privateText = privateTextErrors({ cwd, cfg, hook: Boolean(opts.hook), staged, notUtf8, brings, addedNames, message, mode, unchecked, gateRead });
     /** @type {{ ok: boolean, errors: string[], warnings?: string[] }} */
     let res = { ok: true, errors: [] };
     if (message === null) {
@@ -1262,9 +1362,9 @@ const COMMANDS = {
         err(t("cli.hookMessageUnchecked", { error: masked(typeof error.stderr === "string" ? error.stderr.trim().split("\n")[0] : error.message) }, cfg.language));
       }
     }
-    for (const e of [...unchecked, ...ci.errors, ...deps.errors, ...secrets.errors, ...forbidden.errors, ...messageSecrets, ...res.errors]) err(e);
+    for (const e of [...unchecked, ...ci.errors, ...deps.errors, ...secrets.errors, ...forbidden.errors, ...messageSecrets, ...privateText, ...res.errors]) err(e);
     for (const w of [...(res.warnings ?? []), ...forbidden.warnings, ...ci.warnings, ...deps.warnings]) err(w);
-    return res.ok && !loosens && !unchecked.length && !ci.errors.length && !deps.errors.length && !secrets.errors.length && !forbidden.errors.length && !messageSecrets.length ? 0 : 1;
+    return res.ok && !loosens && !unchecked.length && !ci.errors.length && !deps.errors.length && !secrets.errors.length && !forbidden.errors.length && !messageSecrets.length && !privateText.length ? 0 : 1;
   },
 
   async deps(args) {
@@ -1933,6 +2033,29 @@ const COMMANDS = {
     if (!now || now !== tested) return (out(t("push.modeMoved", { head: String(now).slice(0, 12), tested: String(opts.tested).slice(0, 40) }, lang)), 1);
     if (!clean()) return (out(t("push.modeDirty", {}, lang)), 1);
     out(t("push.modeTested", { head: now.slice(0, 12), branch: String(push.branch) }, lang));
+    return 0;
+  },
+
+  async "private-text"(args) {
+    const { positional, opts, help } = parseArgs(args, { flags: ["exact"], positional: 1 });
+    if (help) return (out(USAGE), 0);
+    if (positional[0] !== "add") throw new UsageError("private-text takes add, with the words on stdin, one a line");
+    const cwd = projectDir();
+    const cfg = config(cwd);
+    const lang = cfg.language;
+    const path = literalsPath(cwd, cfg);
+    // A list that does not read as one is not added to: the hook would read none of it.
+    readLiterals(cwd, cfg);
+    // From stdin, never an argument: a word on a command line stays in the shell's history. No word is ever printed.
+    const words = readFileSync(0, "utf8").split("\n").map((w) => w.trim()).filter(Boolean);
+    const entries = words.map((w) => literalEntry(w, !opts.exact));
+    const bad = entries.flatMap((e, i) => (e === null ? [i + 1] : []));
+    if (bad.length) return (err(t("privateText.notWord", { lines: bad.slice(0, 10).join(", ") }, lang)), 1);
+    if (!entries.length) return (err(t("privateText.none", {}, lang)), 1);
+    const had = new Set((readRegular(stateRoot(cwd, path), path)?.toString("utf8") ?? "").split("\n").map((l) => l.trim()));
+    const fresh = [...new Set(/** @type {string[]} */ (entries))].filter((e) => !had.has(e));
+    if (fresh.length) writeState(stateRoot(cwd, path), path, `${fresh.join("\n")}\n`, "append");
+    out(t("privateText.added", { n: fresh.length, known: entries.length - fresh.length, path }, lang));
     return 0;
   },
 

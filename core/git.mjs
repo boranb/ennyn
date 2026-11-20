@@ -597,12 +597,13 @@ export function stagedPaths(cwd, opts = {}) {
  * The staged paths, read as bytes, from one status read with no pathspec, so no name has to fit an argument. `notUtf8`
  * holds those whose names are not UTF-8, as `paths` spells them (nameText: a string no UTF-8 name is); such a name
  * cannot be handed back to git as a pathspec. `deleted`: the paths the commit deletes, in `paths` too. Every other
- * path is what the commit adds or changes: the scope of a gate's failure (gateFailed in scripts/ennyn.mjs). Past
+ * path is what the commit adds or changes: the scope of a gate's failure (gateFailed in scripts/ennyn.mjs); `added`: the
+ * paths the commit adds (a rename's new name too: renames are not followed). Past
  * NAMES_BUFFER a list of deletions cannot be told from one of changes, so it is asked again without them: `deletedUnread`,
  * and what fills the buffer then is what the commit brings, which throws.
  * @param {string} cwd
  * @param {{ env?: NodeJS.ProcessEnv }} [opts]
- * @returns {{ paths: string[], notUtf8: string[], deleted: Set<string>, deletedUnread: boolean }}
+ * @returns {{ paths: string[], notUtf8: string[], deleted: Set<string>, added: Set<string>, deletedUnread: boolean }}
  */
 export function stagedNames(cwd, { env } = {}) {
   const index = env ? hookIndexFile(cwd, env) : null;
@@ -623,6 +624,8 @@ export function stagedNames(cwd, { env } = {}) {
   const notUtf8 = [];
   /** @type {Set<string>} */
   const deleted = new Set();
+  /** @type {Set<string>} */
+  const added = new Set();
   const records = splitNul(out);
   // A status letter, then its path.
   for (let i = 0; i + 1 < records.length; i += 2) {
@@ -630,8 +633,9 @@ export function stagedNames(cwd, { env } = {}) {
     paths.push(text);
     if (!isUtf8(records[i + 1])) notUtf8.push(text);
     if (records[i][0] === 0x44) deleted.add(text);
+    if (records[i][0] === 0x41) added.add(text);
   }
-  return { paths, notUtf8, deleted, deletedUnread };
+  return { paths, notUtf8, deleted, added, deletedUnread };
 }
 
 /**

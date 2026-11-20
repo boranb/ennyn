@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { readFileSync, lstatSync, readlinkSync, mkdtempSync, mkdirSync, writeFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { git, gitMaybe } from "../core/git.mjs";
 import { secretHits } from "../checks/secrets.mjs";
+import { homeHits, literalHits } from "../checks/private-text.mjs";
 import { TOKENS } from "./secret-shapes.mjs";
 
 // No names, paths or data of the projects that use Ennyn go into this repository (.claude/CLAUDE.md).
@@ -26,31 +26,19 @@ const FOLDED = new Set([
   "433c2a9842d736c0562080ceb58620096eb3846eee56557ff63dd275d12c92c6",
   "e7b4b7621a6844f25669d8dc097a5572c450f32d12c7b32784783ecb245543b0",
 ]);
-// A home directory: /Users/<name> or /home/<name> (any characters but separators), C:\Users\ with any number of backslashes (prose, a JS string, JSON in a string).
-const HOME = /(?<![\w.-])(\/(?:Users|home)\/[^\s/\\"'`<>]+|[A-Za-z]:\\+Users\\+[^\s\\"']+)/u;
-
-/** @param {string} s */
-const digest = (s) => createHash("sha256").update(s).digest("hex");
-
 /**
- * Denied names and home paths in a text: each word is checked whole and in its parts (name.md, name-server,
- * NAME_HOME), as written for EXACT and in lower case for FOLDED.
+ * Denied names and home paths in a text, as the commit-msg hook's private-text gate reads them (checks/private-text.mjs):
+ * each word whole, in its parts (name.md, name-server, NAME_HOME) and its ASCII runs (a Turkish suffix written without
+ * the apostrophe), as written for EXACT and in lower case for FOLDED; a home directory, /Users/<name> or /home/<name>,
+ * C:\Users\ with any number of backslashes (prose, a JS string, JSON in a string).
  * @param {string} text
  */
 export function findings(text) {
   /** @type {string[]} */
   const out = [];
-  for (const raw of text.match(/[\p{L}\p{N}][\p{L}\p{N}._-]*/gu) ?? []) {
-    const word = raw.replace(/[._-]+$/, "");
-    const parts = word.split(/[._-]+/);
-    // A Turkish suffix written without the apostrophe (Nameın): the ASCII run before it.
-    const runs = parts.flatMap((p) => p.match(/[A-Za-z0-9]+/g) ?? []);
-    for (const w of new Set([word, ...parts, ...runs])) {
-      if (w && (EXACT.has(digest(w)) || FOLDED.has(digest(w.toLowerCase())))) out.push(`a project name (${w.length} characters)`);
-    }
-  }
-  const home = HOME.exec(text);
-  if (home) out.push(`a home path: ${home[1]}`);
+  for (const hit of literalHits(text, { exact: EXACT, folded: FOLDED })) out.push(`a project name (${hit.length} characters)`);
+  const home = homeHits(text)[0];
+  if (home) out.push(`a home path: ${text.slice(home.at, home.end)}`);
   return out;
 }
 

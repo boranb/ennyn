@@ -104,6 +104,7 @@ export const NOT_READERS = {
   "adapters/claude-code/hooks/side-copy-reset.mjs": "removes Ennyn's own state",
   "adapters/claude-code/hooks/side-copy-rules.mjs": "a hook's entry file: the reading is rules-index.mjs's and map-path.mjs's",
   "checks/secrets.mjs": "secret shapes are their issuers' documented prefixes and lengths, no program's reading",
+  "checks/private-text.mjs": "word, path, address and conversation shapes over lines git's readers hand it (core/git.mjs, checks/commit-shape.mjs), and the sources of Ennyn's own graph",
   "core/config.mjs": OWN,
   "core/encoding.mjs": "decodes Unicode encoding forms; what git splits is core/git.mjs's reading",
   "core/files.mjs": "file presence and reads through node:fs",

@@ -34,15 +34,17 @@ const up = (a, b) => b > a;
 /** @param {number} a @param {number} b */
 const down = (a, b) => b < a;
 const any = () => true;
+/** A move of where the graph's provenance rule reads, which loosens only while that rule is on before or after it. @param {unknown} _a @param {unknown} _b @param {any} before @param {any} after */
+const provenanceRead = (_a, _b, before, after) => Boolean(before.security.privateText.provenance || after.security.privateText.provenance);
 
 /** @typedef {{ text: string, paths: string[], except?: string[] }} Forbidden */
 /** @typedef {{ paths: string[], docs: string[] }} Cochange */
 
 /**
  * Each key a gate reads, and whether a move from one value to another loosens that gate; asked only of two values
- * that differ. A rule is matched by its text, so a rule with a new text is a rule gone.
+ * that differ, with both whole configs for a key whose gate runs only under another key (`provenanceRead`). A rule is matched by its text, so a rule with a new text is a rule gone.
  */
-const MOVES = new Map(/** @type {[string, (a: any, b: any) => boolean][]} */ ([
+const MOVES = new Map(/** @type {[string, (a: any, b: any, before: any, after: any) => boolean][]} */ ([
   ["commitMsg.types", (a, b) => a.length > 0 && (b.length === 0 || grows(a, b))],
   ["commitMsg.style", (_, b) => b !== "terse"],
   ["commitMsg.subjectMax", up],
@@ -91,6 +93,18 @@ const MOVES = new Map(/** @type {[string, (a: any, b: any) => boolean][]} */ ([
   ["security.deps.advisories", any],
   ["security.deps.advisoryRegistries", any],
   ["security.secrets.except", grows],
+  ["security.privateText.home", (a, b) => a && !b],
+  ["security.privateText.conversation", (a, b) => a && !b],
+  ["security.privateText.addresses", (a, b) => a && !b],
+  ["security.privateText.provenance", (a, b) => a && !b],
+  // Where security.privateText reads. The graph and its sources only while provenance is on in either version (a rule
+  // on in neither reads them); the state dir, which holds the list of private words, whatever the config says.
+  ["paths.graph", provenanceRead],
+  ["paths.stateDir", any],
+  ["graph.exports.open", provenanceRead],
+  ["graph.exports.done", provenanceRead],
+  ["graph.exports.declined", provenanceRead],
+  ["graph.fields.source", provenanceRead],
 ]));
 
 /** The keys a gate reads, as MOVES lists them. */
@@ -104,11 +118,8 @@ export const GATE_KEYS = [...MOVES.keys()];
 const NO_GATE = new Set([
   "language",
   "conversation.style",
-  ...["handoff", "graph", "metricsLog", "classes", "findings", "stateDir"].map((k) => `paths.${k}`),
-  "graph.exports.open",
-  "graph.exports.done",
-  "graph.exports.declined",
-  ...["id", "status", "needs", "gate", "value", "cost", "cluster", "mechanization", "source", "since", "reason", "sourceClass"].map((k) => `graph.fields.${k}`),
+  ...["handoff", "metricsLog", "classes", "findings"].map((k) => `paths.${k}`),
+  ...["id", "status", "needs", "gate", "value", "cost", "cluster", "mechanization", "since", "reason", "sourceClass"].map((k) => `graph.fields.${k}`),
   "graph.openGateValue",
   "graph.doneStatus",
   "planner.splitAbove",
@@ -160,7 +171,7 @@ export function loosenedKeys(before, after) {
   return KEYS.filter((key) => {
     if (gateKeyKind(key) === "none") return false;
     const [a, b] = [valueAt(before, key), valueAt(after, key)];
-    return plain(a) !== plain(b) && (MOVES.get(key) ?? any)(a, b);
+    return plain(a) !== plain(b) && (MOVES.get(key) ?? any)(a, b, before, after);
   });
 }
 

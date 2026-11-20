@@ -49,7 +49,7 @@ export const GATES = [
     guards: [
       { id: "hygiene-name", why: "a project name in a tracked file", file: "DESIGN.md", old: "# ennyn — design\n", new: `# ennyn — design\n\nFrom ${NAME}.\n`, pattern: "hygiene: no file, path, symlink" },
       { id: "hygiene-home", why: "a home path in a tracked file", file: "README.md", old: "> Early days (0.0.x).", new: `> Early days (0.0.x), from ${HOME}/ennyn.`, pattern: "hygiene: no file, path, symlink" },
-      { id: "hygiene-judge", why: "a judge that finds nothing", file: "test/hygiene.test.mjs", old: "  const out = [];\n  for (const raw of text.match(", new: "  const out = [];\n  if (out) return out;\n  for (const raw of text.match(", pattern: "hygiene: a name is found whole" },
+      { id: "hygiene-judge", why: "a judge that finds nothing", file: "test/hygiene.test.mjs", old: "  const out = [];\n  for (const hit of literalHits(", new: "  const out = [];\n  if (out) return out;\n  for (const hit of literalHits(", pattern: "hygiene: a name is found whole" },
       {
         id: "hygiene-log",
         why: "commit messages not read",
@@ -958,6 +958,7 @@ const CLI_ONLY = { reason: "runs the CLI on temporary repositories", allow: '"sc
 export const NOT_GATES = {
   "test/budget.test.mjs": { reason: "runs the CLI on temporary repositories, and on the metrics-log corpus", allow: '"scripts", "ennyn\\.mjs"|"__fixtures__", "metrics-log"' },
   "test/ci.test.mjs": CLI_ONLY,
+  "test/private-text.test.mjs": CLI_ONLY,
   "test/push-spellings.test.mjs": { reason: "runs the push reader on its corpus and the PreToolUse hook on temporary projects, on a copy of the plugin's files for a broken catalog; reads the header and SECURITY.md for the stated limits", allow: '"\\.\\./(adapters/claude-code/(hooks/)?push-spellings\\.mjs|SECURITY\\.md|)", import\\.meta\\.url|"\\.\\.", import\\.meta\\.url' },
   "test/kill-targets.test.mjs": { reason: "runs the kill reader on its corpus and the PreToolUse hook on temporary projects, on a copy of the plugin's files for a broken catalog; reads the header and SECURITY.md for the stated limits; makes a shell box in a child node inside a sandbox; runs its own box tests and the push reader's, from the top, in a child node with the box made to throw", allow: '"\\.\\./(adapters/claude-code/(hooks/)?kill-targets\\.mjs|SECURITY\\.md|)", import\\.meta\\.url|"\\.\\.", import\\.meta\\.url|"\\./shell-box\\.mjs", import\\.meta\\.url' },
   "test/run.test.mjs": { reason: "runs npm test's runner, its reporter and its setup on a copy in a temporary folder", allow: '"\\./(?:run|tally|hermetic|hostile)\\.mjs", import\\.meta\\.url' },

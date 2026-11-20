@@ -130,6 +130,13 @@ export const DEFAULTS = Object.freeze({
     // Secret shapes kept out of commits: commit-check fails a commit that adds a line holding a credential in a
     // shape only its issuer writes (checks/secrets.mjs), in any staged path `except` does not name.
     secrets: { except: [] },
+    // Private text kept out of commits (checks/private-text.mjs): commit-check fails a commit whose added lines, the
+    // names of the files it adds or its message hold a word of the clone's private list (`ennyn private-text add`, kept
+    // hashed in the state dir), a home path (`home`), an address `commits.addresses` does not hold (`addresses`: runs
+    // only with that list set), or a conversation shape (`conversation`); and a source it adds to the graph (a .json
+    // paths.graph) that names the user outside `the user, <YYYY-MM-DD>: a request | approved | left to the session`
+    // (`provenance`). home and conversation refuse in most projects' docs and tests, so they are the project's choice.
+    privateText: { home: false, conversation: false, addresses: true, provenance: true },
   },
   // Claude Code keeps a hook's added context to 10,000 characters; the rules and the list after them fit in it.
   sideCopy: { roots: [], maxInjectBytes: 9000 },

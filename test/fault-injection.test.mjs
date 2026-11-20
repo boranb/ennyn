@@ -284,6 +284,23 @@ function stageSecret(repo) {
 }
 
 /**
+ * Stages a home path in a new file and a graph source outside the closed provenance form, with private text's text
+ * rules on and no review.forbidden rule. Both are written in parts, as test/hygiene.test.mjs writes its own.
+ * @param {string} repo
+ */
+function stagePrivate(repo) {
+  const path = join(repo, ".ennyn", "config.json");
+  const config = JSON.parse(readFileSync(path, "utf8"));
+  writeFileSync(path, JSON.stringify({ ...config, review: { ...config.review, forbidden: [] }, security: { ...config.security, privateText: { home: true, conversation: true } } }));
+  writeFileSync(join(repo, "notes.md"), `cd ${"/" + "Users/"}someone/app\n`);
+  const graph = join(repo, ".ennyn", "graph.json");
+  const data = JSON.parse(readFileSync(graph, "utf8"));
+  data.nodes = [...(data.nodes ?? []), { id: "told", title: "x", value: "low", cost: "S", source: `${"the " + "user"}, 2026-01-02: words` }];
+  writeFileSync(graph, JSON.stringify(data, null, 2));
+  git(["add", "notes.md", ".ennyn/config.json", ".ennyn/graph.json"], { cwd: repo });
+}
+
+/**
  * The cycle's worktrees, in the run's copy under its ignored .claude/worktrees/, so its path names them: one that can
  * go, one kept for an untracked file, one without the mark. A read or a git call that fails must keep a worktree.
  * @param {string} repo
@@ -422,6 +439,11 @@ const CASES = [
   // A staged secret where no forbidden rule reads: only the secret scan reads the lines, and says a read that failed.
   { args: ["commit-check", ".git/MSG"], setup: (repo) => stageSecret(repo) },
   { args: ["commit-check", "--hook", ".git/MSG"], setup: (repo) => stageSecret(repo) },
+  // A staged home path and a graph source the private-text gate refuses: read as no line or no graph, it would pass.
+  { args: ["commit-check", ".git/MSG"], setup: (repo) => stagePrivate(repo) },
+  { args: ["commit-check", "--hook", ".git/MSG"], setup: (repo) => stagePrivate(repo) },
+  // No stdin here: the list's place is read, and a list that cannot be read is said, before the words.
+  { args: ["private-text", "add"] },
   // An amend! that drops the Impact line its target needs; the target is read from the log.
   { args: ["commit-check", "--hook", ".git/AMEND"], setup: (repo) => git(["reset", "-q"], { cwd: repo }) },
   // The same past a shallow boundary: the target cannot be found, and the hook says what went unchecked.
