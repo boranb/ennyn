@@ -163,7 +163,9 @@ const word = (s) => (/^[A-Za-z0-9@._%+=/:,-]+$/.test(s) ? s : `'${s.replace(/'/g
 /**
  * The commands a clone runs for the rule, in order.
  * @param {{ address: string | null, signed: boolean, signingKey: string | null, signers: string, cli: string, pluginData?: string | null }} o
- *   `address`: the user.email to set, null when none was chosen; `signingKey`: the clone's, kept when set
+ *   `address`: the user.email to set, null when none was chosen; `signingKey`: the clone's, kept when set; unset, a
+ *   fill-in quoted like a value, so the line still parses as pasted (unquoted, its `<` and `>` were redirections, and
+ *   sh refused the line while the lines after it ran) and a commit then names the fill-in in git's error
  * @returns {string[]}
  */
 export function setupCommands({ address, signed, signingKey, signers, cli, pluginData = null }) {
@@ -172,7 +174,7 @@ export function setupCommands({ address, signed, signingKey, signers, cli, plugi
     ...(signed
       ? [
           "git config gpg.format ssh",
-          `git config user.signingkey ${signingKey ? word(signingKey) : "<your SSH public key file>"}`,
+          `git config user.signingkey ${signingKey ? word(signingKey) : word("<your SSH public key file>")}`,
           "git config commit.gpgsign true",
           "git config tag.gpgsign true",
           `git config gpg.ssh.allowedSignersFile ${word(signers)}`,

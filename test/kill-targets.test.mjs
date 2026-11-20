@@ -950,10 +950,11 @@ test("kill reader's harness: with no boundary every test that makes a box ends, 
   // Each test file as node runs it alone: a server or a sleeper a test opened before the box threw and never closed
   // keeps the file from ending (main 526f54b in WSL: kill-targets sat on an open server until stopped).
   const top = fileURLToPath(new URL("..", import.meta.url));
-  for (const [file, pattern] of [
-    ["test/kill-targets.test.mjs", "^shell box|^kill reader: (a real bash agrees|the differential judge)"],
-    ["test/push-spellings.test.mjs", "^push reader: (a real shell and a real git|on generated texts a real bash)"],
-  ]) {
+  for (const [file, pattern, boxes] of /** @type {const} */ ([
+    ["test/kill-targets.test.mjs", "^shell box|^kill reader: (a real bash agrees|the differential judge)", 6],
+    ["test/push-spellings.test.mjs", "^push reader: (a real shell and a real git|on generated texts a real bash)", 2],
+    ["test/shell-templates.test.mjs", "^shell templates: what a person pastes", 1],
+  ])) {
     // Not as a subtest of this run: node:test would then write its results in its own binary form.
     const env = { ...process.env, ENNYN_SHELL_BOX: "none" };
     delete env.NODE_TEST_CONTEXT;
@@ -962,7 +963,7 @@ test("kill reader's harness: with no boundary every test that makes a box ends, 
     const count = (/** @type {string} */ word) => Number(new RegExp(`^# ${word} (\\d+)$`, "m").exec(r.stdout)?.[1]);
     // Every box test ran and failed on the throw; the one that only reads pickFence passes.
     const thrown = r.stdout.split("ENNYN_SHELL_BOX=none").length - 1;
-    assert.ok(count("fail") >= (file.includes("kill") ? 6 : 2), `${file}: ${count("fail")} failed\n${r.stdout.slice(-2000)}`);
+    assert.ok(count("fail") >= boxes, `${file}: ${count("fail")} failed\n${r.stdout.slice(-2000)}`);
     assert.ok(thrown >= count("fail"), `${file}: a test failed on something other than the throw\n${r.stdout.slice(-2000)}`);
     assert.equal(count("cancelled"), 0, file);
   }
