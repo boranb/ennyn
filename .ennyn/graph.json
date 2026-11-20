@@ -2751,19 +2751,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "shell-in-js-templates",
-      "title": "Shell text held in JavaScript templates is checked: a test passes every printed hook text through sh -n and the shells the block supports, and fails on a template escape left in the output; then delete the prose that asks to read the printed text",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "gates",
-      "mechanization": true,
-      "sourceClass": "shell text inside a JavaScript template",
-      "source": "cycle 2026-10-31 (15), plugin-tracked-hookspath: mixed quotes in the first recordSteps draft, an apostrophe in a single-quoted message that would have been a syntax error on every commit, a \\$ left in a stale message; all caught by reading the printed block",
-      "since": 15
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "hook-tracked-advice",
       "title": "The advice for a tracked hooks directory holding Ennyn's script prints the block: hook.cliPinned, cliUnrecorded, cliGone, cliRefused and cliReplaced print a line naming this machine's plugin data folder, to be put in a tracked file, and doctor.hookUnread's plain message shows a tracked hook the line for a local one",
       "value": "medium",
@@ -3273,7 +3260,7 @@
         "push-ask-never-holds-turn"
       ],
       "id": "fresh-session-run",
-      "title": "ennyn run --cycles N (or --each task) from the terminal: each cycle or task is one claude -p with the cycle skill, a new process and so a new context. --cycles is required, there is no open-ended loop; a budget cap goes to --max-budget-usd. It runs doctor first and stops at the first red: non-zero exit, a stopped task, a gate that needs the user, the plan's limit, the budget; it prints why and what is next, and keeps a log in the state dir. It spawns only the claude on PATH. It decides from the journal, never from the model's words, and a run with no new commit and no node change ends the loop. With compact it resumes by session id, never --continue. Pushes follow push.mode. A -p run cannot ask, so it needs a mode that does not prompt (the no-bypass mode or the user's own bypass), and it says so when it has neither. Measure first: a task with subagents completes in -p, an ask rule refuses rather than hangs, hooks and the plugin load without --bare, and what breaks if --bare becomes the default for -p. If this threatens the release date it moves to the next version, ahead of everything else there; the 5-hour usage window does not end the run. The run reads claude -p's stream-json events, never the model's words: a rate_limit_event whose status is rejected and whose resetsAt is at most 5 hours away makes it wait until that time plus a minute and go on from the journal, and the cycle it cut does not count against --cycles; a later resetsAt (a weekly window), no resetsAt, or errorCode credits_required stops it as before, saying when the window resets. At a seam, when the last event said allowed_warning with a resetsAt within 5 hours, it starts no new cycle before that time. No threshold key: the warning is the server's. rateLimitType and unifiedWindows are in 2.1.310's schema but not in the docs, so they are not read. Measure first: what -p does when it is refused (exit status, whether the event comes before the result), at what use the server sends allowed_warning, and that a cycle cut mid-task resumes from the journal. A stopped task still ends the run: the next cycle could take the same node again, or build on work the user has not seen. It reports a silent stall (no stream event and no journal line for longer than the longest past step) and stops nothing by itself. Amended 2026-11-17 (Fable, after the audit runs of cycles 36-40, prototype runner scripts kept outside the repository): the first run of 0.2, from 2026-11-29. The child gets an allowlisted environment: a parent session's identity variables (session id, messaging socket, child-session mark) and GIT_* are dropped, auth and provider variables kept (measure first: hygiene, not a proven fix). --each <node> <node>... takes a list fixed at start; a second ennyn run queues behind the first on a lock, no open-ended queue. The runner is detached with its PID recorded; nothing between items reads stdin or waits for a session, and no step runs through a host that can show a permission prompt (in the audit runs an interactive session's git push waited 3.5 hours on a git push ask rule while nobody was there). A wait is not red: a loosening key, a user gate or an asked push under ask is recorded as a wait, that node and its dependants are skipped and the run goes on when the tree is clean and the closing complete; red still stops it. A result event with the journal still open is red. The runner holds the wake lock for each child's lifetime and the brief's own wake step is skipped under it. The runner never pushes; only the closing does, under push.mode",
+      "title": "ennyn run --cycles N (or --each task) from the terminal: each cycle or task is one claude -p with the cycle skill, a new process and so a new context. --cycles is required, there is no open-ended loop; a budget cap goes to --max-budget-usd. It runs doctor first and stops at the first red: non-zero exit, a stopped task, a gate that needs the user, the plan's limit, the budget; it prints why and what is next, and keeps a log in the state dir. It spawns only the claude on PATH. It decides from the journal, never from the model's words, and a run with no new commit and no node change ends the loop. With compact it resumes by session id, never --continue. Pushes follow push.mode. A -p run cannot ask, so it needs a mode that does not prompt (the no-bypass mode or the user's own bypass), and it says so when it has neither. Measure first (the first two from cycle 50, Fable 2026-11-21): one write of words/<id>.txt under .git/ in claude -p (in an interactive bypass session, 2.1.327, the Write tool and a Bash redirect did not prompt): if it prompts, the write moves into an ennyn command, which reopens the declined id check; permissions.denyInsteadOfPrompting passed to each child with --settings (its text in the 2.1.327 to 2.1.329 binaries: a call that would prompt is denied at once, subagents included): whether an ask rule then denies rather than waits, unmeasured; a task with subagents completes in -p, an ask rule refuses rather than hangs, hooks and the plugin load without --bare, and what breaks if --bare becomes the default for -p. If this threatens the release date it moves to the next version, ahead of everything else there; the 5-hour usage window does not end the run. The run reads claude -p's stream-json events, never the model's words: a rate_limit_event whose status is rejected and whose resetsAt is at most 5 hours away makes it wait until that time plus a minute and go on from the journal, and the cycle it cut does not count against --cycles; a later resetsAt (a weekly window), no resetsAt, or errorCode credits_required stops it as before, saying when the window resets. At a seam, when the last event said allowed_warning with a resetsAt within 5 hours, it starts no new cycle before that time. No threshold key: the warning is the server's. rateLimitType and unifiedWindows are in 2.1.310's schema but not in the docs, so they are not read. Measure first: what -p does when it is refused (exit status, whether the event comes before the result), at what use the server sends allowed_warning, and that a cycle cut mid-task resumes from the journal. A stopped task still ends the run: the next cycle could take the same node again, or build on work the user has not seen. It reports a silent stall (no stream event and no journal line for longer than the longest past step) and stops nothing by itself. Amended 2026-11-17 (Fable, after the audit runs of cycles 36-40, prototype runner scripts kept outside the repository): the first run of 0.2, from 2026-11-29. The child gets an allowlisted environment: a parent session's identity variables (session id, messaging socket, child-session mark) and GIT_* are dropped, auth and provider variables kept (measure first: hygiene, not a proven fix). --each <node> <node>... takes a list fixed at start; a second ennyn run queues behind the first on a lock, no open-ended queue. The runner is detached with its PID recorded; nothing between items reads stdin or waits for a session, and no step runs through a host that can show a permission prompt (in the audit runs an interactive session's git push waited 3.5 hours on a git push ask rule while nobody was there). A wait is not red: a loosening key, a user gate or an asked push under ask is recorded as a wait, that node and its dependants are skipped and the run goes on when the tree is clean and the closing complete; red still stops it. A result event with the journal still open is red. The runner holds the wake lock for each child's lifetime and the brief's own wake step is skipped under it. The runner never pushes; only the closing does, under push.mode",
       "value": "high",
       "cost": "M",
       "cluster": "method",
@@ -5302,8 +5289,8 @@
       "value": "medium",
       "cost": "S",
       "cluster": "gates",
-      "title": "What the shell box still leaves open, decided in one place, no patches: a box text is root in its user namespace and keeps the user's supplementary groups (setgroups deny), so a group-writable file under the rbind'ed /usr or /etc stays writable (none on this machine today); macOS's check reads a zombie sleeper as alive after the check (c29-t1-code-r0-05); the container branch has no file boundary. Decide: a further boundary (a user without groups, a read-only remount), or the limit said in DESIGN.md and SECURITY.md. Also (cycle 30 security audit, q07): on macOS the sandbox profile has no file boundary either, and a background job of a run that ends before its limit outlives it",
-      "source": "cycle 2026-11-09 (29), T1 rounds 1-2 (test/shell-box.mjs is at the fix-loop brake)",
+      "title": "What the shell box still leaves open, decided in one place, no patches: a box text is root in its user namespace and keeps the user's supplementary groups (setgroups deny), so a group-writable file under the rbind'ed /usr or /etc stays writable (none on this machine today); macOS's check reads a zombie sleeper as alive after the check (c29-t1-code-r0-05); the container branch has no file boundary. Decide: a further boundary (a user without groups, a read-only remount), or the limit said in DESIGN.md and SECURITY.md. Also (cycle 30 security audit, q07): on macOS the sandbox profile has no file boundary either, and a background job of a run that ends before its limit outlives it. Also (cycle 50, shell-in-js-templates inventory): test/shell-box.mjs:372,378,381 write the bash path, a program path and the box path into stand-in scripts inside single quotes unescaped, so a ' in TMPDIR breaks them, loudly",
+      "source": "cycle 2026-11-09 (29), T1 rounds 1-2 (test/shell-box.mjs is at the fix-loop brake); cycle 2026-11-20 (50) author's proposed node shell-box-quoted-paths; Fable, 2026-11-21",
       "since": 29
     },
     {
@@ -6721,7 +6708,7 @@
     {
       "status": "planned",
       "since": 46,
-      "source": "the user, 2026-11-19: a request; release 0.1.0 preparation, 2026-11-18; cycle 2026-11-20 (49) replay of private-text-gate; Fable, 2026-11-20",
+      "source": "the user, 2026-11-19: a request; release 0.1.0 preparation, 2026-11-18; cycle 2026-11-20 (49) replay of private-text-gate; Fable, 2026-11-20; cycle 2026-11-20 (50) security audit; Fable, 2026-11-21",
       "id": "publish-check",
       "value": "high",
       "cost": "M",
@@ -6730,7 +6717,7 @@
         "private-text-gate"
       ],
       "mechanization": false,
-      "title": "ennyn publish-check [--range], report only: reads every blob, path, commit and tag message for secret shapes, the private-text rules, commit addresses outside the allowed list, unsigned commits and ignored paths that history still holds; then writes the distinct text as labelled chunks beside a generic reader brief and says how many readers a full read needs; an outside scanner runs only when one is on PATH. It takes the history half of secret-held-today; history-secret-scan stays declined (that was this repository's own release step); the generic reader brief names first what the shape rules cannot see: in cycle 49's replay they caught none of the full read's findings on other projects, the work environment, plan and quota, machine timings and test data; and the limits DESIGN.md states"
+      "title": "ennyn publish-check [--range], report only: reads every blob, path, commit and tag message for secret shapes, the private-text rules, commit addresses outside the allowed list, unsigned commits and ignored paths that history still holds; then writes the distinct text as labelled chunks beside a generic reader brief and says how many readers a full read needs; an outside scanner runs only when one is on PATH. It takes the history half of secret-held-today; history-secret-scan stays declined (that was this repository's own release step); the generic reader brief names first what the shape rules cannot see: in cycle 49's replay they caught none of the full read's findings on other projects, the work environment, plan and quota, machine timings and test data; and the limits DESIGN.md states; and branch and tag names (cycle 50 audit: no gate reads a ref name)"
     },
     {
       "status": "planned",
@@ -6763,36 +6750,13 @@
     {
       "status": "planned",
       "needs": [],
-      "since": 47,
-      "id": "user-words-in-node-lows",
-      "value": "low",
-      "cost": "S",
-      "cluster": "method",
-      "gate": "beside",
-      "title": "user-words-in-node: low findings left, in order. (e) near-miss spellings of the clarification marker (lower case, a full-width colon) are silently not held and nothing names them: hold on the folded reading (NFKC, any case, either colon), since held is the safe side, and doctor names it. (a) the marker walk follows object links, so in a .mjs graph module whose nodes share an object one marker holds every linked node under another's question (c47-t1-code-r1-02): the walk stops at a value that is itself another open node. (b) a node that names the marker in prose, with brackets, is held (c47-t1-code-r1-03): one line in report-formats.md's An ask of the user says prose names it 'the clarification marker', without brackets. (c) skills/init/new-project.md:20 defaults the product note's first answer to a retelling of the user's first words (c47-t1-code-r1-05): the default becomes one line in the agent's own words. (g) the words file is never removed: one line in skills/cycle/handover.md that the closing removes words/<id>.txt for each node it marks done. (h) unmeasured: Claude Code lists .git among protected directories, so writing words/<id>.txt may prompt even in bypass mode: one write in bypass and one in -p, before fresh-session-run lands; if it prompts, the write moves into an ennyn command, which takes (g) and reopens the declined id check. Closes beside held-in-json (same two files). Declined (Fable, 2026-11-19): the quadratic marker match (a hostile graph only; a .mjs graph already runs code) and a code check of the id at the words write (task-brief.md states the id form)",
-      "source": "cycle 2026-11-19 (47) review of user-words-in-node, round 1, and the security reviewer's evidence gaps; Fable, 2026-11-19"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 47,
-      "id": "held-in-json",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "plan",
-      "title": "core --json and mechanization --json carry held: [{id, question}] for the nodes the clarification marker holds; today they are named only on stderr, in a localized line no program can read, and the unattended runner is the first reader that cannot ask. After private-text-gate, before fresh-session-run (no needs edge: its design decides whether it reads the field)",
-      "source": "cycle 2026-11-19 (47) author's proposed node for user-words-in-node; Fable, 2026-11-19: go"
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "since": 48,
       "id": "commit-identity-design-decision",
       "value": "medium",
       "cost": "M",
       "cluster": "security",
-      "title": "checks/commit-identity.mjs is at the fix-loop brake (cycle 48, round 2: five previous-fix rows, nine rows in all): a design decision on the top two rungs, no patch nodes. Cause: the file answers two questions a second time. Doctor reads the allowed-signers file and the clone's settings by hand where the push check asks git, and the rule is put together from three configs (work tree, HEAD, upstream) beside the loosening check that already judges a config change. Decide, measured on git 2.34 and the current git. Removing the need: doctor gives only the verdict the push check's own reading gives for the clone's key and address, names only the settings that verdict depends on (tag signing stays clone-setup's printed advice), and a change to the list inside the pushed range is judged in one place with a remedy measured to clear it. Or a construct: doctor says unmeasured for every file shape it does not take whole (several principals on a line, the key on more than one line), an address holding a character outside ASCII is refused instead of folded, and a config held by a commit that cannot be read is named together with the push that repairs it. Or the limits said in DESIGN.md and the rest declined. Leftovers: doctor names tag.gpgsign as making commits the push check refuses, which reads no tags (c48-t1-code-r1-04); an address added inside the pushed range is refused and the printed remedy cannot clear it (c48-t1-code-r2-02); doctor reads a line with several principals as unlisted where git takes the first, and accepts any matching line where git takes the first line holding the key (c48-t1-code-r2-03, c48-t1-sec-r2-03); an upstream config that is broken JSON makes push-check exit 1 for a project that never set commits.*, against the commit's unset-nothing-changes (author, measured); toLowerCase folds U+212A to k, a shape only an attacker writes (author; the proposed commits-address-ascii-fold folds in here); the address fold has no name of its own: checks/private-text.mjs folds a found address by calling commitRule with a made-up config holding that one address (cycle 49, written so because this file was not to be edited); the decision exports the fold, and the choice on U+212A then holds for both readers",
-      "source": "cycle 2026-11-20 (48) review of clone-setup-guard, convergence fix-loop brake; Fable, 2026-11-20; cycle 2026-11-20 (49) author's proposal for private-text-gate; Fable, 2026-11-20"
+      "title": "checks/commit-identity.mjs is at the fix-loop brake (cycle 48, round 2: five previous-fix rows, nine rows in all): a design decision on the top two rungs, no patch nodes. Cause: the file answers two questions a second time. Doctor reads the allowed-signers file and the clone's settings by hand where the push check asks git, and the rule is put together from three configs (work tree, HEAD, upstream) beside the loosening check that already judges a config change. Decide, measured on git 2.34 and the current git. Removing the need: doctor gives only the verdict the push check's own reading gives for the clone's key and address, names only the settings that verdict depends on (tag signing stays clone-setup's printed advice), and a change to the list inside the pushed range is judged in one place with a remedy measured to clear it. Or a construct: doctor says unmeasured for every file shape it does not take whole (several principals on a line, the key on more than one line), an address holding a character outside ASCII is refused instead of folded, and a config held by a commit that cannot be read is named together with the push that repairs it. Or the limits said in DESIGN.md and the rest declined. Leftovers: doctor names tag.gpgsign as making commits the push check refuses, which reads no tags (c48-t1-code-r1-04); an address added inside the pushed range is refused and the printed remedy cannot clear it (c48-t1-code-r2-02); doctor reads a line with several principals as unlisted where git takes the first, and accepts any matching line where git takes the first line holding the key (c48-t1-code-r2-03, c48-t1-sec-r2-03); an upstream config that is broken JSON makes push-check exit 1 for a project that never set commits.*, against the commit's unset-nothing-changes (author, measured); toLowerCase folds U+212A to k, a shape only an attacker writes (author; the proposed commits-address-ascii-fold folds in here); the address fold has no name of its own: checks/private-text.mjs folds a found address by calling commitRule with a made-up config holding that one address (cycle 49, written so because this file was not to be edited); the decision exports the fold, and the choice on U+212A then holds for both readers; cycle 50 security audit: pushSendsMore lacks the two submodule settings push-mode's pushWidened reads, so under ask push-check calls clean a push that also sends a submodule's commits (c50-t4-audit-r0-01): one list of the settings that widen a bare push, read by both; doctor is silent when gpg.ssh.allowedSignersFile names a file inside the work tree, where the pushed range can add its own key (evidence gap); checks/loosening.mjs compares addresses as written, so a case-only change of commits.addresses is refused as a loosening (c50-t4-audit-r0-05): a third reader of the fold the decision exports; rung 2 action for checks/loosening.mjs (cycle 50 convergence; cause: the table judges a key's two values as written, apart from the rule that reads the key): the move is judged on the values as the rule's own reader folds them (the exported fold), and a test over the table holds that a case-only rewrite of a list key the rule folds is no move. Removing the need also covers one list of the settings that widen a bare push, read by both push-check and push-mode",
+      "source": "cycle 2026-11-20 (48) review of clone-setup-guard, convergence fix-loop brake; Fable, 2026-11-20; cycle 2026-11-20 (49) author's proposal for private-text-gate; Fable, 2026-11-20; cycle 2026-11-20 (50) security audit; Fable, 2026-11-21"
     },
     {
       "status": "planned",
@@ -6833,17 +6797,6 @@
     {
       "status": "planned",
       "needs": [],
-      "since": 48,
-      "id": "brief-no-push-text-in-lab",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "method",
-      "title": "task-brief.md Rules: a lab never writes git push in a command, even into a local bare repository, because a push ask rule reads the text and waits with nobody there; a lab upstream is set with fetch (git -C up.git fetch ../repo main:main, then remote add, fetch and branch -u). Measure whether the push hook can refuse outright, not ask, a push from a task worktree",
-      "source": "cycle 2026-11-20 (48) review of clone-setup-guard: an author's lab push to a local bare repository hit the project's push ask rule and stopped there until it was answered; the rule worked in the briefs from round 2 on; Fable, 2026-11-20"
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "since": 49,
       "id": "private-text-gate-lows",
       "value": "low",
@@ -6851,8 +6804,8 @@
       "cluster": "security",
       "mechanization": false,
       "gate": "beside",
-      "title": "private-text-gate: low findings left, in order. (a) commit-check's other lines (secrets, forbidden, cochange, impact, a failed read) print a staged name whole, so a name holding a listed word is printed beside the private-text line that cuts it (c49-t1-sec-r1-05, older than the gate): every staged name commit-check prints goes through one shower that cuts what security.privateText matches while a rule is on; gate: a hook test in test/private-text.test.mjs where one added name trips the word rule and a sibling gate, and no line of the refusal holds the word. (b) a Windows home directory reached through WSL's drive mount passes the home rule: it is read as a home path, with a test that fails first. (c) the comment and the help of private-text add say stdin keeps a word out of the shell's history, while a pipe from echo or a here-string writes it there and into an agent's transcript (c49-t1-sec-r1-07): the text names a file redirected to stdin or typed lines. (d) DESIGN.md's security.privateText rows gain one sentence: a revert, a cherry-pick and a rebase run no commit-msg hook (the loosening section says so already; point at it), and what the readers pass by, none found in the replayed history or on the tip in cycle 49: a listed word joined in camelCase, a home path with escaped slashes, an attribution spelled with a hyphened verb, with a noun before the colon or with a bracketed note, a source in a list graph.exports does not name. None of these becomes a pattern until a full read finds one in real text (publish-check, closing-private-read): the file is at rung 2, and a shape added for no measured line is how its fix-introduced rows came",
-      "source": "cycle 2026-11-20 (49) review of private-text-gate, round 1, and the author's proposed node private-text-other-gates-echo; Fable, 2026-11-20"
+      "title": "private-text-gate: low findings left, in order. (a) commit-check's other lines (secrets, forbidden, cochange, impact, a failed read) print a staged name whole, so a name holding a listed word is printed beside the private-text line that cuts it (c49-t1-sec-r1-05, older than the gate): every staged name commit-check prints goes through one shower that cuts what security.privateText matches while a rule is on; gate: a hook test in test/private-text.test.mjs where one added name trips the word rule and a sibling gate, and no line of the refusal holds the word. (b) a Windows home directory reached through WSL's drive mount passes the home rule: it is read as a home path, with a test that fails first. (c) the comment and the help of private-text add say stdin keeps a word out of the shell's history, while a pipe from echo or a here-string writes it there and into an agent's transcript (c49-t1-sec-r1-07): the text names a file redirected to stdin or typed lines. (d) DESIGN.md's security.privateText rows gain one sentence: a revert, a cherry-pick and a rebase run no commit-msg hook (the loosening section says so already; point at it), and what the readers pass by, none found in the replayed history or on the tip in cycle 49: a listed word joined in camelCase, a home path with escaped slashes, an attribution spelled with a hyphened verb, with a noun before the colon or with a bracketed note, a source in a list graph.exports does not name. None of these becomes a pattern until a full read finds one in real text (publish-check, closing-private-read): the file is at rung 2, and a shape added for no measured line is how its fix-introduced rows came. (e) the home rule misses homes under /var/home of image-based Linux systems (c50-t4-audit-r0-02; layout from that system's documentation, no machine measured): a test that fails first, and the two-corpus replay, since a pattern changes. (f) a renamed file's old text is judged as new, so git mv of a file already holding a match is refused (c50-t4-audit-r0-03): the moved-lines comparison follows the rename. (g) rung 2, one rung up (cycle 50 convergence; cause: it finds private text by matching shapes in free text, which has no grammar, so what lies outside its patterns passes unsaid): the cycle 50 audit's cells for this gate (19: private, home, maxword, rename) join the verdict corpus as a new gate, with the task that closes (e) and (f); cells are built at run time as the gate's own test builds its inputs. Previous-fix rows in the next task that edits the file mean the brake and private-text-design-decision",
+      "source": "cycle 2026-11-20 (49) review of private-text-gate, round 1, and the author's proposed node private-text-other-gates-echo; Fable, 2026-11-20; cycle 2026-11-20 (50) security audit; Fable, 2026-11-21"
     },
     {
       "status": "planned",
@@ -6876,6 +6829,53 @@
       "cluster": "security",
       "title": "test/hygiene.test.mjs holds the names it refuses as unsalted SHA-256 digests, and a plain word list recovers three of the seven (re-measured 2026-11-20), so a public repository would name the projects it hides. The names leave the test: it reads the private word list in the state dir (security.privateText, which already holds these digests) and says so when a clone has none, beside private-list-expected; its controls keep made-up words. Lands before the public flip; the history rewrite then removes the digests from every blob since they came in",
       "source": "public-flip timing decision, Fable, 2026-11-20"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 50,
+      "id": "push-hook-deny-in-subagent",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "title": "A push written in a subagent is refused at once, never asked: a lab push sat on the push ask rule with nobody there (cycle 48; 3.5 hours in the audit runs), and the brief rule that forbids the text (83c9a06) is prose. Measure first, on the current Claude Code: whether an ask (the settings rule's and the hook's) in a background subagent waits or the host denies it (2.1.329's binary holds an automatic denial for a session with no approval surface; the waits were on earlier versions), and that a hook deny holds on a command the ask rule also matches (recorded: a deny holds in a subagent, 2.1.310). If the host denies by itself, close with the recorded cell and no hook change. Else adapters/claude-code/hooks/push-spellings.mjs answers deny, the fetch form in its reason, when the input holds agent_id (absent on the main thread, where the closing's push runs; ignored today, measured with hand-made input); cells join the verdict corpus. brief-no-push-text-in-lab-lows closes beside it. After push-hook-reads-commits-rule (same hook), before fresh-session-run",
+      "source": "cycle 2026-11-20 (50) author's proposed node for brief-no-push-text-in-lab; Fable, 2026-11-21"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 50,
+      "id": "held-in-json-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "plan",
+      "gate": "beside",
+      "title": "held-in-json: low findings left, in order. (a) the marker fold misses a space before the colon, the marker's words joined, and a dotted capital I lower-cased outside a Turkish locale (i plus U+0307); each is free and nothing names it (c50-t1-code-r1-02). (b) a near marker's question is reported from the NFKC copy, not the node's own text (c50-t1-data-r1-03). Closes beside a task that edits plan/mechanization.mjs",
+      "source": "cycle 2026-11-20 (50) review of held-in-json, rounds 1-2; Fable, 2026-11-21"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 50,
+      "id": "shell-in-js-templates-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "gate": "beside",
+      "title": "shell-in-js-templates: low findings left, in order. (a) a printed line or chmod shows a control character of its value escaped, so the pasted command names another path (c50-t3-author-r0-02). (b) the impact table prints its commands with symbol and file values unquoted (c50-t3-code-r1-03): quote them and add them to the gate's hostile renders. (c) zsh and ksh, which the shebang rule accepts, are unparsed by the gate (by hand, zsh 5.9 and ksh 93u+ parsed all 532 texts): parse under each when it is on the machine, a diagnostic line when it is not, no skip. (d) rung 2 for test/shell-templates.test.mjs (cycle 50 convergence; cause: its hostile values and residue scan are hand-made lists, judged only by the mutants someone thought of): the hostile values come from a table of the characters the shells treat specially, one class a value, and the file fails on a value holding two; every rendered text is read back in the box or named in a list with why not; the residue scan gets no new pattern",
+      "source": "cycle 2026-11-20 (50) review of shell-in-js-templates, round 1, and the orchestrator's brief row; Fable, 2026-11-21"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 50,
+      "id": "brief-no-push-text-in-lab-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "method",
+      "gate": "beside",
+      "title": "brief-no-push-text-in-lab: low findings left. (a) task-brief.md's reviewer line names one sentence of the Rules row's two on git push in a lab (c50-t2-code-r1-01): it names both, and its pin and guard follow. Closes beside push-hook-deny-in-subagent",
+      "source": "cycle 2026-11-20 (50) review of brief-no-push-text-in-lab, round 1; Fable, 2026-11-21"
     }
   ],
   "done": [
@@ -7979,6 +7979,34 @@
       "status": "done",
       "finished": "2026-11-20",
       "cluster": "security"
+    },
+    {
+      "id": "held-in-json",
+      "title": "Closed 2026-11-21 (cycle 50, four tasks) in 2893b8f: core --json and mechanization --json carry held: [{ id, question }] always, mechanization --json is an object even when nothing is ready; a near spelling of the clarification marker (any case, full-width forms, the Turkish dotted and dotless i, NFKC) holds a node and doctor names it; the marker walk stops at another graph node (open, done or declined); readyNodes reads heldNodes; every --json output prints a value with a cycle on one line, each object once, later reaches as {\"$ref\": n}, linear in its objects and links, and a value with no cycle byte for byte as JSON.stringify. Review 2 rounds (round 1: a cyclic --json crash now reachable and the Turkish i fixed; round 2: the first cycle form printed every simple path, fixed; failures 1), mutation first 23/25, last 24/24 (rounds: 14/17 to 14/14, 16/23 to 23/23)",
+      "status": "done",
+      "finished": "2026-11-21",
+      "cluster": "plan"
+    },
+    {
+      "id": "user-words-in-node-lows",
+      "title": "Closed 2026-11-21 (cycle 50) beside held-in-json in 2893b8f: (e) near spellings held and named, (a) the walk stops at another graph node, (b) prose names it the clarification marker, (c) and (g) as listed; (h) measured in an interactive bypass session (2.1.327: the Write tool and a Bash redirect wrote words/<id>.txt with no prompt); its -p half moved to fresh-session-run's measure-first list",
+      "status": "done",
+      "finished": "2026-11-21",
+      "cluster": "method"
+    },
+    {
+      "id": "brief-no-push-text-in-lab",
+      "title": "Closed 2026-11-21 (cycle 50, four tasks) in 83c9a06: task-brief.md's Rules row says a lab never writes git push in a shell command, even into a local bare repository, and sets its upstream with fetch (measured on git 2.34.1 and 2.56.0); the reviewer's section carries it; two guards pin both sentences. The refusal half went to push-hook-deny-in-subagent. Review 1 round, failures 0, mutation not applicable (method text)",
+      "status": "done",
+      "finished": "2026-11-21",
+      "cluster": "method"
+    },
+    {
+      "id": "shell-in-js-templates",
+      "title": "Closed 2026-11-21 (cycle 50, the mechanization slot) in df07e29: test/shell-templates.test.mjs renders every shell text Ennyn builds in a template (the hooks, the printed block, line and chmod, the env-file line, clone-setup's commands, scan's mutation command, the impact table's commands) with one hostile value at a time, parses each under sh, dash and bash, refuses template residue and reads the pasted lines back word by word in the shell box; clone-setup quotes its unset-key placeholder. No prose rule to delete was found. Review 2 rounds (round 1: two medium in the inventory and the residue scan, one security medium on expansion seen only for given names; round 2: two medium on mixed-shape hostile values and a doubled backslash; failures 1), mutation first 23/24, last 47/47",
+      "status": "done",
+      "finished": "2026-11-21",
+      "cluster": "gates"
     }
   ],
   "declined": [
@@ -8219,6 +8247,42 @@
       "title": "Measure OpenPGP and X.509 signatures under commits.signed and take them where the forge's keys can vouch for them",
       "source": "cycle 2026-11-20 (48) review of clone-setup-guard: author's not-measured list",
       "reason": "Fable, 2026-11-20: DESIGN.md states the refusal and its reason (git calls an OpenPGP or X.509 signature good for any key the local keyring trusts); SSH signing exists on the git 2.34 floor and no project has asked. Reopen on the first that does"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 50,
+      "id": "private-text-near-marker",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "title": "checks/private-text.mjs ENDS recognizes only the exact clarification marker after a closed source form; a near spelling there gets the source refused rather than held",
+      "source": "cycle 2026-11-20 (50) author's proposed node for held-in-json",
+      "reason": "Fable, 2026-11-21: a near-spelled marker after a closed source is refused, the safe side, and the exact marker is the remedy; folding it would loosen a rung-2 file for a spelling none of the 114 graph versions holds"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 50,
+      "id": "quote-helpers-one",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "title": "Three shell-quoting helpers do one job: shQuote (setup/hook.mjs), word (setup/clone-setup.mjs) and shellWord (setup/scan.mjs)",
+      "source": "cycle 2026-11-20 (50) author's proposed node for shell-in-js-templates",
+      "reason": "Fable, 2026-11-21: no defect measured; test/shell-templates.test.mjs holds all three to the same real shells with single-shape values, so drift fails a test; merging them is a refactor"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 50,
+      "id": "json-cycle-print-design-decision",
+      "value": "low",
+      "cost": "S",
+      "cluster": "plan",
+      "title": "core/i18n.mjs is at the fix-loop brake (cycle 50, round 2: three previous-fix rows on jsonShown's cycle print): the limit is said and the rest declined, no patch nodes. Limits: a value nested past JSON.stringify's own depth throws as it does there (c50-t1-orch-r2-01); a data object holding only $ref reads as a reference (c50-t1-data-r2-01); toJSON runs twice on a cyclic value; an acyclic value whose objects share subtrees prints every path, as JSON.stringify does; the walk before the print costs about three times JSON.stringify alone on a 20 MB value",
+      "source": "cycle 2026-11-20 (50) convergence, fix-loop brake; review of held-in-json, round 2",
+      "reason": "Fable, 2026-11-21: no defect is open; every limit is reached only by a module graph built to reach it, and a value with no cycle prints as JSON.stringify's text byte for byte (100,000 values compared). Reopen as a decision on the top two rungs at the next row in jsonShown: refuse a cyclic value by name, or print a picked node's links to other nodes as ids so no cycle reaches the printer"
     }
   ]
 }

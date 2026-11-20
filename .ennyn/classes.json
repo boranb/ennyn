@@ -203,7 +203,9 @@
         "new: text test pins words, not the claim",
         "new: test branch asserts nothing of its boundary",
         "new: boundary placed around the host, not around the box",
-        "new: check with no positive control"
+        "new: check with no positive control",
+        "new: hostile fixture uses names the check already allows",
+        "new: hostile fixture values mix shapes so one shape is never alone"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, it holds inside the listed gates only. Named in cycle 5."
     },
@@ -255,7 +257,8 @@
         "new: positional run inside re-read text not seen by helper rule",
         "new: identity record parsed with a separator its value holds",
         "new: output lines the parser does not match dropped from a fact",
-        "new: gate test declared in a form the guards reader cannot see"
+        "new: gate test declared in a form the guards reader cannot see",
+        "new: near spelling outside the fold"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, reviewers found more shapes after it landed. Named in cycle 7."
     },
@@ -297,7 +300,8 @@
         "new: bounded line cuts one field to nothing before another",
         "new: test pins how much a cut line shows",
         "new: harness limit unknown to the test",
-        "new: a failure report sized by its corpus stalls the runner"
+        "new: a failure report sized by its corpus stalls the runner",
+        "new: cycle printer walks every simple path"
       ],
       "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict and record no gate. These tests hold the surfaces they name, and the class came back on others in cycles 9, 10, 12 and 14. Named in cycle 7."
     },
@@ -489,7 +493,9 @@
         "new: guarded line edited without its guard",
         "new: pinned method line edited",
         "new: new config list not registered with its type check",
-        "new: general rule left beside its exception"
+        "new: general rule left beside its exception",
+        "new: method text contradicts the rule it sits beside",
+        "new: rule handed on in part"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: no gate, it recurred in all four tasks of cycle 15. Named in cycle 14, first seen in cycle 8. Counting cycle 12's two readers of one decision here is this reconstruction's merge."
     },
@@ -509,17 +515,25 @@
     {
       "id": "foreign-text-in-template",
       "says": "Text in another language held in a host-language template is never parsed as that language, so a quote or escape breaks it only when it runs.",
-      "state": "open",
-      "nodes": [
-        "shell-in-js-templates"
+      "state": "partial",
+      "gates": [
+        {
+          "commit": "df07e2927cdc8b1848de7500fedb0bcc63bf242f",
+          "file": "test/shell-templates.test.mjs",
+          "action": "real-program",
+          "proof": "Every shell text built in a template is rendered by the real functions with one hostile value at a time, parsed by sh, dash and bash, and its pasted lines are read back word by word in the shell box."
+        }
       ],
-      "judged": "Research of 2026-10-31, about 30% either way: no gate. Named in cycle 15.",
+      "nodes": [
+        "shell-in-js-templates-lows"
+      ],
       "linked": [
         "new: a bulk text replace breaks the quoting of a string it lands in",
         "new: state file text promoted to instructions",
         "new: message text collides with placeholder syntax",
         "new: escape lost when generating source text"
-      ]
+      ],
+      "judged": "Research of 2026-10-31, about 30% either way: no gate. Named in cycle 15. Cycle 50: partial. Not held: the test harness's own scripts, hooks.json, the Windows forms, zsh and ksh, text in other languages."
     },
     {
       "id": "code-no-test-holds",
@@ -752,7 +766,8 @@
         "new: share of a growing total read as a shortage",
         "new: share of a slow-draining total read as a shortage",
         "new: kill target filled by a name lookup through a file",
-        "new: state of an abandoned read joins its redo"
+        "new: state of an abandoned read joins its redo",
+        "new: normalized copy reported as the text"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate.",
       "gates": [
@@ -825,7 +840,9 @@
         "new: nullable field read without a guard",
         "new: honest failure aborts the whole reading",
         "new: no-process id passed to a group kill",
-        "new: empty variable read as a set value"
+        "new: empty variable read as a set value",
+        "new: printed node assumed a tree",
+        "new: cyclic node breaks json output"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
