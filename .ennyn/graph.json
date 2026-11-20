@@ -88,13 +88,13 @@
     },
     {
       "id": "hygiene-gaps",
-      "title": "hygiene test: a Turkish suffix in ASCII letters without an apostrophe is missed; the macOS shared folder and a site's home/ paths are taken for home directories",
+      "title": "hygiene test: a Turkish suffix in ASCII letters without an apostrophe is missed; the macOS shared folder and a site's home/ paths are taken for home directories; since cycle 49 the matcher is checks/private-text.mjs's, shared with the commit gate",
       "status": "planned",
       "value": "low",
       "cost": "S",
       "cluster": "gates",
       "needs": [],
-      "source": "review, cycle 2026-10-19 (2)",
+      "source": "review, cycle 2026-10-19 (2); cycle 2026-11-20 (49) close of private-text-gate; Fable, 2026-11-20",
       "since": 2
     },
     {
@@ -3715,13 +3715,13 @@
       "status": "planned",
       "needs": [],
       "id": "changed-lines-uncovered",
-      "title": "Before the first mutation pass, a command lists the changed decision lines no test reaches, from NODE_V8_COVERAGE: in cycle 17, 36 of 39 rows of the recurring class were caught by mutation, one survivor at a time, in a run that takes minutes each",
+      "title": "Before the first mutation pass, a command lists the changed decision lines no test reaches, from NODE_V8_COVERAGE: in cycle 17, 36 of 39 rows of the recurring class were caught by mutation, one survivor at a time, in a run that takes minutes each; code-no-test-holds tied for the most recurring class in cycle 49, 6 rows, all gate:mutation, 19 first-run survivors over three passes",
       "value": "high",
       "cost": "M",
       "cluster": "gates",
       "mechanization": true,
       "sourceClass": "code-no-test-holds",
-      "source": "cycle 2026-11-01 (17): the most recurring class of the convergence block; cycle 30 convergence: code-no-test-holds the most recurring class, 11 times, all caught by the mutation gate (gate:mutation): a coverage list before the pass would name them before mutants are written",
+      "source": "cycle 2026-11-01 (17): the most recurring class of the convergence block; cycle 30 convergence: code-no-test-holds the most recurring class, 11 times, all caught by the mutation gate (gate:mutation): a coverage list before the pass would name them before mutants are written; cycle 2026-11-20 (49) convergence; Fable, 2026-11-20",
       "since": 17
     },
     {
@@ -6242,8 +6242,8 @@
       "value": "medium",
       "cost": "S",
       "cluster": "init",
-      "title": "uninstall-hook lists .ennyn/classes.json among what stays (S8 left it out), prints the state dir's size and contents before removing it, and asks while a cycle journal is open or a marked worktree or rows file lies in it (it deleted about 1.2 GB in one go). Sibling of security-md-lock-uninstall. Gate: test/setup.test.mjs cases",
-      "source": "acceptance run of 2026-11-15 on 98d82ae (docs/acceptance.md S1-S8 on a small public npm library, fresh install, shipped text alone), triaged by Fable the same day"
+      "title": "uninstall-hook lists .ennyn/classes.json among what stays (S8 left it out), prints the state dir's size and contents before removing it, and asks while a cycle journal is open or a marked worktree or rows file lies in it (it deleted about 1.2 GB in one go). Sibling of security-md-lock-uninstall. Gate: test/setup.test.mjs cases; it names the private word list of security.privateText among what the state dir holds and asks before removing it, since no other copy may exist (c49-t1-sec-r1-06)",
+      "source": "acceptance run of 2026-11-15 on 98d82ae (docs/acceptance.md S1-S8 on a small public npm library, fresh install, shipped text alone), triaged by Fable the same day; cycle 2026-11-20 (49) security review of private-text-gate, round 1; Fable, 2026-11-20"
     },
     {
       "status": "planned",
@@ -6719,20 +6719,7 @@
     {
       "status": "planned",
       "since": 46,
-      "source": "the user, 2026-11-19: a request; release 0.1.0 preparation, 2026-11-18",
-      "id": "private-text-gate",
-      "value": "high",
-      "cost": "M",
-      "cluster": "security",
-      "needs": [],
-      "mechanization": true,
-      "sourceClass": "new: private text in tracked files",
-      "title": "commit-check refuses added lines, staged file names and the message when they hold a listed private literal (stored hashed, as test/hygiene does), a home path, a commit address outside the allowed list, or a conversation shape; in the graph file it refuses a source that names the user outside the closed provenance form. Measured before it lands: the rules replayed over a pre-rewrite history kept outside the repository, recall recorded against a full read's findings and false refusals counted on the tip; only counts enter tracked text. hygiene-gaps stays for the test"
-    },
-    {
-      "status": "planned",
-      "since": 46,
-      "source": "the user, 2026-11-19: a request; release 0.1.0 preparation, 2026-11-18",
+      "source": "the user, 2026-11-19: a request; release 0.1.0 preparation, 2026-11-18; cycle 2026-11-20 (49) replay of private-text-gate; Fable, 2026-11-20",
       "id": "publish-check",
       "value": "high",
       "cost": "M",
@@ -6741,7 +6728,7 @@
         "private-text-gate"
       ],
       "mechanization": false,
-      "title": "ennyn publish-check [--range], report only: reads every blob, path, commit and tag message for secret shapes, the private-text rules, commit addresses outside the allowed list, unsigned commits and ignored paths that history still holds; then writes the distinct text as labelled chunks beside a generic reader brief and says how many readers a full read needs; an outside scanner runs only when one is on PATH. It takes the history half of secret-held-today; history-secret-scan stays declined (that was this repository's own release step)"
+      "title": "ennyn publish-check [--range], report only: reads every blob, path, commit and tag message for secret shapes, the private-text rules, commit addresses outside the allowed list, unsigned commits and ignored paths that history still holds; then writes the distinct text as labelled chunks beside a generic reader brief and says how many readers a full read needs; an outside scanner runs only when one is on PATH. It takes the history half of secret-held-today; history-secret-scan stays declined (that was this repository's own release step); the generic reader brief names first what the shape rules cannot see: in cycle 49's replay they caught none of the full read's findings on other projects, the work environment, plan and quota, machine timings and test data; and the limits DESIGN.md states"
     },
     {
       "status": "planned",
@@ -6802,8 +6789,8 @@
       "value": "medium",
       "cost": "M",
       "cluster": "security",
-      "title": "checks/commit-identity.mjs is at the fix-loop brake (cycle 48, round 2: five previous-fix rows, nine rows in all): a design decision on the top two rungs, no patch nodes. Cause: the file answers two questions a second time. Doctor reads the allowed-signers file and the clone's settings by hand where the push check asks git, and the rule is put together from three configs (work tree, HEAD, upstream) beside the loosening check that already judges a config change. Decide, measured on git 2.34 and the current git. Removing the need: doctor gives only the verdict the push check's own reading gives for the clone's key and address, names only the settings that verdict depends on (tag signing stays clone-setup's printed advice), and a change to the list inside the pushed range is judged in one place with a remedy measured to clear it. Or a construct: doctor says unmeasured for every file shape it does not take whole (several principals on a line, the key on more than one line), an address holding a character outside ASCII is refused instead of folded, and a config held by a commit that cannot be read is named together with the push that repairs it. Or the limits said in DESIGN.md and the rest declined. Leftovers: doctor names tag.gpgsign as making commits the push check refuses, which reads no tags (c48-t1-code-r1-04); an address added inside the pushed range is refused and the printed remedy cannot clear it (c48-t1-code-r2-02); doctor reads a line with several principals as unlisted where git takes the first, and accepts any matching line where git takes the first line holding the key (c48-t1-code-r2-03, c48-t1-sec-r2-03); an upstream config that is broken JSON makes push-check exit 1 for a project that never set commits.*, against the commit's unset-nothing-changes (author, measured); toLowerCase folds U+212A to k, a shape only an attacker writes (author; the proposed commits-address-ascii-fold folds in here)",
-      "source": "cycle 2026-11-20 (48) review of clone-setup-guard, convergence fix-loop brake; Fable, 2026-11-20"
+      "title": "checks/commit-identity.mjs is at the fix-loop brake (cycle 48, round 2: five previous-fix rows, nine rows in all): a design decision on the top two rungs, no patch nodes. Cause: the file answers two questions a second time. Doctor reads the allowed-signers file and the clone's settings by hand where the push check asks git, and the rule is put together from three configs (work tree, HEAD, upstream) beside the loosening check that already judges a config change. Decide, measured on git 2.34 and the current git. Removing the need: doctor gives only the verdict the push check's own reading gives for the clone's key and address, names only the settings that verdict depends on (tag signing stays clone-setup's printed advice), and a change to the list inside the pushed range is judged in one place with a remedy measured to clear it. Or a construct: doctor says unmeasured for every file shape it does not take whole (several principals on a line, the key on more than one line), an address holding a character outside ASCII is refused instead of folded, and a config held by a commit that cannot be read is named together with the push that repairs it. Or the limits said in DESIGN.md and the rest declined. Leftovers: doctor names tag.gpgsign as making commits the push check refuses, which reads no tags (c48-t1-code-r1-04); an address added inside the pushed range is refused and the printed remedy cannot clear it (c48-t1-code-r2-02); doctor reads a line with several principals as unlisted where git takes the first, and accepts any matching line where git takes the first line holding the key (c48-t1-code-r2-03, c48-t1-sec-r2-03); an upstream config that is broken JSON makes push-check exit 1 for a project that never set commits.*, against the commit's unset-nothing-changes (author, measured); toLowerCase folds U+212A to k, a shape only an attacker writes (author; the proposed commits-address-ascii-fold folds in here); the address fold has no name of its own: checks/private-text.mjs folds a found address by calling commitRule with a made-up config holding that one address (cycle 49, written so because this file was not to be edited); the decision exports the fold, and the choice on U+212A then holds for both readers",
+      "source": "cycle 2026-11-20 (48) review of clone-setup-guard, convergence fix-loop brake; Fable, 2026-11-20; cycle 2026-11-20 (49) author's proposal for private-text-gate; Fable, 2026-11-20"
     },
     {
       "status": "planned",
@@ -6814,8 +6801,8 @@
       "cost": "S",
       "cluster": "security",
       "gate": "beside",
-      "title": "clone-setup-guard: low findings left outside the braked file. (e) doctor's ok line under an addresses-only rule claims signing settings it did not read (c48-t1-code-r1-03): fix the catalog lines in i18n/en.json and i18n/tr.json, chosen in setup/doctor.mjs, no edit to the file at the fix-loop brake (commit-identity-design-decision); gate: a test in test/clone-setup.test.mjs that the ok line names no signing under an addresses-only rule. (f) README.md and README.tr.md's command table does not name clone-setup (c48-t1-code-r1-06); gate: a test that reads the command names from the CLI's usage and finds each in the table (look in test/cli.test.mjs first)",
-      "source": "cycle 2026-11-20 (48) review of clone-setup-guard, round 1; Fable, 2026-11-20"
+      "title": "clone-setup-guard: low findings left outside the braked file. (e) doctor's ok line under an addresses-only rule claims signing settings it did not read (c48-t1-code-r1-03): fix the catalog lines in i18n/en.json and i18n/tr.json, chosen in setup/doctor.mjs, no edit to the file at the fix-loop brake (commit-identity-design-decision); gate: a test in test/clone-setup.test.mjs that the ok line names no signing under an addresses-only rule. (f) README.md and README.tr.md's command table does not name clone-setup (c48-t1-code-r1-06); gate: a test that reads the command names from the CLI's usage and finds each in the table (look in test/cli.test.mjs first); (g) test/clone-setup.test.mjs writes made-up logins at the real noreply domain as whole literals (12 lines); with the address rule on here a commit that edits one is refused: one helper in the test builds the address from an id and a login at run time and every such line uses it, done first by whichever task next edits the file; gate: the file's tests, and the commit passing commit-check",
+      "source": "cycle 2026-11-20 (48) review of clone-setup-guard, round 1; Fable, 2026-11-20; cycle 2026-11-20 (49) author's proposal for private-text-gate; Fable, 2026-11-20"
     },
     {
       "status": "planned",
@@ -6851,6 +6838,31 @@
       "cluster": "method",
       "title": "task-brief.md Rules: a lab never writes git push in a command, even into a local bare repository, because a push ask rule reads the text and waits with nobody there; a lab upstream is set with fetch (git -C up.git fetch ../repo main:main, then remote add, fetch and branch -u). Measure whether the push hook can refuse outright, not ask, a push from a task worktree",
       "source": "cycle 2026-11-20 (48) review of clone-setup-guard: an author's lab push to a local bare repository hit the project's push ask rule and stopped there until it was answered; the rule worked in the briefs from round 2 on; Fable, 2026-11-20"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 49,
+      "id": "private-text-gate-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "mechanization": false,
+      "gate": "beside",
+      "title": "private-text-gate: low findings left, in order. (a) commit-check's other lines (secrets, forbidden, cochange, impact, a failed read) print a staged name whole, so a name holding a listed word is printed beside the private-text line that cuts it (c49-t1-sec-r1-05, older than the gate): every staged name commit-check prints goes through one shower that cuts what security.privateText matches while a rule is on; gate: a hook test in test/private-text.test.mjs where one added name trips the word rule and a sibling gate, and no line of the refusal holds the word. (b) a Windows home directory reached through WSL's drive mount passes the home rule: it is read as a home path, with a test that fails first. (c) the comment and the help of private-text add say stdin keeps a word out of the shell's history, while a pipe from echo or a here-string writes it there and into an agent's transcript (c49-t1-sec-r1-07): the text names a file redirected to stdin or typed lines. (d) DESIGN.md's security.privateText rows gain one sentence: a revert, a cherry-pick and a rebase run no commit-msg hook (the loosening section says so already; point at it), and what the readers pass by, none found in the replayed history or on the tip in cycle 49: a listed word joined in camelCase, a home path with escaped slashes, an attribution spelled with a hyphened verb, with a noun before the colon or with a bracketed note, a source in a list graph.exports does not name. None of these becomes a pattern until a full read finds one in real text (publish-check, closing-private-read): the file is at rung 2, and a shape added for no measured line is how its fix-introduced rows came",
+      "source": "cycle 2026-11-20 (49) review of private-text-gate, round 1, and the author's proposed node private-text-other-gates-echo; Fable, 2026-11-20"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 49,
+      "id": "private-list-expected",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "mechanization": false,
+      "title": "A clone with no private word list checks no word and says nothing: the list lives in the state dir, so a second clone, a fresh machine or a contributor's checkout runs security.privateText with its largest rule silent (in cycle 49's replay listed words gave more hits than every other rule together). A key, security.privateText.words (off by default; the name is the author's to better), says the project expects a list: with it on, doctor names a clone whose state dir holds none and commit-check says on every commit that no word was checked, with the two ways to get one (the file copied from another clone's state dir over a private channel, or private-text add). Said, never refused: a contributor's clone cannot hold the owner's list. Turning the key off is a loosening. Decided here, not left open: no digest list in a tracked file, keyed or not, since a key every clone must hold is the same hand-carry as the list, and once it leaks the tracked file names every word to anyone with a dictionary, in history for good. Gate: tests in test/private-text.test.mjs (key on and no list: the line at the commit and in doctor; with a list: neither)",
+      "source": "cycle 2026-11-20 (49) author's proposed node private-list-shared for private-text-gate; Fable, 2026-11-20"
     }
   ],
   "done": [
@@ -7944,6 +7956,13 @@
     {
       "id": "clone-setup-guard",
       "title": "Closed 2026-11-20 (cycle 48, one task) in b9cbc32: commits.addresses and commits.signed (unset by default); push-check holds a push to the strictest commits block of the work tree's, HEAD's and the upstream's config and refuses, in every mode, a commit by an address outside the list or, with signing asked, one not SSH-signed and verified for a key the allowed-signers file lists for its committer; a push that sends more refs than HEAD's branch or to another url is unmeasured; doctor names missing clone settings and an unlisted signing key; ennyn clone-setup prints the per-clone settings and builds the allowed-signers file from GitHub's SSH signing keys for a login. Review 2 rounds (6 medium fixed in round 1, 2 in round 2; failures 1), mutation first 35/37, last 73/73",
+      "status": "done",
+      "finished": "2026-11-20",
+      "cluster": "security"
+    },
+    {
+      "id": "private-text-gate",
+      "title": "Closed 2026-11-20 (cycle 49, one task) in 2bbc47f: security.privateText; commit-check refuses, in added lines, added names and the message as git stores it, a word of the clone's private list (SHA-256 digests in the state dir, ennyn private-text add from stdin), a home path, an address commits.addresses does not hold (reserved test and example names, file-extension hosts and openssh.com pass) and conversation shapes (dated attribution, a retold act, speaker labels), and a graph source naming the user outside the closed form; each place named with the rule and a length, never the text; home and conversation opt-in (on in this repository since 7ae75bd); graph keys judged by the loosening check while provenance is on. Replayed over the 348 pre-rewrite commits before landing (counts in docs/evidence.md); paraphrase escapes. Review 2 rounds (7 medium or high fixed in round 1, 4 in round 2; failures 1), mutation first 41/46, last 81/82 (the survivor differs only on an input no corpus holds)",
       "status": "done",
       "finished": "2026-11-20",
       "cluster": "security"

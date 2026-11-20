@@ -353,7 +353,8 @@
         "new: boundary leaves a path-bound channel open",
         "new: boundary fences one channel of an effect another channel reaches",
         "new: second runner of untrusted texts outside the gate",
-        "new: denylist of write-place variables misses one"
+        "new: denylist of write-place variables misses one",
+        "new: refusal echoes guarded text"
       ],
       "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict; no gate, both nodes are open. Named in cycle 8 as one-site escape or twin fix."
     },
@@ -958,7 +959,8 @@
         "new: inserted sentence splits a list so its later items attach to the wrong subject",
         "new: copied record counted twice",
         "new: doc cell shape breaks the test that parses it",
-        "new: principal syntax lets a written key trust other addresses"
+        "new: principal syntax lets a written key trust other addresses",
+        "new: places of several reads joined in one line"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate. Its own entry: a singleton that fits nothing else."
     },
@@ -1049,12 +1051,22 @@
     {
       "id": "corpus-carries-private-text",
       "says": "Text copied from a real machine or session into a test, a probe or a corpus carries a home path, a user name or another project's name.",
-      "state": "open",
-      "gates": [],
-      "nodes": [],
+      "state": "partial",
+      "gates": [
+        {
+          "commit": "2bbc47f5bbbf44ec2d6db99a5ff7d9d2f0c600a0",
+          "file": "checks/private-text.mjs",
+          "action": "ban-list",
+          "proof": "commit-check refuses a listed word, a home path, an address outside commits.addresses and conversation shapes in the lines, names and message a commit adds; a paraphrase passes."
+        }
+      ],
+      "nodes": [
+        "private-text-gate"
+      ],
       "linked": [
         "new: probe text carries a home path or project name into a corpus",
-        "new: home path in checked-in record"
+        "new: home path in checked-in record",
+        "new: private text in tracked files"
       ],
       "judged": "Named in cycle 23 by the orchestrator, from the rows that named it."
     },
@@ -1206,6 +1218,28 @@
         "new: remedy text not followable as written"
       ],
       "judged": "Named in cycle 37 by the orchestrator, from a round-one correctness row (a hint joining two config lines into one)."
+    },
+    {
+      "id": "case-fold-misses-letters",
+      "says": "A match said to ignore case folds only some letters, so a word written in another case of a letter outside that set does not match itself.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: case fold not locale aware"
+      ],
+      "judged": "Named in cycle 49 by the orchestrator, from a round-one correctness row (a word list folded with toLowerCase alone)."
+    },
+    {
+      "id": "gate-asks-where-nothing-changes",
+      "says": "A gate asks for approval, or refuses, on a change that alters nothing it protects, because it judges a setting alone and not whether any rule that reads it is on.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: loosening asked where nothing loosens"
+      ],
+      "judged": "Named in cycle 49 by the orchestrator, from a round-one security row (graph keys judged by the loosening check with the rule that reads them off)."
     }
   ]
 }
