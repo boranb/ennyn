@@ -5441,17 +5441,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "push-hook-reads-record",
-      "title": "The push hook reads the test-run record push-check reads, so a plain git push the hook lets through in after-closing needs the same recorded green run on the pushed tree, not the caller's word",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "method",
-      "source": "cycle 2026-11-08 (28), closed on the Mac 2026-11-09 from its ledger: T1 author follow-up",
-      "since": 28
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "guards-floor-short-record",
       "title": "On the Node 20 floor image 8 guards of test/short.test.mjs fail: --record needs Node 22.15+ while its record guards still run there, and short-read-bare times out on 2 CPUs. Make the guards say the floor (skip by version is no t.skip: assert the refusal instead) and bound the bare read's time",
       "value": "medium",
@@ -6716,17 +6705,6 @@
     },
     {
       "status": "planned",
-      "needs": [],
-      "since": 46,
-      "id": "clone-setup-guard",
-      "value": "medium",
-      "cost": "M",
-      "cluster": "security",
-      "title": "The allowed commit addresses and the signing requirement are a config key, so any project gets the check before a push that refuses an unsigned commit or one with an address outside the list, and a doctor line naming a clone that lacks its settings; ennyn clone-setup prints the per-clone git settings (signing format and key, commit and tag signing, the address, the commit-msg hook) and builds the allowed signers file from the forge's public keys. Once public, a signed-commits ruleset refuses such a push at the forge as well",
-      "source": "release 2026-11-18: the folder swap needed install-hook again and a stale hook record removed by hand (Fable, post-tag decision); amended: the user, 2026-11-19: a request; release 0.1.0 preparation, 2026-11-18"
-    },
-    {
-      "status": "planned",
       "needs": [
         "public-flip"
       ],
@@ -6815,6 +6793,64 @@
       "cluster": "plan",
       "title": "core --json and mechanization --json carry held: [{id, question}] for the nodes the clarification marker holds; today they are named only on stderr, in a localized line no program can read, and the unattended runner is the first reader that cannot ask. After private-text-gate, before fresh-session-run (no needs edge: its design decides whether it reads the field)",
       "source": "cycle 2026-11-19 (47) author's proposed node for user-words-in-node; Fable, 2026-11-19: go"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 48,
+      "id": "commit-identity-design-decision",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "title": "checks/commit-identity.mjs is at the fix-loop brake (cycle 48, round 2: five previous-fix rows, nine rows in all): a design decision on the top two rungs, no patch nodes. Cause: the file answers two questions a second time. Doctor reads the allowed-signers file and the clone's settings by hand where the push check asks git, and the rule is put together from three configs (work tree, HEAD, upstream) beside the loosening check that already judges a config change. Decide, measured on git 2.34 and the current git. Removing the need: doctor gives only the verdict the push check's own reading gives for the clone's key and address, names only the settings that verdict depends on (tag signing stays clone-setup's printed advice), and a change to the list inside the pushed range is judged in one place with a remedy measured to clear it. Or a construct: doctor says unmeasured for every file shape it does not take whole (several principals on a line, the key on more than one line), an address holding a character outside ASCII is refused instead of folded, and a config held by a commit that cannot be read is named together with the push that repairs it. Or the limits said in DESIGN.md and the rest declined. Leftovers: doctor names tag.gpgsign as making commits the push check refuses, which reads no tags (c48-t1-code-r1-04); an address added inside the pushed range is refused and the printed remedy cannot clear it (c48-t1-code-r2-02); doctor reads a line with several principals as unlisted where git takes the first, and accepts any matching line where git takes the first line holding the key (c48-t1-code-r2-03, c48-t1-sec-r2-03); an upstream config that is broken JSON makes push-check exit 1 for a project that never set commits.*, against the commit's unset-nothing-changes (author, measured); toLowerCase folds U+212A to k, a shape only an attacker writes (author; the proposed commits-address-ascii-fold folds in here)",
+      "source": "cycle 2026-11-20 (48) review of clone-setup-guard, convergence fix-loop brake; Fable, 2026-11-20"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 48,
+      "id": "clone-setup-guard-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "gate": "beside",
+      "title": "clone-setup-guard: low findings left outside the braked file. (e) doctor's ok line under an addresses-only rule claims signing settings it did not read (c48-t1-code-r1-03): fix the catalog lines in i18n/en.json and i18n/tr.json, chosen in setup/doctor.mjs, no edit to the file at the fix-loop brake (commit-identity-design-decision); gate: a test in test/clone-setup.test.mjs that the ok line names no signing under an addresses-only rule. (f) README.md and README.tr.md's command table does not name clone-setup (c48-t1-code-r1-06); gate: a test that reads the command names from the CLI's usage and finds each in the table (look in test/cli.test.mjs first)",
+      "source": "cycle 2026-11-20 (48) review of clone-setup-guard, round 1; Fable, 2026-11-20"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 48,
+      "id": "push-hook-reads-commits-rule",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "title": "Under push.mode after-closing the push hook decides from the one verdict push-check gives (the commits rule and the recorded test run), not from closingPush alone: today a bare git push the hook lets through skips the commits rule push-check refuses on (c48-t1-sec-r1-04) and needs no recorded green run on the pushed tree. It imports the push check's own verdict and does not edit the file at the fix-loop brake (commit-identity-design-decision). Absorbs push-hook-reads-record: The push hook reads the test-run record push-check reads, so a plain git push the hook lets through in after-closing needs the same recorded green run on the pushed tree, not the caller's word",
+      "source": "cycle 2026-11-20 (48) review of clone-setup-guard, round 1, and the author's impact table row S1; cycle 2026-11-08 (28), closed on the Mac 2026-11-09 from its ledger: T1 author follow-up; Fable, 2026-11-20"
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "commit-identity-design-decision"
+      ],
+      "since": 48,
+      "id": "clone-setup-many-logins",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "title": "clone-setup builds one allowed-signers file for several logins and addresses (a team), where today one run writes one login's keys for one address",
+      "source": "cycle 2026-11-20 (48) review of clone-setup-guard: author's proposal; Fable, 2026-11-20"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 48,
+      "id": "brief-no-push-text-in-lab",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "title": "task-brief.md Rules: a lab never writes git push in a command, even into a local bare repository, because a push ask rule reads the text and waits with nobody there; a lab upstream is set with fetch (git -C up.git fetch ../repo main:main, then remote add, fetch and branch -u). Measure whether the push hook can refuse outright, not ask, a push from a task worktree",
+      "source": "cycle 2026-11-20 (48) review of clone-setup-guard: an author's lab push to a local bare repository hit the project's push ask rule and stopped there until it was answered; the rule worked in the briefs from round 2 on; Fable, 2026-11-20"
     }
   ],
   "done": [
@@ -7904,6 +7940,13 @@
       "status": "done",
       "finished": "2026-11-19",
       "cluster": "method"
+    },
+    {
+      "id": "clone-setup-guard",
+      "title": "Closed 2026-11-20 (cycle 48, one task) in b9cbc32: commits.addresses and commits.signed (unset by default); push-check holds a push to the strictest commits block of the work tree's, HEAD's and the upstream's config and refuses, in every mode, a commit by an address outside the list or, with signing asked, one not SSH-signed and verified for a key the allowed-signers file lists for its committer; a push that sends more refs than HEAD's branch or to another url is unmeasured; doctor names missing clone settings and an unlisted signing key; ennyn clone-setup prints the per-clone settings and builds the allowed-signers file from GitHub's SSH signing keys for a login. Review 2 rounds (6 medium fixed in round 1, 2 in round 2; failures 1), mutation first 35/37, last 73/73",
+      "status": "done",
+      "finished": "2026-11-20",
+      "cluster": "security"
     }
   ],
   "declined": [
@@ -8120,6 +8163,30 @@
       "title": "tally-late-registration: low findings left. later-preload: test/hermetic.mjs imports the test file's entry, so a second --import named after it on the command line now runs after the file loaded (a hand run only: every runner names one --import, and test:short --record's reads.mjs comes first through NODE_OPTIONS); stated in hermetic's comment, nothing pins hermetic as the last preload (c46-t1-code-r1-01)",
       "source": "cycle 2026-11-17 (46) review of tally-late-registration, round 1",
       "reason": "Fable, 2026-11-18: reachable only by a hand run that names a second --import after test/hermetic.mjs; the one runner (wholeArgs, test:short) names one, and test:short --record's reads.mjs comes first through NODE_OPTIONS; the limit is stated in hermetic's own comment. Reopen only if a second runner or a second --import appears"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "id": "push-hook-reads-record",
+      "title": "The push hook reads the test-run record push-check reads, so a plain git push the hook lets through in after-closing needs the same recorded green run on the pushed tree, not the caller's word",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "source": "cycle 2026-11-08 (28), closed on the Mac 2026-11-09 from its ledger: T1 author follow-up",
+      "since": 28,
+      "reason": "Fable, 2026-11-20: folded into push-hook-reads-commits-rule (same class, same file, one task)"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 48,
+      "id": "commits-signatures-other-formats",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "title": "Measure OpenPGP and X.509 signatures under commits.signed and take them where the forge's keys can vouch for them",
+      "source": "cycle 2026-11-20 (48) review of clone-setup-guard: author's not-measured list",
+      "reason": "Fable, 2026-11-20: DESIGN.md states the refusal and its reason (git calls an OpenPGP or X.509 signature good for any key the local keyring trusts); SSH signing exists on the git 2.34 floor and no project has asked. Reopen on the first that does"
     }
   ]
 }

@@ -34,7 +34,8 @@
         "new: count in fixed text",
         "new: guard left on replaced text",
         "new: new skill file not linked from SKILL.md",
-        "new: doc of a changed exit left stale"
+        "new: doc of a changed exit left stale",
+        "new: stated limit made false by a new path"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: not stopped, no catch since it landed. Named in cycle 1. Counting the doc twin of cycle 4 here is this reconstruction's merge."
     },
@@ -557,7 +558,9 @@
         "new: corpus does not reach each deciding line",
         "new: corpus misses shapes a reader may later widen to",
         "new: test does not pin a name pattern's anchor",
-        "new: shared predicate's fail-closed branch untested"
+        "new: shared predicate's fail-closed branch untested",
+        "new: new command outside the failure matrix",
+        "new: refusal path untested where another refusal masks it"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -680,7 +683,8 @@
         "new: written file left out of the commit list",
         "new: branch decided by an answer asked in the same message",
         "new: earlier answers not consulted on rerun",
-        "new: state dropped at a reset"
+        "new: state dropped at a reset",
+        "new: stream failure skips the said path"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet.",
       "nodes": [
@@ -953,7 +957,8 @@
         "new: list element holds several output lines",
         "new: inserted sentence splits a list so its later items attach to the wrong subject",
         "new: copied record counted twice",
-        "new: doc cell shape breaks the test that parses it"
+        "new: doc cell shape breaks the test that parses it",
+        "new: principal syntax lets a written key trust other addresses"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate. Its own entry: a singleton that fits nothing else."
     },
@@ -1002,7 +1007,8 @@
         "new: forced kill skips a wrapper's signal forwarding",
         "new: retry loop with no pause on a lasting error",
         "new: self-spawning test with no recursion stop",
-        "new: time-limited child call with no named kill signal"
+        "new: time-limited child call with no named kill signal",
+        "new: abort that no longer reaches the connection"
       ],
       "judged": "the orchestrator of cycle 18, reading the rows"
     },
