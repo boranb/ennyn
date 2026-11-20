@@ -522,8 +522,11 @@ export async function checkSetup({ cwd, env = process.env, self = OWN_ROOT }) {
     if (core + mech === 0) add("warn", "doctor.readyNone");
     else add("ok", "doctor.ready", { core, mech });
     // A held node waits on the user's answer: named, so the count is not read as all there is.
-    const held = heldNodes(graph, config).map((h) => String(h.node[f.id]));
-    if (held.length) add("warn", "doctor.held", { n: held.length, list: held });
+    const held = heldNodes(graph, config);
+    if (held.length) add("warn", "doctor.held", { n: held.length, list: held.map((h) => String(h.node[f.id])) });
+    // A near spelling holds too (the folded reading): named, so it is written as the marker.
+    const near = held.filter((h) => h.near).map((h) => String(h.node[f.id]));
+    if (near.length) add("warn", "doctor.heldNear", { n: near.length, list: near });
   }
   // The cycle reads the handoff, and writes it at its end: a link a commit holds would lead that read and that
   // write anywhere. Looked at as the graph is read; none there yet is fine.

@@ -17,7 +17,7 @@
 
 Ask once, at most five questions, in one message. When the words that invoked init already say what the project is, take question 1 from them. Otherwise ask question 1 alone first: questions 2 to 5 depend on it (a one-file script needs none of them), and go in one message after it. Each carries a proposed default, so "ok" accepts it. Nothing is asked twice, in this run or a later one: the answers go into the note below.
 
-1. **What is it?** One line. Default: the user's own first words, shortened.
+1. **What is it?** One line. Default: one line in your own words for what the first words describe, never those words retold or shortened: the note is tracked.
 2. **Who uses it, and where does it run?** Default: the user alone, on this machine; say a web service, a phone app or a library when the first answer implies one.
 3. **Stack.** Propose one, with a one-line reason and the alternatives you weighed. A stack or tool the user names is kept as named: never swap it for one you prefer, and say a doubt once, after writing it down.
 4. **Data and auth.** What is stored and where; who may sign in. Default: nothing stored, no sign-in.

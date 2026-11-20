@@ -190,14 +190,27 @@ export function doneIds(graph, config) {
 const CLARIFY = /\[NEEDS CLARIFICATION:\s*([^\]]*)\]/;
 
 /**
- * The question a node waits on: the first clarification marker in any string the node holds, at any depth (a field of
- * any name, a list, an object in it), fields in their order; null when it holds none. Keys, numbers and booleans are
- * no text of the node. Walked with a stack of its own and a seen set: a module may build a node that holds itself, or
- * one nested deeper than the call stack.
- * @param {GraphNode} node
- * @returns {string | null}
+ * The marker's folded reading, matched on the string's NFKC form (a full-width colon, bracket or letter, a no-break
+ * space, become the plain one) in any case, the Turkish dotted İ and dotless ı taken for an i (Caps Lock on a Turkish
+ * keyboard types İ; the question is left as written). A near spelling holds the node, the safe side, and is named.
  */
-export function clarification(node) {
+const CLARIFY_FOLDED = /\[NEEDS CLAR[i\u0130\u0131]F[i\u0130\u0131]CAT[i\u0130\u0131]ON:\s*([^\]]*)\]/i;
+
+/** No other node's text: the walk of one node does not enter these. */
+const NO_NODES = new Set();
+
+/**
+ * The first clarification marker a node holds, in any string at any depth (a field of any name, a list, an object in
+ * it), fields in their order; null when it holds none. In one string the exact marker is read first, then the folded
+ * reading (`near`: the question as the folded text gives it). Keys, numbers and booleans are no text of the node. A
+ * value that is another node of the graph (`others`: a module graph's nodes may share objects) is that node's text, and
+ * the walk does not enter it. Walked with a stack of its own and a seen set: a module may build a node that holds
+ * itself, or one nested deeper than the call stack.
+ * @param {GraphNode} node
+ * @param {Set<unknown>} others
+ * @returns {{ question: string, near: boolean } | null}
+ */
+function markerOf(node, others) {
   /** @type {unknown[]} */
   const stack = [node];
   const seen = new Set();
@@ -205,8 +218,10 @@ export function clarification(node) {
     const v = stack.pop();
     if (typeof v === "string") {
       const m = CLARIFY.exec(v);
-      if (m) return m[1].trim();
-    } else if (v !== null && typeof v === "object" && !seen.has(v)) {
+      if (m) return { question: m[1].trim(), near: false };
+      const n = CLARIFY_FOLDED.exec(v.normalize("NFKC"));
+      if (n) return { question: n[1].trim(), near: true };
+    } else if (v !== null && typeof v === "object" && !seen.has(v) && (v === node || !others.has(v))) {
       seen.add(v);
       const values = Object.values(v);
       for (let i = values.length - 1; i >= 0; i--) stack.push(values[i]);
@@ -216,21 +231,34 @@ export function clarification(node) {
 }
 
 /**
- * The held nodes: open, not done, not declined, holding a clarification marker. They wait on the user's answer, never
- * picked, and the picks name each with its question. In the list's order.
+ * The question a node waits on (markerOf): the first clarification marker it holds, exact or near; null when none.
+ * `others`: the graph's other nodes, which the walk does not enter.
+ * @param {GraphNode} node
+ * @param {Set<unknown>} [others]
+ * @returns {string | null}
+ */
+export function clarification(node, others = NO_NODES) {
+  return markerOf(node, others)?.question ?? null;
+}
+
+/**
+ * The held nodes: open, not done, not declined, holding a clarification marker of their own (a node of the graph that
+ * another holds is not read as its text). They wait on the user's answer, never picked, and the picks name each with
+ * its question. `near`: held on the folded reading only, a spelling doctor names. In the list's order.
  * @param {Graph} graph
  * @param {any} config
- * @returns {{ node: GraphNode, question: string }[]}
+ * @returns {{ node: GraphNode, question: string, near: boolean }[]}
  */
 export function heldNodes(graph, config) {
   const f = config.graph.fields;
   const declined = declinedIds(graph, config);
-  /** @type {{ node: GraphNode, question: string }[]} */
+  const nodes = new Set([...graph.open, ...graph.done, ...(graph.declined ?? [])]);
+  /** @type {{ node: GraphNode, question: string, near: boolean }[]} */
   const out = [];
   for (const node of graph.open) {
     if (node[f.status] === config.graph.doneStatus || declined.has(node[f.id])) continue;
-    const question = clarification(node);
-    if (question !== null) out.push({ node, question });
+    const marker = markerOf(node, nodes);
+    if (marker !== null) out.push({ node, ...marker });
   }
   return out;
 }
@@ -246,12 +274,13 @@ export function readyNodes(graph, config) {
   const { doneStatus, openGateValue } = config.graph;
   const done = doneIds(graph, config);
   const declined = declinedIds(graph, config);
+  const held = new Set(heldNodes(graph, config).map((h) => h.node));
 
   const ready = graph.open.filter((n) => {
     if (n[f.status] === doneStatus || declined.has(n[f.id])) return false;
     const gate = n[f.gate];
     if (gate !== undefined && gate !== openGateValue) return false;
-    if (clarification(n) !== null) return false;
+    if (held.has(n)) return false;
     return needsOf(n, config).every((id) => done.has(id));
   });
 

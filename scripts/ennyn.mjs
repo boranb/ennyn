@@ -64,9 +64,10 @@ Commands:
   rework [--since YYYY-MM-DD] [--until YYYY-MM-DD] [--days N] [--json]
                                                     SZZ-style rework rate: commits from --since to --until (local days) whose lines a fix changed
                                                     within --days N (the window after each commit, not the range; default ${REWORK_DAYS})
-  core [--json]                                     the core slots' picks: the oldest node of the highest value (or the ready need it waits on), and the best ready by value/cost
+  core [--json]                                     the core slots' picks: the oldest node of the highest value (or the ready need it waits on), and the best ready by value/cost;
+                                                    each node a clarification marker holds is named on stderr, and --json carries them as held: [{ id, question }]
   core --value <v> [--json]                         every open node of that value (graph.fields.value), ready or not, flagged or not, oldest first: what a closing reads to decline
-  mechanization [--json]                            best ready mechanization node
+  mechanization [--json]                            best ready mechanization node; held ones as core says; --json: { node, score, count, cycles, held }, node null when none
   classes [--json]                                  the defect class registry: each class's id, state and sentence, its problems, whether each gate's commit is there and each entry that claims a gate has one standing; exit 1 unless all hold
   convergence [<ledger>] --cycle N [--from <rev>] [--json]
                                                     cycle N's convergence block, counted from the findings ledger (default paths.findings) as skills/cycle/report-formats.md
@@ -208,15 +209,22 @@ async function pickable(cwd, cfg) {
 
 /**
  * Each held node of one slot (heldNodes: a clarification marker), named on stderr with its question, so a node the pick
- * leaves for the user's answer is never dropped unsaid. `flagged`: the mechanization slot's, else the core slots'.
+ * leaves for the user's answer is never dropped unsaid; returned as the JSON's `held`, `{ id, question }` strings in the
+ * graph's order, the empty question as "". `flagged`: the mechanization slot's, else the core slots'.
  * @param {import("../plan/mechanization.mjs").Graph} graph @param {any} cfg @param {boolean} flagged
+ * @returns {{ id: string, question: string }[]}
  */
 function sayHeld(graph, cfg, flagged) {
   const f = cfg.graph.fields;
+  /** @type {{ id: string, question: string }[]} */
+  const held = [];
   for (const { node, question } of heldNodes(graph, cfg)) {
     if ((node[f.mechanization] === true) !== flagged) continue;
-    err(`! ${tShown(question === "" ? "pick.heldBlank" : "pick.held", { id: String(node[f.id]), question }, cfg.language)}`);
+    const id = String(node[f.id]);
+    err(`! ${tShown(question === "" ? "pick.heldBlank" : "pick.held", { id, question }, cfg.language)}`);
+    held.push({ id, question });
   }
+  return held;
 }
 
 /** The paths a map holds, by the reason each was not read. @param {Map<string, string>} unread @returns {Map<string, string[]>} */
@@ -1808,7 +1816,7 @@ const COMMANDS = {
       for (const n of open) out(tShown(n[f.cluster] === undefined ? "core.valueItem" : "core.valueItemCluster", { id: String(n[f.id]), cost: String(n[f.cost] ?? "?"), cluster: String(n[f.cluster]) }, lang));
       return 0;
     }
-    sayHeld(graph, cfg, false);
+    const held = sayHeld(graph, cfg, false);
     const pick = pickOldest(graph, cfg);
     const split = pick !== null && splitFirst(pick.node, cfg);
     // The other slot: the rest of the ready core nodes by value/cost, the first few and every one that ties with the last.
@@ -1817,7 +1825,7 @@ const COMMANDS = {
     const last = shown.length ? scoreNode(shown[shown.length - 1], cfg) : null;
     while (shown.length < Math.min(CORE_LIST_MAX, rest.length) && scoreNode(rest[shown.length], cfg) === last) shown.push(rest[shown.length]);
     const more = rest.length - shown.length;
-    if (opts.json) return (out(jsonShown({ oldest: pick && { node: pick.node, of: pick.oldest, split }, byScore: shown.map((node) => ({ score: scoreNode(node, cfg), node })), more })), 0);
+    if (opts.json) return (out(jsonShown({ oldest: pick && { node: pick.node, of: pick.oldest, split }, byScore: shown.map((node) => ({ score: scoreNode(node, cfg), node })), more, held })), 0);
     if (!pick) return (out(t("core.none", {}, lang)), 0);
     const about = (/** @type {Record<string, unknown>} */ n) => ({ id: String(n[f.id]), value: String(n[f.value] ?? "?"), cost: String(n[f.cost] ?? "?") });
     const of = about(pick.oldest);
@@ -1843,7 +1851,7 @@ const COMMANDS = {
     if (!graph) return 1;
     const f = cfg.graph.fields;
     const lang = cfg.language;
-    sayHeld(graph, cfg, true);
+    const held = sayHeld(graph, cfg, true);
     const ready = readyMechanization(graph, cfg);
     // The slot ranks by how often each node's class recurred lately; a ledger that cannot say is never read as none.
     /** @type {ReturnType<typeof recentRecurrence> | null} */
@@ -1872,7 +1880,8 @@ const COMMANDS = {
     const score = node ? scoreNode(node, cfg) : null;
     const count = node ? countOf(node) : null;
     const window = rec?.cycles.length ? [rec.cycles[0], rec.cycles[rec.cycles.length - 1]] : null;
-    if (opts.json) return (out(jsonShown(node ? { node, score, count, cycles: window } : null)), 0);
+    // Always an object, so `held` is read when nothing is ready: `node` null then, and the rest with it (no ledger read).
+    if (opts.json) return (out(jsonShown({ node, score, count, cycles: window, held })), 0);
     if (!node) return (out(t("mechanization.none", {}, lang)), 0);
     const vars = { id: String(node[f.id]), score: Number(score).toFixed(2) };
     if (window === null) out(tShown("mechanization.pick", vars, lang));

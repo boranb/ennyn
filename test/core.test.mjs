@@ -881,3 +881,113 @@ test("nameText: UTF-8 as it is; a name that is not keeps its bytes apart from an
   assert.equal(nameText(Buffer.from([0xe2, 0x82])).toWellFormed(), "\ufffd\ufffd", "a cut sequence, a byte at a time");
   assert.equal(shown(nameText(Buffer.from([0x70, 0xff, 0x22])), { name: true }).text, '"p\ufffd\\""', "shown as U+FFFD, in quotes too");
 });
+
+test("jsonShown: a value with a cycle prints each object once, every later reach of it as the number its brace opened at; one with none prints as JSON.stringify does", async () => {
+  const { jsonShown } = await import("../core/i18n.mjs");
+  // No cycle: the same text JSON.stringify writes, an object two places share printed in each, toJSON read as it reads it.
+  const shared = { s: 1 };
+  const tree = { a: [shared, shared], b: { when: new Date(0), own: { toJSON: () => ({ t: [shared] }) } } };
+  assert.equal(jsonShown(tree), JSON.stringify(tree, null, 2));
+  // Two module-graph nodes linked both ways, a node that holds itself, and b reached again off the path.
+  /** @type {any} */
+  const a = { id: "a" };
+  /** @type {any} */
+  const b = { id: "b", prev: a };
+  a.next = b;
+  a.self = a;
+  a.list = [b, { up: a }];
+  const back = JSON.parse(jsonShown({ oldest: { node: a } }));
+  // Opened in order: 0 the top, 1 oldest, 2 a, 3 b, 4 and 5 references, 6 the list, 7 a reference, 8 { up }, 9.
+  assert.deepEqual(back.oldest.node.next, { id: "b", prev: { $ref: 2 } });
+  assert.deepEqual(back.oldest.node.self, { $ref: 2 });
+  assert.deepEqual(back.oldest.node.list, [{ $ref: 3 }, { up: { $ref: 2 } }]);
+  const opens = [...jsonShown({ oldest: { node: a } })].filter((c) => c === "{" || c === "[").length;
+  assert.equal(opens, 10);
+  // The cycle anywhere in the value: an object shared elsewhere in it is printed once too.
+  /** @type {any} */
+  const loop = { id: "l" };
+  loop.me = loop;
+  assert.deepEqual(JSON.parse(jsonShown({ x: shared, y: shared, z: loop })), { x: { s: 1 }, y: { $ref: 1 }, z: { id: "l", me: { $ref: 3 } } });
+  // A cycle below an array and below a key that is no name.
+  /** @type {any} */
+  const deep = { "a key": [{}] };
+  deep["a key"][0].loop = deep["a key"][0];
+  deep["a key"][0].top = deep;
+  assert.deepEqual(JSON.parse(jsonShown([deep]))[0]["a key"][0], { loop: { $ref: 3 }, top: { $ref: 1 } });
+  // A cycle through toJSON, which makes a new object at each reach (JSON.stringify alone runs out of stack): the object
+  // whose toJSON it is counts as printed where it first was.
+  /** @type {any} */
+  const made = { id: "m" };
+  made.toJSON = () => ({ id: "m", inner: { back: made } });
+  assert.throws(() => JSON.stringify({ v: made }), RangeError);
+  assert.deepEqual(JSON.parse(jsonShown({ v: made })), { v: { id: "m", inner: { back: { $ref: 1 } } } });
+  // A toJSON that gives an object above it, and two toJSONs that give one object: each printed once.
+  /** @type {any} */
+  const up = { id: "u" };
+  up.kid = { toJSON: () => up };
+  const one = { f: 1 };
+  assert.throws(() => JSON.stringify(up), TypeError);
+  assert.deepEqual(JSON.parse(jsonShown({ up, a: { toJSON: () => one }, b: { toJSON: () => one } })), { up: { id: "u", kid: { $ref: 1 } }, a: { f: 1 }, b: { $ref: 3 } });
+});
+
+test("jsonShown: the cycle is looked for once per object, through toJSON as JSON.stringify reads it, so a value whose paths double at each level is no slower", { timeout: 20_000 }, async () => {
+  const { jsonShown } = await import("../core/i18n.mjs");
+  /** @type {any} */
+  const loop = { id: "l" };
+  loop.me = loop;
+  // Forty levels, each reached twice from the one above, and the cycle after them: every path is 2^40.
+  /** @param {(next: any) => any} level */
+  const chain = (level) => {
+    /** @type {any} */
+    let top = { end: true };
+    for (let i = 0; i < 40; i++) top = level(top);
+    return top;
+  };
+  // Plain objects; one object two toJSONs give; one object whose toJSON gives a new one at each reach.
+  const plain = chain((next) => ({ a: next, b: next }));
+  const given = chain((next) => ({ a: { toJSON: () => next }, b: { toJSON: () => next } }));
+  const fresh = chain((next) => {
+    const x = { toJSON: () => ({ next }) };
+    return { a: x, b: x };
+  });
+  for (const value of [plain, given, fresh]) {
+    const text = jsonShown({ value, loop });
+    assert.ok(text.length < 5000, `${text.length} characters`);
+    assert.deepEqual(JSON.parse(text).loop, { id: "l", me: { $ref: JSON.parse(text).loop.me.$ref } });
+  }
+  // toJSON is asked with its key, as JSON.stringify asks it, at each reach: here only the key "back" gives the cycle.
+  // Printed, an object with a toJSON is the object itself: a later reach is a reference to its first print.
+  /** @type {any} */
+  const top = { id: "t" };
+  const either = { toJSON: (/** @type {string} */ key) => (key === "back" ? top : { plain: 1 }) };
+  top.a = either;
+  top.back = either;
+  assert.deepEqual(JSON.parse(jsonShown(top)), { id: "t", a: { plain: 1 }, back: { $ref: 1 } });
+});
+
+test("jsonShown: a graph whose nodes all link to each other both ways prints in a size linear in its nodes and links", async () => {
+  const { jsonShown } = await import("../core/i18n.mjs");
+  /** @param {number} n @param {"all" | "grid"} shape */
+  const graph = (n, shape) => {
+    /** @type {any[]} */
+    const nodes = Array.from({ length: n }, (_, i) => ({ id: `n${i}`, links: [] }));
+    const k = Math.round(Math.sqrt(n));
+    let links = 0;
+    for (let i = 0; i < n; i++) {
+      const to = shape === "all" ? nodes.filter((y) => y !== nodes[i]) : [i % k + 1 < k ? nodes[i + 1] : null, i + k < n ? nodes[i + k] : null].filter(Boolean);
+      for (const y of to) {
+        nodes[i].links.push(y);
+        if (shape === "grid") y.links.push(nodes[i]);
+        links += shape === "grid" ? 2 : 1;
+      }
+    }
+    return { value: { oldest: { node: nodes[0] } }, n, links };
+  };
+  // Each node printed once (an id and a list) and each link one reference: well under 100 characters apiece.
+  for (const [n, shape] of /** @type {const} */ ([[9, "all"], [100, "grid"], [100, "all"]])) {
+    const g = graph(n, shape);
+    const text = jsonShown(g.value);
+    assert.ok(text.length < 100 * (g.n + g.links), `${shape} ${n}: ${text.length} characters for ${g.n} nodes and ${g.links} links`);
+    assert.equal(JSON.parse(text).oldest.node.id, "n0");
+  }
+});

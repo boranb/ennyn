@@ -453,7 +453,7 @@ test("cli: core names the oldest node of the highest value and the best of the r
   assert.deepEqual([one.byScore, one.more, one.oldest.split], [[], 0, false]);
 });
 
-test("cli: core and mechanization name each held node of their slot with its question, never pick it, and doctor counts what they pick", () => {
+test("cli: core and mechanization name each held node of their slot with its question on stderr and in the JSON's held, never pick it, and doctor counts what they pick", () => {
   const p = project();
   mkdirSync(join(p.dir, ".ennyn"));
   const write = (/** @type {unknown} */ graph) => writeFileSync(join(p.dir, ".ennyn", "graph.json"), JSON.stringify(graph));
@@ -476,11 +476,14 @@ test("cli: core and mechanization name each held node of their slot with its que
   assert.deepEqual(lines(core.stderr), [h], "the core slots' held node only; w waits on it and is not held itself");
   const json = run(p.dir, "core", "--json");
   assert.deepEqual([json.code, JSON.parse(json.stdout).oldest.node.id, lines(json.stderr)], [0, "a", [h]]);
+  // A program reads the held nodes of the slot from the JSON: id and question, strings, the empty question as "".
+  assert.deepEqual(JSON.parse(json.stdout).held, [{ id: "h", question: "which file?" }]);
   const mech = run(p.dir, "mechanization");
   assert.deepEqual([mech.code, mech.stdout], [0, "n (score 1.00)\n"]);
   assert.deepEqual(lines(mech.stderr), [m]);
   const mjson = run(p.dir, "mechanization", "--json");
   assert.deepEqual([mjson.code, JSON.parse(mjson.stdout).node.id, lines(mjson.stderr)], [0, "n", [m]]);
+  assert.deepEqual(JSON.parse(mjson.stdout).held, [{ id: "m", question: "" }]);
   const doctor = run(p.dir, "doctor").stdout;
   assert.match(doctor, /^✓ ready: 1 core, 1 mechanization$/m);
   assert.match(doctor, /^! held: 2 open nodes hold a \[NEEDS CLARIFICATION: …\] marker and are not picked until the user answers: h, m$/m);
@@ -490,11 +493,49 @@ test("cli: core and mechanization name each held node of their slot with its que
   assert.deepEqual([none.code, none.stdout, lines(none.stderr)], [0, "No ready core node.\n", [h]]);
   const mnone = run(p.dir, "mechanization");
   assert.deepEqual([mnone.code, mnone.stdout, lines(mnone.stderr)], [0, "No ready mechanization node.\n", [m]]);
+  // Nothing picked: the JSON still carries the held list, beside a node of null.
+  assert.deepEqual(JSON.parse(run(p.dir, "core", "--json").stdout), { oldest: null, byScore: [], more: 0, held: [{ id: "h", question: "which file?" }] });
+  assert.deepEqual(JSON.parse(run(p.dir, "mechanization", "--json").stdout), { node: null, score: null, count: null, cycles: null, held: [{ id: "m", question: "" }] });
   assert.match(run(p.dir, "doctor").stdout, /^! ready: no open node can start \(each is done, gated, held or waiting on needs\); a cycle has nothing to pick$/m);
-  // No marker: no held line anywhere.
-  write({ nodes: [{ id: "a", title: "[needs clarification: which?]" }], done: [] });
+  // A near spelling holds too, and doctor names it to be written as the marker; a held id that is a number is a string.
+  write({ nodes: [{ id: "lc", value: "low", title: "[needs clarification: which?]" }, { id: 7, value: "low", title: "[NEEDS CLARIFICATION\uFF1A how?]" }, { id: "x", value: "low", title: "[NEEDS CLARIFICATION: exact?]" }], done: [] });
+  assert.deepEqual(JSON.parse(run(p.dir, "core", "--json").stdout).held, [{ id: "lc", question: "which?" }, { id: "7", question: "how?" }, { id: "x", question: "exact?" }]);
+  const near = run(p.dir, "doctor").stdout;
+  assert.match(near, /^! held: 3 open nodes hold a \[NEEDS CLARIFICATION: …\] marker and are not picked until the user answers: lc, 7, x$/m);
+  assert.match(near, /^! held on a near spelling: 2 nodes write the marker in another case or width, read as held; write it \[NEEDS CLARIFICATION: <the question>\]: lc, 7$/m);
+  // No marker: no held line anywhere, and an empty held list in the JSON.
+  write({ nodes: [{ id: "a", title: "the clarification marker, named in prose" }, { id: "n", mechanization: true, source: "it needs clarification: which" }], done: [] });
   assert.deepEqual(lines(run(p.dir, "core").stderr), []);
+  assert.deepEqual(JSON.parse(run(p.dir, "core", "--json").stdout).held, []);
+  assert.deepEqual(JSON.parse(run(p.dir, "mechanization", "--json").stdout).held, []);
   assert.doesNotMatch(run(p.dir, "doctor").stdout, /held/);
+});
+
+test("cli: core and mechanization --json print a picked module-graph node linked both ways to a held one, the link back as a reference", () => {
+  const p = project({ paths: { graph: ".ennyn/graph.mjs" } });
+  const graph = (/** @type {string} */ flag, /** @type {string} */ marked) =>
+    writeFileSync(
+      join(p.dir, ".ennyn", "graph.mjs"),
+      `const a = { id: "a", value: "high", cost: "S"${flag}, title: ${marked === "a" ? '"[NEEDS CLARIFICATION: qa]"' : '"plain"'} };\n` +
+        `const b = { id: "b", value: "high", cost: "S"${flag}, title: ${marked === "b" ? '"[NEEDS CLARIFICATION: qb]"' : '"plain"'} };\n` +
+        "a.next = b;\nb.prev = a;\nexport const nodes = [a, b];\nexport const done = [];\n",
+    );
+  for (const [marked, free] of [["a", "b"], ["b", "a"]]) {
+    const held = [{ id: marked, question: `q${marked}` }];
+    const back = free === "b" ? "prev" : "next";
+    graph("", marked);
+    const core = run(p.dir, "core", "--json");
+    assert.equal(core.code, 0, core.stderr);
+    const c = JSON.parse(core.stdout);
+    assert.deepEqual([c.oldest.node.id, c.held], [free, held], `core, the marker in ${marked}`);
+    assert.deepEqual(c.oldest.node[back][free === "b" ? "next" : "prev"], { $ref: 2 });
+    graph(", mechanization: true", marked);
+    const mech = run(p.dir, "mechanization", "--json");
+    assert.equal(mech.code, 0, mech.stderr);
+    const m = JSON.parse(mech.stdout);
+    assert.deepEqual([m.node.id, m.held], [free, held], `mechanization, the marker in ${marked}`);
+    assert.deepEqual(m.node[back][free === "b" ? "next" : "prev"], { $ref: 1 });
+  }
 });
 
 test("cli: push-check says unmeasured without upstream and warns above the threshold; it exits 1 while what the push needs is unmeasured or not met", () => {

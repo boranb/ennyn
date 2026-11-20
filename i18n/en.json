@@ -464,6 +464,7 @@
   "doctor.readyNone": "ready: no open node can start (each is done, gated, held or waiting on needs); a cycle has nothing to pick",
   "doctor.ready": "ready: {core} core, {mech} mechanization",
   "doctor.held": "held: {n} open nodes hold a [NEEDS CLARIFICATION: …] marker and are not picked until the user answers: {list}",
+  "doctor.heldNear": "held on a near spelling: {n} nodes write the marker in another case or width, read as held; write it [NEEDS CLARIFICATION: <the question>]: {list}",
   "doctor.fixOk": "fix label: {pattern} matches {matches} of {commits} commits",
   "doctor.fixMajority": "fix label: {pattern} matches {matches} of {commits} commits; here the rework rate counts churn",
   "doctor.fixNone": "fix label: {pattern} matches none of {commits} commits; the rework rate sees no fixes",

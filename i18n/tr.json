@@ -464,6 +464,7 @@
   "doctor.readyNone": "hazır: başlayabilecek açık düğüm yok (her biri bitmiş, kapılı, bekletilen ya da bağımlılık bekliyor); döngünün seçeceği iş yok",
   "doctor.ready": "hazır: {core} çekirdek, {mech} mekanizasyon",
   "doctor.held": "bekletilen: {n} açık düğüm [NEEDS CLARIFICATION: …] işareti taşıyor, kullanıcı yanıtlayana kadar seçilmez: {list}",
+  "doctor.heldNear": "yakın yazımla bekletilen: {n} düğüm işareti başka harf büyüklüğünde ya da genişlikte yazıyor, bekletilen sayılıyor; [NEEDS CLARIFICATION: <soru>] olarak yaz: {list}",
   "doctor.fixOk": "fix etiketi: {pattern}, {commits} commit'in {matches} tanesine uyuyor",
   "doctor.fixMajority": "fix etiketi: {pattern}, {commits} commit'in {matches} tanesine uyuyor; burada yeniden iş oranı değişim sıklığını sayar",
   "doctor.fixNone": "fix etiketi: {pattern}, {commits} commit'in hiçbirine uymuyor; yeniden iş oranı düzeltme görmez",

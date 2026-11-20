@@ -139,15 +139,84 @@ export function asciiJson(name) {
 /** What UNSHOWN names that JSON.stringify writes as it is: it escapes the C0 controls itself, and a raw one in its output is its own line break. */
 const JSON_UNSHOWN = new RegExp(`(?![\\u0000-\\u001f])${UNSHOWN.source}`, "gu");
 
+/** What JSON.stringify prints for a value under `key`: its toJSON's result when it has one. @param {unknown} v @param {string} key */
+const asJson = (v, key) => (v !== null && typeof v === "object" && typeof (/** @type {any} */ (v).toJSON) === "function" ? /** @type {any} */ (v).toJSON(key) : v);
+
+/**
+ * Whether JSON.stringify would meet an object again inside itself: a walk of what it prints (own enumerable keys, each
+ * value through toJSON, asked with its key at each reach). An object on the open path counts by itself, so a toJSON
+ * that makes a new object at each reach still closes a cycle through the object it belongs to; what was printed and
+ * walked to its end is not walked again, so the walk is linear in objects and links (a toJSON that makes a new object
+ * at each reach costs that object's own keys once per reach).
+ * @param {unknown} value
+ */
+function holdsCycle(value) {
+  const open = new Set();
+  const done = new Set();
+  /** @type {[object, string[], number, unknown][]} what is printed, its keys, the next key, the object it came from */
+  const frames = [];
+  /** @param {unknown} raw @param {string} key @returns {boolean} a cycle */
+  const enter = (raw, key) => {
+    const v = asJson(raw, key);
+    if (v === null || typeof v !== "object") return false;
+    if (open.has(raw)) return true;
+    if (done.has(v)) return false;
+    open.add(raw);
+    frames.push([v, Object.keys(v), 0, raw]);
+    return false;
+  };
+  enter(value, "");
+  while (frames.length) {
+    const f = frames[frames.length - 1];
+    if (f[2] === f[1].length) {
+      open.delete(f[3]);
+      done.add(f[0]);
+      frames.pop();
+      continue;
+    }
+    const key = f[1][f[2]++];
+    if (enter(/** @type {any} */ (f[0])[key], key)) return true;
+  }
+  return false;
+}
+
+/**
+ * The replacer for a value with a cycle: each object printed once, every later reach of it (a link back, or a second
+ * link to it from anywhere) as `{ "$ref": <n> }`, n the object's number among the output's objects and arrays in the
+ * order their `{` or `[` opens in the text, the top value 0, each `$ref` object counted too. An object with a toJSON is
+ * the object itself, and what its toJSON gave counts too: a later reach of either is a reference to that first print,
+ * even where its toJSON would give another value under another key. JSON.stringify calls the replacer just before it
+ * prints each value, in that order, so the count is the replacer's own.
+ */
+function references() {
+  /** @type {Map<unknown, number>} */
+  const printed = new Map();
+  let opened = 0;
+  /** @this {any} @param {string} key @param {unknown} value */
+  return function (key, value) {
+    if (value === null || typeof value !== "object") return value;
+    const raw = this[key];
+    const at = printed.get(raw) ?? printed.get(value);
+    if (at !== undefined) return (opened++, { $ref: at });
+    printed.set(raw, opened).set(value, opened);
+    opened++;
+    return value;
+  };
+}
+
 /**
  * A command's --json output: JSON.stringify's, with every character UNSHOWN names that it leaves as it is (DEL,
  * C1 controls, direction marks and other format characters, line and paragraph separators) written as `\u`
- * escapes. It parses to the same value; a terminal or a reader sees what a name or a line holds.
+ * escapes. It parses to the same value; a terminal or a reader sees what a name or a line holds. A value with no
+ * cycle is JSON.stringify's text, an object two places share printed in each; one with a cycle, which JSON.stringify
+ * alone refuses or follows without end, prints each object once (references) and on one line, as an indent grows
+ * with the depth, so its size is linear in its objects and links.
  * @param {unknown} value
  * @returns {string}
  */
 export function jsonShown(value) {
-  return String(JSON.stringify(value, null, 2)).replace(JSON_UNSHOWN, escaped);
+  const text = holdsCycle(value) ? JSON.stringify(value, references()) : JSON.stringify(value, null, 2);
+  return String(text).replace(JSON_UNSHOWN, escaped);
 }
 
 /**

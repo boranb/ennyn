@@ -4,6 +4,8 @@ Only at a seam: after section 3's last step, or a one-task run's closing, once t
 
 Before the closing's last message, the run's wake process is stopped by its recorded PID: [task-brief.md](task-brief.md), **The machine stays awake**.
 
+The closing removes `words/<id>.txt` in the state dir for each node it marks done ([task-brief.md](task-brief.md), **The user's sentence**).
+
 No tool lets a session clear itself: the closing's last message names the step and the user takes it. Which one, the config's `context.afterCycle` says:
 
 | Value | The closing's last message |

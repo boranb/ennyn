@@ -315,7 +315,8 @@ test("oldest: a chain tens of thousands long, every node a candidate and its end
 });
 
 // The clarification marker: a request that reads two ways puts [NEEDS CLARIFICATION: <the question>] in its node,
-// and the node waits on the user's answer: held, never picked, named with its question.
+// and the node waits on the user's answer: held, never picked, named with its question. A near spelling, which the
+// folded reading finds (NFKC, any case), holds too, the safe side, and is marked near so doctor can name it.
 /** Held: the marker, in any string the node holds, and the question it carries. */
 const HELD = [
   ["in the title", { id: "t", title: "Export the report [NEEDS CLARIFICATION: CSV or JSON?]" }, "CSV or JSON?"],
@@ -328,12 +329,29 @@ const HELD = [
   ["two markers: the first in field order", { id: "2", title: "[NEEDS CLARIFICATION: first?]", source: "[NEEDS CLARIFICATION: second?]" }, "first?"],
   ["the question up to the first closing bracket", { id: "b", title: "[NEEDS CLARIFICATION: a [b] c?]" }, "a [b"],
 ];
+/** Held on the folded reading only: a near spelling, the question as the folded text gives it. */
+const NEAR = [
+  ["lower case", { id: "lc", title: "[needs clarification: which?]" }, "which?"],
+  ["mixed case", { id: "mc", title: "[Needs Clarification: which?]" }, "which?"],
+  ["Turkish capital dotted I, as caps lock types it", { id: "ti", title: "[NEEDS CLAR\u0130F\u0130CAT\u0130ON: hang\u0131 dosya?]" }, "hang\u0131 dosya?"],
+  ["Turkish dotless i in lower case", { id: "tl", title: "[needs clar\u0131f\u0131cat\u0131on: \u0130ki mi?]" }, "\u0130ki mi?"],
+  ["the dotted I as I and a combining dot", { id: "td", title: "[NEEDS CLARI\u0307FI\u0307CATI\u0307ON: which?]" }, "which?"],
+  ["the question trimmed at both ends", { id: "tr", title: "[needs clarification:  which? \u3000]" }, "which?"],
+  ["a full-width colon", { id: "fc", title: "[NEEDS CLARIFICATION\uFF1A which?]" }, "which?"],
+  ["full-width brackets", { id: "fb", title: "\uFF3BNEEDS CLARIFICATION: which?\uFF3D" }, "which?"],
+  ["full-width letters", { id: "fl", title: "[\uFF2EEEDS CLARIFICATION: which?]" }, "which?"],
+  ["a no-break space between the words", { id: "nb", title: "[NEEDS\u00A0CLARIFICATION: which?]" }, "which?"],
+  ["lower case, an empty question", { id: "le", source: "[needs clarification:]" }, ""],
+];
 /** Not held: near spellings, and what holds no string. */
 const FREE = [
   ["no brackets", { id: "nb", title: "NEEDS CLARIFICATION: which?" }],
-  ["lower case", { id: "lc", title: "[needs clarification: which?]" }],
-  ["mixed case", { id: "mc", title: "[Needs Clarification: which?]" }],
   ["no colon", { id: "nc", title: "[NEEDS CLARIFICATION which?]" }],
+  ["no colon, lower case", { id: "nl", title: "[needs clarification which?]" }],
+  ["another letter for the i", { id: "oi", title: "[NEEDS CLAR\u00CDF\u00CDCAT\u00CDON: which?]" }],
+  ["another colon NFKC keeps", { id: "rc", title: "[NEEDS CLARIFICATION\u2236 which?]" }],
+  ["prose that names it", { id: "p", title: "the node holds the clarification marker until the user answers" }],
+  ["prose with the words and a colon", { id: "pc", source: "it needs clarification: which report" }],
   ["not closed", { id: "uc", title: "[NEEDS CLARIFICATION: which?" }],
   ["the words alone", { id: "w", title: "the ask needs clarification" }],
   ["a key, not a value", { id: "k", "[NEEDS CLARIFICATION: key?]": 1 }],
@@ -345,8 +363,16 @@ test("clarification: the accept and reject corpus, the marker in any string a no
   for (const [why, node, question] of HELD) {
     assert.equal(clarification(node), question, why);
     assert.deepEqual(readyNodes({ open: [node], done: [] }, c), [], `${why}: never ready`);
-    assert.deepEqual(heldNodes({ open: [node], done: [] }, c).map((h) => [h.node, h.question]), [[node, question]], why);
+    assert.deepEqual(heldNodes({ open: [node], done: [] }, c).map((h) => [h.node, h.question, h.near]), [[node, question, false]], why);
   }
+  for (const [why, node, question] of NEAR) {
+    assert.equal(clarification(node), question, why);
+    assert.deepEqual(readyNodes({ open: [node], done: [] }, c), [], `${why}: never ready`);
+    assert.deepEqual(heldNodes({ open: [node], done: [] }, c).map((h) => [h.node, h.question, h.near]), [[node, question, true]], why);
+  }
+  // In one string the exact marker is read first; in two, the first in field order, exact or near.
+  assert.deepEqual(heldNodes({ open: [{ id: "x", title: "[needs clarification: near?] [NEEDS CLARIFICATION: exact?]" }], done: [] }, c).map((h) => [h.question, h.near]), [["exact?", false]]);
+  assert.deepEqual(heldNodes({ open: [{ id: "y", title: "[needs clarification: near?]", source: "[NEEDS CLARIFICATION: exact?]" }], done: [] }, c).map((h) => [h.question, h.near]), [["near?", true]]);
   for (const [why, node] of FREE) {
     assert.equal(clarification(node), null, why);
     assert.deepEqual(readyNodes({ open: [node], done: [] }, c), [node], `${why}: ready`);
@@ -432,6 +458,36 @@ test("clarification: a node a module builds with a loop or a deep nest is read w
   assert.equal(clarification({ id: "d", deep }), "bottom?");
   const wide = { id: "w", list: Array.from({ length: 300_000 }, (_, i) => String(i)) };
   assert.equal(clarification(wide), null);
+});
+
+test("clarification: the walk stops at a value that is another node of the graph, so a shared object holds only its own node", async () => {
+  const c = cfg();
+  // A module graph whose nodes share objects: b links to a, which holds the marker; d links to a done node with one.
+  /** @type {any} */
+  const a = { id: "a", title: "[NEEDS CLARIFICATION: for a?]" };
+  const done = { id: "z", title: "[NEEDS CLARIFICATION: was it?]" };
+  const gone = { id: "r", reason: "no", title: "[NEEDS CLARIFICATION: why?]" };
+  const b = { id: "b", parent: a };
+  const d = { id: "d", from: [done, { via: gone }] };
+  a.child = b;
+  const graph = { open: [a, b, d], done: [done], declined: [gone] };
+  assert.deepEqual(heldNodes(graph, c).map((h) => [h.node.id, h.question]), [["a", "for a?"]], "b and d hold no marker of their own");
+  assert.deepEqual(readyNodes(graph, c).map((n) => n.id), ["b", "d"]);
+  // The control: the same objects outside the graph's lists are the node's own text, and hold it.
+  assert.deepEqual(heldNodes({ open: [b, d], done: [] }, c).map((h) => [h.node.id, h.question]), [["b", "for a?"], ["d", "was it?"]]);
+  // An object two nodes share that is no node is each node's own text: both held.
+  const meta = { ask: "[NEEDS CLARIFICATION: shared?]" };
+  assert.deepEqual(heldNodes({ open: [{ id: "m1", meta }, { id: "m2", meta }], done: [] }, c).map((h) => [h.node.id, h.question]), [["m1", "shared?"], ["m2", "shared?"]]);
+  // A node that holds itself is still read.
+  /** @type {any} */
+  const self = { id: "s", text: "[NEEDS CLARIFICATION: me?]" };
+  self.me = self;
+  assert.deepEqual(heldNodes({ open: [self], done: [] }, c).map((h) => h.question), ["me?"]);
+  // As a module graph loads it.
+  const dir = graphFile("graph.mjs", 'const a = { id: "a", title: "[NEEDS CLARIFICATION: for a?]" };\nconst b = { id: "b", parent: a };\nexport const nodes = [a, b];\nexport const done = [];\n');
+  const loaded = await loadGraph({ cwd: dir, config: cfg({ paths: { graph: ".ennyn/graph.mjs" } }) });
+  assert.deepEqual(heldNodes(loaded, c).map((h) => h.node.id), ["a"]);
+  assert.deepEqual(readyNodes(loaded, c).map((n) => n.id), ["b"]);
 });
 
 test("loadGraph: JSON and module graphs with configured export names", async () => {
