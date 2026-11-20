@@ -6694,7 +6694,9 @@
     },
     {
       "status": "planned",
-      "needs": [],
+      "needs": [
+        "hygiene-names-from-state-dir"
+      ],
       "since": 46,
       "id": "public-flip",
       "value": "high",
@@ -6863,6 +6865,17 @@
       "mechanization": false,
       "title": "A clone with no private word list checks no word and says nothing: the list lives in the state dir, so a second clone, a fresh machine or a contributor's checkout runs security.privateText with its largest rule silent (in cycle 49's replay listed words gave more hits than every other rule together). A key, security.privateText.words (off by default; the name is the author's to better), says the project expects a list: with it on, doctor names a clone whose state dir holds none and commit-check says on every commit that no word was checked, with the two ways to get one (the file copied from another clone's state dir over a private channel, or private-text add). Said, never refused: a contributor's clone cannot hold the owner's list. Turning the key off is a loosening. Decided here, not left open: no digest list in a tracked file, keyed or not, since a key every clone must hold is the same hand-carry as the list, and once it leaks the tracked file names every word to anyone with a dictionary, in history for good. Gate: tests in test/private-text.test.mjs (key on and no list: the line at the commit and in doctor; with a list: neither)",
       "source": "cycle 2026-11-20 (49) author's proposed node private-list-shared for private-text-gate; Fable, 2026-11-20"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 50,
+      "id": "hygiene-names-from-state-dir",
+      "value": "high",
+      "cost": "S",
+      "cluster": "security",
+      "title": "test/hygiene.test.mjs holds the names it refuses as unsalted SHA-256 digests, and a plain word list recovers three of the seven (re-measured 2026-11-20), so a public repository would name the projects it hides. The names leave the test: it reads the private word list in the state dir (security.privateText, which already holds these digests) and says so when a clone has none, beside private-list-expected; its controls keep made-up words. Lands before the public flip; the history rewrite then removes the digests from every blob since they came in",
+      "source": "public-flip timing decision, Fable, 2026-11-20"
     }
   ],
   "done": [
