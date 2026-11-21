@@ -207,26 +207,26 @@ Imbue's study was read in full. The others were read through summaries or in par
 - Snyk ToxicSkills: https://snyk.io/blog/toxicskills-malicious-ai-agent-skills-clawhub/
 - Claude Code plugin evals: https://code.claude.com/docs/en/plugin-evals
 - ScrapeGraphAI at 194055e: https://github.com/ScrapeGraphAI/Scrapegraph-ai/tree/194055e
-- agent-reach at 14c2134: agent-reach
-- Scrapling at 0336400: Scrapling
+- agent-reach, read at commit 14c2134
+- Scrapling, read at commit 0336400
 - Understand-Anything at 4e6d329: https://github.com/Egonex-AI/Understand-Anything/tree/4e6d329
 - Codex skill loading at e6de6a2423: https://github.com/openai/codex/tree/e6de6a2423/codex-rs/ext/skills/src
 - modern-web-guidance at 4dd9683: https://github.com/GoogleChrome/modern-web-guidance/tree/4dd9683
 - Anthropic, agent evals: https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents
 - Vercel: https://vercel.com/blog/agents-md-outperforms-skills-in-our-agent-evals
 - Go blog: https://go.dev/blog/gofix
-- agent-skills at 39b723c: agent-skills
-- skills at 5863806: skills
-- planning-with-files at 51bf62d: planning-with-files
+- agent-skills, read at commit 39b723c
+- skills, read at commit 5863806
+- planning-with-files, read at commit 51bf62d
 - graphify at d4a5b32: https://github.com/Graphify-Labs/graphify/tree/d4a5b32
-- Auto-claude-code-research-in-sleep at 9f30e83: Auto-claude-code-research-in-sleep
-- text-to-cad at 337ac4e: text-to-cad
-- academic-research-skills at 23bd688 (CC BY-NC 4.0, ideas only): academic-research-skills
-- Agent-Skills-for-Context-Engineering at 9ff0c99: Agent-Skills-for-Context-Engineering
-- humanizer at b48c832: humanizer
-- hallmark at 04977e1: hallmark
-- last30days-skill at 5718ae7: last30days-skill
-- book-to-skill at e7bb659: book-to-skill
+- Auto-claude-code-research-in-sleep, read at commit 9f30e83
+- text-to-cad, read at commit 337ac4e
+- academic-research-skills, read at commit 23bd688 (CC BY-NC 4.0, ideas only)
+- Agent-Skills-for-Context-Engineering, read at commit 9ff0c99
+- humanizer, read at commit b48c832
+- hallmark, read at commit 04977e1
+- last30days-skill, read at commit 5718ae7
+- book-to-skill, read at commit e7bb659
 - Spotify: https://engineering.atspotify.com/2025/12/feedback-loops-background-coding-agents-part-3
 - Anthropic, C compiler: https://www.anthropic.com/engineering/building-c-compiler
 - Mozilla: https://hacks.mozilla.org/2026/05/behind-the-scenes-hardening-firefox/

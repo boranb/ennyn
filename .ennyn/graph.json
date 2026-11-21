@@ -394,7 +394,7 @@
       "value": "high",
       "cost": "M",
       "cluster": "security",
-      "source": "cycle 2026-10-24 (8), user: security; 2026 plugin and hook findings (trusted channel, permission rewrites, Plugin4Shell); cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): tools carry risk tiers, the highest never run without a person's approval; review of context-mode (MIT), 2026-10-25: hooks/ensure-deps.mjs runs npm install of a native module on first run and rebuilds it when the Node ABI changes; its README offers an MCP-only install as npx -y context-mode; review of Understand-Anything (MIT, 4e6d329), agent-reach (MIT, 14c2134) and ScrapeGraphAI's just-scrape skill (allowed-tools: Bash with npm install -g just-scrape@latest), 2026-10-28; measured with fixture repositories; read 2026-11-15 (agent-skills hooks/sdd-cache-pre.sh:97; graphify always_on/claude-md.md:6,10, hooks.py:1003; academic-research-skills ars_update_check.sh:176)",
+      "source": "cycle 2026-10-24 (8); the user, 2026-10-24: a request; 2026 plugin and hook findings (trusted channel, permission rewrites, Plugin4Shell); cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): tools carry risk tiers, the highest never run without a person's approval; review of context-mode (MIT), 2026-10-25: hooks/ensure-deps.mjs runs npm install of a native module on first run and rebuilds it when the Node ABI changes; its README offers an MCP-only install as npx -y context-mode; review of Understand-Anything (MIT, 4e6d329), agent-reach (MIT, 14c2134) and ScrapeGraphAI's just-scrape skill (allowed-tools: Bash with npm install -g just-scrape@latest), 2026-10-28; measured with fixture repositories; read 2026-11-15 (agent-skills hooks/sdd-cache-pre.sh:97; graphify always_on/claude-md.md:6,10, hooks.py:1003; academic-research-skills ars_update_check.sh:176)",
       "since": 8
     },
     {
@@ -1209,7 +1209,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "distribution",
-      "source": "review of ponytail and i-have-adhd (open-source agent skills, MIT), 2026-10-25: ponytail merges a rule change only with a three-arm benchmark, a case it should help and one it could break, 6 or more runs; i-have-adhd: hooks fast, bounded, fail-safe and opt-in, a write outside the repository needs an opt-in and an undo path; review of Scrapling (BSD-3-Clause, 0336400), 2026-10-28: AI_POLICY.md; 47 issues and pull requests labelled AI-Slop; an issue closed as completed while the code it named stayed",
+      "source": "review of ponytail and i-have-adhd (open-source agent skills, MIT), 2026-10-25: ponytail merges a rule change only with a three-arm benchmark, a case it should help and one it could break, 6 or more runs; i-have-adhd: hooks fast, bounded, fail-safe and opt-in, a write outside the repository needs an opt-in and an undo path; review of Scrapling (BSD-3-Clause, 0336400), 2026-10-28: AI_POLICY.md and its AI-Slop label for issues and pull requests",
       "since": 11
     },
     {
@@ -2644,7 +2644,7 @@
       "value": "high",
       "cost": "M",
       "cluster": "cycle",
-      "source": "users: 'Don't clean things up unless the user explicitly asks for it.' (codex), 'Deletion must be opt-in consent, not opt-out discovery.' (claude-code#59248); gemini-cli#23183: 'If any changes are detected (modified, staged, or untracked files) or if an error occurs during the check, the worktree must be preserved.'; Docker: 'Volumes are never removed automatically, because to do so could destroy data.'; Claude Code: 'SessionEnd hooks have a default timeout of 1.5 seconds.'; Conductor admits 'Descendants that move into another process group or session can survive and keep ports open'",
+      "source": "users: 'Don't clean things up unless the user explicitly asks for it.' (codex), 'Deletion must be opt-in consent, not opt-out discovery.' (claude-code#59248); gemini-cli#23183: 'If any changes are detected (modified, staged, or untracked files) or if an error occurs during the check, the worktree must be preserved.'; Docker: 'Volumes are never removed automatically, because to do so could destroy data.'; Claude Code: 'SessionEnd hooks have a default timeout of 1.5 seconds.'; Conductor's docs: 'Descendants that move into another process group or session can survive and keep ports open'",
       "since": 15
     },
     {
@@ -8026,7 +8026,7 @@
     },
     {
       "id": "history-rewrite-3",
-      "title": "Closed 2026-11-21 (pre-flip run, no cycle): a table kept outside the repository (the five name digests test/hygiene.test.mjs held, the place name in its two spellings, five graph source strings; the two control digests stay, so old commits pass their own tests) applied once on a copy; the 29 signed commits rebuilt so cited hashes resolve and signed again, the metrics covers keys re-keyed in line order, v0.1.0 tagged again and signed. Verified on the copy (16 checks, whole suite green) and on a fresh clone of the new remote: every table entry absent from every blob, path, message and the tag, the word list clean, signatures kept. The remote was created anew and holds main and v0.1.0 only",
+      "title": "Closed 2026-11-21 (pre-flip run, no cycle): a table kept outside the repository (the five name digests test/hygiene.test.mjs held, the place name in its two spellings, five graph source strings; the two control digests stay, so old commits pass their own tests) applied once on a copy; the 29 signed commits rebuilt so cited hashes resolve and signed again, the metrics covers keys re-keyed in line order, v0.1.0 tagged again and signed. Verified on the copy (16 checks, whole suite green) and on a fresh clone of the new remote: every table entry absent from every blob, path, message and the tag, the word list clean, signatures kept. The remote was created anew and holds main and v0.1.0 only; a fourth pass followed the same day for the wording of sources",
       "status": "done",
       "finished": "2026-11-21",
       "cluster": "distribution"
