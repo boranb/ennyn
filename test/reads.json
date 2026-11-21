@@ -1,6 +1,6 @@
 {
  "version": 1,
- "code": "0d9ffaa44615687500ddb5da51b015ec78bfb575763d84f1d4e8b61012e705ba",
+ "code": "f71004898c65cc55e4d8cc85f93b14f54850ec0c60a874824b7fc8849b918a3e",
  "tests": {
   "test/agents.test.mjs": {
    "reads": [
@@ -1296,7 +1296,9 @@
     "test/worktrees-oracle.test.mjs",
     "test/worktrees.test.mjs"
    ],
-   "dirs": [],
+   "dirs": [
+    ".ennyn"
+   ],
    "unseen": [
     "execFileSync git: git in the repository",
     "spawnSync git: git in the repository"
