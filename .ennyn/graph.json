@@ -3260,7 +3260,7 @@
         "push-ask-never-holds-turn"
       ],
       "id": "fresh-session-run",
-      "title": "ennyn run --cycles N (or --each task) from the terminal: each cycle or task is one claude -p with the cycle skill, a new process and so a new context. --cycles is required, there is no open-ended loop; a budget cap goes to --max-budget-usd. It runs doctor first and stops at the first red: non-zero exit, a stopped task, a gate that needs the user, the plan's limit, the budget; it prints why and what is next, and keeps a log in the state dir. It spawns only the claude on PATH. It decides from the journal, never from the model's words, and a run with no new commit and no node change ends the loop. With compact it resumes by session id, never --continue. Pushes follow push.mode. A -p run cannot ask, so it needs a mode that does not prompt (the no-bypass mode or the user's own bypass), and it says so when it has neither. Measure first (the first two from cycle 50, Fable 2026-11-21): one write of words/<id>.txt under .git/ in claude -p (in an interactive bypass session, 2.1.327, the Write tool and a Bash redirect did not prompt): if it prompts, the write moves into an ennyn command, which reopens the declined id check; permissions.denyInsteadOfPrompting passed to each child with --settings (its text in the 2.1.327 to 2.1.329 binaries: a call that would prompt is denied at once, subagents included): whether an ask rule then denies rather than waits, unmeasured; a task with subagents completes in -p, an ask rule refuses rather than hangs, hooks and the plugin load without --bare, and what breaks if --bare becomes the default for -p. If this threatens the release date it moves to the next version, ahead of everything else there; the 5-hour usage window does not end the run. The run reads claude -p's stream-json events, never the model's words: a rate_limit_event whose status is rejected and whose resetsAt is at most 5 hours away makes it wait until that time plus a minute and go on from the journal, and the cycle it cut does not count against --cycles; a later resetsAt (a weekly window), no resetsAt, or errorCode credits_required stops it as before, saying when the window resets. At a seam, when the last event said allowed_warning with a resetsAt within 5 hours, it starts no new cycle before that time. No threshold key: the warning is the server's. rateLimitType and unifiedWindows are in 2.1.310's schema but not in the docs, so they are not read. Measure first: what -p does when it is refused (exit status, whether the event comes before the result), at what use the server sends allowed_warning, and that a cycle cut mid-task resumes from the journal. A stopped task still ends the run: the next cycle could take the same node again, or build on work the user has not seen. It reports a silent stall (no stream event and no journal line for longer than the longest past step) and stops nothing by itself. Amended 2026-11-17 (Fable, after the audit runs of cycles 36-40, prototype runner scripts kept outside the repository): the first run of 0.2, from 2026-11-29. The child gets an allowlisted environment: a parent session's identity variables (session id, messaging socket, child-session mark) and GIT_* are dropped, auth and provider variables kept (measure first: hygiene, not a proven fix). --each <node> <node>... takes a list fixed at start; a second ennyn run queues behind the first on a lock, no open-ended queue. The runner is detached with its PID recorded; nothing between items reads stdin or waits for a session, and no step runs through a host that can show a permission prompt (in the audit runs an interactive session's git push waited 3.5 hours on a git push ask rule while nobody was there). A wait is not red: a loosening key, a user gate or an asked push under ask is recorded as a wait, that node and its dependants are skipped and the run goes on when the tree is clean and the closing complete; red still stops it. A result event with the journal still open is red. The runner holds the wake lock for each child's lifetime and the brief's own wake step is skipped under it. The runner never pushes; only the closing does, under push.mode",
+      "title": "ennyn run --cycles N (or --each task) from the terminal: each cycle or task is one claude -p with the cycle skill, a new process and so a new context. --cycles is required, there is no open-ended loop; a budget cap goes to --max-budget-usd. It runs doctor first and stops at the first red: non-zero exit, a stopped task, a gate that needs the user, the plan's limit, the budget; it prints why and what is next, and keeps a log in the state dir. It spawns only the claude on PATH. It decides from the journal, never from the model's words, and a run with no new commit and no node change ends the loop. With compact it resumes by session id, never --continue. Pushes follow push.mode. A -p run cannot ask, so it needs a mode that does not prompt (the no-bypass mode or the user's own bypass), and it says so when it has neither. Measure first (the first two from cycle 50, Fable 2026-11-21): one write of words/<id>.txt under .git/ in claude -p (in an interactive bypass session, 2.1.327, the Write tool and a Bash redirect did not prompt): if it prompts, the write moves into an ennyn command, which reopens the declined id check; permissions.denyInsteadOfPrompting passed to each child with --settings (its text in the 2.1.327 to 2.1.329 binaries: a call that would prompt is denied at once, subagents included): whether an ask rule then denies rather than waits, unmeasured; a task with subagents completes in -p, an ask rule refuses rather than hangs, hooks and the plugin load without --bare, and what breaks if --bare becomes the default for -p. If this threatens the release date it moves to the next version, ahead of everything else there; the 5-hour usage window does not end the run. The run reads claude -p's stream-json events, never the model's words: a rate_limit_event whose status is rejected and whose resetsAt is at most 5 hours away makes it wait until that time plus a minute and go on from the journal, and the cycle it cut does not count against --cycles; a later resetsAt (a weekly window), no resetsAt, or errorCode credits_required stops it as before, saying when the window resets. At a seam, when the last event said allowed_warning with a resetsAt within 5 hours, it starts no new cycle before that time. No threshold key: the warning is the server's. rateLimitType and unifiedWindows are in 2.1.310's schema but not in the docs, so they are not read. Measure first: what -p does when it is refused (exit status, whether the event comes before the result), at what use the server sends allowed_warning, and that a cycle cut mid-task resumes from the journal. A stopped task still ends the run: the next cycle could take the same node again, or build on work the user has not seen. It reports a silent stall (no stream event and no journal line for longer than the longest past step) and stops nothing by itself. Amended 2026-11-17 (Fable, after the audit runs of cycles 36-40, prototype runner scripts kept outside the repository): the first run of 0.2, from 2026-11-29. The child gets an allowlisted environment: a parent session's identity variables (session id, messaging socket, child-session mark) and GIT_* are dropped, auth and provider variables kept (measure first: hygiene, not a proven fix). --each <node> <node>... takes a list fixed at start; a second ennyn run queues behind the first on a lock, no open-ended queue. The runner is detached with its PID recorded; nothing between items reads stdin or waits for a session, and no step runs through a host that can show a permission prompt (in the audit runs an interactive session's git push waited on a git push ask rule until it was answered). A wait is not red: a loosening key, a user gate or an asked push under ask is recorded as a wait, that node and its dependants are skipped and the run goes on when the tree is clean and the closing complete; red still stops it. A result event with the journal still open is red. The runner holds the wake lock for each child's lifetime and the brief's own wake step is skipped under it. The runner never pushes; only the closing does, under push.mode",
       "value": "high",
       "cost": "M",
       "cluster": "method",
@@ -5289,7 +5289,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "gates",
-      "title": "What the shell box still leaves open, decided in one place, no patches: a box text is root in its user namespace and keeps the user's supplementary groups (setgroups deny), so a group-writable file under the rbind'ed /usr or /etc stays writable (none on this machine today); macOS's check reads a zombie sleeper as alive after the check (c29-t1-code-r0-05); the container branch has no file boundary. Decide: a further boundary (a user without groups, a read-only remount), or the limit said in DESIGN.md and SECURITY.md. Also (cycle 30 security audit, q07): on macOS the sandbox profile has no file boundary either, and a background job of a run that ends before its limit outlives it. Also (cycle 50, shell-in-js-templates inventory): test/shell-box.mjs:372,378,381 write the bash path, a program path and the box path into stand-in scripts inside single quotes unescaped, so a ' in TMPDIR breaks them, loudly",
+      "title": "What the shell box still leaves open, decided in one place, no patches: a box text is root in its user namespace and keeps the user's supplementary groups (setgroups deny), so a group-writable file under the rbind'ed /usr or /etc stays writable (none found when measured); macOS's check reads a zombie sleeper as alive after the check (c29-t1-code-r0-05); the container branch has no file boundary. Decide: a further boundary (a user without groups, a read-only remount), or the limit said in DESIGN.md and SECURITY.md. Also (cycle 30 security audit, q07): on macOS the sandbox profile has no file boundary either, and a background job of a run that ends before its limit outlives it. Also (cycle 50, shell-in-js-templates inventory): test/shell-box.mjs:372,378,381 write the bash path, a program path and the box path into stand-in scripts inside single quotes unescaped, so a ' in TMPDIR breaks them, loudly",
       "source": "cycle 2026-11-09 (29), T1 rounds 1-2 (test/shell-box.mjs is at the fix-loop brake); cycle 2026-11-20 (50) author's proposed node shell-box-quoted-paths; Fable, 2026-11-21",
       "since": 29
     },
@@ -6682,7 +6682,7 @@
     {
       "status": "planned",
       "needs": [
-        "hygiene-names-from-state-dir"
+        "history-rewrite-3"
       ],
       "since": 46,
       "id": "public-flip",
@@ -6690,7 +6690,8 @@
       "cost": "S",
       "cluster": "distribution",
       "title": "Make boranb/ennyn public on the user's own yes, then at once: rulesets on main (no force-push, no deletion, signed commits), on v* tags (no update, no deletion) and against branch and tag names of 40 or 64 hex characters; private vulnerability reporting, secret scanning and push protection on; read every ruleset back and try a refused push in a temporary clone; announce only after that. Main must be green at every push until then, since the flip publishes whatever is there. Settings to carry are recorded outside the repository (old-repo-settings.json in the release-0.1.0 keep folder). Commits made after v0.1.0 get the same checks and a full read before the flip, and the flip waits until they pass",
-      "source": "release 2026-11-18: tagged in the private repository; the flip waits for the user (Fable, post-tag decision); amended: the user, 2026-11-19: a request; release 0.1.0 preparation, 2026-11-18"
+      "source": "release 2026-11-18: tagged in the private repository; the flip waits for the user (Fable, post-tag decision); amended: the user, 2026-11-19: a request; release 0.1.0 preparation, 2026-11-18; amended cycle 51 (Fable, 2026-11-21): waits for history-rewrite-3, gate user",
+      "gate": "user"
     },
     {
       "status": "planned",
@@ -6823,22 +6824,11 @@
       "status": "planned",
       "needs": [],
       "since": 50,
-      "id": "hygiene-names-from-state-dir",
-      "value": "high",
-      "cost": "S",
-      "cluster": "security",
-      "title": "test/hygiene.test.mjs holds the names it refuses as unsalted SHA-256 digests, and a plain word list recovers three of the seven (re-measured 2026-11-20), so a public repository would name the projects it hides. The names leave the test: it reads the private word list in the state dir (security.privateText, which already holds these digests) and says so when a clone has none, beside private-list-expected; its controls keep made-up words. Lands before the public flip; the history rewrite then removes the digests from every blob since they came in",
-      "source": "public-flip timing decision, Fable, 2026-11-20"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 50,
       "id": "push-hook-deny-in-subagent",
       "value": "medium",
       "cost": "S",
       "cluster": "security",
-      "title": "A push written in a subagent is refused at once, never asked: a lab push sat on the push ask rule with nobody there (cycle 48; 3.5 hours in the audit runs), and the brief rule that forbids the text (83c9a06) is prose. Measure first, on the current Claude Code: whether an ask (the settings rule's and the hook's) in a background subagent waits or the host denies it (2.1.329's binary holds an automatic denial for a session with no approval surface; the waits were on earlier versions), and that a hook deny holds on a command the ask rule also matches (recorded: a deny holds in a subagent, 2.1.310). If the host denies by itself, close with the recorded cell and no hook change. Else adapters/claude-code/hooks/push-spellings.mjs answers deny, the fetch form in its reason, when the input holds agent_id (absent on the main thread, where the closing's push runs; ignored today, measured with hand-made input); cells join the verdict corpus. brief-no-push-text-in-lab-lows closes beside it. After push-hook-reads-commits-rule (same hook), before fresh-session-run",
+      "title": "A push written in a subagent is refused at once, never asked: a lab's push waited on the push ask rule in an unattended run (the audit runs of cycles 36-40; cycle 48), and the brief rule that forbids the text (83c9a06) is prose. Measure first, on the current Claude Code: whether an ask (the settings rule's and the hook's) in a background subagent waits or the host denies it (2.1.329's binary holds an automatic denial for a session with no approval surface; the waits were on earlier versions), and that a hook deny holds on a command the ask rule also matches (recorded: a deny holds in a subagent, 2.1.310). If the host denies by itself, close with the recorded cell and no hook change. Else adapters/claude-code/hooks/push-spellings.mjs answers deny, the fetch form in its reason, when the input holds agent_id (absent on the main thread, where the closing's push runs; ignored today, measured with hand-made input); cells join the verdict corpus. brief-no-push-text-in-lab-lows closes beside it. After push-hook-reads-commits-rule (same hook), before fresh-session-run",
       "source": "cycle 2026-11-20 (50) author's proposed node for brief-no-push-text-in-lab; Fable, 2026-11-21"
     },
     {
@@ -6876,6 +6866,43 @@
       "gate": "beside",
       "title": "brief-no-push-text-in-lab: low findings left. (a) task-brief.md's reviewer line names one sentence of the Rules row's two on git push in a lab (c50-t2-code-r1-01): it names both, and its pin and guard follow. Closes beside push-hook-deny-in-subagent",
       "source": "cycle 2026-11-20 (50) review of brief-no-push-text-in-lab, round 1; Fable, 2026-11-21"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 51,
+      "id": "hygiene-names-from-state-dir-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "gate": "beside",
+      "title": "hygiene-names-from-state-dir: low findings left, in order. (a) the repository scan prints a path that holds a listed word whole, where the hook cuts the hit (c51-t1-sec-r1-02; the print shape is older, the change widened it from five words to the clone's whole list): every path the scan prints is shown cut, as the hook shows it, with a test on a temporary repository whose failure text holds the rest of the path and not the word. (b) the scan counts commits as half the parts of a NUL-terminated log split, one half too many (c51-t1-author-r0-01, older than the task, 590e278): it counts whole pairs, so the not-vacuous check asks for more than ten commits as it says and its failure text names a whole number. Closes beside private-list-expected, with private-text-gate-lows (a): the same shower",
+      "source": "cycle 2026-11-21 (51) review of hygiene-names-from-state-dir, round 1, and the author's proposed node hygiene-commit-count-half; Fable, 2026-11-21"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 51,
+      "id": "pre-flip-freeze-read",
+      "value": "high",
+      "cost": "M",
+      "cluster": "distribution",
+      "title": "Before the public flip main is frozen and everything v0.1.0 does not hold is read in full. The fix commit the handoff names lands first; after it no commit lands but a reader's fix. Four fresh readers read v0.1.0..HEAD with the generic brief kept outside the repository (messages and .ennyn; docs, skills and the top-level documents; code and tests, reviewer-made fixtures included; one reader of the whole range with no anchor), beside the publish tools' scans, an outside secret scanner over the range, and the clone's whole private word list over every blob, path, commit message and tag message the new remote will hold (test/hygiene.test.mjs reads the tip's files and HEAD's messages only). A finding on the tip is fixed in an ordinary commit that one fresh reader reads; a medium or higher finding in history joins the rewrite's table. Then the full npm run test:linux on the frozen tree, alone on an idle machine (test/guards.test.mjs is unmeasured on Linux since 83c9a06): red stops the flip. Done when the read is clean, the Linux run is green and the handoff records the frozen tree's hash",
+      "source": "public-flip timing decision, Fable, 2026-11-20; cycle 2026-11-21 (51) security review of hygiene-names-from-state-dir, rounds 1-2: no node held the flip to the read and the rewrite; Fable, 2026-11-21"
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "pre-flip-freeze-read"
+      ],
+      "since": 51,
+      "id": "history-rewrite-3",
+      "value": "high",
+      "cost": "M",
+      "cluster": "distribution",
+      "gate": "user",
+      "title": "The third history rewrite, once, before the public flip: the name digests test/hygiene.test.mjs held from 590e278 to 58893c0 leave every blob, v0.1.0's included, with whatever pre-flip-freeze-read sent to the table. On a copy first: replacement tables kept outside the repository, the hash map, the rebuild of the last commits so cited hashes resolve, records keyed by a line's digest re-keyed in the map commit (history-rewrite-runbook, cycle 47 amendment), new commits signed. Verified on the copy: the hex census finds no word digest at the tip or in history, the whole private word list has no hit in any blob, path or message, only the expected paths changed, the tip differs from the frozen tree only in lines that cite a hash, ennyn audit answers as before, the whole suite is green. Up to here it runs without the user, and stops. On the user's own yes: v0.1.0 is tagged and signed again, the private remote is deleted and created anew (no force-push) and takes main and v0.1.0 only, a fresh clone is checked, every other clone is cloned again and the word list carried by hand. No second full read and no second Linux run when the verification shows only that. Ennyn rewrites nothing itself: the owner's hand work, with tools kept outside the repository",
+      "source": "public-flip timing decision, Fable, 2026-11-20; cycle 2026-11-21 (51) security review of hygiene-names-from-state-dir, rounds 1-2: no node held the flip to the read and the rewrite; Fable, 2026-11-21"
     }
   ],
   "done": [
@@ -8007,6 +8034,13 @@
       "status": "done",
       "finished": "2026-11-21",
       "cluster": "gates"
+    },
+    {
+      "id": "hygiene-names-from-state-dir",
+      "title": "Closed 2026-11-21 (cycle 51, one task) in d850adc: test/hygiene.test.mjs holds no digest of a real name; the digests stay in history until history-rewrite-3. The scan reads the clone's private word list in the state dir (shared with its worktrees) beside made-up controls built at run time; a clone with no list checks the controls and home paths and says so in one diagnostic line, held by a test on a temporary repository and a guard; a list it cannot read fails. Four new guards, all hygiene guards killed in the guards' list-less clone. Review 2 rounds (round 1: two medium, the length-less merge and the unpinned diagnostic), failures 0, mutation first 20/22, last 22/23 (one equivalent)",
+      "status": "done",
+      "finished": "2026-11-21",
+      "cluster": "security"
     }
   ],
   "declined": [

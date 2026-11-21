@@ -67,7 +67,8 @@
         "new: stop passed on in a form the child does not handle",
         "new: shell state handed by environment that the shell resets at start",
         "new: verdict read by output shape, not by what the host does with it",
-        "new: config layer unmeasured"
+        "new: config layer unmeasured",
+        "new: count derived from a delimiter split is off by a part"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, the stored-message scope held and other git readers did not. Named in cycle 2."
     },
@@ -358,7 +359,8 @@
         "new: boundary fences one channel of an effect another channel reaches",
         "new: second runner of untrusted texts outside the gate",
         "new: denylist of write-place variables misses one",
-        "new: refusal echoes guarded text"
+        "new: refusal echoes guarded text",
+        "new: refusal prints the private text it refused"
       ],
       "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict; no gate, both nodes are open. Named in cycle 8 as one-site escape or twin fix."
     },
