@@ -34,7 +34,7 @@ test("private text: a listed word is found whole, in its parts and runs, in the 
   const exact = parseLiterals(literalEntry(NAME, false) ?? "");
   assert.equal(literalHits(NAME, exact).length, 1);
   assert.deepEqual(literalHits(NAME.toLowerCase(), exact), [], "an exact word in another case");
-  // A digest with no length (hygiene's form): every word is hashed.
+  // A digest with no length (the form of those taken over from the hygiene test): every word is hashed.
   const bare = parseLiterals(`folded ${digest(NAME.toLowerCase())}\n`);
   assert.equal(bare.lengths, undefined);
   assert.equal(literalHits(`x ${NAME} y`, bare).length, 1);

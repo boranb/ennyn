@@ -278,7 +278,7 @@ export const LITERALS_FILE = "private-literals";
 
 /**
  * A line of the list: `exact` or `folded`, the length of the string hashed, its SHA-256. The length may be left out
- * (a digest from elsewhere, as hygiene's): then every word is hashed.
+ * (a digest from elsewhere, as those taken over from the hygiene test): then every word is hashed.
  */
 const ENTRY = /^(exact|folded) (?:(\d{1,4}) )?([0-9a-f]{64})$/;
 
