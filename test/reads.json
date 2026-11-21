@@ -1,6 +1,6 @@
 {
  "version": 1,
- "code": "1e1cd267db0bf4ce40285d44add2207e501573b84aa78796a0a31a101e99fbe5",
+ "code": "0d9ffaa44615687500ddb5da51b015ec78bfb575763d84f1d4e8b61012e705ba",
  "tests": {
   "test/agents.test.mjs": {
    "reads": [
@@ -646,6 +646,7 @@
     "test/secrets.test.mjs",
     "test/setup.test.mjs",
     "test/shell-box.mjs",
+    "test/shell-templates.test.mjs",
     "test/short.mjs",
     "test/short.test.mjs",
     "test/side-copy.test.mjs",
@@ -1274,6 +1275,7 @@
     "test/secrets.test.mjs",
     "test/setup.test.mjs",
     "test/shell-box.mjs",
+    "test/shell-templates.test.mjs",
     "test/short.mjs",
     "test/short.test.mjs",
     "test/side-copy.test.mjs",
@@ -1567,6 +1569,7 @@
     "test/secrets.test.mjs",
     "test/setup.test.mjs",
     "test/shell-box.mjs",
+    "test/shell-templates.test.mjs",
     "test/short.mjs",
     "test/short.test.mjs",
     "test/side-copy.test.mjs",
@@ -1602,18 +1605,23 @@
     "core/glob.mjs",
     "core/i18n.mjs",
     "i18n/en.json",
+    "impact/table.mjs",
     "plan/audit.mjs",
     "setup/budget.mjs",
+    "setup/clone-setup.mjs",
+    "setup/hook.mjs",
     "setup/permissions.mjs",
     "setup/scan.mjs",
     "setup/secret-setup.mjs",
     "test/hermetic.mjs",
     "test/hostile.mjs",
     "test/kill-targets.test.mjs",
+    "test/own-home.mjs",
     "test/push-spellings.test.mjs",
     "test/reference/claude-bin.mjs",
     "test/reference/claude-code.mjs",
-    "test/shell-box.mjs"
+    "test/shell-box.mjs",
+    "test/shell-templates.test.mjs"
    ],
    "dirs": [
     "adapters",
@@ -2504,6 +2512,35 @@
     "spawnSync sh: sh handed a path in the repository"
    ]
   },
+  "test/shell-templates.test.mjs": {
+   "reads": [
+    "adapters/claude-code/rules-index.mjs",
+    "checks/secrets.mjs",
+    "core/config.mjs",
+    "core/encoding.mjs",
+    "core/files.mjs",
+    "core/git.mjs",
+    "core/glob.mjs",
+    "core/i18n.mjs",
+    "i18n/en.json",
+    "i18n/tr.json",
+    "impact/table.mjs",
+    "setup/clone-setup.mjs",
+    "setup/hook.mjs",
+    "setup/permissions.mjs",
+    "setup/scan.mjs",
+    "setup/secret-setup.mjs",
+    "test/hermetic.mjs",
+    "test/hostile.mjs",
+    "test/own-home.mjs",
+    "test/shell-box.mjs",
+    "test/shell-templates.test.mjs"
+   ],
+   "dirs": [],
+   "unseen": [
+    "spawnSync sandbox-exec: a PATH whose first node is another"
+   ]
+  },
   "test/short.test.mjs": {
    "reads": [
     ".claude-plugin/icon.svg",
@@ -2717,6 +2754,7 @@
     "test/secrets.test.mjs",
     "test/setup.test.mjs",
     "test/shell-box.mjs",
+    "test/shell-templates.test.mjs",
     "test/short.mjs",
     "test/short.test.mjs",
     "test/side-copy.test.mjs",
