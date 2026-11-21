@@ -6878,31 +6878,6 @@
       "gate": "beside",
       "title": "hygiene-names-from-state-dir: low findings left, in order. (a) the repository scan prints a path that holds a listed word whole, where the hook cuts the hit (c51-t1-sec-r1-02; the print shape is older, the change widened it from five words to the clone's whole list): every path the scan prints is shown cut, as the hook shows it, with a test on a temporary repository whose failure text holds the rest of the path and not the word. (b) the scan counts commits as half the parts of a NUL-terminated log split, one half too many (c51-t1-author-r0-01, older than the task, 590e278): it counts whole pairs, so the not-vacuous check asks for more than ten commits as it says and its failure text names a whole number. Closes beside private-list-expected, with private-text-gate-lows (a): the same shower",
       "source": "cycle 2026-11-21 (51) review of hygiene-names-from-state-dir, round 1, and the author's proposed node hygiene-commit-count-half; Fable, 2026-11-21"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 51,
-      "id": "pre-flip-freeze-read",
-      "value": "high",
-      "cost": "M",
-      "cluster": "distribution",
-      "title": "Before the public flip main is frozen and everything v0.1.0 does not hold is read in full. The fix commit the handoff names lands first; after it no commit lands but a reader's fix. Four fresh readers read v0.1.0..HEAD with the generic brief kept outside the repository (messages and .ennyn; docs, skills and the top-level documents; code and tests, reviewer-made fixtures included; one reader of the whole range with no anchor), beside the publish tools' scans, an outside secret scanner over the range, and the clone's whole private word list over every blob, path, commit message and tag message the new remote will hold (test/hygiene.test.mjs reads the tip's files and HEAD's messages only). A finding on the tip is fixed in an ordinary commit that one fresh reader reads; a medium or higher finding in history joins the rewrite's table. Then the full npm run test:linux on the frozen tree, alone on an idle machine (test/guards.test.mjs is unmeasured on Linux since 83c9a06): red stops the flip. Done when the read is clean, the Linux run is green and the handoff records the frozen tree's hash",
-      "source": "public-flip timing decision, Fable, 2026-11-20; cycle 2026-11-21 (51) security review of hygiene-names-from-state-dir, rounds 1-2: no node held the flip to the read and the rewrite; Fable, 2026-11-21"
-    },
-    {
-      "status": "planned",
-      "needs": [
-        "pre-flip-freeze-read"
-      ],
-      "since": 51,
-      "id": "history-rewrite-3",
-      "value": "high",
-      "cost": "M",
-      "cluster": "distribution",
-      "gate": "user",
-      "title": "The third history rewrite, once, before the public flip: the name digests test/hygiene.test.mjs held from 590e278 to 58893c0 leave every blob, v0.1.0's included, with whatever pre-flip-freeze-read sent to the table. On a copy first: replacement tables kept outside the repository, the hash map, the rebuild of the last commits so cited hashes resolve, records keyed by a line's digest re-keyed in the map commit (history-rewrite-runbook, cycle 47 amendment), new commits signed. Verified on the copy: the hex census finds no word digest at the tip or in history, the whole private word list has no hit in any blob, path or message, only the expected paths changed, the tip differs from the frozen tree only in lines that cite a hash, ennyn audit answers as before, the whole suite is green. Up to here it runs without the user, and stops. On the user's own yes: v0.1.0 is tagged and signed again, the private remote is deleted and created anew (no force-push) and takes main and v0.1.0 only, a fresh clone is checked, every other clone is cloned again and the word list carried by hand. No second full read and no second Linux run when the verification shows only that. Ennyn rewrites nothing itself: the owner's hand work, with tools kept outside the repository",
-      "source": "public-flip timing decision, Fable, 2026-11-20; cycle 2026-11-21 (51) security review of hygiene-names-from-state-dir, rounds 1-2: no node held the flip to the read and the rewrite; Fable, 2026-11-21"
     }
   ],
   "done": [
@@ -8041,6 +8016,20 @@
       "status": "done",
       "finished": "2026-11-21",
       "cluster": "security"
+    },
+    {
+      "id": "pre-flip-freeze-read",
+      "title": "Closed 2026-11-21 (pre-flip run, no cycle): main froze at 4a13b64 after two text commits, 360e0fd (the two fixtures that held a real place name hold made-up words) and 4a13b64 (four graph sources name a request by its date only, found with the private-text gate run over every graph source). Four fresh readers read every distinct line added in v0.1.0..HEAD (messages and .ennyn; docs and skills; code and tests; the whole range with no anchor); gitleaks over the range and the history found two made-up fixtures; the clone's whole word list over every blob, path, commit message and tag message found nothing; the residue and identifier scans found nothing new. One medium finding, the place name in history, joined history-rewrite-3's table; lows are kept on purpose. npm run test:linux passed on the frozen tree (Node 22.0 with git 2.34, and Node 24)",
+      "status": "done",
+      "finished": "2026-11-21",
+      "cluster": "distribution"
+    },
+    {
+      "id": "history-rewrite-3",
+      "title": "Closed 2026-11-21 (pre-flip run, no cycle): a table kept outside the repository (the five name digests test/hygiene.test.mjs held, the place name in its two spellings, five graph source strings; the two control digests stay, so old commits pass their own tests) applied once on a copy; the 29 signed commits rebuilt so cited hashes resolve and signed again, the metrics covers keys re-keyed in line order, v0.1.0 tagged again and signed. Verified on the copy (16 checks, whole suite green) and on a fresh clone of the new remote: every table entry absent from every blob, path, message and the tag, the word list clean, signatures kept. The remote was created anew and holds main and v0.1.0 only",
+      "status": "done",
+      "finished": "2026-11-21",
+      "cluster": "distribution"
     }
   ],
   "declined": [
