@@ -52,8 +52,6 @@ claude plugin install ennyn@ennyn
 
 Then run `/ennyn:init` in your project. It scans the repository, asks a few questions, and sets up `.ennyn/`. In your other projects, the plugin's hooks do nothing except note the plugin's version in the plugin's own folder.
 
-Until Ennyn's repository is public, add the marketplace from a local clone with `claude plugin marketplace add ./ennyn`, then run the install command above.
-
 Install Ennyn only from `github.com/boranb/ennyn`, with the commands above or from a clone. The real thing has no binaries, no runtime dependencies and no install scripts. A copy that ships an executable, or asks you to run a setup program, is not Ennyn.
 
 ### Update
@@ -159,7 +157,7 @@ No setting turns a gate off. The full list of keys is in [DESIGN.md](DESIGN.md).
 
 ## Status and roadmap
 
-- **0.1** (next): the first public release, with the plugin, `/ennyn:init`, and the CLI as they are now. It ships when the scenarios in [docs/acceptance.md](docs/acceptance.md) pass on a second project.
+- **0.1** (2026-11-18): the first public release, with the plugin, `/ennyn:init`, and the CLI.
 - **0.2**: Codex support, `claude plugin eval` cases that compare a project with and without the plugin, published results from a second project, a terminal runner for unattended cycles, output masking for secrets, and a triage of the backlog.
 - **1.0**: a stable config format.
 

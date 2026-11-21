@@ -28,4 +28,4 @@ A development loop for coding agents, shipped as a Claude Code plugin and a zero
 3. `npm test && npm run typecheck && npm run validate:plugin` (the last needs the claude CLI), `npm run test:reference` (needs docker), `npm run test:linux`, and, when a Windows machine is at hand, `npm test` in WSL; README dates each platform's last measurement.
 4. Commit `chore: release vX.Y.Z`, tag `vX.Y.Z`, push the commit and the tag.
 
-Install: `claude plugin marketplace add boranb/ennyn`. It stays private until the public release.
+Install: `claude plugin marketplace add boranb/ennyn`.

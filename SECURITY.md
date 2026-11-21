@@ -4,7 +4,7 @@ Ennyn runs inside other projects: in their commits (the commit-msg hook) and in 
 
 ## Reporting a vulnerability
 
-Report it privately, through GitHub's private vulnerability reporting (the repository's **Security** tab, **Report a vulnerability**), which is switched on when the repository becomes public; until then the repository is private and its owner is the one to tell. Do not open a public issue for it. Say which version (`package.json`) or commit, which command or hook, and the smallest input that shows it.
+Report it privately, through GitHub's private vulnerability reporting (the repository's **Security** tab, **Report a vulnerability**). Do not open a public issue for it. Say which version (`package.json`) or commit, which command or hook, and the smallest input that shows it.
 
 ## Supported versions
 

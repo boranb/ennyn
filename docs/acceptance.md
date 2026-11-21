@@ -9,7 +9,7 @@ Each scenario names who runs it, the start state, the steps in the user's words,
 - **Who:** a developer with Claude Code, in a project that never had Ennyn.
 - **Start:** a git repository with no `.ennyn/` folder.
 - **Steps:**
-  1. Run `claude plugin marketplace add boranb/ennyn` (while the repository is private: `claude plugin marketplace add ./ennyn` from a local clone, as the README says).
+  1. Run `claude plugin marketplace add boranb/ennyn`.
   2. Run `claude plugin install ennyn@ennyn`.
   3. Restart Claude Code and work in the project as usual: edit, commit, push.
   4. Look for any file the plugin wrote in the project.

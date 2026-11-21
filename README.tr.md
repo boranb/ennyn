@@ -52,8 +52,6 @@ claude plugin install ennyn@ennyn
 
 Sonra projenizde `/ennyn:init` çalıştırın. Komut repoyu tarar, birkaç soru sorar ve `.ennyn/` klasörünü hazırlar. Diğer projelerinizde plugin'in hook'ları, plugin'in sürümünü kendi klasörüne not etmek dışında hiçbir şey yapmaz.
 
-Ennyn'in reposu public olana kadar marketplace'i yerel bir klondan `claude plugin marketplace add ./ennyn` ile ekleyin, sonra yukarıdaki install komutunu çalıştırın.
-
 Ennyn'i yalnızca `github.com/boranb/ennyn` adresinden kurun: yukarıdaki komutlarla ya da bir klondan. Asıl Ennyn'de çalıştırılabilir dosya, çalışma zamanı bağımlılığı ya da kurulum script'i yoktur. Çalıştırılabilir dosya getiren ya da sizden bir kurulum programı çalıştırmanızı isteyen bir kopya Ennyn değildir.
 
 ### Güncelleme
@@ -159,7 +157,7 @@ Hiçbir ayar bir kapıyı kapatmaz. Anahtarların tam listesi [DESIGN.md](DESIGN
 
 ## Durum ve yol haritası
 
-- **0.1** (sıradaki): ilk public sürüm; plugin, `/ennyn:init` ve CLI bugünkü hâliyle. [docs/acceptance.md](docs/acceptance.md)'deki senaryolar ikinci bir projede geçtiğinde çıkar.
+- **0.1** (2026-11-18): ilk public sürüm; plugin, `/ennyn:init` ve CLI.
 - **0.2**: Codex desteği, aynı projeyi plugin'li ve plugin'siz karşılaştıran `claude plugin eval` senaryoları ve ikinci bir projeden sonuçların yayımlanması, gözetimsiz döngüler için bir terminal runner'ı, secret'lar için çıktı maskeleme ve backlog'un triyajı.
 - **1.0**: kararlı bir config formatı.
 
