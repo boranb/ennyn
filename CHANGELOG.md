@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The plugin description now also names the kill refusal the hooks apply, and the READMEs link to install from the top.
 - A node that holds `[NEEDS CLARIFICATION: <question>]` in any of its strings is never picked: `core` and `mechanization` name it with its question, and doctor warns. A node made from a request names it in `source` only as `the user, <date>: a request` (or `approved`, `left to the session`); the sentence a brief needs stays under the state dir, and the closing reads the host's memory notes changed during the cycle.
 - `ennyn audit` counts the security audits recorded before the history rewrite again: their coverage keys follow the rewritten metrics lines.
 - `commits.addresses` and `commits.signed` (unset by default): `push-check` holds a push to the strictest `commits` block of the work tree's, HEAD's and the upstream's config, and refuses, in every mode, a commit by an address outside the list or, with signing asked, one that is not SSH-signed and verified for a key the clone's allowed-signers file lists for its committer; a push that git config makes send more refs than HEAD's branch, or to a url other than the one its upstream is fetched from, is refused as unmeasured. `doctor` names missing clone settings and an unlisted signing key; the new `ennyn clone-setup` prints the per-clone settings and builds the allowed-signers file from the SSH signing keys GitHub lists for a login.

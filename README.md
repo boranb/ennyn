@@ -7,9 +7,11 @@
 
 Ennyn is a Claude Code plugin and Node CLI. It gives the agent a working routine: impact analysis before code is written, a two-round review, and checks on every commit for recurring classes of bugs.
 
+[Install](#install-claude-code) · [Try it without installing](#try-it-without-installing)
+
 ![Output of ennyn rework, ennyn doctor, and ennyn core on the Ennyn repository](docs/assets/terminal.png)
 
-> Early days (0.0.x). Ennyn is built with Claude Code using its own cycle; its work graph, findings and metrics are in `.ennyn/`; the handoff notes between cycles are working notes and stay outside the repository. The config format may still change before 1.0.
+> Early days (0.1.x). Ennyn is built with Claude Code using its own cycle; its work graph, findings and metrics are in `.ennyn/`; the handoff notes between cycles are working notes and stay outside the repository. The config format may still change before 1.0.
 
 ## Why Ennyn
 

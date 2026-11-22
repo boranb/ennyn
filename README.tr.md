@@ -7,9 +7,11 @@
 
 Ennyn, Claude Code için bir plugin ve Node CLI aracı. Agent'a bir çalışma düzeni getiriyor: kod yazılmadan önce etki analizi, iki turlu review ve tekrar eden hata sınıfları için her commit'te çalışan kontroller.
 
+[Kurulum](#kurulum-claude-code) · [Kurmadan deneyin](#kurmadan-deneyin)
+
 ![Ennyn reposunda çalıştırılan ennyn rework, ennyn doctor ve ennyn core çıktısı](docs/assets/terminal.png)
 
-> Proje henüz erken aşamada (0.0.x). Ennyn, Claude Code ile ve kendi döngüsü kullanılarak geliştiriliyor; iş grafı, bulguları ve metrikleri `.ennyn/` klasöründe; döngüler arası devir notları çalışma notu olduğu için repo dışında tutuluyor. Config formatı 1.0'a kadar değişebilir.
+> Proje henüz erken aşamada (0.1.x). Ennyn, Claude Code ile ve kendi döngüsü kullanılarak geliştiriliyor; iş grafı, bulguları ve metrikleri `.ennyn/` klasöründe; döngüler arası devir notları çalışma notu olduğu için repo dışında tutuluyor. Config formatı 1.0'a kadar değişebilir.
 
 ## Neden Ennyn
 

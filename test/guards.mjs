@@ -48,7 +48,7 @@ export const GATES = [
     test: "test/hygiene.test.mjs",
     guards: [
       { id: "hygiene-name", why: "a project name in a tracked file", file: "DESIGN.md", old: "# ennyn — design\n", new: `# ennyn — design\n\nFrom ${NAME}.\n`, pattern: "hygiene: no file, path, symlink" },
-      { id: "hygiene-home", why: "a home path in a tracked file", file: "README.md", old: "> Early days (0.0.x).", new: `> Early days (0.0.x), from ${HOME}/ennyn.`, pattern: "hygiene: no file, path, symlink" },
+      { id: "hygiene-home", why: "a home path in a tracked file", file: "README.md", old: "> Early days (0.1.x).", new: `> Early days (0.1.x), from ${HOME}/ennyn.`, pattern: "hygiene: no file, path, symlink" },
       { id: "hygiene-judge", why: "a judge that finds nothing", file: "test/hygiene.test.mjs", old: "  const out = [];\n  for (const hit of literalHits(", new: "  const out = [];\n  if (out) return out;\n  for (const hit of literalHits(", pattern: "hygiene: a name is found whole" },
       {
         id: "hygiene-log",
