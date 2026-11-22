@@ -1,0 +1,41 @@
+# Publishes the npm package when a version tag (vX.Y.Z) is pushed. npm trusted publishing: the registry trusts
+# this file by name over OIDC, so no npm token is stored anywhere, and npm attaches a provenance attestation on
+# its own. Only this job may ask for an OIDC token; the test workflow stays read-only. The npm environment holds
+# the job until the owner approves it. The tag must name package.json's version and a commit on main, or nothing
+# is published; no cache is restored into the job that holds the token.
+# test/engines.test.mjs holds this text whole. Each action is named by its full commit SHA, checkout leaves no
+# credential in .git/config, and nothing is installed: the package has no runtime dependencies.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+      - name: The tag names package.json's version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: test "$TAG" = "v$(node -p "require('./package.json').version")"
+      - name: The tagged commit is on main
+        run: git fetch --no-tags origin refs/heads/main && git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD
+      - run: npm publish

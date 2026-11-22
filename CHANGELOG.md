@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Ennyn is published to npm as `ennyn`. A version tag starts `.github/workflows/release.yml`, which waits for the owner to approve it in the `npm` environment and publishes with npm trusted publishing: no npm token is stored, and npm attaches the provenance attestation.
 - The plugin description now also names the kill refusal the hooks apply, and the READMEs link to install from the top.
 - A node that holds `[NEEDS CLARIFICATION: <question>]` in any of its strings is never picked: `core` and `mechanization` name it with its question, and doctor warns. A node made from a request names it in `source` only as `the user, <date>: a request` (or `approved`, `left to the session`); the sentence a brief needs stays under the state dir, and the closing reads the host's memory notes changed during the cycle.
 - `ennyn audit` counts the security audits recorded before the history rewrite again: their coverage keys follow the rewritten metrics lines.

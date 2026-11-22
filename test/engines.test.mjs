@@ -15,7 +15,7 @@ import { fileURLToPath } from "node:url";
 import { GIT_FLOOR, git } from "../core/git.mjs";
 import { DEFAULTS } from "../core/config.mjs";
 import { matchAny } from "../core/glob.mjs";
-import { ciFindings, ciKind } from "../checks/ci.mjs";
+import { ciFindings, ciKind, yamlRead } from "../checks/ci.mjs";
 import { nodeFloor, versionIs, runs, pinned, NEWER, FLOOR_BASE } from "./linux-run.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -70,6 +70,72 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run typecheck
 `;
+
+/**
+ * The release workflow, whole, for the same reason: a second job, a trigger on branches, a write permission or
+ * a step before the version check could publish what the owner did not approve. Only this file asks for an OIDC
+ * token, only in its one job, and only behind the npm environment.
+ */
+const RELEASE = `# Publishes the npm package when a version tag (vX.Y.Z) is pushed. npm trusted publishing: the registry trusts
+# this file by name over OIDC, so no npm token is stored anywhere, and npm attaches a provenance attestation on
+# its own. Only this job may ask for an OIDC token; the test workflow stays read-only. The npm environment holds
+# the job until the owner approves it. The tag must name package.json's version and a commit on main, or nothing
+# is published; no cache is restored into the job that holds the token.
+# test/engines.test.mjs holds this text whole. Each action is named by its full commit SHA, checkout leaves no
+# credential in .git/config, and nothing is installed: the package has no runtime dependencies.
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+      - name: The tag names package.json's version
+        env:
+          TAG: \${{ github.ref_name }}
+        run: test "$TAG" = "v$(node -p "require('./package.json').version")"
+      - name: The tagged commit is on main
+        run: git fetch --no-tags origin refs/heads/main && git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD
+      - run: npm publish
+`;
+
+test("engines: the release workflow publishes only a version tag, behind the npm environment, and is the only file that asks for an OIDC token", () => {
+  assert.equal(read(".github/workflows/release.yml"), RELEASE);
+  const files = git(["ls-files", "-z"], { cwd: ROOT }).split("\0").filter((f) => matchAny(f, DEFAULTS.security.ci.paths));
+  // Keys as YAML decodes them, so an escaped spelling of the key is found too; a file this reading cannot take is listed.
+  const oidc = files.filter((f) => { const r = yamlRead(read(f)); return r.unread.length > 0 || r.entries.some((e) => e.key === "id-token"); });
+  assert.deepEqual(oidc, [".github/workflows/release.yml"]);
+  const pkg = JSON.parse(read("package.json"));
+  assert.equal(pkg.private, undefined, "package.json is publishable");
+  assert.equal(pkg.name, "ennyn");
+  // npm trusted publishing refuses a package whose repository URL names another repository.
+  assert.equal(pkg.repository.url, "git+https://github.com/boranb/ennyn.git");
+  // A script would run in the job that can mint an OIDC token; publishConfig could change the registry or drop provenance.
+  const lifecycle = ["prepublishOnly", "prepublish", "prepack", "prepare", "postpack", "publish", "postpublish"];
+  assert.deepEqual(lifecycle.filter((s) => s in pkg.scripts), [], "publishing runs no script");
+  assert.equal(pkg.publishConfig, undefined);
+  assert.equal(read(".npmrc"), "ignore-scripts=true\n");
+});
 
 test("engines: the Node floor parses from the range forms package.json uses, and nothing else", () => {
   assert.equal(nodeFloor(">=20"), "20.0.0");
