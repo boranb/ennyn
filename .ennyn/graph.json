@@ -2615,11 +2615,11 @@
         "no-test-command-stop"
       ],
       "id": "greenfield-trial",
-      "title": "A greenfield trial: a small real project started from an empty directory with /ennyn:init and run for three cycles, recorded in docs/evidence.md with the intake's questions and time, the skeleton's commands and checks, and the first cycles' numbers 0.2 (Fable 2026-11-17): the trial's project has a user-visible surface (a small web application with one form and one list is enough), so the UI package (ui-seen-running, ui-brief-states, ui-reviewer, ui-check, ui-own-checks, ui-floor, ui-slop-tells) is read on a real project in the same three cycles: for each UI task the brief-to-result table's counts by kind, ui-check's candidates and how each was answered, what the project's own checks failed on, and the UI findings by class. It records what the intake's question 5 proposes for a web project's end-to-end tool, in three runs. The same run answers whether architecture and lifecycle practice reach a built project with no document written for it: counted at the end, imports that cross the boundary the first node set up, decisions found in two places, and tasks that changed one layer alone. A class that recurs becomes a mechanization node by the convergence ladder, never a prose guide",
+      "title": "A greenfield trial: a small real project started from an empty directory with /ennyn:init and run for three cycles, recorded in docs/evidence.md with the intake's questions and time, the skeleton's commands and checks, and the first cycles' numbers 0.2 (Fable 2026-11-17): the trial's project has a user-visible surface (a small web application with one form and one list is enough), so the UI package (ui-seen-running, ui-brief-states, ui-reviewer, ui-check, ui-own-checks, ui-floor, ui-slop-tells) is read on a real project in the same three cycles: for each UI task the brief-to-result table's counts by kind, ui-check's candidates and how each was answered, what the project's own checks failed on, and the UI findings by class. It records what the intake's question 5 proposes for a web project's end-to-end tool, in three runs. The same run answers whether architecture and lifecycle practice reach a built project with no document written for it: counted at the end, imports that cross the boundary the first node set up, decisions found in two places, and tasks that changed one layer alone. A class that recurs becomes a mechanization node by the convergence ladder, never a prose guide. The trial also records what it ships (Fable 2026-11-23): the note's handed-to-users line; the manifest's licence after the scaffold against the note; and, with a planted value in an env file read through a public-prefixed variable (NEXT_PUBLIC_, VITE_), whether the built output holds it and what said so (the commit hook, the security reviewer's client-bundles line, nothing)",
       "value": "high",
       "cost": "M",
       "cluster": "evidence",
-      "source": "user, 2026-10-29: a request; every trial so far ran on an existing project",
+      "source": "user, 2026-10-29: a request; every trial so far ran on an existing project; the user, 2026-11-23: a request; Fable, 2026-11-23",
       "since": 15,
       "gate": "user"
     },
@@ -5720,11 +5720,11 @@
       "value": "low",
       "cost": "S",
       "gate": "user",
-      "source": "cycle 32 convergence: the file reached the fix-loop brake (review of greenfield-intake and engines-floor-22, 2026-11-13)",
+      "source": "cycle 32 convergence: the file reached the fix-loop brake (review of greenfield-intake and engines-floor-22, 2026-11-13); the user, 2026-11-23: a request; Fable, 2026-11-23",
       "since": 32,
       "id": "new-project-design-decision",
       "cluster": "init",
-      "title": "skills/init/new-project.md is at the fix-loop brake (8 rows in cycle 32, one a previous-fix in round 2): a design decision on the top two rungs, no patch nodes. Option A, a construct: the intake's answers are written by a CLI command (ennyn init --product) that refuses an answer it cannot place, keeps the Product: line and the chosen lint and typecheck commands in config keys, and reads earlier answers on a rerun. Option B, remove the need: the intake shrinks to the one question the first commit cannot do without, and the rest stays the user's to write. Leftover defects it carries, not fixed one by one: a rerun repeats the intake; the closing's handoff rewrite drops the Product: line; lint and typecheck choices kept only as prose; no guard pins the intake rules; line 18 'in one message' beside the two-message exception; what a question tool returns after askUserQuestionTimeout is unmeasured (the stand-in model on 127.0.0.1 can measure it). Leftover defect from the acceptance run 2026-11-15 (S3): with a git repository the first commit holds the setup files only and leaves README.md and LICENSE untracked; without one, init committed them 0.2 UI package (Fable 2026-11-17, on the user's question whether Ennyn uses Playwright): the decision also settles the end-to-end default for a project with a browser surface, with no patch to this file before it. Under either option ui-own-checks reads the tool from what the project declares, so it needs no intake answer. Under option A the end-to-end answer is one of the kept answers, and its proposal for a browser surface is the stack's usual browser runner (Playwright at the time of writing), its name and version from the registry at the time of choice (greenfield-stack-versions, preinstall-name-check), its browser download a step the user starts, never through npx and never by Ennyn. Measured first, in greenfield-trial: what question 5 proposes unaided for a web project in three runs; a runner named in all three means no product name is written into the text"
+      "title": "skills/init/new-project.md is at the fix-loop brake (8 rows in cycle 32, one a previous-fix in round 2): a design decision on the top two rungs, no patch nodes. Option A, a construct: the intake's answers are written by a CLI command (ennyn init --product) that refuses an answer it cannot place, keeps the Product: line and the chosen lint and typecheck commands in config keys, and reads earlier answers on a rerun. Option B, remove the need: the intake shrinks to the one question the first commit cannot do without, and the rest stays the user's to write. Leftover defects it carries, not fixed one by one: a rerun repeats the intake; the closing's handoff rewrite drops the Product: line; lint and typecheck choices kept only as prose; no guard pins the intake rules; line 18 'in one message' beside the two-message exception; what a question tool returns after askUserQuestionTimeout is unmeasured (the stand-in model on 127.0.0.1 can measure it). Leftover defect from the acceptance run 2026-11-15 (S3): with a git repository the first commit holds the setup files only and leaves README.md and LICENSE untracked; without one, init committed them 0.2 UI package (Fable 2026-11-17, on the user's question whether Ennyn uses Playwright): the decision also settles the end-to-end default for a project with a browser surface, with no patch to this file before it. Under either option ui-own-checks reads the tool from what the project declares, so it needs no intake answer. Under option A the end-to-end answer is one of the kept answers, and its proposal for a browser surface is the stack's usual browser runner (Playwright at the time of writing), its name and version from the registry at the time of choice (greenfield-stack-versions, preinstall-name-check), its browser download a step the user starts, never through npx and never by Ennyn. Measured first, in greenfield-trial: what question 5 proposes unaided for a web project in three runs; a runner named in all three means no product name is written into the text Shipped-code protection (Fable 2026-11-23): under either option the note records two more facts inside the five questions, no sixth. With question 2, what of the product is handed to its users (nothing: a service; a browser bundle; a package's source; an installable binary). And the licence, default none (all rights reserved; \"private\": true and UNLICENSED in an npm manifest), an open licence only when the user picks one. Step 4's check after the scaffold reads the manifest's licence field against the note, as it does for .gitignore and .npmrc: npm 10.9.9's init-license default is ISC (npm config get init-license, measured 2026-11-23), so npm init -y states a permissive licence nobody chose. No patch to the file before the decision"
     },
     {
       "status": "planned",
@@ -6878,6 +6878,20 @@
       "gate": "beside",
       "title": "hygiene-names-from-state-dir: low findings left, in order. (a) the repository scan prints a path that holds a listed word whole, where the hook cuts the hit (c51-t1-sec-r1-02; the print shape is older, the change widened it from five words to the clone's whole list): every path the scan prints is shown cut, as the hook shows it, with a test on a temporary repository whose failure text holds the rest of the path and not the word. (b) the scan counts commits as half the parts of a NUL-terminated log split, one half too many (c51-t1-author-r0-01, older than the task, 590e278): it counts whole pairs, so the not-vacuous check asks for more than ten commits as it says and its failure text names a whole number. Closes beside private-list-expected, with private-text-gate-lows (a): the same shower",
       "source": "cycle 2026-11-21 (51) review of hygiene-names-from-state-dir, round 1, and the author's proposed node hygiene-commit-count-half; Fable, 2026-11-21"
+    },
+    {
+      "id": "shipped-output-read",
+      "title": "ennyn publish-check --output, report only: reads what the project hands to users (the build folder it names, or the files npm pack --dry-run --json lists) with the hook's secret shapes and, matched locally and never printed, the values of the project's env files (secret-output-mask's reader (a)); counts source maps and sourceMappingURL lines; prints kind, file and count, never a value. It reads what no gate reads: build output is ignored, and an env value reaches a bundle without ever being staged. The command is recorded and named in the brief's Commands row for a task that changes the client build; the closing runs it where set. Stop condition: if greenfield-trial's planted value is caught by the hook or the reviewer, this node is declined. No obfuscator, no decoy insertion, no bundler plugin",
+      "status": "planned",
+      "needs": [
+        "publish-check",
+        "greenfield-trial"
+      ],
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "source": "the user, 2026-11-23: a request; Fable, 2026-11-23; secret-held-today covers tracked files and publish-check git history, nothing reads untracked output",
+      "since": 52
     }
   ],
   "done": [
@@ -8306,6 +8320,18 @@
       "title": "core/i18n.mjs is at the fix-loop brake (cycle 50, round 2: three previous-fix rows on jsonShown's cycle print): the limit is said and the rest declined, no patch nodes. Limits: a value nested past JSON.stringify's own depth throws as it does there (c50-t1-orch-r2-01); a data object holding only $ref reads as a reference (c50-t1-data-r2-01); toJSON runs twice on a cyclic value; an acyclic value whose objects share subtrees prints every path, as JSON.stringify does; the walk before the print costs about three times JSON.stringify alone on a 20 MB value",
       "source": "cycle 2026-11-20 (50) convergence, fix-loop brake; review of held-in-json, round 2",
       "reason": "Fable, 2026-11-21: no defect is open; every limit is reached only by a module graph built to reach it, and a value with no cycle prints as JSON.stringify's text byte for byte (100,000 values compared). Reopen as a decision on the top two rungs at the next row in jsonShown: refuse a cyclic value by name, or print a picked node's links to other nodes as ids so no cycle reaches the printer"
+    },
+    {
+      "id": "shipped-code-obfuscation",
+      "title": "Ennyn proposes, installs or runs no obfuscator, decoy inserter or anti-analysis tool for a built project",
+      "status": "planned",
+      "needs": [],
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "the user, 2026-11-23: a request; Fable, 2026-11-23; a public reel on AI code-analysis tools and decoy insertion (2026-11-22)",
+      "since": 52,
+      "reason": "Fable, 2026-11-23: the figures are the tool authors' own, unverified (tool repositories not fetched); the same source shows the remover restoring 6 of 6; a build-time transformer is third-party code rewriting the shipped artifact, the class preinstall-name-check and load-time-obfuscation guard against; behaviour seen from outside can be rebuilt without reading code. Protection is what is not shipped. A project that picks such a tool itself gets it as any dependency (name check, cooldown)"
     }
   ]
 }
