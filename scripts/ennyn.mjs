@@ -21,10 +21,10 @@ import { advisoriesOf, depsMessages, dirOf, judgeEntry, judgeLock, lockEntries, 
 import { readIfThere, readRegular, writeState } from "../core/files.mjs";
 import { SecretScanner, masked, secretsOff } from "../checks/secrets.mjs";
 import { ConfigPicked, ConfigUnread, LOOSENING_LINE, commitConfig, looseningErrors } from "../checks/loosening.mjs";
-import { closingPush } from "../checks/push-mode.mjs";
-import { commitRule, commitsRefused, pushRule } from "../checks/commit-identity.mjs";
+import { pushVerdict, saidText } from "../checks/push-mode.mjs";
+import { commitRule } from "../checks/commit-identity.mjs";
 import { API, apiBase, isAddress, isLogin, noreplyLogin, setupCommands, signersPath, signersText, signingKeys, writeSigners } from "../setup/clone-setup.mjs";
-import { cleanTree, lastRun, pushNeeds, readRuns, recordRun, runBase, within } from "../checks/test-runs.mjs";
+import { cleanTree, lastRun, readRuns, recordRun, runBase, within } from "../checks/test-runs.mjs";
 import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
 import { REWORK_DAYS, reworkRate } from "../metrics/szz.mjs";
 import { bypassUses } from "../metrics/bypass.mjs";
@@ -1970,81 +1970,10 @@ const COMMANDS = {
     if (n === null) out(t("push.unmeasured", {}, lang));
     else if (n > max) out(t("push.warn", { n, max }, lang));
     else out(t("push.ok", { n, max }, lang));
-    // What the push needs, from the commits it sends and the record of runs (checks/test-runs.mjs). A git that fails
-    // is said: nothing here reads as met.
-    let needs;
-    try {
-      needs = pushNeeds(cwd, cfg);
-    } catch (e) {
-      needs = { unmeasured: String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message).trim().split("\n")[0] };
-    }
-    /** Whether the push may go as far as the tests go: measured, not behind, and nothing to run or met. */
-    let ready = false;
-    if ("unmeasured" in needs) out(t("push.needUnmeasured", { why: masked(needs.unmeasured) }, lang));
-    else {
-      if (needs.fetched !== null) out(t("push.notFetched", { why: masked(needs.fetched) }, lang));
-      const tree = needs.tree.slice(0, 12);
-      if (needs.behind) out(t("push.behind", { n: needs.behind }, lang));
-      else if (needs.need === null) out(t("push.needNothing", {}, lang));
-      else {
-        const why = needs.code === null ? t("push.noCode", {}, lang) : t("push.code", { path: needs.code }, lang);
-        if (needs.met) out(t("push.needMet", { kind: needs.need, tree, why, end: String(/** @type {any} */ (needs.last).end) }, lang));
-        else out(t(needs.last ? "push.needRed" : "push.needRun", { kind: needs.need, tree, why, end: String(needs.last?.end) }, lang));
-      }
-      ready = !needs.behind && (needs.need === null || needs.met);
-    }
-    // Who wrote what the push sends, and whether it is signed (commits.*): a refusal, or a range not read, is exit 1 in
-    // every mode, whatever the tests say. The rule is the strictest of the work tree's, HEAD's and the upstream's
-    // config (pushRule): an edit not committed, ENNYN_CONFIG or a loosening inside the range does not take it off.
-    let identityOk = true;
-    const unread = (/** @type {unknown} */ e) => {
-      out(t("push.commitsUnmeasured", { why: masked(String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message).trim().split("\n")[0]) }, lang));
-      identityOk = false;
-    };
-    /** @type {ReturnType<typeof pushRule>} */
-    let rule = null;
-    try {
-      rule = pushRule(cwd, cfg, "unmeasured" in needs ? null : needs.upstream);
-    } catch (e) {
-      unread(e);
-    }
-    if (rule) {
-      try {
-        if ("unmeasured" in needs) throw new Error(needs.unmeasured);
-        const { checked, refused } = commitsRefused(cwd, rule, needs.upstream);
-        if (refused.length) {
-          out(t("push.commitsRefused", { n: refused.length, total: checked }, lang));
-          for (const r of refused) out(`  ${r.hash.slice(0, 12)} ${r.why.map((w) => t(w.key, w.vars, lang)).join("; ")}`);
-          out(t("push.commitsSetup", {}, lang));
-        } else out(t("push.commitsOk", { n: checked }, lang));
-        identityOk = !refused.length;
-      } catch (e) {
-        unread(e);
-      }
-    }
-    // The push itself: by the user's yes, or with after-closing by the cycle (checks/push-mode.mjs), on a commit whose
-    // tree the record holds green, or one the caller names as tested, with nothing uncommitted. Either is a word:
-    // a record line is a file any process here can write. Under ask neither pushes.
-    // Exit 0 is only the line that says the cycle may push (push.md, step 4, pushes on it); ready but asked is 3.
-    const push = closingPush(cwd);
-    for (const l of push.said) out(t(l.key, l.vars, lang));
-    if (!identityOk) return 1;
-    if (!push.ok) return opts.tested !== undefined || !ready ? 1 : 3;
-    const clean = () => git(["status", "--porcelain=v1", "-z", "--untracked-files=normal", "--ignore-submodules=none"], { cwd }) === "";
-    if (!("unmeasured" in needs) && ready && needs.met) {
-      if (!clean()) return (out(t("push.modeDirty", {}, lang)), 1);
-      return (out(t("push.modeRecorded", { head: needs.tree.slice(0, 12), branch: String(push.branch) }, lang)), 0);
-    }
-    if (opts.tested === undefined) return (out(t("push.modeUntested", {}, lang)), 1);
-    // The caller's word stands only where the record says nothing of this tree, and never against a branch behind.
-    if (!("unmeasured" in needs) && needs.red) out(t("push.testedRed", { kind: needs.red.kind, tree: needs.tree.slice(0, 12), end: needs.red.end, exit: needs.red.exit }, lang));
-    if ("unmeasured" in needs || needs.behind || needs.last || needs.red) return 1;
-    const at = (/** @type {string} */ rev) => gitMaybe(["rev-parse", "--verify", "-q", `${rev}^{commit}`], { cwd, absent: [1] });
-    const [now, tested] = [at("HEAD"), at(String(opts.tested))];
-    if (!now || now !== tested) return (out(t("push.modeMoved", { head: String(now).slice(0, 12), tested: String(opts.tested).slice(0, 40) }, lang)), 1);
-    if (!clean()) return (out(t("push.modeDirty", {}, lang)), 1);
-    out(t("push.modeTested", { head: now.slice(0, 12), branch: String(push.branch) }, lang));
-    return 0;
+    // The verdict is one function (checks/push-mode.mjs), which the push hook reads too, taken there without the fetch.
+    const verdict = pushVerdict(cwd, cfg, { tested: opts.tested === undefined ? undefined : String(opts.tested) });
+    for (const line of saidText(verdict.said, lang)) out(line);
+    return verdict.exit;
   },
 
   async "private-text"(args) {

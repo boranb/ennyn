@@ -25,10 +25,18 @@
 import { join } from "node:path";
 import { CONFIG_PATH, DEFAULTS, loadConfig } from "../core/config.mjs";
 import { HOOK_READ_ENV, git, gitBytes, gitMaybe, headCommit, projectRoot } from "../core/git.mjs";
+import { t } from "../core/i18n.mjs";
+import { commitsRefused, pushRule } from "./commit-identity.mjs";
 import { approvedKeys, configAt, inside, loaded } from "./loosening.mjs";
 import { masked } from "./secrets.mjs";
+import { pushNeeds } from "./test-runs.mjs";
 
 /** @typedef {{ key: string, vars: Record<string, string> }} Line a catalog line */
+/**
+ * @typedef {{ key: string, vars: Record<string, string | number | Line> } | { commit: string, why: Line[] }} Said
+ *   a line of push-check's verdict: a catalog line (a value may be a catalog line of its own), or a commit the commits
+ *   rule refuses, by its short hash, with why
+ */
 
 /** @param {unknown} e */
 const firstLine = (e) => String(/** @type {Error & { stderr?: unknown }} */ (e).stderr || /** @type {Error} */ (e).message).trim().split("\n")[0];
@@ -211,4 +219,130 @@ export function closingPush(cwd, env = process.env, { project } = {}) {
     said.push({ key: "push.modeUnread", vars: { error: masked(firstLine(e)) } });
     return no();
   }
+}
+
+/**
+ * The verdict of `ennyn push-check`: what the push needs from the test record and whether it is met (pushNeeds), the
+ * commits rule on what it sends (pushRule, commitsRefused), the mode (closingPush), and the exit that sums them. One
+ * verdict, which push-check prints and the push hook reads (hookVerdict): exit 0 only where the cycle may push by
+ * itself, on a green run the record holds on HEAD's tree with nothing uncommitted, or on `tested`; 3 where the tests
+ * are met and the push is asked; 1 for the rest, a commit the rule refuses or a range it cannot read in every mode.
+ * @param {string} cwd the repository's top @param {any} config
+ * @param {{ tested?: string, fetch?: boolean, env?: NodeJS.ProcessEnv, closing?: ReturnType<typeof closingPush> }} [opts]
+ *   `tested`: the hash the caller names as tested (its word); `fetch`: false reads the upstream as the last fetch left
+ *   it; `closing`: closingPush's answer when the caller already took it
+ * @returns {{ exit: 0 | 1 | 3, branch: string | null, said: Said[] }}
+ */
+export function pushVerdict(cwd, config, { tested, fetch = true, env = process.env, closing } = {}) {
+  /** @type {Said[]} */
+  const said = [];
+  const say = (/** @type {string} */ key, /** @type {Record<string, string | number | Line>} */ vars = {}) => said.push({ key, vars });
+  // What the push needs, from the commits it sends and the record of runs (checks/test-runs.mjs). A git that fails
+  // is said: nothing here reads as met.
+  /** @type {ReturnType<typeof pushNeeds>} */
+  let needs;
+  try {
+    needs = pushNeeds(cwd, config, { fetch });
+  } catch (e) {
+    needs = { unmeasured: firstLine(e) };
+  }
+  /** Whether the push may go as far as the tests go: measured, not behind, and nothing to run or met. */
+  let ready = false;
+  if ("unmeasured" in needs) say("push.needUnmeasured", { why: masked(needs.unmeasured) });
+  else {
+    if (fetch && needs.fetched !== null) say("push.notFetched", { why: masked(needs.fetched) });
+    const tree = needs.tree.slice(0, 12);
+    if (needs.behind) say("push.behind", { n: needs.behind });
+    else if (needs.need === null) say("push.needNothing");
+    else {
+      /** @type {Line} */
+      const why = needs.code === null ? { key: "push.noCode", vars: {} } : { key: "push.code", vars: { path: needs.code } };
+      if (needs.met) say("push.needMet", { kind: needs.need, tree, why, end: String(/** @type {any} */ (needs.last).end) });
+      else say(needs.last ? "push.needRed" : "push.needRun", { kind: needs.need, tree, why, end: String(needs.last?.end) });
+    }
+    ready = !needs.behind && (needs.need === null || needs.met);
+  }
+  // Who wrote what the push sends, and whether it is signed (commits.*): a refusal, or a range not read, is exit 1 in
+  // every mode, whatever the tests say. The rule is the strictest of the work tree's, HEAD's and the upstream's
+  // config (pushRule): an edit not committed, ENNYN_CONFIG or a loosening inside the range does not take it off.
+  let identityOk = true;
+  const unread = (/** @type {unknown} */ e) => {
+    say("push.commitsUnmeasured", { why: masked(firstLine(e)) });
+    identityOk = false;
+  };
+  /** @type {ReturnType<typeof pushRule>} */
+  let rule = null;
+  try {
+    rule = pushRule(cwd, config, "unmeasured" in needs ? null : needs.upstream);
+  } catch (e) {
+    unread(e);
+  }
+  if (rule) {
+    try {
+      if ("unmeasured" in needs) throw new Error(needs.unmeasured);
+      const { checked, refused } = commitsRefused(cwd, rule, needs.upstream);
+      if (refused.length) {
+        say("push.commitsRefused", { n: refused.length, total: checked });
+        for (const r of refused) said.push({ commit: r.hash.slice(0, 12), why: r.why });
+        say("push.commitsSetup");
+      } else say("push.commitsOk", { n: checked });
+      identityOk = !refused.length;
+    } catch (e) {
+      unread(e);
+    }
+  }
+  // The push itself: by the user's yes, or with after-closing by the cycle, on a commit whose tree the record holds
+  // green, or one the caller names as tested, with nothing uncommitted. Either is a word: a record line is a file any
+  // process here can write. Under ask neither pushes.
+  const push = closing ?? closingPush(cwd, env);
+  said.push(...push.said);
+  const end = (/** @type {0 | 1 | 3} */ exit) => ({ exit, branch: push.branch, said });
+  if (!identityOk) return end(1);
+  if (!push.ok) return end(tested !== undefined || !ready ? 1 : 3);
+  const clean = () => git(["status", "--porcelain=v1", "-z", "--untracked-files=normal", "--ignore-submodules=none"], { cwd }) === "";
+  if (!("unmeasured" in needs) && ready && needs.met) {
+    if (!clean()) return (say("push.modeDirty"), end(1));
+    return (say("push.modeRecorded", { head: needs.tree.slice(0, 12), branch: String(push.branch) }), end(0));
+  }
+  if (tested === undefined) return (say("push.modeUntested"), end(1));
+  // The caller's word stands only where the record says nothing of this tree, and never against a branch behind.
+  if (!("unmeasured" in needs) && needs.red) say("push.testedRed", { kind: needs.red.kind, tree: needs.tree.slice(0, 12), end: needs.red.end, exit: needs.red.exit });
+  if ("unmeasured" in needs || needs.behind || needs.last || needs.red) return end(1);
+  const at = (/** @type {string} */ rev) => gitMaybe(["rev-parse", "--verify", "-q", `${rev}^{commit}`], { cwd, absent: [1] });
+  const [now, named] = [at("HEAD"), at(tested)];
+  if (!now || now !== named) return (say("push.modeMoved", { head: String(now).slice(0, 12), tested: tested.slice(0, 40) }), end(1));
+  if (!clean()) return (say("push.modeDirty"), end(1));
+  return (say("push.modeTested", { head: now.slice(0, 12), branch: String(push.branch) }), end(0));
+}
+
+/**
+ * The verdict's lines as text: a value that is a catalog line is put as its own text, a refused commit as its short
+ * hash and why, indented.
+ * @param {Said[]} said @param {string} lang @returns {string[]}
+ */
+export function saidText(said, lang) {
+  return said.map((s) => {
+    if ("commit" in s) return `  ${s.commit} ${s.why.map((w) => t(w.key, w.vars, lang)).join("; ")}`;
+    /** @type {Record<string, string | number>} */
+    const vars = {};
+    for (const [k, v] of Object.entries(s.vars)) vars[k] = typeof v === "object" ? t(v.key, v.vars, lang) : v;
+    return t(s.key, vars, lang);
+  });
+}
+
+/**
+ * What the push hook reads for a push it leaves under after-closing, in the folder the shell stands in (`cwd`), for the
+ * session's folder `project`: closingPush, and for a bare `git push` past it push-check's own verdict (pushVerdict),
+ * taken without its fetch, since no hook makes a network call: behind and ahead are read against the last fetch. `ok`:
+ * the mode allows the push (for a push that is not bare), or the verdict is exit 0 (for a bare one); `lines`: why not,
+ * in `lang`.
+ * @param {string} cwd @param {NodeJS.ProcessEnv} env @param {{ project: string, bare: boolean, lang?: string }} opts
+ * @returns {{ ok: boolean, lines: string[] }}
+ */
+export function hookVerdict(cwd, env, { project, bare, lang = "en" }) {
+  const push = closingPush(cwd, env, { project });
+  if (!push.ok || !bare) return { ok: push.ok, lines: saidText(push.said, lang) };
+  const top = projectRoot(cwd);
+  const verdict = pushVerdict(top, loadConfig({ cwd: top, env }), { fetch: false, env, closing: push });
+  return { ok: verdict.exit === 0, lines: verdict.exit === 0 ? [] : saidText(verdict.said, lang) };
 }

@@ -17,6 +17,9 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { mayHold } from "../adapters/claude-code/config-place.mjs";
 import { pushAliases, pushSpelling } from "../adapters/claude-code/push-spellings.mjs";
+import { pushVerdict, saidText } from "../checks/push-mode.mjs";
+import { recordRun } from "../checks/test-runs.mjs";
+import { DEFAULTS, loadConfig } from "../core/config.mjs";
 import { SPELLINGS, readRecord } from "./reference/claude-code.mjs";
 import { inFence, inRoot, shellBox, unsafeTexts } from "./shell-box.mjs";
 
@@ -1413,11 +1416,22 @@ test("push hook: a plain push is asked about and every other command passes, pri
 const AFTER = '{ "push": { "mode": "after-closing" } }\n';
 
 /**
- * A repository on main with an upstream, whose commit holds `config` at `at` (the approval line in its message with
- * `line`): what the closing's push needs, or one thing short of it.
- * @param {{ config?: string, line?: boolean, at?: string }} [o]
+ * A green whole run recorded on HEAD's tree, as `ennyn test whole` records one. @param {string} dir @param {number} [exit]
  */
-function closing({ config = AFTER, line = true, at = ".ennyn/config.json" } = {}) {
+function recorded(dir, exit = 0) {
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir, encoding: "utf8" }).trim();
+  const tree = execFileSync("git", ["rev-parse", "HEAD^{tree}"], { cwd: dir, encoding: "utf8" }).trim();
+  const now = new Date().toISOString();
+  recordRun(dir, DEFAULTS, { v: 1, kind: "whole", tree, head, exit, start: now, end: now });
+}
+
+/**
+ * A repository on main with an upstream, whose commit holds `config` at `at` (the approval line in its message with
+ * `line`), and one commit on top that the push sends, with a green whole run recorded on its tree (`run` false: none):
+ * what the closing's push needs, or one thing short of it.
+ * @param {{ config?: string, line?: boolean, at?: string, run?: boolean }} [o]
+ */
+function closing({ config = AFTER, line = true, at = ".ennyn/config.json", run = true } = {}) {
   const dir = project(null);
   const remote = realpathSync(mkdtempSync(join(tmpdir(), "en-push-remote-")));
   execFileSync("git", ["init", "-q", "--bare", "-b", "main"], { cwd: remote });
@@ -1429,6 +1443,10 @@ function closing({ config = AFTER, line = true, at = ".ennyn/config.json" } = {}
   g("commit", "-q", "--no-verify", "-m", `chore: push by itself${line ? "\n\nUser-Approved-Loosening: push.mode" : ""}`);
   g("remote", "add", "origin", remote);
   g("push", "-q", "-u", "origin", "main");
+  writeFileSync(join(dir, "work.txt"), "work\n");
+  g("add", "work.txt");
+  g("commit", "-q", "--no-verify", "-m", "feat: work");
+  if (run) recorded(dir);
   return { dir, g };
 }
 
@@ -1469,6 +1487,76 @@ test("push hook: under after-closing only a bare git push runs, and only when pu
   assert.match(reason(run(dir, at(dir, "git push"))), /HEAD's config holds after-closing, the work tree's ask/);
 });
 
+test("push hook: under after-closing a bare git push runs only on push-check's verdict: a commit the commits rule refuses asks", () => {
+  const reason = (/** @type {{ stdout: string }} */ r) => JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason;
+  // The commits are written by t@t; the rule lets only another address write them.
+  const { dir } = closing({ config: '{ "push": { "mode": "after-closing" }, "commits": { "addresses": ["other@example.test"] } }\n' });
+  const r = bare(dir);
+  assert.equal(decision(r), "ask");
+  assert.match(reason(r), /commits\.\*: 1 of the 1 commits this push sends break the rule/);
+  assert.match(reason(r), /author t@t is not in commits\.addresses/);
+  // The verdict push-check prints, with its fetch: exit 1, the same line.
+  const check = pushVerdict(dir, loadConfig({ cwd: dir, env: {} }));
+  assert.equal(check.exit, 1);
+  assert.ok(saidText(check.said, "en").some((l) => /^commits\.\*: 1 of the 1 commits this push sends break the rule/.test(l)));
+});
+
+test("push hook: under after-closing a bare git push asks with no green run recorded on the pushed tree, or a red one", () => {
+  const reason = (/** @type {{ stdout: string }} */ r) => JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason;
+  const none = closing({ run: false }).dir;
+  const r = bare(none);
+  assert.equal(decision(r), "ask");
+  assert.match(reason(r), /The push needs a green whole run on HEAD's tree [0-9a-f]{12} \(work\.txt matches push\.codeGlobs\): none is recorded/);
+  assert.match(reason(r), /the record holds no green run of what the push needs on HEAD's tree/);
+  // It fetched nothing, so it says no fetch failed.
+  assert.doesNotMatch(reason(r), /could not be read anew/);
+  // A red run last on the tree asks too.
+  const red = closing().dir;
+  recorded(red, 1);
+  assert.match(reason(bare(red)), /the last one, at .*, failed/);
+  // A green run on another tree: the commit after it is not what was tested.
+  const moved = closing();
+  writeFileSync(join(moved.dir, "work.txt"), "more\n");
+  moved.g("commit", "-q", "--no-verify", "-am", "feat: more");
+  assert.match(reason(bare(moved.dir)), /none is recorded/);
+  // Nothing to send: no run answers for it, and it asks as push-check does.
+  const { dir, g } = closing();
+  g("push", "-q");
+  assert.match(reason(bare(dir)), /No commit to send/);
+  // An untracked file: the tree tested is not what is here.
+  const dirty = closing().dir;
+  writeFileSync(join(dirty, "new.txt"), "x\n");
+  assert.match(reason(bare(dirty)), /the work tree holds changes or untracked files/);
+});
+
+test("push hook: under after-closing a bare git push runs when the mode, the commits rule and the record all hold, and the hook fetches nothing", () => {
+  const { dir } = closing({ config: '{ "push": { "mode": "after-closing" }, "commits": { "addresses": ["t@t"] } }\n' });
+  const log = join(realpathSync(mkdtempSync(join(tmpdir(), "en-push-log-"))), "calls");
+  const real = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
+  const bin = mkdtempSync(join(tmpdir(), "en-push-git-"));
+  writeFileSync(join(bin, "git"), `#!/bin/sh\necho "$*" >> '${log}'\nexec '${real}' "$@"\n`, { mode: 0o755 });
+  assert.equal(bare(dir, { PATH: `${bin}${delimiter}${process.env.PATH}` }).stdout, "");
+  const calls = readFileSync(log, "utf8").split("\n");
+  assert.ok(calls.some((c) => c.includes(" rev-list --count ")), "it read what the push sends");
+  assert.deepEqual(calls.filter((c) => / (fetch|ls-remote|remote update|pull) /.test(` ${c} `)), [], "no call reaches the remote");
+  // The verdict push-check prints, which fetches, is exit 0 too.
+  assert.equal(pushVerdict(dir, loadConfig({ cwd: dir, env: {} })).exit, 0);
+});
+
+test("push hook: under after-closing a verdict that does not finish in time asks, inside the hook's own limit", () => {
+  const { dir } = closing();
+  const real = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf8" }).trim();
+  const bin = mkdtempSync(join(tmpdir(), "en-push-git-"));
+  // Only the count of what the push sends stalls, past the hook's own limit: the mode's own reading finishes.
+  writeFileSync(join(bin, "git"), `#!/bin/sh\ncase "$*" in *" rev-list --count "*) exec sleep 12;; esac\nexec '${real}' "$@"\n`, { mode: 0o755 });
+  const start = Date.now();
+  const r = bare(dir, { PATH: `${bin}${delimiter}${process.env.PATH}` });
+  const took = Date.now() - start;
+  assert.equal(decision(r), "ask");
+  assert.equal(JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason, "ennyn: this push waits for the user's yes.");
+  assert.ok(took < 9000, `the hook answered in ${took} ms, inside Claude Code's 10 s`);
+});
+
 test("push hook: a mode no commit check judged asks: unapproved, a work-tree edit, ENNYN_CONFIG outside, a subfolder's own config", () => {
   const reason = (/** @type {{ stdout: string }} */ r) => JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason;
   assert.match(reason(bare(closing({ line: false }).dir)), /the commit that set it \([0-9a-f]{12}\) holds no User-Approved-Loosening: push\.mode line/);
@@ -1493,6 +1581,8 @@ test("push hook: under after-closing the push is decided where the shell stands:
   // A nested repository the shell moved into, with a mirror remote: the session's decision says nothing of it.
   const nested = join(dir, "nested");
   mkdirSync(nested);
+  // Ignored, so the checkout's own work tree stays clean for the pushes from it below.
+  writeFileSync(join(dir, ".git", "info", "exclude"), "nested/\n");
   execFileSync("git", ["init", "-q", "-b", "main"], { cwd: nested });
   execFileSync("git", ["config", "remote.origin.mirror", "true"], { cwd: nested });
   const there = run(dir, at(nested, "git push"));

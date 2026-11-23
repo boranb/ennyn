@@ -33,6 +33,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpath
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { recordRun } from "../../checks/test-runs.mjs";
+import { DEFAULTS } from "../../core/config.mjs";
 import { claudeBinary, safePath, versionOf } from "./claude-bin.mjs";
 import { gitEnv } from "./claude-code.mjs";
 import { standIn } from "./precompact.mjs";
@@ -86,7 +88,8 @@ const ENTRIES = { crash: 'node "${CLAUDE_PLUGIN_ROOT}/crash.mjs"', missing: 'nod
  * @typedef {{ hook?: string, entry?: string, real?: true, noConfig?: true, config?: string, closing?: "approved" | "unapproved", command?: string, then?: string, tool?: string, input?: object, matcher?: string, rules?: object, localRules?: object, settings?: object, env?: Record<string, string>, timeout?: number, skipFlag?: true, install?: true, subagent?: true, keeps?: string[] }} Cell
  *   `then`: a second call, what an agent writes after a refusal; `keeps`: the input's fields, which the cell records;
  *   `localRules`: rules held only in .claude/settings.local.json; `config`: the Ennyn config's text in a `real` cell (`{}` else); `closing`: that config committed, with or without
- *   the approval line, and the branch given an upstream, as the closing's push needs
+ *   the approval line, and the branch given an upstream one commit behind and a green whole run recorded on HEAD's
+ *   tree, as the closing's push needs
  */
 
 /** @type {Record<string, Cell>} */
@@ -218,7 +221,13 @@ export async function reading(c, bin) {
         execFileSync("git", [...quiet, "add", ".ennyn/config.json"], at);
         execFileSync("git", [...quiet, "commit", "-qm", `chore: mode${c.closing === "approved" ? "\n\nUser-Approved-Loosening: push.mode" : ""}`, "--no-verify"], at);
         const branch = execFileSync("git", [...quiet, "symbolic-ref", "--short", "HEAD"], { ...at, encoding: "utf8" }).trim();
-        for (const [k, v] of [["remote.origin.url", join(R, "remote.git")], [`branch.${branch}.remote`, "origin"], [`branch.${branch}.merge`, `refs/heads/${branch}`]]) execFileSync("git", [...quiet, "config", k, v], at);
+        for (const [k, v] of [["remote.origin.url", join(R, "remote.git")], ["remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"], [`branch.${branch}.remote`, "origin"], [`branch.${branch}.merge`, `refs/heads/${branch}`]]) execFileSync("git", [...quiet, "config", k, v], at);
+        // The upstream holds the first commit, so the push sends the config's, and a green whole run is recorded on its
+        // tree: push-check's verdict, which the hook reads, is met.
+        execFileSync("git", [...quiet, "update-ref", `refs/remotes/origin/${branch}`, "HEAD~1"], { cwd: P, env: git, timeout: 60_000, killSignal: "SIGKILL" });
+        const [head, tree] = execFileSync("git", [...quiet, "rev-parse", "HEAD", "HEAD^{tree}"], { cwd: P, env: git, encoding: "utf8", timeout: 60_000, killSignal: "SIGKILL" }).trim().split("\n");
+        const now = new Date().toISOString();
+        recordRun(P, DEFAULTS, { v: 1, kind: "whole", tree, head, exit: 0, start: now, end: now });
       }
     }
     writeFileSync(join(P, ".claude", "settings.json"), JSON.stringify({ ...(c.rules ? { permissions: c.rules } : {}), ...c.settings }));

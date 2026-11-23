@@ -9,7 +9,7 @@
  * is read in the session's folder. Only the corpus's own `cd`, `pushd` and `-C` words run, never a push.
  *
  * Every repository here is one where push-check's other facts hold (push.mode after-closing with the approval line, a
- * branch with an upstream of one url, nothing widened), so where the push runs is the one fact that moves (the folder,
+ * branch with an upstream of one url, nothing widened, a commit to send and a green run recorded on its tree), so where the push runs is the one fact that moves (the folder,
  * or a git variable in the session's environment); test/push-check-oracle holds the rest. "Goes" is: the push runs,
  * in a folder whose top, common git dir and git dir are the session's. "Run" is what Claude Code does with the hook's
  * answer, not its shape: a crash or a message alone runs the call too. The test fails where the hook lets a push run
@@ -24,6 +24,8 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { recordRun } from "../checks/test-runs.mjs";
+import { DEFAULTS } from "../core/config.mjs";
 import { ownHome } from "./own-home.mjs";
 
 const HOOK = fileURLToPath(new URL("../adapters/claude-code/hooks/push-spellings.mjs", import.meta.url));
@@ -51,7 +53,7 @@ function g(cwd, args) {
   return r.stdout.trim();
 }
 
-/** A checkout where push-check's facts hold: after-closing, approved, pushed to a bare upstream, one commit ahead. @param {string} dir */
+/** A checkout where push-check's facts hold: after-closing, approved, pushed to a bare upstream, one commit ahead, recorded green. @param {string} dir */
 function repo(dir) {
   const bare = `${dir}.git`;
   g(DIR, ["init", "-q", "--bare", "-b", "main", bare]);
@@ -62,14 +64,22 @@ function repo(dir) {
   g(dir, ["add", "-A"]), g(dir, ["commit", "-q", "-m", "chore: push by itself\n\nUser-Approved-Loosening: push.mode"]);
   g(dir, ["remote", "add", "origin", bare]), g(dir, ["push", "-q", "-u", "origin", "main"]);
   writeFileSync(join(dir, "a.txt"), "1\n"), g(dir, ["add", "a.txt"]), g(dir, ["commit", "-q", "-m", "chore: two"]);
+  return recorded(dir);
+}
+
+/** A green whole run recorded on the checkout's HEAD tree, as `ennyn test whole` writes one. @param {string} dir */
+function recorded(dir) {
+  const now = new Date().toISOString();
+  recordRun(dir, DEFAULTS, { v: 1, kind: "whole", tree: g(dir, ["rev-parse", "HEAD^{tree}"]), head: g(dir, ["rev-parse", "HEAD"]), exit: 0, start: now, end: now });
   return dir;
 }
 
 const P = repo(join(DIR, "project"));
 const N = repo(join(P, "nested"));
-writeFileSync(join(P, ".git", "info", "exclude"), "nested/\n");
+writeFileSync(join(P, ".git", "info", "exclude"), "nested/\nnested.git/\n");
 const W = join(DIR, "linked");
 g(P, ["worktree", "add", "-q", "-b", "side", W]), g(W, ["push", "-q", "-u", "origin", "side"]);
+writeFileSync(join(W, "w.txt"), "w\n"), g(W, ["add", "w.txt"]), g(W, ["commit", "-q", "-m", "chore: side"]), recorded(W);
 const O = repo(join(DIR, "other"));
 const Q = repo(join(DIR, "two words"));
 const PLAIN = join(DIR, "plain");
