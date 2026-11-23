@@ -7,7 +7,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { git } from "../core/git.mjs";
 import { loadConfig } from "../core/config.mjs";
-import { gateKeyKind, loosenedKeys } from "../checks/loosening.mjs";
+import { LOOSENING_LINE, gateKeyKind, loosenedKeys } from "../checks/loosening.mjs";
 import { installHook } from "../setup/hook.mjs";
 import { addressHits, closedSource, conversationHits, digest, foldCase, homeHits, lineHits, literalEntry, literalHits, newLines, parseLiterals, privateErrors, sourceHits, textRules } from "../checks/private-text.mjs";
 
@@ -244,7 +244,7 @@ test("private text: a line HEAD's file already holds, moved or given a trailing 
 });
 
 test("private text: the switches are loosened only when turned off, and the places the gate reads count on any change", () => {
-  for (const k of ["home", "conversation", "addresses", "provenance"]) {
+  for (const k of ["home", "conversation", "addresses", "provenance", "listExpected"]) {
     assert.equal(gateKeyKind(`security.privateText.${k}`), "gate");
     const on = eff({ security: { privateText: { [k]: true } } });
     const off = eff({ security: { privateText: { [k]: false } } });
@@ -261,7 +261,9 @@ test("private text: the switches are loosened only when turned off, and the plac
     assert.ok(loosenedKeys(eff(), eff({ ...off, ...over })).includes(key), `${key}, provenance turned off with it`);
   }
   const d = eff().security.privateText;
-  assert.deepEqual(d, { home: false, conversation: false, addresses: true, provenance: true });
+  assert.deepEqual(d, { home: false, conversation: false, addresses: true, provenance: true, listExpected: false });
+  // Removed, the key merges to its default: a key that was on is turned off.
+  assert.deepEqual(loosenedKeys(eff({ security: { privateText: { listExpected: true } } }), eff()), ["security.privateText.listExpected"]);
 });
 
 /** A repository whose first commit holds `config`, with the real commit-msg hook. @param {Record<string, unknown>} config */
@@ -402,4 +404,79 @@ test("private text add: words from stdin, one a line, hashed; no word is printed
   const refused = r.add("Another\n");
   assert.notEqual(refused.status, 0);
   assert.equal(readFileSync(join(r.dir, ".git", "ennyn", "private-literals"), "utf8"), "broken\n", "a broken list is not added to");
+});
+
+const EXPECTED = { security: { privateText: { listExpected: true } } };
+/** The missing-list line of commit-check, as it opens. */
+const MISSING = /security\.privateText: no word of a private list was checked/;
+/** doctor's lines on the list, as `<mark> <text>`. @param {string} dir */
+const doctorList = (dir) => {
+  const r = spawnSync(process.execPath, [CLI, "doctor"], { cwd: dir, encoding: "utf8" });
+  return r.stdout.split("\n").filter((l) => /private words/.test(l));
+};
+
+test("private list expected: with the key on and no list, each commit and doctor say no word was checked, and the commit passes", () => {
+  const r = repo(EXPECTED);
+  const c = r.attempt({ "a.txt": "plain\n" });
+  assert.equal(c.status, 0, c.stderr);
+  assert.match(c.stderr, MISSING);
+  assert.match(c.stderr, /\.git\/ennyn\/private-literals/, "the place, as the config spells it");
+  assert.match(c.stderr, /copy the file from another clone's state dir over a private channel, or run ennyn private-text add/);
+  assert.ok(!c.stderr.includes(r.dir), "no machine's path");
+  // Every commit, not the first only.
+  const again = r.attempt({ "b.txt": "plain\n" });
+  assert.equal(again.status, 0, again.stderr);
+  assert.match(again.stderr, MISSING);
+  // By hand too, and it fails nothing.
+  writeFileSync(join(r.dir, ".git", "MSG"), "feat: x\n");
+  const byHand = spawnSync(process.execPath, [CLI, "commit-check", ".git/MSG"], { cwd: r.dir, encoding: "utf8" });
+  assert.equal(byHand.status, 0, byHand.stderr);
+  assert.match(byHand.stderr, MISSING);
+  const said = doctorList(r.dir);
+  assert.equal(said.length, 1, said.join("\n"));
+  assert.match(said[0], /^! security\.privateText: the clone .* has no list of private words at \.git\/ennyn\/private-literals/);
+  // A file with no entry checks no word either.
+  mkdirSync(join(r.dir, ".git", "ennyn"), { recursive: true });
+  writeFileSync(join(r.dir, ".git", "ennyn", "private-literals"), "# none yet\n");
+  assert.match(r.attempt({ "c.txt": "plain\n" }).stderr, MISSING, "an empty list");
+  assert.match(doctorList(r.dir)[0] ?? "", /^! /, "doctor, an empty list");
+});
+
+test("private list expected: with a list, or with the key off, neither line; an unread list is said as before, never as missing", () => {
+  const r = repo(EXPECTED);
+  assert.equal(r.add(`${NAME}\n`).status, 0);
+  const c = r.attempt({ "a.txt": "plain\n" });
+  assert.equal(c.status, 0, c.stderr);
+  assert.doesNotMatch(c.stderr, MISSING);
+  const listed = doctorList(r.dir);
+  assert.equal(listed.length, 1, listed.join("\n"));
+  assert.match(listed[0], /^✓ security\.privateText: this clone holds a list of private words/);
+  const off = repo({});
+  const plain = off.attempt({ "a.txt": "plain\n" });
+  assert.equal(plain.status, 0, plain.stderr);
+  assert.doesNotMatch(plain.stderr, MISSING);
+  assert.deepEqual(doctorList(off.dir), [], "the key off: doctor reads no list");
+  writeFileSync(join(r.dir, ".git", "ennyn", "private-literals"), "folded nothex\n");
+  const broken = r.attempt({ "b.txt": "plain\n" });
+  assert.equal(broken.status, 0, broken.stderr);
+  assert.match(broken.stderr, /list of private words was not checked: it could not be read/);
+  assert.doesNotMatch(broken.stderr, MISSING);
+  const unread = doctorList(r.dir);
+  assert.equal(unread.length, 1, unread.join("\n"));
+  assert.match(unread[0], /^✗ security\.privateText: the list of private words could not be read \(line 1 is not/);
+});
+
+test("private list expected: turning the key off, or removing it, is a loosening the hook refuses without the approval line", () => {
+  const r = repo(EXPECTED);
+  const KEY = "security.privateText.listExpected";
+  for (const [what, config] of /** @type {[string, Record<string, unknown>][]} */ ([["turned off", { security: { privateText: { listExpected: false } } }], ["removed", {}]])) {
+    const refused = r.attempt({ ".ennyn/config.json": JSON.stringify(config) }, "chore: drop the list");
+    assert.equal(refused.status, 1, `${what}: ${refused.stderr}`);
+    assert.match(refused.stderr, /This commit loosens security\.privateText\.listExpected\b/, what);
+  }
+  const approved = r.attempt({ ".ennyn/config.json": JSON.stringify({}) }, `chore: drop the list\n\n${LOOSENING_LINE} ${KEY}\n`);
+  assert.equal(approved.status, 0, approved.stderr);
+  // Turned on again: a tightening, no line asked.
+  const on = r.attempt({ ".ennyn/config.json": JSON.stringify(EXPECTED) }, "chore: expect the list");
+  assert.equal(on.status, 0, on.stderr);
 });

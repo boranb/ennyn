@@ -97,6 +97,7 @@ const MOVES = new Map(/** @type {[string, (a: any, b: any, before: any, after: a
   ["security.privateText.conversation", (a, b) => a && !b],
   ["security.privateText.addresses", (a, b) => a && !b],
   ["security.privateText.provenance", (a, b) => a && !b],
+  ["security.privateText.listExpected", (a, b) => a && !b],
   // Where security.privateText reads. The graph and its sources only while provenance is on in either version (a rule
   // on in neither reads them); the state dir, which holds the list of private words, whatever the config says.
   ["paths.graph", provenanceRead],

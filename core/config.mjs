@@ -136,7 +136,9 @@ export const DEFAULTS = Object.freeze({
     // only with that list set), or a conversation shape (`conversation`); and a source it adds to the graph (a .json
     // paths.graph) that names the user outside `the user, <YYYY-MM-DD>: a request | approved | left to the session`
     // (`provenance`). home and conversation refuse in most projects' docs and tests, so they are the project's choice.
-    privateText: { home: false, conversation: false, addresses: true, provenance: true },
+    // `listExpected`: the project keeps a list, so a clone with none is said by commit-check on every commit and by
+    // doctor, never refused (a contributor's clone cannot hold the owner's list).
+    privateText: { home: false, conversation: false, addresses: true, provenance: true, listExpected: false },
   },
   // Claude Code keeps a hook's added context to 10,000 characters; the rules and the list after them fit in it.
   sideCopy: { roots: [], maxInjectBytes: 9000 },

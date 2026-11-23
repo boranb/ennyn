@@ -15,7 +15,7 @@ import { HOOK_INDEX_ENV, HOOK_READ_ENV, MISSING_OBJECT, NAMES_BUFFER, READ_BUDGE
 import { ends, jsonShown, shown, t, tShown, unshownEscaped } from "../core/i18n.mjs";
 import { matchAny } from "../core/glob.mjs";
 import { foldTarget, forbiddenResult, nameShown, secretErrors, shapeOf, storedMessage, hookCommitMode } from "../checks/commit-shape.mjs";
-import { anyTextRule, lineHits, literalEntry, literalsPath, newLines, privateErrors, privateShown, readLiterals, sourceHits, textRules } from "../checks/private-text.mjs";
+import { anyTextRule, lineHits, listMissing, listShown, literalEntry, literalsPath, newLines, privateErrors, privateShown, readLiterals, sourceHits, textRules } from "../checks/private-text.mjs";
 import { ciCallees, ciMessages } from "../checks/ci.mjs";
 import { advisoriesOf, depsMessages, dirOf, judgeEntry, judgeLock, lockEntries, lockPath, lockText, npmrcFindings, npmrcPath, pkgJson, pkgJsonPath, pkgPathOf, reasonText, registryOf, registryResolver } from "../checks/deps.mjs";
 import { readIfThere, readRegular, writeState } from "../core/files.mjs";
@@ -506,6 +506,8 @@ function privateTextErrors({ cwd, cfg, hook, staged, notUtf8, brings, addedNames
   let literals = null;
   try {
     literals = readLiterals(cwd, cfg);
+    // Expected and not here: said on every commit, never refused (a contributor's clone cannot hold the owner's list).
+    if (listMissing(cfg, literals)) err(t("cli.privateListMissing", { path: listShown(cfg) }, lang));
   } catch (e) {
     const said = t("cli.privateListUnread", { error: oneLine(String(/** @type {Error} */ (e).message)) }, lang);
     if (!hook) throw new Error(said);

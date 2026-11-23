@@ -10,7 +10,8 @@
  * digest a line, written by `ennyn private-text add` from stdin. A digest of a short word is reversed by trying a list
  * of names, so a digest in a tracked file names what it hides to anyone with such a list; the state dir keeps the
  * list on the machines that hold it, and a clone without the file checks no word: a second clone, a CI runner or a
- * fresh machine gets its own list, by hand.
+ * fresh machine gets its own list, by hand. With `listExpected` on, such a clone is said on every commit and by doctor
+ * (listMissing), never refused.
  * Words are matched as test/hygiene.test.mjs matches them (it imports literalHits): each word whole, in its parts
  * (`name.md`, `name-server`, `NAME_HOME`) and in its ASCII runs, exactly or in lower case.
  *
@@ -21,7 +22,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { readRegular } from "../core/files.mjs";
 import { resolveStateDir, stateRoot } from "../core/git.mjs";
 import { shown, t } from "../core/i18n.mjs";
@@ -319,6 +320,17 @@ export function readLiterals(cwd, config) {
   const bytes = readRegular(stateRoot(cwd, path), path);
   return bytes === null ? null : parseLiterals(bytes.toString("utf8"));
 }
+
+/**
+ * Whether the project expects a list (`security.privateText.listExpected`) and the clone's holds no entry: no file, or
+ * one with no entry, which checks no word either. A list that cannot be read is no missing one: readLiterals throws,
+ * and that is said on its own.
+ * @param {any} config @param {Literals | null} literals
+ */
+export const listMissing = (config, literals) => config.security.privateText.listExpected === true && !(literals && (literals.exact.size || literals.folded.size));
+
+/** The list's place as the config spells it (`<paths.stateDir>/private-literals`): a line names no machine's path. @param {any} config */
+export const listShown = (config) => posix.join(String(config.paths.stateDir).replace(/\\/g, "/"), LITERALS_FILE);
 
 /**
  * The entry for a word: one word as the matcher reads it (no space, no mark at its ends), else null. `folded`

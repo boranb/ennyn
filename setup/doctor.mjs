@@ -25,6 +25,7 @@ import { ciSet, ciText } from "../checks/ci.mjs";
 import { t, tShown } from "../core/i18n.mjs";
 import { literalGlob, matchAny } from "../core/glob.mjs";
 import { secretsOff } from "../checks/secrets.mjs";
+import { listMissing, listShown, readLiterals } from "../checks/private-text.mjs";
 import { closingPush } from "../checks/push-mode.mjs";
 import { cloneGaps, commitRule } from "../checks/commit-identity.mjs";
 import { checkProofs, loadClasses, registryLine } from "../metrics/classes.mjs";
@@ -654,6 +655,16 @@ export async function checkSetup({ cwd, env = process.env, self = OWN_ROOT }) {
         else add("ok", "doctor.cloneOk", {});
       } catch (e) {
         add("unmeasured", "doctor.cloneUnmeasured", { error: oneLine(e) });
+      }
+    }
+    // security.privateText.listExpected: the project keeps a list of private words; a clone with none checks no word.
+    // Off, no line: the list is read only when the project says it expects one.
+    if (config.security.privateText.listExpected) {
+      try {
+        if (listMissing(config, readLiterals(cwd, config))) add("warn", "doctor.privateListMissing", { clone: [cwd], path: [listShown(config)] });
+        else add("ok", "doctor.privateListOk", {});
+      } catch (e) {
+        add("fail", "doctor.privateListUnread", { error: oneLine(e) });
       }
     }
     askReport(cwd, files, add, { configured: Boolean(config.configPath), pushMode: push.mode });
