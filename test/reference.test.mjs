@@ -173,11 +173,15 @@ test("reference: the PreToolUse record holds what the push hook stands on", () =
   const is = (id, want) => assert.deepEqual(Object.fromEntries(Object.keys(want).map((k) => [k, cells[id][k]])), want, id);
   const stopped = { ended: "success", calls: ["hook"], reached: false };
   const ran = { ended: "success", calls: ["ran"], reached: true };
-  // The claim the hook stands on: a deny holds in bypassPermissions, over an allow rule, from an installed plugin and a subagent.
-  for (const id of ["deny-stops-the-call", "deny-holds-over-an-allow-rule", "deny-holds-with-the-skip-flag", "deny-holds-from-an-installed-plugin", "deny-holds-in-a-subagent", "exit-2-stops-the-call", "a-printed-deny-holds-over-exit-1"]) is(id, stopped);
+  // The claim the hook stands on: a deny holds in bypassPermissions, over an allow rule, from an installed plugin and a subagent,
+  // and in a subagent over an ask rule that matches the same push.
+  for (const id of ["deny-stops-the-call", "deny-holds-over-an-allow-rule", "deny-holds-with-the-skip-flag", "deny-holds-from-an-installed-plugin", "deny-holds-in-a-subagent", "deny-holds-over-a-matching-ask-rule-in-a-subagent", "exit-2-stops-the-call", "a-printed-deny-holds-over-exit-1"]) is(id, stopped);
   // A silent hook is the control; every way a hook can fail to answer runs the call: the fault direction rests on this.
   for (const id of ["a-silent-hook-lets-it-run", "a-subagent-runs-past-a-silent-hook", "exit-1-runs-the-call", "a-crash-runs-the-call", "a-missing-script-runs-the-call", "a-killed-hook-runs-the-call", "a-timeout-runs-the-call", "output-no-json-runs-the-call", "a-bad-decision-runs-the-call"]) is(id, ran);
   is("deny-holds-in-a-subagent", { agentId: "string", mode: "bypassPermissions" });
+  is("deny-holds-over-a-matching-ask-rule-in-a-subagent", { agentId: "string", mode: "bypassPermissions" });
+  // In a subagent a hook that crashes or times out leaves the push to the ask rule, which waits in an attended session (SECURITY.md).
+  for (const id of ["a-crash-in-a-subagent-falls-to-the-ask-rule", "a-timeout-in-a-subagent-falls-to-the-ask-rule"]) is(id, { ended: "success", calls: ["rule"], reached: false });
   // The input the hook reads, on each tool.
   for (const id of ["a-silent-hook-lets-it-run", "monitor-stopped-by-a-hook-that-names-it", "powershell-reaches-a-hook-that-names-it"]) assert.ok(cells[id].toolInput.includes("command") && cells[id].input.includes("tool_input"), id);
   is("powershell-reaches-a-hook-that-names-it", { tool: "PowerShell", hookRuns: 1 });
@@ -192,12 +196,13 @@ test("reference: the PreToolUse record holds what the push hook stands on", () =
   is("the-settings-env-reaches-the-hook", { envSeen: true });
   // The real hook, in bypassPermissions: a spelling refused, on Monitor too, a plain command run, a plain push left to the
   // rule, in a compound too, a config name nothing holds changing nothing; a push written as the refusal says is asked about,
-  // the folder it advises in one call among them, from a subagent too; with no config the hook does nothing.
+  // the folder it advises in one call among them; in a subagent that push is refused; with no config the hook does nothing.
   is("the-hook-refuses-a-spelling", stopped);
   is("the-hook-refuses-in-monitor", stopped);
   is("the-hook-passes-a-plain-command", { calls: ["ran"], reached: false });
   is("the-hook-leaves-a-plain-push-to-the-rule", { calls: ["rule"], reached: false });
-  for (const id of ["the-hook-leaves-a-push-in-a-compound", "the-hook-leaves-a-commit-then-a-push-and-a-pipe", "the-hook-leaves-the-folder-it-advises", "the-hook-leaves-the-folder-it-advises-in-a-subagent", "the-rule-in-the-local-file-asks-the-same"]) is(id, { calls: ["rule"], reached: false });
+  for (const id of ["the-hook-leaves-a-push-in-a-compound", "the-hook-leaves-a-commit-then-a-push-and-a-pipe", "the-hook-leaves-the-folder-it-advises", "the-rule-in-the-local-file-asks-the-same"]) is(id, { calls: ["rule"], reached: false });
+  is("the-hook-refuses-a-plain-push-in-a-subagent", stopped);
   is("a-config-name-nothing-holds-does-not-switch-it-off", stopped);
   is("refused-then-written-plain-is-asked", { calls: ["hook", "rule"], reached: false });
   is("the-hook-ends-at-once-with-no-config", ran);

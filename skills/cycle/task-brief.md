@@ -38,7 +38,7 @@ Leave out the plan for other tasks; mark a guess at a cause or a fix as a guess.
 
 ## How a reviewer is briefed
 
-It does not get the author's reasoning. It works in a **folder of its own**, on a real copy of the commit, and its probes and harnesses stay there for the author to rerun. Its brief carries the **Long jobs** row and the Rules row's sentence on `git push` in a lab, as an author's does. All findings of a round go to the author in one message.
+It does not get the author's reasoning. It works in a **folder of its own**, on a real copy of the commit, and its probes and harnesses stay there for the author to rerun. Its brief carries the **Long jobs** row and the Rules row's two sentences on `git push` in a lab, as an author's does. All findings of a round go to the author in one message.
 
 When the author's Task row names the file of the user's sentence (**The user's sentence** above), the reviewer's brief names the same absolute path, never its words, and that its text goes into nothing the reviewer writes.
 

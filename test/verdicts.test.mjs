@@ -30,6 +30,7 @@ test("verdicts: every bans cell keeps its recorded verdict", () => replay("bans"
 test("verdicts: every hook cell keeps its recorded verdict", () => replay("hook"));
 test("verdicts: every declarations cell keeps its recorded verdict", () => replay("declarations"));
 test("verdicts: every kill cell keeps its recorded verdict", () => replay("kill"));
+test("verdicts: every push cell keeps its recorded verdict", () => replay("push"));
 
 test("verdicts: every cell file in test/verdicts/ is a gate's or the input-shape matrix's, and reads", () => {
   const files = readdirSync(DIR).sort();

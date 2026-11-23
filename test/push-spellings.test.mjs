@@ -1450,6 +1450,37 @@ function closing({ config = AFTER, line = true, at = ".ennyn/config.json", run =
   return { dir, g };
 }
 
+/** A call made in a subagent: Claude Code names it with agent_id, absent on the main thread. @param {string} command @param {unknown} [agent] */
+const sub = (command, agent = "a1f2e3d4c5b6") => ({ ...call(command), agent_id: agent, agent_type: "general-purpose" });
+/** The fetch form of a lab's upstream, as the task brief's Rules row writes it (test/plugin.test.mjs holds the two the same). */
+const FETCH_FORM = "git init -q --bare -b main up.git && git -C up.git fetch -q ../repo main:main && cd repo && git remote add origin ../up.git && git fetch -q origin && git branch -q -u origin/main";
+
+test("push hook: in a subagent a plain push is refused, never asked, and the reason gives the fetch form; on the main thread it is asked", () => {
+  const dir = project("{}\n");
+  for (const c of PLAIN_PUSHES) {
+    const out = JSON.parse(run(dir, sub(c)).stdout).hookSpecificOutput;
+    assert.equal(out.permissionDecision, "deny", c);
+    assert.match(out.permissionDecisionReason, /^ennyn: a subagent does not push: this push is refused, never asked/, c);
+    assert.ok(out.permissionDecisionReason.endsWith(`: \`${FETCH_FORM}\`.`), `${c}: the Rules row's fetch form, and nothing after it`);
+    assert.equal(decision(run(dir, call(c))), "ask", `${c}: the main thread`);
+  }
+  // Any id Claude Code may give, and none: an empty or null one is the main thread's.
+  for (const agent of ["x", 7, { id: "x" }]) assert.equal(decision(run(dir, sub("git push origin main", agent))), "deny", JSON.stringify(agent));
+  for (const agent of ["", null]) assert.equal(decision(run(dir, sub("git push origin main", agent))), "ask", JSON.stringify(agent));
+  // A spelling is refused as on the main thread; a command with no push passes in silence.
+  assert.match(JSON.parse(run(dir, sub("git -C . push origin main")).stdout).hookSpecificOutput.permissionDecisionReason, /outside the shape Claude Code's ask rule reads/);
+  for (const c of ["git status", "git fetch -q origin", "git branch -q -u origin/main", FETCH_FORM]) assert.equal(run(dir, sub(c)).stdout, "", c);
+});
+
+test("push hook: in a subagent it refuses a bare push that after-closing would let run, and asks git nothing", () => {
+  const { dir } = closing();
+  assert.equal(run(dir, at(dir, "git push")).stdout, "", "the main thread's closing push runs");
+  const log = join(dir, ".git", "calls");
+  const PATH = countingGit(log);
+  for (const c of ["git push", "git push origin main"]) assert.equal(decision(run(dir, { ...sub(c), cwd: dir }, { PATH })), "deny", c);
+  assert.equal(existsSync(log), false, "no git call");
+});
+
 test("push hook: under push.mode ask a plain push is asked, with the reason; a spelling is refused, and a config that does not load asks", () => {
   const reason = (/** @type {{ stdout: string }} */ r) => JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason;
   const asks = project('{ "push": { "mode": "ask" } }\n');
@@ -1628,6 +1659,9 @@ test("push hook: a broken or missing catalog still refuses, with a plain English
     const out = JSON.parse(r.stdout).hookSpecificOutput;
     assert.equal(out.permissionDecision, "deny");
     assert.match(out.permissionDecisionReason, /^ennyn: .*git push <remote> <branch>/);
+    const inSub = spawnSync(process.execPath, [join(box, "adapters/claude-code/hooks/push-spellings.mjs")], { input: JSON.stringify(sub("git push origin main")), env: { ...process.env, CLAUDE_PROJECT_DIR: repo }, cwd: neutral, encoding: "utf8", timeout: 20000, killSignal: "SIGKILL" });
+    assert.equal(inSub.status, 0, inSub.stderr);
+    assert.deepEqual([JSON.parse(inSub.stdout).hookSpecificOutput.permissionDecision, JSON.parse(inSub.stdout).hookSpecificOutput.permissionDecisionReason], ["deny", "ennyn: a subagent does not push: this push is refused. Leave it to the main thread."]);
   }
 });
 

@@ -13,7 +13,7 @@
  * names and the message it scans, the budget, a key's file read whole) is replayed too. Their why is each line
  * the hook prints, as its catalog key and the values in it (counts, places), sorted. The readers that are no
  * hook (init-scan's ban lines, doctor's hook reader, the guards test's declarations, the kill hook's reader) are called as their
- * callers call them.
+ * callers call them. The push hook runs as Claude Code runs it, its input on stdin.
  *
  * Cycles 2026-10-24 (8) and (9) found this class about 80 times, nearly all fix-introduced and found by
  * reviewers re-running probes an earlier round had refused: NFC over raw bytes, decoded lines in place of git's
@@ -50,6 +50,7 @@ const ALPHABETS = { B62, B64, B64URL, UPPER_DIGITS, HEX };
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const DIR = join(HERE, "verdicts");
 const CLI = join(HERE, "..", "scripts", "ennyn.mjs");
+const PUSH_HOOK = join(HERE, "..", "adapters", "claude-code", "hooks", "push-spellings.mjs");
 export const VERDICTS = /** @type {const} */ (["refused", "said", "pass"]);
 
 /** The keys of a cell beside its input. */
@@ -64,6 +65,7 @@ export const INPUTS = {
   hook: ["text"],
   declarations: ["text"],
   kill: ["text"],
+  push: ["text", "agent"],
   "input-shapes": [],
 };
 
@@ -74,6 +76,7 @@ const TYPES = {
   workflow: [(v) => typeof v === "string", "is not a string"],
   message: [(v) => typeof v === "string", "is not a string"],
   text: [(v) => typeof v === "string", "is not a string"],
+  agent: [(v) => typeof v === "string", "is not a string"],
   husky: [(v) => v === true, "is not true"],
   files: [(v) => isObject(v), "is not an object of names"],
   head: [(v) => isObject(v), "is not an object of names"],
@@ -519,6 +522,34 @@ export const GATES = {
         return [c.id, r ? { verdict: /** @type {Verdict} */ ("refused"), why: [r.why] } : { verdict: /** @type {Verdict} */ ("pass") }];
       }),
     );
+  },
+
+  /**
+   * The push hook (adapters/claude-code/hooks/push-spellings.mjs) as Claude Code runs it: `text`, a Bash call's command,
+   * and `agent`, the input's agent_id (a call made in a subagent; none on the main thread), from the top of a repository
+   * whose config is `{}` (push.mode ask). Refused: it denies; said: it asks, or says it cannot read the input; why the
+   * reason as its catalog key.
+   */
+  async push(cells) {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "en-verdicts-push-")));
+    try {
+      await g(dir, ["init", "-q"]);
+      mkdirSync(join(dir, ".ennyn"));
+      writeFileSync(join(dir, CONFIG_FILE), "{}\n");
+      const got = await pool(cells, Math.max(4, availableParallelism()), async (c) => {
+        const input = { session_id: "s", hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: c.text, description: "x" }, cwd: dir, ...(c.agent === undefined ? {} : { agent_id: c.agent }) };
+        const r = await run(process.execPath, [PUSH_HOOK], { cwd: dir, input: JSON.stringify(input), env: { ...cellEnv(), CLAUDE_PROJECT_DIR: dir } });
+        if (r.timedOut || r.code !== 0 || r.stderr) throw new Error(`${c.id}: the hook died (exit ${r.code}): ${r.stderr.slice(0, 2000)}`);
+        if (!r.stdout) return { verdict: /** @type {Verdict} */ ("pass") };
+        const out = JSON.parse(r.stdout);
+        const said = out.hookSpecificOutput?.permissionDecisionReason ?? out.systemMessage;
+        const decision = out.hookSpecificOutput?.permissionDecision;
+        return { verdict: /** @type {Verdict} */ (decision === "deny" ? "refused" : "said"), why: [reasonOf(String(said))] };
+      });
+      return new Map(cells.map((c, k) => [c.id, got[k]]));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   },
 };
 

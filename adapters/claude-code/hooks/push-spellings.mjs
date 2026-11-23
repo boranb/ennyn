@@ -3,7 +3,8 @@
  * Claude Code PreToolUse hook (matcher `Bash|Monitor|PowerShell`, the tools that run a command): refuses every push but
  * a plain `git push` the ask rule reads for certain, in every permission mode, and says how to write it. That plain push
  * it asks about (`ask`), so the user is asked with no rule too, unless it is a bare `git push` and the config's
- * `push.mode` lets the cycle push by itself on the verdict push-check gives (../../../checks/push-mode.mjs).
+ * `push.mode` lets the cycle push by itself on the verdict push-check gives (../../../checks/push-mode.mjs). In a
+ * subagent (the input's `agent_id`) it refuses that push too, never asks, and gives the fetch form a lab's upstream takes.
  * ../push-spellings.mjs is the reader and has the shape and the limits. This stops a push written another way by habit.
  * It is no boundary: a program set on pushing gets through, and test/reference/pretooluse.json records that a hook that
  * crashes or times out lets the call run.
@@ -39,6 +40,11 @@ async function readStdin() {
 const PLAIN_REFUSAL = "ennyn: this push is refused: write it in a call of its own, git push <remote> <branch>, with the commit in the call before.";
 /** The ask when its catalog cannot be read. */
 const PLAIN_ASK = "ennyn: this push waits for the user's yes.";
+/** The refusal in a subagent when its catalog cannot be read. */
+const PLAIN_SUBAGENT = "ennyn: a subagent does not push: this push is refused. Leave it to the main thread.";
+
+/** A call made in a subagent: Claude Code's input names it with `agent_id`, absent on the main thread. @param {any} input */
+const inSubagent = (input) => input?.agent_id !== undefined && input?.agent_id !== null && input?.agent_id !== "";
 
 /** The decision's whole run, git calls included, well inside the hook's 10 s: a hook that times out lets the call run. */
 const DECIDE_MS = 5000;
@@ -111,6 +117,14 @@ async function main() {
     }
   }
   if (read && refused === null) {
+    // A push left in a subagent is refused, never asked: Claude Code 2.1.330 routes a subagent's ask to the session's
+    // prompt, where it waits with nobody there. Claude Code names a subagent with agent_id, absent on the main thread,
+    // where the closing's push runs.
+    if (left && inSubagent(input)) {
+      const reason = await text("pushSpellings.subagent").catch(() => PLAIN_SUBAGENT);
+      process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason } }));
+      return;
+    }
     const ask = left ? await waits(projectDir, input?.cwd, /** @type {string} */ (command)) : null;
     if (ask === null) return;
     process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "ask", permissionDecisionReason: ask } }));

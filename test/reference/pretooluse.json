@@ -68,6 +68,16 @@
       "agentId": "string",
       "mode": "bypassPermissions"
     },
+    "deny-holds-over-a-matching-ask-rule-in-a-subagent": {
+      "ended": "success",
+      "calls": [
+        "hook"
+      ],
+      "reached": false,
+      "hookRuns": 1,
+      "agentId": "string",
+      "mode": "bypassPermissions"
+    },
     "a-subagent-runs-past-a-silent-hook": {
       "ended": "success",
       "calls": [
@@ -133,6 +143,24 @@
       ],
       "reached": true,
       "hookRuns": 1
+    },
+    "a-crash-in-a-subagent-falls-to-the-ask-rule": {
+      "ended": "success",
+      "calls": [
+        "rule"
+      ],
+      "reached": false,
+      "hookRuns": 0
+    },
+    "a-timeout-in-a-subagent-falls-to-the-ask-rule": {
+      "ended": "success",
+      "calls": [
+        "rule"
+      ],
+      "reached": false,
+      "hookRuns": 1,
+      "agentId": "string",
+      "mode": "bypassPermissions"
     },
     "output-no-json-runs-the-call": {
       "ended": "success",
@@ -297,10 +325,10 @@
       "reached": false,
       "hookRuns": null
     },
-    "the-hook-leaves-the-folder-it-advises-in-a-subagent": {
+    "the-hook-refuses-a-plain-push-in-a-subagent": {
       "ended": "success",
       "calls": [
-        "rule"
+        "hook"
       ],
       "reached": false,
       "hookRuns": null
