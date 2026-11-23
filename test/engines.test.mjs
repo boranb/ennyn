@@ -9,8 +9,8 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { join, dirname, posix, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { GIT_FLOOR, git } from "../core/git.mjs";
 import { DEFAULTS } from "../core/config.mjs";
@@ -135,6 +135,66 @@ test("engines: the release workflow publishes only a version tag, behind the npm
   assert.deepEqual(lifecycle.filter((s) => s in pkg.scripts), [], "publishing runs no script");
   assert.equal(pkg.publishConfig, undefined);
   assert.equal(read(".npmrc"), "ignore-scripts=true\n");
+});
+
+/** @param {string} text @returns {string[]} the relative specifiers `reached` follows in a module's text */
+const specsOf = (text) =>
+  [
+    ...text.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s+)(["'`])(\.{1,2}\/[^"'`$]+)\1/g),
+    ...text.matchAll(/new URL\(\s*(["'`])(\.{1,2}\/[^"'`$]+)\1\s*,\s*import\.meta\.url\s*\)/g),
+  ].map((m) => m[2]);
+
+/** @param {string} p a clean path @returns {boolean} whether npm reads it as an ignore file of its folder */
+const ignoreFile = (p) => /(^|\/)\.(git|npm)ignore$/.test(p);
+
+/**
+ * The modules a file reaches: relative static imports, dynamic imports of a literal, and files named by
+ * `new URL("<literal>", import.meta.url)`, followed from each. A literal is in single, double or back quotes; a
+ * template with a `${}` in it, or any other specifier built at run time, is not followed.
+ * @param {string[]} entries clean paths from the top @returns {string[]}
+ */
+const reached = (entries) => {
+  const seen = new Set();
+  const walk = (/** @type {string} */ rel) => {
+    if (seen.has(rel)) return;
+    seen.add(rel);
+    if (!rel.endsWith(".mjs")) return;
+    for (const s of specsOf(read(rel))) walk(posix.normalize(posix.join(posix.dirname(rel), s)));
+  };
+  entries.forEach(walk);
+  return [...seen];
+};
+
+test("engines: the package npm ships holds its bin and every module the CLI and the hooks reach, and the lock names its version", () => {
+  const pkg = JSON.parse(read("package.json"));
+  // npm reads a `files` entry as a glob, and a .gitignore or .npmignore inside a shipped folder leaves out what it
+  // names (npm 10.9.9, measured; a package.json there does not). Plain names and no such file keep this reading
+  // exact: npm 10.9.9's own list (npm pack --dry-run) agreed with it when it was written, the same 55 modules.
+  assert.ok(pkg.files.every((/** @type {string} */ f) => /^[\w.-]+$/.test(f)), `files holds only plain names: ${pkg.files}`);
+  const ignoring = pkg.files
+    .filter((/** @type {string} */ f) => existsSync(join(ROOT, f)) && statSync(join(ROOT, f)).isDirectory())
+    .flatMap((/** @type {string} */ f) => readdirSync(join(ROOT, f), { recursive: true }).map((p) => posix.join(f, String(p).split(sep).join("/"))))
+    .filter(ignoreFile);
+  assert.deepEqual(["core/.npmignore", "core/sub/.gitignore", ".gitignore", "core/a.gitignore", "core/.gitignore.mjs"].map(ignoreFile), [true, true, true, false, false]);
+  assert.deepEqual(ignoring, [], "no ignore file inside a shipped folder");
+  const ships = (/** @type {string} */ p) => pkg.files.some((/** @type {string} */ f) => p === f || p.startsWith(`${f}/`));
+  assert.deepEqual(Object.keys(pkg.bin), ["ennyn"]);
+  assert.ok(read(pkg.bin.ennyn).startsWith("#!/usr/bin/env node\n"), "the bin runs under node from any shell");
+  const hooks = [...read("hooks/hooks.json").matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/([^"\\\s]+)/g)].map((m) => m[1]);
+  assert.ok(hooks.length >= 5, `hook commands read: ${hooks}`);
+  const all = reached([pkg.bin.ennyn, ...hooks]);
+  // Each kind of reference is followed: an import (config), a dynamic import (i18n, from the kill hook alone too),
+  // a file by URL (the lock's runner).
+  for (const p of ["core/config.mjs", "core/i18n.mjs", "impact/reference-run.mjs"]) assert.ok(all.includes(p), p);
+  assert.ok(reached(["adapters/claude-code/hooks/kill-targets.mjs"]).includes("core/i18n.mjs"), "a dynamic import is followed");
+  const quoted = ['import("../a/x.mjs")', "import('../a/x.mjs')", "import(`../a/x.mjs`)", 'export { x } from "../a/x.mjs"', "new URL(`../a/x.mjs`, import.meta.url)", "new URL('../a/x.mjs', import.meta.url)"];
+  for (const text of quoted) assert.deepEqual(specsOf(text), ["../a/x.mjs"], text);
+  for (const text of ["import(`../a/${name}.mjs`)", "new URL(`../a/${name}.mjs`, import.meta.url)", 'import("../a/x.mjs`)']) assert.deepEqual(specsOf(text), [], text);
+  assert.deepEqual(all.filter((p) => !existsSync(join(ROOT, p))), [], "every reached file is in the tree");
+  // Folders read by a path built at run time (core/i18n.mjs, core/style.mjs), which no reference names whole.
+  assert.deepEqual([...all, "i18n/en.json", "styles/terse.en.md"].filter((p) => !ships(p)), [], "every reached file is in the package");
+  const lock = JSON.parse(read("package-lock.json"));
+  assert.deepEqual([lock.version, lock.packages[""].version], [pkg.version, pkg.version], "package-lock.json names package.json's version in both places");
 });
 
 test("engines: the Node floor parses from the range forms package.json uses, and nothing else", () => {
