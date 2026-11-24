@@ -576,6 +576,23 @@ function closing({ config = { push: { mode: "after-closing" } }, line = true } =
   return { ...p, origin, head };
 }
 
+test("cli: push-check prints the verdict's lines it holds when a later step throws: a git status that fails on a corrupt index", () => {
+  const p = closing();
+  p.commit({ "a.txt": "2" }, "c2");
+  const head = p.head();
+  writeFileSync(join(p.dir, ".git", "index"), "not an index");
+  const r = run(p.dir, "push-check", "--tested", head);
+  assert.notEqual(r.code, 0);
+  assert.notEqual(r.code, 3);
+  // Every line said before the clean-tree check, in order, then nothing that claims a verdict.
+  const said = r.stdout.split("\n").filter(Boolean);
+  assert.match(said[0], /^1 commits are waiting to be pushed/);
+  assert.match(said[1], /The push needs a green whole run on HEAD's tree [0-9a-f]{12} .*: none is recorded/);
+  assert.equal(said.length, 2, r.stdout);
+  assert.match(r.stderr, /^ennyn push-check: .*index/m, "the error is said, as before");
+  assert.doesNotMatch(r.stdout, /push main with a bare git push/);
+});
+
 test("cli: push-check --tested exits 0 only on the approved after-closing, HEAD the named commit on a branch, nothing uncommitted; else it asks", () => {
   const p = closing();
   const head = p.head();

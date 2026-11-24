@@ -228,14 +228,13 @@ export function closingPush(cwd, env = process.env, { project } = {}) {
  * itself, on a green run the record holds on HEAD's tree with nothing uncommitted, or on `tested`; 3 where the tests
  * are met and the push is asked; 1 for the rest, a commit the rule refuses or a range it cannot read in every mode.
  * @param {string} cwd the repository's top @param {any} config
- * @param {{ tested?: string, fetch?: boolean, env?: NodeJS.ProcessEnv, closing?: ReturnType<typeof closingPush> }} [opts]
+ * @param {{ tested?: string, fetch?: boolean, env?: NodeJS.ProcessEnv, closing?: ReturnType<typeof closingPush>, said?: Said[] }} [opts]
  *   `tested`: the hash the caller names as tested (its word); `fetch`: false reads the upstream as the last fetch left
- *   it; `closing`: closingPush's answer when the caller already took it
+ *   it; `closing`: closingPush's answer when the caller already took it; `said`: the list the lines go into as they are
+ *   said, so a caller still holds them when a later step throws (a git that fails under `git status`)
  * @returns {{ exit: 0 | 1 | 3, branch: string | null, said: Said[] }}
  */
-export function pushVerdict(cwd, config, { tested, fetch = true, env = process.env, closing } = {}) {
-  /** @type {Said[]} */
-  const said = [];
+export function pushVerdict(cwd, config, { tested, fetch = true, env = process.env, closing, said = [] } = {}) {
   const say = (/** @type {string} */ key, /** @type {Record<string, string | number | Line>} */ vars = {}) => said.push({ key, vars });
   // What the push needs, from the commits it sends and the record of runs (checks/test-runs.mjs). A git that fails
   // is said: nothing here reads as met.

@@ -3150,6 +3150,9 @@ test("push.mode: doctor names the mode both ways; with after-closing no git push
   // Set with no approval line and no upstream: named, and what holds the closing's push back is said.
   const held = push(await checkSetup({ cwd: after.dir, env: {} }));
   assert.deepEqual(held.map(([level, key]) => [level, key]), [["ok", "doctor.pushModeAfter"], ["warn", "doctor.pushModeHeld"]]);
+  // It reads the mode's part of push-check's verdict, and says which parts it leaves to the push.
+  assert.match(tShown("doctor.pushModeAfter", {}, "en"), /This line reads the mode, its approval, the checkout and what git config makes a bare push send; the commits rule, the test record, what the push sends and the work tree are read at the push, by push-check and the push hook$/);
+  assert.match(tShown("doctor.pushModeAfter", {}, "en"), /--tested, which the push hook does not take/);
   assert.match(tShown("doctor.pushModeHeld", held[1][2], "en"), /^push\.mode is after-closing, but the closing would still ask: push\.mode is after-closing, but the commit that set it \([0-9a-f]{12}\) holds no User-Approved-Loosening: push\.mode line/);
   assert.deepEqual(scanned(after.dir), []);
   // A rule left on push stops the closing's own push: said, in either file.

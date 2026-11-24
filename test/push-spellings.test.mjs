@@ -1472,6 +1472,19 @@ test("push hook: in a subagent a plain push is refused, never asked, and the rea
   for (const c of ["git status", "git fetch -q origin", "git branch -q -u origin/main", FETCH_FORM]) assert.equal(run(dir, sub(c)).stdout, "", c);
 });
 
+test("push hook: in a subagent a spelling it refuses gives the fetch form, not the advice to write a plain push the subagent may not run", () => {
+  const dir = project("{}\n");
+  for (const c of ["git -C . push origin main", "GIT_TRACE=1 git push", "sh -c 'git push'", "git push origin main &"]) {
+    const reason = JSON.parse(run(dir, sub(c)).stdout).hookSpecificOutput.permissionDecisionReason;
+    assert.match(reason, /^ennyn: this reaches a push outside the shape Claude Code's ask rule reads for certain: /, c);
+    assert.match(reason, /A subagent does not push: a plain git push is refused here too/, c);
+    assert.ok(reason.endsWith(`: \`${FETCH_FORM}\`.`), `${c}: the Rules row's fetch form, and nothing after it`);
+    assert.doesNotMatch(reason, /Write the push in a call of its own/, c);
+    // On the main thread the advice stands.
+    assert.match(JSON.parse(run(dir, call(c)).stdout).hookSpecificOutput.permissionDecisionReason, /Write the push in a call of its own/, c);
+  }
+});
+
 test("push hook: in a subagent it refuses a bare push that after-closing would let run, and asks git nothing", () => {
   const { dir } = closing();
   assert.equal(run(dir, at(dir, "git push")).stdout, "", "the main thread's closing push runs");
@@ -1572,6 +1585,136 @@ test("push hook: under after-closing a bare git push runs when the mode, the com
   assert.deepEqual(calls.filter((c) => / (fetch|ls-remote|remote update|pull) /.test(` ${c} `)), [], "no call reaches the remote");
   // The verdict push-check prints, which fetches, is exit 0 too.
   assert.equal(pushVerdict(dir, loadConfig({ cwd: dir, env: {} })).exit, 0);
+});
+
+/** A stand-in program that writes its name and arguments to `log` and fails, as a verifier that never answers. @param {string} bin @param {string} name @param {string} log */
+function loggingProgram(bin, name, log) {
+  const file = join(bin, name);
+  writeFileSync(file, `#!/bin/sh\necho "${name} $*" >> '${log}'\nexit 1\n`, { mode: 0o755 });
+  return file;
+}
+
+/**
+ * A commit on HEAD with its tree, author and committer, whose header holds a signature in `armor`'s format: git reads
+ * the armor to pick the verifier, and the body need not verify. @param {(...a: string[]) => string} g @param {string} dir
+ * @param {string} armor @param {string} subject
+ */
+function signedLike(g, dir, armor, subject) {
+  const head = g("cat-file", "commit", "HEAD");
+  const kept = head.slice(0, head.indexOf("\n\n")).split("\n").filter((l) => /^(tree|author|committer) /.test(l));
+  const text = [kept[0], `parent ${g("rev-parse", "HEAD").trim()}`, ...kept.slice(1), `gpgsig -----BEGIN ${armor}-----`, " ", " abc", ` -----END ${armor}-----`].join("\n");
+  return execFileSync("git", ["hash-object", "-t", "commit", "-w", "--stdin"], { cwd: dir, input: `${text}\n\n${subject}\n`, encoding: "utf8" }).trim();
+}
+
+test("push hook: under after-closing the verdict starts no OpenPGP or x509 verifier git config names or PATH holds; the commits rule still refuses those commits", () => {
+  const reason = (/** @type {{ stdout: string }} */ r) => JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason;
+  const { dir, g } = closing({ config: '{ "push": { "mode": "after-closing" }, "commits": { "signed": true } }\n' });
+  const log = join(realpathSync(mkdtempSync(join(tmpdir(), "en-push-log-"))), "started");
+  const bin = mkdtempSync(join(tmpdir(), "en-push-verifier-"));
+  // Named by the repository's config, the later OpenPGP key included, and by the names git starts with none set.
+  g("config", "gpg.openpgp.program", loggingProgram(bin, "openpgp-verifier", log));
+  g("config", "gpg.x509.program", loggingProgram(bin, "x509-verifier", log));
+  for (const name of ["gpg", "gpgsm"]) loggingProgram(bin, name, log);
+  const PATH = `${bin}${delimiter}${process.env.PATH}`;
+  for (const [armor, format] of [["PGP SIGNATURE", "openpgp"], ["SIGNED MESSAGE", "x509"]]) {
+    g("reset", "-q", "--soft", signedLike(g, dir, armor, `feat: signed with ${format}`));
+    // The control: git as push-check runs it starts the verifier.
+    execFileSync("git", ["log", "-1", "--format=%G?", "HEAD"], { cwd: dir, env: { ...process.env, PATH }, stdio: "ignore" });
+    assert.match(readFileSync(log, "utf8"), new RegExp(`^${format === "openpgp" ? "openpgp" : "x509"}-verifier --`, "m"), `${format}: the stand-in is what git starts`);
+    rmSync(log);
+    const r = bare(dir, { PATH });
+    assert.equal(decision(r), "ask", format);
+    assert.match(reason(r), new RegExp(`signed with ${format}, which commits\\.signed does not take`), format);
+    assert.equal(existsSync(log), false, `${format}: no verifier started from the hook`);
+  }
+});
+
+test("push hook: the config it hands git comes after the environment's own GIT_CONFIG_COUNT list, which still decides; a count that is none asks", () => {
+  const reason = (/** @type {{ stdout: string }} */ r) => JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason;
+  const { dir } = closing();
+  assert.equal(bare(dir).stdout, "", "the control: the verdict lets it run");
+  const r = bare(dir, { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "push.default", GIT_CONFIG_VALUE_0: "matching" });
+  assert.equal(decision(r), "ask");
+  assert.match(reason(r), /git config push\.default makes a bare git push send more/);
+  assert.equal(decision(bare(dir, { GIT_CONFIG_COUNT: "x" })), "ask");
+});
+
+test("push hook: in a partial clone the verdict fetches nothing lazily, blob:none and tree:0 alike, and a missing object asks", () => {
+  const reason = (/** @type {{ stdout: string }} */ r) => JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason;
+  const SET = ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "protocol.file.allow=always"];
+  const gi = (/** @type {string} */ cwd, /** @type {string[]} */ ...args) => execFileSync("git", [...SET, ...args], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  /** No fetch on any version, whatever a config file allows. */
+  const still = { ...process.env, GIT_NO_LAZY_FETCH: "1", GIT_ALLOW_PROTOCOL: "none" };
+  /** What git calls missing, read with no fetch. @param {string} cwd */
+  const missing = (cwd) => execFileSync("git", ["rev-list", "--objects", "--all", "--missing=print"], { cwd, encoding: "utf8", env: still }).split("\n").filter((l) => l.startsWith("?")).sort();
+  for (const filter of ["blob:none", "tree:0"]) {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "en-push-partial-")));
+    const up = join(root, "up.git");
+    gi(root, "init", "-q", "--bare", "-b", "main", up);
+    gi(up, "config", "uploadpack.allowFilter", "true");
+    const seed = join(root, "seed");
+    gi(root, "init", "-q", "-b", "main", seed);
+    mkdirSync(join(seed, ".ennyn"));
+    writeFileSync(join(seed, ".ennyn", "config.json"), AFTER);
+    gi(seed, "add", "-A");
+    gi(seed, "commit", "-q", "--no-verify", "-m", "chore: push by itself\n\nUser-Approved-Loosening: push.mode");
+    gi(seed, "remote", "add", "origin", up);
+    gi(seed, "push", "-q", "-u", "origin", "main");
+    const clone = join(root, "clone");
+    gi(root, "clone", "-q", `--filter=${filter}`, `file://${up}`, clone);
+    // The upstream moves on, and the clone's fetch leaves out what the filter leaves out.
+    writeFileSync(join(seed, "up.txt"), "up\n");
+    gi(seed, "add", "up.txt");
+    gi(seed, "commit", "-q", "--no-verify", "-m", "feat: upstream");
+    gi(seed, "push", "-q");
+    gi(clone, "fetch", "-q");
+    writeFileSync(join(clone, "work.txt"), "work\n");
+    gi(clone, "add", "work.txt");
+    gi(clone, "commit", "-q", "--no-verify", "-m", "feat: work");
+    // A config file that allows the file protocol by name, as many do since CVE-2022-39253: git reads that key before
+    // protocol.allow.
+    gi(clone, "config", "protocol.file.allow", "always");
+    const before = missing(clone);
+    assert.ok(before.length > 0, `${filter}: the clone lacks objects`);
+    const r = bare(clone);
+    assert.equal(decision(r), "ask", filter);
+    assert.deepEqual(missing(clone), before, `${filter}: nothing was fetched`);
+    if (filter === "blob:none") {
+      // Names only: the diff needs no blob, and the verdict reads to the end.
+      assert.match(reason(r), /The branch is 1 commits behind its upstream/, filter);
+      continue;
+    }
+    // tree:0: the upstream's tree is not here, so what the push needs is unread. A git that reads GIT_NO_LAZY_FETCH
+    // stops there; one that does not reaches for a transport, and GIT_ALLOW_PROTOCOL refuses it.
+    const probe = spawnSync("git", ["cat-file", "-t", before[0].slice(1)], { cwd: clone, encoding: "utf8", env: still });
+    const reads = !/transport/.test(probe.stderr);
+    assert.match(reason(r), /What the push needs is unmeasured \(/, filter);
+    if (reads) assert.doesNotMatch(reason(r), /transport/, `${filter}: GIT_NO_LAZY_FETCH stops the read before any transport`);
+    else assert.match(reason(r), /transport 'file' not allowed/, `${filter}: GIT_ALLOW_PROTOCOL stops a git that does not read GIT_NO_LAZY_FETCH`);
+  }
+});
+
+test("push hook: a stated limit: an upstream rewound since the last fetch is not seen, so the bare push runs and sends a commit the rule refuses, which push-check's fetch catches", () => {
+  const { dir, g } = closing({ config: '{ "push": { "mode": "after-closing" }, "commits": { "addresses": ["t@t"] } }\n' });
+  const remote = g("remote", "get-url", "origin").trim();
+  const base = g("rev-parse", "origin/main").trim();
+  // A commit by an address the rule refuses reaches the upstream; then one of the clone's own, tested.
+  writeFileSync(join(dir, "other.txt"), "other\n");
+  g("add", "other.txt");
+  g("-c", "user.email=other@example.test", "commit", "-q", "--no-verify", "-m", "feat: other");
+  g("push", "-q");
+  writeFileSync(join(dir, "mine.txt"), "mine\n");
+  g("add", "mine.txt");
+  g("commit", "-q", "--no-verify", "-m", "feat: mine");
+  recorded(dir);
+  // Another clone rewinds the upstream past it; this clone does not fetch.
+  execFileSync("git", ["update-ref", "refs/heads/main", base], { cwd: remote });
+  assert.equal(bare(dir).stdout, "", "the hook reads the last fetch's upstream: what it sends holds no refused commit");
+  const sends = execFileSync("git", ["push", "--dry-run", "--porcelain", "origin", "main"], { cwd: dir, encoding: "utf8" });
+  assert.match(sends, new RegExp(`\t${base.slice(0, 7)}[0-9a-f]*\\.\\.[0-9a-f]+$`, "m"), "the push sends both commits, the refused one too");
+  const check = pushVerdict(dir, loadConfig({ cwd: dir, env: {} }));
+  assert.equal(check.exit, 1, "push-check fetches and refuses");
+  assert.ok(saidText(check.said, "en").some((l) => /author other@example\.test is not in commits\.addresses/.test(l)));
 });
 
 test("push hook: under after-closing a verdict that does not finish in time asks, inside the hook's own limit", () => {

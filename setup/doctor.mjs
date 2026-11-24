@@ -641,6 +641,8 @@ export async function checkSetup({ cwd, env = process.env, self = OWN_ROOT }) {
       add("unmeasured", "doctor.filesUnmeasured", { error: oneLine(e) });
     }
     // The cycle asks the user before any push unless push.mode says after-closing; an ask rule is the harness's backstop.
+    // closingPush only: the rest of the verdict (the commits rule, the record, what the push sends, a clean tree) is
+    // the moment's, read at the push; the after-closing line says so. The commits rule's setup is cloneGaps' below.
     const push = closingPush(cwd, env);
     if (push.error !== undefined) add("unmeasured", "doctor.pushModeUnread", { error: push.error });
     else if (push.head !== push.work) add("warn", "doctor.pushModeSplit", { head: push.head, work: push.work });

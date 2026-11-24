@@ -1971,8 +1971,15 @@ const COMMANDS = {
     else if (n > max) out(t("push.warn", { n, max }, lang));
     else out(t("push.ok", { n, max }, lang));
     // The verdict is one function (checks/push-mode.mjs), which the push hook reads too, taken there without the fetch.
-    const verdict = pushVerdict(cwd, cfg, { tested: opts.tested === undefined ? undefined : String(opts.tested) });
-    for (const line of saidText(verdict.said, lang)) out(line);
+    // A step that throws late in it leaves the lines said before it: printed, then the error as any command's.
+    /** @type {import("../checks/push-mode.mjs").Said[]} */
+    const said = [];
+    let verdict;
+    try {
+      verdict = pushVerdict(cwd, cfg, { tested: opts.tested === undefined ? undefined : String(opts.tested), said });
+    } finally {
+      for (const line of saidText(said, lang)) out(line);
+    }
     return verdict.exit;
   },
 
