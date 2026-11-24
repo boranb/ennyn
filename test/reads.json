@@ -1,6 +1,6 @@
 {
  "version": 1,
- "code": "f79787c1441d2b5b3cb3007e52b0506585b325d6381360faded6221114f8f502",
+ "code": "5d4d75ed211ae5bb6b3b8e02013bc27792136d7b91ea8ce52e0721e2b3c1d89b",
  "tests": {
   "test/agents.test.mjs": {
    "reads": [
@@ -397,6 +397,7 @@
   },
   "test/commit-shape.test.mjs": {
    "reads": [
+    "checks/commit-identity.mjs",
     "checks/commit-shape.mjs",
     "checks/loosening.mjs",
     "checks/secrets.mjs",
@@ -716,6 +717,7 @@
     ".ennyn/classes.json",
     ".ennyn/findings.jsonl",
     "adapters/claude-code/rules-index.mjs",
+    "checks/commit-identity.mjs",
     "checks/commit-shape.mjs",
     "checks/loosening.mjs",
     "checks/secrets.mjs",
@@ -910,6 +912,7 @@
   "test/git-oracle.test.mjs": {
    "reads": [
     "adapters/claude-code/rules-index.mjs",
+    "checks/commit-identity.mjs",
     "checks/commit-shape.mjs",
     "checks/loosening.mjs",
     "checks/secrets.mjs",
@@ -988,6 +991,7 @@
   },
   "test/hermetic.test.mjs": {
    "reads": [
+    "checks/commit-identity.mjs",
     "checks/commit-shape.mjs",
     "checks/loosening.mjs",
     "checks/secrets.mjs",
@@ -1809,6 +1813,7 @@
   "test/metrics.test.mjs": {
    "reads": [
     "adapters/claude-code/rules-index.mjs",
+    "checks/commit-identity.mjs",
     "checks/commit-shape.mjs",
     "checks/loosening.mjs",
     "checks/secrets.mjs",
@@ -1946,6 +1951,7 @@
     "agents/security-reviewer.md",
     "agents/summarizer.md",
     "checks/ci.mjs",
+    "checks/commit-identity.mjs",
     "checks/commit-shape.mjs",
     "checks/deps.mjs",
     "checks/loosening.mjs",
@@ -2874,6 +2880,7 @@
     "adapters/claude-code/config-place.mjs",
     "adapters/claude-code/hooks/conversation-style.mjs",
     "adapters/claude-code/project.mjs",
+    "checks/commit-identity.mjs",
     "checks/commit-shape.mjs",
     "checks/loosening.mjs",
     "checks/secrets.mjs",
