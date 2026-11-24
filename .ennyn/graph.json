@@ -6892,7 +6892,7 @@
       "cost": "S",
       "cluster": "distribution",
       "gate": "beside",
-      "title": "The npm package and release audit: low findings and lean items left. (a) the release job checks the tag's name against the version and its commit against main, not that it is an annotated tag signed by the owner, so a lightweight v* tag pushed while the no-new-tags ruleset is off would publish after approval (c52-t4-author-r0-04): the job runs git tag -v (or reads the tag object's type and signature) against the allowed signers. (b) package.json files lists schema, a folder that never existed: drop it, and the engines test refuses a files entry that names nothing. (c) the repository's Actions settings allow every action and do not require SHA pins (read with gh api, 2026-11-23); the workflows pin by SHA already: requiring it is the owner's setting, asked of the user, never set by a session",
+      "title": "The npm package and release audit: low findings and lean items left. (a) the release job checks the tag's name against the version and its commit against main, not that the tag is annotated and signed by an allowed signer (c52-t4-author-r0-04): the job runs git tag -v (or reads the tag object's type and signature) against the allowed signers. (b) package.json files lists schema, a folder that never existed: drop it, and the engines test refuses a files entry that names nothing. (c) whether the repository requires SHA-pinned actions is a setting of the owner's, outside any file: the user is asked; a session never sets it",
       "source": "cycle 2026-11-23 (52) legacy audit of the npm package and release workflow, and the author's proposed nodes package-files-schema and actions-sha-pinning-setting"
     },
     {
