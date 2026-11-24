@@ -32,6 +32,23 @@ function repo() {
   return dir;
 }
 
+/**
+ * A CLI where `npx ennyn` puts it, in this file's own home: `<cache>/_npx/<hash>/node_modules/ennyn/scripts/ennyn.mjs`,
+ * the layout npx 10.9.9 made in a lab, with the cache at its default `$HOME/.npm`. A stand-in file, or a link to this
+ * checkout (`link`), which node runs under that path with --preserve-symlinks-main.
+ * @param {{ link?: boolean }} [o]
+ */
+function npxCli({ link = false } = {}) {
+  const pkg = join(mkdtempSync(join(HOME, ".npm-")), "_npx", "4b9673e6bf541de9", "node_modules", "ennyn");
+  mkdirSync(dirname(pkg), { recursive: true });
+  if (link) symlinkSync(dirname(dirname(CLI)), pkg, "dir");
+  else {
+    mkdirSync(join(pkg, "scripts"), { recursive: true });
+    writeFileSync(join(pkg, "scripts", "ennyn.mjs"), "process.exit(0);\n");
+  }
+  return join(pkg, "scripts", "ennyn.mjs");
+}
+
 /** @param {string} dir @param {string} message */
 function commit(dir, message) {
   writeFileSync(join(dir, "a.txt"), String(Math.random()));
@@ -463,6 +480,22 @@ test("install-hook audit (review): for every hook state doctor and install-hook 
       },
     },
     {
+      name: "an Ennyn script under core.hooksPath that runs a CLI in npm's npx cache",
+      want: "doctor.hookNpxCache",
+      says: /inside npm's npx cache.*put this line in its place/,
+      make: (/** @type {string} */ d) => machineHooks(d, hookScript(npxCli())),
+    },
+    {
+      name: "an Ennyn script under core.hooksPath that runs a CLI in npm's npx cache npm has cleaned",
+      want: "doctor.hookNpxCache",
+      says: /inside npm's npx cache.*put this line in its place/,
+      make: (/** @type {string} */ d) => {
+        const cli = npxCli();
+        rmSync(dirname(dirname(cli)), { recursive: true });
+        machineHooks(d, hookScript(cli));
+      },
+    },
+    {
       name: "an Ennyn script under core.hooksPath that runs",
       want: "doctor.hookOk",
       says: /already runs commit-check/,
@@ -671,6 +704,84 @@ const sessionStart = (env) => spawnSync(process.execPath, [PLUGIN_ROOT_HOOK], { 
 
 /** install-hook as a command, in a plugin session when `env` names one. @param {string} dir @param {Record<string, string>} env @param {string[]} args */
 const installCli = (dir, env, ...args) => spawnSync(process.execPath, [CLI, "install-hook", ...args], { cwd: dir, env: { ...process.env, ...env }, encoding: "utf8" });
+
+test("install-hook npx cache: which CLI paths read as npm's npx cache, Windows spelling and other caches included", () => {
+  const { inNpxCache } = hookModule;
+  /** @type {[string, boolean][]} */
+  const corpus = [
+    ["/srv/w/.npm/_npx/4b9673e6bf541de9/node_modules/ennyn/scripts/ennyn.mjs", true],
+    ["/srv/cache/npm/_npx/e08465a69b3b7136/node_modules/ennyn/scripts/ennyn.mjs", true],
+    ["D:\\npm-cache\\_npx\\4b9673e6bf541de9\\node_modules\\ennyn\\scripts\\ennyn.mjs", true],
+    ["_npx/4b9673e6bf541de9/node_modules/ennyn/scripts/ennyn.mjs", true],
+    ["/usr/local/lib/node_modules/ennyn/scripts/ennyn.mjs", false],
+    ["/srv/w/project/node_modules/ennyn/scripts/ennyn.mjs", false],
+    ["/srv/w/src/ennyn/scripts/ennyn.mjs", false],
+    ["/srv/w/.claude/plugins/cache/ennyn/ennyn/0.1.1/scripts/ennyn.mjs", false],
+    ["/srv/w/my_npx/4b9673e6bf541de9/node_modules/ennyn/scripts/ennyn.mjs", false],
+    ["/srv/w/_npx/ennyn/scripts/ennyn.mjs", false],
+    ["/srv/w/_npx/a/b/node_modules/ennyn/scripts/ennyn.mjs", false],
+    ["/srv/w/.npm/_cacache/content-v2/ennyn/scripts/ennyn.mjs", false],
+  ];
+  assert.deepEqual(corpus.map(([p]) => [p, inNpxCache(p)]), corpus);
+});
+
+test("install-hook npx cache: run from npm's npx cache it writes no hook, no record and no state, exits 1 and names a stable install", async () => {
+  const dir = repo();
+  const cli = npxCli();
+  const data = join(mkdtempSync(join(tmpdir(), "en-plugin-")), "data", "ennyn-mkt");
+  for (const pluginData of [null, data]) {
+    const res = installHook({ cwd: dir, cliPath: cli, pluginData });
+    assert.deepEqual([res.result, res.root], ["npxCopy", dirname(dirname(cli))], String(pluginData));
+    assert.equal(existsSync(hookStatus(dir).path), false, "no hook written");
+    assert.equal(existsSync(data), false, "no record written");
+  }
+  // A hook already there stays as it was.
+  installHook({ cwd: dir, cliPath: CLI });
+  const before = readFileSync(hookStatus(dir).path, "utf8");
+  assert.equal(installHook({ cwd: dir, cliPath: cli }).result, "npxCopy");
+  assert.equal(readFileSync(hookStatus(dir).path, "utf8"), before);
+  // The command, as npx runs it: this checkout under the cache's path.
+  const fresh = repo();
+  const linked = npxCli({ link: true });
+  const r = spawnSync(process.execPath, ["--preserve-symlinks-main", "--preserve-symlinks", linked, "install-hook"], { cwd: fresh, encoding: "utf8" });
+  assert.equal(r.status, 1, r.stderr);
+  assert.match(r.stdout, /runs from npm's npx cache.*Nothing was written.*\/ennyn:init.*git clone https:\/\/github\.com\/boranb\/ennyn, then node <clone>\/scripts\/ennyn\.mjs install-hook/);
+  assert.equal(existsSync(hookStatus(fresh).path), false);
+  assert.equal(existsSync(join(fresh, ".git", "ennyn")), false, "no state written");
+  // The remedies name no install inside the work tree: a node_modules clean, or a commit to the dependency, turns that gate off.
+  const { t } = await import("../core/i18n.mjs");
+  for (const lang of ["en", "tr"]) for (const key of ["hook.npxCopy", "doctor.hookNpxCache"]) assert.doesNotMatch(t(key, {}, lang), /npm install|save-dev|npx ennyn install-hook/, `${lang} ${key}`);
+});
+
+test("install-hook npx cache: doctor names a hook whose cli= points into npm's npx cache, there or cleaned, and install-hook from a stable copy writes it again", async () => {
+  const dir = doctorRepo();
+  const cli = npxCli();
+  // What install-hook wrote before it refused the cache.
+  const path = hookStatus(dir).path;
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, hookScript(cli), { mode: 0o755 });
+  assert.deepEqual(await hookKeys(dir), ["doctor.hookNpxCache"]);
+  // npm cleaned its cache: the hook lets every commit through, and doctor still names the cache.
+  rmSync(dirname(dirname(dirname(dirname(dirname(cli))))), { recursive: true });
+  assert.equal(commit(dir, "untyped").status, 0);
+  assert.deepEqual(await hookKeys(dir), ["doctor.hookNpxCache"]);
+  assert.equal(installHook({ cwd: dir, cliPath: CLI }).result, "updated");
+  assert.deepEqual(await hookKeys(dir), ["doctor.hookOk"]);
+  // A plugin hook reads its version from the record, not a cli= line: a record naming a copy in the cache (written from
+  // npx with --plugin-data before the refusal) is the record's to answer for: once npm cleans it, every commit is refused.
+  const plugged = doctorRepo();
+  const data = join(mkdtempSync(join(tmpdir(), "en-plugin-")), "data", "ennyn-mkt");
+  const kept = npxCli();
+  mkdirSync(data, { recursive: true });
+  writeFileSync(join(data, "root"), `${dirname(dirname(kept))}\n`);
+  const plain = hookStatus(plugged).path;
+  mkdirSync(dirname(plain), { recursive: true });
+  writeFileSync(plain, hookScript("", data), { mode: 0o755 });
+  assert.deepEqual(await hookKeys(plugged), ["doctor.hookOk"]);
+  rmSync(dirname(dirname(kept)), { recursive: true });
+  assert.deepEqual(await hookKeys(plugged), ["doctor.hookPluginStale"]);
+  assert.notEqual(commit(plugged, "feat: refused").status, 0);
+});
 
 test("hook follows the plugin: installed from the plugin, it runs the version the record names, and each session records the version it runs", () => {
   const dir = repo();

@@ -13,7 +13,7 @@ import { loadGraph, readyNodes, readyMechanization, graphProblems, heldNodes, Gr
 import { MAYBE_TEST_COMMAND, MIN_HISTORY, TEST_COMMAND, indexMatches, recentCommits, productionSubjects, projectCommands, projectFiles, remotesByHost } from "./scan.mjs";
 import { askRules, capped, ghApplies, outwardCommands, GH_COMMANDS, SETTINGS, SETTINGS_LIMIT } from "./permissions.mjs";
 import { secretSetup } from "./secret-setup.mjs";
-import { ORPHANED, PLUGIN_RECORD, hookStatus, idleReason, replacedRoot, sessionOf, versionNote } from "./hook.mjs";
+import { ORPHANED, PLUGIN_RECORD, hookStatus, idleReason, npxHook, replacedRoot, sessionOf, versionNote } from "./hook.mjs";
 import { instructionBudget, readBudgets } from "./budget.mjs";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -610,6 +610,8 @@ export async function checkSetup({ cwd, env = process.env, self = OWN_ROOT }) {
       else if (hook.block !== null && idle === "noData") add("warn", "doctor.hookBlockNoData", { path: [hook.block] });
       else if (hook.block !== null && idle === "unrecorded") add("warn", "doctor.hookBlockUnrecorded", { path: [hook.block], data: [String(hook.data)] });
       else if (hook.block !== null && idle !== null) add("warn", "doctor.hookBlockStale", { path: [hook.block], data: [String(hook.data)] });
+      // A CLI in npm's npx cache, there or already cleaned: the remedy is a stable install, not install-hook through npx again.
+      else if ((idle === null || idle === "cli") && npxHook(hook)) add("warn", "doctor.hookNpxCache", { path: [hook.path], cli: [String(hook.cli)] });
       else if (idle === "cli") add("warn", "doctor.hookCliGone", { path: [hook.path], cli: [String(hook.cli)] });
       // Installed from the plugin: uninstalled (every commit passes) or the version its link names deleted (every commit is refused).
       else if (idle === "unrecorded") add("warn", "doctor.hookPluginUnrecorded", { path: [hook.path], data: [String(hook.data)] });

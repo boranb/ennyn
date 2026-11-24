@@ -137,6 +137,17 @@ export function sessionRoot(data, env) {
 const slashed = (s) => s.replace(/\\/g, "/");
 
 /**
+ * Whether a CLI path lies in npm's npx cache, where `npx ennyn` puts the package it fetches:
+ * `<cache>/_npx/<hash>/node_modules/ennyn/…` (npm 10.9.9, under any cache folder: `npm_config_cache`, `--cache` or
+ * the default). npm removes or replaces that folder (a cache clean, another version under another hash), and a hook
+ * naming it then lets every commit through. Read from the path alone, slashes folded: the env npx sets is the same
+ * for a project's own install run through `npx ennyn`, and `npm config get cache` is a child process that fails
+ * with no npm on PATH.
+ * @param {string} cliPath
+ */
+export const inNpxCache = (cliPath) => /(?:^|\/)_npx\/[^/]+\/node_modules\//.test(slashed(cliPath));
+
+/**
  * The line a commit-msg hook runs; quoted for the shell, so a path with spaces, quotes or $ survives.
  * `--hook`: a config that does not load lets the commit through with a warning instead of locking it.
  * With the plugin's data directory, the line reads the version from its record: a record that names no
@@ -727,6 +738,14 @@ export function idleReason(st) {
 }
 
 /**
+ * Whether an Ennyn script names, on its `cli=` line, a CLI in npm's npx cache (inNpxCache): written by install-hook
+ * run through npx before it refused that, it checks until npm cleans the folder, then lets every commit through. A
+ * plugin hook's CLI comes from its record, and is not read here. doctor and installHook read this one answer.
+ * @param {ReturnType<typeof hookStatus>} st
+ */
+export const npxHook = (st) => st.state === "ennyn" && st.data === null && st.cli !== null && inNpxCache(st.cli);
+
+/**
  * The plugin version directory the CLI of an Ennyn hook belongs to, when Claude Code has replaced it (its
  * `.orphaned_at` marker): the hook checks with that version's rules until Claude Code deletes it. null for
  * a CLI that is not there, any other copy of Ennyn, or a hook that is not Ennyn's.
@@ -877,7 +896,7 @@ const blockIdNames = (data) => data === null || BLOCK_ID.test(basename(data));
  *   hook names `cliPath`. A data directory inside the repository is refused (`dataInRepository`): a record
  *   there would be the repository's own file.
  * `restored`: no record was there, and install-hook wrote it from this plugin session (sessionRoot).
- * @returns {{ restored: boolean, result: "installed" | "updated" | "unchanged" | "wired" | "notThere" | "notExecutable" | "blockUnread" | "late" | "hooksOff" | "blockUnrecorded" | "blockStale" | "blockNoData" | "blockNoNode" | "cliGone" | "cliUnrecorded" | "cliRefused" | "cliForeign" | "cliReplaced" | "cliPinned" | "cliOtherVersion" | "replacedCopy" | "followsRecord" | "dataInRepository" | "dataName" | "other" | "hooksPath", path: string, hooksPath: string | null, hooksKind: "repo" | "husky" | "global" | null, line: string, block: string, cli: string | null, data: string | null, root: string, recorded: string, chmod: string, own: string }}
+ * @returns {{ restored: boolean, result: "installed" | "updated" | "unchanged" | "wired" | "notThere" | "notExecutable" | "blockUnread" | "late" | "hooksOff" | "blockUnrecorded" | "blockStale" | "blockNoData" | "blockNoNode" | "cliGone" | "cliUnrecorded" | "cliRefused" | "cliForeign" | "cliReplaced" | "cliPinned" | "cliOtherVersion" | "cliNpxCache" | "replacedCopy" | "npxCopy" | "followsRecord" | "dataInRepository" | "dataName" | "other" | "hooksPath", path: string, hooksPath: string | null, hooksKind: "repo" | "husky" | "global" | null, line: string, block: string, cli: string | null, data: string | null, root: string, recorded: string, chmod: string, own: string }}
  *   `line`: what to add to a hook Ennyn does not write (shell-quoted); `block`: with the plugin's data directory
  *   known, hookBlock's block for the project's own hook, for a tracked hooks directory, husky's, or a hook doctor
  *   cannot read (else ""); dataName: that directory's last part is no id the block can hold (BLOCK_ID), so
@@ -891,7 +910,9 @@ const blockIdNames = (data) => data === null || BLOCK_ID.test(basename(data));
  *   or no node once it has filtered PATH (every commit passes). cliReplaced: it
  *   checks with a plugin version Claude Code has replaced (`root`); cliPinned / cliOtherVersion: versionNote.
  *   replacedCopy: this copy of Ennyn is such a version (`root`); a hook naming it, or a record of it, would
- *   stop checking when Claude Code deletes it, so nothing is written. `data`: the data directory the hook
+ *   stop checking when Claude Code deletes it, so nothing is written. npxCopy: this copy runs from npm's npx cache
+ *   (inNpxCache, `root`), which npm cleans, so nothing is written either; cliNpxCache: an Ennyn script under
+ *   core.hooksPath names such a copy (npxHook). `data`: the data directory the hook
  *   reads its record from; `recorded`: what that record names. The record is written only with Ennyn's own
  *   hook: a run that writes no hook moves no other repository's.
  */
@@ -930,6 +951,8 @@ function installWith(st, { cwd, cliPath, pluginData, session }) {
   const own = st.hooksPath ? join(dirname(st.hooksPath), "commit-msg") : "";
   const base = { path: st.path, hooksPath: st.hooksPath, hooksKind: st.hooksKind, cli: st.cli, chmod: `chmod +x ${shQuote(st.path)}`, own, root: "", recorded: st.recorded ?? "", line: hookLine(cliPath), block: "", data: st.data };
   if (present(join(self, ORPHANED))) return { ...base, result: "replacedCopy", root: self };
+  // Run through npx: a hook, a record or a printed line naming this copy would stop checking once npm cleans its cache.
+  if (inNpxCache(cliPath)) return { ...base, result: "npxCopy", root: self };
   if (st.hooksPath === "") return { ...base, result: "hooksOff" };
   const fromSession = session !== null && sameRoot(session.root, self) ? session.data : null;
   const kept = st.data !== null && st.problem === null && sameRoot(/** @type {string} */ (st.recorded), self) ? st.data : null;
@@ -951,6 +974,8 @@ function installWith(st, { cwd, cliPath, pluginData, session }) {
       const block = { unrecorded: "blockUnrecorded", stale: "blockStale", foreign: "blockStale", noData: "blockNoData", noNode: "blockNoNode" };
       if (idle !== null && idle in block) return { ...base, result: block[idle], line, own: st.block };
     }
+    // A CLI in npm's npx cache, there or already cleaned, as doctor reads it.
+    if ((idle === null || idle === "cli") && npxHook(st)) return { ...base, result: "cliNpxCache", line };
     if (idle !== null) return { ...base, result: why[idle], line };
     const replaced = st.block === null ? replacedRoot(st) : null;
     if (replaced !== null) return { ...base, result: "cliReplaced", line, root: replaced };
