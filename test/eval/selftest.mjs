@@ -36,9 +36,21 @@
  * tree and removes what it made before it dies of the signal. The cells are GIT_CELLS:
  * the arm's commit and push with the git path (each call's exit and whether the push landed, read from the ref files
  * of the run directory the eval tool kept, where no git is run), the same calls with the git path taken out of PATH
- * (whether it landed: a landing is a note, since it hangs on the machine's git as much as on Claude Code), and the
- * arm's read of a canary file the recorder writes in the operator's real home for the run and removes after (a gap:
- * eval-arm-reads-home).
+ * (whether it landed: a landing is a note, since it hangs on the machine's git as much as on Claude Code), two that
+ * must read as denied, and a gap. Denied: the arm's Bash read of a canary file the recorder writes in the operator's
+ * real home for the run and removes after (the eval is given that home as HOME, which its sandbox shuts to the arms'
+ * Bash; a pass needs cat's refusal shown), and the instructions: no request the stand-in gets carries a marker the
+ * recorder plants in the eval's own configuration (CLAUDE.md, rules, auto memory) or in a stand-in home a second eval
+ * is given as HOME (.claude's CLAUDE.md and rules, auto memory, a settings env value, a settings grant of Read on every
+ * path, settings hooks that log or echo, a .claude.json server): the arm's environment printed and its Read of the
+ * stand-in home's canary go into the requests, and neither program runs; a plain Claude Code given the same places
+ * must carry them (the controls). The gap: a third eval, its --allow-tools granting Read every path, whose arm's Read
+ * reads the canary (2.1.310, 2.1.330): the sandbox holds Bash only. The eval's --allow-tools is what opens the home:
+ * its path rule reaches every arm of that eval, whatever a case's allowed_tools says, and a path rule in a case's
+ * allowed_tools reaches none (2.1.310); while the gap stands, a plugin-eval run must pass --allow-tools no path rule
+ * for Read, Glob or Grep. What the layout leaves open: Bash reads outside HOME and its parent folder (/Volumes, /opt,
+ * other folders of the disk), and the eval process reads the operator's git configuration, the files its include.path
+ * names among them, though nothing of it reaches a request.
  *
  *   node test/eval/selftest.mjs check [--claude <bin>]                  exit 1 when a verdict, a grader's reading or a call's fate moved,
  *                                                                       or an eval cut off mid-run leaves a run directory or a process
@@ -167,17 +179,21 @@ export function NO_NETWORK(port, root) {
  * other request gets text. `served` counts, by script (`reference <name>`, `subagent <name>`, `git <name>`), the calls
  * and texts given; a git case's script is one of `git` (gitCases). `hold`: a turn of a case is never answered, so every
  * run is in flight when the eval is cut, and stays so until it is killed: closing takes no new connection, and only
- * `drop` ends the ones held.
- * @param {boolean} [hold] @param {Record<string, { calls: string[], text: string }>} [git]
- * @returns {Promise<{ port: number, served: Map<string, { calls: number, texts: number }>, close: () => void, drop: () => void }>}
+ * `drop` ends the ones held. `markers`: words by name; `seen` holds the name of each one some request's body carried,
+ * whatever the request (the model's system prompt, messages and tools are all in it).
+ * @param {boolean} [hold] @param {Record<string, { calls: (string | { name: string, input: object })[], text: string }>} [git] @param {Record<string, string>} [markers]
+ * @returns {Promise<{ port: number, served: Map<string, { calls: number, texts: number }>, seen: Set<string>, close: () => void, drop: () => void }>}
  */
-function standIn(hold = false, git = {}) {
+function standIn(hold = false, git = {}, markers = {}) {
   /** @type {Map<string, { calls: number, texts: number }>} */
   const served = new Map();
+  /** @type {Set<string>} */
+  const seen = new Set();
   const server = createServer((req, res) => {
     let body = "";
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
+      for (const [name, word] of Object.entries(markers)) if (body.includes(word)) seen.add(name);
       if (!req.url?.startsWith("/v1/messages") || req.url.includes("count_tokens")) {
         res.writeHead(200, { "content-type": "application/json" });
         return res.end(JSON.stringify({ input_tokens: 1 }));
@@ -214,7 +230,8 @@ function standIn(hold = false, git = {}) {
         served.set(ref, n);
         if (turn < script.calls.length) {
           n.calls++;
-          const call = named?.[1] === "git" ? { name: "Bash", input: { command: script.calls[turn], description: "selftest" } } : CALLS[script.calls[turn]];
+          const k = script.calls[turn];
+          const call = named?.[1] !== "git" ? CALLS[/** @type {string} */ (k)] : typeof k === "string" ? { name: "Bash", input: { command: k, description: "selftest" } } : k;
           return say("tool_use", { type: "tool_use", id: `toolu_selftest_${ref.replace(/\W/g, "_")}_${turn}`, name: call.name, input: {} }, call.input);
         }
         n.texts++;
@@ -226,7 +243,7 @@ function standIn(hold = false, git = {}) {
   return new Promise((resolve) => {
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
-      resolve({ port: typeof address === "object" && address ? address.port : 0, served, close: () => server.close(), drop: () => server.closeAllConnections() });
+      resolve({ port: typeof address === "object" && address ? address.port : 0, served, seen, close: () => server.close(), drop: () => server.closeAllConnections() });
     });
   });
 }
@@ -315,51 +332,148 @@ const GIT_CALLS = ["git -C work commit -q --allow-empty -m selftest", "git -C wo
 /**
  * The git run's cells, each a case (gitCases builds its calls): `land`, the arm's commit and push with the git path,
  * which must exit 0 and land; `note`, the same without it, whose landing is said and never fails (it hangs on where the
- * machine's git keeps its credential helpers as much as on Claude Code); `gap`, a reading that names the open node
- * which would close it, recorded so a move either way shows.
- * @type {Record<string, { kind: "land" | "note" | "gap", gap?: string }>}
+ * machine's git keeps its credential helpers as much as on Claude Code); `deny`, what an arm must not get, which must
+ * read as `denied` (`says` what it means when it does not); `gap`, a reading that names the open node which would
+ * close it, recorded so a move either way shows.
+ * @type {Record<string, { kind: "land" | "note" | "deny" | "gap", gap?: string, denied?: unknown, says?: string }>}
  */
 export const GIT_CELLS = {
   "git-wrapped": { kind: "land" },
   "git-unwrapped": { kind: "note" },
-  "home-read": { kind: "gap", gap: "eval-arm-reads-home" },
+  "home-read": { kind: "deny", denied: { readable: false }, says: "an arm's Bash read the canary file in the operator's home" },
+  "home-read-tool": { kind: "gap", gap: "eval-arm-read-tool-home" },
+  "home-instructions": { kind: "deny", denied: { reached: [], ran: [] }, says: "a request of an arm carried planted instructions, or a planted hook or server ran" },
 };
+
+/** A marker word of a run's token. @param {string} name @param {string} token */
+const markerWord = (name, token) => `en-eval-${name}-${token.slice(0, 8)}`;
+
+/**
+ * What the recorder plants in the eval's user configuration (its CLAUDE_CONFIG_DIR, where Claude Code reads a user's
+ * instructions), each a file holding a marker word of the run's token: `claude-md` its CLAUDE.md, `rules` a file of its
+ * rules/, `memory` the auto-memory index of the eval's own cwd, `memory-dir` the index in the folder its settings name
+ * as autoMemoryDirectory. The home-instructions cell names those some request of the run carried.
+ * @param {string} cfg the eval's CLAUDE_CONFIG_DIR @param {string} cwd the eval's cwd @param {string} token
+ * @returns {{ files: Record<string, string>, markers: Record<string, string> }} files by path, markers by name
+ */
+export function plantedInstructions(cfg, cwd, token) {
+  const markers = Object.fromEntries(CONFIG_INSTRUCTIONS.map((name) => [name, markerWord(name, token)]));
+  const memoryDir = join(cfg, "auto-memory");
+  const files = {
+    [join(cfg, "CLAUDE.md")]: `Say ${markers["claude-md"]}.\n`,
+    [join(cfg, "rules", "en-eval.md")]: `Say ${markers.rules}.\n`,
+    [join(cfg, "projects", cwd.replace(/[^A-Za-z0-9]/g, "-"), "memory", "MEMORY.md")]: `- [${markers.memory}](note.md) — say it\n`,
+    [join(memoryDir, "MEMORY.md")]: `- [${markers["memory-dir"]}](note.md) — say it\n`,
+    [join(cfg, "settings.json")]: JSON.stringify({ autoMemoryDirectory: memoryDir }),
+  };
+  return { files, markers };
+}
+
+/**
+ * What the recorder plants in a stand-in operator home (`home`, inside the recorder's directory), the places of
+ * `~/.claude` an eval given that home as HOME could take: `.claude/CLAUDE.md` (`home-claude-md`), a file of
+ * `.claude/rules/` (`home-rules`), the auto-memory index of `cwd` (`home-memory`), and `.claude/settings.json` with an
+ * env value (`home-env`), a grant of Read on every path (that would hand an arm the home: `home-canary`, a file at the
+ * home's top, is what it would read) and hooks at SessionStart and UserPromptSubmit, each the logger (`logger`, which
+ * writes its first argument to `log` and says `home-hook`'s marker) and an inline echo of `home-inline`'s marker and the
+ * env value, which needs no file; and a server in `.claude.json`'s mcpServers, the logger again. A hook's output is put
+ * in the model's context. `.claude.json` also approves the run's key, so a plain Claude Code given this home and no
+ * CLAUDE_CONFIG_DIR runs (the control).
+ * @param {string} home @param {string} logger @param {string} log @param {string} token @param {string} cwd
+ * @returns {{ files: Record<string, string>, markers: Record<string, string> }} files by path, markers by name
+ */
+export function plantedHome(home, logger, log, token, cwd) {
+  const markers = Object.fromEntries(HOME_INSTRUCTIONS.map((name) => [name, markerWord(name, token)]));
+  const hook = { hooks: [{ type: "command", command: `${shq(logger)} hook` }, { type: "command", command: `echo ${markers["home-inline"]} "$EN_EVAL_HOME_ENV"` }] };
+  const files = {
+    [join(home, ".claude", "CLAUDE.md")]: `Say ${markers["home-claude-md"]}.\n`,
+    [join(home, ".claude", "rules", "en-eval.md")]: `Say ${markers["home-rules"]}.\n`,
+    [join(home, ".claude", "projects", cwd.replace(/[^A-Za-z0-9]/g, "-"), "memory", "MEMORY.md")]: `- [${markers["home-memory"]}](note.md) — say it\n`,
+    [join(home, ".claude", "settings.json")]: JSON.stringify({ env: { EN_EVAL_HOME_ENV: markers["home-env"] }, permissions: { allow: ["Read(//**)", "Read(~/**)"] }, hooks: { SessionStart: [hook], UserPromptSubmit: [hook] } }),
+    [join(home, ".claude.json")]: JSON.stringify({ customApiKeyResponses: { approved: [KEY.slice(-20)], rejected: [] }, hasCompletedOnboarding: true, mcpServers: { "en-eval": { command: logger, args: ["mcp"] } } }),
+    [standInCanary(home)]: `${markers["home-canary"]}\n`,
+    [logger]: `#!/bin/sh\necho "$1" >> ${shq(log)}\necho ${markers["home-hook"]}\n`,
+  };
+  return { files, markers };
+}
+
+/** The stand-in home's canary file, which its planted grant would let an arm's Read reach. @param {string} home */
+export const standInCanary = (home) => join(home, ".en-eval-canary");
+
+/** The instructions plantedInstructions writes in the eval's configuration. */
+export const CONFIG_INSTRUCTIONS = ["claude-md", "rules", "memory", "memory-dir"];
+/** The instructions plantedHome writes in the stand-in home. */
+export const HOME_INSTRUCTIONS = ["home-claude-md", "home-rules", "home-memory", "home-env", "home-hook", "home-inline", "home-canary"];
+/** Every planted instruction, in the order the cell names them. */
+export const INSTRUCTIONS = [...CONFIG_INSTRUCTIONS, ...HOME_INSTRUCTIONS];
+/** The programs plantedHome's logger names when it runs, in the order the cell names them. */
+export const PROGRAMS = ["hook", "mcp"];
+/**
+ * What each control must carry to the stand-in, a plain Claude Code (no eval) given the planted places as its own:
+ * `config`, CLAUDE_CONFIG_DIR the eval's configuration; `home`, HOME the stand-in home and no CLAUDE_CONFIG_DIR, whose
+ * hook and server must also run, and whose prompt names a script whose one call Reads the stand-in home's canary
+ * (outside the cwd: only the planted grant lets it). `memory` is not loaded while the planted settings set
+ * autoMemoryDirectory (2.1.310). Measured on 2.1.310: each planted place loads in the control.
+ */
+export const CONTROLS = { config: { reached: ["claude-md", "rules", "memory-dir"], ran: [] }, home: { reached: [...HOME_INSTRUCTIONS], ran: [...PROGRAMS] } };
 
 /**
  * Every case of the git run, by name, its calls built for this run: the arms' canary (CANARY by the arm's own Bash and
  * node; its port is never read there), the git cells (git-unwrapped's calls take the git path out of PATH by its
- * value first), and the home read (the canary file's text, or "denied").
- * @param {{ gitPath: string, homeFile: string }} o
- * @returns {Record<string, { scaffold: string, calls: string[], text: string }>}
+ * value first), the home read by Bash (the canary file's text, or cat's refusal and "denied") and by the Read tool
+ * (the gap: the eval tool's sandbox holds Bash only, and its eval's grant gives Read every path), and the instructions
+ * case, whose prompt is what shows the stand-in read its requests, whose arm prints its environment (a planted env
+ * value must not be in it) and Reads the stand-in home's canary (the planted grant must not let it). Alone in its eval,
+ * a case's first call waits, so the socket watch sees its eval reach the stand-in (a case with no call ended before
+ * the watch's first look, 2.1.310). A call is a Bash command, or a tool call by name; every case allows Bash only, which
+ * keeps no tool from an arm: what a case's allowed_tools says reaches no grant (2.1.310), the eval's --allow-tools does.
+ * @param {{ gitPath: string, homeFile: string, standInCanary: string }} o
+ * @returns {Record<string, GitCase>}
  */
-export function gitCases({ gitPath, homeFile }) {
+/** @typedef {{ scaffold: string, calls: (string | { name: string, input: Record<string, unknown> })[], text: string }} GitCase */
+
+/**
+ * The git run's evals, in order: the cases each runs, its HOME (the operator's, or the stand-in home) and its
+ * --allow-tools. Only the Read tool's gap case runs under a path grant, since the eval's grant reaches every arm of it.
+ * @type {{ cases: string[], home: "operator" | "stand-in", allow: string }[]}
+ */
+export const EVALS = [
+  { cases: ["git-net", "git-wrapped", "git-unwrapped", "home-read"], home: "operator", allow: "Bash" },
+  { cases: ["home-instructions"], home: "stand-in", allow: "Bash" },
+  { cases: ["home-read-tool"], home: "operator", allow: "Bash,Read(//**)" },
+];
+
+export function gitCases({ gitPath, homeFile, standInCanary }) {
   const strip = `PATH="$(printf %s "$PATH" | tr : '\\n' | grep -vxF ${shq(gitPath)} | paste -sd: -)"; `;
   return {
     "git-net": { scaffold: "", calls: [`node -e ${shq(CANARY)} 1`], text: "Done." },
     "git-wrapped": { scaffold: SCAFFOLD, calls: GIT_CALLS, text: "Done." },
     "git-unwrapped": { scaffold: SCAFFOLD, calls: GIT_CALLS.map((c) => strip + c), text: "Done." },
-    "home-read": { scaffold: "", calls: [`cat ${shq(homeFile)} 2>/dev/null || echo denied`], text: "Done." },
+    "home-read": { scaffold: "", calls: [`cat ${shq(homeFile)} 2>&1 || echo denied`], text: "Done." },
+    "home-read-tool": { scaffold: "", calls: ["sleep 2", { name: "Read", input: { file_path: homeFile } }], text: "Done." },
+    "home-instructions": { scaffold: "", calls: ["sleep 2; env", { name: "Read", input: { file_path: standInCanary } }], text: "Done." },
   };
 }
 
 /**
  * Where a git run parts from what its cells show: the land cell's every call (one each of GIT_CALLS) exited 0 and its
- * push landed. A note or gap cell is not judged. A cell missing from either side.
+ * push landed; a deny cell reads as denied. A note or gap cell is not judged. A cell missing from either side.
  * @param {Record<string, any>} cells @returns {string[]}
  */
 export function gitProblems(cells) {
   const out = [];
-  for (const [cell, { kind }] of Object.entries(GIT_CELLS)) {
+  for (const [cell, { kind, denied, says }] of Object.entries(GIT_CELLS)) {
     const got = cells[cell];
     if (!got) out.push(`${cell}: not recorded`);
     else if (kind === "land" && (!got.landed || got.exits.length !== GIT_CALLS.length || got.exits.some((/** @type {unknown} */ e) => e !== 0))) out.push(`${cell}: exits ${JSON.stringify(got.exits)}, landed ${got.landed}: the arms' git does not commit and push through the git path`);
+    else if (kind === "deny" && JSON.stringify(got) !== JSON.stringify(denied)) out.push(`${cell}: ${JSON.stringify(got)}: ${says}`);
   }
   for (const cell of Object.keys(cells)) if (!(cell in GIT_CELLS)) out.push(`${cell}: recorded, no such git cell`);
   return out;
 }
 
 /**
- * A git run against its record: a land or gap cell that moved fails (`fail`); the note cell only says (`notes`), and
+ * A git run against its record: a land, deny or gap cell that moved fails (`fail`); the note cell only says (`notes`), and
  * whenever its push landed it says what that can mean.
  * @param {Record<string, any>} cells @param {Record<string, any> | undefined} old
  * @returns {{ fail: string[], notes: string[] }}
@@ -384,13 +498,22 @@ export function readGitRecord(path = GIT_RECORD) {
 /**
  * The git run: runPlan's environment with the git path first on PATH and the HTTP and HTTPS proxies at a dead port
  * (the stand-in, on 127.0.0.1, is no proxy's), under no outer profile, scaffolds run, Bash granted (the stand-in gives
- * no command but its cases').
- * @param {{ bin: string, port: number, root: string, plugin: string, report: string, gitPath: string }} o
+ * no command but its cases'), `allow` its --allow-tools (Bash by default; the eval's grant reaches every arm of the
+ * eval, whatever a case's allowed_tools says, 2.1.310). HOME is the operator's home (`home`): the eval tool's sandbox
+ * denies its arms' Bash reads under the HOME it is given and its parent folder, and gives each arm and each scaffold a
+ * HOME and config of its own (2.1.310), so the operator's home is shut to the arms' Bash. It holds Bash only: given a
+ * path rule in --allow-tools, Read, Glob and Grep read that home (2.1.310, 2.1.330); without one dontAsk refuses them
+ * outside the cwd, in either layout. Folders outside HOME's parent (/Volumes, /opt) stay open to Bash. CLAUDE_CONFIG_DIR stays the recorder's, so the eval reads and writes no file
+ * of the operator's ~/.claude (with it unset, the eval writes its config backups there). The eval itself reads the
+ * operator's git configuration (~/.gitconfig, ~/.config/git/config and the files their include.path names; measured
+ * by access times, whether or not GIT_CONFIG_GLOBAL is set) and runs none of its programs; nothing of it reaches a
+ * request.
+ * @param {{ bin: string, port: number, root: string, plugin: string, report: string, gitPath: string, home: string, allow?: string }} o
  */
-export function gitRunPlan({ bin, port, root, plugin, report, gitPath }) {
+export function gitRunPlan({ bin, port, root, plugin, report, gitPath, home, allow = "Bash" }) {
   const { env } = runPlan({ bin, port, root, plugin, report });
-  const args = ["plugin", "eval", plugin, "--no-publish", "--scaffold", "--mocks", "record", "--json", report, "--report", join(dirname(report), "report.html"), "--output-dir", join(dirname(report), "results"), "--runs", "1", "--ablation", "none", "--threshold", "0", "--trust-plugin", "--allow-tools", "Bash", "--keep-temp", "-j", "4"];
-  return { file: bin, args, env: { ...env, PATH: `${gitPath}${delimiter}${env.PATH}`, HTTPS_PROXY: DEAD_PROXY, HTTP_PROXY: DEAD_PROXY, NO_PROXY: "127.0.0.1,localhost" } };
+  const args = ["plugin", "eval", plugin, "--no-publish", "--scaffold", "--mocks", "record", "--json", report, "--report", join(dirname(report), "report.html"), "--output-dir", join(dirname(report), "results"), "--runs", "1", "--ablation", "none", "--threshold", "0", "--trust-plugin", "--allow-tools", allow, "--keep-temp", "-j", "4"];
+  return { file: bin, args, env: { ...env, HOME: home, PATH: `${gitPath}${delimiter}${env.PATH}`, HTTPS_PROXY: DEAD_PROXY, HTTP_PROXY: DEAD_PROXY, NO_PROXY: "127.0.0.1,localhost" } };
 }
 
 /** A proxy address nothing listens on. */
@@ -399,7 +522,7 @@ const DEAD_PROXY = "http://127.0.0.1:9";
 /**
  * The git run's plugin: a manifest and a case a git case, each in case.yaml (prompt.md takes no scaffold) with its
  * scaffold beside it and one grader the eval tool asks for.
- * @param {Record<string, { scaffold: string, calls: string[] }>} cases
+ * @param {Record<string, { scaffold: string, calls: unknown[] }>} cases
  * @returns {{ files: Record<string, string>, cases: Map<string, string> }}
  */
 export function gitPluginFiles(cases) {
@@ -539,10 +662,16 @@ export function watchSockets(pid, port, { every = 250, lookMs = 5000, stopMs = 1
 
 /**
  * The git run's cells: each one's reading, after the arms' canary found their network shut and the socket watch saw
- * no connection past loopback. A canary file is in the operator's home while it runs (`home`, the real one by default:
- * os.userInfo, not HOME), named by the run's token (`token`, random by default). Removed after, however it ended, as
- * recordRuns removes its run; on SIGINT, SIGTERM or SIGHUP the eval's tree is killed and what this run made (the canary
- * if it wrote it, its folder, the run directories) removed before the signal is raised again.
+ * no connection past loopback. The evals of EVALS, each as gitRunPlan builds it: the first and third given the
+ * operator's home as HOME (`home`, the real one by default: os.userInfo, not HOME), in which a canary file named by the
+ * run's token (`token`, random by default) lies while they run, the third alone granted a path rule; the second given
+ * a stand-in home in the recorder's directory that holds plantedHome's files. The eval's own configuration holds
+ * plantedInstructions' files in all. Then the controls:
+ * a plain Claude Code (no eval) under the recorder's NO_NETWORK profile, once given that configuration and once that
+ * home with no CLAUDE_CONFIG_DIR, must carry what CONTROLS names to a stand-in of its own, or nothing planted is shown
+ * to load and the run cannot be recorded. Removed after, however it ended, as recordRuns removes its run; on SIGINT,
+ * SIGTERM or SIGHUP the running tree is killed and what this run made (the canary if it wrote it, its folder, the run
+ * directories) removed before the signal is raised again.
  * @param {string} bin
  * @param {{ spawnRun?: (file: string, args: string[], opts: object) => any, git?: (path: string) => string, home?: string, token?: string, watch?: (pid: number | undefined, port: number) => { stop: () => Promise<{ others: string[], standIn: boolean, stuck?: boolean }> }, hasSandbox?: () => boolean, stray?: typeof processesNaming, tmp?: string, runRoot?: string, timeoutMs?: number }} [o]
  * @returns {Promise<Record<string, any>>}
@@ -556,6 +685,8 @@ export async function recordGit(bin, o = {}) {
   const since = Date.now() - 1000;
   /** @type {Awaited<ReturnType<typeof standIn>> | undefined} */
   let server;
+  /** @type {Awaited<ReturnType<typeof standIn>>[]} */
+  const others = [];
   /** @type {unknown} */
   let failure;
   /** Whether this run wrote the canary: only then is it removed. */
@@ -568,8 +699,7 @@ export async function recordGit(bin, o = {}) {
     for (const s of signals) process.off(s, onSignal);
     killTree(evalPid);
     for (const pid of running(R)) killTree(pid);
-    server?.close();
-    server?.drop();
+    for (const sv of [server, ...others]) sv?.close(), sv?.drop();
     if (wrote) rmSync(homeFile, { force: true });
     rmSync(R, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     for (const name of newRunDirs(runRoot, before, since)) unseal(join(runRoot, name));
@@ -580,69 +710,134 @@ export async function recordGit(bin, o = {}) {
     writeFileSync(homeFile, token, { flag: "wx", mode: 0o600 });
     wrote = true;
     const P = join(R, "plugin");
-    for (const d of ["cfg", "home", "tmp", "run", "work", "out"]) mkdirSync(join(R, d));
+    const H = join(R, "oph");
+    for (const d of ["cfg", "home", "tmp", "run", "work", "out", "out2", "out3", "bin", "oph"]) mkdirSync(join(R, d));
     // In the plugin: the eval tool lets the arms read it, and not write it.
     const gitPath = join(P, "git-path");
-    const scripts = gitCases({ gitPath, homeFile });
-    const { files, cases } = gitPluginFiles(scripts);
-    for (const [path, text] of Object.entries(files)) {
-      mkdirSync(dirname(join(P, path)), { recursive: true });
-      writeFileSync(join(P, path), text);
+    const scripts = gitCases({ gitPath, homeFile, standInCanary: standInCanary(H) });
+    /** @type {[string, Record<string, GitCase>][]} */
+    const plugins = EVALS.map((e, i) => [i ? join(R, `plugin${i + 1}`) : P, Object.fromEntries(Object.entries(scripts).filter(([c]) => e.cases.includes(c)))]);
+    /** @type {Map<string, string>[]} */
+    const names = [];
+    for (const [dir, some] of plugins) {
+      const { files, cases } = gitPluginFiles(some);
+      names.push(cases);
+      for (const [path, text] of Object.entries(files)) {
+        mkdirSync(dirname(join(dir, path)), { recursive: true });
+        writeFileSync(join(dir, path), text);
+      }
     }
     writeGitPath(gitPath, git(safePath()));
     writeFileSync(join(R, "cfg", ".claude.json"), JSON.stringify({ customApiKeyResponses: { approved: [KEY.slice(-20)], rejected: [] }, hasCompletedOnboarding: true }));
-    server = await standIn(false, scripts);
-    const report = join(R, "out", "report.json");
-    const { file, args, env } = gitRunPlan({ bin, port: server.port, root: R, plugin: P, report, gitPath });
-    /** @type {ReturnType<typeof watchSockets> | undefined} */
-    let watcher;
+    const log = join(R, "ran.log");
+    const planted = [plantedInstructions(join(R, "cfg"), join(R, "work"), token), plantedHome(H, join(R, "bin", "log.sh"), log, token, join(R, "work"))];
+    for (const [path, text] of planted.flatMap((p) => Object.entries(p.files))) {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, text);
+    }
+    chmodSync(join(R, "bin", "log.sh"), 0o755);
+    const markers = Object.assign({}, ...planted.map((p) => p.markers));
+    const logLines = () => (existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean) : []);
+    /** The programs the logger named in the log from its line `from` on, in PROGRAMS' order. */
+    const ran = (from = 0) => {
+      const lines = logLines().slice(from);
+      return PROGRAMS.filter((name) => lines.includes(name));
+    };
+    // The instructions case's prompt, seen as the markers are: proof the stand-in read the requests' bodies.
+    server = await standIn(false, scripts, { ...markers, [PROMPT_SEEN]: "selftest git home-instructions" });
     const port = server.port;
-    const run = await runEval(spawnRun, file, args, { cwd: join(R, "work"), env }, timeoutMs, (pid) => ((evalPid = pid), (watcher = watch(pid, port))));
-    const seen = await watcher?.stop();
-    if (run.timedOut || run.code !== 0 || !existsSync(report)) throw new Error(`claude plugin eval (the git run) ${run.timedOut ? "ran out of time" : `exited ${run.code}`}: ${run.err.slice(-2000)}`);
-    const json = JSON.parse(readFileSync(report, "utf8"));
+    /** @type {any[]} */
+    const reports = [];
+    const wrong = [];
+    for (const [i, [plugin]] of plugins.entries()) {
+      const report = join(R, `out${i ? i + 1 : ""}`, "report.json");
+      const { file, args, env } = gitRunPlan({ bin, port, root: R, plugin, report, gitPath, home: EVALS[i].home === "stand-in" ? H : home, allow: EVALS[i].allow });
+      /** @type {ReturnType<typeof watchSockets> | undefined} */
+      let watcher;
+      const run = await runEval(spawnRun, file, args, { cwd: join(R, "work"), env }, timeoutMs, (pid) => ((evalPid = pid), (watcher = watch(pid, port))));
+      const seen = await watcher?.stop();
+      const which = ["the git run", "the git run's stand-in home eval", "the git run's Read grant eval"][i];
+      if (run.timedOut || run.code !== 0 || !existsSync(report)) throw new Error(`claude plugin eval (${which}) ${run.timedOut ? "ran out of time" : `exited ${run.code}`}: ${run.err.slice(-2000)}`);
+      reports.push(JSON.parse(readFileSync(report, "utf8")));
+      if (seen?.others.length) wrong.push(`the eval's processes opened connections past loopback (${which}):\n${seen.others.join("\n")}`);
+      if (!seen?.standIn) wrong.push(`the socket watch saw no connection to the stand-in, so it did not see the run's sockets (${which})`);
+      if (seen?.stuck) wrong.push(`the socket watch's last look did not end in time, so what it saw last is unread (${which})`);
+    }
+    const ranInEvals = ran();
+    // The controls: each planted place, given to a plain Claude Code as its own, must load.
+    const { env: base } = runPlan({ bin, port: 0, root: R, plugin: P, report: join(R, "out", "report.json") });
+    for (const [name, want] of Object.entries(CONTROLS)) {
+      const sv = await standIn(false, { "control-home": { calls: [{ name: "Read", input: { file_path: standInCanary(H) } }], text: "Done." } }, markers);
+      others.push(sv);
+      const { CLAUDE_CONFIG_DIR, ...rest } = { ...base, ANTHROPIC_BASE_URL: `http://127.0.0.1:${sv.port}` };
+      const env = name === "home" ? { ...rest, HOME: H } : { ...rest, CLAUDE_CONFIG_DIR };
+      const from = logLines().length;
+      const run = await runEval(spawnRun, SANDBOX, ["-p", NO_NETWORK(sv.port, R), bin, "-p", name === "home" ? "selftest git control-home" : "selftest control", "--setting-sources", "user"], { cwd: join(R, "work"), env }, timeoutMs, (pid) => (evalPid = pid));
+      const got = { reached: INSTRUCTIONS.filter((m) => sv.seen.has(m)), ran: ran(from) };
+      sv.close();
+      if (run.timedOut || run.code !== 0) wrong.push(`control ${name}: claude -p ${run.timedOut ? "ran out of time" : `exited ${run.code}`}: ${run.err.slice(-500)}`);
+      else if (want.reached.some((m) => !got.reached.includes(m)) || want.ran.some((p) => !got.ran.includes(p))) wrong.push(`control ${name}: a plain Claude Code given the planted ${name === "home" ? "home" : "configuration"} carried ${JSON.stringify(got)}, must carry ${JSON.stringify(want)}: what is planted is not shown to load, so its absence in the arms says nothing`);
+    }
     /** @type {Record<string, any>} */
     const got = {};
     /** The cases read, the canary's among them. */
     const read = new Set();
-    const wrong = [];
-    if (seen?.others.length) wrong.push(`the eval's processes opened connections past loopback:\n${seen.others.join("\n")}`);
-    if (!seen?.standIn) wrong.push("the socket watch saw no connection to the stand-in, so it did not see the run's sockets");
-    if (seen?.stuck) wrong.push("the socket watch's last look did not end in time, so what it saw last is unread");
-    for (const c of json.cases ?? []) {
-      const cell = cases.get(c.name);
-      if (cell === undefined) {
-        wrong.push(`${c.name}: a case not written here`);
-        continue;
-      }
-      const arm = c.arms?.with ?? [];
-      const n = server.served.get(`git ${cell}`);
-      const calls = scripts[cell].calls.length;
-      if (arm.length !== 1 || arm[0].error !== null) wrong.push(`${cell}: ${arm.length} run(s), error ${JSON.stringify(arm[0]?.error)}`);
-      else if (!n || n.calls !== calls || n.texts !== 1) wrong.push(`${cell}: the run did not follow the script (${n?.calls ?? 0} of ${calls} calls, ${n?.texts ?? 0} texts)`);
-      else {
-        const trace = readTrace(String(arm[0].tracePath));
-        const said = (trace.results.get(trace.uses[0]?.id)?.text ?? "").trim();
-        if (trace.uses.length !== calls) wrong.push(`${cell}: the trace holds ${trace.uses.length} of ${calls} calls`);
-        else if (cell === "git-net") {
-          /** @type {Record<string, string> | undefined} */
-          let net;
-          try {
-            net = JSON.parse(said);
-          } catch {}
-          if (!net || typeof net !== "object") wrong.push(`git-net: the arms' canary did not run: ${said.slice(0, 200)}`);
-          else {
-            read.add(cell);
-            const open = canaryProblems(net, false);
-            if (open.length) wrong.push(`the arms' network is not shut: ${open.join("; ")}`);
+    for (const [i, json] of reports.entries()) {
+      for (const c of json.cases ?? []) {
+        const cell = names[i].get(c.name);
+        if (cell === undefined) {
+          wrong.push(`${c.name}: a case not written here`);
+          continue;
+        }
+        const arm = c.arms?.with ?? [];
+        const n = server.served.get(`git ${cell}`);
+        const calls = scripts[cell].calls.length;
+        if (arm.length !== 1 || arm[0].error !== null) wrong.push(`${cell}: ${arm.length} run(s), error ${JSON.stringify(arm[0]?.error)}`);
+        else if (!n || n.calls !== calls || n.texts !== 1) wrong.push(`${cell}: the run did not follow the script (${n?.calls ?? 0} of ${calls} calls, ${n?.texts ?? 0} texts)`);
+        else {
+          const trace = readTrace(String(arm[0].tracePath));
+          const id = trace.uses[0]?.id;
+          const result = trace.results.get(id);
+          const said = (result?.text ?? "").trim();
+          if (trace.uses.length !== calls) wrong.push(`${cell}: the trace holds ${trace.uses.length} of ${calls} calls`);
+          else if (cell === "git-net") {
+            /** @type {Record<string, string> | undefined} */
+            let net;
+            try {
+              net = JSON.parse(said);
+            } catch {}
+            if (!net || typeof net !== "object") wrong.push(`git-net: the arms' canary did not run: ${said.slice(0, 200)}`);
+            else {
+              read.add(cell);
+              const open = canaryProblems(net, false);
+              if (open.length) wrong.push(`the arms' network is not shut: ${open.join("; ")}`);
+            }
+          } else if (cell === "home-read") {
+            // The token anywhere in the output: Claude Code may add a <sandbox_violations> block after it. Denied only
+            // on the sandbox's own refusal of cat and the echo after it: an empty or other output measured nothing.
+            if (said.includes(token)) (got[cell] = { readable: true }), read.add(cell);
+            else if (/Operation not permitted/.test(said) && /^denied$/m.test(said)) (got[cell] = { readable: false }), read.add(cell);
+            else wrong.push(`${cell}: the arm's read neither printed the canary nor showed the sandbox's refusal: ${JSON.stringify(said.slice(0, 200))}`);
+          } else if (cell === "home-read-tool") {
+            // Its Read is the case's last call (the first waits for the socket watch).
+            const last = trace.uses[calls - 1]?.id;
+            const text = (trace.results.get(last)?.text ?? "").trim();
+            if (text.includes(token)) (got[cell] = { readable: true }), read.add(cell);
+            else if (trace.refused.has(last) || trace.results.get(last)?.isError) (got[cell] = { readable: false }), read.add(cell);
+            else wrong.push(`${cell}: the Read call neither gave the canary nor was refused: ${JSON.stringify(text.slice(0, 200))}`);
+          } else if (cell === "home-instructions") {
+            // The env and the Read must have run: their output goes into the next request, where the scan reads it.
+            const second = trace.uses[1]?.id;
+            const readText = trace.results.get(second)?.text ?? "";
+            if (!server.seen.has(PROMPT_SEEN)) wrong.push(`${cell}: the stand-in did not see the case's prompt in a request, so it read no request's body`);
+            else if (!/^HOME=/m.test(said)) wrong.push(`${cell}: the arm's env printed no environment: ${JSON.stringify(said.slice(0, 200))}`);
+            else if (!(trace.refused.has(second) || trace.results.get(second)?.isError || readText.includes(markers["home-canary"]))) wrong.push(`${cell}: the arm's Read of the stand-in home's canary neither gave it nor was refused: ${JSON.stringify(readText.trim().slice(0, 200))}`);
+            else (got[cell] = { reached: INSTRUCTIONS.filter((name) => server?.seen.has(name)), ran: ranInEvals }), read.add(cell);
+          } else {
+            const cwd = keptCwd(String(arm[0].tracePath), runRoot);
+            if (cwd === null || !scaffolded(cwd)) wrong.push(`${cell}: no work repository and remote where the scaffold makes them (${cwd ?? arm[0].tracePath})`);
+            else (got[cell] = GIT_CELLS[cell].kind === "land" ? { exits: exitsOf(trace), landed: landedIn(cwd) } : { landed: landedIn(cwd) }), read.add(cell);
           }
-        } else if (cell === "home-read") {
-          // The token anywhere in the output: Claude Code may add a <sandbox_violations> block after it.
-          (got[cell] = { readable: said.includes(token) }), read.add(cell);
-        } else {
-          const cwd = keptCwd(String(arm[0].tracePath), runRoot);
-          if (cwd === null || !scaffolded(cwd)) wrong.push(`${cell}: no work repository and remote where the scaffold makes them (${cwd ?? arm[0].tracePath})`);
-          else (got[cell] = GIT_CELLS[cell].kind === "land" ? { exits: exitsOf(trace), landed: landedIn(cwd) } : { landed: landedIn(cwd) }), read.add(cell);
         }
       }
     }
@@ -654,10 +849,14 @@ export async function recordGit(bin, o = {}) {
     throw e;
   } finally {
     for (const s of signals) process.off(s, onSignal);
+    for (const sv of others) sv.close(), sv.drop();
     if (wrote) rmSync(homeFile, { force: true });
     await sweep({ R, server, failure, runRoot, before, since, running });
   }
 }
+
+/** The stand-in's name for the instructions case's prompt among the markers it looks for. */
+const PROMPT_SEEN = "prompt";
 
 /** The run directories' parent: the eval tool makes them in /tmp on macOS, whatever TMPDIR says (2.1.310). */
 const RUN_ROOT = "/private/tmp";
@@ -1035,7 +1234,7 @@ async function gitCommand(bin, rest) {
   for (const line of [...wrong, ...notes]) process.stdout.write(`${line}\n`);
   if (record) {
     if (wrong.length) {
-      process.stdout.write("not recorded: the arms' git does not commit and push through the git path\n");
+      process.stdout.write("not recorded: a git or deny cell reads otherwise than it must (above)\n");
       process.exit(1);
     }
     const lines = Object.entries(cells).map(([k, v]) => `    ${JSON.stringify(k)}: ${JSON.stringify(v)}`).join(",\n");
@@ -1043,7 +1242,7 @@ async function gitCommand(bin, rest) {
     process.stdout.write(`recorded ${Object.keys(cells).length} git cell(s) with Claude Code ${version}; moved: ${fail.map((l) => l.split(":")[0]).join(", ") || "none"}\n`);
   } else {
     for (const line of fail) process.stdout.write(`${line}\n`);
-    if (!fail.length) process.stdout.write(`Claude Code ${version} runs git and reads the home in its arms as recorded\n`);
+    if (!fail.length) process.stdout.write(`Claude Code ${version} runs git in its arms and keeps the operator's home and instructions from them, as recorded\n`);
     process.exitCode = wrong.length || fail.length ? 1 : 0;
   }
 }

@@ -17,8 +17,8 @@ import { pathToFileURL } from "node:url";
 import { loadConfig } from "../core/config.mjs";
 import { loadGraph } from "../plan/mechanization.mjs";
 import { ALLOWED, CALLS, CHECKS, JUDGED, NEVER, REFERENCES, SUBAGENTS, fateOf, graderFile, traceCalls } from "./eval/checks.mjs";
-import { WRAPPERS, realGit, writeGitPath } from "./eval/git-path.mjs";
-import { GIT_CELLS, NO_NETWORK, NotMeasured, RECORD, SANDBOX, callsOf, canaryProblems, exitOf, exitsOf, gitCases, gitMoves, gitPluginFiles, gitProblems, gitRunPlan, keptCwd, watchSockets, landedIn, newRunDirs, outboundOf, plan, pluginFiles, problems, readGitRecord, readRecord, readTrace, recordGit, recordRuns, runPlan, scaffolded, treeOf, unseal } from "./eval/selftest.mjs";
+import { WRAPPERS, realGit, shq, writeGitPath } from "./eval/git-path.mjs";
+import { CONFIG_INSTRUCTIONS, CONTROLS, GIT_CELLS, EVALS, HOME_INSTRUCTIONS, INSTRUCTIONS, NO_NETWORK, PROGRAMS, NotMeasured, RECORD, SANDBOX, callsOf, canaryProblems, exitOf, exitsOf, gitCases, gitMoves, gitPluginFiles, gitProblems, gitRunPlan, keptCwd, watchSockets, landedIn, newRunDirs, outboundOf, plan, plantedHome, plantedInstructions, pluginFiles, problems, readGitRecord, readRecord, readTrace, recordGit, recordRuns, runPlan, scaffolded, treeOf, unseal } from "./eval/selftest.mjs";
 
 /** The open nodes of the work graph: a `gap:` or an `until` names one. */
 async function openNodes() {
@@ -156,14 +156,17 @@ test("eval selftest control: a moved verdict or call, a grader read otherwise, a
   assert.match(problems(extra).join("\n"), /^nothing: recorded, no such check$/m);
 });
 
-test("eval selftest: the git cells: with the git path an arm commits and pushes; a landing without it is a note, the home read a gap", async () => {
+test("eval selftest: the git cells: with the git path an arm commits and pushes; a landing without it is a note; the operator's home and the planted instructions are denied", async () => {
   const rec = readGitRecord();
   assert.match(rec.claudeCode, /^\d+\.\d+\.\d+$/);
   assert.deepEqual(gitProblems(rec.cells), []);
   assert.deepEqual(Object.keys(rec.cells), Object.keys(GIT_CELLS));
   const open = await openNodes();
   for (const [cell, c] of Object.entries(GIT_CELLS)) if (c.kind === "gap") assert.ok(open.has(String(c.gap)), `${cell}: ${c.gap} is no open node`);
-  assert.equal(GIT_CELLS["home-read"].gap, "eval-arm-reads-home");
+  assert.deepEqual(Object.entries(GIT_CELLS).filter(([, c]) => c.kind === "deny").map(([cell]) => cell), ["home-read", "home-instructions"]);
+  assert.deepEqual([rec.cells["home-read"], rec.cells["home-instructions"]], [{ readable: false }, { reached: [], ran: [] }], "the record says denied");
+  assert.deepEqual(GIT_CELLS["home-read-tool"], { kind: "gap", gap: "eval-arm-read-tool-home" }, "the Read tool under the eval's path grant: a gap, recorded, naming the node that would close it");
+  for (const [cell, c] of Object.entries(GIT_CELLS)) assert.notEqual(c.gap, "eval-arm-reads-home", `${cell}: no gap names the node this cell's task closes`);
   // The plain record holds no git cell: check and record keep the outer sandbox, the git run is its own command.
   assert.ok(!("git" in readRecord()), "selftest.json holds no git cell");
   const cells = () => JSON.parse(JSON.stringify(rec.cells));
@@ -171,16 +174,22 @@ test("eval selftest: the git cells: with the git path an arm commits and pushes;
     assert.match(gitProblems({ ...cells(), "git-wrapped": wrapped }).join("\n"), /^git-wrapped: exits .*: the arms' git does not commit and push through the git path$/m, JSON.stringify(wrapped));
   }
   assert.deepEqual(gitProblems({ ...cells(), "git-unwrapped": { landed: true } }), [], "a landing without the git path is no problem");
-  assert.deepEqual(gitProblems({ ...cells(), "home-read": { readable: false } }), [], "a gap is recorded, not judged");
+  // A deny cell fails whenever it reads otherwise than denied, whatever the record says.
+  assert.match(gitProblems({ ...cells(), "home-read": { readable: true } }).join("\n"), /^home-read: \{"readable":true\}: an arm's Bash read the canary file in the operator's home$/m);
+  for (const [reached, ran] of [[["claude-md"], []], [["memory", "memory-dir"], []], [["home-rules"], []], [[], ["mcp"]], [[], []]]) {
+    const one = reached.length || ran.length ? { reached, ran } : { reached };
+    assert.match(gitProblems({ ...cells(), "home-instructions": one }).join("\n"), /^home-instructions: \{.+\}: a request of an arm carried planted instructions, or a planted hook or server ran$/m, JSON.stringify(one));
+  }
+  for (const odd of [{}, { readable: "false" }, { readable: false, more: 1 }]) assert.equal(gitProblems({ ...cells(), "home-read": odd }).length, 1, JSON.stringify(odd));
   const missing = cells();
   delete missing["git-wrapped"];
   assert.match(gitProblems(missing).join("\n"), /^git-wrapped: not recorded$/m);
   assert.match(gitProblems({ ...cells(), "git-other": { landed: false } }).join("\n"), /^git-other: recorded, no such git cell$/m);
   // What moved against the record: a git or gap cell fails; the cell without the git path only notes, naming both causes.
   assert.deepEqual(gitMoves(rec.cells, rec.cells), { fail: [], notes: [] });
-  const moved = gitMoves({ ...cells(), "git-wrapped": { exits: [0, 128], landed: false }, "home-read": { readable: false } }, rec.cells);
+  const moved = gitMoves({ ...cells(), "git-wrapped": { exits: [0, 128], landed: false }, "home-read": { readable: true } }, rec.cells);
   assert.match(moved.fail.join("\n"), /^git-wrapped: the arm now gives \{"exits":\[0,128\],"landed":false\}, recorded \{"exits":\[0,0\],"landed":true\}$/m);
-  assert.match(moved.fail.join("\n"), /^home-read: the arm now gives \{"readable":false\}, recorded \{"readable":true\} \(gap: eval-arm-reads-home\)$/m);
+  assert.match(moved.fail.join("\n"), /^home-read: the arm now gives \{"readable":true\}, recorded \{"readable":false\}$/m);
   const landed = gitMoves({ ...cells(), "git-unwrapped": { landed: true } }, rec.cells);
   assert.deepEqual(landed.fail, []);
   assert.match(landed.notes.join("\n"), /^git-unwrapped: the push landed with no git path: Claude Code's credential-helper deny changed, or this git keeps its helpers outside the folders Claude Code scans/m);
@@ -188,16 +197,26 @@ test("eval selftest: the git cells: with the git path an arm commits and pushes;
   assert.deepEqual(gitMoves(rec.cells, undefined).fail.length, Object.keys(GIT_CELLS).filter((c) => GIT_CELLS[c].kind !== "note").length, "no record: every judged cell is new");
 });
 
-test("eval selftest: the git run is the recorder's environment with the git path first, proxies to a dead port, scaffolds on and no outer profile", () => {
+test("eval selftest: the git run is the recorder's environment with the git path first, proxies to a dead port, the operator's home as HOME, scaffolds on and no outer profile", () => {
   const o = { bin: "claude", port: 4321, root: "/private/tmp/en-pg-x", plugin: "/private/tmp/en-pg-x/plugin", report: "/private/tmp/en-pg-x/out/report.json" };
-  const { file, args, env } = gitRunPlan({ ...o, gitPath: "/private/tmp/en-pg-x/plugin/git-path" });
+  const { file, args, env } = gitRunPlan({ ...o, gitPath: "/private/tmp/en-pg-x/plugin/git-path", home: "/opt/op-home" });
   const shut = runPlan(o);
   assert.equal(file, "claude", "the eval tool's own sandbox cannot start under another");
   assert.deepEqual(args.slice(0, 3), ["plugin", "eval", "/private/tmp/en-pg-x/plugin"]);
   for (const a of ["--no-publish", "--scaffold", "--trust-plugin", "--keep-temp"]) assert.ok(args.includes(a), a);
   for (const [a, v] of [["--mocks", "record"], ["--allow-tools", "Bash"], ["--ablation", "none"], ["--runs", "1"]]) assert.equal(args[args.indexOf(a) + 1], v, a);
+  // The eval's grant is the one lever a path rule reaches the arms by (a case's allowed_tools rule has none, 2.1.310): only
+  // the eval that runs the Read tool's gap case is given one.
+  const granted = gitRunPlan({ ...o, gitPath: "/private/tmp/en-pg-x/plugin/git-path", home: "/opt/op-home", allow: "Bash,Read(//**)" });
+  assert.deepEqual(granted.args, args.map((a) => (a === "Bash" ? "Bash,Read(//**)" : a)));
+  assert.deepEqual(EVALS.map((e) => [e.cases, e.home, e.allow]), [[["git-net", "git-wrapped", "git-unwrapped", "home-read"], "operator", "Bash"], [["home-instructions"], "stand-in", "Bash"], [["home-read-tool"], "operator", "Bash,Read(//**)"]]);
   for (const a of ["--no-scaffold", "--allow-real-servers", "--publish-report", "--model", "--judge-model"]) assert.ok(!args.includes(a), a);
-  assert.deepEqual({ ...env, PATH: shut.env.PATH, HTTPS_PROXY: undefined, HTTP_PROXY: undefined, NO_PROXY: undefined }, { ...shut.env, HTTPS_PROXY: undefined, HTTP_PROXY: undefined, NO_PROXY: undefined }, "the same key, base URL, directories and switches");
+  const own = { HTTPS_PROXY: undefined, HTTP_PROXY: undefined, NO_PROXY: undefined, HOME: undefined };
+  assert.deepEqual({ ...env, PATH: shut.env.PATH, ...own }, { ...shut.env, ...own }, "the same key, base URL, directories and switches");
+  // The eval denies its arms the HOME it is given: the operator's; its configuration stays the recorder's.
+  assert.equal(env.HOME, "/opt/op-home");
+  assert.equal(env.CLAUDE_CONFIG_DIR, "/private/tmp/en-pg-x/cfg");
+  assert.equal(shut.env.HOME, "/private/tmp/en-pg-x/home", "the plain run keeps a home of its own");
   assert.equal(env.PATH, `/private/tmp/en-pg-x/plugin/git-path:${shut.env.PATH}`);
   assert.deepEqual([env.HTTPS_PROXY, env.HTTP_PROXY, env.NO_PROXY], ["http://127.0.0.1:9", "http://127.0.0.1:9", "127.0.0.1,localhost"]);
   // The plain run is held where it was: under the profile, scaffolds off, no proxy.
@@ -205,18 +224,44 @@ test("eval selftest: the git run is the recorder's environment with the git path
   assert.ok(shut.args.includes("--no-scaffold") && !("HTTPS_PROXY" in shut.env));
   // A case a cell, in case.yaml with its scaffold; the canary's and the home read's have none.
   const gitPath = "/private/tmp/en-pg-x/plugin/git-path.x*[y]";
-  const cases = gitCases({ gitPath, homeFile: "/private/tmp/en-pg-x/home/.en-eval-home-it's" });
+  const cases = gitCases({ gitPath, homeFile: "/private/tmp/en-pg-x/home/.en-eval-home-it's", standInCanary: "/private/tmp/en-pg-x/oph/.en-eval-canary" });
   assert.deepEqual(Object.keys(cases), ["git-net", ...Object.keys(GIT_CELLS)]);
   const { files, cases: names } = gitPluginFiles(cases);
   assert.deepEqual([...names.values()], Object.keys(cases));
   for (const path of Object.keys(files)) assert.match(path, /^(?:\.claude-plugin\/plugin\.json|evals\/g\d{3}\/(?:case\.yaml|scaffold\.sh))$/, path);
   for (const [name, cell] of names) {
     const yaml = files[`evals/${name}/case.yaml`];
-    assert.match(yaml, new RegExp(`\\n  prompt: "selftest git ${cell}"\\n  max_turns: ${cases[cell].calls.length + 3}\\n  allowed_tools: \\["Bash"\\]\\n`), cell);
+    assert.ok(yaml.includes(`\n  prompt: "selftest git ${cell}"\n  max_turns: ${cases[cell].calls.length + 3}\n  allowed_tools: ["Bash"]\n`), cell);
     assert.equal(yaml.includes('scaffold_script: "scaffold.sh"'), Boolean(cases[cell].scaffold), cell);
     assert.equal(files[`evals/${name}/scaffold.sh`], cases[cell].scaffold || undefined, cell);
   }
   assert.equal(cases["home-read"].scaffold, "");
+  assert.deepEqual(cases["home-instructions"], { scaffold: "", calls: ["sleep 2; env", { name: "Read", input: { file_path: "/private/tmp/en-pg-x/oph/.en-eval-canary" } }], text: "Done." }, "what it reads is the requests: the arm's environment and its Read of the stand-in home's canary go into them; its first call holds its eval open for the socket watch");
+  // The planted instructions: the eval's own configuration, each file a marker of the run's token.
+  const planted = plantedInstructions("/private/tmp/en-pg-x/cfg", "/private/tmp/en-pg-x/work", "0123abcd".padEnd(32, "f"));
+  assert.deepEqual(Object.keys(planted.markers), CONFIG_INSTRUCTIONS);
+  assert.deepEqual(INSTRUCTIONS, [...CONFIG_INSTRUCTIONS, ...HOME_INSTRUCTIONS]);
+  for (const [name, word] of Object.entries(planted.markers)) assert.equal(word, `en-eval-${name}-0123abcd`);
+  assert.deepEqual(Object.keys(planted.files), ["CLAUDE.md", "rules/en-eval.md", "projects/-private-tmp-en-pg-x-work/memory/MEMORY.md", "auto-memory/MEMORY.md", "settings.json"].map((p) => `/private/tmp/en-pg-x/cfg/${p}`));
+  for (const name of CONFIG_INSTRUCTIONS) assert.equal(Object.values(planted.files).filter((t) => t.includes(planted.markers[name])).length, 1, name);
+  // The stand-in home: its .claude's instructions, a hook and a server that log and speak, and the key approved.
+  const ph = plantedHome("/private/tmp/en-pg-x/oph", "/private/tmp/en-pg-x/bin/log.sh", "/private/tmp/en-pg-x/ran.log", "0123abcd".padEnd(32, "f"), "/private/tmp/en-pg-x/work");
+  assert.deepEqual(Object.keys(ph.markers), HOME_INSTRUCTIONS);
+  assert.deepEqual(HOME_INSTRUCTIONS, ["home-claude-md", "home-rules", "home-memory", "home-env", "home-hook", "home-inline", "home-canary"]);
+  assert.deepEqual(Object.keys(ph.files), [".claude/CLAUDE.md", ".claude/rules/en-eval.md", ".claude/projects/-private-tmp-en-pg-x-work/memory/MEMORY.md", ".claude/settings.json", ".claude.json", ".en-eval-canary"].map((p) => `/private/tmp/en-pg-x/oph/${p}`).concat("/private/tmp/en-pg-x/bin/log.sh"));
+  for (const name of HOME_INSTRUCTIONS) assert.ok(Object.values(ph.files).some((t) => t.includes(ph.markers[name])), name);
+  const settings = JSON.parse(ph.files["/private/tmp/en-pg-x/oph/.claude/settings.json"]);
+  assert.deepEqual(settings.env, { EN_EVAL_HOME_ENV: "en-eval-home-env-0123abcd" });
+  assert.deepEqual(settings.permissions, { allow: ["Read(//**)", "Read(~/**)"] }, "a grant that would hand an arm the home through Read");
+  const hooks = settings.hooks;
+  assert.deepEqual(Object.keys(hooks), ["SessionStart", "UserPromptSubmit"]);
+  for (const at of Object.values(hooks)) assert.deepEqual(at[0].hooks.map((/** @type {any} */ h) => h.command), ["'/private/tmp/en-pg-x/bin/log.sh' hook", 'echo en-eval-home-inline-0123abcd "$EN_EVAL_HOME_ENV"'], "the logger, and an inline hook that needs no file");
+  assert.equal(ph.files["/private/tmp/en-pg-x/oph/.en-eval-canary"], "en-eval-home-canary-0123abcd\n");
+  const hj = JSON.parse(ph.files["/private/tmp/en-pg-x/oph/.claude.json"]);
+  assert.deepEqual(hj.mcpServers, { "en-eval": { command: "/private/tmp/en-pg-x/bin/log.sh", args: ["mcp"] } });
+  assert.match(ph.files["/private/tmp/en-pg-x/bin/log.sh"], /^#!\/bin\/sh\necho "\$1" >> '\/private\/tmp\/en-pg-x\/ran\.log'\necho en-eval-home-hook-0123abcd\n$/);
+  assert.deepEqual(CONTROLS, { config: { reached: ["claude-md", "rules", "memory-dir"], ran: [] }, home: { reached: HOME_INSTRUCTIONS, ran: PROGRAMS } });
+  assert.deepEqual(JSON.parse(planted.files["/private/tmp/en-pg-x/cfg/settings.json"]), { autoMemoryDirectory: "/private/tmp/en-pg-x/cfg/auto-memory" });
   const scaffold = cases["git-wrapped"].scaffold.split("\n");
   for (const line of ["set -e", "git init -q --bare --ref-format=files remote.git", "git init -q -b main --ref-format=files work", "git -C work remote add origin ../remote.git"]) assert.ok(scaffold.includes(line), line);
   assert.equal(cases["git-unwrapped"].scaffold, cases["git-wrapped"].scaffold);
@@ -227,7 +272,8 @@ test("eval selftest: the git run is the recorder's environment with the git path
     assert.equal(execFileSync("/bin/sh", ["-c", `${strip}printf %s "$PATH"`], { encoding: "utf8", env: { ...process.env, PATH: before } }), after, before);
   }
   assert.match(cases["git-net"].calls[0], /^node -e '[\s\S]*192\.0\.2\.1[\s\S]*' 1$/);
-  assert.deepEqual(cases["home-read"].calls, [`cat '/private/tmp/en-pg-x/home/.en-eval-home-it'\\''s' 2>/dev/null || echo denied`]);
+  assert.deepEqual(cases["home-read"].calls, [`cat '/private/tmp/en-pg-x/home/.en-eval-home-it'\\''s' 2>&1 || echo denied`]);
+  assert.deepEqual(cases["home-read-tool"], { scaffold: "", calls: ["sleep 2", { name: "Read", input: { file_path: "/private/tmp/en-pg-x/home/.en-eval-home-it's" } }], text: "Done." });
   // An arm's canary need not reach the stand-in; every other way it fails is the same.
   assert.deepEqual(canaryProblems({ remote: "EPERM", lookup: "ENOTFOUND", resolve: "ECONNREFUSED", local: "EPERM" }, false), []);
   assert.match(canaryProblems({}, false).join(), /192\.0\.2\.1 was not refused \(undefined\)/);
@@ -363,12 +409,54 @@ test("eval selftest: the git run writes the git path into its plugin and a canar
    * canary file's text, read as the arm would); `skip`: a cell left out of the report; `short`: a cell whose run stops a
    * turn early; `jump`: a cell whose second turn the arm skips, so its text comes after one call; `bare`: a cell with no
    * scaffolded repositories in its cwd; `drop`: a cell whose trace loses its last call.
-   * `homeRead`: the home read's output from the canary file's path.
-   * @param {{ net?: string, home?: string, homeRead?: (file: string) => string, landed?: Record<string, boolean>, skip?: string, short?: string, bare?: string, jump?: string, drop?: string }} play
+   * `homeRead`: the home read's output from the canary file's path; `readTool`: the Read tool's result. `leak`: files of
+   * the eval's configuration (`~/` of its HOME) whose text every request carries, as a system prompt would; `hooks`: the
+   * HOME's planted hook runs in the eval. `escape`: a cell whose requests write each dash as a JSON escape, which the
+   * stand-in parses as the same text and a scan of the body's bytes does not see. A control (sandbox-exec, claude -p)
+   * sends one request carrying what Claude Code loads from its configuration, or its HOME's .claude with the hook's and
+   * the server's output, unless `deaf` names it; `controlRuns`: what of the logger the home control runs. The home control
+   * also runs the inline hook with the settings' env and reads the canary its prompt's script names. `envOut`: the
+   * instructions case's env output; `homeTool`: its Read of the stand-in home's canary.
+   * @param {{ net?: string, home?: string, homeRead?: (file: string) => string, readTool?: { content: string, is_error?: boolean }, envOut?: string, homeTool?: { content: string, is_error?: boolean }, landed?: Record<string, boolean>, skip?: string, short?: string, bare?: string, jump?: string, drop?: string, leak?: string[], hooks?: boolean, escape?: string, deaf?: string, controlRuns?: string[] }} play
    */
   const evalWith = (play) => (/** @type {string} */ file, /** @type {string[]} */ args, /** @type {any} */ opts) => {
-    spawned.push([file, args, opts.env, readFileSync(join(opts.env.PATH.split(":")[0], "git"), "utf8"), readdirSync(home).map((f) => [f, statSync(join(home, f)).mode & 0o777])]);
+    const cfg = opts.env.CLAUDE_CONFIG_DIR;
     const child = Object.assign(new EventEmitter(), { pid: undefined, stderr: Object.assign(new EventEmitter(), { setEncoding() {} }) });
+    const runLogger = (/** @type {string} */ h, /** @type {string} */ what) => {
+      const settings = JSON.parse(readFileSync(join(h, ".claude", "settings.json"), "utf8"));
+      const command = what === "mcp" ? shq(JSON.parse(readFileSync(join(h, ".claude.json"), "utf8")).mcpServers["en-eval"].command) + " mcp" : settings.hooks.SessionStart[0].hooks[0].command;
+      return execFileSync("/bin/sh", ["-c", command], { encoding: "utf8" });
+    };
+    if (file === SANDBOX) {
+      const name = cfg ? "config" : "home";
+      controls.push([args, opts.env]);
+      const runs = play.controlRuns ?? ["hook", "mcp"];
+      // A control whose hook does not run still carries its marker (the logger's text), so only what ran differs.
+      const logger = cfg ? "" : JSON.parse(readFileSync(join(opts.env.HOME, ".claude.json"), "utf8")).mcpServers["en-eval"].command;
+      const h = opts.env.HOME;
+      const homeSide = () => {
+        const settings = JSON.parse(readFileSync(join(h, ".claude", "settings.json"), "utf8"));
+        const memory = join(h, ".claude", "projects", String(opts.cwd).replace(/[^A-Za-z0-9]/g, "-"));
+        return [
+          ...[".claude/CLAUDE.md", ".claude/rules/en-eval.md"].map((f) => readFileSync(join(h, f), "utf8")),
+          ...readdirSync(memory, { recursive: true }).map(String).filter((f) => f.endsWith("MEMORY.md")).map((f) => readFileSync(join(memory, f), "utf8")),
+          ...runs.map((r) => runLogger(h, r)),
+          runs.includes("hook") ? "" : readFileSync(logger, "utf8"),
+          execFileSync("/bin/sh", ["-c", settings.hooks.SessionStart[0].hooks[1].command], { encoding: "utf8", env: { ...process.env, ...settings.env } }),
+          readFileSync(join(h, ".en-eval-canary"), "utf8"),
+        ];
+      };
+      const loaded = play.deaf === name ? [] : cfg ? ["CLAUDE.md", "rules/en-eval.md", "auto-memory/MEMORY.md"].map((f) => readFileSync(join(cfg, f), "utf8")) : homeSide();
+      fetch(`${opts.env.ANTHROPIC_BASE_URL}/v1/messages`, { method: "POST", body: JSON.stringify({ model: "m", system: loaded.join("\n"), tools: [{ name: "Bash" }], messages: [{ role: "user", content: args[4] }] }) }).then((r) => r.text()).then(() => child.emit("close", 0), () => child.emit("close", 1));
+      return child;
+    }
+    const which = Number(/out(\d?)/.exec(args[args.indexOf("--json") + 1])?.[1] || 1) - 1;
+    const second = which === 1;
+    spawned.push([file, args, opts.env, readFileSync(join(opts.env.PATH.split(":")[0], "git"), "utf8"), readdirSync(home).map((f) => [f, statSync(join(home, f)).mode & 0o777]), readdirSync(cfg, { recursive: true }).map(String).sort(), which]);
+    const key = join(args[2], "..", "work").replace(/[^A-Za-z0-9]/g, "-");
+    const system = (play.leak ?? []).filter((f) => second || !f.startsWith("~/")).map((f) => readFileSync(f.startsWith("~/") ? join(opts.env.HOME, f.slice(2).replace("{cwd}", key)) : join(cfg, f.replace("{work}", key)), "utf8")).join("\n");
+    if (second && play.hooks) runLogger(opts.env.HOME, "hook");
+    // A planted env or permission that reached the second eval's arm: its env output or its Read carries the marker.
     (async () => {
       const report = args[args.indexOf("--json") + 1];
       const evals = join(args[2], "evals");
@@ -380,21 +468,24 @@ test("eval selftest: the git run writes the git path into its plugin and a canar
         const messages = [{ role: "user", content: `selftest git ${cell}` }];
         const events = [];
         for (let turn = 0; ; turn++) {
-          const res = await fetch(`${opts.env.ANTHROPIC_BASE_URL}/v1/messages`, { method: "POST", body: JSON.stringify({ model: "m", tools: [{ name: "Bash" }], messages }) });
+          const json = JSON.stringify({ model: "m", system, tools: [{ name: "Bash" }], messages });
+          const res = await fetch(`${opts.env.ANTHROPIC_BASE_URL}/v1/messages`, { method: "POST", body: cell === play.escape ? json.replace(/-/g, "\\u002d") : json });
           const command = /"partial_json":"((?:[^"\\]|\\.)*)"/.exec(await res.text());
           if (!command) break;
-          const c = JSON.parse(JSON.parse(`"${command[1]}"`)).command;
+          const input = JSON.parse(JSON.parse(`"${command[1]}"`));
+          const c = input.command ?? "";
           const id = `${cell}-${turn}`;
           const read = /^cat '([^']+)'/.exec(c);
-          const text = cell === "git-net" ? (play.net ?? JSON.stringify({ remote: "EPERM", lookup: "ENOTFOUND", resolve: "ECONNREFUSED", local: "EPERM" })) : cell === "home-read" ? (play.home ?? (read ? (play.homeRead ?? ((f) => readFileSync(f, "utf8")))(read[1]) : "")) : play.landed?.[cell] ? "" : "Exit code 72\nxcode-select";
-          events.push({ type: "assistant", message: { content: [{ type: "tool_use", id, name: "Bash", input: {} }] } });
-          events.push({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, content: text }] } });
-          messages.push({ role: "assistant", content: "x" });
+          const tool = !input.file_path ? undefined : cell === "home-read-tool" ? (play.readTool ?? { content: readFileSync(input.file_path, "utf8") }) : (play.homeTool ?? { content: "<tool_use_error>refused</tool_use_error>", is_error: true });
+          const text = tool ? tool.content : cell === "home-instructions" ? (play.envOut ?? "HOME=/h\nPATH=/bin\n") : cell === "home-read-tool" ? "" : cell === "git-net" ? (play.net ?? JSON.stringify({ remote: "EPERM", lookup: "ENOTFOUND", resolve: "ECONNREFUSED", local: "EPERM" })) : cell === "home-read" ? (play.home ?? (read ? (play.homeRead ?? ((f) => readFileSync(f, "utf8")))(read[1]) : "")) : play.landed?.[cell] ? "" : "Exit code 72\nxcode-select";
+          events.push({ type: "assistant", message: { content: [{ type: "tool_use", id, name: tool ? "Read" : "Bash", input: {} }] } });
+          events.push({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, content: text, ...(tool?.is_error ? { is_error: true } : {}) }] } });
+          messages.push({ role: "assistant", content: "x" }, { role: "user", content: [{ type: "tool_result", content: text }] });
           if (cell === play.jump && turn === 0) messages.push({ role: "assistant", content: "x" });
           if (cell === play.short && turn === 1) break;
         }
         if (cell === play.drop) events.splice(-2);
-        const run = join(runRoot, `e-${name}x`);
+        const run = join(runRoot, `e-${["", "h", "t"][which]}${name}x`);
         const cwd = join(run, "sealed", "home", "cwd");
         mkdirSync(join(run, "out"), { recursive: true });
         if (["git-wrapped", "git-unwrapped"].includes(cell) && cell !== play.bare) {
@@ -416,16 +507,34 @@ test("eval selftest: the git run writes the git path into its plugin and a canar
   };
   /** A socket watch that saw `seen`. @param {{ others: string[], standIn: boolean, stuck?: boolean }} seen */
   const watching = (seen) => () => ({ stop: async () => seen });
+  /** @type {any[]} */
+  const controls = [];
   const o = { git: () => "/opt/x/bin/git", hasSandbox: () => true, stray: () => [], tmp, runRoot, home, watch: watching({ others: [], standIn: true }) };
   const listening = () => ["SIGINT", "SIGTERM", "SIGHUP"].map((sig) => process.listenerCount(sig));
   const before = listening();
   const cells = await recordGit("claude", { ...o, spawnRun: evalWith({ landed: { "git-wrapped": true } }) });
   assert.deepEqual(listening(), before, "no signal handler is left behind");
-  assert.deepEqual(cells, { "git-wrapped": { exits: [0, 0], landed: true }, "git-unwrapped": { landed: false }, "home-read": { readable: true } });
-  assert.equal(spawned.length, 1);
-  const [file, args, env, script, inHome] = spawned[0];
+  assert.deepEqual(cells, { "git-wrapped": { exits: [0, 0], landed: true }, "git-unwrapped": { landed: false }, "home-read": { readable: true }, "home-read-tool": { readable: true }, "home-instructions": { reached: [], ran: [] } });
+  assert.equal(spawned.length, 3, "three evals");
+  const [file, args, env, script, inHome, inCfg] = spawned[0];
   const root = join(args[2], "..");
-  assert.deepEqual([file, args, env], Object.values(gitRunPlan({ bin: "claude", port: Number(new URL(env.ANTHROPIC_BASE_URL).port), root, plugin: join(root, "plugin"), report: join(root, "out", "report.json"), gitPath: join(root, "plugin", "git-path") })));
+  const port = Number(new URL(env.ANTHROPIC_BASE_URL).port);
+  assert.deepEqual([file, args, env], Object.values(gitRunPlan({ bin: "claude", port, root, plugin: join(root, "plugin"), report: join(root, "out", "report.json"), gitPath: join(root, "plugin", "git-path"), home })));
+  assert.equal(env.HOME, home, "the eval's HOME is the home the canary is in");
+  // The second eval: the instructions case alone, HOME the stand-in home in the recorder's directory, the same stand-in;
+  // the third: the Read tool's gap case alone, the only eval granted a path rule.
+  assert.deepEqual(spawned[1].slice(0, 3), Object.values(gitRunPlan({ bin: "claude", port, root, plugin: join(root, "plugin2"), report: join(root, "out2", "report.json"), gitPath: join(root, "plugin", "git-path"), home: join(root, "oph") })));
+  assert.deepEqual(spawned[2].slice(0, 3), Object.values(gitRunPlan({ bin: "claude", port, root, plugin: join(root, "plugin3"), report: join(root, "out3", "report.json"), gitPath: join(root, "plugin", "git-path"), home, allow: "Bash,Read(//**)" })));
+  for (const s of spawned) assert.equal(s[4].length, 1, "the canary stays in the operator's home while every eval runs");
+  // The controls: a plain claude -p under the recorder's profile, given the configuration, then the stand-in home alone.
+  assert.equal(controls.length, 2);
+  for (const [i, [cargs, cenv]] of controls.entries()) {
+    const cport = Number(new URL(cenv.ANTHROPIC_BASE_URL).port);
+    assert.notEqual(cport, port, "a stand-in of its own");
+    assert.deepEqual(cargs, ["-p", NO_NETWORK(cport, root), "claude", "-p", i ? "selftest git control-home" : "selftest control", "--setting-sources", "user"]);
+    assert.deepEqual([cenv.HOME, cenv.CLAUDE_CONFIG_DIR], i ? [join(root, "oph"), undefined] : [join(root, "home"), join(root, "cfg")]);
+  }
+  for (const p of ["CLAUDE.md", "rules/en-eval.md", "auto-memory/MEMORY.md", "settings.json", `projects/${join(root, "work").replace(/[^A-Za-z0-9]/g, "-")}/memory/MEMORY.md`]) assert.ok(inCfg.includes(p), `${p} planted in the eval's configuration: ${inCfg.join(", ")}`);
   assert.equal(script, "#!/bin/sh\nexec '/opt/x/bin/git' \"$@\"\n", "the git path in the plugin, the arms can read it");
   assert.equal(inHome.length, 1, "one canary file in the home while the eval runs");
   assert.match(inHome[0][0], /^\.en-eval-home-[0-9a-f]{8}$/);
@@ -433,13 +542,37 @@ test("eval selftest: the git run writes the git path into its plugin and a canar
   assert.deepEqual(readdirSync(home), [], "the canary file is removed after");
   assert.deepEqual(readdirSync(runRoot), ["e-before1"], "every run directory the git run made is removed, one that was there before is kept");
   assert.ok(!existsSync(root), "the recorder's own directory is removed");
-  // Readable exactly when the output holds this run's token, whatever Claude Code adds after it.
+  // Readable when the output holds this run's token, whatever Claude Code adds after it; denied only on cat's refusal by
+  // the sandbox and the echo after it; any other output measured nothing, and the run is not recorded.
   const violations = "\n<sandbox_violations>\nfile-read-data /x\n</sandbox_violations>";
-  for (const [home, readable] of [["denied\n", false], [`denied${violations}`, false], ["cat: x: No such file\n", false], ["", false]]) {
-    assert.deepEqual((await recordGit("claude", { ...o, spawnRun: evalWith({ landed: { "git-wrapped": true }, home }) }))["home-read"], { readable }, JSON.stringify(home));
+  const refused = "cat: /h/.en-eval-home-x: Operation not permitted\ndenied";
+  for (const home of [`${refused}\n`, `${refused}${violations}`]) {
+    assert.deepEqual((await recordGit("claude", { ...o, spawnRun: evalWith({ landed: { "git-wrapped": true }, home }) }))["home-read"], { readable: false }, JSON.stringify(home));
   }
+  for (const home of ["denied\n", `denied${violations}`, "cat: x: No such file or directory\ndenied\n", "", "cat: x: Operation not permitted\n"]) {
+    await assert.rejects(recordGit("claude", { ...o, spawnRun: evalWith({ landed: { "git-wrapped": true }, home }) }), /^home-read: the arm's read neither printed the canary nor showed the sandbox's refusal: /m, JSON.stringify(home));
+  }
+  // The Read tool's gap: readable on the token, not on a refusal or an error; any other result measured nothing.
+  for (const [readTool, readable] of /** @type {[any, boolean][]} */ ([[{ content: "<tool_use_error>File is in a directory that is denied</tool_use_error>", is_error: true }, false]])) {
+    assert.deepEqual((await recordGit("claude", { ...o, spawnRun: evalWith({ landed: { "git-wrapped": true }, readTool }) }))["home-read-tool"], { readable }, JSON.stringify(readTool));
+  }
+  await assert.rejects(recordGit("claude", { ...o, spawnRun: evalWith({ landed: { "git-wrapped": true }, readTool: { content: "" } }) }), /^home-read-tool: the Read call neither gave the canary nor was refused: ""$/m);
   const withToken = (/** @type {string} */ f) => readFileSync(f, "utf8") + violations;
   assert.deepEqual((await recordGit("claude", { ...o, spawnRun: evalWith({ landed: { "git-wrapped": true }, homeRead: withToken }) }))["home-read"], { readable: true });
+  // Each planted file whose text a request carried is named, in INSTRUCTIONS' order; a run with none names none; a
+  // planted hook that ran in an eval is named by what it logged and by its output, if a request carried it.
+  for (const [leak, reached] of /** @type {[string[], string[]][]} */ ([[["CLAUDE.md"], ["claude-md"]], [["auto-memory/MEMORY.md", "rules/en-eval.md"], ["rules", "memory-dir"]], [["projects/{work}/memory/MEMORY.md"], ["memory"]], [["~/.claude/CLAUDE.md", "~/.claude/rules/en-eval.md"], ["home-claude-md", "home-rules"]], [["settings.json"], []], [["~/.claude/settings.json"], ["home-env", "home-inline"]], [["~/.claude/projects/{cwd}/memory/MEMORY.md"], ["home-memory"]]])) {
+    assert.deepEqual((await recordGit("claude", { ...o, spawnRun: evalWith({ landed: { "git-wrapped": true }, leak }) }))["home-instructions"], { reached, ran: [] }, JSON.stringify(leak));
+  }
+  assert.deepEqual((await recordGit("claude", { ...o, spawnRun: evalWith({ landed: { "git-wrapped": true }, hooks: true }) }))["home-instructions"], { reached: [], ran: ["hook"] });
+  // The planted env in the arm's environment, the planted grant letting the arm's Read reach the stand-in home's canary.
+  const word = (/** @type {string} */ n) => `en-eval-${n}-0123abcd`;
+  const t = { ...o, token: "0123abcd".padEnd(32, "e") };
+  assert.deepEqual((await recordGit("claude", { ...t, spawnRun: evalWith({ landed: { "git-wrapped": true }, envOut: `HOME=/h\nEN_EVAL_HOME_ENV=${word("home-env")}\n` }) }))["home-instructions"], { reached: ["home-env"], ran: [] });
+  assert.deepEqual((await recordGit("claude", { ...t, spawnRun: evalWith({ landed: { "git-wrapped": true }, homeTool: { content: `${word("home-canary")}\n` } }) }))["home-instructions"], { reached: ["home-canary"], ran: [] });
+  // Either call that measured nothing: the run is not recorded.
+  await assert.rejects(recordGit("claude", { ...o, spawnRun: evalWith({ landed: { "git-wrapped": true }, envOut: "" }) }), /^home-instructions: the arm's env printed no environment: ""$/m);
+  await assert.rejects(recordGit("claude", { ...o, spawnRun: evalWith({ landed: { "git-wrapped": true }, homeTool: { content: "" } }) }), /^home-instructions: the arm's Read of the stand-in home's canary neither gave it nor was refused: ""$/m);
   // A canary name already taken: the run stops, and the file it did not write stays.
   writeFileSync(join(home, ".en-eval-home-0123abcd"), "someone else's\n");
   await assert.rejects(recordGit("claude", { ...o, token: "0123abcd".padEnd(32, "0"), spawnRun: evalWith({}) }), /EEXIST/);
@@ -456,15 +589,22 @@ test("eval selftest: the git run writes the git path into its plugin and a canar
     [{ jump: "git-wrapped" }, /^git-wrapped: the run did not follow the script \(1 of 2 calls, 1 texts\)$/m],
     [{ drop: "git-wrapped", landed: { "git-wrapped": true } }, /^git-wrapped: the trace holds 1 of 2 calls$/m],
     [{ bare: "git-unwrapped" }, /^git-unwrapped: no work repository and remote where the scaffold makes them \(.*\/e-g002x\/sealed\/home\/cwd\)$/m],
+    [{ escape: "home-instructions", landed: { "git-wrapped": true } }, /^home-instructions: the stand-in did not see the case's prompt in a request, so it read no request's body$/m],
+    [{ deaf: "config", landed: { "git-wrapped": true } }, /^control config: a plain Claude Code given the planted configuration carried \{"reached":\[\],"ran":\[\]\}, must carry \{"reached":\["claude-md","rules","memory-dir"\],"ran":\[\]\}: what is planted is not shown to load/m],
+    [{ controlRuns: [], landed: { "git-wrapped": true } }, /^control home: a plain Claude Code given the planted home carried \{"reached":\["home-claude-md","home-rules","home-memory","home-env","home-hook","home-inline","home-canary"\],"ran":\[\]\}/m],
+    // A hook that ran in an eval is no proof the control ran it: only the control's own lines count.
+    [{ hooks: true, controlRuns: ["mcp"], landed: { "git-wrapped": true } }, /^control home: .*"ran":\["mcp"\]\}, must carry/m],
+    [{ deaf: "home", landed: { "git-wrapped": true } }, /^control home: a plain Claude Code given the planted home carried \{"reached":\[\],"ran":\[\]\}, must carry \{"reached":\["home-claude-md","home-rules","home-memory","home-env","home-hook","home-inline","home-canary"\],"ran":\["hook","mcp"\]\}/m],
   ]);
   for (const [play, why] of fails) await assert.rejects(recordGit("claude", { ...o, spawnRun: evalWith(play) }), why, JSON.stringify(play));
-  await assert.rejects(recordGit("claude", { ...o, spawnRun: evalWith({}), watch: watching({ others: ["claude 1 u 3u IPv4 TCP 10.0.0.5:1->160.79.104.10:443"], standIn: true }) }), /^the eval's processes opened connections past loopback:\nclaude 1 u 3u IPv4 TCP 10\.0\.0\.5:1->160\.79\.104\.10:443$/m);
-  await assert.rejects(recordGit("claude", { ...o, spawnRun: evalWith({}), watch: watching({ others: [], standIn: false }) }), /^the socket watch saw no connection to the stand-in, so it did not see the run's sockets$/m);
-  await assert.rejects(recordGit("claude", { ...o, spawnRun: evalWith({}), watch: watching({ others: [], standIn: true, stuck: true }) }), /^the socket watch's last look did not end in time, so what it saw last is unread$/m);
+  await assert.rejects(recordGit("claude", { ...o, spawnRun: evalWith({}), watch: watching({ others: ["claude 1 u 3u IPv4 TCP 10.0.0.5:1->160.79.104.10:443"], standIn: true }) }), /^the eval's processes opened connections past loopback \(the git run\):\nclaude 1 u 3u IPv4 TCP 10\.0\.0\.5:1->160\.79\.104\.10:443$/m);
+  await assert.rejects(recordGit("claude", { ...o, spawnRun: evalWith({}), watch: watching({ others: [], standIn: false }) }), /^the socket watch saw no connection to the stand-in, so it did not see the run's sockets \(the git run\)$/m);
+  await assert.rejects(recordGit("claude", { ...o, spawnRun: evalWith({}), watch: watching({ others: [], standIn: true, stuck: true }) }), /^the socket watch's last look did not end in time, so what it saw last is unread \(the git run\)$/m);
   assert.deepEqual(readdirSync(runRoot), ["e-before1"]);
   assert.deepEqual(readdirSync(home), []);
   assert.deepEqual(listening(), before, "nor after a run that failed");
-  assert.notEqual(spawned[0][4][0][0], spawned[1][4][0][0], "each run names its canary anew");
+  const firsts = spawned.filter((s) => s[0] !== "error" && s[6] === 0);
+  assert.notEqual(firsts[0][4][0][0], firsts[1][4][0][0], "each run names its canary anew");
   await assert.rejects(recordGit("claude", { ...o, hasSandbox: () => false, spawnRun: evalWith({}) }), NotMeasured);
   assert.equal(spawned.filter((s) => s[0] === "error").length, 0, spawned.filter((s) => s[0] === "error").map((s) => s[1]).join("\n"));
 });

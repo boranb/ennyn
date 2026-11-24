@@ -3,6 +3,8 @@
   "cells": {
     "git-wrapped": {"exits":[0,0],"landed":true},
     "git-unwrapped": {"landed":false},
-    "home-read": {"readable":true}
+    "home-read": {"readable":false},
+    "home-read-tool": {"readable":true},
+    "home-instructions": {"reached":[],"ran":[]}
   }
 }

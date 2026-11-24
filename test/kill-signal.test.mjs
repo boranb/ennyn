@@ -28,7 +28,7 @@ const ALLOWED = [
   { file: "test/linux-run.mjs", text: 'spawnSync("docker", args,', count: 1, why: "its options are an input and a cwd (the parameter's type); docker gets no time limit here" },
   { file: "test/fault-fs.mjs", text: "} = cp;", count: 1, why: "takes child_process's functions to wrap them for a fault: it passes the caller's options through and adds no limit" },
   { file: "test/fault-fs.mjs", text: "(cp);", count: 1, why: "replaces child_process's functions with the wrappers that fail one call; no limit of its own" },
-  { file: "test/eval/selftest.mjs", text: "runEval(spawnRun,", count: 3, why: "hands spawn to runEval, whose call has no timeout option: its own timer kills the run's process tree with SIGKILL" },
+  { file: "test/eval/selftest.mjs", text: "runEval(spawnRun,", count: 4, why: "hands spawn to runEval, whose call has no timeout option: its own timer kills the run's process tree with SIGKILL" },
   { file: "test/reference/npm.mjs", text: "    req,", count: 1, why: "hands on a createRequire loader rooted in npm's own folder, to load npm's modules (arborist, pacote); nothing loads child_process through it" },
   { file: "test/reference/pretooluse.mjs", text: 'execFileSync("git", [...quiet,', count: 4, why: "the options are a cwd and an environment (`at`, a name the file declares twice, so the reader does not resolve it); no limit" },
 ];
