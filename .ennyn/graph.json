@@ -1877,17 +1877,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "eval-arm-reads-home",
-      "title": "plugin-eval's arms can read the operator's real home: the eval tool denies reads under the HOME it is given and the temporary folders, and the recorder gives it its own HOME; user settings' sandbox.filesystem.denyRead does not reach the arms (measured 2.1.310: the git run's home-read cell reads a canary file the recorder writes in the real home). A paid run's model could read ~/.ssh, ~/.config/gh, ~/.docker/config.json, ~/.claude.json and other repositories. Find a layout that denies it (the real HOME given to the eval with CLAUDE_CONFIG_DIR kept apart, measured) and turn the gap cell into a check. No paid run until this closes; the same layout check covers the instructions an arm loads: whether the operator's ~/.claude/CLAUDE.md, rules and auto memory reach it (the eval tool starts every run with --setting-sources user)",
-      "value": "high",
-      "cost": "M",
-      "cluster": "security",
-      "source": "cycle 2026-10-28 (14), eval-git-macos measurements and security review round 1; a third-party eval script read 2026-10-29 (all rights reserved; read, nothing copied): its baseline arm ran with --setting-sources project and the user's personal CLAUDE.md stayed loaded; it keeps its own calls apart with claudeMdExcludes and CLAUDE_CODE_DISABLE_AUTO_MEMORY=1, both strings present in the Claude Code 2.1.310 binary",
-      "since": 14
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "eval-keychain-exec",
       "title": "Claude Code's credential-helper deny in an eval arm only blocks reads: the sandbox profile allows process-exec and the keychain Mach services (com.apple.SecurityServer, com.apple.securityd.xpc), and the Homebrew and Command Line Tools git-credential-osxkeychain helpers, started by their absolute path, ran under a mimic of the deny (2.1.310, security review). Measure from an arm, with a test keychain item of its own, whether the keychain answers. Done only when an arm is measured not to reach the keychain; if it answers, the standing rule (paid plugin-eval runs only in a separate macOS account or a Linux VM) goes into plugin-eval's title, and only then does this close. No paid run until this closes",
       "value": "high",
@@ -6317,19 +6306,6 @@
       "status": "planned",
       "needs": [],
       "since": 38,
-      "id": "ci-test-staged-state-asserted",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "tests",
-      "mechanization": true,
-      "sourceClass": "test-built-on-assumption",
-      "title": "test/ci.test.mjs is at rung 2 (previous-fix rows in cycles 36 and 38): its hook tests build the staged state with hand-written git steps and trust it, and a step that left a file in place (git rm --cached, then a later add restaging it) made a test check a state it never reached (c38-t1-author-r2-01). A test or helper that asserts the index (git ls-files --stage) matches the set each hook test means before it commits",
-      "source": "cycle 2026-11-16 (38) review of ci-pr-ref-through-input; convergence recurrence ladder, rung 2"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 38,
       "id": "reference-ay-add-split",
       "value": "low",
       "cost": "S",
@@ -6877,17 +6853,6 @@
       "status": "planned",
       "needs": [],
       "since": 53,
-      "id": "commit-identity-doctor-design-decision",
-      "value": "low",
-      "cost": "S",
-      "cluster": "security",
-      "title": "checks/commit-identity.mjs is still at the fix-loop brake after its design decision (cycle 53, round 2: previous-fix 2): the leftovers sit in doctor's second reading of the rule, so the decision is about doctor, not patch nodes. Cause: doctor judges the clone from the work tree's config alone and words its own reasons, where push-check takes the strictest of work tree, HEAD and upstream. Decide on the top two rungs: doctor calls pushRule's own reading (strictest of three) and prints the shape it found in the unmeasured reason, or the limit in DESIGN.md. Leftovers: doctor reads the work tree's rule only (c53-t2-code-r1-02, pre-existing); the unmeasured reason names neither a character outside ASCII nor a negated namespace, the shapes cycle 53 added (c53-t2-sec-r2-01); doctor never reads gpg.ssh.revocationFile, so a revoked key reads listed where git says B (evidence gap, pre-existing); a local upstream (remote .) with push.default matching or followTags is unmeasured for what a bare push updates (evidence gap)",
-      "source": "cycle 2026-11-24 (53) review of commit-identity-design-decision, rounds 1 and 2; cycle 53 convergence, fix-loop brake"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 53,
       "id": "push-hook-verdict-other-programs",
       "value": "low",
       "cost": "S",
@@ -6941,6 +6906,109 @@
       "cluster": "security",
       "title": "plugin-eval arms granted a path rule for Read, Glob or Grep at the eval level (--allow-tools, as the git run does for its home-read-tool cell) read the HOME the eval is given: the sandbox holds Bash only (measured 2.1.310 and 2.1.330; a case-level allowed_tools path rule has no effect). Find a layout or setting that denies the read tools the home, and turn the home-read-tool gap cell in test/eval/git-cell.json into a deny check. No paid run until this closes",
       "source": "cycle 2026-11-24 (54) security review of eval-arm-reads-home, rounds 1 and 2"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 54,
+      "id": "eval-selftest-design-decision",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "title": "test/eval/selftest.mjs is at the fix-loop brake (cycle 54, round 2: previous-fix 5): decide on the top two rungs, or write the limit, for its leftovers: the second and third evals stay visible to the socket watch only through a fixed sleep 2 in their case (a loaded machine refuses a clean run; c54-t1-code-r2-02); the planted keyed memory marker can never load while the planted settings set autoMemoryDirectory (c54-t1-code-r1-03); a hook that ran in an arm with its log write denied and its output kept out of a request would go unseen; the eval process reads the operator's git config, include.path files too, though none of git's programs runs and nothing reaches a request. Cause: each new cell adds a run, a control and a wait to one recorder that judges by watching processes from outside",
+      "source": "cycle 2026-11-25 (54) convergence: fix-loop brake on test/eval/selftest.mjs; review of eval-arm-reads-home"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 54,
+      "id": "scan-audit-54-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "init",
+      "title": "init-scan audit lows (cycle 54): a roadmap file ending in a newline is counted one line long (c54-t4-audit-r0-08); a submodule is named twice, with and without its trailing slash, in the new-project found list (r0-09); githubRepo decides GitHub with its own host pattern (notgithub.com reads as GitHub, ssh.github.com:443 does not) where permissions.mjs has isGithubHost (r0-11). Lean: RECENT_COMMITS and TEST_ALTERNATIVES exported for no reader; recentCommits and historyPaths parse the same git log -z --raw format; MAX_LISTED now unused by production callers",
+      "source": "cycle 2026-11-25 (54) feature audit of setup/scan.mjs"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 54,
+      "id": "staged-state-asserted-shared",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "tests",
+      "mechanization": true,
+      "sourceClass": "test-built-on-assumption",
+      "title": "Hook tests in hook, loosening, cli, fault-injection, secrets, deps and setup test files commit a hand-built index without asserting it: move test/ci.test.mjs's staged/bytes/each helper to a shared test helper and have each such commit state its set (five-row impact table: a shared helper)",
+      "source": "cycle 2026-11-25 (54) sweep of ci-test-staged-state-asserted"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 54,
+      "id": "clone-setup-reads-push-rule",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "title": "clone-setup reads the work tree's commits rule alone, so the remedy push-check prints says no setting is needed when the rule is set at HEAD or the upstream (or a loosening is committed on the branch); it needs its own address handling, since it reads commits.addresses as written. Row c54-t2-author-r0-01",
+      "source": "cycle 2026-11-25 (54) commit-identity-doctor-design-decision, measured in its lab m3"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 54,
+      "id": "doctor-newest-signed-commit",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "title": "doctor warns early about a key push-check will refuse by asking git for %G? %GS of the newest commit signed by user.email (no second reading of the allowed-signers file); since cycle 54 doctor's ✓ names settings only and an unlisted, revoked or namespaced key is first seen at push-check",
+      "source": "cycle 2026-11-25 (54) security review of commit-identity-doctor-design-decision, round 1"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 54,
+      "id": "git-helper-literal-pathspecs-stash",
+      "value": "low",
+      "cost": "S",
+      "cluster": "tests",
+      "title": "core/git.mjs FIXED_CONFIG passes --literal-pathspecs to every call; with it git stash push -u stores an untracked file but leaves it on disk (git 2.56.0). No production path runs stash; a test that stashes through git() and then reads the disk reads the leftover (one did, scan audit 54)",
+      "source": "cycle 2026-11-25 (54) review of the scan audit, round 1, measured"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 54,
+      "id": "lock-orphan-never-exits",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "title": "An `ennyn lock -- true` process outlived its caller by 17 h 40 min (parent launchd, no queue ticket, not the holder) until the orchestrator stopped it by PID in cycle 54; why a waiter whose caller is gone neither takes its turn nor exits is unmeasured. Measure, then make a waiter exit when its caller dies or say the limit",
+      "source": "the user, 2026-11-24: left to the session"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 54,
+      "id": "colima-delete-leaves-ssh-mux",
+      "value": "low",
+      "cost": "S",
+      "cluster": "method",
+      "title": "Labs' Linux runs (colima start -p cNN-tN, then colima delete) left 14 ssh mux masters of deleted profiles running for 9 to 23 h (cycles 52 and 53); measure whether colima delete stops them, and if not, the lab template stops the mux by its PID or the closing lists them",
+      "source": "the user, 2026-11-24: left to the session"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 54,
+      "id": "measured-claim-names-cell",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "gates",
+      "mechanization": true,
+      "sourceClass": "claim-outruns-evidence",
+      "title": "claim-outruns-evidence recurred 10 times in cycle 54 (9 in review), in doctor ✓ texts and in DESIGN.md and header sentences about what another program does: a sentence in DESIGN.md, docs/ or a module header that names a program version (Claude Code 2.1.x, git 2.x, OpenSSH, Node) as measured names the test, cell or record that measured it, and a test fails on a version-naming sentence with no such pointer or a pointer to nothing; doctor's ✓ keys are checked against what their code path reads (a ✓ naming a setting the path never reads fails)",
+      "source": "cycle 2026-11-25 (54) convergence: claim-outruns-evidence the most recurring class, 10 rows"
     }
   ],
   "done": [
@@ -8149,6 +8217,27 @@
       "status": "done",
       "finished": "2026-11-24",
       "cluster": "distribution"
+    },
+    {
+      "id": "eval-arm-reads-home",
+      "title": "Closed in cycle 54 (7d88820): selftest.mjs git gives the eval the operator's real HOME with CLAUDE_CONFIG_DIR kept apart, so the sandbox denies an arm's Bash the home (home-read is a deny cell that needs the refusal shown); a stand-in home and the planted config dir hold CLAUDE.md, rules, auto memory, settings env and permissions.allow, hooks (logger and inline) and an MCP server, each first shown to load by a plain claude -p control, and none reaches an arm (2.1.310, note on 2.1.330). Three evals: the Read path grant runs alone. The read tools under an eval-level path grant still read the home: eval-arm-read-tool-home. Leftovers: eval-selftest-design-decision",
+      "status": "done",
+      "finished": "2026-11-25",
+      "cluster": "security"
+    },
+    {
+      "id": "commit-identity-doctor-design-decision",
+      "title": "Closed in cycle 54 (1451c30): doctor no longer reads allowed-signers lines (signingPublicKey and signerListed deleted); its commits ✓ names only the settings read for the rule in force and leaves the key, listed or revoked, to git's %G? at push-check, held there by 13 signers shapes with real keys and a KRL; the rule-source drift of doctor and clone-setup is a DESIGN.md limit (clone-setup's part: clone-setup-reads-push-rule); push-check now refuses a local upstream redirected by remote \".\" config or a url rewrite of \".\"",
+      "status": "done",
+      "finished": "2026-11-25",
+      "cluster": "security"
+    },
+    {
+      "id": "ci-test-staged-state-asserted",
+      "title": "Closed in cycle 54 (56a0503): every hook run and commit in test/ci.test.mjs states the index set it means and a helper reading git diff --cached fails on any difference; the cycle-38 slip was still in the hand-off hook test and is fixed. Other files: staged-state-asserted-shared",
+      "status": "done",
+      "finished": "2026-11-25",
+      "cluster": "tests"
     }
   ],
   "declined": [

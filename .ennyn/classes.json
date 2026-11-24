@@ -304,7 +304,8 @@
         "new: test pins how much a cut line shows",
         "new: harness limit unknown to the test",
         "new: a failure report sized by its corpus stalls the runner",
-        "new: cycle printer walks every simple path"
+        "new: cycle printer walks every simple path",
+        "new: silent cut of a proposal list"
       ],
       "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict and record no gate. These tests hold the surfaces they name, and the class came back on others in cycles 9, 10, 12 and 14. Named in cycle 7."
     },
@@ -453,7 +454,10 @@
       "nodes": [
         "suite-wall-clock-limits"
       ],
-      "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict; no gate. Named in cycle 12, seen in seven cycles by the notes' count."
+      "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict; no gate. Named in cycle 12, seen in seven cycles by the notes' count.",
+      "linked": [
+        "new: run ends before its watch looks"
+      ]
     },
     {
       "id": "terminal-control-bytes",
@@ -633,7 +637,8 @@
         "new: exit status assumed not measured",
         "new: known parting named with the wrong cause",
         "new: shown value rounds across its threshold",
-        "new: message states an outcome it does not know"
+        "new: message states an outcome it does not know",
+        "new: wrong cause named in a comment"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet."
     },
@@ -908,7 +913,19 @@
         "new: reference fixture short of the state its cell names",
         "new: test reads a repository file its guard does not allow"
       ],
-      "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
+      "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate.",
+      "gates": [
+        {
+          "commit": "56a05031929e44868df9d11ebb2ebf55185a6a3c",
+          "file": "test/ci.test.mjs",
+          "action": "red-green",
+          "proof": "Each hook run and commit in the CI tests states the index set it means, and a helper reading git diff --cached fails on any difference; a test holds it to the cycle-38 slip. Other hand-staging test files: staged-state-asserted-shared."
+        }
+      ],
+      "nodes": [
+        "ci-test-staged-state-asserted",
+        "staged-state-asserted-shared"
+      ]
     },
     {
       "id": "text-over-project-limit",
@@ -1094,7 +1111,8 @@
       "linked": [
         "new: probe text carries a home path or project name into a corpus",
         "new: home path in checked-in record",
-        "new: private text in tracked files"
+        "new: private text in tracked files",
+        "new: made-up fixture in a refused shape"
       ],
       "judged": "Named in cycle 23 by the orchestrator, from the rows that named it."
     },
@@ -1307,6 +1325,28 @@
         "new: general config key overridden by a more specific one"
       ],
       "judged": "Named in cycle 53 by the orchestrator, from the review of push-hook-lows: git reads protocol.<name>.allow before protocol.allow, so the hook guard did nothing on git 2.34 under a common global setting; GIT_ALLOW_PROTOCOL replaced it (ce0c35b)."
+    },
+    {
+      "id": "guard-text-pinned-to-layout",
+      "says": "A guard that names code by its text fails when an edit moves, splits or reflows that text, though the behaviour it guards still holds.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: edit moves a guarded line"
+      ],
+      "judged": "Named in cycle 54 by the orchestrator, from a round-one author row (an inserted cleanup line split a guarded span)."
+    },
+    {
+      "id": "one-thing-two-names",
+      "says": "One thing is listed or counted under two spellings of its name (with and without a trailing separator, two cases, two paths to it), so a list shows it twice or a count is off.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: one entry named in two spellings"
+      ],
+      "judged": "Named in cycle 54 by the orchestrator, from an audit row (a submodule listed with and without its trailing slash)."
     }
   ]
 }
