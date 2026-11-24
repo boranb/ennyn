@@ -268,6 +268,55 @@ test("risky paths: top-most matching directory, or the file in a flat layout; wh
     { path: "server/migrations", files: 1, glob: "server/migrations/**" },
     { path: "src/auth", files: 2, glob: "src/auth/**" },
   ]);
+  // A file with no extension is a file: its own name is no directory to glob below.
+  assert.deepEqual(riskyPaths(["bin/login"], pat()), [{ path: "bin/login", files: 1, glob: "bin/login" }]);
+  // A dotted flat name is read by its first part, its subject (scan audit 54): the security audit's scope reads this list.
+  const accept = ["src/app/auth.service.ts", "src/app/auth.guard.ts", "src/app/login.component.ts", "src/app/login.ts", "app/payments.controller.ts", "lib/auth.d.ts", "src/Auth.Service.cs", "views/login.html.erb"];
+  const reject = ["src/app/author.service.ts", "src/app/authors.module.ts", "src/app/app.component.ts", "src/app/oauthless.ts", "src/user.service.ts", "src/order-list.component.ts", "src/vite.config.ts", "docs/auth.service.md", "src/auth.service.spec.ts"];
+  assert.deepEqual(riskyPaths([...accept, ...reject], pat(), Infinity).map((r) => r.path), [...accept].sort());
+});
+
+test("risky paths (scan audit 54): init-scan proposes every one, whole: a flat app's files do not push its risky folders out", () => {
+  const r = repo();
+  const app = ["auth.service.ts", "auth.guard.ts", "auth.interceptor.ts", "login.component.ts", "login.component.html", "login.component.scss", "session.service.ts", "order.service.ts", "orders.component.ts", "orders.component.html", "orders.component.scss", "payment.service.ts", "app.component.ts"];
+  r.commit("feat: app", { ...Object.fromEntries(app.map((n) => [`src/app/${n}`, "x\n"])), "src/migrations/001_init.sql": "x\n", "src/payments/stripe.ts": "x\n", "server/src/main.ts": "x\n" });
+  const risky = scanProject({ cwd: r.dir, env: {} }).risky.map((x) => x.path);
+  assert.equal(risky.length, 14, "twelve flat files and two folders");
+  assert.ok(risky.includes("src/migrations") && risky.includes("src/payments"), risky.join(" "));
+  // The printout init reads names each of them.
+  const human = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: r.dir, encoding: "utf8" });
+  assert.equal(human.status, 0, human.stderr);
+  const line = human.stdout.split("\n").find((l) => l.startsWith("Risky-looking paths")) ?? "";
+  assert.equal(line.split(", ").length, 14, line);
+  assert.match(line, /src\/migrations\/\*\*.*src\/payments\/\*\*/);
+});
+
+test("fix label (scan audit 54): Hotfix, Hot fix and Onarıldı start a fix; a commit touching only tests is outside the count; the examples are the newest fixes whichever label", () => {
+  const hot = proposeFixSubject(many(40, (i) => (i % 4 ? `Add page ${i}` : i % 8 ? `Hotfix crash ${i}` : `Hot fix login ${i}`)));
+  assert.deepEqual([hot.pick, hot.reason, hot.matches], ["verb", "ok", 10]);
+  const onar = proposeFixSubject(many(40, (i) => (i % 4 ? `Ekran eklendi ${i}` : i % 8 ? `Onarıldı: liste ${i}` : `onarildi sayac ${i}`)));
+  assert.deepEqual([onar.pick, onar.reason, onar.matches], ["turkish", "ok", 10]);
+  const commits = [
+    { subject: "fix: only the test", paths: ["src/a.test.js"] },
+    { subject: "fix: the code", paths: ["src/a.js", "src/a.test.js"] },
+  ];
+  assert.deepEqual(productionSubjects(commits, pat()), ["fix: the code"]);
+  // Newest first: the three Turkish fixes are newer than the conventional ones, though the conventional label comes first.
+  const mixed = proposeFixSubject(many(40, (i) => (i < 3 ? `düzeltme: a${i}` : i < 6 ? `fix: b${i}` : `feat: c${i}`)));
+  assert.equal(mixed.pick, "conventional+turkish");
+  assert.deepEqual(mixed.examples, ["düzeltme: a0", "düzeltme: a1", "düzeltme: a2"]);
+});
+
+test("churn (scan audit 54): MIN_HISTORY commits are enough; a path counts from max(10, a quarter of the commits rounded up), the most rewritten first", () => {
+  const dir = mkdtempSync(join(tmpdir(), "en-churn-"));
+  /** `n` commits, each path in the newest `counts[path]`. @param {number} n @param {Record<string, number>} counts */
+  const commitsOf = (n, counts) => many(n, (i) => ({ subject: `feat: ${i}`, paths: Object.keys(counts).filter((p) => i < counts[p]) }));
+  const at30 = churnPaths(commitsOf(MIN_HISTORY, { "src/ten.js": 10, "src/nine.js": 9, "src/twenty.js": 20 }), dir, pat());
+  assert.equal(at30.min, 10, "a quarter of 30 is under ten");
+  assert.deepEqual(at30.paths.map((p) => [p.path, p.commits]), [["src/twenty.js", 20], ["src/ten.js", 10]]);
+  const at41 = churnPaths(commitsOf(41, { "src/ten.js": 10, "src/eleven.js": 11 }), dir, pat());
+  assert.equal(at41.min, 11, "a quarter of 41 is 10.25, rounded up");
+  assert.deepEqual(at41.paths.map((p) => p.path), ["src/eleven.js"]);
 });
 
 test("work sources: checkbox counts; a roadmap split into a directory counts; archives and unrelated files are skipped", () => {
@@ -330,6 +379,11 @@ test("commands: entry points and fast variants only; mutation from a stryker scr
   const bom = mkdtempSync(join(tmpdir(), "en-cmd-bom-"));
   put(bom, { "package.json": "\uFEFF" + JSON.stringify({ scripts: { test: "node --test" } }) });
   assert.deepEqual(projectCommands(bom), { commands: ["npm test"], mutation: null, unreadable: [], unmeasured: {}, outside: [] });
+  // Eight entry points are kept whatever they run; past them only those that run or may run tests.
+  const lots = mkdtempSync(join(tmpdir(), "en-cmd-lots-"));
+  const names = ["check", "check:ci", "check:fast", "check:quick", "check:unit", "lint", "lint:ci", "lint:fast", "lint:quick", "test"];
+  put(lots, { "package.json": JSON.stringify({ scripts: Object.fromEntries(names.map((n) => [n, "x"])) }) });
+  assert.deepEqual(projectCommands(lots).commands, [...names.slice(0, 8).map((n) => `npm run ${n}`), "npm test"]);
 });
 
 test("scan: outside a repository and with a broken config it reports, it does not throw", () => {
@@ -723,6 +777,15 @@ test("new project: the stash reflog and nested notes read as git reads them; nam
   const bare = committed({ "README.md": "# x\n" });
   git(["update-ref", "refs/stash", "HEAD"], { cwd: bare });
   assert.deepEqual(newVerdict(bare), NEW, "a stash ref with no reflog");
+  // Code stashed under a newer stash entry is read from the stash's reflog (scan audit 54).
+  const older = committed({ "README.md": "# x\n" });
+  put(older, { "src/a.js": "x\n" });
+  git(["add", "src/a.js"], { cwd: older });
+  git([...WHO, "stash", "push", "-q"], { cwd: older });
+  put(older, { "README.md": "# y\n" });
+  git([...WHO, "stash", "push", "-q"], { cwd: older });
+  rmSync(join(older, "src"), { recursive: true, force: true });
+  assert.deepEqual(newVerdict(older), notNew(["src/"]), "an older stash entry holds code");
   // Notes under nested refs (nested-notes-ref).
   const noted = committed({ "README.md": "# x\n" });
   git([...WHO, "notes", "--ref", "plain", "add", "-m", "n", "HEAD"], { cwd: noted });
@@ -821,6 +884,9 @@ test("new project: the review's other probes (round 1): repositories git reads, 
   git([...WHO, "stash", "push", "-q", "-u"], { cwd: stashed });
   put(stashed, { "README.md": "# y\n" });
   git([...WHO, "stash", "push", "-q"], { cwd: stashed });
+  // git's `--literal-pathspecs`, which every Ennyn git call passes, makes `stash push -u` keep the stashed file on disk
+  // (git 2.56.0, measured in scan audit 54): the verdict must come from the stash.
+  rmSync(join(stashed, "src"), { recursive: true, force: true });
   assert.deepEqual(newVerdict(stashed), notNew(["src/"]));
   // A tag on a tree (tag-on-a-tree) names no commit.
   const tagged = committed({ "README.md": "# x\n" });
@@ -1267,6 +1333,9 @@ test("commit style: language guessed from subjects, also Turkish typed without d
   const en = commitStyle(["feat: add the parser", "fix: crash when the list is empty", "docs: note on config", "Add a page for users", "Fix the build"]);
   assert.deepEqual([en.language.guess, en.typedShare], ["en", 0.6]);
   assert.equal(commitStyle(["feat: x", "fix: y"]).language.guess, null, "too few readable subjects to guess");
+  // As many Turkish as English subjects: English, the default language (scan audit 54).
+  const tie = commitStyle(["fix: the crash", "feat: add the page", "docs: note for users", "düzeltme: liste", "ekle: yeni sayfa", "temizlik: eski kod"]);
+  assert.deepEqual([tie.language.guess, tie.language.tr, tie.language.en], ["en", 3, 3]);
 });
 
 test("doctor: a fix label that misses a form the commit gate admits warns, naming that form (doctor-label-misses-bang, doctor-custom-label-misses-bang)", async () => {

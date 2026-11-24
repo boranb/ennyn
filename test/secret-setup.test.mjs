@@ -304,4 +304,10 @@ test("secret setup: init-scan gives the setup and the block, no worktrees folder
   assert.equal(secrets.mode, "asIs");
   assert.deepEqual(secrets.proposal, noBypassBlock({ worktrees: null, hosts: ["registry.npmjs.org"], vars: ["NPM_TOKEN"] }));
   assert.deepEqual(secrets.proposal.sandbox.filesystem.allowWrite, []);
+  // A package.json below the top, tracked, brings the registry too (scan audit 54).
+  const nested = place();
+  git(["init", "-q"], { cwd: nested.dir });
+  put(nested.dir, { "web/package.json": "{}" });
+  git(["add", "-A"], { cwd: nested.dir });
+  assert.deepEqual(scanProject({ cwd: nested.dir, env: nested.env }).agentSetup.secrets.proposal.sandbox.network.allowedDomains, ["registry.npmjs.org"]);
 });

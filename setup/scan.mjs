@@ -389,10 +389,11 @@ export function testLayout(files, testRe) {
  * Paths whose name says auth, security, migrations, payments, ledger… A
  * matching directory covers everything below it (the first matching segment
  * is taken, so no listed directory sits inside another); in a flat layout the
- * file itself is listed (`app/security.py`). Test and excluded paths do not count.
+ * file itself is listed by the part of its name before the first dot
+ * (`app/security.py`, `src/auth.service.ts`). Test and excluded paths do not count.
  * @param {string[]} files
  * @param {PathPatterns} re
- * @param {number} [limit] how many to list (the security audit reads them all)
+ * @param {number} [limit] how many to list (init-scan and the security audit read them all)
  */
 export function riskyPaths(files, re, limit = MAX_LISTED) {
   /** @type {Map<string, { files: number, glob: string }>} */
@@ -406,7 +407,8 @@ export function riskyPaths(files, re, limit = MAX_LISTED) {
       const prev = found.get(dir);
       // A name holding glob syntax (`app/[locale]`, `src/{legacy}`) is written so the glob names it, not a class.
       found.set(dir, { files: (prev?.files ?? 0) + 1, glob: `${literalGlob(dir)}/**` });
-    } else if (RISKY_NAME.test(parts[parts.length - 1].replace(/\.[^.]*$/, ""))) {
+    } else if (RISKY_NAME.test(parts[parts.length - 1].replace(/\..*$/, ""))) {
+      // The subject comes first in a dotted name (auth.service.ts, payments.controller.ts, auth.d.ts).
       found.set(f, { files: 1, glob: literalGlob(f) });
     }
   }
@@ -1317,7 +1319,8 @@ export function scanProject({ cwd, env = process.env, from = cwd, ceiling }) {
     commitStyle: commitStyle(commits.map((c) => c.subject)),
     churn,
     tests: testLayout(files, patterns.testRe),
-    risky: riskyPaths(files, patterns.re),
+    // A proposal init writes back: every risky path, whole, as the security audit reads them.
+    risky: riskyPaths(files, patterns.re, Infinity),
     roadmap,
     github: repo ? githubRepo(cwd) : null,
     pathScopedRules: rules.n,
