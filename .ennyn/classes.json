@@ -951,7 +951,8 @@
         "new: setting whose meaning differs across supported versions of the program",
         "new: safety flag ignored by a supported version and documented as holding",
         "new: a guard that exists only from a version above the supported floor",
-        "new: a safety flag offered as a fix on a version that ignores it"
+        "new: a safety flag offered as a fix on a version that ignores it",
+        "new: guard read only by newer tool versions"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -1294,6 +1295,18 @@
         "new: approval asked where nobody can answer"
       ],
       "judged": "Named in cycle 52 by the orchestrator, from the author's measurement of push-hook-deny-in-subagent (a subagent's push asked, routed to the session's prompt); the push gate now refuses there."
+    },
+    {
+      "id": "specific-setting-overrides-guard",
+      "says": "A guard set through a general setting is overridden by a more specific setting another layer holds (a per-name key, a later config scope), so it does nothing wherever that setting is set.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: general config key loses to a more specific one",
+        "new: general config key overridden by a more specific one"
+      ],
+      "judged": "Named in cycle 53 by the orchestrator, from the review of push-hook-lows: git reads protocol.<name>.allow before protocol.allow, so the hook guard did nothing on git 2.34 under a common global setting; GIT_ALLOW_PROTOCOL replaced it (ce0c35b)."
     }
   ]
 }

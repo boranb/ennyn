@@ -4999,7 +4999,7 @@
       "cluster": "gates",
       "mechanization": true,
       "sourceClass": "reader-drifts-from-program",
-      "source": "cycle 2026-11-06 (25) convergence: reader-drifts-from-program the most recurring class (8: review 5, measurement 3), including the closing Linux run, where the kill differential judge itself drifted on bash 5 coproc (21d89a5)",
+      "source": "cycle 2026-11-06 (25) convergence: reader-drifts-from-program the most recurring class (8: review 5, measurement 3), including the closing Linux run, where the kill differential judge itself drifted on bash 5 coproc (21d89a5); cycle 2026-11-24 (53) convergence: reader-drifts-from-program tied for the most recurring class, 4 rows (signers file shapes in doctor, commit-identity)",
       "since": 25
     },
     {
@@ -6752,17 +6752,6 @@
       "status": "planned",
       "needs": [],
       "since": 48,
-      "id": "commit-identity-design-decision",
-      "value": "medium",
-      "cost": "M",
-      "cluster": "security",
-      "title": "checks/commit-identity.mjs is at the fix-loop brake (cycle 48, round 2: five previous-fix rows, nine rows in all): a design decision on the top two rungs, no patch nodes. Cause: the file answers two questions a second time. Doctor reads the allowed-signers file and the clone's settings by hand where the push check asks git, and the rule is put together from three configs (work tree, HEAD, upstream) beside the loosening check that already judges a config change. Decide, measured on git 2.34 and the current git. Removing the need: doctor gives only the verdict the push check's own reading gives for the clone's key and address, names only the settings that verdict depends on (tag signing stays clone-setup's printed advice), and a change to the list inside the pushed range is judged in one place with a remedy measured to clear it. Or a construct: doctor says unmeasured for every file shape it does not take whole (several principals on a line, the key on more than one line), an address holding a character outside ASCII is refused instead of folded, and a config held by a commit that cannot be read is named together with the push that repairs it. Or the limits said in DESIGN.md and the rest declined. Leftovers: doctor names tag.gpgsign as making commits the push check refuses, which reads no tags (c48-t1-code-r1-04); an address added inside the pushed range is refused and the printed remedy cannot clear it (c48-t1-code-r2-02); doctor reads a line with several principals as unlisted where git takes the first, and accepts any matching line where git takes the first line holding the key (c48-t1-code-r2-03, c48-t1-sec-r2-03); an upstream config that is broken JSON makes push-check exit 1 for a project that never set commits.*, against the commit's unset-nothing-changes (author, measured); toLowerCase folds U+212A to k, a shape only an attacker writes (author; the proposed commits-address-ascii-fold folds in here); the address fold has no name of its own: checks/private-text.mjs folds a found address by calling commitRule with a made-up config holding that one address (cycle 49, written so because this file was not to be edited); the decision exports the fold, and the choice on U+212A then holds for both readers; cycle 50 security audit: pushSendsMore lacks the two submodule settings push-mode's pushWidened reads, so under ask push-check calls clean a push that also sends a submodule's commits (c50-t4-audit-r0-01): one list of the settings that widen a bare push, read by both; doctor is silent when gpg.ssh.allowedSignersFile names a file inside the work tree, where the pushed range can add its own key (evidence gap); checks/loosening.mjs compares addresses as written, so a case-only change of commits.addresses is refused as a loosening (c50-t4-audit-r0-05): a third reader of the fold the decision exports; rung 2 action for checks/loosening.mjs (cycle 50 convergence; cause: the table judges a key's two values as written, apart from the rule that reads the key): the move is judged on the values as the rule's own reader folds them (the exported fold), and a test over the table holds that a case-only rewrite of a list key the rule folds is no move. Removing the need also covers one list of the settings that widen a bare push, read by both push-check and push-mode",
-      "source": "cycle 2026-11-20 (48) review of clone-setup-guard, convergence fix-loop brake; Fable, 2026-11-20; cycle 2026-11-20 (49) author's proposal for private-text-gate; Fable, 2026-11-20; cycle 2026-11-20 (50) security audit; Fable, 2026-11-21"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 48,
       "id": "clone-setup-guard-lows",
       "value": "low",
       "cost": "S",
@@ -6851,18 +6840,6 @@
       "status": "planned",
       "needs": [],
       "since": 52,
-      "id": "push-hook-reads-commits-rule-lows",
-      "value": "low",
-      "cost": "S",
-      "cluster": "security",
-      "gate": "beside",
-      "title": "push-hook-reads-commits-rule: low findings left, in order. (a) the hook's verdict runs the signature verifier programs git config names (gpg.program, gpg.x509.program) for an OpenPGP or x509 commit in the pushed range, which may reach a keyserver or a transparency log, while the hook says it makes no network call (c52-t1-sec-r1-01): the hook's reads run %G? only on commits whose header says ssh, or pass inert verifier programs, with a test whose logging verifier is never started. (b) push-check prints the verdict's lines only once the whole verdict returns, so a git failure late in it drops lines it printed before (c52-t1-code-r1-01): it prints as it goes, or prints what it has on a throw. (c) skills/cycle/push.md step 1 still sends an after-closing project with no whole test command to --tested, which the hook now always asks (c52-t1-code-r1-02). (d) doctor's push mode line reads closingPush only, not the whole verdict (author, impact row S1). (e) no test pins that the verdict lazy-fetches nothing in a partial clone (measured in review: blob:none and tree:0 fetch nothing; the mutant dropping GIT_NO_LAZY_FETCH survives) and the stale-upstream limit has no recorded cell. Closes beside push-hook-deny-in-subagent-lows: the same hook",
-      "source": "cycle 2026-11-23 (52) review of push-hook-reads-commits-rule, round 1, and the author's proposed nodes hook-verdict-partial-clone-probe, push-hook-openpgp-verify-network, doctor-push-mode-full-verdict, push-hook-stale-upstream"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 52,
       "id": "private-list-expected-lows",
       "value": "low",
       "cost": "S",
@@ -6870,18 +6847,6 @@
       "gate": "beside",
       "title": "private-list-expected: low findings left, in order. (a) the missing-list line says the commit goes on even when another rule refuses it (c52-t2-code-r1-01): it says nothing of the outcome, as the unread line does. (b) doctor's missing-list line names the clone by its absolute path, and its unread line carries the read error with the list's absolute path (c52-t2-sec-r1-01, -02; commit-check's unread line is older and the same): both name the list as the config spells it and no machine path. (c) a state dir that is a plain file or a dangling link reads as no list (core/files.mjs gone() on ENOENT and ENOTDIR), so it is said as missing, not unread, and a hand commit-check exits 0 (c52-t2-sec-r1-03, older than the task, 89017b5): an unread state dir is said as unread. Closes beside hygiene-names-from-state-dir-lows: the same shower",
       "source": "cycle 2026-11-23 (52) review of private-list-expected, round 1"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 52,
-      "id": "push-hook-deny-in-subagent-lows",
-      "value": "low",
-      "cost": "S",
-      "cluster": "security",
-      "gate": "beside",
-      "title": "push-hook-deny-in-subagent: low findings left. (a) a push spelling the reader refuses, written in a subagent, is refused with the advice to write a plain git push, which the subagent branch then refuses too, so the first reason points toward a push and holds no fetch form (c52-t3-code-r1-02): in a subagent the refused reason gives the fetch form as well. Closes beside push-hook-reads-commits-rule-lows: the same hook",
-      "source": "cycle 2026-11-23 (52) review of push-hook-deny-in-subagent, round 1"
     },
     {
       "status": "planned",
@@ -6898,13 +6863,72 @@
     {
       "status": "planned",
       "needs": [],
-      "since": 52,
-      "id": "install-hook-npx-cache",
-      "value": "medium",
+      "since": 53,
+      "id": "install-hook-npx-cache-lows",
+      "value": "low",
       "cost": "S",
       "cluster": "distribution",
-      "title": "install-hook run through npx (npx ennyn install-hook) writes a commit-msg hook that calls the CLI inside npm's npx cache (_npx/<hash>/...); once that folder is cleaned, or another version lands under another hash, every commit passes unchecked with one stderr line (setup/hook.mjs:174), measured by deleting _npx (c52-t4-author-r0-01). install-hook refuses a CLI path under npm's cache folder (npm config get cache, or a path segment _npx), names a stable install (a global or project install, or the plugin's data folder), and doctor names a hook that points into the cache. A test builds the cache path in a temporary HOME",
-      "source": "cycle 2026-11-23 (52) legacy audit of the npm package (c52-t4-author-r0-01)"
+      "gate": "beside",
+      "title": "install-hook-npx-cache: low findings left. (a) a project's own hook holding the line an npx install-hook printed before 0.1.2 (node '<cache>/_npx/...' commit-check) is not named by doctor nor install-hook while the cache is there; it fails closed once the cache goes (c53-t1-code-r1-01). (b) clone-setup run through npx prints an install-hook line naming the npx copy, which now refuses when pasted (c53-t1-code-r1-02): it prints the plugin or clone remedy instead. (c) a clone of Ennyn inside the work tree (git clone run from the project's top) is accepted and not named; it survives git clean -fdx, not -ffdx (round 2 evidence gap). (d) pnpm dlx, yarn dlx and bunx caches are not refused, and npm 11's npx layout is unmeasured (the author's proposed install-hook-dlx-caches and npx-cache-npm11)",
+      "source": "cycle 2026-11-24 (53) review of install-hook-npx-cache, rounds 1 and 2, and the author's proposed nodes install-hook-dlx-caches, npx-cache-npm11, clone-setup-npx-path"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 53,
+      "id": "commit-identity-doctor-design-decision",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "title": "checks/commit-identity.mjs is still at the fix-loop brake after its design decision (cycle 53, round 2: previous-fix 2): the leftovers sit in doctor's second reading of the rule, so the decision is about doctor, not patch nodes. Cause: doctor judges the clone from the work tree's config alone and words its own reasons, where push-check takes the strictest of work tree, HEAD and upstream. Decide on the top two rungs: doctor calls pushRule's own reading (strictest of three) and prints the shape it found in the unmeasured reason, or the limit in DESIGN.md. Leftovers: doctor reads the work tree's rule only (c53-t2-code-r1-02, pre-existing); the unmeasured reason names neither a character outside ASCII nor a negated namespace, the shapes cycle 53 added (c53-t2-sec-r2-01); doctor never reads gpg.ssh.revocationFile, so a revoked key reads listed where git says B (evidence gap, pre-existing); a local upstream (remote .) with push.default matching or followTags is unmeasured for what a bare push updates (evidence gap)",
+      "source": "cycle 2026-11-24 (53) review of commit-identity-design-decision, rounds 1 and 2; cycle 53 convergence, fix-loop brake"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 53,
+      "id": "push-hook-verdict-other-programs",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "title": "The push hook's verdict runs git status, which may start a program git config names (filter.<x>.clean, a fsmonitor other than the one the call turns off, a textconv): measure which programs git 2.34 and 2.56 start under the verdict's calls in a repository whose config names logging stand-ins, and turn off or refuse each, with a test whose stand-ins are never started (a guess, not measured)",
+      "source": "cycle 2026-11-24 (53) author of push-hook-lows, its sweep"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 53,
+      "id": "security-audit-53-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "gate": "beside",
+      "title": "Security audit of cycle 53: low findings and items left. (a) push-check's fetch runs without --prune, so a remote branch deleted after the last fetch (a merged pull request) still reads as the upstream: push-check exits 0, the hook lets the bare push run and the push recreates the branch (c53-t4-audit-r0-01); the fetch prunes, or a gone upstream asks. (b) withConfig's comment in the push hook says a non-numeric GIT_CONFIG_COUNT makes git fail every call, while git's strtoul takes ' 1' and '+1' (cycle 53 review note; SECURITY.md already states the limit). Lean: (c) waits() allows a tab in the bare push pattern that the reader refuses earlier: unreachable; (d) firstLine in checks/push-mode.mjs and the same stderr-first-line expression in checks/test-runs.mjs are near-copies. Evidence gaps: whether Claude Code sends agent_id on a main thread started with --agent or on a teammate's call; whether npm's trusted publisher requires the npm environment (the owner's setting)",
+      "source": "cycle 2026-11-24 (53) security audit"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 53,
+      "id": "remedy-runs-in-tests",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "gates",
+      "mechanization": true,
+      "sourceClass": "remedy-not-followable",
+      "title": "Every catalog line that prints a remedy a person runs (a command, an order of pushes, a setting) has a test that follows it as printed in a temporary repository and reaches the state the message names; a test over i18n/en.json lists the remedy keys and fails for one no test follows. Cycle 53: four remedy-not-followable rows in two tasks (install-hook's npm remedies, the brought-address push order), all caught by review only",
+      "source": "cycle 2026-11-24 (53) convergence: remedy-not-followable tied for the most recurring class, 4 rows, all review"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 53,
+      "id": "brief-no-approval-prompts",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "title": "task-brief.md's Rules row says what an author or reviewer runs nothing of: a command that can ask the user (a push in any spelling, a publish, a forge write, an edit under .claude/ or .git/, rm -rf with a glob or a variable, which Claude Code's own check asks about), since Claude Code 2.1.330 routes a subagent's ask to the session's screen; a call rejected or asking is written as unmeasured and never retried. Cycle 53's briefs carried it by hand after prompts reached the screen",
+      "source": "the user, 2026-11-24: a request; cycle 2026-11-24 (53) briefs"
     }
   ],
   "done": [
@@ -8085,6 +8109,34 @@
       "status": "done",
       "finished": "2026-11-24",
       "cluster": "method"
+    },
+    {
+      "id": "commit-identity-design-decision",
+      "title": "Closed in cycle 53 (7846706): option A where git or a reading already answers: one exported addressFold (A to Z only, U+212A refused) read by commit-identity, private-text, loosening and clone-setup; a FOLDED table so a case-only rewrite of commits.addresses is no loosening; pushSendsMore the one list of settings that widen a bare push (submodule settings included), pushWidened ends in it; addresses the push's own config brings or drops are named, with one remedy (push.commitsListOrder) measured to clear add, drop and replace; doctor drops tag.gpgsign. Option B for doctor's signers reading: listed only for one plain line holding the key (space and tab separators, one trailing CR), unmeasured for every other shape, checked against git's own %G? %GS over a 32-cell corpus on git 2.56 and 2.34.1 with OpenSSH 10.5, 9.2, 8.9. Option C: a broken upstream config and a signers file inside the work tree are written as limits in DESIGN.md. Leftovers: commit-identity-doctor-design-decision",
+      "status": "done",
+      "finished": "2026-11-24",
+      "cluster": "security"
+    },
+    {
+      "id": "push-hook-reads-commits-rule-lows",
+      "title": "Closed in cycle 53 (ce0c35b), with push-hook-deny-in-subagent-lows: the hook's verdict child gives git gpg.program and gpg.x509.program as a program that cannot start, and GIT_ALLOW_PROTOCOL=none beside GIT_NO_LAZY_FETCH (protocol.allow lost to a per-protocol key on git 2.34, review), so no OpenPGP or x509 verifier and no transport runs from the hook; push-check prints the verdict's lines on a throw; push.md says a --tested push is asked; doctor's after-closing line says what it leaves to the push; tests pin the partial clone and the stale-upstream limit; SECURITY.md names GIT_CONFIG_PARAMETERS and odd counts as not reached",
+      "status": "done",
+      "finished": "2026-11-24",
+      "cluster": "security"
+    },
+    {
+      "id": "push-hook-deny-in-subagent-lows",
+      "title": "Closed in cycle 53 (ce0c35b), beside push-hook-reads-commits-rule-lows: in a subagent a refused push spelling gets pushSpellings.refusedSubagent with the lab fetch form",
+      "status": "done",
+      "finished": "2026-11-24",
+      "cluster": "security"
+    },
+    {
+      "id": "install-hook-npx-cache",
+      "title": "Closed in cycle 53 (e8b9d54): install-hook refuses a CLI whose path holds an _npx/<hash>/node_modules segment (read from the path only: the env npx sets is the same for a project install, and npm config get cache needs npm on PATH, measured on npm 10.9.9), writes nothing and names the plugin or a clone of the repository outside the work tree (a project install was dropped in review: a clean of node_modules or a commit to the dependency turns the gate off); doctor warns hookNpxCache for a hook already written, cliNpxCache under core.hooksPath. Lows: install-hook-npx-cache-lows",
+      "status": "done",
+      "finished": "2026-11-24",
+      "cluster": "distribution"
     }
   ],
   "declined": [
