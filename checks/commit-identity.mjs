@@ -1,6 +1,7 @@
 /**
  * Who wrote the commits a push sends, and whether each is signed (config `commits`): push-check refuses a push that
- * holds a commit outside the rule, and doctor names a clone whose git settings would make such commits.
+ * holds a commit outside the rule, and doctor names the git settings a clone lacks for it (the signing key itself, and
+ * whether the allowed-signers file lists it, is git's to judge on each commit push-check reads).
  *
  * The rule push-check holds a push to is the strictest of three configs (pushRule): the work tree's (as loadConfig reads
  * it, ENNYN_CONFIG and all), HEAD's and the upstream's `.ennyn/config.json`. So an edit not committed, a config
@@ -34,7 +35,7 @@
  */
 
 import { isAbsolute, join, resolve } from "node:path";
-import { readFileSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
 import { CONFIG_PATH, ConfigError, configFrom } from "../core/config.mjs";
 import { HOOK_READ_ENV, blobAt, git, gitBytes, gitMaybe, headCommit } from "../core/git.mjs";
 
@@ -205,7 +206,10 @@ function signatureFormats(cwd, hashes) {
  * commits check does not read). Elsewhere: push urls (`git remote get-url --push --all`) other than the one fetch url
  * (`git remote get-url`), as a pushurl, a second url or a pushInsteadOf makes them; an insteadOf rewrites both alike.
  * Keys that change neither (a tool's own, as the gh CLI's `remote.<name>.gh-resolved`) pass. A local upstream
- * (remote ".") sends the branch nowhere. A git that fails throws.
+ * (remote ".") pushes into this repository: a bare push there updates at most the upstream branch, with push.default
+ * matching or push.followTags too (measured on git 2.56.0 and 2.34.1; under matching `@{push}` fails, so pushNeeds has
+ * read the push as unmeasured already). Any `remote...` key (a url, a pushurl, a refspec) or an insteadOf or
+ * pushInsteadOf rewrite that matches "." sends it to another repository instead, and is named. A git that fails throws.
  * @param {string} cwd @param {string} branch
  * @returns {{ setting: string, change: string } | null}
  */
@@ -216,7 +220,16 @@ export function pushSendsMore(cwd, branch) {
   if (!remote) return { setting: `branch.${branch}.remote`, change: "give the branch an upstream on a remote" };
   if (![null, "no", "false", "check"].includes(get("push.recurseSubmodules"))) return { setting: "push.recurseSubmodules", change: "set it to check or no" };
   if (get("submodule.recurse", ["--type=bool"]) === "true") return { setting: "submodule.recurse", change: "set it to false" };
-  if (remote === ".") return null;
+  if (remote === ".") {
+    // A local upstream sends the push to this repository, unless config on remote "." itself (a url, a pushurl, a
+    // refspec) or a url rewrite whose prefix "." matches sends it to another one.
+    const own = gitMaybe(["config", "--name-only", "--get-regexp", "^remote\\.\\.\\."], { cwd, absent: [1] });
+    if (own) return { setting: own.split("\n")[0], change: "take it out: a local upstream needs no remote config" };
+    // -z: a url's base may hold a space; each entry is its name, a line break and its value.
+    const rewrites = (gitMaybe(["config", "-z", "--get-regexp", "^url\\..*\\.(push)?insteadof$"], { cwd, absent: [1] }) ?? "").split("\0");
+    const dot = rewrites.map((e) => e.split("\n")).find(([name, value]) => name && ".".startsWith(value ?? ""));
+    return dot ? { setting: dot[0], change: "take the rewrite of \".\" out" } : null;
+  }
   if (![null, "simple", "upstream", "tracking", "current"].includes(get("push.default"))) return { setting: "push.default", change: "set it to simple" };
   if (all(`remote.${remote}.push`).length) return { setting: `remote.${remote}.push`, change: "take the refspec out" };
   if (get(`remote.${remote}.mirror`, ["--type=bool"]) === "true") return { setting: `remote.${remote}.mirror`, change: "set it to false" };
@@ -278,65 +291,6 @@ export function commitsRefused(cwd, rule, upstream) {
 }
 
 /**
- * The public half of user.signingkey as an allowed-signers line names it, `<type> <base64>`: a `key::` literal, a
- * literal key, or the file it names (a public key, or a private key with its `.pub` beside it). Null when it names no
- * key of that shape; a file that cannot be read throws.
- * @param {string} value as `git config --type=path` gives it @param {string} cwd
- * @returns {string | null}
- */
-export function signingPublicKey(value, cwd) {
-  const shape = (/** @type {string} */ text) => /^(\S+) ([A-Za-z0-9+/]+={0,2})(?:\s|$)/.exec(text.trim());
-  const literal = value.startsWith("key::") ? value.slice(5) : /^(ssh-|ecdsa-|sk-)/.test(value) ? value : null;
-  if (literal !== null) return ((m) => (m ? `${m[1]} ${m[2]}` : null))(shape(literal));
-  const path = isAbsolute(value) ? value : resolve(cwd, value);
-  for (const file of [path, `${path}.pub`]) {
-    if (!isFile(file)) continue;
-    const m = shape(readFileSync(file, "utf8").split("\n")[0] ?? "");
-    if (m && !m[1].startsWith("-----")) return `${m[1]} ${m[2]}`;
-  }
-  return null;
-}
-
-/**
- * Whether an allowed-signers file lists `key` for `address` as git reads it, taken only where the file's shape leaves
- * one reading. git asks ssh-keygen for the principal of the first line that holds the key and takes that line's first
- * principal; an earlier line for another namespace makes the signature bad, an expired one is passed over (measured on
- * git 2.56.0 and 2.34.1 with OpenSSH 10.5). So: `listed` when exactly one line holds the key, its one principal is the
- * address (folded) and its only option, if any, a namespace list holding git and no negation; `unlisted` when no line
- * that holds the key names the address or a pattern; any other shape (several principals, several lines, a pattern, a
- * quoted principal, another option) is `unmeasured`, never listed. Words part on space and tab alone, and one CR ends
- * a line, as every ssh-keygen measured reads them (OpenSSH 10.5, 9.2, 8.9: a vertical tab, a form feed or a no-break
- * space parts nothing, a byte order mark or a leading no-break space is part of the principal, and a CR inside a line
- * parts words in 10.5 alone); a line that holds the key is unmeasured when its text up to the key holds any character
- * but printable ASCII, space and tab, or when a CR stands anywhere in it but at its end.
- * @param {string} text @param {string} address folded @param {string} key `<type> <base64>`
- * @returns {"listed" | "unlisted" | "unmeasured"}
- */
-export function signerListed(text, address, key) {
-  const [type, body] = key.split(" ");
-  /** @type {{ principals: string[], options: string[] }[]} */
-  const lines = [];
-  let odd = false;
-  for (const raw of text.split("\n")) {
-    const line = raw.replace(/\r$/, "").replace(/^[ \t]+|[ \t]+$/g, "");
-    if (!line || line.startsWith("#")) continue;
-    const end = line.indexOf(body);
-    if (end !== -1 && (/[^\x21-\x7e \t]/.test(line.slice(0, end + body.length)) || line.includes("\r"))) odd = true;
-    const words = line.split(/[ \t]+/);
-    const at = words.findIndex((w, i) => i > 0 && w === type && words[i + 1] === body);
-    if (at !== -1) lines.push({ principals: words[0].split(","), options: words.slice(1, at) });
-  }
-  const pattern = (/** @type {string} */ p) => /[*?!"]/.test(p);
-  if (odd) return "unmeasured";
-  if (!lines.some((l) => l.principals.some((p) => pattern(p) || addressFold(p) === address))) return "unlisted";
-  if (lines.length !== 1 || lines[0].principals.length !== 1 || pattern(lines[0].principals[0])) return "unmeasured";
-  const { options } = lines[0];
-  if (!options.length) return "listed";
-  const ns = options.length === 1 ? /^namespaces="([^"\s]*)"$/.exec(options[0]) : null;
-  return ns && !ns[1].includes("!") && ns[1].split(",").includes("git") ? "listed" : "unmeasured";
-}
-
-/**
  * Whether a file is there: none, or something else in its place, is false; a file that cannot be looked at throws, so
  * it is unmeasured, not missing.
  * @param {string} path
@@ -351,37 +305,28 @@ function isFile(path) {
 }
 
 /**
- * What this clone lacks for the rule, as push-check's verdict reads it (no tag: tag signing is clone-setup's advice).
- * `gaps`, by name: with `signed`, commit signing on, a signing key, gpg.format ssh (the allowed-signers file `ennyn clone-setup` builds holds SSH keys), an allowed-signers file that is there and a
- * user.email; with addresses, a user.email the list holds. `key`, with `signed` and no gap: whether the file lists
- * the signing key's public half for user.email (signerListed), `unmeasured` with why when the key or the file could
- * not be read as one; null when not read. Read as git reads them here (every scope). A git that fails throws.
+ * What this clone lacks for the rule, as push-check's verdict reads it (no tag: tag signing is clone-setup's advice),
+ * by setting name: with `signed`, commit signing on, a signing key, gpg.format ssh (the allowed-signers file `ennyn
+ * clone-setup` builds holds SSH keys), an allowed-signers file that is there and a user.email; with addresses, a
+ * user.email the list holds. Read as git reads them here (every scope). The file's lines are not read: which line answers
+ * for a key turns on every line that holds it, on gpg.ssh.revocationFile (a revoked key is `B`, measured on git 2.56.0
+ * and 2.34.1) and on the ssh-keygen that reads them, so git's own `%G?` at push-check is the one reading. A git that
+ * fails, or a file that cannot be looked at, throws.
  * @param {string} cwd the repository's top @param {Rule} rule
- * @returns {{ gaps: string[], key: null | "listed" | "unlisted" | { unmeasured: string } }}
+ * @returns {string[]}
  */
 export function cloneGaps(cwd, rule) {
   const get = (/** @type {string} */ key, /** @type {string[]} */ type = []) => gitMaybe(["config", ...type, "--get", key], { cwd, absent: [1] });
   /** @type {string[]} */
   const gaps = [];
   const email = get("user.email");
-  const signingKey = rule.signed ? get("user.signingkey", ["--type=path"]) : null;
-  let file = null;
   if (rule.signed) {
     if (get("commit.gpgsign", ["--type=bool"]) !== "true") gaps.push("commit.gpgsign");
-    if (!signingKey) gaps.push("user.signingkey");
+    if (!get("user.signingkey", ["--type=path"])) gaps.push("user.signingkey");
     if (get("gpg.format") !== "ssh") gaps.push("gpg.format");
     const named = get("gpg.ssh.allowedSignersFile", ["--type=path"]);
-    file = named ? (isAbsolute(named) ? named : resolve(cwd, named)) : null;
-    if (!file || !isFile(file)) gaps.push("gpg.ssh.allowedSignersFile");
+    if (!named || !isFile(isAbsolute(named) ? named : resolve(cwd, named))) gaps.push("gpg.ssh.allowedSignersFile");
   }
   if (rule.addresses ? !email || !rule.addresses.includes(addressFold(email)) : rule.signed && !email) gaps.push("user.email");
-  if (!rule.signed || gaps.length) return { gaps, key: null };
-  try {
-    const pub = signingPublicKey(/** @type {string} */ (signingKey), cwd);
-    if (!pub) return { gaps, key: { unmeasured: "user.signingkey names no SSH public key this reading finds" } };
-    const listed = signerListed(readFileSync(/** @type {string} */ (file), "utf8"), addressFold(/** @type {string} */ (email)), pub);
-    return { gaps, key: listed === "unmeasured" ? { unmeasured: "the allowed-signers file holds the key on a line git may read otherwise: several principals or lines, a pattern, or an option other than a git namespace" } : listed };
-  } catch (e) {
-    return { gaps, key: { unmeasured: String(/** @type {Error} */ (e).message).split("\n")[0] } };
-  }
+  return gaps;
 }

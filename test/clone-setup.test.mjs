@@ -12,12 +12,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFile, spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:http";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ConfigError, DEFAULTS, loadConfig } from "../core/config.mjs";
 import { gateKeyKind, loosenedKeys } from "../checks/loosening.mjs";
-import { addressFold, cloneGaps, commitRule, commitsRefused, signerListed, signingPublicKey, strictest } from "../checks/commit-identity.mjs";
+import { addressFold, cloneGaps, commitRule, commitsRefused, strictest } from "../checks/commit-identity.mjs";
 import { apiBase, noreplyLogin, signersText, signingKeys } from "../setup/clone-setup.mjs";
 import { ownHome } from "./own-home.mjs";
 
@@ -260,40 +260,85 @@ test("commits: the module reads the range it is given, and a git that fails thro
   assert.throws(() => commitsRefused(r.dir, rule, "refs/remotes/origin/none"));
 });
 
-test("commits: doctor names the settings a clone lacks, says ok when it holds them, and says nothing with the key unset", () => {
+test("commits: push-check holds each allowed-signers shape to git's own %G? and %GS: a namespace not git, a pattern, another address first, an expired line, a revoked key, an unreadable or missing file are refused", () => {
+  const r = repo(BOTH);
+  const base = r.commit(null);
+  const h = r.commit("a");
+  const rule = /** @type {NonNullable<ReturnType<typeof commitRule>>} */ (commitRule({ commits: BOTH }));
+  const file = join(DIR, "shape_signers");
+  const krl = join(DIR, "shape_krl");
+  const made = spawnSync("ssh-keygen", ["-q", "-k", "-f", krl, join(KEYS, "a.pub")], { encoding: "utf8" });
+  assert.equal(made.status, 0, made.stderr);
+  /** @type {[string, string | null, { revoked?: boolean, shut?: string, missing?: boolean }, string | null][]} */
+  const cells = [
+    ["listed", `a@x.test ${pub("a")}`, {}, null],
+    ["listed in another case", `A@X.TEST ${pub("a")}`, {}, null],
+    ["another key listed for the address", `a@x.test ${pub("b")}`, {}, "commits.notGood U"],
+    ["revoked in a KRL", `a@x.test ${pub("a")}`, { revoked: true }, "commits.notGood B"],
+    ["a KRL that cannot be read", `a@x.test ${pub("a")}`, { revoked: true, shut: krl }, "commits.notGood B"],
+    ["a namespace other than git", `a@x.test namespaces="file" ${pub("a")}`, {}, "commits.notGood B"],
+    ["a namespace list that negates git", `a@x.test namespaces="*,!git" ${pub("a")}`, {}, "commits.notGood B"],
+    ["another address first on the line", `b@x.test,a@x.test ${pub("a")}`, {}, "commits.otherSigner"],
+    ["another address on an earlier line", `b@x.test ${pub("a")}\na@x.test ${pub("a")}`, {}, "commits.otherSigner"],
+    ["a pattern", `*@x.test ${pub("a")}`, {}, "commits.otherSigner"],
+    ["a line expired", `a@x.test valid-before="20200101" ${pub("a")}`, {}, "commits.notGood U"],
+    ["a file that cannot be read", `a@x.test ${pub("a")}`, { shut: file }, "commits.notGood U"],
+    ["a file that is not there", null, { missing: true }, "commits.notGood U"],
+  ];
+  for (const [name, text, { revoked, shut, missing }, want] of cells) {
+    rmSync(file, { force: true });
+    if (text !== null) writeFileSync(file, `${text}\n`);
+    g(r.dir, ["config", "gpg.ssh.allowedSignersFile", missing ? join(DIR, "no-such-signers") : file]);
+    if (revoked) g(r.dir, ["config", "gpg.ssh.revocationFile", krl]);
+    else gq(r.dir, ["config", "--unset", "gpg.ssh.revocationFile"]);
+    if (shut) chmodSync(shut, 0o000);
+    try {
+      const { refused } = commitsRefused(r.dir, rule, base);
+      const got = refused.flatMap((x) => x.why.map((w) => (w.key === "commits.notGood" ? `${w.key} ${w.vars.code}` : w.key)));
+      assert.deepEqual(got, want ? [want] : [], name);
+      assert.ok(refused.every((x) => x.hash === h), name);
+    } finally {
+      if (shut) chmodSync(shut, 0o644);
+    }
+  }
+});
+
+test("commits: doctor names the settings a clone lacks, says which it read when it holds them, and says nothing with the key unset", () => {
   const r = repo(BOTH);
   const rule = /** @type {NonNullable<ReturnType<typeof commitRule>>} */ (commitRule({ commits: BOTH }));
   g(r.dir, ["config", "user.email", "c@x.test"]);
   // Only what push-check's verdict reads: it reads no tag, so tag signing is clone-setup's advice and no gap here.
-  assert.deepEqual(cloneGaps(r.dir, rule), { gaps: ["commit.gpgsign", "user.signingkey", "gpg.format", "user.email"], key: null });
+  assert.deepEqual(cloneGaps(r.dir, rule), ["commit.gpgsign", "user.signingkey", "gpg.format", "user.email"]);
   const warn = cli(r.dir, ["doctor"]);
   assert.match(warn.out + warn.err, /! commits\.\*: this clone's git settings would make commits push-check refuses: commit\.gpgsign, user\.signingkey, gpg\.format, user\.email/);
   for (const [k, v] of [["commit.gpgsign", "true"], ["user.signingkey", join(KEYS, "a.pub")], ["gpg.format", "ssh"], ["user.email", "A@x.test"]]) g(r.dir, ["config", k, v]);
-  assert.deepEqual(cloneGaps(r.dir, rule), { gaps: [], key: "listed" });
+  assert.deepEqual(cloneGaps(r.dir, rule), []);
+  const OK = /✓ commits\.\*: this clone holds the git settings signing needs \(.*\); whether that file lists the key for user\.email, and whether it is revoked, git judges \(%G\?\) on each commit push-check reads/;
   const ok = cli(r.dir, ["doctor"]);
-  assert.match(ok.out + ok.err, /✓ commits\.\*: this clone signs and writes its commits as the rule asks/);
-  // The key must be the one the file lists for user.email: a key it lists for another address, or none, is said, never ✓.
-  g(r.dir, ["config", "user.signingkey", join(KEYS, "b.pub")]);
-  assert.deepEqual(cloneGaps(r.dir, rule), { gaps: [], key: "unlisted" });
-  const unlisted = cli(r.dir, ["doctor"]);
-  assert.match(unlisted.out + unlisted.err, /! commits\.\*: the allowed-signers file does not list user\.signingkey for user\.email/);
-  assert.doesNotMatch(unlisted.out + unlisted.err, /✓ commits\.\*/);
+  assert.match(ok.out + ok.err, OK);
+  // Doctor reads no line of the allowed-signers file: which line answers for a key turns on every line that holds it and
+  // on gpg.ssh.revocationFile. A key the file does not list, or one the revocation file names, reads the same ✓, and
+  // push-check, which asks git, refuses the commit that key signs: U, and B for the revoked key (git 2.56.0 and 2.34.1).
   g(r.dir, ["config", "user.signingkey", join(KEYS, "c.pub")]);
-  assert.deepEqual(cloneGaps(r.dir, rule).key, "unlisted");
-  // The private key's path, with its .pub beside it, and a key:: literal name the same key.
-  g(r.dir, ["config", "user.signingkey", join(KEYS, "a")]);
-  assert.deepEqual(cloneGaps(r.dir, rule).key, "listed");
-  g(r.dir, ["config", "user.signingkey", `key::${pub("a")}`]);
-  assert.deepEqual(cloneGaps(r.dir, rule).key, "listed");
-  g(r.dir, ["config", "user.signingkey", join(DIR, "no-such-key.pub")]);
-  assert.deepEqual(cloneGaps(r.dir, rule).key, { unmeasured: "user.signingkey names no SSH public key this reading finds" });
-  const keyless = cli(r.dir, ["doctor"]);
-  assert.match(keyless.out + keyless.err, /\? commits\.\*: whether the allowed-signers file lists user\.signingkey for user\.email is unmeasured/);
+  assert.deepEqual(cloneGaps(r.dir, rule), []);
+  const unlisted = r.commit("c");
+  const revoked = join(DIR, "revoked_keys");
+  writeFileSync(revoked, `${pub("a")}\n`), g(r.dir, ["config", "gpg.ssh.revocationFile", revoked]);
   g(r.dir, ["config", "user.signingkey", join(KEYS, "a.pub")]);
+  const gone = r.commit("a");
+  const doc = cli(r.dir, ["doctor"]);
+  assert.match(doc.out + doc.err, OK);
+  assert.equal((doc.out + doc.err).match(/commits\.\*/g)?.length, 1, doc.out);
+  const push = cli(r.dir, ["push-check"]);
+  const why = refusals(push.out);
+  assert.match(why[unlisted.slice(0, 12)] ?? "", /%G\? is U,/, push.out);
+  assert.match(why[gone.slice(0, 12)] ?? "", /%G\? is B,/, push.out);
+  assert.equal(push.code, 1, push.out);
+  g(r.dir, ["config", "--unset", "gpg.ssh.revocationFile"]);
   g(r.dir, ["config", "gpg.ssh.allowedSignersFile", join(DIR, "no-such-file")]);
-  assert.deepEqual(cloneGaps(r.dir, rule).gaps, ["gpg.ssh.allowedSignersFile"]);
+  assert.deepEqual(cloneGaps(r.dir, rule), ["gpg.ssh.allowedSignersFile"]);
   g(r.dir, ["config", "gpg.ssh.allowedSignersFile", KEYS]);
-  assert.deepEqual(cloneGaps(r.dir, rule).gaps, ["gpg.ssh.allowedSignersFile"], "a folder in the file's place");
+  assert.deepEqual(cloneGaps(r.dir, rule), ["gpg.ssh.allowedSignersFile"], "a folder in the file's place");
   // A file that cannot be looked at is unmeasured, never missing: a folder that refuses a search holds it.
   const shut = join(DIR, "shut");
   mkdirSync(shut), writeFileSync(join(shut, "allowed_signers"), ""), g(r.dir, ["config", "gpg.ssh.allowedSignersFile", join(shut, "allowed_signers")]);
@@ -306,80 +351,25 @@ test("commits: doctor names the settings a clone lacks, says ok when it holds th
     chmodSync(shut, 0o755);
   }
   g(r.dir, ["config", "--unset", "gpg.ssh.allowedSignersFile"]);
-  assert.deepEqual(cloneGaps(r.dir, rule).gaps, ["gpg.ssh.allowedSignersFile"]);
-  assert.deepEqual(cloneGaps(r.dir, { addresses: null, signed: false }), { gaps: [], key: null });
+  assert.deepEqual(cloneGaps(r.dir, rule), ["gpg.ssh.allowedSignersFile"]);
+  assert.deepEqual(cloneGaps(r.dir, { addresses: null, signed: false }), []);
   // Signing asked and no list: the committer's address is still what the key must be listed for, so none is a gap.
   g(r.dir, ["config", "gpg.ssh.allowedSignersFile", SIGNERS]), g(r.dir, ["config", "--unset", "user.email"]);
-  assert.deepEqual(cloneGaps(r.dir, { addresses: null, signed: true }), { gaps: ["user.email"], key: null });
+  assert.deepEqual(cloneGaps(r.dir, { addresses: null, signed: true }), ["user.email"]);
   g(r.dir, ["config", "user.email", "a@x.test"]);
-  assert.deepEqual(cloneGaps(r.dir, { addresses: null, signed: true }), { gaps: [], key: "listed" });
+  assert.deepEqual(cloneGaps(r.dir, { addresses: null, signed: true }), []);
+  // A relative file is read from the repository's top, not from where the process stands.
+  g(r.dir, ["config", "gpg.ssh.allowedSignersFile", "../allowed_signers"]);
+  assert.notEqual(process.cwd(), r.dir);
+  assert.deepEqual(cloneGaps(r.dir, { addresses: null, signed: true }), []);
+  // A list and no signing: the ✓ names user.email alone, no signing setting.
+  const listOnly = repo({ addresses: ["a@x.test"] });
+  const addressOk = cli(listOnly.dir, ["doctor"]);
+  assert.match(addressOk.out + addressOk.err, /✓ commits\.\*: this clone's user\.email is in commits\.addresses\n/);
+  assert.doesNotMatch(addressOk.out + addressOk.err, /sign/i);
   const off = repo({});
   const quiet = cli(off.dir, ["doctor"]);
   assert.doesNotMatch(quiet.out + quiet.err, /commits\.\*/);
-});
-
-test("commits: doctor says a key is listed for an address only where one line holds it, for that one principal; every shape git reads by line order is unmeasured, held against git's own %G? and %GS", () => {
-  const key = pub("a");
-  const [type, body] = key.split(" ");
-  /** @type {[string, ReturnType<typeof signerListed>][]} */
-  const corpus = [
-    [`a@x.test ${key}`, "listed"],
-    [`A@X.test namespaces="git" ${key} comment`, "listed"],
-    [`a@x.test namespaces="file,git" ${key}`, "listed"],
-    // A line for another key plays no part: git reads only the lines that hold the signing key.
-    [`b@x.test ${pub("b")}\na@x.test ${key}`, "listed"],
-    [`# a@x.test ${key}\n\nb@x.test ${key}`, "unlisted"],
-    [`a@x.test ${type} ${body.slice(0, -2)}AA`, "unlisted"],
-    [`b@x.test,c@x.test ${key}`, "unlisted"],
-    [`b@x.test ${key}\nc@x.test ${key}`, "unlisted"],
-    ["", "unlisted"],
-    // git takes a line's first principal and the first line that holds the key (measured on 2.56.0 and 2.34.1): which
-    // one answers rests on order, namespaces and dates of every such line, so none of these is taken.
-    [`b@x.test,a@x.test ${key}`, "unmeasured"],
-    [`a@x.test,b@x.test ${key}`, "unmeasured"],
-    [`b@x.test ${key}\na@x.test ${key}`, "unmeasured"],
-    [`a@x.test ${key}\nb@x.test ${key}`, "unmeasured"],
-    [`b@x.test namespaces="file" ${key}\na@x.test ${key}`, "unmeasured"],
-    [`*@x.test ${key}`, "unmeasured"],
-    [`b@x.test,*@y.test ${key}`, "unmeasured"],
-    [`"a@x.test" ${key}`, "unmeasured"],
-    // Words part on space and tab, one CR ends a line: so every ssh-keygen measured reads them (OpenSSH 10.5, 9.2, 8.9).
-    // A CR inside a line parts words in 10.5 alone: unmeasured.
-    [`a@x.test\t${type}\t${body}`, "listed"],
-    [`  a@x.test ${key}\r`, "listed"],
-    [`\r\ta@x.test\r${type} ${body}`, "unmeasured"],
-    [`a@x.test\r${key}`, "unmeasured"],
-    [`a@x.test ${key}\rcomment`, "unmeasured"],
-    // A no-break space or a form feed right after the key keeps it from being a word of its own: git says U.
-    [`a@x.test ${key}\u00A0c`, "unlisted"],
-    [`a@x.test ${key}\fc`, "unlisted"],
-    [`\uFEFFa@x.test ${key}`, "unmeasured"],
-    [`\u00A0a@x.test ${key}`, "unmeasured"],
-    [`a@x.test\u00A0${key}`, "unmeasured"],
-    [`a@x.test\v${key}`, "unmeasured"],
-    [`a@x.test namespaces="git,!git" ${key}`, "unmeasured"],
-    [`a@x.test namespaces="file" ${key}`, "unmeasured"],
-    [`a@x.test valid-before="20000101" ${key}`, "unmeasured"],
-    [`a@x.test cert-authority ${key}`, "unmeasured"],
-    [`a@x.test namespaces="git",valid-after="20990101" ${key}`, "unmeasured"],
-  ];
-  // git's own reading of each file: a commit by a@x.test signed with key a, verified through it.
-  const r = repo({});
-  const h = r.commit("a");
-  const file = join(DIR, "corpus_signers");
-  for (const [text, want] of corpus) {
-    assert.equal(signerListed(text, "a@x.test", key), want, text);
-    writeFileSync(file, `${text}\n`);
-    const said = g(r.dir, ["-c", `gpg.ssh.allowedSignersFile=${file}`, "log", "-1", "--format=%G? %GS", h]);
-    const passes = said.startsWith("G ") && addressFold(said.slice(2)) === "a@x.test";
-    if (want === "listed") assert.ok(passes, `listed, and git says ${said}: ${text}`);
-    if (want === "unlisted") assert.ok(!passes, `unlisted, and git says ${said}: ${text}`);
-  }
-  assert.equal(signingPublicKey(`key::${key} c`, DIR), key);
-  assert.equal(signingPublicKey(key, DIR), key);
-  assert.equal(signingPublicKey(join(KEYS, "a.pub"), DIR), key);
-  assert.equal(signingPublicKey(join(KEYS, "a"), DIR), key);
-  assert.equal(signingPublicKey("key::nothing", DIR), null);
 });
 
 /**
@@ -601,14 +591,25 @@ test("commits: of HEAD's and the upstream's config only the commits block is rea
 
 test("commits: a bare push that sends more refs than HEAD's branch, or to a url other than the upstream's, is unmeasured and named; a key that changes neither is not", () => {
   const other = join(DIR, "other.git");
+  const spaced = join(DIR, "an other.git");
   g(DIR, ["init", "-q", "--bare", "-b", "main", other]);
+  g(DIR, ["init", "-q", "--bare", "-b", "main", spaced]);
+  // A local upstream under push.default upstream: the push updates a branch here, and nothing leaves.
+  const local = (/** @type {ReturnType<typeof repo>} */ r) => (g(r.dir, ["branch", "base", "origin/main"]), g(r.dir, ["branch", "-q", "-u", "base"]), g(r.dir, ["config", "push.default", "upstream"]));
   /** @type {[string, (r: ReturnType<typeof repo>) => void, RegExp | null][]} */
   const shapes = [
     ["the gh CLI's remote.origin.gh-resolved", (r) => g(r.dir, ["config", "remote.origin.gh-resolved", "base"]), null],
     ["an insteadOf that rewrites fetch and push alike", (r) => (g(r.dir, ["config", `url.${r.bare}.insteadOf`, "alias:"]), g(r.dir, ["remote", "set-url", "origin", "alias:"]), g(r.dir, ["fetch", "-q", "origin"])), null],
     ["a pushurl that is the url", (r) => g(r.dir, ["config", "remote.origin.pushurl", g(r.dir, ["remote", "get-url", "origin"])]), null],
-    // A local upstream under push.default upstream: the push updates a branch here, and nothing leaves.
-    ["a local upstream", (r) => (g(r.dir, ["branch", "base", "origin/main"]), g(r.dir, ["branch", "-q", "-u", "base"]), g(r.dir, ["config", "push.default", "upstream"])), null],
+    ["a local upstream", local, null],
+    ["a local upstream, a rewrite that does not match its \".\"", (r) => (local(r), g(r.dir, ["config", `url.${other}.insteadOf`, "alias:"])), null],
+    // Config on remote "." itself, or a rewrite that matches ".", sends that push to another repository (git 2.56.0 and 2.34.1).
+    ["a local upstream with remote...url", (r) => (local(r), g(r.dir, ["config", "remote...url", other])), /\(remote\.\.\.url\): take it out/],
+    ["a local upstream with remote...pushurl", (r) => (local(r), g(r.dir, ["config", "remote...pushurl", other])), /\(remote\.\.\.pushurl\): take it out/],
+    ["a local upstream with url.<base>.pushInsteadOf .", (r) => (local(r), g(r.dir, ["config", `url.${other}.pushInsteadOf`, "."])), new RegExp(`\\(url\\.${other.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.pushinsteadof\\): take the rewrite`)],
+    // An empty value is a prefix of every url: git rewrites "." to the base followed by "." (git 2.56.0).
+    ["a local upstream with url.<base>.pushInsteadOf empty", (r) => (local(r), g(r.dir, ["config", `url.${other}.pushInsteadOf`, ""])), /\.pushinsteadof\): take the rewrite of "\." out/],
+    ["a local upstream with url.<base with a space>.insteadOf .", (r) => (local(r), g(r.dir, ["config", `url.${spaced}.insteadOf`, "."])), /\.insteadof\): take the rewrite of "\." out/],
     ["push.default matching, a second branch ahead of its remote branch", (r) => (g(r.dir, ["push", "-q", "origin", "main:side"]), g(r.dir, ["branch", "side", "origin/side"]), g(r.dir, ["config", "push.default", "matching"])), /\(push\.default\): set it to simple/],
     ["a remote.origin.push refspec", (r) => g(r.dir, ["config", "--add", "remote.origin.push", "refs/heads/*:refs/heads/*"]), /\(remote\.origin\.push\): take the refspec out/],
     ["a mirror", (r) => g(r.dir, ["config", "remote.origin.mirror", "true"]), /\(remote\.origin\.mirror\): set it to false/],

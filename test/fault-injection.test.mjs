@@ -345,7 +345,7 @@ function commitsSet(repo, clone = false) {
   const date = "2026-01-20 12:00:00 +0000";
   git(["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "--no-verify", "-am", "chore: commits"], { cwd: repo, env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } });
   if (!clone) return;
-  // A key of the right shape, listed for the clone's address: doctor reads both files, and the clean run's line is a ✓.
+  // Every setting doctor reads, an allowed-signers file there: the clean run's line is a ✓. Doctor opens neither file.
   const key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFaultMatrixFixtureKeyNotARealOne0000000";
   writeFileSync(join(repo, ".git", "key.pub"), `${key} t\n`);
   writeFileSync(join(repo, ".git", "allowed_signers"), `t@t namespaces="git" ${key}\n`);

@@ -652,11 +652,9 @@ export async function checkSetup({ cwd, env = process.env, self = OWN_ROOT }) {
     const rule = commitRule(config);
     if (rule) {
       try {
-        const { gaps, key } = cloneGaps(cwd, rule);
+        const gaps = cloneGaps(cwd, rule);
         if (gaps.length) add("warn", "doctor.cloneGaps", { settings: gaps });
-        else if (key === "unlisted") add("warn", "doctor.cloneKeyUnlisted", {});
-        else if (key !== null && key !== "listed") add("unmeasured", "doctor.cloneKeyUnmeasured", { why: key.unmeasured });
-        else add("ok", "doctor.cloneOk", {});
+        else add("ok", rule.signed ? "doctor.cloneSigningOk" : "doctor.cloneAddressOk", {});
       } catch (e) {
         add("unmeasured", "doctor.cloneUnmeasured", { error: oneLine(e) });
       }
