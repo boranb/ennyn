@@ -46,7 +46,8 @@
         "plugin-eval-selftest",
         "eval-git-macos",
         "eval-arm-reads-home",
-        "eval-keychain-exec"
+        "eval-keychain-exec",
+        "eval-arm-read-tool-home"
       ],
       "source": "README.md, roadmap 0.2; cycle 2026-10-25 (10), ideas from the AgentLab review (an open-source agent platform, MIT): deterministic checks carry most of the score there, a judge the rest; reviews of ponytail and i-have-adhd (open-source agent skills, MIT), 2026-10-25: each published a result its own SessionStart hook had leaked into the baseline (ponytail's 2026-06-17 run superseded; i-have-adhd's README warns of its always-on flag); i-have-adhd's agent-owned-edit case could not pass under --tools \"\" and still counted against both arms; cycle 2026-10-26 (12): ennyn core picks it as the oldest node and says to split it first (plugin-eval-selftest); cycle 2026-10-28 (14), eval-git-macos (ca68658); reviews of ScrapeGraphAI's paper repository (separate schema-rejected outcome, strict and accepted-only metrics) and Scrapling's spider checkpoints (an unreadable checkpoint logs an error and the crawl starts fresh instead of stopping), 2026-10-28; review of GoogleChrome/modern-web-guidance (Apache-2.0, 4dd9683, read 2026-11-13): 'Prompts avoid naming APIs or features, testing whether the agent can naturally discover and apply the right guides'; Anthropic, 'Demystifying evals for AI agents' (2026-01-09; raw copy sha256 05cbe5c7f543906c, read in part 2026-11-13): 'pass^k measures the probability that all k trials succeed', 'a 0% pass rate across many trials (i.e. 0% pass@100) is most often a signal of a broken task, not an incapable agent', 'One-sided evals create one-sided optimization'; read 2026-11-15 (agent-skills scripts/lib/execution-status.js:3-44, evals/README.md:69; Agent-Skills-for-Context-Engineering effectiveness/README.md:40,43)",
       "since": 0
@@ -6929,6 +6930,17 @@
       "cluster": "method",
       "title": "task-brief.md's Rules row says what an author or reviewer runs nothing of: a command that can ask the user (a push in any spelling, a publish, a forge write, an edit under .claude/ or .git/, rm -rf with a glob or a variable, which Claude Code's own check asks about), since Claude Code 2.1.330 routes a subagent's ask to the session's screen; a call rejected or asking is written as unmeasured and never retried. Cycle 53's briefs carried it by hand after prompts reached the screen",
       "source": "the user, 2026-11-24: a request; cycle 2026-11-24 (53) briefs"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 54,
+      "id": "eval-arm-read-tool-home",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "title": "plugin-eval arms granted a path rule for Read, Glob or Grep at the eval level (--allow-tools, as the git run does for its home-read-tool cell) read the HOME the eval is given: the sandbox holds Bash only (measured 2.1.310 and 2.1.330; a case-level allowed_tools path rule has no effect). Find a layout or setting that denies the read tools the home, and turn the home-read-tool gap cell in test/eval/git-cell.json into a deny check. No paid run until this closes",
+      "source": "cycle 2026-11-24 (54) security review of eval-arm-reads-home, rounds 1 and 2"
     }
   ],
   "done": [
