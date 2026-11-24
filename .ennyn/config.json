@@ -4,7 +4,7 @@
   "commands": { "fastTest": "npm run test:short", "wholeTest": "npm test" },
   "push": { "codeGlobs": ["**/*.mjs", "**/*.cjs", "**/*.js", "**/package.json"] },
   "commits": { "addresses": ["61060561+boranb@users.noreply.github.com"], "signed": true },
-  "security": { "privateText": { "home": true, "conversation": true } },
+  "security": { "privateText": { "home": true, "conversation": true, "listExpected": true } },
   "commitMsg": {
     "language": "en",
     "types": ["feat", "fix", "docs", "test", "refactor", "chore"],

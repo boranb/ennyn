@@ -1321,7 +1321,7 @@
       "value": "low",
       "cost": "S",
       "cluster": "gates",
-      "source": "cycle 2026-10-26 (12), a full run of reference-claude-code's branch at load 50-110; cycle 2026-11-01 (16): ENOTEMPTY again, in whole suites and in guards' baseline, 8 of 8 alone; 2026-11-18: guards baseline of input-shapes failed once in the post-commit fast run after the npm reference re-record (1754/1755, inner run # fail 1 in 18.5 s; its tail names neither ENOTEMPTY nor a time limit, so the cause is unread), test:short before it 1755/1755; same as cycle 40 closing (alone 3/3)",
+      "source": "cycle 2026-10-26 (12), a full run of reference-claude-code's branch at load 50-110; cycle 2026-11-01 (16): ENOTEMPTY again, in whole suites and in guards' baseline, 8 of 8 alone; 2026-11-18: guards baseline of input-shapes failed once in the post-commit fast run after the npm reference re-record (1754/1755, inner run # fail 1 in 18.5 s; its tail names neither ENOTEMPTY nor a time limit, so the cause is unread), test:short before it 1755/1755; same as cycle 40 closing (alone 3/3); cycle 2026-11-23 (52): twice more in one task's fast runs under load (ENOTEMPTY on .git/objects/pack), green alone and on a third run",
       "since": 12
     },
     {
@@ -1453,12 +1453,12 @@
       "status": "planned",
       "needs": [],
       "id": "npx-entry",
-      "title": "Publish the CLI to npm as ennyn at the public release (the name was free on 2026-10-27) with trusted publishing (OIDC) and provenance, from a release workflow of its own (id-token: write there only; the test workflow stays read-only), so npx ennyn@<version> rework is the README's first command with no clone. Measure first whether a marketplace entry with an npm source installs only the package's files (no tests, no development dependencies): if it does, it also settles plugin-root-dev-deps; the name was still free on 2026-10-28 (npm view: 404): publish 0.1.0 when the repository goes public. The release workflow runs on a tag push, reads the version from package.json and fails when the tag differs, keeps event fields out of run lines, and publishes from an environment with a required reviewer; before a version bump is pushed, npm view ennyn@<version> finds it, since a skill calling npx ennyn@<version> breaks for every user otherwise; the test that hook commands name existing files extends to package.json bin and main",
+      "title": "Publish the CLI to npm as ennyn at the public release (the name was free on 2026-10-27) with trusted publishing (OIDC) and provenance, from a release workflow of its own (id-token: write there only; the test workflow stays read-only), so npx ennyn@<version> rework is the README's first command with no clone. Measure first whether a marketplace entry with an npm source installs only the package's files (no tests, no development dependencies): if it does, it also settles plugin-root-dev-deps; the name was still free on 2026-10-28 (npm view: 404): publish 0.1.0 when the repository goes public. The release workflow runs on a tag push, reads the version from package.json and fails when the tag differs, keeps event fields out of run lines, and publishes from an environment with a required reviewer; before a version bump is pushed, npm view ennyn@<version> finds it, since a skill calling npx ennyn@<version> breaks for every user otherwise; the test that hook commands name existing files extends to package.json bin and main. Done in d9f171b and 17e5fc7 (v0.1.1): the package is no longer private, release.yml publishes from a v* tag in the npm environment with trusted publishing, and the engines test holds bin, files and the lock's version (d6bff8c). Left: the first publish by the owner and the trusted publisher on npmjs.com (owner's steps), then README's first command is npx ennyn@<version> rework (c52-t4-author-r0-05); the marketplace npm source is still unmeasured",
       "value": "high",
       "cost": "M",
       "cluster": "distribution",
       "gate": "user",
-      "source": "discoverability review, 2026-10-27: package.json names bin; npx ../ennyn --help ran from a local copy; Claude Code 2.1.310 accepts npm marketplace sources (binary read); reviews of agent-reach, Scrapling and Understand-Anything, 2026-10-28: agent-reach never published to PyPI and an unrelated project holds the name; Understand-Anything's manifests say 2.9.8 with no such tag, so a URL built from the version fails",
+      "source": "discoverability review, 2026-10-27: package.json names bin; npx ../ennyn --help ran from a local copy; Claude Code 2.1.310 accepts npm marketplace sources (binary read); reviews of agent-reach, Scrapling and Understand-Anything, 2026-10-28: agent-reach never published to PyPI and an unrelated project holds the name; Understand-Anything's manifests say 2.9.8 with no such tag, so a URL built from the version fails; cycle 2026-11-23 (52) legacy audit of the npm package",
       "since": 13
     },
     {
@@ -4023,11 +4023,11 @@
       "status": "planned",
       "needs": [],
       "id": "hook-older-config-keys",
-      "title": "A commit hook that runs an older Ennyn (the plugin's recorded root) cannot load a config key it does not know and reads the whole config as loosened (checks/loosening.mjs:389), so a commit that brings a new key with the code reading it is refused for loosening; say it is a version skew, or judge the commit's config with the commit's own reader",
+      "title": "A commit hook that runs an older Ennyn (the plugin's recorded root) cannot load a config key it does not know and reads the whole config as loosened (checks/loosening.mjs:389), so a commit that brings a new key with the code reading it is refused for loosening; say it is a version skew, or judge the commit's config with the commit's own reader. The pass side too (c52-t4-author-r0-02, a duplicate of c20-t2-author-r0-03 seen from the other end): once HEAD holds a key the installed Ennyn cannot load, the hook checks no commit at all and tells the user to fix the config, measured with an older installed package beside a newer project config: it names the version skew and the version that reads the key",
       "value": "medium",
       "cost": "S",
       "cluster": "gates",
-      "source": "cycle 2026-11-04 (20) task no-test-command-stop: commands.fastTest refused by the hook at 918f33c's CLI; the code landed first and the config line followed (930d700), row c20-t2-author-r0-03",
+      "source": "cycle 2026-11-04 (20) task no-test-command-stop: commands.fastTest refused by the hook at 918f33c's CLI; the code landed first and the config line followed (930d700), row c20-t2-author-r0-03; cycle 2026-11-23 (52) legacy audit of the npm package",
       "since": 20
     },
     {
@@ -6773,17 +6773,6 @@
     },
     {
       "status": "planned",
-      "needs": [],
-      "since": 48,
-      "id": "push-hook-reads-commits-rule",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "security",
-      "title": "Under push.mode after-closing the push hook decides from the one verdict push-check gives (the commits rule and the recorded test run), not from closingPush alone: today a bare git push the hook lets through skips the commits rule push-check refuses on (c48-t1-sec-r1-04) and needs no recorded green run on the pushed tree. It imports the push check's own verdict and does not edit the file at the fix-loop brake (commit-identity-design-decision). Absorbs push-hook-reads-record: The push hook reads the test-run record push-check reads, so a plain git push the hook lets through in after-closing needs the same recorded green run on the pushed tree, not the caller's word",
-      "source": "cycle 2026-11-20 (48) review of clone-setup-guard, round 1, and the author's impact table row S1; cycle 2026-11-08 (28), closed on the Mac 2026-11-09 from its ledger: T1 author follow-up; Fable, 2026-11-20"
-    },
-    {
-      "status": "planned",
       "needs": [
         "commit-identity-design-decision"
       ],
@@ -6807,29 +6796,6 @@
       "gate": "beside",
       "title": "private-text-gate: low findings left, in order. (a) commit-check's other lines (secrets, forbidden, cochange, impact, a failed read) print a staged name whole, so a name holding a listed word is printed beside the private-text line that cuts it (c49-t1-sec-r1-05, older than the gate): every staged name commit-check prints goes through one shower that cuts what security.privateText matches while a rule is on; gate: a hook test in test/private-text.test.mjs where one added name trips the word rule and a sibling gate, and no line of the refusal holds the word. (b) a Windows home directory reached through WSL's drive mount passes the home rule: it is read as a home path, with a test that fails first. (c) the comment and the help of private-text add say stdin keeps a word out of the shell's history, while a pipe from echo or a here-string writes it there and into an agent's transcript (c49-t1-sec-r1-07): the text names a file redirected to stdin or typed lines. (d) DESIGN.md's security.privateText rows gain one sentence: a revert, a cherry-pick and a rebase run no commit-msg hook (the loosening section says so already; point at it), and what the readers pass by, none found in the replayed history or on the tip in cycle 49: a listed word joined in camelCase, a home path with escaped slashes, an attribution spelled with a hyphened verb, with a noun before the colon or with a bracketed note, a source in a list graph.exports does not name. None of these becomes a pattern until a full read finds one in real text (publish-check, closing-private-read): the file is at rung 2, and a shape added for no measured line is how its fix-introduced rows came. (e) the home rule misses homes under /var/home of image-based Linux systems (c50-t4-audit-r0-02; layout from that system's documentation, no machine measured): a test that fails first, and the two-corpus replay, since a pattern changes. (f) a renamed file's old text is judged as new, so git mv of a file already holding a match is refused (c50-t4-audit-r0-03): the moved-lines comparison follows the rename. (g) rung 2, one rung up (cycle 50 convergence; cause: it finds private text by matching shapes in free text, which has no grammar, so what lies outside its patterns passes unsaid): the cycle 50 audit's cells for this gate (19: private, home, maxword, rename) join the verdict corpus as a new gate, with the task that closes (e) and (f); cells are built at run time as the gate's own test builds its inputs. Previous-fix rows in the next task that edits the file mean the brake and private-text-design-decision",
       "source": "cycle 2026-11-20 (49) review of private-text-gate, round 1, and the author's proposed node private-text-other-gates-echo; Fable, 2026-11-20; cycle 2026-11-20 (50) security audit; Fable, 2026-11-21"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 49,
-      "id": "private-list-expected",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "security",
-      "mechanization": false,
-      "title": "A clone with no private word list checks no word and says nothing: the list lives in the state dir, so a second clone, a fresh machine or a contributor's checkout runs security.privateText with its largest rule silent (in cycle 49's replay listed words gave more hits than every other rule together). A key, security.privateText.words (off by default; the name is the author's to better), says the project expects a list: with it on, doctor names a clone whose state dir holds none and commit-check says on every commit that no word was checked, with the two ways to get one (the file copied from another clone's state dir over a private channel, or private-text add). Said, never refused: a contributor's clone cannot hold the owner's list. Turning the key off is a loosening. Decided here, not left open: no digest list in a tracked file, keyed or not, since a key every clone must hold is the same hand-carry as the list, and once it leaks the tracked file names every word to anyone with a dictionary, in history for good. Gate: tests in test/private-text.test.mjs (key on and no list: the line at the commit and in doctor; with a list: neither)",
-      "source": "cycle 2026-11-20 (49) author's proposed node private-list-shared for private-text-gate; Fable, 2026-11-20"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 50,
-      "id": "push-hook-deny-in-subagent",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "security",
-      "title": "A push written in a subagent is refused at once, never asked: a lab's push waited on the push ask rule in an unattended run (the audit runs of cycles 36-40; cycle 48), and the brief rule that forbids the text (83c9a06) is prose. Measure first, on the current Claude Code: whether an ask (the settings rule's and the hook's) in a background subagent waits or the host denies it (2.1.329's binary holds an automatic denial for a session with no approval surface; the waits were on earlier versions), and that a hook deny holds on a command the ask rule also matches (recorded: a deny holds in a subagent, 2.1.310). If the host denies by itself, close with the recorded cell and no hook change. Else adapters/claude-code/hooks/push-spellings.mjs answers deny, the fetch form in its reason, when the input holds agent_id (absent on the main thread, where the closing's push runs; ignored today, measured with hand-made input); cells join the verdict corpus. brief-no-push-text-in-lab-lows closes beside it. After push-hook-reads-commits-rule (same hook), before fresh-session-run",
-      "source": "cycle 2026-11-20 (50) author's proposed node for brief-no-push-text-in-lab; Fable, 2026-11-21"
     },
     {
       "status": "planned",
@@ -6858,18 +6824,6 @@
     {
       "status": "planned",
       "needs": [],
-      "since": 50,
-      "id": "brief-no-push-text-in-lab-lows",
-      "value": "low",
-      "cost": "S",
-      "cluster": "method",
-      "gate": "beside",
-      "title": "brief-no-push-text-in-lab: low findings left. (a) task-brief.md's reviewer line names one sentence of the Rules row's two on git push in a lab (c50-t2-code-r1-01): it names both, and its pin and guard follow. Closes beside push-hook-deny-in-subagent",
-      "source": "cycle 2026-11-20 (50) review of brief-no-push-text-in-lab, round 1; Fable, 2026-11-21"
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "since": 51,
       "id": "hygiene-names-from-state-dir-lows",
       "value": "low",
@@ -6892,6 +6846,65 @@
       "cluster": "security",
       "source": "the user, 2026-11-23: a request; Fable, 2026-11-23; secret-held-today covers tracked files and publish-check git history, nothing reads untracked output",
       "since": 52
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 52,
+      "id": "push-hook-reads-commits-rule-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "gate": "beside",
+      "title": "push-hook-reads-commits-rule: low findings left, in order. (a) the hook's verdict runs the signature verifier programs git config names (gpg.program, gpg.x509.program) for an OpenPGP or x509 commit in the pushed range, which may reach a keyserver or a transparency log, while the hook says it makes no network call (c52-t1-sec-r1-01): the hook's reads run %G? only on commits whose header says ssh, or pass inert verifier programs, with a test whose logging verifier is never started. (b) push-check prints the verdict's lines only once the whole verdict returns, so a git failure late in it drops lines it printed before (c52-t1-code-r1-01): it prints as it goes, or prints what it has on a throw. (c) skills/cycle/push.md step 1 still sends an after-closing project with no whole test command to --tested, which the hook now always asks (c52-t1-code-r1-02). (d) doctor's push mode line reads closingPush only, not the whole verdict (author, impact row S1). (e) no test pins that the verdict lazy-fetches nothing in a partial clone (measured in review: blob:none and tree:0 fetch nothing; the mutant dropping GIT_NO_LAZY_FETCH survives) and the stale-upstream limit has no recorded cell. Closes beside push-hook-deny-in-subagent-lows: the same hook",
+      "source": "cycle 2026-11-23 (52) review of push-hook-reads-commits-rule, round 1, and the author's proposed nodes hook-verdict-partial-clone-probe, push-hook-openpgp-verify-network, doctor-push-mode-full-verdict, push-hook-stale-upstream"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 52,
+      "id": "private-list-expected-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "gate": "beside",
+      "title": "private-list-expected: low findings left, in order. (a) the missing-list line says the commit goes on even when another rule refuses it (c52-t2-code-r1-01): it says nothing of the outcome, as the unread line does. (b) doctor's missing-list line names the clone by its absolute path, and its unread line carries the read error with the list's absolute path (c52-t2-sec-r1-01, -02; commit-check's unread line is older and the same): both name the list as the config spells it and no machine path. (c) a state dir that is a plain file or a dangling link reads as no list (core/files.mjs gone() on ENOENT and ENOTDIR), so it is said as missing, not unread, and a hand commit-check exits 0 (c52-t2-sec-r1-03, older than the task, 89017b5): an unread state dir is said as unread. Closes beside hygiene-names-from-state-dir-lows: the same shower",
+      "source": "cycle 2026-11-23 (52) review of private-list-expected, round 1"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 52,
+      "id": "push-hook-deny-in-subagent-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "gate": "beside",
+      "title": "push-hook-deny-in-subagent: low findings left. (a) a push spelling the reader refuses, written in a subagent, is refused with the advice to write a plain git push, which the subagent branch then refuses too, so the first reason points toward a push and holds no fetch form (c52-t3-code-r1-02): in a subagent the refused reason gives the fetch form as well. Closes beside push-hook-reads-commits-rule-lows: the same hook",
+      "source": "cycle 2026-11-23 (52) review of push-hook-deny-in-subagent, round 1"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 52,
+      "id": "audit-npx-release-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "distribution",
+      "gate": "beside",
+      "title": "The npm package and release audit: low findings and lean items left. (a) the release job checks the tag's name against the version and its commit against main, not that it is an annotated tag signed by the owner, so a lightweight v* tag pushed while the no-new-tags ruleset is off would publish after approval (c52-t4-author-r0-04): the job runs git tag -v (or reads the tag object's type and signature) against the allowed signers. (b) package.json files lists schema, a folder that never existed: drop it, and the engines test refuses a files entry that names nothing. (c) the repository's Actions settings allow every action and do not require SHA pins (read with gh api, 2026-11-23); the workflows pin by SHA already: requiring it is the owner's setting, asked of the user, never set by a session",
+      "source": "cycle 2026-11-23 (52) legacy audit of the npm package and release workflow, and the author's proposed nodes package-files-schema and actions-sha-pinning-setting"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 52,
+      "id": "install-hook-npx-cache",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "distribution",
+      "title": "install-hook run through npx (npx ennyn install-hook) writes a commit-msg hook that calls the CLI inside npm's npx cache (_npx/<hash>/...); once that folder is cleaned, or another version lands under another hash, every commit passes unchecked with one stderr line (setup/hook.mjs:174), measured by deleting _npx (c52-t4-author-r0-01). install-hook refuses a CLI path under npm's cache folder (npm config get cache, or a path segment _npx), names a stable install (a global or project install, or the plugin's data folder), and doctor names a hook that points into the cache. A test builds the cache path in a temporary HOME",
+      "source": "cycle 2026-11-23 (52) legacy audit of the npm package (c52-t4-author-r0-01)"
     }
   ],
   "done": [
@@ -8044,6 +8057,34 @@
       "status": "done",
       "finished": "2026-11-21",
       "cluster": "distribution"
+    },
+    {
+      "id": "push-hook-reads-commits-rule",
+      "title": "Closed in cycle 52 (5967c8e): push-check's verdict lives in checks/push-mode.mjs as pushVerdict; push-check prints it and the push hook, under push.mode after-closing, lets a bare git push run only when hookVerdict (closingPush, then pushVerdict without the fetch) gives exit 0: the commits rule on what the push sends and a green run recorded on the pushed tree, in a child stopped at 5 s, anything else asks. Push-check's output is unchanged on 51 states (review). A bare push with nothing to send now asks. Lows: push-hook-reads-commits-rule-lows",
+      "status": "done",
+      "finished": "2026-11-24",
+      "cluster": "security"
+    },
+    {
+      "id": "private-list-expected",
+      "title": "Closed in cycle 52 (38ce424): security.privateText.listExpected (off by default; named so, not words, since words false would read as listed words unchecked). With it on and no list or an empty one, commit-check says on every commit that no listed word was checked and how to get a list, never refusing; doctor warns, and fails on a list it cannot read; turning it off or removing it is a loosening (46 paths through the real hook refused). No pattern changed in checks/private-text.mjs. Lows: private-list-expected-lows",
+      "status": "done",
+      "finished": "2026-11-24",
+      "cluster": "security"
+    },
+    {
+      "id": "push-hook-deny-in-subagent",
+      "title": "Closed in cycle 52 (ec4fc2b): read in the 2.1.330 binary, an attended session routes a subagent's ask to the session's prompt, where it waits, so the host denies nothing by itself; the hook input carries agent_id only in a subagent. The push hook refuses every push its reader leaves when the input holds agent_id, in either push mode, before the verdict child, with the lab fetch form as the remedy. New push gate in the verdict corpus (31 cells); reference cells: deny holds over a matching ask rule in a subagent, and a hook that crashes or times out there falls to the ask rule (stated in SECURITY.md, as is the unmeasured teammate case). Lows: push-hook-deny-in-subagent-lows",
+      "status": "done",
+      "finished": "2026-11-24",
+      "cluster": "security"
+    },
+    {
+      "id": "brief-no-push-text-in-lab-lows",
+      "title": "Closed in cycle 52 (ec4fc2b), beside push-hook-deny-in-subagent: task-brief.md's reviewer line names both sentences of the Rules row on git push in a lab, with its pin and guard",
+      "status": "done",
+      "finished": "2026-11-24",
+      "cluster": "method"
     }
   ],
   "declined": [

@@ -206,7 +206,9 @@
         "new: boundary placed around the host, not around the box",
         "new: check with no positive control",
         "new: hostile fixture uses names the check already allows",
-        "new: hostile fixture values mix shapes so one shape is never alone"
+        "new: hostile fixture values mix shapes so one shape is never alone",
+        "new: stall shorter than the bound it tests",
+        "new: test checks inclusion where it means the whole"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, it holds inside the listed gates only. Named in cycle 5."
     },
@@ -630,7 +632,8 @@
         "new: message names the wrong reason",
         "new: exit status assumed not measured",
         "new: known parting named with the wrong cause",
-        "new: shown value rounds across its threshold"
+        "new: shown value rounds across its threshold",
+        "new: message states an outcome it does not know"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet."
     },
@@ -800,7 +803,8 @@
         "new: check environment strips one channel of shell functions but not the startup file",
         "new: gate narrowed by the judged change's own record",
         "new: record read through one kind only",
-        "new: control derived from the value it checks"
+        "new: control derived from the value it checks",
+        "new: release trusts an unverified tag"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -899,7 +903,10 @@
         "new: fixture names a default the code does not use",
         "new: fixture default overwrites an intended missing value",
         "new: a program's refusal assumed absent from recall",
-        "new: control expectations not updated for a new excuse"
+        "new: control expectations not updated for a new excuse",
+        "new: fixture state outside the fact the oracle names",
+        "new: reference fixture short of the state its cell names",
+        "new: test reads a repository file its guard does not allow"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -1029,7 +1036,8 @@
         "new: retry loop with no pause on a lasting error",
         "new: self-spawning test with no recursion stop",
         "new: time-limited child call with no named kill signal",
-        "new: abort that no longer reaches the connection"
+        "new: abort that no longer reaches the connection",
+        "new: unbounded call added beside a pinned exemption"
       ],
       "judged": "the orchestrator of cycle 18, reading the rows"
     },
@@ -1112,7 +1120,8 @@
       "linked": [
         "new: helper program found through an unfiltered PATH runs repository code",
         "new: data file read as configuration runs a command",
-        "new: a check runs a program the judged repository names"
+        "new: a check runs a program the judged repository names",
+        "new: hook runs configured external verifier"
       ],
       "judged": "Named in cycle 24 by the orchestrator, from one security review row (a tr found through the hook's PATH); hook-node-in-repo is the same shape for node."
     },
@@ -1178,7 +1187,8 @@
       "linked": [
         "new: removal breaks a repository that borrows from it",
         "new: removal breaks a repository that borrows its objects",
-        "new: pointer not kept by a later rewrite"
+        "new: pointer not kept by a later rewrite",
+        "new: hook pinned to a transient install path"
       ],
       "judged": "Named in cycle 31 by the orchestrator, from rows of the cycle's delete and lock tasks."
     },
@@ -1201,7 +1211,8 @@
       "gates": [],
       "nodes": [],
       "linked": [
-        "new: event logged only at the end of the run it precedes"
+        "new: event logged only at the end of the run it precedes",
+        "new: buffered output lost on a crash path"
       ],
       "judged": "Named in cycle 34 by the orchestrator, from rows of the cycle's lock and test-runner tasks."
     },
@@ -1259,6 +1270,30 @@
         "new: loosening asked where nothing loosens"
       ],
       "judged": "Named in cycle 49 by the orchestrator, from a round-one security row (graph keys judged by the loosening check with the rule that reads them off)."
+    },
+    {
+      "id": "said-line-names-machine-path",
+      "says": "A line a command prints for a person names an absolute path of the machine (a home folder, a clone's place) where the project's own spelling of the place would do, so the output carries the machine's layout wherever it is pasted.",
+      "state": "open",
+      "gates": [],
+      "nodes": [
+        "private-list-expected-lows"
+      ],
+      "linked": [
+        "new: machine path in a said line"
+      ],
+      "judged": "Named in cycle 52 by the orchestrator, from two round-one security rows (doctor's private-list lines)."
+    },
+    {
+      "id": "approval-asked-unattended",
+      "says": "A gate asks for approval in a place where nobody can answer (a background agent, a runner with no prompt), so the work waits without end instead of being refused with a way forward.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: approval asked where nobody can answer"
+      ],
+      "judged": "Named in cycle 52 by the orchestrator, from the author's measurement of push-hook-deny-in-subagent (a subagent's push asked, routed to the session's prompt); the push gate now refuses there."
     }
   ]
 }
