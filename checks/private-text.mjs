@@ -26,7 +26,7 @@ import { join, posix } from "node:path";
 import { readRegular } from "../core/files.mjs";
 import { resolveStateDir, stateRoot } from "../core/git.mjs";
 import { shown, t } from "../core/i18n.mjs";
-import { commitRule } from "./commit-identity.mjs";
+import { addressFold, commitRule } from "./commit-identity.mjs";
 import { masked } from "./secrets.mjs";
 
 /** @typedef {{ exact: Set<string>, folded: Set<string>, lengths?: Set<number> }} Literals digests; `lengths`: of the strings hashed, to hash only words of those lengths */
@@ -113,9 +113,9 @@ const NOT_MAIL_HOST = /^(?:.*\.(?:png|jpe?g|gif|webp|svg|avif|heic|heif|jxl|ico|
 const notMailbox = (text, at, end, domain) => NOT_MAIL_HOST.test(domain) || /:\/\/[^\s/@]*$/.test(text.slice(Math.max(0, at - 512), at)) || /^(?::[\w~./-]|\/)/.test(text.slice(end, end + 2));
 
 /**
- * The addresses a text holds that `allowed` does not, folded as commits.addresses is (commitRule), past reserved
- * names and what is no mailbox.
- * @param {string} text @param {string[]} allowed in lower case, as commitRule gives them
+ * The addresses a text holds that `allowed` does not, folded by commits.addresses' own fold (addressFold), past
+ * reserved names and what is no mailbox.
+ * @param {string} text @param {string[]} allowed folded, as commitRule gives them
  * @returns {Hit[]}
  */
 export function addressHits(text, allowed) {
@@ -125,14 +125,11 @@ export function addressHits(text, allowed) {
     const end = m.index + m[0].length;
     const domain = m[0].slice(m[0].indexOf("@") + 1);
     if (RESERVED.test(domain) || notMailbox(text, m.index, end, domain)) continue;
-    if (allowed.includes(folded(m[0]))) continue;
+    if (allowed.includes(addressFold(m[0]))) continue;
     out.push({ rule: "address", at: m.index, end, length: m[0].length });
   }
   return out;
 }
-
-/** An address folded by commits.addresses' own rule, so the two never differ. @param {string} address */
-const folded = (address) => /** @type {string[]} */ (/** @type {import("./commit-identity.mjs").Rule} */ (commitRule({ commits: { addresses: [address], signed: false } })).addresses)[0];
 
 /** The closed provenance form a graph node names the user in (skills/cycle/report-formats.md, **An ask of the user**). */
 const FORM = String.raw`(?:the )?user, \d{4}-\d{2}-\d{2}: (?:a request|approved|left to the session)`;

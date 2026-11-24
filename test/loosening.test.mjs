@@ -7,7 +7,8 @@ import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { git, stagedVersions } from "../core/git.mjs";
 import { ConfigError, DEFAULTS, STRING_LISTS, configFrom, loadConfig } from "../core/config.mjs";
-import { LOOSENING_LINE, approvedKeys, gateKeyKind, loaded, loosenedKeys } from "../checks/loosening.mjs";
+import { FOLDED, LOOSENING_LINE, approvedKeys, gateKeyKind, loaded, loosenedKeys, sameValue } from "../checks/loosening.mjs";
+import { addressFold } from "../checks/commit-identity.mjs";
 import { installHook } from "../setup/hook.mjs";
 import { TOKENS } from "./secret-shapes.mjs";
 
@@ -212,6 +213,21 @@ test("loosening: every key of the defaults is judged, none by the catch-all; an 
   assert.deepEqual(kinds.filter(([, kind]) => kind === "any"), []);
   assert.ok(kinds.filter(([, kind]) => kind === "gate").length >= 34, "the gates' keys are listed");
   assert.equal(gateKeyKind("security.deps.newKey"), "any");
+});
+
+test("loosening: a list key whose rule folds its values is judged folded, by the rule's own fold: a case-only rewrite is no move, a new member still is", () => {
+  assert.deepEqual([...FOLDED], [["commits.addresses", addressFold]]);
+  /** A value of `key` set to `list`. @param {string} key @param {string[]} list */
+  const at = (key, list) => key.split(".").reduceRight((/** @type {any} */ v, k) => ({ [k]: v }), list);
+  for (const [key] of FOLDED) {
+    const before = eff(at(key, ["Me@X.test", "b@x.test"]));
+    assert.deepEqual(loosenedKeys(before, eff(at(key, ["me@x.TEST", "B@X.test"]))), [], `${key}: case only`);
+    assert.deepEqual(loosenedKeys(before, eff(at(key, ["me@x.test", "b@x.test", "c@x.test"]))), [key], `${key}: a member added`);
+    assert.deepEqual(loosenedKeys(before, eff(at(key, ["ME@X.TEST"]))), [], `${key}: one gone, the other in another case`);
+    // ennyn bypass reads a merge's sides by the same reading: a side in another case holds the merge's value.
+    assert.ok(sameValue(key, before, eff(at(key, ["b@x.test", "ME@x.test"]))), `${key}: the same value`);
+    assert.ok(!sameValue(key, before, eff(at(key, ["me@x.test"]))), `${key}: another value`);
+  }
 });
 
 test("loosening: the approval line stands in the body at a line's start, and several lines count", () => {

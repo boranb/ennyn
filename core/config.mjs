@@ -94,8 +94,9 @@ export const DEFAULTS = Object.freeze({
   // one (push-check); every path by default.
   push: { warnAtUnpushed: 20, mode: "ask", codeGlobs: ["**"] },
   // Who may write the commits a push sends, and whether each is signed (checks/commit-identity.mjs): push-check refuses
-  // a commit whose author or committer address `addresses` does not hold, compared without case, and with `signed` one
-  // git does not verify as signed by a key the clone's allowed-signers file lists for its committer. [] and false: unset.
+  // a commit whose author or committer address `addresses` does not hold, compared by addressFold (A to Z without
+  // case), and with `signed` one git does not verify as signed by a key the clone's allowed-signers file lists for its
+  // committer. [] and false: unset.
   commits: { addresses: [], signed: false },
   security: {
     // Every this many cycles the audit slot is a security audit of the sensitive paths (plan/audit.mjs, `ennyn

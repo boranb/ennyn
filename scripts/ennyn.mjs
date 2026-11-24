@@ -22,7 +22,7 @@ import { readIfThere, readRegular, writeState } from "../core/files.mjs";
 import { SecretScanner, masked, secretsOff } from "../checks/secrets.mjs";
 import { ConfigPicked, ConfigUnread, LOOSENING_LINE, commitConfig, looseningErrors } from "../checks/loosening.mjs";
 import { pushVerdict, saidText } from "../checks/push-mode.mjs";
-import { commitRule } from "../checks/commit-identity.mjs";
+import { addressFold, commitRule } from "../checks/commit-identity.mjs";
 import { API, apiBase, isAddress, isLogin, noreplyLogin, setupCommands, signersPath, signersText, signingKeys, writeSigners } from "../setup/clone-setup.mjs";
 import { cleanTree, lastRun, readRuns, recordRun, runBase, within } from "../checks/test-runs.mjs";
 import { buildImpactTable, formatImpactTable } from "../impact/table.mjs";
@@ -2023,9 +2023,9 @@ const COMMANDS = {
     // only one, or with no list the clone's own user.email.
     const email = gitMaybe(["config", "--get", "user.email"], { cwd, absent: [1] });
     const address = opts.address !== undefined ? String(opts.address) : given === null && derived ? derived.address : listed.length === 1 ? listed[0] : !listed.length && email && isAddress(email) ? email : null;
-    if (address !== null && rule.addresses && !rule.addresses.includes(address.toLowerCase())) throw new UsageError(`--address ${address} is not in commits.addresses`);
+    if (address !== null && rule.addresses && !rule.addresses.includes(addressFold(address))) throw new UsageError(`--address ${address} is not in commits.addresses`);
     // A login read from a noreply address answers for that address alone: another one takes --login, the user's word.
-    const login = given ?? (derived && address !== null && address.toLowerCase() === derived.address.toLowerCase() ? derived.login : null);
+    const login = given ?? (derived && address !== null && addressFold(address) === addressFold(derived.address) ? derived.login : null);
     const signers = signersPath(cwd, cfg);
     const commands = setupCommands({ address, signed: rule.signed, signingKey: gitMaybe(["config", "--get", "user.signingkey"], { cwd, absent: [1] }), signers, cli: fileURLToPath(import.meta.url), pluginData: process.env.ENNYN_PLUGIN_DATA || null });
     out(t("cloneSetup.commands", { addresses: listed.join(", ") || "any", signed: String(rule.signed) }, lang));

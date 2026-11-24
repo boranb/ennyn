@@ -16,19 +16,21 @@
  * fails is unmeasured, never clean.
  * Commits are read with replace refs and grafts off (HOOK_READ_ENV): the push sends the objects as they are.
  *
- * An address passes when `commits.addresses` holds it, compared without case: author and committer both.
+ * An address passes when `commits.addresses` holds it, both folded by addressFold (A to Z only): author and committer
+ * both. One the push's own config adds and the upstream's lacks is refused with the push that clears it (pushRule).
  *
  * A signature passes only when it is an SSH signature (every `gpgsig` header of the commit's raw text holds an SSH
  * armor), git says `G` (`%G?`) and the principal the allowed-signers file names for the key
- * (`%GS`) is the committer's address, without case: the committer is who made the commit object, and `G` alone ties
+ * (`%GS`) is the committer's address, folded: the committer is who made the commit object, and `G` alone ties
  * the key to no address (a key listed for b@x.test gives `G [b@x.test]` on a commit by a@x.test, git 2.56.0). `U` (a
  * good signature by a key the file does not list, or no file there) does not pass: any key makes one. With no
  * gpg.ssh.allowedSignersFile configured git says `N` for an SSH-signed commit as for an unsigned one; a commit whose
  * raw header holds a `gpgsig` line is then said to be signed and unchecked, never unsigned, and is refused all the
- * same. A line of the file with two principals gives the first, a wildcard its pattern: neither is the committer's
- * address, so such a file is refused; `ennyn clone-setup` writes one address a line. An OpenPGP or X.509 signature is
- * refused whatever git says of it: git calls it `G` for any key the local keyring trusts, a key made on this machine
- * with the committer's address in its user id among them (gpg 2.4), so `G` there says nothing of the list.
+ * same. The first line of the file that holds the key answers, with its first principal, and a wildcard gives its
+ * pattern, which is no address (measured on git 2.56.0 and 2.34.1); `ennyn clone-setup` writes one address a line.
+ * An OpenPGP or X.509 signature is refused whatever git says of it: git calls it `G` for any key the local keyring
+ * trusts, a key made on this machine with the committer's address in its user id among them (gpg 2.4), so `G` there
+ * says nothing of the list.
  */
 
 import { isAbsolute, join, resolve } from "node:path";
@@ -36,12 +38,21 @@ import { readFileSync, statSync } from "node:fs";
 import { CONFIG_PATH, ConfigError, configFrom } from "../core/config.mjs";
 import { HOOK_READ_ENV, blobAt, git, gitBytes, gitMaybe, headCommit } from "../core/git.mjs";
 
-/** @typedef {{ addresses: string[] | null, signed: boolean }} Rule addresses in lower case; null: any address */
+/**
+ * @typedef {{ addresses: string[] | null, signed: boolean, brought?: string[], dropped?: string[] }} Rule addresses folded
+ *   (addressFold); null: any address. `brought`: addresses the push's own configs list and the upstream's does not;
+ *   `dropped`: addresses the upstream's list holds and the push's own lists do not (pushRule)
+ */
 /** @typedef {{ key: string, vars: Record<string, string> }} Why a catalog line */
 /** @typedef {{ hash: string, why: Why[] }} Refused */
 
-/** @param {string} s */
-const lower = (s) => s.toLowerCase();
+/**
+ * The one fold of an address, for every reader of one (this rule, checks/private-text.mjs, checks/loosening.mjs,
+ * clone-setup): A to Z lower-cased, nothing else. `commits.addresses` takes ASCII alone (core/config.mjs ADDRESS), so an
+ * address with any other character never equals an entry: toLowerCase would fold U+212A (KELVIN SIGN) into `k`.
+ * @param {string} address
+ */
+export const addressFold = (address) => address.replace(/[A-Z]+/g, (m) => m.toLowerCase());
 
 /**
  * The rule the config sets, or null when it sets none (no address and no signing): then nothing here runs.
@@ -51,7 +62,7 @@ const lower = (s) => s.toLowerCase();
 export function commitRule(config) {
   const { addresses, signed } = config.commits;
   if (!addresses.length && !signed) return null;
-  return { addresses: addresses.length ? addresses.map(lower) : null, signed };
+  return { addresses: addresses.length ? addresses.map(addressFold) : null, signed };
 }
 
 /**
@@ -104,13 +115,23 @@ function ruleAt(cwd, rev) {
 
 /**
  * The rule push-check holds the push to: the strictest of the work tree's config, HEAD's and, when the range is known,
- * the upstream's. A git that fails, or a commit's config ruleOfText cannot read, throws.
+ * the upstream's. An address the work tree's and HEAD's lists hold and the upstream's does not is `brought`: the push
+ * itself adds it, and it counts once the upstream holds it. One the upstream's list holds and theirs do not is
+ * `dropped`: the push itself takes it out, so it writes no commit of this push. Each refusal names its own remedy, not
+ * the clone's settings. A git that fails, or a commit's config ruleOfText cannot read, throws.
  * @param {string} cwd the repository's top @param {any} config the work tree's @param {string | null} upstream
  * @returns {Rule | null}
  */
 export function pushRule(cwd, config, upstream) {
   const head = headCommit(cwd);
-  return strictest([commitRule(config), head ? ruleAt(cwd, head) : null, upstream ? ruleAt(cwd, upstream) : null]);
+  const own = strictest([commitRule(config), head ? ruleAt(cwd, head) : null]);
+  const theirs = upstream ? ruleAt(cwd, upstream) : null;
+  const rule = strictest([own, theirs]);
+  const kept = rule?.addresses;
+  if (!rule || !kept) return rule;
+  const brought = (own?.addresses ?? []).filter((a) => !kept.includes(a));
+  const dropped = (theirs?.addresses ?? []).filter((a) => !kept.includes(a));
+  return { ...rule, ...(brought.length ? { brought } : {}), ...(dropped.length ? { dropped } : {}) };
 }
 
 /** What each `%G?` letter other than G and N means, as git's pretty-formats manual words it. */
@@ -173,19 +194,18 @@ function signatureFormats(cwd, hashes) {
   return found;
 }
 
-/** The address a signer is named by: SSH gives the principal. @param {string} signer */
-const signerAddress = (signer) => lower(signer);
-
 /**
- * What in git config makes a bare push of `branch` send more refs than that branch, or send it somewhere other than
- * the url its upstream is fetched from, with what to change; null when neither. pushNeeds has already held the push
- * to the upstream's ref (`@{push}`). More refs: push.default matching, a `remote.<name>.push` refspec, a mirror,
- * push.followTags (its tags point only into the branch's history, measured on git 2.56.0, but they are refs the
+ * The one list of git settings that make a bare push of `branch` send more refs than that branch, or send it somewhere
+ * other than the url its upstream is fetched from, with what to change; null when none. Read by push-check here and by
+ * push-mode's pushWidened, which keeps a stricter allow reading in front of it. pushNeeds has already held the push to
+ * the upstream's ref (`@{push}`). More: a submodule push (push.recurseSubmodules other than check or no,
+ * submodule.recurse), sent to the submodules' own remotes whatever the upstream; push.default other than simple,
+ * upstream, tracking or current (matching sends other branches; nothing sends none); a `remote.<name>.push` refspec, a
+ * mirror, push.followTags (its tags point only into the branch's history, measured on git 2.56.0, but they are refs the
  * commits check does not read). Elsewhere: push urls (`git remote get-url --push --all`) other than the one fetch url
  * (`git remote get-url`), as a pushurl, a second url or a pushInsteadOf makes them; an insteadOf rewrites both alike.
  * Keys that change neither (a tool's own, as the gh CLI's `remote.<name>.gh-resolved`) pass. A local upstream
- * (remote ".") sends nothing anywhere. closingPush keeps its own, stricter allow list (pushWidened). A git that fails
- * throws.
+ * (remote ".") sends the branch nowhere. A git that fails throws.
  * @param {string} cwd @param {string} branch
  * @returns {{ setting: string, change: string } | null}
  */
@@ -194,8 +214,10 @@ export function pushSendsMore(cwd, branch) {
   const all = (/** @type {string} */ key) => (gitMaybe(["config", "--get-all", key], { cwd, absent: [1] }) ?? "").split("\n").filter(Boolean);
   const remote = get(`branch.${branch}.remote`);
   if (!remote) return { setting: `branch.${branch}.remote`, change: "give the branch an upstream on a remote" };
+  if (![null, "no", "false", "check"].includes(get("push.recurseSubmodules"))) return { setting: "push.recurseSubmodules", change: "set it to check or no" };
+  if (get("submodule.recurse", ["--type=bool"]) === "true") return { setting: "submodule.recurse", change: "set it to false" };
   if (remote === ".") return null;
-  if (get("push.default") === "matching") return { setting: "push.default", change: "set it to simple" };
+  if (![null, "simple", "upstream", "tracking", "current"].includes(get("push.default"))) return { setting: "push.default", change: "set it to simple" };
   if (all(`remote.${remote}.push`).length) return { setting: `remote.${remote}.push`, change: "take the refspec out" };
   if (get(`remote.${remote}.mirror`, ["--type=bool"]) === "true") return { setting: `remote.${remote}.mirror`, change: "set it to false" };
   if (get("push.followTags", ["--type=bool"]) === "true") return { setting: "push.followTags", change: "set it to false, and push tags on their own" };
@@ -227,8 +249,16 @@ export function commitsRefused(cwd, rule, upstream) {
     /** @type {Why[]} */
     const why = [];
     if (rule.addresses) {
-      if (!rule.addresses.includes(lower(c.author))) why.push({ key: "commits.author", vars: { address: c.author } });
-      if (!rule.addresses.includes(lower(c.committer))) why.push({ key: "commits.committer", vars: { address: c.committer } });
+      // An address the push's own list brings or drops is named apart: its remedy is the order of the pushes, not this
+      // clone's settings.
+      const outside = (/** @type {string} */ address, /** @type {string} */ role) => {
+        const a = addressFold(address);
+        if (rule.addresses?.includes(a)) return;
+        const kind = rule.brought?.includes(a) ? "Brought" : rule.dropped?.includes(a) ? "Dropped" : "";
+        why.push({ key: `commits.${role}${kind}`, vars: { address } });
+      };
+      outside(c.author, "author");
+      outside(c.committer, "committer");
     }
     const kinds = formats.get(c.hash) ?? [];
     const other = kinds.filter((k) => k !== "ssh");
@@ -238,7 +268,7 @@ export function commitsRefused(cwd, rule, upstream) {
     else if (other.length) why.push({ key: "commits.notSsh", vars: { format: [...new Set(other)].join(", ") } });
     else {
       if (c.sig === "G") {
-        if (signerAddress(c.signer) !== lower(c.committer)) why.push({ key: "commits.otherSigner", vars: { signer: c.signer, address: c.committer } });
+        if (addressFold(c.signer) !== addressFold(c.committer)) why.push({ key: "commits.otherSigner", vars: { signer: c.signer, address: c.committer } });
       } else if (c.sig === "N") why.push({ key: "commits.unchecked", vars: {} });
       else why.push({ key: "commits.notGood", vars: { code: c.sig, what: SIGNATURE[c.sig] ?? "a signature git does not verify as good" } });
     }
@@ -268,30 +298,42 @@ export function signingPublicKey(value, cwd) {
 }
 
 /**
- * Whether an allowed-signers file lists `key` for `address` alone, for git: a line `<address> [namespaces="…git…"]
- * <key> [comment]`, the address one principal, no pattern. A line that holds the key for the address with any other
- * option (valid-before, cert-authority, a quoted option this reading does not follow) is unmeasured; none at all is
- * unlisted.
- * @param {string} text @param {string} address lower case @param {string} key `<type> <base64>`
+ * Whether an allowed-signers file lists `key` for `address` as git reads it, taken only where the file's shape leaves
+ * one reading. git asks ssh-keygen for the principal of the first line that holds the key and takes that line's first
+ * principal; an earlier line for another namespace makes the signature bad, an expired one is passed over (measured on
+ * git 2.56.0 and 2.34.1 with OpenSSH 10.5). So: `listed` when exactly one line holds the key, its one principal is the
+ * address (folded) and its only option, if any, a namespace list holding git and no negation; `unlisted` when no line
+ * that holds the key names the address or a pattern; any other shape (several principals, several lines, a pattern, a
+ * quoted principal, another option) is `unmeasured`, never listed. Words part on space and tab alone, and one CR ends
+ * a line, as every ssh-keygen measured reads them (OpenSSH 10.5, 9.2, 8.9: a vertical tab, a form feed or a no-break
+ * space parts nothing, a byte order mark or a leading no-break space is part of the principal, and a CR inside a line
+ * parts words in 10.5 alone); a line that holds the key is unmeasured when its text up to the key holds any character
+ * but printable ASCII, space and tab, or when a CR stands anywhere in it but at its end.
+ * @param {string} text @param {string} address folded @param {string} key `<type> <base64>`
  * @returns {"listed" | "unlisted" | "unmeasured"}
  */
 export function signerListed(text, address, key) {
   const [type, body] = key.split(" ");
-  let unsure = false;
+  /** @type {{ principals: string[], options: string[] }[]} */
+  const lines = [];
+  let odd = false;
   for (const raw of text.split("\n")) {
-    const line = raw.trim();
+    const line = raw.replace(/\r$/, "").replace(/^[ \t]+|[ \t]+$/g, "");
     if (!line || line.startsWith("#")) continue;
-    const words = line.split(/\s+/);
+    const end = line.indexOf(body);
+    if (end !== -1 && (/[^\x21-\x7e \t]/.test(line.slice(0, end + body.length)) || line.includes("\r"))) odd = true;
+    const words = line.split(/[ \t]+/);
     const at = words.findIndex((w, i) => i > 0 && w === type && words[i + 1] === body);
-    if (at === -1) continue;
-    if (lower(words[0]) !== address) continue;
-    const options = words.slice(1, at);
-    if (!options.length) return "listed";
-    const ns = options.length === 1 ? /^namespaces="([^"\s]*)"$/.exec(options[0]) : null;
-    if (ns && ns[1].split(",").includes("git")) return "listed";
-    unsure = true;
+    if (at !== -1) lines.push({ principals: words[0].split(","), options: words.slice(1, at) });
   }
-  return unsure ? "unmeasured" : "unlisted";
+  const pattern = (/** @type {string} */ p) => /[*?!"]/.test(p);
+  if (odd) return "unmeasured";
+  if (!lines.some((l) => l.principals.some((p) => pattern(p) || addressFold(p) === address))) return "unlisted";
+  if (lines.length !== 1 || lines[0].principals.length !== 1 || pattern(lines[0].principals[0])) return "unmeasured";
+  const { options } = lines[0];
+  if (!options.length) return "listed";
+  const ns = options.length === 1 ? /^namespaces="([^"\s]*)"$/.exec(options[0]) : null;
+  return ns && !ns[1].includes("!") && ns[1].split(",").includes("git") ? "listed" : "unmeasured";
 }
 
 /**
@@ -309,8 +351,8 @@ function isFile(path) {
 }
 
 /**
- * What this clone lacks for the rule. `gaps`, by name: with `signed`, commit and tag signing on, a signing key, gpg.format
- * ssh (the allowed-signers file `ennyn clone-setup` builds holds SSH keys), an allowed-signers file that is there and a
+ * What this clone lacks for the rule, as push-check's verdict reads it (no tag: tag signing is clone-setup's advice).
+ * `gaps`, by name: with `signed`, commit signing on, a signing key, gpg.format ssh (the allowed-signers file `ennyn clone-setup` builds holds SSH keys), an allowed-signers file that is there and a
  * user.email; with addresses, a user.email the list holds. `key`, with `signed` and no gap: whether the file lists
  * the signing key's public half for user.email (signerListed), `unmeasured` with why when the key or the file could
  * not be read as one; null when not read. Read as git reads them here (every scope). A git that fails throws.
@@ -326,20 +368,19 @@ export function cloneGaps(cwd, rule) {
   let file = null;
   if (rule.signed) {
     if (get("commit.gpgsign", ["--type=bool"]) !== "true") gaps.push("commit.gpgsign");
-    if (get("tag.gpgsign", ["--type=bool"]) !== "true") gaps.push("tag.gpgsign");
     if (!signingKey) gaps.push("user.signingkey");
     if (get("gpg.format") !== "ssh") gaps.push("gpg.format");
     const named = get("gpg.ssh.allowedSignersFile", ["--type=path"]);
     file = named ? (isAbsolute(named) ? named : resolve(cwd, named)) : null;
     if (!file || !isFile(file)) gaps.push("gpg.ssh.allowedSignersFile");
   }
-  if (rule.addresses ? !email || !rule.addresses.includes(lower(email)) : rule.signed && !email) gaps.push("user.email");
+  if (rule.addresses ? !email || !rule.addresses.includes(addressFold(email)) : rule.signed && !email) gaps.push("user.email");
   if (!rule.signed || gaps.length) return { gaps, key: null };
   try {
     const pub = signingPublicKey(/** @type {string} */ (signingKey), cwd);
     if (!pub) return { gaps, key: { unmeasured: "user.signingkey names no SSH public key this reading finds" } };
-    const listed = signerListed(readFileSync(/** @type {string} */ (file), "utf8"), lower(/** @type {string} */ (email)), pub);
-    return { gaps, key: listed === "unmeasured" ? { unmeasured: "the allowed-signers file holds the key for user.email with options this reading does not follow" } : listed };
+    const listed = signerListed(readFileSync(/** @type {string} */ (file), "utf8"), addressFold(/** @type {string} */ (email)), pub);
+    return { gaps, key: listed === "unmeasured" ? { unmeasured: "the allowed-signers file holds the key on a line git may read otherwise: several principals or lines, a pattern, or an option other than a git namespace" } : listed };
   } catch (e) {
     return { gaps, key: { unmeasured: String(/** @type {Error} */ (e).message).split("\n")[0] } };
   }

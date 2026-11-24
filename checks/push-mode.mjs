@@ -26,7 +26,7 @@ import { join } from "node:path";
 import { CONFIG_PATH, DEFAULTS, loadConfig } from "../core/config.mjs";
 import { HOOK_READ_ENV, git, gitBytes, gitMaybe, headCommit, projectRoot } from "../core/git.mjs";
 import { t } from "../core/i18n.mjs";
-import { commitsRefused, pushRule } from "./commit-identity.mjs";
+import { commitsRefused, pushRule, pushSendsMore } from "./commit-identity.mjs";
 import { approvedKeys, configAt, inside, loaded } from "./loosening.mjs";
 import { masked } from "./secrets.mjs";
 import { pushNeeds } from "./test-runs.mjs";
@@ -153,8 +153,8 @@ const REMOTE_KEYS = new Set(["url", "fetch", "tagopt", "prune", "prunetags", "sk
  * What in git config makes a bare `git push` of `branch` send other than that branch to the branch of its name on its
  * upstream remote's one url, or null. An allow reading: the remote holds only what REMOTE_KEYS names and one url, which
  * `git remote get-url --push --all` gives back unchanged (no pushurl, no second url, no insteadOf or pushInsteadOf
- * rewrite, measured on git 2.56.0 and 2.34.1); push.default simple, upstream or current; no other push remote, no
- * followTags, no submodule push.
+ * rewrite, measured on git 2.56.0 and 2.34.1); no other push remote; then the one list push-check reads too
+ * (pushSendsMore: push.default, followTags, a submodule push).
  * @param {string} cwd @param {string} branch
  * @returns {string | null} the setting, as git names it
  */
@@ -173,11 +173,7 @@ function pushWidened(cwd, branch) {
   if (odd) return odd;
   const urls = (gitMaybe(["config", "--get-all", `${section}url`], { cwd, absent: [1] }) ?? "").split("\n").filter(Boolean);
   if (urls.length !== 1 || gitMaybe(["remote", "get-url", "--push", "--all", remote], { cwd, absent: [2] }) !== urls[0]) return `${section}url`;
-  if (!["simple", "upstream", "tracking", "current", null].includes(get("push.default"))) return "push.default";
-  if (get("push.followTags", ["--type=bool"]) === "true") return "push.followTags";
-  if (![null, "no", "false", "check"].includes(get("push.recurseSubmodules"))) return "push.recurseSubmodules";
-  if (get("submodule.recurse", ["--type=bool"]) === "true") return "submodule.recurse";
-  return null;
+  return pushSendsMore(cwd, branch)?.setting ?? null;
 }
 
 /**
@@ -283,7 +279,12 @@ export function pushVerdict(cwd, config, { tested, fetch = true, env = process.e
       if (refused.length) {
         say("push.commitsRefused", { n: refused.length, total: checked });
         for (const r of refused) said.push({ commit: r.hash.slice(0, 12), why: r.why });
-        say("push.commitsSetup");
+        // Each remedy once, for the refusals it clears: an address the push's own list brings or drops, or the clone's
+        // settings.
+        const keys = new Set(refused.flatMap((r) => r.why.map((w) => w.key)));
+        const kinds = ["Brought", "Dropped"];
+        if (kinds.some((k) => keys.has(`commits.author${k}`) || keys.has(`commits.committer${k}`))) say("push.commitsListOrder");
+        if ([...keys].some((k) => !kinds.some((kind) => k.endsWith(kind)))) say("push.commitsSetup");
       } else say("push.commitsOk", { n: checked });
       identityOk = !refused.length;
     } catch (e) {

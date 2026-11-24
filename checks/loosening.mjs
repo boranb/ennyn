@@ -13,13 +13,15 @@
  *
  * Direction is read from the two values alone (MOVES); a key whose direction cannot be decided counts as loosening
  * unless shown tighter, and so does a key added to DEFAULTS and listed nowhere here. Lists compare by exact member,
- * so a glob rewritten to be wider is a member added.
+ * so a glob rewritten to be wider is a member added; a list whose rule folds its members (FOLDED) compares them as that
+ * rule's own fold leaves them, so a rewrite the rule reads the same is no move.
  */
 
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { CONFIG_PATH, ConfigError, DEFAULTS, configFrom, loadConfig } from "../core/config.mjs";
 import { blobAt, machineFault, newParents, repoPath, stagedNames, stagedVersions, stagedVersionsEach } from "../core/git.mjs";
 import { t } from "../core/i18n.mjs";
+import { addressFold } from "./commit-identity.mjs";
 import { masked } from "./secrets.mjs";
 
 /** The body line that names the keys the user agreed to loosen; an agent never writes it unasked (skills/cycle/SKILL.md). */
@@ -108,6 +110,9 @@ const MOVES = new Map(/** @type {[string, (a: any, b: any, before: any, after: a
   ["graph.fields.source", provenanceRead],
 ]));
 
+/** List keys whose rule folds each member, by that rule's own fold: a move is judged on the folded members. */
+export const FOLDED = new Map([["commits.addresses", addressFold]]);
+
 /** The keys a gate reads, as MOVES lists them. */
 export const GATE_KEYS = [...MOVES.keys()];
 
@@ -160,8 +165,11 @@ const valueAt = (cfg, key) => key.split(".").reduce((o, k) => o[k], cfg);
 /** A value to compare, a list of strings in any order. @param {unknown} v */
 const plain = (v) => JSON.stringify(Array.isArray(v) && v.every((x) => typeof x === "string") ? [...v].sort() : v);
 
+/** A key's value as its rule reads it: a FOLDED list folded member by member. @param {any} cfg @param {string} key */
+const readAs = (cfg, key) => ((v, fold) => (fold ? v.map(fold) : v))(valueAt(cfg, key), FOLDED.get(key));
+
 /** Whether two configs hold one value for a key, a list in any order. @param {string} key @param {any} a @param {any} b */
-export const sameValue = (key, a, b) => plain(valueAt(a, key)) === plain(valueAt(b, key));
+export const sameValue = (key, a, b) => plain(readAs(a, key)) === plain(readAs(b, key));
 
 /**
  * The keys that move from `before` to `after` in the direction that loosens their gate.
@@ -171,7 +179,7 @@ export const sameValue = (key, a, b) => plain(valueAt(a, key)) === plain(valueAt
 export function loosenedKeys(before, after) {
   return KEYS.filter((key) => {
     if (gateKeyKind(key) === "none") return false;
-    const [a, b] = [valueAt(before, key), valueAt(after, key)];
+    const [a, b] = [readAs(before, key), readAs(after, key)];
     return plain(a) !== plain(b) && (MOVES.get(key) ?? any)(a, b, before, after);
   });
 }
