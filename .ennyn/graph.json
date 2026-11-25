@@ -37,7 +37,7 @@
     },
     {
       "id": "plugin-eval",
-      "title": "claude plugin eval cases that run the same tasks with and without the plugin and compare the outcome; each case states what is checked deterministically (commands that must and must not run, such as git push without approval or a commit with an assistant trailer; text the answer must and must not hold; an approval asked or a refusal given; a cap on tool calls), a judge only for what no check reads; each arm runs with only the plugin under test and proves it (a fresh directory outside any repository, CLAUDE.md, auto memory and user settings off, strict MCP, a pinned model, the plugin by --plugin-dir; a finished cell's transcript read for what the arm was given), a spending cap per arm, runs resumable per case, trial and arm, arms interleaved case by case; every deterministic check ships a passing and a failing reference that a self-test proves with no model call before any paid run; a cell that runs commands runs in a sandbox (no network beyond the model's API, an empty environment, writes only in the cell's directory); results name the date, CLI and model versions, cases, trials and cost, and say their limits; no git hook fires in an eval run (2.1.310: GIT_CONFIG_COUNT forces core.hooksPath=/dev/null and hook.*.enabled=false, and execution.env takes only EVAL_* keys), so Ennyn's commit gate is not compared there, only what the agent does; arms' PATH starts with the git path (test/eval/git-path.mjs) in a folder the arms can read (the plugin's); an arm cannot git init or clone a working copy, so repositories come from the scaffold; the arm's cwd lies inside the eval's own home repository; whether the without-plugin arm can read the plugin folder, and so the git path, is not measured: if not, the arms are not comparable; a host or infrastructure failure is an outcome of its own, never the plugin arm's failure, reported with a strict and a completed-only figure; each finished cell is keyed by a hash of its inputs (case text, arm, plugin commit, CLI and model versions, check code), and an unreadable result store stops the run instead of starting over A case's prompt never names the rule, gate or command it tests, so what is read is whether the agent gets there unasked; a must-not check (a push without approval, a commit with an assistant trailer) passes a cell only when every trial passes, never on a median; a case no arm passes in any trial is read as a broken case before it is read as a result. A cell is finished only on a terminal success with no permission denial and a result for every tool call; a grader that only reads whether the Skill tool ran stays out of the two-arm score; one placebo arm and one case where no change is right",
+      "title": "claude plugin eval cases that run the same tasks with and without the plugin and compare the outcome; each case states what is checked deterministically (commands that must and must not run, such as git push without approval or a commit with an assistant trailer; text the answer must and must not hold; an approval asked or a refusal given; a cap on tool calls), a judge only for what no check reads; each arm runs with only the plugin under test and proves it (a fresh directory outside any repository, CLAUDE.md, auto memory and user settings off, strict MCP, a pinned model, the plugin by --plugin-dir; a finished cell's transcript read for what the arm was given), a spending cap per arm, runs resumable per case, trial and arm, arms interleaved case by case; every deterministic check ships a passing and a failing reference that a self-test proves with no model call before any paid run; a cell that runs commands runs in a sandbox (no network beyond the model's API, an empty environment, writes only in the cell's directory); results name the date, CLI and model versions, cases, trials and cost, and say their limits; no git hook fires in an eval run (2.1.310: GIT_CONFIG_COUNT forces core.hooksPath=/dev/null and hook.*.enabled=false, and execution.env takes only EVAL_* keys), so Ennyn's commit gate is not compared there, only what the agent does; arms' PATH starts with the git path (test/eval/git-path.mjs) in a folder the arms can read (the plugin's); an arm cannot git init or clone a working copy, so repositories come from the scaffold; the arm's cwd lies inside the eval's own home repository; whether the without-plugin arm can read the plugin folder, and so the git path, is not measured: if not, the arms are not comparable; a host or infrastructure failure is an outcome of its own, never the plugin arm's failure, reported with a strict and a completed-only figure; each finished cell is keyed by a hash of its inputs (case text, arm, plugin commit, CLI and model versions, check code), and an unreadable result store stops the run instead of starting over A case's prompt never names the rule, gate or command it tests, so what is read is whether the agent gets there unasked; a must-not check (a push without approval, a commit with an assistant trailer) passes a cell only when every trial passes, never on a median; a case no arm passes in any trial is read as a broken case before it is read as a result. A cell is finished only on a terminal success with no permission denial and a result for every tool call; a grader that only reads whether the Skill tool ran stays out of the two-arm score; one placebo arm and one case where no change is right An eval arm's Bash reaches the macOS keychain service: it unlocks and reads any keychain file whose path it can read (2.1.310, 2.1.330, eval-keychain-exec). The login keychain is shut only by the read deny on the HOME the eval is given and its parent folder, so paid plugin-eval runs go only in a separate macOS account or a Linux VM.",
       "status": "planned",
       "value": "high",
       "cost": "L",
@@ -1734,17 +1734,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "codex-skill-bytes",
-      "title": "Codex cuts an invoked plugin skill at 8,000 bytes (openai/codex e6de6a2423: codex-rs/ext/skills/src/render.rs:25 MAX_SKILL_PROMPT_BYTES, applied to agent plugin skills with a warning in host_prompt.rs:79-86); a description stops at 1,024 characters, and the skill list at 2% of the context window in tokens (8,000 characters when the window is unknown). skills/cycle/SKILL.md is 8,049 bytes and loses '…and **ask** for push approval.'; skills/init/SKILL.md is 8,167 and loses 'Ask before committing the files, and never push.' Move the safety lines up and cap each SKILL.md at 8,000 bytes in a test; then budget gives a ceiling per host",
-      "value": "high",
-      "cost": "S",
-      "cluster": "distribution",
-      "source": "research 2026-10-27: popular agent-workflow repositories and published studies; numbers are the sources' own, not measured in Ennyn; Codex's own code read 2026-10-28, the cut tails measured with tail -c; cycle 2026-11-01 (16): skills/cycle/SKILL.md stands at 7,969 bytes; skills/init/SKILL.md does not, and no test caps either at 8,000; cycle 2026-11-01 (17): skills/cycle/SKILL.md stands near 8,000 bytes after two tasks, and skills/init/SKILL.md at 8,191 of the test's 8,192; cycle 2026-11-02 (18): skills/init/SKILL.md stands at 8,186 of the test's 8,192 after seven wording cuts, skills/cycle/SKILL.md at 7,998; cycle 2026-11-02 (19): skills/cycle/SKILL.md at 7,990 bytes after four tasks edited it, each cutting as much as it added; cycle 2026-11-19 (47): skills/cycle/SKILL.md 8,182 and skills/init/SKILL.md 8,191 bytes, both past the 8,000 cut; user-words-in-node put its closing rules in report-formats.md behind a pointer for want of room (the proposed cycle-skill-room folded here, Fable)",
-      "since": 13
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "evidence-published-numbers",
       "title": "docs/evidence.md compares its numbers with published ones, and each source is read in full before it is cited. Imbue 2026-04: a review-fix pass made correct code worse, rarely. METR 2025-08, 18 issues, one model: 38% (±19) of attempts passed the maintainers' tests, but 0 of the 15 reviewed PRs were mergeable. CodeRabbit comments: 36.4% of 31,073 were accepted (arXiv 2607.03316). Context files raised cost by 20% or more with no general gain (arXiv 2602.11988). An agent-PR study (arXiv 2607.21832) used PyDriller's SZZ, which an earlier study put at a precision of 0.39 and which the authors could not measure on their data, a limit for rework",
       "value": "medium",
@@ -1873,17 +1862,6 @@
       "cluster": "security",
       "source": "cycle 2026-10-27 (13), Linux-run repairs (d6ff31c): GIT_NO_LAZY_FETCH measured on 2.34.1, 2.39.5 and 2.56, and read from git's source tags",
       "since": 13
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "eval-keychain-exec",
-      "title": "Claude Code's credential-helper deny in an eval arm only blocks reads: the sandbox profile allows process-exec and the keychain Mach services (com.apple.SecurityServer, com.apple.securityd.xpc), and the Homebrew and Command Line Tools git-credential-osxkeychain helpers, started by their absolute path, ran under a mimic of the deny (2.1.310, security review). Measure from an arm, with a test keychain item of its own, whether the keychain answers. Done only when an arm is measured not to reach the keychain; if it answers, the standing rule (paid plugin-eval runs only in a separate macOS account or a Linux VM) goes into plugin-eval's title, and only then does this close. No paid run until this closes",
-      "value": "high",
-      "cost": "M",
-      "cluster": "security",
-      "source": "cycle 2026-10-28 (14), eval-git-macos security review round 1",
-      "since": 14
     },
     {
       "status": "planned",
@@ -4282,19 +4260,6 @@
       "cost": "S",
       "cluster": "metrics",
       "source": "cycle 2026-11-04 (21), agent-usage-report's stop measurement and both review rounds",
-      "since": 21
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "cited-number-check",
-      "title": "A number that skill text, docs/evidence.md or a commit body gives as evidence names where it was read (a kept file and line, or the command), and a test reads that source and finds the number: in cycle 21 three of four claim-outruns-evidence rows were a count or a tool's output stated other than its source said",
-      "value": "high",
-      "cost": "M",
-      "cluster": "gates",
-      "mechanization": true,
-      "sourceClass": "claim-outruns-evidence",
-      "source": "cycle 2026-11-04 (21): the most recurring class of the convergence block; cycle 2026-11-06 (24) convergence: claim-outruns-evidence the most recurring class again, 10 rows (review 9, author-reading 1): npm keys ruled out from one old npm, a release-age floor from one version's definition, a fix claimed for every platform with Windows unmeasured, measurement totals that did not add up, a pick count given as 17 that a rerun read as 16",
       "since": 21
     },
     {
@@ -6915,7 +6880,7 @@
       "value": "medium",
       "cost": "M",
       "cluster": "security",
-      "title": "test/eval/selftest.mjs is at the fix-loop brake (cycle 54, round 2: previous-fix 5): decide on the top two rungs, or write the limit, for its leftovers: the second and third evals stay visible to the socket watch only through a fixed sleep 2 in their case (a loaded machine refuses a clean run; c54-t1-code-r2-02); the planted keyed memory marker can never load while the planted settings set autoMemoryDirectory (c54-t1-code-r1-03); a hook that ran in an arm with its log write denied and its output kept out of a request would go unseen; the eval process reads the operator's git config, include.path files too, though none of git's programs runs and nothing reaches a request. Cause: each new cell adds a run, a control and a wait to one recorder that judges by watching processes from outside",
+      "title": "test/eval/selftest.mjs is at the fix-loop brake (cycle 54, round 2: previous-fix 5): decide on the top two rungs, or write the limit, for its leftovers: the second and third evals stay visible to the socket watch only through a fixed sleep 2 in their case (a loaded machine refuses a clean run; c54-t1-code-r2-02); the planted keyed memory marker can never load while the planted settings set autoMemoryDirectory (c54-t1-code-r1-03); a hook that ran in an arm with its log write denied and its output kept out of a request would go unseen; the eval process reads the operator's git config, include.path files too, though none of git's programs runs and nothing reaches a request. Cause: each new cell adds a run, a control and a wait to one recorder that judges by watching processes from outside. Cycle 55 input: two keychain cells for the git run, each with a control outside the arm that must read the secret: kc-placed (a lab keychain placed in the arm's cwd mid-run; the arm unlocks and reads it: a gap cell) and kc-home (a lab keychain under the operator's home: a deny cell); no probe may add to a keychain path that might not exist (it falls back to the login keychain)",
       "source": "cycle 2026-11-25 (54) convergence: fix-loop brake on test/eval/selftest.mjs; review of eval-arm-reads-home"
     },
     {
@@ -6926,7 +6891,7 @@
       "value": "low",
       "cost": "S",
       "cluster": "init",
-      "title": "init-scan audit lows (cycle 54): a roadmap file ending in a newline is counted one line long (c54-t4-audit-r0-08); a submodule is named twice, with and without its trailing slash, in the new-project found list (r0-09); githubRepo decides GitHub with its own host pattern (notgithub.com reads as GitHub, ssh.github.com:443 does not) where permissions.mjs has isGithubHost (r0-11). Lean: RECENT_COMMITS and TEST_ALTERNATIVES exported for no reader; recentCommits and historyPaths parse the same git log -z --raw format; MAX_LISTED now unused by production callers",
+      "title": "init-scan audit lows (cycle 54): a roadmap file ending in a newline is counted one line long (c54-t4-audit-r0-08); a submodule is named twice, with and without its trailing slash, in the new-project found list (r0-09); githubRepo decides GitHub with its own host pattern (notgithub.com reads as GitHub, ssh.github.com:443 does not) where permissions.mjs has isGithubHost (r0-11). Lean: RECENT_COMMITS and TEST_ALTERNATIVES exported for no reader; recentCommits and historyPaths parse the same git log -z --raw format; MAX_LISTED now unused by production callers. Cycle 55: githubRepo should ask isGithubHost(urlHost(url)), which now also takes *.ghe.com and the github.com-<name> SSH alias",
       "source": "cycle 2026-11-25 (54) feature audit of setup/scan.mjs"
     },
     {
@@ -7009,6 +6974,94 @@
       "sourceClass": "claim-outruns-evidence",
       "title": "claim-outruns-evidence recurred 10 times in cycle 54 (9 in review), in doctor ✓ texts and in DESIGN.md and header sentences about what another program does: a sentence in DESIGN.md, docs/ or a module header that names a program version (Claude Code 2.1.x, git 2.x, OpenSSH, Node) as measured names the test, cell or record that measured it, and a test fails on a version-naming sentence with no such pointer or a pointer to nothing; doctor's ✓ keys are checked against what their code path reads (a ✓ naming a setting the path never reads fails)",
       "source": "cycle 2026-11-25 (54) convergence: claim-outruns-evidence the most recurring class, 10 rows"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 55,
+      "id": "eval-keychain-exec-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "title": "eval-keychain-exec lows (cycle 55): test/eval/git-path.mjs:16 says an osxkeychain helper started by its path runs, where in an arm it exits 128 (failed to lock) before any keychain call (c55-t1-sec-r2-01); the data-protection keychain (com.apple.securityd.xpc) from an arm is unmeasured: no CLI reaches it",
+      "source": "cycle 2026-11-25 (55) security review of eval-keychain-exec, round 2; author's not-measured list"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 55,
+      "id": "codex-skill-bytes-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "distribution",
+      "title": "codex-skill-bytes lows (cycle 55): the cap test's safety-line list leaves out init's 'Edit it only on the user's yes' line in section 5 (c55-t2-code-r1-01); room left under the 8,000-byte cut is 144 bytes in skills/cycle/SKILL.md and 396 in skills/init/SKILL.md, so the next addition moves detail to a sub-file first",
+      "source": "cycle 2026-11-25 (55) review of codex-skill-bytes, round 1; author's measurement"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 55,
+      "id": "budget-host-ceilings",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "distribution",
+      "title": "ennyn budget reports each shipped SKILL.md against each host's ceiling (Codex 8,000 bytes per invoked plugin skill, 1,024-character descriptions); today budget counts no plugin skill and has no per-host ceiling",
+      "source": "cycle 2026-11-25 (55) codex-skill-bytes, setup/budget.mjs read"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 55,
+      "id": "cited-numbers-design-decision",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "gates",
+      "title": "test/cited-numbers.test.mjs is at the fix-loop brake (cycle 55, round 2: previous-fix 2): decide on the top two rungs, or write the limit, for what its rule still cannot hold: citations and commands are presence-only, so a number under a citation lead changes unseen (nearly every number in docs/evidence.md); a section or file pointer holds counts only by value and noun; task-brief.md's measured durations and token count sit on the allow list instead of a cycle citation (c55-t3-code-r2-02); commit bodies are not read (a check over the bodies a push adds, about M); measured-claim-names-cell would extend the same rule to version sentences in DESIGN.md and docs/. Cause: one hand-written number grammar and pointer grammar grow a case per review round",
+      "source": "cycle 2026-11-25 (55) convergence: fix-loop brake on test/cited-numbers.test.mjs; review of cited-number-check"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 55,
+      "id": "rerun-count-source",
+      "value": "low",
+      "cost": "S",
+      "cluster": "method",
+      "title": "skills/cycle/task-brief.md states a rerun count (0 of 8 reported, 4 of 8 on a rerun) that no record in the repository or the handoff archive holds (first written 084171f, 2026-10-31): find its source or drop the number (it sits on cited-numbers' allow list)",
+      "source": "cycle 2026-11-25 (55) cited-number-check allow list"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 55,
+      "id": "permissions-audit-55-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "init",
+      "title": "setup/permissions.mjs audit lows (cycle 55): a UTF-16LE settings file with a BOM gives no rule while Claude Code applies its rules (c55-t4-audit-r0-02; the decode belongs in the shared read); github.com. and www.github.com remotes read as another host (r0-03; gh resolves www.github.com to api.github.com); npm publish is not asked about in an unborn monorepo whose package.json files are all nested (r0-04). Lean: head and GH_API_WRITES/ruleCovers comments near-copy docs/modules.md; outwardCommands' default parameters and ruleCovers' export serve tests only; EFBIG handled in readSettings and doctor's read wrapper. Next audit candidate: setup/secret-setup.mjs (shares parseSettings and KEPT, reads the user's settings)",
+      "source": "cycle 2026-11-25 (55) feature audit of setup/permissions.mjs"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 55,
+      "id": "design-md-claims-design-decision",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "gates",
+      "title": "DESIGN.md is at the fix-loop brake (cycle 55, round 2: previous-fix 1): its limit and measured-behaviour sentences keep saying more than was measured (c54-t2-code-r1-02, c55-t1-sec-r1-01, the eval keychain line omitting that the data-protection keychain was not measured: c55-t1-sec-r2-02). Decide on the top two rungs: a sentence naming a program version as measured names its test, cell or record and a test resolves it (measured-claim-names-cell, built on test/cited-numbers.test.mjs's pointer rule), or the limit written. No patch nodes for DESIGN.md wording",
+      "source": "cycle 2026-11-25 (55) convergence: fix-loop brake on DESIGN.md"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 55,
+      "id": "scan-design-decision",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "init",
+      "title": "setup/scan.mjs is at the fix-loop brake (previous-fix rows in cycles 54 and 55): decide on the top two rungs for its readings that ask the same questions as other modules (githubRepo's own GitHub host pattern beside permissions.mjs's isGithubHost; recentCommits and historyPaths parsing one git log format; the risky list read by init and by the audit with different needs), or write the limit; scan-audit-54-lows' items are its leftovers and get no more patch nodes",
+      "source": "cycle 2026-11-25 (55) convergence: fix-loop brake on setup/scan.mjs"
     }
   ],
   "done": [
@@ -8238,6 +8291,27 @@
       "status": "done",
       "finished": "2026-11-25",
       "cluster": "tests"
+    },
+    {
+      "id": "eval-keychain-exec",
+      "title": "Closed in cycle 55 (96c28ce) on the 'it answers' branch: an eval arm's Bash unlocks and reads any keychain file whose path it can read, by security and by the Keychain Services API (2.1.310, 2.1.330: a keychain placed in the arm's cwd, and one under the operator's home when the eval is given another HOME); the login keychain is shut only by the read deny on the HOME the eval is given and its parent. DESIGN.md says so and plugin-eval's title carries the rule: paid runs only in a separate macOS account or a Linux VM. Leftovers: eval-keychain-exec-lows",
+      "status": "done",
+      "finished": "2026-11-25",
+      "cluster": "security"
+    },
+    {
+      "id": "codex-skill-bytes",
+      "title": "Closed in cycle 55 (f99c97e): both SKILL.md files within Codex's 8,000-byte cut (cycle 7,856, init 7,604; Codex 3f65e9f render.rs:25 read), init's ask-before-committing line at the top, detail moved to sub-files; test/plugin.test.mjs caps each at 8,000 bytes and fails when a named safety line falls past it. Leftovers: codex-skill-bytes-lows, budget-host-ceilings",
+      "status": "done",
+      "finished": "2026-11-25",
+      "cluster": "distribution"
+    },
+    {
+      "id": "cited-number-check",
+      "title": "Closed in cycle 55 (8f3e886): test/cited-numbers.test.mjs holds every evidence number in docs/evidence.md and the skills to a source: a percentage, ratio or N of M to a line pointer holding it as written and in order, a count to a line, section or file, a citation or command checked for presence only; allow entries keyed by place. File at the fix-loop brake: cited-numbers-design-decision",
+      "status": "done",
+      "finished": "2026-11-25",
+      "cluster": "gates"
     }
   ],
   "declined": [

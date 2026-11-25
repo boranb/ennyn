@@ -156,7 +156,8 @@
         "new: fallback contract skipped by an unguarded first read",
         "new: oracle verdict produced by the harness, not the program under test",
         "new: narrowed run recorded as whole",
-        "new: a skip of a repeated action read as the action"
+        "new: a skip of a repeated action read as the action",
+        "new: check left out without a line"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, failed reads held, the same mistake in logic recurs and writes are not covered. Named in cycle 4."
     },
@@ -397,7 +398,8 @@
         "new: another reading's failure counted in this one",
         "new: over-broad unseen rule",
         "new: over-broad prefix match",
-        "new: guard target read by a fixture"
+        "new: guard target read by a fixture",
+        "new: shared answer widened for one reader, another reader keeps the old meaning"
       ],
       "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict; nothing has recounted it since. Named in cycle 9."
     },
@@ -583,7 +585,8 @@
         "new: test does not pin a name pattern's anchor",
         "new: shared predicate's fail-closed branch untested",
         "new: new command outside the failure matrix",
-        "new: refusal path untested where another refusal masks it"
+        "new: refusal path untested where another refusal masks it",
+        "new: named list covers a subset of its kind"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -597,6 +600,12 @@
           "file": "test/classes-seed.test.mjs",
           "action": "red-green",
           "proof": "A gate row's commit must have touched its file and an entry that claims a gate must have one standing, with guard mutants. It holds the registry's own rows and no other statement."
+        },
+        {
+          "commit": "8f3e886c69e418f862ab0b4ac7c9ae8380f620db",
+          "file": "test/cited-numbers.test.mjs",
+          "action": "red-green",
+          "proof": "Evidence numbers in docs/evidence.md and the skills need a source: a percentage or ratio a line pointer holding it as written and in order, a count a line, section or file; citations and commands are checked for presence only."
         }
       ],
       "linked": [
@@ -638,9 +647,14 @@
         "new: known parting named with the wrong cause",
         "new: shown value rounds across its threshold",
         "new: message states an outcome it does not know",
-        "new: wrong cause named in a comment"
+        "new: wrong cause named in a comment",
+        "new: closed word list read as widening"
       ],
-      "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet."
+      "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet.",
+      "nodes": [
+        "cited-number-check",
+        "measured-claim-names-cell"
+      ]
     },
     {
       "id": "procedure-leaves-case-open",
@@ -833,7 +847,9 @@
         "new: stop by a PID whose handle is closed",
         "new: kill by a PID whose process has ended",
         "new: link target decoded as text",
-        "new: marker read through a linked node"
+        "new: marker read through a linked node",
+        "new: digit match anywhere in the pointed text",
+        "new: marker word matched in prose"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate."
     },
@@ -1253,7 +1269,8 @@
       "gates": [],
       "nodes": [],
       "linked": [
-        "new: unproven source said and let through"
+        "new: unproven source said and let through",
+        "new: command pointer accepted unrun"
       ],
       "judged": "Named in cycle 37 by the orchestrator, from the free-route audit's deps findings 2 and 3 (a resolved outside npm's layout on a listed origin, a no-resolved entry a user's config may route)."
     },
@@ -1347,6 +1364,29 @@
         "new: one entry named in two spellings"
       ],
       "judged": "Named in cycle 54 by the orchestrator, from an audit row (a submodule listed with and without its trailing slash)."
+    },
+    {
+      "id": "write-falls-back-to-default",
+      "says": "A write that names a target it cannot open goes to a default target instead (the user's own store or file), with no error, so a probe or a tool changes what it was meant to leave alone.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: write falls back to the user's default store",
+        "new: probe writes into the user's own store"
+      ],
+      "judged": "Named in cycle 55 by the orchestrator, from an author row and a review row (security add-generic-password with an unopenable keychain path wrote into the login keychain)."
+    },
+    {
+      "id": "exemption-wider-than-its-case",
+      "says": "An exemption is keyed wider than the case it was written for (by value, name or file instead of place), so a new case of the same shape passes unchecked.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: allow entry by value not place"
+      ],
+      "judged": "Named in cycle 55 by the orchestrator, from a round-one review row (an allow entry exempted every occurrence of its number in the file)."
     }
   ]
 }
