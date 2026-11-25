@@ -7062,6 +7062,17 @@
       "cluster": "init",
       "title": "setup/scan.mjs is at the fix-loop brake (previous-fix rows in cycles 54 and 55): decide on the top two rungs for its readings that ask the same questions as other modules (githubRepo's own GitHub host pattern beside permissions.mjs's isGithubHost; recentCommits and historyPaths parsing one git log format; the risky list read by init and by the audit with different needs), or write the limit; scan-audit-54-lows' items are its leftovers and get no more patch nodes",
       "source": "cycle 2026-11-25 (55) convergence: fix-loop brake on setup/scan.mjs"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 55,
+      "id": "impact-signal-test-under-load",
+      "value": "low",
+      "cost": "S",
+      "cluster": "tests",
+      "title": "test/impact.test.mjs:312 (a reference command whose runner is asked to stop) failed once in the cycle 55 whole run under load: the row read \"the reference command's runner ended with SIGTERM\" where the test wants \"killed by SIGTERM\"; alone 14/14, whole rerun green. Find which process the signal reaches first under load and make the test hold either the wording or the order",
+      "source": "cycle 2026-11-25 (55) closing whole run"
     }
   ],
   "done": [
