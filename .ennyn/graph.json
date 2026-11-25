@@ -6871,7 +6871,7 @@
       "value": "medium",
       "cost": "M",
       "cluster": "security",
-      "title": "test/eval/selftest.mjs is at the fix-loop brake (cycle 54, round 2: previous-fix 5): decide on the top two rungs, or write the limit, for its leftovers: the second and third evals stay visible to the socket watch only through a fixed sleep 2 in their case (a loaded machine refuses a clean run; c54-t1-code-r2-02); the planted keyed memory marker can never load while the planted settings set autoMemoryDirectory (c54-t1-code-r1-03); a hook that ran in an arm with its log write denied and its output kept out of a request would go unseen; the eval process reads the operator's git config, include.path files too, though none of git's programs runs and nothing reaches a request. Cause: each new cell adds a run, a control and a wait to one recorder that judges by watching processes from outside. Cycle 55 input: two keychain cells for the git run, each with a control outside the arm that must read the secret: kc-placed (a lab keychain placed in the arm's cwd mid-run; the arm unlocks and reads it: a gap cell) and kc-home (a lab keychain under the operator's home: a deny cell); no probe may add to a keychain path that might not exist (it falls back to the login keychain) Cycle 56 input: eval-read-grant-deny-cell's recorder change (a fixed bare-name grant, one Bash write and one control Read in the home-read-tool play, the refusal read from permission_denials).",
+      "title": "test/eval/selftest.mjs is at the fix-loop brake (cycle 54, round 2: previous-fix 5): decide on the top two rungs, or write the limit, for its leftovers: the second and third evals stay visible to the socket watch only through a fixed sleep 2 in their case (a loaded machine refuses a clean run; c54-t1-code-r2-02); the planted keyed memory marker can never load while the planted settings set autoMemoryDirectory (c54-t1-code-r1-03); a hook that ran in an arm with its log write denied and its output kept out of a request would go unseen; the eval process reads the operator's git config, include.path files too, though none of git's programs runs and nothing reaches a request. Cause: each new cell adds a run, a control and a wait to one recorder that judges by watching processes from outside. Cycle 55 input: two keychain cells for the git run, each with a control outside the arm that must read the secret: kc-placed (a lab keychain placed in the arm's cwd mid-run; the arm unlocks and reads it: a gap cell) and kc-home (a lab keychain under the operator's home: a deny cell); no probe may add to a keychain path that might not exist (it falls back to the login keychain) Cycle 56 input: eval-arm-read-tool-home's recorder change (a fixed bare-name grant, one Bash write and one control Read in the home-read-tool play, the refusal read from permission_denials).",
       "source": "cycle 2026-11-25 (54) convergence: fix-loop brake on test/eval/selftest.mjs; review of eval-arm-reads-home"
     },
     {
@@ -7032,19 +7032,6 @@
     },
     {
       "status": "planned",
-      "needs": [
-        "eval-selftest-design-decision"
-      ],
-      "since": 56,
-      "id": "eval-read-grant-deny-cell",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "security",
-      "title": "Turn test/eval/git-cell.json's home-read-tool gap cell into a deny check: the git run's third eval grants Read, Glob and Grep by bare name (or ~) instead of Read(//**); its play adds one Bash write of a canary in the arm's own home and one Read of it (the in-grant control, must return the token); the home Read must be refused with the dontAsk text in permission_denials; then GIT_CELLS home-read-tool becomes a deny cell with readable false, and test/eval-selftest.test.mjs's EVALS, case and GIT_CELLS assertions follow. Recorder code, so it waits for the brake decision on test/eval/selftest.mjs",
-      "source": "cycle 2026-11-26 (56) eval-arm-read-tool-home, author lab and security review round 1"
-    },
-    {
-      "status": "planned",
       "needs": [],
       "since": 56,
       "id": "eval-arm-bash-read-scope",
@@ -7178,6 +7165,19 @@
       "cluster": "gates",
       "title": "test/measured-claims.test.mjs is at rung 2 (cycle 56: previous-fix rows in round 2): its written limit `(not by a test: no record)` holds 67 of 104 claim sentences, so most version sentences name no measurement; a test pointer counts a version found only in a comment of the test body (said, not run); `test/linux-run.mjs` passes as a limit's where though it is the Linux run's script, not a kept record; a one-part version after a program not on the list or after lowercase node is not read. Next: replace no-record limits with records as measurements are kept (each one a cell), and decide whether a comment-only version may count",
       "source": "cycle 2026-11-26 (56) review of measured-claim-names-cell, round 2; convergence rung 2"
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "eval-selftest-design-decision"
+      ],
+      "since": 54,
+      "id": "eval-arm-read-tool-home",
+      "value": "high",
+      "cost": "M",
+      "cluster": "security",
+      "title": "plugin-eval arms granted a path rule for Read, Glob or Grep at the eval level (--allow-tools, as the git run does for its home-read-tool cell) read the HOME the eval is given: the sandbox holds Bash only (measured 2.1.310 and 2.1.330; a case-level allowed_tools path rule has no effect). Find a layout or setting that denies the read tools the home, and turn the home-read-tool gap cell in test/eval/git-cell.json into a deny check. No paid run until this closes. Measured in cycle 56 (no commit; lab in cycle 56's kept folder, labs/t1; 2.1.310 and 2.1.330): a bare-name or ~ grant of Read, Glob and Grep keeps them to the arm's own home and the read roots and refuses the HOME the eval is given (dontAsk text), with an in-grant control read in the same arm; a path grant that reaches that HOME is read in full, since --disallow-tools and a case's disallowed_tools take bare names only and no measured settings place (the eval's configuration, its HOME, the arm's cwd, the plugin) reaches an arm; by the code, server-managed organization policy does reach an arm (2.1.330, unmeasured). What is left is the cell, recorder code under the brake: Turn test/eval/git-cell.json's home-read-tool gap cell into a deny check: the git run's third eval grants Read, Glob and Grep by bare name (or ~) instead of Read(//**); its play adds one Bash write of a canary in the arm's own home and one Read of it (the in-grant control, must return the token); the home Read must be refused with the dontAsk text in permission_denials; then GIT_CELLS home-read-tool becomes a deny cell with readable false, and test/eval-selftest.test.mjs's EVALS, case and GIT_CELLS assertions follow. Recorder code, so it waits for the brake decision on test/eval/selftest.mjs",
+      "source": "cycle 2026-11-24 (54) security review of eval-arm-reads-home, rounds 1 and 2"
     }
   ],
   "done": [
@@ -8428,13 +8428,6 @@
       "status": "done",
       "finished": "2026-11-25",
       "cluster": "gates"
-    },
-    {
-      "id": "eval-arm-read-tool-home",
-      "title": "Closed in cycle 56 by measurement (no commit; lab in cycle 56's kept folder (labs/t1), cells on 2.1.310 and 2.1.330): a plugin-eval arm's Read, Glob and Grep keep to the arm's own home and the read roots when the eval grants them by bare name or by ~, and refuse the HOME the eval is given (dontAsk text), with an in-grant control read in the same arm; a path grant that reaches that HOME is read in full, since --disallow-tools and a case's disallowed_tools take bare names only and no measured settings place (the eval's configuration, its HOME, the arm's cwd, the plugin) reaches an arm. By the code, server-managed organization policy does reach an arm (2.1.330, unmeasured). The cell stays a gap until the recorder changes: eval-read-grant-deny-cell",
-      "status": "done",
-      "finished": "2026-11-26",
-      "cluster": "security"
     },
     {
       "id": "scan-design-decision",
