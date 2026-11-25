@@ -1,8 +1,10 @@
 # Evidence
 
-Ennyn was extracted from a production project (a web application, one author, one coding agent) where the loop ran for nearly 700 sessions. In October 2026 its last 21 cycles were measured to answer one question: why do review rounds and mutation runs keep finding so many defects, and what would reduce them? This page gives the numbers behind each part of the package, their limits, and the published work they were checked against.
+Ennyn was extracted from a production project (a web application, one author, one coding agent) where the loop ran for nearly 700 sessions; in October 2026 its last 21 cycles were measured to answer one question (origin study, October 2026): why do review rounds and mutation runs keep finding so many defects, and what would reduce them? This page gives the numbers behind each part of the package, their limits, and the published work they were checked against.
 
 ## Method and limits
+
+Source: the origin study (origin project, October 2026) and the outside sources it read, listed under [Sources](#sources).
 
 Twelve studies: six on the origin project, six on outside sources.
 
@@ -13,6 +15,8 @@ Twelve studies: six on the origin project, six on outside sources.
 **Limits.** One author and one model; tasks were not assigned at random, and hard tasks get both more research and more review, so the relations below are not causal. 89% of thinking blocks are empty in the transcripts, so "did the author ask?" only sees questions asked visibly (a lower bound). Classification labels are model judgments; the second rater did not agree on "fully" vs "partly" answerable (κ≈0) but did agree on "at least partly". SZZ-style links were 60-67% precise in a hand check of 15; comparisons between months are more reliable than absolute rates.
 
 ## Where findings came from
+
+Source: the origin study (origin project, October 2026).
 
 539 findings in 21 cycles, 398 of them product defects (the rest: test blindness, mechanical gate hits, process slips).
 
@@ -33,6 +37,8 @@ Twelve studies: six on the origin project, six on outside sources.
 
 ## Fixing findings creates new defects
 
+Source: the origin study (origin project, October 2026).
+
 - 41% of tasks (22/54) took at least two review rounds, 17% at least three.
 - Of 32 serious findings in the second and later rounds, 21 (66%) were side effects of the previous round's fix; in tasks that change a heuristic rule, 20 of 23.
 - Third and later rounds found a new defect class only twice (sample of 7).
@@ -44,6 +50,8 @@ Twelve studies: six on the origin project, six on outside sources.
 
 ## The questions were known, but asked too late
 
+Source: the origin study (origin project, October 2026).
+
 - Analysis before writing was almost absent: an impact script ran in 2 of 60 tasks, a caller table was written in none. The one common step, a grep for the changed symbol (47/60), did not correlate with the number of findings (ρ=+0.14). A grep finds the symbol's callers; what escaped was a second place making the same decision with another rule, a client/server twin, or another path to the same state.
 - The questions themselves were known: 57% of review prompts asked "who else reads this decision?", 22% asked "does this fake come from the real producer?". The author asked the reviewer and did not answer them first.
 - The 71 serious new defects by question: newly accepted or rejected inputs 25, who else reads this 15, other paths to this state 10, behaviour at the ceiling or when measurement fails 10, where the fakes come from 4.
@@ -54,20 +62,22 @@ Twelve studies: six on the origin project, six on outside sources.
 
 ## Code the task did not ask for
 
-From outside sources read on 2026-10-25; Ennyn has not measured this on its own tasks.
+Source: outside sources on ponytail, its repository and two runs of it (ponytail, read 2026-10-25); Ennyn has not measured this on its own tasks.
 
 - ponytail, an open-source agent skill (MIT), asks a ladder before code is written: does it need to exist, is it already in this codebase, does the platform do it, does an installed dependency, can it be one line, and only then the minimum.
-- In its author's own run the ladder cut delivered code by 53% over 38 tasks. The code of 18 of them was run: there the cut was 30%, and the hidden checks' pass rate stayed flat (87/90 against 86/90). The other 20 were judged by a model only.
+- In its author's own run the ladder cut delivered code by 53% over 38 tasks. The code of 18 of the 38 was run: there the cut was 30%, and the hidden checks' pass rate stayed flat (87/90 against 86/90). The other 20 were judged by a model only.
 - An independent run of an older version wrote 53% fewer statements, and robustness fell from 96.7 to 82.5 on stdin scripts whose task did not mention bad input.
 - Its rung "already in this codebase" came from duplicated code (its issue 217).
 - Two of its figures, 98.9% and 94.4%, come from a file its author marked superseded: the plugin's hook fired in every arm, the baseline's too. They are not used here, and the never-cut list rests on the independent run.
-- Ennyn's own source grew from 5,593 lines at cycle 5 to 12,680 at cycle 11.
+- Ennyn's own source, the lines of its `.mjs` files outside `test/`, grew from 5,593 lines at cycle 5's closing to 12,680 lines in cycle 11 (sources: `git ls-tree -r --name-only ac098a1 | grep '\.mjs$' | grep -v '^test/' | sed 's/^/ac098a1:/' | xargs git show | wc -l`, the same with 09c5416).
 
 **Limits.** One author's run, partly judged by a model, and one independent run of an older version. Both count code size and a pass rate, not defects or later rework, and the robustness drop was measured on one kind of program. The row is asked in prose; whether it changes what Ennyn's tasks write is not yet measured.
 
 → Before its first edit, a core task answers a smallest-change row: the line of the task that asks for each new piece, what the repository already has (`git grep -w`), what the platform, git or an installed dependency does, and only then new code. Validation of input from outside the process, data-loss handling, security, accessibility and anything the task asks for are never cut (`skills/cycle/impact-table.md`).
 
 ## Gates stop recurrence, prose does not
+
+Source: the origin study (origin project, October 2026).
 
 | Defect family | Mechanism | Written rule | Result |
 |---|---|---|---|
@@ -85,14 +95,18 @@ From outside sources read on 2026-10-25; Ennyn has not measured this on its own 
 
 ## Context and rules
 
+Source: the origin study (origin project, October 2026).
+
 - Always-loaded rule text was 72-74% of a session's first request and a median 27% of context in later turns. The project's rule text measured 1.98 bytes per token; a size check that assumed 2.4 undercounted by 21%.
 - **Path-scoped rules did not load in side copies** (git worktrees, plain copies). In the main tree a Read loaded them in 24 of 24 cases; in side copies, 4 times in more than 2,000 turns. A controlled headless session confirmed it. One cycle wrote seven code commits with no rule in context; it was the cycle with the most "same decision in several places" defects.
 - Reading files in parallel could save at most 12.7% of task turns (about 3 minutes per task). A small lever.
-- Earlier cycles ran tasks in forks of the orchestrator; the second project's orchestrator stood at about 652K tokens in the middle of its cycle 2. In cycle 15 tasks ran in fresh agents on a written brief; two tasks that reached a third correction (566K and 533K tokens) moved to a new agent with one consolidated brief, and the first passed both reviewers' checks at once. Two tasks, one author: an example, not a measurement.
+- Earlier cycles ran tasks in forks of the orchestrator; the second project's orchestrator stood at about 652K tokens in the middle of its cycle 2. In cycle 15, tasks ran in fresh agents on a written brief; two tasks that reached a third correction (566K and 533K tokens) moved to a new agent with one consolidated brief, and the first passed both reviewers' checks at once. Two tasks, one author: an example, not a measurement.
 
 → The side-copy hook maps a side-copy path back to the project and injects the matching rules (`hooks/hooks.json`, `adapters/claude-code/`). Each task runs in a fresh agent on a written brief (`skills/cycle/task-brief.md`).
 
 ## Speed and rework
+
+Source: the origin study (origin project, October 2026).
 
 | Per task | September | October |
 |---|---|---|
@@ -114,6 +128,8 @@ From outside sources read on 2026-10-25; Ennyn has not measured this on its own 
 
 ## Batch size and the commit gate
 
+Source: the origin study (origin project, October 2026).
+
 - 8 production escapes found in October came from September-October work; 6 of them from work outside the loop, and all of them after one push of 221 commits.
 - From the loop itself: 2 production escapes (both had seen 2-3 review rounds) and 4 test or gate escapes visible only in CI.
 - The September numbers were partly blind: the end-to-end CI job on the main branch was red for ten pushes and nobody read it.
@@ -122,6 +138,8 @@ From outside sources read on 2026-10-25; Ennyn has not measured this on its own 
 → Push approval is asked at the end of each cycle and a warning fires above a threshold of unpushed commits (`ennyn push-check`); every commit-gate attempt is recorded so the wait and the waste can be measured before the gate is split (`ennyn gate-record`, `ennyn gate-stats`).
 
 ## Private text in commits
+
+Source: the replay of the private-text rules over the history kept from before the rewrite (the replay behind commit 2bbc47f, 2026-11-20).
 
 Ennyn's own history was rewritten before the repository went public, to take out what a full read found private. The rules of `security.privateText` (`checks/private-text.mjs`) were replayed over the history kept from before that rewrite: every added line (a line its parent's file already held, moved, left out), every added file name and every message of the 348 commits of its main line. The words, paths and sentences stay outside the repository; only counts are here.
 
@@ -132,6 +150,8 @@ Ennyn's own history was rewritten before the repository went public, to take out
 - **Defaults**: `provenance` is on, its false refusals the 4 form-only sources above; `addresses` is on and runs only with `commits.addresses` set, which no project but this one sets yet; `home` and `conversation` are off, since a project's own docs talk about its users and its home paths (an address and a home path in a test fixture are written as `*.test` and built from parts).
 
 ## Baseline
+
+Source: the origin study (origin project, October 2026).
 
 What the next cycles are compared with on the origin project:
 
@@ -150,6 +170,8 @@ What the next cycles are compared with on the origin project:
 Counter-measure: if rounds and time fall while escapes rise, the review cap is loosened again.
 
 ## Second project
+
+Source: the trials on the second and third projects (second and third project, 2026-10-29), counted by the orchestrating session.
 
 Three cycles ran on a second project on 2026-10-29: Python, about a hundred commits, a service tested in a simulator, by the same author, with its own agent loop kept beside Ennyn's. The plugin was installed for that project only, at one commit, and the cycles ran from the project's own sessions: the first two in one session, the third in a new one. The orchestrating session counted the findings.
 
@@ -170,6 +192,8 @@ Three cycles ran on a second project on 2026-10-29: Python, about a hundred comm
 A third project, by the same author, covered those the same day with init and one cycle: TypeScript, an npm lock file and two CI workflows. The dependency check read 540 lock entries and listed 53 known advisories, all but one in the build chain and that one not reachable in the project; it refused none and left none unmeasured. The CI checks stopped no commit; a commit that only added a permissions block passed, as it should, and the doctor's warning on the default token went away. mutate's parse check, given esbuild, read .ts and .tsx mutants with none invalid. Numbers for the cycle: real escapes 5, fix-introduced 3, pre-existing 9, gate-caught 2; new classes by round 4 and 0.
 
 ## Reading the convergence columns
+
+Source: the closing handoffs and the surviving ledgers of cycles 1 to 15 (cycles 1-15, kept outside this repository).
 
 The first 15 cycles on Ennyn itself wrote four numbers. Their sums, read from the 15 closing handoffs, are 438, 407, 321 and 178. The handoffs are working notes kept outside this repository, so these sums cannot be recounted from it. The columns changed after that. By the research's reading of the handoffs, a judgement and not a count of rows, all 438 "real escapes" were caught by a reviewer before the commit, so they had not escaped the loop; and what each column held had moved from cycle to cycle. Each column now has one definition, in `skills/cycle/report-formats.md`, and each finding lands in one column. The numbers already written, here and in the handoffs, stay as they are. A new cycle compares with them this way:
 
@@ -203,12 +227,12 @@ The fifth column starts empty. The 321 cannot be split by age: the rows of those
 
 | Topic | Evidence | Strength |
 |---|---|---|
-| Repeated review rounds | A second inspection meeting did not find more defects and took longer (Porter et al., TSE 1997, 88 inspections). Multi-round LLM review: recall +0.08, false positives +62% (Song 2026, preprint). Five rounds of "improve" raised critical vulnerabilities by 37.6% (Shukla, preprint). Re-inspection is mostly net positive but yields less than the first (Biffl 2001). | Experimental + opinion |
+| Repeated review rounds | A second inspection meeting did not find more defects and took longer (Porter et al., TSE 1997, 88 inspections). Multi-round LLM review: recall +0.08, false positives +62% (Song 2026, preprint). Five rounds of "improve" raised critical vulnerabilities by 37.6% (Shukla, preprint, arXiv 2506.11022). Re-inspection is mostly net positive but yields less than the first (Biffl 2001). | Experimental + opinion |
 | Checklists | Checklist readers were no more effective than ad hoc readers; scenario-based reading was ~35% better (Porter, Votta, Basili 1995). | Experimental |
 | Defect prevention | Causal analysis with an action team cut development defects by 54% at 0.4-0.5% of resources (Mays et al., IBM 1990). | Case study |
 | Clones | About half of unintentionally inconsistent clone changes are faults (Juergens et al., ICSE 2009, 107/203). 16-46% of supplementary patches fall outside the first patch's structural dependencies (Park et al. 2016). | Case study |
 | Agents miss sibling paths | In large patches the dominant failure is incomplete propagation: agents stop at edge call sites (ProMax 2026, preprint). LLM change-impact estimates are weak (Stengg 2025). | Experimental (preprint) |
-| Planning | With a strong model, planning did not change accuracy and cut cost ~30% (Fan 2026). A plan fed by tool output: CodePlan 5 of 6 repositories, unplanned baseline 0. | Experimental |
+| Planning | With a strong model, planning did not change accuracy and cut cost ~30% (Fan 2026). A plan fed by tool output: CodePlan 5 of 6 repositories, unplanned baseline 0 (CodePlan, FSE 2024). | Experimental |
 | Heuristic rules | 17% of regexes are tested; 51% of regex fixes ship without tests; over-restrictive regexes are 3× as common as over-permissive ones (Wang & Stolee 2018, Wang et al. 2020). Property-based tests find ~50× the mutants of unit tests (Ravi & Coblenz 2025). | Case study + experimental |
 | Fakes | Keeping fakes in sync with the real thing is the main difficulty (Spadini 2017/2019). 36% of agent test commits add mocks, 26% of human ones (Hora & Robbes 2026). | Case study |
 | Bad fixes | 14.8-24.4% of post-release fixes are incorrect (Yin et al., FSE 2011). 29.6% of test-passing agent patches differ from the human patch, ~11% are clearly wrong (Wang, Pradel, Liu, ICSE 2026). | Case study / experimental |
@@ -222,7 +246,7 @@ Practitioners point the same way: a short instruction file with rules moved into
 ## Open questions
 
 - The review cap, finding schema and impact table were first used on a second project (above): three cycles with no third round needed and one round-two regression caught by a project gate. Whether escapes stay down is not yet measured: that needs weeks, not a day.
-- The rework thresholds (≥ 3 owned lines and ≥ 10% of the fix, sweeps over 15 production files and move commits skipped) were tuned on the origin project only.
+- The rework thresholds (≥ 3 owned lines and ≥ 10% of the fix, sweeps over 15 production files and move commits skipped) were tuned on the origin project only (origin study, October 2026).
 - Rules that do not fit the side-copy budget are only listed; whether subagents receive the hook in side copies was not measured.
 - The `[commit-shape-allow: …]` marker checks only that a reason is given; how often it is used is not counted.
 - "Works in any project" has two pieces of evidence so far, both from one author: the origin project and a second project in another language. Independent evidence comes only from other people's projects.
@@ -233,4 +257,5 @@ Practitioners point the same way: a short instruction file with rules moved into
 - Agents and context: Laban et al., arXiv 2505.06120 · Du et al., arXiv 2510.05381 · Gloaguen et al., arXiv 2602.11988 · IFScale, arXiv 2507.11538 · Chroma, "Context Rot" 2025 · Raju, arXiv 2602.16069 · Fan, arXiv 2609.20804 · CodePlan, FSE 2024 · ProMax, arXiv 2608.09802 · Stengg, arXiv 2512.19481 · Hora & Robbes, MSR 2026 (arXiv 2602.00409).
 - Testing: Spadini et al., MSR 2017 / EMSE 2019 · Ravi & Coblenz, OOPSLA 2025 · Wang & Stolee, FSE 2018 · Wang et al., MSR 2020 · Petrović et al., ICSE 2021 · Zimmermann et al., ICSE 2004.
 - Process: DORA 2025 · METR 2025, Feb 2026 · Faros 2025/2026 · GitClear 2025/2026.
+- Kept records, outside this repository: the origin study (October 2026), the second- and third-project trials (2026-10-29), the closing handoffs and ledgers of cycles 1-15, and the private-text replay (2026-11-20). Each section names its source in a `Source:` line or beside the number. `test/cited-numbers.test.mjs` requires every number given as evidence on this page and in the skills to name a source: a place in the repository (a file and line, a section or a file), which it reads for the number as written, or a citation or a command, which it checks only for being there and never runs. Nearly every number on this page rests on a citation of a record kept outside the repository.
 - Practitioners: Every, compound engineering · OpenAI, "Harness engineering" (Feb 2026) · Anthropic, "Effective harnesses for long-running agents" (Nov 2025), "Harness design for long-running apps" (Mar 2026), "Effective context engineering" (Sep 2025) · Stripe, Minions part 2 · Cognition, multi-agent writing · Cursor, self-driving codebases and Bugbot learned rules · Ralph (Jul 2025) · beads (Oct 2025) · BMAD v6 · GitHub Spec Kit · Kiro.

@@ -1,6 +1,6 @@
 # Impact table — before writing, by command
 
-**Why:** in the origin project, almost every new serious defect could at least partly have been asked about before writing (two independent raters agreed), and the reviewers' prompts already contained the question in 57% of reviews — the author asked the reviewer instead of answering it. Generic checklists do not help (Porter, Votta & Basili 1995); scenario questions aimed at specific defect classes do. A model's own impact guess is weak (Stengg et al. 2025): answer every row with a command.
+**Why:** in the origin project, almost every new serious defect could at least partly have been asked about before writing (two independent raters agreed), and the reviewers' prompts already contained the question in 57% of reviews — the author asked the reviewer instead of answering it (source: `docs/evidence.md:56`). Generic checklists do not help (Porter, Votta & Basili 1995); scenario questions aimed at specific defect classes do. A model's own impact guess is weak (Stengg et al. 2025): answer every row with a command.
 
 ## When
 
@@ -34,7 +34,7 @@ A never-cut piece no line asks for still gets its line, with `never cut: <kind>`
 
 Before the commit, set the row against the full diff (`git diff --merge-base <base branch>` for tracked files, `git status --short --untracked-files=all` for new ones): a piece added while writing, a function or option in a file the row already names too, gets its line, and a piece the `Left out` line names is either out of the diff or moved from that line into the row with the line that asks for it.
 
-**Why:** an agent skill that asks this before writing (ponytail, MIT) cut delivered code by 30% on the 18 of its author's 38 tasks whose code was run, with the hidden checks' pass rate flat (87/90 against 86/90); the other 20 were judged by a model only. An independent run of an older version wrote 53% fewer statements, and its robustness fell from 96.7 to 82.5 on stdin scripts whose task did not mention bad input: hence the never-cut list.
+**Why:** on 18 of the 38 tasks of its author's run, those whose code was run, an agent skill that asks this before writing (ponytail, MIT) cut delivered code by 30%, with the hidden checks' pass rate flat (87/90 against 86/90); the other 20 were judged by a model only. An independent run of an older version wrote 53% fewer statements, and its robustness fell from 96.7 to 82.5 on stdin scripts whose task did not mention bad input: hence the never-cut list (sources: `docs/evidence.md:68`, `docs/evidence.md:69`).
 
 ## Heuristic rules, dictionaries, thresholds
 
@@ -45,4 +45,4 @@ Before the commit, set the row against the full diff (`git diff --merge-base <ba
 
 ## A fix is a write
 
-When a review finding is fixed, check whether the fix changes a row; if it does, update the table and pass the delta to round two. (In the origin project, 66% of serious findings in round two and later were side effects of the previous round's fix.)
+When a review finding is fixed, check whether the fix changes a row; if it does, update the table and pass the delta to round two. (In the origin project, 66% of serious findings in round two and later were side effects of the previous round's fix; source: `docs/evidence.md:43`.)
