@@ -736,6 +736,7 @@
   "doctor.agentUnmeasured": "ajan kurulumu: ölçülmedi: {error}",
   "doctor.askUnmeasured": "ask kuralları: ölçülmedi: {error}",
   "doctor.askUnknown": "ask kuralları: bunların tutulup tutulmadığı ya da commit'lenip commit'lenmediği ölçülmedi: {rules}",
+  "doctor.askNoGithub": "ask kuralları: denetlenmedi: {commands}: her remote başka bir hostta (tanıyamadığı bir SSH takma adı ya da Enterprise hostu da öyle okunur), bu yüzden bir kural durdurmadıkça gh repo create ve gh api orada sorulmadan çalışır",
   "doctor.askGithubUnmeasured": "ask kuralları: ölçülmedi: {error}; denetlenmedi: {commands}",
   "doctor.askHeadKind": "ask kuralları: ölçülmedi: HEAD {path} yolunda düzenli bir dosya tutmuyor (kendisi ya da yolundaki bir dizin sembolik bağ, bir alt modül, bir dizin ya da 2 MB'tan büyük bir dosya), yani kurallarının commit'lenip commit'lenmediğine karar verilmedi",
   "doctor.worktreesIgnored": "agent worktree'leri: HEAD'deki {source}:{line} ({pattern}), {path} yolunu worktree'nin adı ne olursa olsun yok sayıyor",

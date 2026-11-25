@@ -226,14 +226,38 @@ export function urlHost(url) {
 }
 
 /**
- * Whether a host serves GitHub: github.com, ssh.github.com (SSH over 443), or GitHub Enterprise on a host
- * named github.<domain>.
+ * Whether a host serves GitHub: github.com, ssh.github.com (SSH over 443), GitHub Enterprise Cloud with data
+ * residency on a subdomain of ghe.com (docs.github.com), or GitHub Enterprise Server on a host named github.<domain>.
  * @param {unknown} host
  */
 export function isGithubHost(host) {
   if (typeof host !== "string") return false;
   const h = host.toLowerCase();
-  return h === "github.com" || h === "ssh.github.com" || /^github(\.[a-z0-9-]+)+$/.test(h);
+  return h === "github.com" || h === "ssh.github.com" || GHE_COM.test(h) || /^github(\.[a-z0-9-]+)+$/.test(h);
+}
+
+/** A GitHub Enterprise Cloud host with data residency: a subdomain of ghe.com. */
+const GHE_COM = /^([a-z0-9-]+\.)+ghe\.com$/;
+
+/**
+ * The hosts a GitHub remote's commands reach: its own host, for git, and the host of the API gh sends to, measured
+ * with gh 2.92.0 from a repository's remote (GH_DEBUG=api): api.github.com for github.com and ssh.github.com,
+ * api.<host> on ghe.com, and the remote's own host (`/api/graphql`, `/api/v3`) on a server named github.<domain>.
+ * None for a host that is not GitHub's. A host spelled github.com-<name> is an SSH alias of github.com (the usual
+ * second-account setup: `Host github.com-work`, `HostName github.com`; no DNS name ends in a label like com-work): it
+ * gives github.com's hosts and not its own name, which nothing connects to. Other aliases are not resolved: gh
+ * resolves them with `ssh -G`, but OpenSSH 10.5 reads the account's ~/.ssh/config whatever HOME says and runs its
+ * `Match exec` commands (both measured), so a scan would run the user's commands, and a test could not keep the read
+ * in its own folder.
+ * @param {unknown} host
+ * @returns {string[]}
+ */
+export function githubHosts(host) {
+  if (typeof host !== "string" || !isGithubHost(host)) return [];
+  const h = host.toLowerCase();
+  if (h === "github.com" || h === "ssh.github.com") return [h, "api.github.com"];
+  if (/^github\.com-[a-z0-9-]+$/.test(h)) return ["github.com", "api.github.com"];
+  return GHE_COM.test(h) ? [h, `api.${h}`] : [h];
 }
 
 /**

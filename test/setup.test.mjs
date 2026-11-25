@@ -36,6 +36,8 @@ const pat = () => pathPatterns(DEFAULTS, []).re;
 /** @param {string} dir @param {Record<string, string>} files */
 /** A repository's remote on another host: the gh commands are not asked about, in a test about something else. @param {{ dir: string }} r */
 const elsewhere = (r) => (git(["remote", "add", "elsewhere", "https://gitlab.com/a/b.git"], { cwd: r.dir }), r);
+/** A doctor ask-rules item, but the line elsewhere() brings (doctor.askNoGithub has its own test). @param {{ key: string }} i */
+const askItem = (i) => i.key.startsWith("doctor.ask") && i.key !== "doctor.askNoGithub";
 
 function put(dir, files) {
   for (const [path, content] of Object.entries(files)) {
@@ -3071,7 +3073,7 @@ test("ask rules: init-scan names the offered rules apart from the outward ones, 
   const text = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: r.dir, encoding: "utf8" }).stdout;
   assert.match(text, new RegExp(`^Ask rules to offer, never written unasked: ${json.agentSetup.offered.destroys.length} for what destroys local work or data, ${json.agentSetup.offered.installs.length} for what installs outside the project \\(init-scan --json lists them\\)\\.$`, "m"));
   // Declined, all of them: nothing to act on, nothing said.
-  const items = (await checkSetup({ cwd: r.dir, env: {} })).items.filter((i) => i.key.startsWith("doctor.ask"));
+  const items = (await checkSetup({ cwd: r.dir, env: {} })).items.filter(askItem);
   assert.deepEqual(items.map((i) => `${i.level} ${i.key}`), ["ok doctor.askOk"]);
   assert.deepEqual(items[0].vars, { n: 2 }, "the rules doctor asks for, counted: a held offered rule is not one");
   // Held in the local file, or written and not committed: still held, so not offered.
@@ -3096,7 +3098,7 @@ test("ask rules: doctor counts what it holds and caps what it names, whatever th
   const r = setupGithub();
   const all = ["git push", ...GH_COMMANDS].flatMap((c) => TOOLS.map((tool) => ruleFor(c, tool)));
   assert.equal(all.length, 36);
-  const ask = async () => (await checkSetup({ cwd: r.dir, env: {} })).items.filter((i) => i.key.startsWith("doctor.ask"));
+  const ask = async () => (await checkSetup({ cwd: r.dir, env: {} })).items.filter(askItem);
   // Nothing held: the first rules by name, the rest as a number.
   const [missing] = await ask();
   assert.equal(missing.key, "doctor.askMissing");
@@ -3238,7 +3240,7 @@ test("push.mode: doctor names the mode both ways; with after-closing no git push
 test("ask rules: doctor says which file holds each rule and whether it is committed, with where Claude Code applies it; init-scan lists them", async () => {
   const { GH_COMMANDS, ruleFor, TOOLS } = await import("../setup/permissions.mjs");
   const graph = { nodes: [{ id: "a" }] };
-  const ask = (/** @type {Awaited<ReturnType<typeof checkSetup>>} */ res) => res.items.filter((i) => i.key.startsWith("doctor.ask")).map((i) => ({ level: i.level, key: i.key, vars: i.vars }));
+  const ask = (/** @type {Awaited<ReturnType<typeof checkSetup>>} */ res) => res.items.filter(askItem).map((i) => ({ level: i.level, key: i.key, vars: i.vars }));
   const both = (/** @type {string} */ c) => [`Bash(${c} *)`, `PowerShell(${c} *)`];
   const none = elsewhere(setup({}, graph));
   assert.deepEqual(ask(await checkSetup({ cwd: none.dir, env: {} })), [{ level: "warn", key: "doctor.askMissing", vars: { rules: both("git push") } }]);
@@ -3325,7 +3327,7 @@ test("ask rules (review two): a HEAD that cannot be read, or holds no regular fi
     /** @type {{ level: string, key: string, vars: any }[]} */
     const out = [];
     askReport(cwd, [], (level, key, vars = {}) => out.push({ level, key, vars }), read);
-    return out;
+    return out.filter(askItem);
   };
   const r = elsewhere(setup({}, graph));
   r.commit("feat: ask", { ".claude/settings.json": all });
@@ -3339,7 +3341,7 @@ test("ask rules (review two): a HEAD that cannot be read, or holds no regular fi
   mkdirSync(join(link.dir, ".claude"));
   symlinkSync("../shared/settings.json", join(link.dir, ".claude", "settings.json"));
   link.commit("feat: linked settings");
-  const linked = (await checkSetup({ cwd: link.dir, env: {} })).items.filter((i) => i.key.startsWith("doctor.ask"));
+  const linked = (await checkSetup({ cwd: link.dir, env: {} })).items.filter(askItem);
   assert.deepEqual(linked.map((i) => `${i.level} ${i.key}`), ["unmeasured doctor.askHeadKind", "unmeasured doctor.askUnknown"]);
   // A link in HEAD on the way to the file is the same.
   const dirLink = elsewhere(setup({}, graph));
@@ -3410,6 +3412,81 @@ test("ask rules (review two): doctor reads every remote for a GitHub host; a rem
   for (const [url, host] of Object.entries(hosts)) assert.equal(urlHost(url), host, url);
   for (const h of ["github.com", "ssh.github.com", "github.mycorp.com", "GITHUB.com"]) assert.equal(isGithubHost(h), true, h);
   for (const h of ["gitlab.com", "notgithub.com", "github.com.evil.net.", "mygithub.com", "", null]) assert.equal(isGithubHost(h), false, String(h));
+});
+
+test("permissions audit: a GitHub Enterprise Cloud remote on a ghe.com subdomain is GitHub, so its gh commands are asked about; lookalikes stay out", async () => {
+  const { urlHost, isGithubHost } = await import("../setup/permissions.mjs");
+  // GitHub's documented forms: the tenant is the SSH user, and every host under ghe.com is GitHub's.
+  for (const url of ["octo@octo.ghe.com:org/repo.git", "https://octo.ghe.com/org/repo.git", "ssh://octo@Octo.GHE.com/org/repo.git"]) assert.equal(isGithubHost(urlHost(url)), true, url);
+  for (const h of ["ghe.com", "evilghe.com", "octo.ghe.com.evil.test", "octo.ghe.co", "octo-ghe.com", "octo.ghe.com."]) assert.equal(isGithubHost(h), false, h);
+  // End to end: the only remote is on ghe.com, and doctor asks for the gh rules as it does for github.com.
+  const { GH_COMMANDS: gh, capped, ruleFor, TOOLS } = await import("../setup/permissions.mjs");
+  const r = setup({}, { nodes: [{ id: "a" }] });
+  git(["remote", "add", "origin", "octo@octo.ghe.com:org/repo.git"], { cwd: r.dir });
+  const missing = (await checkSetup({ cwd: r.dir, env: {} })).items.find((i) => i.key === "doctor.askMissing");
+  assert.deepEqual(missing?.vars.rules, capped(["git push", ...gh].flatMap((c) => TOOLS.map((tool) => ruleFor(c, tool)))));
+});
+
+test("permissions audit (review): the proposed sandbox opens each GitHub remote's own host and the API host gh 2.92.0 sends to, not github.com for every one", () => {
+  const hostsFor = (/** @type {string[]} */ urls) => {
+    const r = setup({}, { nodes: [{ id: "a" }] });
+    urls.forEach((url, i) => git(["remote", "add", `r${i}`, url], { cwd: r.dir }));
+    return scanProject({ cwd: r.dir, env: {} }).agentSetup.secrets.proposal.sandbox.network.allowedDomains;
+  };
+  // gh 2.92.0 (GH_DEBUG=api): github.com → api.github.com, <tenant>.ghe.com → api.<tenant>.ghe.com, a server → <host>/api/v3.
+  assert.deepEqual(hostsFor(["git@github.com:o/r.git"]), ["github.com", "api.github.com"]);
+  assert.deepEqual(hostsFor(["octo@octo.ghe.com:org/repo.git"]), ["octo.ghe.com", "api.octo.ghe.com"]);
+  assert.deepEqual(hostsFor(["git@github.mycorp.test:o/r.git"]), ["github.mycorp.test"]);
+  // An SSH alias of github.com for a second account (Host github.com-work, HostName github.com): no DNS name ends in a
+  // label like com-work, so it is github.com, and the alias, no host anyone connects to, is not opened.
+  assert.deepEqual(hostsFor(["git@github.com-work:o/r.git"]), ["github.com", "api.github.com"]);
+  assert.deepEqual(hostsFor(["git@github.com-work:o/r.git", "https://github.com/o/f.git"]), ["github.com", "api.github.com"]);
+  assert.deepEqual(hostsFor(["ssh://git@ssh.github.com:443/o/r.git"]), ["ssh.github.com", "api.github.com"]);
+  // Each host once, in the order the remotes are listed; a remote elsewhere opens nothing.
+  assert.deepEqual(hostsFor(["https://github.com/o/r.git", "git@github.com:o/f.git", "git@gitlab.test:o/r.git", "octo@octo.ghe.com:o/r.git"]), ["github.com", "api.github.com", "octo.ghe.com", "api.octo.ghe.com"]);
+  assert.deepEqual(hostsFor(["git@gitlab.test:o/r.git"]), []);
+  // Two hosts that share an API host give it once.
+  assert.deepEqual(hostsFor(["git@github.com:o/r.git", "ssh://git@ssh.github.com:443/o/f.git"]), ["github.com", "api.github.com", "ssh.github.com"]);
+});
+
+test("permissions audit (review, mutation): remotesByHost lists the GitHub hosts only, and githubHosts gives none for another host, in any case", async () => {
+  const { remotesByHost } = await import("../setup/scan.mjs");
+  const { githubHosts } = await import("../setup/permissions.mjs");
+  const r = setup({}, { nodes: [{ id: "a" }] });
+  for (const [name, url] of [["a", "git@gitlab.test:o/r.git"], ["b", "https://GitHub.com/o/r.git"]]) git(["remote", "add", name, url], { cwd: r.dir });
+  assert.deepEqual(remotesByHost(r.dir), { github: ["b"], others: ["a"], hosts: ["github.com"] });
+  assert.deepEqual(githubHosts("GitHub.COM"), ["github.com", "api.github.com"]);
+  assert.deepEqual(githubHosts("OCTO.ghe.com"), ["octo.ghe.com", "api.octo.ghe.com"]);
+  for (const h of ["gitlab.test", "notgithub.com", "", null]) assert.deepEqual(githubHosts(h), [], String(h));
+  // Aliases of github.com map to it; a server, a server with a dash and lookalikes keep their own reading.
+  for (const h of ["github.com-work", "GitHub.com-Second-Account"]) assert.deepEqual(githubHosts(h), ["github.com", "api.github.com"], h);
+  for (const h of ["github.mycorp.test", "github.com-work.example.test", "github.company-x.test", "github.github.com-work"]) assert.deepEqual(githubHosts(h), [h.toLowerCase()], h);
+  for (const h of ["notgithub.com-work", "github-work"]) assert.deepEqual(githubHosts(h), [], h);
+});
+
+test("permissions audit (review): with remotes and none on a GitHub host, doctor says the gh commands were not checked, as init-scan says they were not proposed", async () => {
+  const { GH_COMMANDS: gh, capped } = await import("../setup/permissions.mjs");
+  const items = async (/** @type {string | null} */ url) => {
+    const r = setup({}, { nodes: [{ id: "a" }] });
+    if (url) git(["remote", "add", "origin", url], { cwd: r.dir });
+    return (await checkSetup({ cwd: r.dir, env: {} })).items;
+  };
+  // An SSH alias gh resolves to github.com (Host github-work, HostName github.com) reads as another host.
+  const alias = (await items("git@github-work:o/r.git")).find((i) => i.key === "doctor.askNoGithub");
+  assert.deepEqual(alias && [alias.level, alias.vars], ["unmeasured", { commands: capped(gh) }]);
+  assert.match(tShown("doctor.askNoGithub", alias.vars, "en"), /SSH alias/);
+  assert.match(tShown("doctor.askNoGithub", alias.vars, "tr"), /SSH/);
+  // With a GitHub remote, or with none at all, the gh commands are checked and the line is not there.
+  for (const url of ["git@github.com:o/r.git", null]) assert.equal((await items(url)).some((i) => i.key === "doctor.askNoGithub"), false, String(url));
+});
+
+test("permissions audit (mutation): a settings file that leads out of the repository reads as undefined, not as unread; a scheme git takes no transport for names no host", async () => {
+  const { readSettings, urlHost } = await import("../setup/permissions.mjs");
+  // init-scan's hooks reader says a link out under its own line, not among the files Claude Code skips.
+  assert.equal(readSettings({ read: () => undefined }, ".claude/settings.json"), undefined);
+  assert.equal(readSettings({ read: () => null }, ".claude/settings.json"), null);
+  // Not a scheme (an underscore, a leading digit) and not scp-like either: the `//` after the colon is no path.
+  for (const url of ["my_scheme://github.com/a/b", "1git://github.com/a/b"]) assert.equal(urlHost(url), null, url);
 });
 
 test("ask rules (review two): a hooks value Claude Code drops leaves the file counting; a package.json git does not list still brings npm publish; init-scan says why no gh rule", async () => {

@@ -448,7 +448,8 @@ export function roadmapFiles(cwd, files) {
 
 /**
  * The remotes `git remote -v` lists, each name once: `github`, those whose fetch or push URL is on a GitHub host
- * (isGithubHost); `others`, the rest. Both empty without a remote. A git that fails throws.
+ * (isGithubHost); `others`, the rest; `hosts`, the GitHub hosts those URLs name, each once in the order listed. All
+ * empty without a remote. A git that fails throws.
  * @param {string} cwd
  */
 export function remotesByHost(cwd) {
@@ -456,11 +457,16 @@ export function remotesByHost(cwd) {
   const github = new Set();
   /** @type {Set<string>} */
   const others = new Set();
+  /** @type {Set<string>} */
+  const hosts = new Set();
   for (const line of git(["remote", "-v"], { cwd }).split("\n")) {
     const m = /^(\S+)\t(.*) \((?:fetch|push)\)$/.exec(line);
-    if (m) (isGithubHost(urlHost(m[2])) ? github : others).add(m[1]);
+    if (!m) continue;
+    const host = urlHost(m[2]);
+    if (host !== null && isGithubHost(host)) (github.add(m[1]), hosts.add(host));
+    else others.add(m[1]);
   }
-  return { github: [...github], others: [...others].filter((name) => !github.has(name)) };
+  return { github: [...github], others: [...others].filter((name) => !github.has(name)), hosts: [...hosts] };
 }
 
 /** @param {string} cwd */
@@ -1283,7 +1289,7 @@ export function scanProject({ cwd, env = process.env, from = cwd, ceiling }) {
   const setup = agentSetup(cwd, files);
   // Which settings file holds a rule for each command that leaves the machine: /ennyn:init proposes the missing.
   const pf = projectFiles(cwd);
-  const remotes = repo ? remotesByHost(cwd) : { github: [], others: [] };
+  const remotes = repo ? remotesByHost(cwd) : { github: [], others: [], hosts: [] };
   const commands = outwardCommands(files, ghApplies(remotes), (rel) => pf.present(rel), config.push.mode);
   const ask = { ...askRules(pf, commands, { committed: (path) => (repo ? headFile(cwd, path, SETTINGS_LIMIT) : null) }), githubRemotes: remotes.github, otherRemotes: remotes.others };
   // Offered apart, as a choice: a rule the project holds, in either file, committed or not, is not offered again.
@@ -1295,7 +1301,7 @@ export function scanProject({ cwd, env = process.env, from = cwd, ceiling }) {
     ...found,
     proposal: noBypassBlock({
       worktrees: null,
-      hosts: neededHosts({ npm: files.some((f) => /(^|\/)package\.json$/.test(f)) || pf.present("package.json"), github: remotes.github.length > 0 }),
+      hosts: neededHosts({ npm: files.some((f) => /(^|\/)package\.json$/.test(f)) || pf.present("package.json"), github: remotes.hosts }),
       vars: CREDENTIAL_VARS.filter((n) => env[n]),
     }),
   };

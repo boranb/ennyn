@@ -19,7 +19,7 @@ import { homedir } from "node:os";
 import { readIfThere } from "../core/files.mjs";
 import { gitRun, repoPath } from "../core/git.mjs";
 import { textSecrets } from "../checks/secrets.mjs";
-import { KEPT, parseSettings, SETTINGS, SETTINGS_LIMIT } from "./permissions.mjs";
+import { githubHosts, KEPT, parseSettings, SETTINGS, SETTINGS_LIMIT } from "./permissions.mjs";
 
 /** Each Read deny rule proposed, with the spellings counted as it; any other spelling is a rule missing (a warning). */
 export const READ_DENY = /** @type {const} */ ([
@@ -77,11 +77,11 @@ export function noBypassBlock({ worktrees, hosts, vars }) {
 }
 
 /**
- * The hosts the project's own commands reach: the npm registry with a package.json, GitHub with a remote there.
- * Others the user names.
- * @param {{ npm: boolean, github: boolean }} has
+ * The hosts the project's own commands reach: the npm registry with a package.json; for each GitHub host a remote
+ * names, that host and the API host gh sends to (githubHosts), each once. Others the user names.
+ * @param {{ npm: boolean, github: readonly string[] }} has `github`: the GitHub hosts of the remotes (remotesByHost)
  */
-export const neededHosts = ({ npm, github }) => [...(npm ? ["registry.npmjs.org"] : []), ...(github ? ["github.com", "api.github.com"] : [])];
+export const neededHosts = ({ npm, github }) => [...new Set([...(npm ? ["registry.npmjs.org"] : []), ...github.flatMap(githubHosts)])];
 
 /**
  * What the files and the environment hold. `pf` reads the project's own files (setup/scan.mjs projectFiles); the

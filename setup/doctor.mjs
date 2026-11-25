@@ -223,10 +223,14 @@ export function askReport(cwd, files, add, readers = {}) {
     },
   };
   let gh = false;
+  /** Remotes are there and none is on a GitHub host: the gh commands are not checked, said as init-scan says it. */
+  let elsewhere = false;
   /** @type {string | null} */
   let remotesError = null;
   try {
-    gh = ghApplies((readers.remotes ?? remotesByHost)(cwd));
+    const remotes = (readers.remotes ?? remotesByHost)(cwd);
+    gh = ghApplies(remotes);
+    elsewhere = !gh;
   } catch (e) {
     remotesError = oneLine(e);
   }
@@ -244,6 +248,7 @@ export function askReport(cwd, files, add, readers = {}) {
   if (left.length) add("unmeasured", "doctor.askUnread", { list: left });
   for (const error of errors) add("unmeasured", "doctor.askUnmeasured", { error });
   if (remotesError !== null) add("unmeasured", "doctor.askGithubUnmeasured", { error: remotesError, commands: capped(GH_COMMANDS) });
+  if (elsewhere) add("unmeasured", "doctor.askNoGithub", { commands: capped(GH_COMMANDS) });
   if (head) add("unmeasured", "doctor.askHeadKind", { path: [SETTINGS[0]] });
   const at = (/** @type {string | null} */ where) => rules.filter((r) => r.where === where);
   const named = (/** @type {typeof rules} */ list) => capped(list.map((r) => r.rule));

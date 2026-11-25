@@ -736,6 +736,7 @@
   "doctor.agentUnmeasured": "agent setup: unmeasured: {error}",
   "doctor.askUnmeasured": "ask rules: unmeasured: {error}",
   "doctor.askUnknown": "ask rules: unmeasured whether these are held or committed: {rules}",
+  "doctor.askNoGithub": "ask rules: not checked: {commands}: every remote is on another host (an SSH alias or an Enterprise host Ennyn cannot recognize reads as one), so gh repo create and gh api run unasked there unless a rule stops them",
   "doctor.askGithubUnmeasured": "ask rules: unmeasured: {error}; not checked: {commands}",
   "doctor.askHeadKind": "ask rules: unmeasured: HEAD holds {path} as no regular file (a symbolic link, itself or a directory on its way, a submodule, a directory or a file over 2 MB), so whether its rules are committed is not judged",
   "doctor.worktreesIgnored": "agent worktrees: {source}:{line} ({pattern}), as HEAD holds it, ignores {path}, whatever a worktree there is called",
