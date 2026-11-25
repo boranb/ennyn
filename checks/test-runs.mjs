@@ -6,7 +6,7 @@
  * common git dir, so the main checkout reads what a run in a linked worktree wrote. The tree is HEAD's, and a run is
  * written only when the work tree was clean (no change, staged or not, no untracked file) before it and still is,
  * on the same HEAD, after it: `git write-tree` and HEAD's tree both miss an unstaged edit and an untracked file, so a
- * run on a dirty tree would read as a run on HEAD (measured on git 2.56.0). An ignored file is in no tree hash.
+ * run on a dirty tree would read as a run on HEAD (measured on git 2.56.0 (not by a test: no record), `test/cli.test.mjs` "cli: test records a run by HEAD's tree"). An ignored file is in no tree hash.
  *
  * A green run already on the tree is not run again: the line that says so (`skipOf`) is a record too. The record is
  * a fact push-check reads, never an approval: any process that can write the git dir can write a line, so it is the

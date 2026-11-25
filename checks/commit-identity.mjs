@@ -23,14 +23,14 @@
  * A signature passes only when it is an SSH signature (every `gpgsig` header of the commit's raw text holds an SSH
  * armor), git says `G` (`%G?`) and the principal the allowed-signers file names for the key
  * (`%GS`) is the committer's address, folded: the committer is who made the commit object, and `G` alone ties
- * the key to no address (a key listed for b@x.test gives `G [b@x.test]` on a commit by a@x.test, git 2.56.0). `U` (a
+ * the key to no address (a key listed for b@x.test gives `G [b@x.test]` on a commit by a@x.test, git 2.56.0 (not by a test: no record), `test/clone-setup.test.mjs` "commits: push-check holds each allowed-signers shape"). `U` (a
  * good signature by a key the file does not list, or no file there) does not pass: any key makes one. With no
  * gpg.ssh.allowedSignersFile configured git says `N` for an SSH-signed commit as for an unsigned one; a commit whose
  * raw header holds a `gpgsig` line is then said to be signed and unchecked, never unsigned, and is refused all the
  * same. The first line of the file that holds the key answers, with its first principal, and a wildcard gives its
- * pattern, which is no address (measured on git 2.56.0 and 2.34.1); `ennyn clone-setup` writes one address a line.
+ * pattern, which is no address (measured on git 2.56.0 and 2.34.1 (not by a test: no record), `test/clone-setup.test.mjs` "commits: push-check holds each allowed-signers shape"); `ennyn clone-setup` writes one address a line.
  * An OpenPGP or X.509 signature is refused whatever git says of it: git calls it `G` for any key the local keyring
- * trusts, a key made on this machine with the committer's address in its user id among them (gpg 2.4), so `G` there
+ * trusts, a key made on this machine with the committer's address in its user id among them (gpg 2.4 (not by a test: no record); `test/clone-setup.test.mjs` "commits: an OpenPGP signature git calls good" holds git's reading with a stand-in gpg), so `G` there
  * says nothing of the list.
  */
 

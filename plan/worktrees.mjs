@@ -2,7 +2,7 @@
  * The cycle's worktrees. Each one the cycle makes carries a mark, a lock whose reason is `ennyn:<cycle>`
  * (`git worktree add --lock --reason ennyn:<cycle>`): git prunes no locked worktree, and a worktree without the mark
  * is never read here, nor the main one. At the end a marked worktree goes only when removing it loses nothing, which
- * `git worktree remove` without `--force` does not see to (git 2.34.1, 2.39.5 and 2.56.0, measured): it deletes ignored
+ * `git worktree remove` without `--force` does not see to (git 2.34.1, 2.39.5 and 2.56.0, measured) (not by a test: no record): it deletes ignored
  * files, a change git status does not see, and the worktree's HEAD reflog and its own refs, the only hold on a commit
  * made on a detached HEAD.
  *
@@ -18,12 +18,12 @@
  *
  * The mark is read from the common git dir (`worktrees/<id>/locked` and `gitdir`, as gitrepository-layout describes
  * them), never from `git worktree list --porcelain`: below git 2.36 that has no -z, and a path holding a line feed
- * then prints a lock line of its own. Every file read here is a regular file opened without blocking, never through
+ * then prints a lock line of its own (not by a test: no record). Every file read here is a regular file opened without blocking, never through
  * a link: a named pipe in place of `.git`, `locked` or `gitdir` once held the command.
  *
  * The removal is not git's: Git for Windows 2.47.1 deletes through a junction in the folder, with or without
- * `--force`. The folder is moved aside in one rename, looked at again, and deleted by Node's `rmSync`, which unlinks
- * a link, a junction too, and never enters it (Node 22, Windows and Linux, measured); git then drops its entry. It
+ * `--force` (not by a test: cycle 22 review). The folder is moved aside in one rename, looked at again, and deleted by Node's `rmSync`, which unlinks
+ * a link, a junction too, and never enters it (Node 22 on Linux, `test/worktrees.test.mjs` "worktrees: the removal never enters a link", and on Windows (not by a test: cycle 22)); git then drops its entry. It
  * would enter a folder swapped for a junction between its look at it and its read of it, and a volume mount point,
  * which libuv does not report as a link.
  *

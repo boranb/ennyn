@@ -6,7 +6,7 @@
  * tool touches a matching path of the project. Work done in a side copy (a git
  * worktree, or a plain copy under `sideCopy.roots`) is at other paths, where
  * the project's rules may not load; Claude Code 2.1.310 was seen to load a
- * copy's own rules in a worktree under `.claude/worktrees/` (cycle 14 review),
+ * copy's own rules in a worktree under `.claude/worktrees/` (not by a test: cycle 14 review),
  * which are the copy's text, not the project's. For
  * Read/Edit/Write/MultiEdit/NotebookEdit on a side-copy path, this hook maps
  * the path back to the project, finds the project's rules that apply, and

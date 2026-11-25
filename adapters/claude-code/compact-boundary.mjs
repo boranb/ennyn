@@ -4,7 +4,7 @@
  * loses what the task was doing, and a session nobody is using needs no compaction yet. Everything else passes.
  *
  * Why only that. In Claude Code 2.1.310 a hold of idle compaction removes that compaction and nothing else: the next
- * prompt goes out with the whole conversation, as it would with idle compaction off (see test/reference/precompact.mjs,
+ * prompt goes out with the whole conversation, as it would with idle compaction off (`test/reference/precompact.json`,
  * and the lab in DESIGN.md). A hold anywhere else can cost the session: at or past the hard limit it ends the turn, on
  * a 413 it ends the turn, on the auto-mode classifier's request nothing asks again, and a subagent's compaction runs
  * this hook with the main thread's input. So threshold, 413, classifier, subagent and `/compact` compaction run as they

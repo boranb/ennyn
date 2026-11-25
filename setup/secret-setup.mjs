@@ -6,8 +6,8 @@
  * writes the no-bypass block only on the user's yes (skills/init/agent-mode.md).
  *
  * It says what the files hold, not what Claude Code will do: managed settings and command-line flags are not read.
- * The values that keep a file and those that make Claude Code skip it whole were measured on Claude Code 2.1.310 and
- * 2.1.319 (permissions.mjs KEPT holds the first; any other value of those keys may make it skip the file); the block
+ * The values that keep a file and those that make Claude Code skip it whole were measured on Claude Code 2.1.310
+ * (`test/reference.test.mjs` "reference: the no-bypass block /ennyn:init writes") and 2.1.319 (not by a test: no record; permissions.mjs KEPT holds the first; any other value of those keys may make it skip the file); the block
  * is written with kept values only. A reading of the files, not proof: Claude Code skips a file whole for a wrong value
  * of any of its keys, and Ennyn checks only the keys it reads; a session started in a subdirectory reads that
  * directory's .claude/.

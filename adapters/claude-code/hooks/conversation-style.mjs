@@ -9,7 +9,7 @@
  * After a compaction it also gives one fixed line, after the style: if a task is in progress, re-read the files it
  * changed and its impact table before the next edit. Claude Code 2.1.310 runs this hook for a subagent's compaction
  * too, and its text reaches that agent, but the input is the main thread's: its `cwd` is the session's folder, not a
- * task's worktree, so the line names no file and says how to list them. Where that folder is the agent's own (the main
+ * task's worktree, so the line names no file and says how to list them (not by a test: no record). Where that folder is the agent's own (the main
  * thread, an agent run with `isolation: "worktree"`), the PreCompact hook's summary request already lists the files
  * changed since the last commit. `compaction.defer: false` turns the line off, with the rest of Ennyn's compaction
  * handling.

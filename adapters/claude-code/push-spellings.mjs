@@ -49,7 +49,7 @@
  *   path. A second reading is made where a second shell reads the words: ssh joins its command words with one space and
  *   the other machine's shell reads the line, so that line is read here as a shell's text, `;`, `&&`, quotes and
  *   backslashes as there (`ssh host "true;git" push`, `ssh host git "\-C" dir push`). ssh's options are read past (each
- *   letter's value as OpenSSH 8.9p1, 9.5p1 and 9.9p1 take it), its own words run here (`-o ProxyCommand=…`, a push word
+ *   letter's value as OpenSSH 8.9p1, 9.5p1 and 9.9p1 take it, `test/push-spellings.test.mjs` "push reader: after a wrapper any word stands"), its own words run here (`-o ProxyCommand=…`, a push word
  *   there refuses), and with no command the shell there reads what ssh is fed. An expansion here is a built word there
  *   (`ssh host "$(echo git push)"`), and an ssh inside that line runs text.
  * - A name that only reads (INERT) has no folder and no extension off but `.exe`: `./echo` may be a program the work tree

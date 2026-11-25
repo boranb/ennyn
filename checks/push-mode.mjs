@@ -13,10 +13,10 @@
  *   here again. A replayed commit of the user's own keeps its line, and a reset past an unpushed move back leaves
  *   nothing to read: stated limits;
  * - what a bare `git push` sends (pushWidened): the current branch to the branch of its name on its upstream remote's
- *   one url, read by allowing. git config can make it send more or elsewhere (measured on git 2.56.0 and 2.34.1:
+ *   one url, read by allowing. git config can make it send more or elsewhere (measured on git 2.56.0 and 2.34.1 (not by a test: no record):
  *   `remote.<r>.mirror` deleted a remote branch and rewrote another, a `remote.<r>.push` refspec with `+` rewrote one,
  *   `push.default matching` pushed every branch of the same name; a pushurl, a second url and an insteadOf or
- *   pushInsteadOf rewrite each change what `git remote get-url --push --all` gives).
+ *   pushInsteadOf rewrite each change what `git remote get-url --push --all` gives; `test/cli.test.mjs` "cli: push-check reads git config as git push does").
  *
  * Values come from git one key a call (`git config --get`), read as it reads them for the push in this environment;
  * an environment that differs at the push (another GIT_CONFIG_*) is not seen. A git that fails is said, and asks.

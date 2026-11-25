@@ -7,7 +7,7 @@
  * stdout and stderr. At the limit its group gets SIGTERM, so a wrapper that forwards it (`npm run`) and a worker that
  * cleans up on it (a lock file) do so; `graceMs` later the group gets SIGKILL, which nothing in it can ignore. A
  * SIGKILL to the command alone would leave what it started running with no limit (measured: `npm run` and a shell
- * script without `exec`, npm 10.9.9, Node 22.23.4).
+ * script without `exec`, npm 10.9.9, Node 22.23.4) (not by a test: no record).
  *
  * When the command itself ends, before the limit, that end is the result: the output it wrote is relayed for at most
  * SETTLE_MS more, then the end is said and the relay stops, so a process the command left (one that left the group,

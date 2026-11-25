@@ -3,7 +3,7 @@
  * `ennyn agents`. A split of models by role can be skipped without a word (claude-code#100082), so the closing
  * report sets the model asked for beside the model that ran.
  *
- * Measured on Claude Code 2.1.310's binary and on transcripts of 2.1.301 to 2.1.317. A session's subagents live in
+ * Measured on Claude Code 2.1.310's binary and on transcripts of 2.1.301 to 2.1.317 (not by a test: no record). A session's subagents live in
  * `<projects>/<folder>/<session>/subagents/agent-<id>.jsonl`, with `agent-<id>.meta.json` beside each (a workflow's
  * agents in folders below). `<projects>` is `$CLAUDE_CONFIG_DIR/projects`, else `~/.claude/projects`; `<folder>` is
  * the session's folder in NFC with every character outside `[a-zA-Z0-9]` turned into `-`, and past 200 characters
@@ -12,7 +12,7 @@
  *
  * The model asked for, in order: the Agent call's `model` (on the `type: "assistant"` line whose tool_use id is the
  * meta's `toolUseId`, in the session's transcript or another agent's: the same call also stands on lines of other
- * types, which are not read); the meta's `model` (written from 2.1.312 when one is passed; `inherit` for a fork);
+ * types, which are not read); the meta's `model` (written from Claude Code 2.1.312 when one is passed (not by a test: no record); `inherit` for a fork);
  * the `model:` of the agent's file (`.claude/agents/*.md` at the repository's top, only for a session whose first
  * `cwd` is that top, and `<config>/agents/*.md`), read now, not as it was. Nothing asked is `default`: Claude Code then takes the definition's model, which for a built-in
  * agent is only in its binary (`claude-code-guide` runs haiku), or a default set by an environment the transcript
