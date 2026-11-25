@@ -282,14 +282,14 @@ test("eval selftest: the git run is the recorder's environment with the git path
 test("eval selftest: the socket watch reads a connection past loopback from lsof, and the stand-in's to show it sees the run", () => {
   const text = [
     "COMMAND   PID  USER   FD   TYPE  DEVICE SIZE/OFF NODE NAME",
-    "claude  101 boran   20u  IPv4 0x1      0t0  TCP 127.0.0.1:50001->127.0.0.1:4321 (ESTABLISHED)",
-    "claude  101 boran   21u  IPv6 0x2      0t0  TCP [::1]:50002->[::1]:8080 (ESTABLISHED)",
-    "claude  101 boran   22u  IPv4 0x3      0t0  TCP 127.0.0.1:61567 (LISTEN)",
-    "claude  102 boran   23u  IPv4 0x4      0t0  TCP 10.0.0.5:50003->160.79.104.10:443 (SYN_SENT)",
-    "claude  102 boran   24u  IPv4 0x5      0t0  UDP 10.0.0.5:50004->192.168.1.1:53",
-    "zsh     103 boran   25u  IPv4 0x6      0t0  TCP 127.0.0.2:50005->127.0.0.9:9",
+    "claude  101 alice   20u  IPv4 0x1      0t0  TCP 127.0.0.1:50001->127.0.0.1:4321 (ESTABLISHED)",
+    "claude  101 alice   21u  IPv6 0x2      0t0  TCP [::1]:50002->[::1]:8080 (ESTABLISHED)",
+    "claude  101 alice   22u  IPv4 0x3      0t0  TCP 127.0.0.1:61567 (LISTEN)",
+    "claude  102 alice   23u  IPv4 0x4      0t0  TCP 10.0.0.5:50003->203.0.113.10:443 (SYN_SENT)",
+    "claude  102 alice   24u  IPv4 0x5      0t0  UDP 10.0.0.5:50004->192.168.1.1:53",
+    "zsh     103 alice   25u  IPv4 0x6      0t0  TCP 127.0.0.2:50005->127.0.0.9:9",
   ].join("\n");
-  assert.deepEqual(outboundOf(text, 4321), { standIn: true, others: ["claude 102 boran 23u IPv4 0x4 0t0 TCP 10.0.0.5:50003->160.79.104.10:443 (SYN_SENT)", "claude 102 boran 24u IPv4 0x5 0t0 UDP 10.0.0.5:50004->192.168.1.1:53"] });
+  assert.deepEqual(outboundOf(text, 4321), { standIn: true, others: ["claude 102 alice 23u IPv4 0x4 0t0 TCP 10.0.0.5:50003->203.0.113.10:443 (SYN_SENT)", "claude 102 alice 24u IPv4 0x5 0t0 UDP 10.0.0.5:50004->192.168.1.1:53"] });
   assert.deepEqual(outboundOf(text, 4322).standIn, false);
   assert.deepEqual(outboundOf("", 4321), { standIn: false, others: [] });
   assert.deepEqual(treeOf(1, " 1 0\n 2 1\n 3 2\n 4 9\n 5 1\n"), [1, 2, 3, 5]);
@@ -597,7 +597,7 @@ test("eval selftest: the git run writes the git path into its plugin and a canar
     [{ deaf: "home", landed: { "git-wrapped": true } }, /^control home: a plain Claude Code given the planted home carried \{"reached":\[\],"ran":\[\]\}, must carry \{"reached":\["home-claude-md","home-rules","home-memory","home-env","home-hook","home-inline","home-canary"\],"ran":\["hook","mcp"\]\}/m],
   ]);
   for (const [play, why] of fails) await assert.rejects(recordGit("claude", { ...o, spawnRun: evalWith(play) }), why, JSON.stringify(play));
-  await assert.rejects(recordGit("claude", { ...o, spawnRun: evalWith({}), watch: watching({ others: ["claude 1 u 3u IPv4 TCP 10.0.0.5:1->160.79.104.10:443"], standIn: true }) }), /^the eval's processes opened connections past loopback \(the git run\):\nclaude 1 u 3u IPv4 TCP 10\.0\.0\.5:1->160\.79\.104\.10:443$/m);
+  await assert.rejects(recordGit("claude", { ...o, spawnRun: evalWith({}), watch: watching({ others: ["claude 1 u 3u IPv4 TCP 10.0.0.5:1->203.0.113.10:443"], standIn: true }) }), /^the eval's processes opened connections past loopback \(the git run\):\nclaude 1 u 3u IPv4 TCP 10\.0\.0\.5:1->203\.0\.113\.10:443$/m);
   await assert.rejects(recordGit("claude", { ...o, spawnRun: evalWith({}), watch: watching({ others: [], standIn: false }) }), /^the socket watch saw no connection to the stand-in, so it did not see the run's sockets \(the git run\)$/m);
   await assert.rejects(recordGit("claude", { ...o, spawnRun: evalWith({}), watch: watching({ others: [], standIn: true, stuck: true }) }), /^the socket watch's last look did not end in time, so what it saw last is unread \(the git run\)$/m);
   assert.deepEqual(readdirSync(runRoot), ["e-before1"]);
