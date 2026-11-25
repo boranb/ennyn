@@ -16,6 +16,8 @@
 - A test holds every number docs/evidence.md and the skills give as evidence to a source: a percentage, ratio or N of M to the line that states it, in the same order; a count to a line, section or file; or a citation or command, which are checked for being there only. docs/evidence.md names its sources per section.
 - Doctor and init-scan treat a remote on a ghe.com subdomain as GitHub; the proposed sandbox opens each GitHub remote's own host and the API host gh uses there (an SSH alias spelled github.com-<name> opens github.com's); doctor says when no remote is on a GitHub host and the gh commands were not checked.
 - Tests: the engines test holds the npm package whole: `bin` names a file with a node shebang, every module the CLI and the hooks import (static, literal dynamic and `new URL` reads, in any quotes) and the folders read by built paths ship under `files`, no ignore file inside a shipped folder drops one, and the lock names the package's version.
+- init-scan names the GitHub repository for origins on ghe.com, GitHub Enterprise Server, ssh.github.com:443 and github.com-<name> SSH aliases, and no longer for look-alike hosts, a GitHub-looking path on another host, or local paths; it decides GitHub as the ask rules and the sandbox do.
+- A test now holds each version a sentence in DESIGN.md, SECURITY.md, docs/ or a module header names to a record or evidence section with that program's version, a test that holds that version, or a written "(not by a test: …)" limit; SECURITY.md no longer claims Claude Code 2.1.330 for a record taken on 2.1.310.
 
 ## 0.1.1 (2026-11-23)
 
