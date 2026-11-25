@@ -178,8 +178,25 @@ test("plugin: what SECURITY.md says of this repository's own files holds: no run
   assert.deepEqual(iconExtras(read(".claude-plugin/icon.svg")), [], "the icon is paths and gradients");
 });
 
-test("plugin: every SKILL.md stays under 8 KB (DESIGN.md: skills are read whole, every time)", () => {
-  for (const { path } of skills) assert.ok(statSync(join(ROOT, path)).size < 8 * 1024, `${path}: ${statSync(join(ROOT, path)).size} bytes`);
+test("plugin: every SKILL.md stays within 8,000 bytes, Codex's cut, and its safety lines end before it (DESIGN.md: skills are read whole, every time)", () => {
+  // Codex cuts an invoked plugin skill's file, front matter included, at 8,000 bytes on a character boundary and warns
+  // (openai/codex 3f65e9f, codex-rs/ext/skills/src/render.rs:25 MAX_SKILL_PROMPT_BYTES; host_prompt.rs:84-85).
+  const CUT = 8000;
+  for (const { path } of skills) assert.ok(statSync(join(ROOT, path)).size <= CUT, `${path}: ${statSync(join(ROOT, path)).size} bytes`);
+  // The lines that keep a push, a commit and a loosening with the user: each ends inside the bytes every host reads.
+  const safety = {
+    "skills/cycle/SKILL.md": ["push only on the user's yes in the same exchange.", `\`${LOOSENING_LINE} <key>\` only on their plain yes for that key`, "the push question its last words ([push.md](push.md))"],
+    "skills/init/SKILL.md": ["Ask before committing, and never push.", "A config that loosens a default: [gates.md](gates.md)."],
+  };
+  assert.deepEqual(Object.keys(safety).sort(), skills.map((s) => s.path).sort(), "every skill names its safety lines");
+  for (const [path, lines] of Object.entries(safety)) {
+    const bytes = readFileSync(join(ROOT, path));
+    for (const line of lines) {
+      const at = bytes.indexOf(line);
+      assert.ok(at >= 0, `${path}: ${line}`);
+      assert.ok(at + Buffer.byteLength(line) <= CUT, `${path}: ${line} ends at byte ${at + Buffer.byteLength(line)}`);
+    }
+  }
 });
 
 test("plugin: a core task answers the smallest-change row before its first edit, five rows or none, in its impact table's file; what it never cuts is said once, in text read on demand", () => {

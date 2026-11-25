@@ -96,7 +96,7 @@ Each idea became a node in the work graph (`.ennyn/graph.json`), or an addition 
 | A test that Ennyn's own hooks never grant permissions or hide themselves from the transcript | PromptArmor's plugin demo | `own-hooks-no-permissions` |
 | Branch and tag names of 40 or 64 hex characters refused in the repository's rules | Plugin4Shell | `account-hardening` |
 | The handoff records the commit it was written at | Cline's memory bank, whose files go stale | `cycle-journal` |
-| A size ceiling per host for skill files | A report that Codex loads only the first 8,000 bytes of a SKILL.md, since checked in Codex's code: both of Ennyn's skills lose their last lines, which ask before a push or a commit | `codex-skill-bytes` |
+| A size ceiling per host for skill files | A report that Codex loads only the first 8,000 bytes of a SKILL.md, since checked in Codex's code: a test caps each of Ennyn's skills there, with the lines that ask before a push or a commit inside | `codex-skill-bytes` |
 | A quote is checked against a saved raw copy of its source, never against a model's summary of the page | ScrapeGraphAI's check for expected words in fetched text, agent-reach's refusal of challenge pages, Scrapling's relocation by similarity | `source-quote-check` |
 | A test that the code's network use matches what the README and SECURITY.md say | ScrapeGraphAI, whose README calls telemetry that sends page content "anonymous usage metrics" | `network-claim-test` |
 | Untrusted event fields in a workflow's run lines under any trigger; container images and installs in CI and in skills pinned | Scrapling, ScrapeGraphAI, Understand-Anything | `ci-more-sinks`, `ci-container-pins`, `ci-install-pins` |
@@ -210,7 +210,7 @@ Imbue's study was read in full. The others were read through summaries or in par
 - agent-reach, read at commit 14c2134
 - Scrapling, read at commit 0336400
 - Understand-Anything at 4e6d329: https://github.com/Egonex-AI/Understand-Anything/tree/4e6d329
-- Codex skill loading at e6de6a2423: https://github.com/openai/codex/tree/e6de6a2423/codex-rs/ext/skills/src
+- Codex skill loading at e6de6a2423: https://github.com/openai/codex/tree/e6de6a2423/codex-rs/ext/skills/src; the cut read again at 3f65e9f (2026-11-25): https://github.com/openai/codex/blob/3f65e9f13165d85d1b1fbe20ce06c55758f927b9/codex-rs/ext/skills/src/render.rs#L25
 - modern-web-guidance at 4dd9683: https://github.com/GoogleChrome/modern-web-guidance/tree/4dd9683
 - Anthropic, agent evals: https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents
 - Vercel: https://vercel.com/blog/agents-md-outperforms-skills-in-our-agent-evals

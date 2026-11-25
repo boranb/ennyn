@@ -22,7 +22,7 @@ The method was extracted from a production project where it was measured (2026-1
 ```
 .claude-plugin/plugin.json          Claude Code plugin manifest
 .claude-plugin/marketplace.json     single-repo marketplace (source "./")
-skills/                             the method (SKILL.md files, < 8 KB each, and the on-demand files each one links)
+skills/                             the method (SKILL.md files, at most 8,000 bytes each, Codex's cut, and the on-demand files each one links)
 agents/                             reviewer agents sharing one finding schema (model: inherit); scout and summarizer (haiku, no shell)
 hooks/hooks.json                    Claude Code hooks (push refusal, kill refusal, side-copy rule bridge, conversation style, idle compaction, the summary's request and the re-read and cycle lines after it: only in a project with a config; plugin version record)
 scripts/ennyn.mjs                   CLI entry (no top-level bin/ — claude.ai/Cowork reject it)

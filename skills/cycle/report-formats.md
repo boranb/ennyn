@@ -45,6 +45,10 @@ The plan lists at most four graph nodes (a split's step counts as one) and names
 
 **Memory notes:** the closing reads the agent host's notes written or changed since the cycle's start against what they cite, and corrects or deletes one that misstates a request or a fact. Claude Code (2.1.310, read in its binary): the auto-memory folder whose `MEMORY.md` the session's context names, by default `memory/` in the project's folder under `$CLAUDE_CONFIG_DIR/projects` (else `~/.claude/projects`), or the `autoMemoryDirectory` a settings file sets; the notes changed are `find <folder> -type f -newer <paths.stateDir>/cycle-start.json`, the start record `ennyn.mjs leftovers --start` wrote.
 
+**Retiring lessons** (step 4): in one lesson file touched this cycle, mark each lesson keep/update/merge/delete; delete the prose of any lesson whose rationale now lives in a test or gate.
+
+**Budget** (step 6): text loaded every session that grew needs a reason in the report. A repeated rule keeps one copy, in the narrowest file that loads where it is needed.
+
 **Leftovers answered after the closing's commit:** what the user's answer brings (a node, a fix, a line in the handoff) goes into one follow-up commit with the graph and a fresh `ennyn.mjs budget --record`, before the push.
 
 **Convergence** — run `ennyn.mjs convergence --cycle <N> --from <cycle start>` and paste what it prints, unchanged: it counts the rows of `paths.findings` ([ledger-row.md](ledger-row.md)) of cycle N and no other, as this file says, in the project's language; its last line says what it counted, and under the block it says what it could not place and why. It exits 1 when a count reads `?`, when a name resolves to no entry, and when a start given is refused, even with every count exact. No repository, a bare one or no git stops it with no block. `Proposal:` is yours to add:
