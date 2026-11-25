@@ -37,7 +37,7 @@
     },
     {
       "id": "plugin-eval",
-      "title": "claude plugin eval cases that run the same tasks with and without the plugin and compare the outcome; each case states what is checked deterministically (commands that must and must not run, such as git push without approval or a commit with an assistant trailer; text the answer must and must not hold; an approval asked or a refusal given; a cap on tool calls), a judge only for what no check reads; each arm runs with only the plugin under test and proves it (a fresh directory outside any repository, CLAUDE.md, auto memory and user settings off, strict MCP, a pinned model, the plugin by --plugin-dir; a finished cell's transcript read for what the arm was given), a spending cap per arm, runs resumable per case, trial and arm, arms interleaved case by case; every deterministic check ships a passing and a failing reference that a self-test proves with no model call before any paid run; a cell that runs commands runs in a sandbox (no network beyond the model's API, an empty environment, writes only in the cell's directory); results name the date, CLI and model versions, cases, trials and cost, and say their limits; no git hook fires in an eval run (2.1.310: GIT_CONFIG_COUNT forces core.hooksPath=/dev/null and hook.*.enabled=false, and execution.env takes only EVAL_* keys), so Ennyn's commit gate is not compared there, only what the agent does; arms' PATH starts with the git path (test/eval/git-path.mjs) in a folder the arms can read (the plugin's); an arm cannot git init or clone a working copy, so repositories come from the scaffold; the arm's cwd lies inside the eval's own home repository; whether the without-plugin arm can read the plugin folder, and so the git path, is not measured: if not, the arms are not comparable; a host or infrastructure failure is an outcome of its own, never the plugin arm's failure, reported with a strict and a completed-only figure; each finished cell is keyed by a hash of its inputs (case text, arm, plugin commit, CLI and model versions, check code), and an unreadable result store stops the run instead of starting over A case's prompt never names the rule, gate or command it tests, so what is read is whether the agent gets there unasked; a must-not check (a push without approval, a commit with an assistant trailer) passes a cell only when every trial passes, never on a median; a case no arm passes in any trial is read as a broken case before it is read as a result. A cell is finished only on a terminal success with no permission denial and a result for every tool call; a grader that only reads whether the Skill tool ran stays out of the two-arm score; one placebo arm and one case where no change is right An eval arm's Bash reaches the macOS keychain service: it unlocks and reads any keychain file whose path it can read (2.1.310, 2.1.330, eval-keychain-exec). The login keychain is shut only by the read deny on the HOME the eval is given and its parent folder, so paid plugin-eval runs go only in a separate macOS account or a Linux VM.",
+      "title": "claude plugin eval cases that run the same tasks with and without the plugin and compare the outcome; each case states what is checked deterministically (commands that must and must not run, such as git push without approval or a commit with an assistant trailer; text the answer must and must not hold; an approval asked or a refusal given; a cap on tool calls), a judge only for what no check reads; each arm runs with only the plugin under test and proves it (a fresh directory outside any repository, CLAUDE.md, auto memory and user settings off, strict MCP, a pinned model, the plugin by --plugin-dir; a finished cell's transcript read for what the arm was given), a spending cap per arm, runs resumable per case, trial and arm, arms interleaved case by case; every deterministic check ships a passing and a failing reference that a self-test proves with no model call before any paid run; a cell that runs commands runs in a sandbox (no network beyond the model's API, an empty environment, writes only in the cell's directory); results name the date, CLI and model versions, cases, trials and cost, and say their limits; no git hook fires in an eval run (2.1.310: GIT_CONFIG_COUNT forces core.hooksPath=/dev/null and hook.*.enabled=false, and execution.env takes only EVAL_* keys), so Ennyn's commit gate is not compared there, only what the agent does; arms' PATH starts with the git path (test/eval/git-path.mjs) in a folder the arms can read (the plugin's); an arm cannot git init or clone a working copy, so repositories come from the scaffold; the arm's cwd lies inside the eval's own home repository; whether the without-plugin arm can read the plugin folder, and so the git path, is not measured: if not, the arms are not comparable; a host or infrastructure failure is an outcome of its own, never the plugin arm's failure, reported with a strict and a completed-only figure; each finished cell is keyed by a hash of its inputs (case text, arm, plugin commit, CLI and model versions, check code), and an unreadable result store stops the run instead of starting over A case's prompt never names the rule, gate or command it tests, so what is read is whether the agent gets there unasked; a must-not check (a push without approval, a commit with an assistant trailer) passes a cell only when every trial passes, never on a median; a case no arm passes in any trial is read as a broken case before it is read as a result. A cell is finished only on a terminal success with no permission denial and a result for every tool call; a grader that only reads whether the Skill tool ran stays out of the two-arm score; one placebo arm and one case where no change is right An eval arm's Bash reaches the macOS keychain service: it unlocks and reads any keychain file whose path it can read (2.1.310, 2.1.330, eval-keychain-exec). The login keychain is shut only by the read deny on the HOME the eval is given and its parent folder, so paid plugin-eval runs go only in a separate macOS account or a Linux VM. An eval grants Read, Glob and Grep by bare name or by `~` only, never by a path that reaches the HOME the eval is given. A bare or `~` grant keeps those tools to the arm's own home and the read roots and refuses that HOME (2.1.310, 2.1.330; eval-arm-read-tool-home, cycle 56 lab). A path grant that reaches HOME is read in full, since `--disallow-tools` and a case's `disallowed_tools` take bare tool names only, and no measured settings place reaches an arm (the eval's configuration, its HOME, the arm's cwd, the plugin). By the code, server-managed organization policy does reach an arm (2.1.330, unmeasured). The plugin's folder is a read root, so a plugin kept under the operator's HOME is readable to its arms through a bare grant.",
       "status": "planned",
       "value": "high",
       "cost": "L",
@@ -960,7 +960,7 @@
       "value": "high",
       "cost": "M",
       "cluster": "distribution",
-      "title": "Ennyn's plugin root is the repository root, so Claude Code 2.1.207's npm ci --ignore-scripts after the cache copy fetches typescript and @types/node onto every user's machine, and the tests (the 396 KB npm record among them) ship too: move the plugin to a subdirectory (marketplace source ./plugin), or the development dependencies and lock out of the root; measure what Claude Code installs for each before choosing, on the version the user runs (the VS Code extension carries 2.1.306, the claude CLI 2.1.207; the install step was read in 2.1.207, later docs move it), without touching the user's configuration",
+      "title": "Ennyn's plugin root is the repository root, so Claude Code 2.1.207's npm ci --ignore-scripts after the cache copy fetches typescript and @types/node onto every user's machine, and the tests (the 396 KB npm record among them) ship too: move the plugin to a subdirectory (marketplace source ./plugin), or the development dependencies and lock out of the root; measure what Claude Code installs for each before choosing, on the version the user runs (the VS Code extension carries 2.1.306, the claude CLI 2.1.207; the install step was read in 2.1.207, later docs move it), without touching the user's configuration. The subfolder was decided (Fable, after reading the directory's checklist on 2026-11-26). The directory's checklist says people who install get only the plugin folder, holds a version for each file over 256 KiB (seven at the root) and for a lockfile install, raises the same hold on every new version, and fixes a submission's folder at submit. Paths inside the plugin's folder keep their spelling (scripts/ennyn.mjs under the plugin root); measure that a commit hook written before the move still finds the CLI after an update. It lands alone, as a one-task run, before the first submission",
       "source": "cycle 2026-10-25 (11), security audit review round 1 (R4), binary read; the record size decision; GoogleChrome/modern-web-guidance (Apache-2.0, 4dd9683, read 2026-11-13) installs from a publish-target repository that holds only the manifests, the skills and their guides, with source, tests and evals in a second repository (CONTRIBUTING.md: 'is a publish target'); Ennyn's tracked tree on 2026-11-13 is 10.2 MB, 5.9 MB of it test/ and 1.7 MB .ennyn/",
       "since": 11
     },
@@ -1192,7 +1192,7 @@
       "status": "planned",
       "needs": [],
       "id": "cycle-cost",
-      "title": "budget --record also records what the cycle cost: tokens (input, cache write, cache read, output), agent time and, where Claude Code wrote it, dollars, summed from this project's session transcripts since the previous record, numbers only, never text; unmeasured when no transcript is there; the cycle report gives the cost per task, per review round and per finding found in review; usage is summed once per message id: Claude Code writes one transcript line per content block and repeats the message's usage on each (this repository's last 8 sessions, version field 2.1.306: summing per line gave 1.78 to 2.61 times the per-id sum, every repeated id with the same usage); a call that timed out or returned no JSON is unmeasured, never 0 USD; an estimate is never added to a measured cost; the greenfield intake and the first cycle are recorded the same way: token and time cost is among the most-reacted complaints about spec-kit, superpowers and Kiro (spec-kit #1492: 'usage limits are typically reached in under an hour of active work.'); also hours from the cycle's start to its closing, and the count of defects found after a closing in what that cycle landed: these two numbers decide whether a cut in the loop stays; it also counts cache tokens written after a gap longer than the cache lifetime, by agent kind. Cycle 18 runs with subagentPromptCacheTtl 1h and is compared with the number below",
+      "title": "budget --record also records what the cycle cost: tokens (input, cache write, cache read, output), agent time and, where Claude Code wrote it, dollars, summed from this project's session transcripts since the previous record, numbers only, never text; unmeasured when no transcript is there; the cycle report gives the cost per task, per review round and per finding found in review; usage is summed once per message id: Claude Code writes one transcript line per content block and repeats the message's usage on each (this repository's last 8 sessions, version field 2.1.306: summing per line gave 1.78 to 2.61 times the per-id sum, every repeated id with the same usage); a call that timed out or returned no JSON is unmeasured, never 0 USD; an estimate is never added to a measured cost; the greenfield intake and the first cycle are recorded the same way: token and time cost is among the most-reacted complaints about spec-kit, superpowers and Kiro (spec-kit #1492: 'usage limits are typically reached in under an hour of active work.'); also hours from the cycle's start to its closing, and the count of defects found after a closing in what that cycle landed: these two numbers decide whether a cut in the loop stays; it also counts cache tokens written after a gap longer than the cache lifetime, by agent kind. Cycle 18 runs with subagentPromptCacheTtl 1h and is compared with the number below Also the billable Actions time the cycle's pushes drew, per runner OS, from the run timing endpoint (it answers with gh's default scopes, measured 2026-11-25); unmeasured when unread, never 0",
       "value": "medium",
       "cost": "M",
       "cluster": "metrics",
@@ -1466,7 +1466,7 @@
       "status": "planned",
       "needs": [],
       "id": "launch-demo",
-      "title": "A terminal recording under a minute (asciinema cast or GIF) of /ennyn:init on a small sample repository and one cycle's convergence report, linked at the top of both READMEs; test/hygiene cannot read an image, so the sample holds no names or paths of projects that use Ennyn and is checked by hand; the images are made by a script from a fixture repository in a temporary directory, with a test that fails when the output drifts; the first hand-made images, from Ennyn's own repository, are in docs/assets",
+      "title": "A terminal recording under a minute (asciinema cast or GIF) of /ennyn:init on a small sample repository and one cycle's convergence report, linked at the top of both READMEs; test/hygiene cannot read an image, so the sample holds no names or paths of projects that use Ennyn and is checked by hand; the images are made by a script from a fixture repository in a temporary directory, with a test that fails when the output drifts; the first hand-made images, from Ennyn's own repository, are in docs/assets Schedule (the user, 2026-11-25: a request): landed by 2026-11-29, as core tasks of the next cycle, before the launch on 2026-12-01 or 12-02",
       "value": "medium",
       "cost": "S",
       "cluster": "distribution",
@@ -1476,10 +1476,12 @@
     {
       "status": "planned",
       "needs": [
-        "hooks-project-gate"
+        "hooks-project-gate",
+        "plugin-root-dev-deps",
+        "readme-says-what-runs"
       ],
       "id": "directory-submission",
-      "title": "Submit the plugin to Anthropic's plugin directory (claude.ai/directory/manage; the repository may be private while it validates, public before the listing goes live): the listing comes from plugin.json and the README; new versions published by hand or by a reviewer, never auto-published; the icon is in place (.claude-plugin/icon.svg, 140e7be); the README says what Ennyn sends over the network and how to turn it off",
+      "title": "Submit the plugin to Anthropic's plugin directory (claude.ai/directory/manage; the repository may be private while it validates, public before the listing goes live): the listing comes from plugin.json and the README; new versions published by hand or by a reviewer, never auto-published; the icon is in place (.claude-plugin/icon.svg, 140e7be); the README says what Ennyn sends over the network and how to turn it off Submitted from the plugin's subfolder at a release tag (v0.1.2 or later), never from the root or from main; the portal's Validate step runs first and a Blocks row stops the submission; a hold is the reviewer's to read. The listing is no launch condition: the docs give no review time (checklist and submit page read 2026-11-26)",
       "value": "high",
       "cost": "S",
       "cluster": "distribution",
@@ -1491,7 +1493,7 @@
       "status": "planned",
       "needs": [],
       "id": "launch-writeup",
-      "title": "At the release: the 21-cycle study as an article (fixing review findings introduced 99 defects, first drafts missed 80; the origin project stays unnamed), then launch posts, and pull requests to two community lists of Claude Code plugins; GitHub topics and the social preview image set before; awesome-claude-code takes a descriptive description (10–500 characters, not promotional, not addressed to the reader), submitted by a person through the web form, category Agent Orchestration > SDLC",
+      "title": "At the release: the 21-cycle study as an article (fixing review findings introduced 99 defects, first drafts missed 80; the origin project stays unnamed), then launch posts, and pull requests to two community lists of Claude Code plugins; GitHub topics and the social preview image set before; awesome-claude-code takes a descriptive description (10–500 characters, not promotional, not addressed to the reader), submitted by a person through the web form, category Agent Orchestration > SDLC Schedule (the user, 2026-11-25: a request): article and Show HN on 2026-12-01 or 12-02, Reddit the day after, list pull requests that weekend; texts are prepared outside cycles and each outward step waits for the user's yes",
       "value": "medium",
       "cost": "M",
       "cluster": "distribution",
@@ -1591,7 +1593,7 @@
       "status": "planned",
       "needs": [],
       "id": "evidence-does-it-work",
-      "title": "docs/evidence.md gets 'Does it work yet?': the convergence numbers of Ennyn's own cycles and the second project's, plainly, linked from the README's evidence line (no measurement prose goes in the README itself)",
+      "title": "docs/evidence.md gets 'Does it work yet?': the convergence numbers of Ennyn's own cycles and the second project's, plainly, linked from the README's evidence line (no measurement prose goes in the README itself) Schedule (the user, 2026-11-25: a request): landed by 2026-11-29, as core tasks of the next cycle, before the launch on 2026-12-01 or 12-02",
       "value": "medium",
       "cost": "S",
       "cluster": "evidence",
@@ -1614,7 +1616,7 @@
       "status": "planned",
       "needs": [],
       "id": "statusline",
-      "title": "ennyn statusline: the budget and the last cycle's convergence numbers in Claude Code's status line; local, time-bounded, fail-open, added to settings.json only by the user; after the release: init offers ennyn status --line as the project's statusLine (a plugin cannot ship one: its settings carry only agent and subagentStatusLine), and a band above the prompt through a mod for the VS Code panel, read from the journal. Measure first whether a status line shows in that panel, and that a mod's band works there as the docs say",
+      "title": "ennyn statusline: the budget and the last cycle's convergence numbers in Claude Code's status line; local, time-bounded, fail-open, added to settings.json only by the user; after the release: init offers ennyn status --line as the project's statusLine (a plugin cannot ship one: its settings carry only agent and subagentStatusLine), and a band above the prompt through a mod for the VS Code panel, read from the journal. Measure first whether a status line shows in that panel, and that a mod's band works there as the docs say Measure first whether the status line command's input carries the usage windows: the 2.1.310 binary holds rate_limits, five_hour, seven_day, used_percentage and resets_at, and where a plugin can read them is unmeasured. If it does, the line shows both windows and keeps the last reading in the state dir, numbers only, and the cycle's plan says it: past a share the config names no cycle starts by itself, and the plan gives the reset time; no reading is unmeasured, never room (fresh-session-run reads the same windows from a -p run's events)",
       "value": "low",
       "cost": "M",
       "cluster": "metrics",
@@ -2054,7 +2056,7 @@
       "status": "planned",
       "needs": [],
       "id": "network-claim-test",
-      "title": "A test holds the code to what README.md and SECURITY.md say about the network: outside test/, the only fetch is checks/deps.mjs's, no module imports node:http, node:https, node:net, node:tls or node:dgram, no child process runs curl or wget, the OSV request body carries only name, ecosystem and version, and with security.deps.online false the commit hook fetches nothing",
+      "title": "A test holds the code to what README.md and SECURITY.md say about the network: outside test/, the only fetch is checks/deps.mjs's, no module imports node:http, node:https, node:net, node:tls or node:dgram, no child process runs curl or wget, the OSV request body carries only name, ecosystem and version, and with security.deps.online false the commit hook fetches nothing Its list is the README's after readme-says-what-runs: the fetch in setup/clone-setup.mjs, push-check's git fetch and the closing's push are named there, so the test holds the code to that list, not to one fetch",
       "value": "high",
       "cost": "S",
       "cluster": "security",
@@ -2595,7 +2597,7 @@
       "status": "planned",
       "needs": [],
       "id": "resource-ledger",
-      "title": "The cycle records what it and its agents start or create that outlives a command, in <stateDir>/resources.jsonl, never in the work tree: processes with their process group and listening ports, docker objects (label dev.ennyn.run=<id>, compose project ennyn-<id>), scratch databases, temp roots made by mkdtemp, worktrees (lock reason ennyn:<id>) and branches with their start commit. Each record holds what identifies it at removal time: a pid with its start time and cwd, an object id with its label, a realpath with device and inode, a base commit. `ennyn res` starts and records them; a PostToolUse observer adds what appeared since the session started (ports, docker objects, worktrees, branches) as observed, inferred records whose removal always asks. Nothing in Ennyn records any of this today",
+      "title": "The cycle records what it and its agents start or create that outlives a command, in <stateDir>/resources.jsonl, never in the work tree: processes with their process group and listening ports, docker objects (label dev.ennyn.run=<id>, compose project ennyn-<id>), scratch databases, temp roots made by mkdtemp, worktrees (lock reason ennyn:<id>) and branches with their start commit. Each record holds what identifies it at removal time: a pid with its start time and cwd, an object id with its label, a realpath with device and inode, a base commit. `ennyn res` starts and records them; a PostToolUse observer adds what appeared since the session started (ports, docker objects, worktrees, branches) as observed, inferred records whose removal always asks. Nothing in Ennyn records any of this today Also VM profiles and their data disks (colima, lima): the profile name, the disk's realpath with device and inode, and whether the run created the profile or only started it (measured 2026-11-25: a deleted colima profile keeps its data disk unless the delete says --data) A footprint row (project-footprint) the user marks for removal enters as an observed record with its identity, so its removal is cleanup-command's, item by item on the user's yes; nothing in git history is ever a record",
       "value": "high",
       "cost": "L",
       "cluster": "cycle",
@@ -2608,7 +2610,7 @@
         "resource-ledger"
       ],
       "id": "cleanup-command",
-      "title": "ennyn cleanup removes only what the record names and whose identity checks again at removal: it prints the plan first (each item with what its removal destroys: size, file count, untracked or ignored files, commits on no other ref) and a digest, and --apply <digest> runs exactly that plan, by argv, never a shell string, so no variable, glob or substitution widens a target; a mismatch marks the record orphaned and deletes nothing. Without asking: recorded processes (TERM to the group, KILL after a grace period, then the recorded ports checked free), recorded containers, the session temp root, clean worktrees, branches git branch -d accepts. Item by item on the user's yes: volumes, databases, worktrees holding untracked or ignored files, unmerged branches, observed records. Never: anything not recorded, a prune, a kill by name, home, the repository root and its parents, .git, stashes, tags, ignored files the record does not name (.env). It runs at task end and at cycle end before push-check, never in a SessionEnd hook",
+      "title": "ennyn cleanup removes only what the record names and whose identity checks again at removal: it prints the plan first (each item with what its removal destroys: size, file count, untracked or ignored files, commits on no other ref) and a digest, and --apply <digest> runs exactly that plan, by argv, never a shell string, so no variable, glob or substitution widens a target; a mismatch marks the record orphaned and deletes nothing. Without asking: recorded processes (TERM to the group, KILL after a grace period, then the recorded ports checked free), recorded containers, the session temp root, clean worktrees, branches git branch -d accepts. Item by item on the user's yes: volumes, databases, worktrees holding untracked or ignored files, unmerged branches, observed records. Never: anything not recorded, a prune, a kill by name, home, the repository root and its parents, .git, stashes, tags, ignored files the record does not name (.env). It runs at task end and at cycle end before push-check, never in a SessionEnd hook A VM data disk goes without asking only when the record says this run created its profile, no profile of that name exists any more and lima shows no user of the disk; a stopped profile counts as existing, since lima shows its disk with no user (measured 2026-11-25). Any other VM disk is item by item on the user's yes, and one no record names is listed, never removed",
       "value": "high",
       "cost": "M",
       "cluster": "cycle",
@@ -2674,7 +2676,7 @@
       "status": "planned",
       "needs": [],
       "id": "disk-use-record",
-      "title": "budget --record also records the disk use of the cycle's worktrees, its temp roots and Ennyn's state folder, and the cycle report says the growth; Ennyn's own state and logs stay within a size the config names. No agent tool measures this, and users report tool folders of tens to hundreds of gigabytes. Acceptance run 2026-11-15: the state folder under the git dir reached about 1.2 GB after two cycles of a small library (review trees, mutation copies with node_modules), nothing reported it",
+      "title": "budget --record also records the disk use of the cycle's worktrees, its temp roots and Ennyn's state folder, and the cycle report says the growth; Ennyn's own state and logs stay within a size the config names. No agent tool measures this, and users report tool folders of tens to hundreds of gigabytes. Acceptance run 2026-11-15: the state folder under the git dir reached about 1.2 GB after two cycles of a small library (review trees, mutation copies with node_modules), nothing reported it The record also holds project-footprint's totals by kind, numbers only, so growth between closings is read from the metrics log and the audit's comparison starts from the last record",
       "value": "medium",
       "cost": "S",
       "cluster": "metrics",
@@ -2696,7 +2698,7 @@
       "status": "planned",
       "needs": [],
       "id": "run-leftover-diff",
-      "title": "Each test, mutation or server command the cycle runs is wrapped in a snapshot of what a command can leave behind, taken before and after, and the difference is reported as left behind by that command (what resource-ledger records is explained, once it exists): untracked and ignored files in the work tree (git status --ignored), new entries in the temp folder, docker containers, volumes, networks and images, listening ports and processes whose cwd is in the repository or its worktrees, git worktrees, branches and stashes, global installs (npm -g, pip outside a virtualenv, brew, cargo install, go install, pipx), changes to the user's config files (~/.gitconfig, ~/.npmrc, shell profiles), and databases on the local servers the project declares, through a listing command init records, never a URL. It catches what no list names; the snapshot only reads, and removing stays with cleanup-command Also VMs and containers: what a cycle starts (colima profile, docker container, dev server) is stopped by what started it, and the closing lists those running that were not at the start (cycle 33 left colima ennyn-ci running 13 h, 1.6 GB). The closing report says memory, swap, load and free disk at the start and the end",
+      "title": "Each test, mutation or server command the cycle runs is wrapped in a snapshot of what a command can leave behind, taken before and after, and the difference is reported as left behind by that command (what resource-ledger records is explained, once it exists): untracked and ignored files in the work tree (git status --ignored), new entries in the temp folder, docker containers, volumes, networks and images, listening ports and processes whose cwd is in the repository or its worktrees, git worktrees, branches and stashes, global installs (npm -g, pip outside a virtualenv, brew, cargo install, go install, pipx), changes to the user's config files (~/.gitconfig, ~/.npmrc, shell profiles), and databases on the local servers the project declares, through a listing command init records, never a URL. It catches what no list names; the snapshot only reads, and removing stays with cleanup-command Also VMs and containers: what a cycle starts (colima profile, docker container, dev server) is stopped by what started it, and the closing lists those running that were not at the start (cycle 33 left colima ennyn-ci running 13 h, 1.6 GB). The closing report says memory, swap, load and free disk at the start and the end The snapshot also reads VM data disks (limactl disk list beside colima list), and the closing lists each disk whose profile is gone, with its size on disk",
       "value": "high",
       "cost": "M",
       "cluster": "cycle",
@@ -6865,22 +6867,11 @@
       "status": "planned",
       "needs": [],
       "since": 54,
-      "id": "eval-arm-read-tool-home",
-      "value": "high",
-      "cost": "M",
-      "cluster": "security",
-      "title": "plugin-eval arms granted a path rule for Read, Glob or Grep at the eval level (--allow-tools, as the git run does for its home-read-tool cell) read the HOME the eval is given: the sandbox holds Bash only (measured 2.1.310 and 2.1.330; a case-level allowed_tools path rule has no effect). Find a layout or setting that denies the read tools the home, and turn the home-read-tool gap cell in test/eval/git-cell.json into a deny check. No paid run until this closes",
-      "source": "cycle 2026-11-24 (54) security review of eval-arm-reads-home, rounds 1 and 2"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 54,
       "id": "eval-selftest-design-decision",
       "value": "medium",
       "cost": "M",
       "cluster": "security",
-      "title": "test/eval/selftest.mjs is at the fix-loop brake (cycle 54, round 2: previous-fix 5): decide on the top two rungs, or write the limit, for its leftovers: the second and third evals stay visible to the socket watch only through a fixed sleep 2 in their case (a loaded machine refuses a clean run; c54-t1-code-r2-02); the planted keyed memory marker can never load while the planted settings set autoMemoryDirectory (c54-t1-code-r1-03); a hook that ran in an arm with its log write denied and its output kept out of a request would go unseen; the eval process reads the operator's git config, include.path files too, though none of git's programs runs and nothing reaches a request. Cause: each new cell adds a run, a control and a wait to one recorder that judges by watching processes from outside. Cycle 55 input: two keychain cells for the git run, each with a control outside the arm that must read the secret: kc-placed (a lab keychain placed in the arm's cwd mid-run; the arm unlocks and reads it: a gap cell) and kc-home (a lab keychain under the operator's home: a deny cell); no probe may add to a keychain path that might not exist (it falls back to the login keychain)",
+      "title": "test/eval/selftest.mjs is at the fix-loop brake (cycle 54, round 2: previous-fix 5): decide on the top two rungs, or write the limit, for its leftovers: the second and third evals stay visible to the socket watch only through a fixed sleep 2 in their case (a loaded machine refuses a clean run; c54-t1-code-r2-02); the planted keyed memory marker can never load while the planted settings set autoMemoryDirectory (c54-t1-code-r1-03); a hook that ran in an arm with its log write denied and its output kept out of a request would go unseen; the eval process reads the operator's git config, include.path files too, though none of git's programs runs and nothing reaches a request. Cause: each new cell adds a run, a control and a wait to one recorder that judges by watching processes from outside. Cycle 55 input: two keychain cells for the git run, each with a control outside the arm that must read the secret: kc-placed (a lab keychain placed in the arm's cwd mid-run; the arm unlocks and reads it: a gap cell) and kc-home (a lab keychain under the operator's home: a deny cell); no probe may add to a keychain path that might not exist (it falls back to the login keychain) Cycle 56 input: eval-read-grant-deny-cell's recorder change (a fixed bare-name grant, one Bash write and one control Read in the home-read-tool play, the refusal read from permission_denials).",
       "source": "cycle 2026-11-25 (54) convergence: fix-loop brake on test/eval/selftest.mjs; review of eval-arm-reads-home"
     },
     {
@@ -6891,7 +6882,7 @@
       "value": "low",
       "cost": "S",
       "cluster": "init",
-      "title": "init-scan audit lows (cycle 54): a roadmap file ending in a newline is counted one line long (c54-t4-audit-r0-08); a submodule is named twice, with and without its trailing slash, in the new-project found list (r0-09); githubRepo decides GitHub with its own host pattern (notgithub.com reads as GitHub, ssh.github.com:443 does not) where permissions.mjs has isGithubHost (r0-11). Lean: RECENT_COMMITS and TEST_ALTERNATIVES exported for no reader; recentCommits and historyPaths parse the same git log -z --raw format; MAX_LISTED now unused by production callers. Cycle 55: githubRepo should ask isGithubHost(urlHost(url)), which now also takes *.ghe.com and the github.com-<name> SSH alias",
+      "title": "init-scan audit lows (cycle 54): a roadmap file ending in a newline is counted one line long (c54-t4-audit-r0-08); a submodule is named twice, with and without its trailing slash, in the new-project found list (r0-09); githubRepo decides GitHub with its own host pattern (notgithub.com reads as GitHub, ssh.github.com:443 does not) where permissions.mjs has isGithubHost (r0-11). Lean: RECENT_COMMITS and TEST_ALTERNATIVES exported for no reader; recentCommits and historyPaths parse the same git log -z --raw format; MAX_LISTED now unused by production callers. Cycle 55: githubRepo should ask isGithubHost(urlHost(url)), which now also takes *.ghe.com and the github.com-<name> SSH alias Cycle 56: r0-11 (githubRepo's own host pattern), the log-parser item and the MAX_LISTED item are settled by scan-design-decision; left: r0-08 (a roadmap ending in a newline counted one line long), r0-09 (a submodule named twice in newProject's found list), the RECENT_COMMITS and TEST_ALTERNATIVES exports nothing reads.",
       "source": "cycle 2026-11-25 (54) feature audit of setup/scan.mjs"
     },
     {
@@ -6956,24 +6947,11 @@
       "needs": [],
       "since": 54,
       "id": "colima-delete-leaves-ssh-mux",
-      "value": "low",
+      "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "title": "Labs' Linux runs (colima start -p cNN-tN, then colima delete) left 14 ssh mux masters of deleted profiles running for 9 to 23 h (cycles 52 and 53); measure whether colima delete stops them, and if not, the lab template stops the mux by its PID or the closing lists them",
+      "title": "Labs' Linux runs (colima start -p cNN-tN, then colima delete) left 14 ssh mux masters of deleted profiles running for 9 to 23 h (cycles 52 and 53); measure whether colima delete stops them, and if not, the lab template stops the mux by its PID or the closing lists them Same teardown, measured 2026-11-25 with colima 0.10.3: colima delete without --data also keeps the profile's data disk, and 35 such disks from cycles 39 to 55 left the machine 4.3 GB free. The lab template deletes with --data, then checks that no disk and no mux of that profile is left, and the brief's Linux line says so; a named release or reference profile is torn down the same way by the run that made it With --data every lab pulls its images again: Docker Hub's anonymous limit on this address read 100 pulls an hour, 96 left, on 2026-11-25 (the ratelimit headers of a HEAD request for ratelimitpreview/test with an anonymous token). The template counts a cycle's pulls against it, or loads the pinned images from a file saved on the host",
       "source": "the user, 2026-11-24: left to the session"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 54,
-      "id": "measured-claim-names-cell",
-      "value": "medium",
-      "cost": "M",
-      "cluster": "gates",
-      "mechanization": true,
-      "sourceClass": "claim-outruns-evidence",
-      "title": "claim-outruns-evidence recurred 10 times in cycle 54 (9 in review), in doctor ✓ texts and in DESIGN.md and header sentences about what another program does: a sentence in DESIGN.md, docs/ or a module header that names a program version (Claude Code 2.1.x, git 2.x, OpenSSH, Node) as measured names the test, cell or record that measured it, and a test fails on a version-naming sentence with no such pointer or a pointer to nothing; doctor's ✓ keys are checked against what their code path reads (a ✓ naming a setting the path never reads fails)",
-      "source": "cycle 2026-11-25 (54) convergence: claim-outruns-evidence the most recurring class, 10 rows"
     },
     {
       "status": "planned",
@@ -7016,7 +6994,7 @@
       "value": "medium",
       "cost": "M",
       "cluster": "gates",
-      "title": "test/cited-numbers.test.mjs is at the fix-loop brake (cycle 55, round 2: previous-fix 2): decide on the top two rungs, or write the limit, for what its rule still cannot hold: citations and commands are presence-only, so a number under a citation lead changes unseen (nearly every number in docs/evidence.md); a section or file pointer holds counts only by value and noun; task-brief.md's measured durations and token count sit on the allow list instead of a cycle citation (c55-t3-code-r2-02); commit bodies are not read (a check over the bodies a push adds, about M); measured-claim-names-cell would extend the same rule to version sentences in DESIGN.md and docs/. Cause: one hand-written number grammar and pointer grammar grow a case per review round",
+      "title": "test/cited-numbers.test.mjs is at the fix-loop brake (cycle 55, round 2: previous-fix 2): decide on the top two rungs, or write the limit, for what its rule still cannot hold: citations and commands are presence-only, so a number under a citation lead changes unseen (nearly every number in docs/evidence.md); a section or file pointer holds counts only by value and noun; task-brief.md's measured durations and token count sit on the allow list instead of a cycle citation (c55-t3-code-r2-02); commit bodies are not read (a check over the bodies a push adds, about M); measured-claim-names-cell would extend the same rule to version sentences in DESIGN.md and docs/. Cause: one hand-written number grammar and pointer grammar grow a case per review round Cycle 56 input: test/measured-claims.test.mjs has its own pointer grammar (a record holds a version only under that program's key, a test only when its body holds the version, a written limit names no record, a cycle or a test/ file); moving cited-numbers' name pointers onto a shared resolver (a non-test module such as test/pointers.mjs) is about S, and its `path` \"name\" pointers have no live uses in its scope.",
       "source": "cycle 2026-11-25 (55) convergence: fix-loop brake on test/cited-numbers.test.mjs; review of cited-number-check"
     },
     {
@@ -7045,34 +7023,161 @@
       "status": "planned",
       "needs": [],
       "since": 55,
-      "id": "design-md-claims-design-decision",
-      "value": "medium",
-      "cost": "M",
-      "cluster": "gates",
-      "title": "DESIGN.md is at the fix-loop brake (cycle 55, round 2: previous-fix 1): its limit and measured-behaviour sentences keep saying more than was measured (c54-t2-code-r1-02, c55-t1-sec-r1-01, the eval keychain line omitting that the data-protection keychain was not measured: c55-t1-sec-r2-02). Decide on the top two rungs: a sentence naming a program version as measured names its test, cell or record and a test resolves it (measured-claim-names-cell, built on test/cited-numbers.test.mjs's pointer rule), or the limit written. No patch nodes for DESIGN.md wording",
-      "source": "cycle 2026-11-25 (55) convergence: fix-loop brake on DESIGN.md"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 55,
-      "id": "scan-design-decision",
-      "value": "medium",
-      "cost": "M",
-      "cluster": "init",
-      "title": "setup/scan.mjs is at the fix-loop brake (previous-fix rows in cycles 54 and 55): decide on the top two rungs for its readings that ask the same questions as other modules (githubRepo's own GitHub host pattern beside permissions.mjs's isGithubHost; recentCommits and historyPaths parsing one git log format; the risky list read by init and by the audit with different needs), or write the limit; scan-audit-54-lows' items are its leftovers and get no more patch nodes",
-      "source": "cycle 2026-11-25 (55) convergence: fix-loop brake on setup/scan.mjs"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 55,
       "id": "impact-signal-test-under-load",
       "value": "low",
       "cost": "S",
       "cluster": "tests",
       "title": "test/impact.test.mjs:312 (a reference command whose runner is asked to stop) failed once in the cycle 55 whole run under load: the row read \"the reference command's runner ended with SIGTERM\" where the test wants \"killed by SIGTERM\"; alone 14/14, whole rerun green. Find which process the signal reaches first under load and make the test hold either the wording or the order",
       "source": "cycle 2026-11-25 (55) closing whole run"
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "eval-selftest-design-decision"
+      ],
+      "since": 56,
+      "id": "eval-read-grant-deny-cell",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "title": "Turn test/eval/git-cell.json's home-read-tool gap cell into a deny check: the git run's third eval grants Read, Glob and Grep by bare name (or ~) instead of Read(//**); its play adds one Bash write of a canary in the arm's own home and one Read of it (the in-grant control, must return the token); the home Read must be refused with the dontAsk text in permission_denials; then GIT_CELLS home-read-tool becomes a deny cell with readable false, and test/eval-selftest.test.mjs's EVALS, case and GIT_CELLS assertions follow. Recorder code, so it waits for the brake decision on test/eval/selftest.mjs",
+      "source": "cycle 2026-11-26 (56) eval-arm-read-tool-home, author lab and security review round 1"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 56,
+      "id": "eval-arm-bash-read-scope",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "title": "Trace which folders the plugin-eval sandbox shuts to an arm's Bash beyond the HOME it is given and that HOME's parent: in cycle 56 a sibling of the eval cwd's parent was denied too (Operation not permitted), with no rule read for it",
+      "source": "cycle 2026-11-26 (56) eval-arm-read-tool-home lab, symlink-cwd first run"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 56,
+      "id": "security-audit-56-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "title": "Security audit 56 lows: .github/workflows/release.yml's publish job (the one that can mint the npm token) installs a floating Node major (node-version \"24\") on ubuntu-latest; pin an exact release that ships npm 11.5.1 or later and change test/engines.test.mjs with it (c56-t4-audit-r0-01). SECURITY.md names github.com/boranb/ennyn as the only source and no release path: add npm, the release workflow's environment gate, OIDC trusted publishing and provenance (c56-t4-audit-r0-02). Also: ennyn@0.0.0-stage, the placeholder npm's staged publishing left, may be deprecated by the owner. Next audit: the release path once a tag first goes through release.yml (provenance, staged approval), and push-check's exit 0 when the remote branch was deleted",
+      "source": "cycle 2026-11-26 (56) security audit"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 56,
+      "id": "scan-design-decision-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "init",
+      "title": "scan-design-decision lows (cycle 56): core/git.mjs's rawLog comment calls it the one reader of git log -z --raw while metrics/szz.mjs keeps a third, lenient loop and no limit for it is written (c56-t2-code-r1-01); the urlHost and githubName tables in test/setup.test.mjs hold no userinfo cells (https://github.com@evil.test/o/r, https://a@github.com@evil.test/o/r), so a later parser change could move those hosts unseen (security review round 1; 25 cells kept in cycle 56's kept folder, rev/t2-sec/lab/probes.json)",
+      "source": "cycle 2026-11-26 (56) review of scan-design-decision, round 1"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 56,
+      "id": "szz-rawlog",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "title": "metrics/szz.mjs reads git log -z --raw with its own lenient loop beside core/git.mjs's rawLog: move it onto rawLog or write at both why it stays apart",
+      "source": "cycle 2026-11-26 (56) scan-design-decision, the third reader of the format"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 56,
+      "id": "no-ready-node-rule",
+      "title": "A cycle with fewer ready core nodes than core slots says so and invents no task. Today ennyn core prints 'No ready core node.' at exit 0 for four different states and skills/cycle/SKILL.md section 1 has no rule for it; init asks where the work comes from once. (a) ennyn core says why none is ready, in text and --json: no open node, closed gates (ids), held questions, needs that wait behind a gate or a held node, each with its count. (b) With none ready the cycle does not start: it reports what the graph holds and asks init's question 5 again, with at most five candidates read from evidence, each naming it: roadmap files changed since the graph was written, open issues, leftover defects in the findings ledger that no node carries, the convergence report's most recurring class, gated nodes the user could open, held nodes' questions. Each candidate is a proposal: it enters the graph only on the user's yes, through the Verdicts rule (report-formats.md), never as a task of this cycle on the session's own word. Nobody to ask (a runner in a terminal): it stops and says why, and writes nothing. (c) With some ready but fewer than the slots, the cycle runs those and the audit, and the plan names the empty slots. (d) Before empty: a closing that leaves fewer ready core nodes than the next cycle's core slots (two, three when no mechanization node is ready) ends its report with that count and the same candidates, so the answer can come between cycles; the threshold is the slot count, no config key",
+      "value": "high",
+      "cost": "M",
+      "cluster": "plan",
+      "source": "the user, 2026-11-25: a request"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 56,
+      "id": "project-footprint",
+      "title": "ennyn footprint reads what the project already holds on disk and how it got there, and only reports: no deletion, no git gc or prune, no history rewrite, no project code run. Nothing reads this today: every disk node measures what a cycle adds from now on. Git and Node only, by argv with a time limit. (a) Git: count-objects (pack, loose, garbage), the ten largest blobs any ref reaches with path, the date of the commit that added each and whether HEAD still holds it, the LFS store's size under the git dir with the paths .gitattributes sends there (no git lfs call), and tracked files an ignore rule matches (output that was committed). A shallow or partial clone is said and nothing is fetched. (b) Work tree: each top-level ignored or untracked directory and large file (git ls-files --others, with and without --ignored, --directory) with allocated bytes, entry count, newest change date and a kind by name (dependencies, build output, cache, coverage, logs, database files, virtual environments, temp). (c) Worktrees: each linked worktree's size, its dependency folders, whether git calls it prunable and whether its branch is merged; Ennyn's own state folder. The walk uses lstat only, follows no link, stays inside the root and on its device, counts a hard link once and counts allocated blocks, not length (measured 2026-11-25: a sparse VM disk of 100 GiB nominal size held 1.6 GB; where the platform gives no block count, the length, said); past an entry cap or the time limit the rest is unmeasured, never none. Output is names and sizes through the report's escaping, never a file's content. Where it runs: init-scan --json carries it as footprint and init's report gets one line (the total and the three largest); the legacy audit runs it once and lists under the lean group each row that is new or grew since the last record. A row whose cause the project can fix (committed output, a large blob added lately, dependency copies per worktree) is proposed as a node on the user's yes; plain stock is a line. Tests build their repositories in temporary folders",
+      "value": "high",
+      "cost": "M",
+      "cluster": "init",
+      "source": "the user, 2026-11-25: a request"
+    },
+    {
+      "status": "planned",
+      "needs": [
+        "project-footprint"
+      ],
+      "since": 56,
+      "id": "project-footprint-machine",
+      "title": "ennyn footprint also lists what the project left outside its folder, report only. An object is the project's when a label holds the project's root path or a tracked file of the project names it; anything else is not listed and not counted. (a) Docker: containers, networks and volumes by the compose labels (working directory under the root; a volume by the compose project name, said as inferred since another folder of the same name matches too), images and VM profiles only by a name a tracked compose file or script gives; each with size and creation date, read from listings, never from inspect's environment. (b) Processes whose working directory is inside the root or a worktree, with their listening ports: process name, pid and age, never arguments or environment. (c) Scheduled jobs and background services that name the root (the user's crontab, launchd agents, systemd user units): the count and where each lives, never the line. A tool that is absent, a daemon or VM that is not running (none is ever started to measure) or a listing past its time limit is unmeasured, never none; Windows is unmeasured until read there. Commands run by argv; tests feed recorded listings through stand-in commands on a temporary PATH, no docker needed. The listing code is the one run-leftover-diff's snapshot uses: whichever lands first writes it. Measure first on three real projects how much (c) finds; if nothing, it leaves the node",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "init",
+      "source": "the user, 2026-11-25: a request"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 56,
+      "id": "push-metered-runs",
+      "title": "push-check says what the push will start and what that draws on, before the push; nothing reads this today and it was read by hand before cycle 56's push. (a) No network: from the tracked workflow files, the workflows whose triggers match the refs being pushed (branch, tag and path filters read; a job's if is not evaluated and counts as may run) and each job's runner. With the repository's visibility (through gh when it is on PATH; else unmeasured) each job is metered or not: every GitHub-hosted job of a private repository, only a larger runner in a public one, no self-hosted job. No metered job: one line, and nothing else is read. (b) Else the readings, numbers only: the repository's billable time this billing cycle per runner OS and the last runs' billable time as the estimate for this push (the workflow and run timing endpoints), said as a lower bound of the account's; the account's own usage, with Actions storage, Packages and Git LFS, when the token can read the billing usage endpoint. Measured 2026-11-25, gh 2.92.0 with its default scopes: the timing and cache usage endpoints answer, every user billing endpoint answers 404 and gh names the user scope. Ennyn never widens a token: it says the command and reports that reading unmeasured. (c) The config names the month's limit in minutes and the share to warn at; no plan's numbers are held in code. Past the share: a warning. Metered jobs with a reading at or past the limit, or a limit set and no reading: exit 3, the push is asked and the cycle does not make it by itself. No limit set: lines only. Unreadable is unmeasured, never ok and never 0. It never dispatches, reruns or cancels a workflow to measure, and prints no token and no account name. Also one line when gh api rate_limit, free to read, shows under a tenth left. init-scan lists the same workflow-by-runner table, and init proposes the limit only for a private repository with a push or pull request workflow. The closing report carries push-check's line. Tests feed recorded answers through a stand-in gh on a temporary PATH, no network",
+      "value": "high",
+      "cost": "M",
+      "cluster": "gates",
+      "source": "the user, 2026-11-25: a request"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 56,
+      "id": "readme-says-what-runs",
+      "title": "README.md and README.tr.md say everything Ennyn runs, sends, fetches and writes, as the plugin directory's checklist asks, and agree with SECURITY.md. README.md:33 says network requests happen in two cases only; the code has more: clone-setup asks api.github.com for a login's public signing keys (setup/clone-setup.mjs:20, no token), push-check fetches from the branch's remote, the closing pushes there (asked unless push.mode is after-closing), git itself fetches objects in a partial clone, and while a lock file sits in the plugin's folder the install downloads the development dependencies. The Setup row says that /ennyn:init, on a yes, writes ask rules and the no-bypass block into the project's .claude/settings.json; one line says the session-start hook adds two ENNYN_ variables to the session's environment file. Each destination with what is sent and its off switch where there is one. It lands with network-claim-test, whose list becomes the README's",
+      "value": "high",
+      "cost": "S",
+      "cluster": "distribution",
+      "source": "the directory's pre-submission checklist, read 2026-11-26: 'Describe in the README everything the plugin runs, sends, or fetches'; 'A first submission that fails the security scan is rejected'"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 56,
+      "id": "doctor-ok-keys-read",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "gates",
+      "title": "A doctor ✓ line that names a setting fails when the code path that prints it never reads that setting, traced while it runs: 25 ✓ keys in setup/doctor.mjs, 8 name a dotted setting, 2 of them (cloneSigningOk, cloneAddressOk) read through helpers a text check cannot follow (the second half of measured-claim-names-cell)",
+      "source": "cycle 2026-11-26 (56) measured-claim-names-cell, author's measurement"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 56,
+      "id": "version-claims-beyond-headers",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "title": "Run test/measured-claims.test.mjs's version rule over README.md, README.tr.md, skills/ and comments after a module's leading block; cited-numbers' two version-bound allow entries in skills/ (task-brief.md's 10 minutes in 2.1.310, new-project.md's setting values) move to it",
+      "source": "cycle 2026-11-26 (56) measured-claim-names-cell, scope limit; convergence 56: claim-outruns-evidence the most recurring class again, 8 rows",
+      "mechanization": true,
+      "sourceClass": "claim-outruns-evidence"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 56,
+      "id": "measured-claims-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "title": "test/measured-claims.test.mjs is at rung 2 (cycle 56: previous-fix rows in round 2): its written limit `(not by a test: no record)` holds 67 of 104 claim sentences, so most version sentences name no measurement; a test pointer counts a version found only in a comment of the test body (said, not run); `test/linux-run.mjs` passes as a limit's where though it is the Linux run's script, not a kept record; a one-part version after a program not on the list or after lowercase node is not read. Next: replace no-record limits with records as measurements are kept (each one a cell), and decide whether a comment-only version may count",
+      "source": "cycle 2026-11-26 (56) review of measured-claim-names-cell, round 2; convergence rung 2"
     }
   ],
   "done": [
@@ -8322,6 +8427,34 @@
       "title": "Closed in cycle 55 (8f3e886): test/cited-numbers.test.mjs holds every evidence number in docs/evidence.md and the skills to a source: a percentage, ratio or N of M to a line pointer holding it as written and in order, a count to a line, section or file, a citation or command checked for presence only; allow entries keyed by place. File at the fix-loop brake: cited-numbers-design-decision",
       "status": "done",
       "finished": "2026-11-25",
+      "cluster": "gates"
+    },
+    {
+      "id": "eval-arm-read-tool-home",
+      "title": "Closed in cycle 56 by measurement (no commit; lab in cycle 56's kept folder (labs/t1), cells on 2.1.310 and 2.1.330): a plugin-eval arm's Read, Glob and Grep keep to the arm's own home and the read roots when the eval grants them by bare name or by ~, and refuse the HOME the eval is given (dontAsk text), with an in-grant control read in the same arm; a path grant that reaches that HOME is read in full, since --disallow-tools and a case's disallowed_tools take bare names only and no measured settings place (the eval's configuration, its HOME, the arm's cwd, the plugin) reaches an arm. By the code, server-managed organization policy does reach an arm (2.1.330, unmeasured). The cell stays a gap until the recorder changes: eval-read-grant-deny-cell",
+      "status": "done",
+      "finished": "2026-11-26",
+      "cluster": "security"
+    },
+    {
+      "id": "scan-design-decision",
+      "title": "Closed in cycle 56 (11c719a): setup/scan.mjs's shared questions each have one site: githubRepo calls githubName, which asks isGithubHost on the host permissions.mjs's urlParts reads (16 of 25 measured remotes had disagreed); rawLog in core/git.mjs cuts git log -z --raw for recentCommits and historyPaths; riskyPaths has one list, and a table test holds init's globs and the audit's paths to the same files (limit written at riskyPaths: Windows separators, NFC, a file and a folder of one name). Leftovers: scan-design-decision-lows, szz-rawlog",
+      "status": "done",
+      "finished": "2026-11-26",
+      "cluster": "init"
+    },
+    {
+      "id": "measured-claim-names-cell",
+      "title": "Closed in cycle 56 (8733559): test/measured-claims.test.mjs holds every version a sentence in DESIGN.md, SECURITY.md, docs/ or a module header names (three-part numbers anywhere, two-part with a program in the sentence or unit, one-part right after a listed program) to a record or evidence section holding that program's version, a test whose body holds that version, or a written limit `(not by a test: no record | cycle N | a test/ file)`; 15 sentences allowed by place; 104 claim sentences, 17 held by pointers, 71 by limits; SECURITY.md no longer claims 2.1.330 for a 2.1.310 record. The doctor ✓ half went to doctor-ok-keys-read. Leftovers: measured-claims-lows, version-claims-beyond-headers",
+      "status": "done",
+      "finished": "2026-11-26",
+      "cluster": "gates"
+    },
+    {
+      "id": "design-md-claims-design-decision",
+      "title": "Decided in cycle 56: the top rung, a test. Every version sentence in DESIGN.md names its record, evidence section, version-holding test or written limit, and test/measured-claims.test.mjs resolves it (measured-claim-names-cell, 8733559). DESIGN.md wording gets no patch nodes; a new version sentence there passes that test",
+      "status": "done",
+      "finished": "2026-11-26",
       "cluster": "gates"
     }
   ],

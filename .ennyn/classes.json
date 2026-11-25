@@ -1387,6 +1387,19 @@
         "new: allow entry by value not place"
       ],
       "judged": "Named in cycle 55 by the orchestrator, from a round-one review row (an allow entry exempted every occurrence of its number in the file)."
+    },
+    {
+      "id": "unpinned-in-credential-path",
+      "says": "A job or step that holds a credential runs a toolchain or dependency chosen when it runs (a floating version, a moving tag), so a change made upstream runs with the credential.",
+      "state": "open",
+      "gates": [],
+      "nodes": [
+        "security-audit-56-lows"
+      ],
+      "linked": [
+        "new: unpinned toolchain in a credential job"
+      ],
+      "judged": "Named in cycle 56 by the orchestrator, from the security audit row on the release workflow (the publish job installs a floating Node major)."
     }
   ]
 }
