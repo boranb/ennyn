@@ -14,13 +14,13 @@ import { lstatSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { gone, present, readIfThere } from "../core/files.mjs";
 import { dirname, join, relative, resolve, posix, sep } from "node:path";
 import { homedir } from "node:os";
-import { git, gitError, gitMaybe, gitRun, headCommit, headFile, rawChange, repoPath } from "../core/git.mjs";
+import { git, gitError, gitMaybe, gitRun, headCommit, headFile, rawLog, repoPath } from "../core/git.mjs";
 import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
 import { literalGlob } from "../core/glob.mjs";
 import { clipped, ends } from "../core/i18n.mjs";
 import { LEAVES, keptPaths, loadPathScopedRules, markdownFiles, reasonText, splitFrontMatter, parsePaths } from "../adapters/claude-code/rules-index.mjs";
 import { CREDENTIAL_VARS, neededHosts, noBypassBlock, secretSetup } from "./secret-setup.mjs";
-import { askRules, ghApplies, isGithubHost, OFFERED, outwardCommands, readSettings, SETTINGS, SETTINGS_LIMIT, urlHost } from "./permissions.mjs";
+import { askRules, ghApplies, isGithubHost, OFFERED, outwardCommands, readSettings, SETTINGS, SETTINGS_LIMIT, urlHost, urlParts } from "./permissions.mjs";
 
 /** Fewer commits than this and a share says little: the default stays. */
 export const MIN_HISTORY = 30;
@@ -140,11 +140,9 @@ export function commitStyle(subjects) {
 
 /**
  * Recent non-merge commits with their subject and touched paths. `-z` keeps
- * paths raw: without it git C-quotes names holding quotes, backslashes or tabs.
- * Every field ends at a NUL, which no message or name holds: a commit is its
- * hash and subject, then a raw change and a path per file, so a subject holding
- * any other character (a \x01) or a name spelled like a hash shifts nothing.
- * A submodule's commit is no file: as in the rework rate, it is no path here.
+ * paths raw: without it git C-quotes names holding quotes, backslashes or tabs;
+ * rawLog cuts the fields. A submodule's commit is no file: as in the rework
+ * rate, it is no path here.
  * @param {string} cwd
  * @param {number} [limit]
  * @returns {RecentCommit[]} newest first; [] outside a repository or without commits
@@ -154,21 +152,8 @@ export function recentCommits(cwd, limit = RECENT_COMMITS) {
   if (!headCommit(cwd)) return [];
   // --ignore-submodules=none, as the rework rate reads the log: git otherwise reads .gitmodules for a commit that
   // moves a submodule, and one it cannot parse stops the call.
-  const fields = git(["log", "-z", "--no-merges", "--no-renames", "--ignore-submodules=none", `-n${limit}`, "--raw", "--format=%H%x00%s"], { cwd }).split("\0");
-  /** @type {RecentCommit[]} */
-  const out = [];
-  for (let i = 0; i + 1 < fields.length; ) {
-    if (!/^[0-9a-f]{40,64}$/.test(fields[i])) throw new Error(`git log printed a field that is no commit: ${JSON.stringify(fields[i].slice(0, 80))}`);
-    /** @type {RecentCommit} */
-    const commit = { subject: fields[i + 1], paths: [] };
-    i += 2;
-    // The list of names starts on a line of its own: its first change carries the "\n".
-    for (let change; i + 1 < fields.length && (change = rawChange(fields[i])); i += 2) {
-      if (!change.submodule) commit.paths.push(fields[i + 1]);
-    }
-    out.push(commit);
-  }
-  return out;
+  const log = git(["log", "-z", "--no-merges", "--no-renames", "--ignore-submodules=none", `-n${limit}`, "--raw", "--format=%H%x00%s"], { cwd });
+  return rawLog(log, { subject: true }).map((c) => ({ subject: /** @type {string} */ (c.subject), paths: c.changes.filter((x) => !x.submodule).map((x) => x.path) }));
 }
 
 /**
@@ -391,11 +376,13 @@ export function testLayout(files, testRe) {
  * is taken, so no listed directory sits inside another); in a flat layout the
  * file itself is listed by the part of its name before the first dot
  * (`app/security.py`, `src/auth.service.ts`). Test and excluded paths do not count.
+ * Every one is listed: init-scan proposes each `glob`, the security audit reads each `path` as a folder or the
+ * file, and a test holds the two to the same files. Limit: matchAny reads `\` as `/` on Windows and compares NFC
+ * forms, the path reading neither; a file and a folder of one name, which git's index refuses, are read apart.
  * @param {string[]} files
  * @param {PathPatterns} re
- * @param {number} [limit] how many to list (init-scan and the security audit read them all)
  */
-export function riskyPaths(files, re, limit = MAX_LISTED) {
+export function riskyPaths(files, re) {
   /** @type {Map<string, { files: number, glob: string }>} */
   const found = new Map();
   for (const f of files) {
@@ -414,7 +401,6 @@ export function riskyPaths(files, re, limit = MAX_LISTED) {
   }
   return [...found.keys()]
     .sort()
-    .slice(0, limit)
     .map((path) => ({ path, .../** @type {{ files: number, glob: string }} */ (found.get(path)) }));
 }
 
@@ -469,11 +455,22 @@ export function remotesByHost(cwd) {
   return { github: [...github], others: [...others].filter((name) => !github.has(name)), hosts: [...hosts] };
 }
 
+/**
+ * The GitHub repository a remote URL names, `owner/repo`: on a host isGithubHost reads as GitHub (the host the
+ * permission rules and the sandbox read, urlParts), its path two names, `.git` and a last slash dropped; else null.
+ * @param {string} url
+ */
+export function githubName(url) {
+  const parts = urlParts(url);
+  if (parts === null || !isGithubHost(parts.host)) return null;
+  const m = /^\/?([^/\s]+)\/([^/\s]+?)(\.git)?\/?$/.exec(parts.path);
+  return m ? `${m[1]}/${m[2]}` : null;
+}
+
 /** @param {string} cwd */
 function githubRepo(cwd) {
-  const url = gitMaybe(["remote", "get-url", "origin"], { cwd, absent: [2] }) ?? "";
-  const m = /github\.com[:/]([^/\s]+)\/([^/\s]+?)(\.git)?\/?$/.exec(url);
-  return m ? bounded(`${m[1]}/${m[2]}`, NAME_MAX) : null;
+  const name = githubName(gitMaybe(["remote", "get-url", "origin"], { cwd, absent: [2] }) ?? "");
+  return name === null ? null : bounded(name, NAME_MAX);
 }
 
 /**
@@ -1076,22 +1073,15 @@ const foundName = (path) => (NEW_DIRS.some((d) => path.startsWith(`${d}/`)) || !
  * The paths the last `limit` commits of every ref change (`--all` but notes, whose trees name objects, not files:
  * each branch, tag and remote branch, a detached HEAD, and every stash entry, older ones from the stash's reflog; a
  * merge against its first parent, so what only the merge brought counts; a submodule's path counts too), and how many
- * commits were read. Every field ends at a NUL, as recentCommits reads them. A git that fails throws.
+ * commits were read, cut by rawLog as recentCommits' are. A git that fails throws.
  * @param {string} cwd @param {number} limit
  */
 function historyPaths(cwd, limit) {
   const stash = gitMaybe(["rev-parse", "--verify", "-q", "refs/stash"], { cwd, absent: [1] });
   const stashes = stash ? git(["log", "-g", "--format=%H", `-n${limit}`, "refs/stash"], { cwd }).split("\n").filter(Boolean) : [];
   const args = ["log", "-z", "--exclude=refs/notes/*", "--all", ...stashes, "--diff-merges=first-parent", "--no-renames", "--ignore-submodules=none", `-n${limit}`, "--raw", "--format=%H"];
-  const fields = git(args, { cwd }).split("\0");
-  /** @type {Set<string>} */
-  const paths = new Set();
-  let commits = 0;
-  for (let i = 0; i + 1 < fields.length; commits++) {
-    if (!/^[0-9a-f]{40,64}$/.test(fields[i])) throw new Error(`git log printed a field that is no commit: ${JSON.stringify(fields[i].slice(0, 80))}`);
-    for (i++; i + 1 < fields.length && rawChange(fields[i]); i += 2) paths.add(fields[i + 1]);
-  }
-  return { commits, paths };
+  const commits = rawLog(git(args, { cwd }));
+  return { commits: commits.length, paths: new Set(commits.flatMap((c) => c.changes.map((x) => x.path))) };
 }
 
 /**
@@ -1326,7 +1316,7 @@ export function scanProject({ cwd, env = process.env, from = cwd, ceiling }) {
     churn,
     tests: testLayout(files, patterns.testRe),
     // A proposal init writes back: every risky path, whole, as the security audit reads them.
-    risky: riskyPaths(files, patterns.re, Infinity),
+    risky: riskyPaths(files, patterns.re),
     roadmap,
     github: repo ? githubRepo(cwd) : null,
     pathScopedRules: rules.n,

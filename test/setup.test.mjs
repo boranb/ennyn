@@ -3822,3 +3822,113 @@ test("uninstall (review round 2): no hard links puts the hook back by rename; a 
   assert.equal(du.status, 0, du.stdout);
   assert.equal(du.stdout.match(/^Removed .*commit-msg/gm)?.length, 1);
 });
+
+// scan-design-decision (cycle 56): each question scan.mjs shares with another module has one site that answers it.
+test("scan design decision: origin names a GitHub repository exactly when isGithubHost reads the remote's host GitHub", async () => {
+  const scan = await import("../setup/scan.mjs");
+  const { isGithubHost, urlHost } = await import("../setup/permissions.mjs");
+  /** @type {Record<string, string | null>} remote URL → the repository the scan names */
+  const remotes = {
+    "https://github.com/o/r.git": "o/r",
+    "git@github.com:o/r.git": "o/r",
+    "ssh://git@github.com/o/r": "o/r",
+    "git://github.com/o/r": "o/r",
+    "https://github.com/o/r/": "o/r",
+    "https://github.com/o/r.git/": "o/r",
+    "https://user@GitHub.com/O/R.git": "O/R",
+    "https://github.com:443/o/r.git": "o/r",
+    "ssh://git@ssh.github.com:443/o/r.git": "o/r",
+    "git@ssh.github.com:o/r.git": "o/r",
+    "git@github.com-work:o/r.git": "o/r",
+    "https://octo.ghe.com/o/r.git": "o/r",
+    "octo@octo.ghe.com:o/r.git": "o/r",
+    "git@github.example.test:o/r.git": "o/r",
+    "https://notgithub.test/o/r.git": null,
+    "https://notgithub.com/o/r.git": null,
+    "https://evil.test/github.com/o/r": null,
+    "https://gitlab.test/github.com/r.git": null,
+    "https://www.github.com/o/r.git": null,
+    "/srv/github.com/o/r.git": null,
+    "../github.com/o/r": null,
+    "file:///srv/github.com/o/r.git": null,
+  };
+  for (const [url, name] of Object.entries(remotes)) {
+    assert.equal(scan.githubName(url), name, url);
+    // One question, one answer: the scan names a repository on exactly the hosts the permission rules call GitHub.
+    const host = urlHost(url);
+    assert.equal(name !== null, host !== null && isGithubHost(host), url);
+  }
+  // On a GitHub host, a path that is no owner/repo names none.
+  for (const url of ["https://github.com/o", "https://github.com/o/r/extra", "git@github.com:o", "https://github.com/"]) assert.equal(scan.githubName(url), null, url);
+  // End to end, through the origin remote.
+  const r = repo();
+  r.commit("feat: start", { "a.txt": "1" });
+  git(["remote", "add", "origin", "octo@octo.ghe.com:o/r.git"], { cwd: r.dir });
+  assert.equal(scanProject({ cwd: r.dir, env: {} }).github, "o/r");
+  git(["remote", "set-url", "origin", "https://evil.test/github.com/o/r"], { cwd: r.dir });
+  assert.equal(scanProject({ cwd: r.dir, env: {} }).github, null);
+});
+
+test("scan design decision: one parser cuts git log -z --raw, and scan.mjs reads the log only through it", async () => {
+  const { rawLog } = await import("../core/git.mjs");
+  const r = repo();
+  r.commit("feat: one", { a: "1", [`${"a".repeat(40)}`]: "1" });
+  // An empty commit whose subject is shaped like a change field.
+  r.commit(":000000 100644 0000000 1111111 A");
+  mkdirSync(join(r.dir, "sub"), { recursive: true });
+  git(["update-index", "--add", "--cacheinfo", `160000,${"1".repeat(40)},sub`], { cwd: r.dir });
+  r.commit("feat: sub and b", { b: "1" });
+  const hashes = git(["rev-list", "HEAD"], { cwd: r.dir }).split("\n");
+  const changes = [
+    [{ status: "A", submodule: false, path: "b" }, { status: "A", submodule: true, path: "sub" }],
+    [],
+    [{ status: "A", submodule: false, path: "a" }, { status: "A", submodule: false, path: "a".repeat(40) }],
+  ];
+  const subjects = ["feat: sub and b", ":000000 100644 0000000 1111111 A", "feat: one"];
+  const log = (/** @type {string} */ format) => git(["log", "-z", "--no-renames", "--ignore-submodules=none", "--raw", `--format=${format}`], { cwd: r.dir });
+  assert.deepEqual(rawLog(log("%H%x00%s"), { subject: true }), hashes.map((hash, i) => ({ hash, subject: subjects[i], changes: changes[i] })));
+  assert.deepEqual(rawLog(log("%H")), hashes.map((hash, i) => ({ hash, subject: null, changes: changes[i] })));
+  assert.deepEqual(rawLog(""), []);
+  assert.throws(() => rawLog("not a hash\0"), /git log printed a field that is no commit/);
+  // The second reading is gone: scan.mjs reads no change field itself, and every --raw log it runs goes through rawLog.
+  const src = readFileSync(join(dirname(CLI), "..", "setup", "scan.mjs"), "utf8");
+  assert.doesNotMatch(src, /\brawChange\b/);
+  assert.equal((src.match(/"--raw"/g) ?? []).length, (src.match(/\brawLog\(/g) ?? []).length);
+});
+
+test("scan design decision: the risky list's two views, init's glob and the audit's path, select the same files", async () => {
+  const { sensitivePaths } = await import("../plan/audit.mjs");
+  const { matchAny } = await import("../core/glob.mjs");
+  const files = [
+    "src/auth/login.ts", "src/auth/deep/x.ts", "app/[locale]/auth/page.tsx", "src/{legacy}/payments/y.ts", "lib/[id]/session.ts",
+    "src/a*b/auth/z.ts", "src/q?/security/k.py", "src/a,b/auth/x.ts", "src/x!/auth/y.ts", "app/security.py", "src/auth.service.ts",
+    "auth.d.ts", "src/Auth/X.ts", "src/AUTH.ts", "migrations/001.sql", "db/migrations/002.sql", "src/ledger.ts", "src/ledger/a.ts",
+    // Not risky, or under no risky folder: both views leave them out.
+    "src/authx/y.ts", "src/auth-x/y.ts", "src/payments!/a.ts", "src/.auth/x", "src/auth.d/x.ts", "src/authors.ts", "test/auth/x.test.ts",
+    "src/auth2/a.ts", "app/[locale]/page.tsx", "lib/[id]/other.ts", "src/a*b/z.ts", "README.md",
+  ];
+  const risky = riskyPaths(files, pat());
+  assert.ok(risky.length >= 15, String(risky.length));
+  const byGlob = files.filter((f) => matchAny(f, risky.map((x) => x.glob)));
+  const byPath = sensitivePaths(files, DEFAULTS).find((s) => s.source === "init-scan risky")?.files ?? [];
+  assert.deepEqual(byPath, byGlob);
+  assert.ok(byGlob.includes("src/q?/security/k.py") && !byGlob.includes("src/a*b/z.ts") && !byGlob.includes("app/[locale]/page.tsx"), byGlob.join(" "));
+});
+
+test("scan design decision: the history a new project is judged by counts empty commits and a submodule's path, through rawLog", async () => {
+  const { NEW_HISTORY } = await import("../setup/scan.mjs");
+  /** A repository written by git fast-import, nothing checked out: commit i holds ops[i]. @param {string[]} ops */
+  const imported = (ops) => {
+    const dir = folder();
+    git(["init", "-q", "-b", "main"], { cwd: dir });
+    const data = (/** @type {string} */ s) => `data ${Buffer.byteLength(s)}\n${s}\n`;
+    git(["fast-import", "--quiet"], { cwd: dir, input: ops.map((op, i) => `commit refs/heads/main\ncommitter t <t@t> ${1700000000 + i} +0000\n${data(`c${i}`)}${op}\n`).join("") });
+    return dir;
+  };
+  const readme = `M 100644 inline README.md\ndata 4\n# x\n\n`;
+  // Past the commits read, though all but the first change nothing: an empty commit is a commit read.
+  assert.deepEqual(newVerdict(imported([readme, ...many(NEW_HISTORY, () => "")])), { ...notNew([]), unmeasured: [{ reason: "historyCap", n: NEW_HISTORY }] });
+  assert.deepEqual(newVerdict(imported([readme, ...many(NEW_HISTORY - 1, () => "")])), NEW);
+  // A submodule the history added and removed is no file, but its path is one the project held.
+  assert.deepEqual(newVerdict(imported([readme, `M 160000 ${"1".repeat(40)} lib/sub\n`, "D lib/sub\n"])), notNew(["lib/"]));
+});

@@ -216,13 +216,23 @@ export function outwardCommands(files, gh, present = () => false, pushMode = "as
 }
 
 /**
- * The host a remote URL names, lowercased: `scheme://[user@]host[:port]/…` or scp-like `[user@]host:path`;
- * null for a local path.
+ * The host a remote URL names, lowercased, and the path after it: `scheme://[user@]host[:port]/path` (the path from
+ * its slash, up to a query or fragment) or scp-like `[user@]host:path`; null for a local path. The one reading of a
+ * remote URL: the GitHub host (isGithubHost) and the repository init-scan names (githubName) both come from it.
+ * @param {string} url
+ * @returns {{ host: string, path: string } | null}
+ */
+export function urlParts(url) {
+  const m = /^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]*@)?(\[[^\]]*\]|[^/:?#]*)[^/?#]*([^?#]*)/i.exec(url) ?? /^(?:[^@/:]+@)?([^/:]+):(?!\/\/)(.*)/s.exec(url);
+  return m ? { host: m[1].toLowerCase(), path: m[2] } : null;
+}
+
+/**
+ * The host a remote URL names, lowercased (urlParts); null for a local path.
  * @param {string} url
  */
 export function urlHost(url) {
-  const m = /^[a-z][a-z0-9+.-]*:\/\/(?:[^@/]*@)?(\[[^\]]*\]|[^/:?#]*)/i.exec(url) ?? /^(?:[^@/:]+@)?([^/:]+):(?!\/\/)/.exec(url);
-  return m ? m[1].toLowerCase() : null;
+  return urlParts(url)?.host ?? null;
 }
 
 /**

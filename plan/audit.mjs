@@ -247,7 +247,7 @@ export function sensitivePaths(files, config, { configRel = null, logRel = null,
   const ciGlobs = ci.length ? ci : DEFAULTS.security.ci.paths;
   const depsGlobs = deps.length ? deps : DEFAULTS.security.deps.paths;
   // A risky path is a directory (or a flat file) as the scan names it: `app/[locale]/auth` is that directory, no glob.
-  const risky = new Set(riskyPaths(files, pathPatterns(config, []).re, Infinity).map((r) => r.path));
+  const risky = new Set(riskyPaths(files, pathPatterns(config, []).re).map((r) => r.path));
   const underRisky = (/** @type {string} */ f) => {
     if (risky.has(f)) return true;
     for (let i = f.indexOf("/"); i !== -1; i = f.indexOf("/", i + 1)) if (risky.has(f.slice(0, i))) return true;

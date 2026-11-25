@@ -1668,6 +1668,30 @@ export function rawChange(field) {
 }
 
 /**
+ * The commits of one `git log -z --raw` run whose format is `%H` or, with `subject`, `%H%x00%s`, in git's order:
+ * every field ends at a NUL, which no message or name holds, so a commit is its hash (and subject), then a change
+ * (rawChange) and a path per file; a subject holding any other character, or shaped like a change, and a name
+ * spelled like a hash shift nothing. The one reader of that output: init-scan's recent commits and its history paths.
+ * @param {string} out the log's output
+ * @param {{ subject?: boolean }} [opts]
+ * @returns {{ hash: string, subject: string | null, changes: { status: string, submodule: boolean, path: string }[] }[]}
+ */
+export function rawLog(out, { subject = false } = {}) {
+  const fields = out.split("\0");
+  /** @type {{ hash: string, subject: string | null, changes: { status: string, submodule: boolean, path: string }[] }[]} */
+  const commits = [];
+  for (let i = 0; i + 1 < fields.length; ) {
+    if (!/^[0-9a-f]{40,64}$/.test(fields[i])) throw new Error(`git log printed a field that is no commit: ${JSON.stringify(fields[i].slice(0, 80))}`);
+    const commit = { hash: fields[i], subject: subject ? fields[i + 1] : null, changes: /** @type {{ status: string, submodule: boolean, path: string }[]} */ ([]) };
+    i += subject ? 2 : 1;
+    // The list of names starts on a line of its own: its first change carries the "\n".
+    for (let change; i + 1 < fields.length && (change = rawChange(fields[i])); i += 2) commit.changes.push({ ...change, path: fields[i + 1] });
+    commits.push(commit);
+  }
+  return commits;
+}
+
+/**
  * Commits on HEAD that the upstream branch does not have.
  * @param {string} cwd
  * @returns {number | null} null when there is nothing to count against (a detached HEAD, no upstream, an
