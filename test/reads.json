@@ -1,6 +1,6 @@
 {
  "version": 1,
- "code": "29d243716a76679c7acec02afdb50a2e6c3b2c0ab742cec3ad8829597474803a",
+ "code": "10b1d0fd5979f87e21a31887540b9f00e647c443b5e5bbda7246f91ece2428bc",
  "tests": {
   "test/agents.test.mjs": {
    "reads": [
@@ -206,6 +206,39 @@
    ],
    "dirs": [
     ".orphaned_at"
+   ],
+   "unseen": []
+  },
+  "test/cited-numbers.test.mjs": {
+   "reads": [
+    "docs/evidence.md",
+    "skills/cycle/SKILL.md",
+    "skills/cycle/design-brief.md",
+    "skills/cycle/finding-schema.md",
+    "skills/cycle/handover.md",
+    "skills/cycle/impact-table.md",
+    "skills/cycle/journal.md",
+    "skills/cycle/lean-audit.md",
+    "skills/cycle/ledger-row.md",
+    "skills/cycle/one-task.md",
+    "skills/cycle/push.md",
+    "skills/cycle/report-formats.md",
+    "skills/cycle/task-brief.md",
+    "skills/init/SKILL.md",
+    "skills/init/agent-mode.md",
+    "skills/init/commit-convention.md",
+    "skills/init/gates.md",
+    "skills/init/graph.md",
+    "skills/init/new-project.md",
+    "skills/init/worktrees.md",
+    "test/cited-numbers.test.mjs",
+    "test/hermetic.mjs",
+    "test/hostile.mjs"
+   ],
+   "dirs": [
+    "skills",
+    "skills/cycle",
+    "skills/init"
    ],
    "unseen": []
   },
@@ -578,6 +611,7 @@
     "test/budget.test.mjs",
     "test/bypass.test.mjs",
     "test/ci.test.mjs",
+    "test/cited-numbers.test.mjs",
     "test/classes-seed.test.mjs",
     "test/classes.test.mjs",
     "test/cli.test.mjs",
@@ -1195,6 +1229,7 @@
     "skills/cycle/task-brief.md",
     "skills/init/SKILL.md",
     "skills/init/agent-mode.md",
+    "skills/init/commit-convention.md",
     "skills/init/gates.md",
     "skills/init/graph.md",
     "skills/init/new-project.md",
@@ -1215,6 +1250,7 @@
     "test/budget.test.mjs",
     "test/bypass.test.mjs",
     "test/ci.test.mjs",
+    "test/cited-numbers.test.mjs",
     "test/classes-seed.test.mjs",
     "test/classes.test.mjs",
     "test/cli.test.mjs",
@@ -1525,6 +1561,7 @@
     "test/budget.test.mjs",
     "test/bypass.test.mjs",
     "test/ci.test.mjs",
+    "test/cited-numbers.test.mjs",
     "test/classes-seed.test.mjs",
     "test/classes.test.mjs",
     "test/cli.test.mjs",
@@ -1995,6 +2032,7 @@
     "skills/cycle/task-brief.md",
     "skills/init/SKILL.md",
     "skills/init/agent-mode.md",
+    "skills/init/commit-convention.md",
     "skills/init/gates.md",
     "skills/init/graph.md",
     "skills/init/new-project.md",
@@ -2691,6 +2729,7 @@
     "skills/cycle/task-brief.md",
     "skills/init/SKILL.md",
     "skills/init/agent-mode.md",
+    "skills/init/commit-convention.md",
     "skills/init/gates.md",
     "skills/init/graph.md",
     "skills/init/new-project.md",
@@ -2711,6 +2750,7 @@
     "test/budget.test.mjs",
     "test/bypass.test.mjs",
     "test/ci.test.mjs",
+    "test/cited-numbers.test.mjs",
     "test/classes-seed.test.mjs",
     "test/classes.test.mjs",
     "test/cli.test.mjs",
