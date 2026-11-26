@@ -1223,7 +1223,8 @@
         "new: removal breaks a repository that borrows from it",
         "new: removal breaks a repository that borrows its objects",
         "new: pointer not kept by a later rewrite",
-        "new: hook pinned to a transient install path"
+        "new: hook pinned to a transient install path",
+        "new: licence notice left out of the distributed copy"
       ],
       "judged": "Named in cycle 31 by the orchestrator, from rows of the cycle's delete and lock tasks."
     },
@@ -1400,6 +1401,17 @@
         "new: unpinned toolchain in a credential job"
       ],
       "judged": "Named in cycle 56 by the orchestrator, from the security audit row on the release workflow (the publish job installs a floating Node major)."
+    },
+    {
+      "id": "reference-to-version-only-path",
+      "says": "A written reference (a hook line, a record, a config value) names a path that exists in some versions of the tree it points into and not in others, so moving that tree to another version leaves the reference pointing at nothing, and a reader that treats nothing as pass lets work through.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: hook names a layout-specific path that older trees lack"
+      ],
+      "judged": "Named in cycle 57 by the orchestrator, from the security review of the plugin folder move (an install-hook from a clone named the moved CLI path)."
     }
   ]
 }

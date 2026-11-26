@@ -956,17 +956,6 @@
     {
       "status": "planned",
       "needs": [],
-      "id": "plugin-root-dev-deps",
-      "value": "high",
-      "cost": "M",
-      "cluster": "distribution",
-      "title": "Ennyn's plugin root is the repository root, so Claude Code 2.1.207's npm ci --ignore-scripts after the cache copy fetches typescript and @types/node onto every user's machine, and the tests (the 396 KB npm record among them) ship too: move the plugin to a subdirectory (marketplace source ./plugin), or the development dependencies and lock out of the root; measure what Claude Code installs for each before choosing, on the version the user runs (the VS Code extension carries 2.1.306, the claude CLI 2.1.207; the install step was read in 2.1.207, later docs move it), without touching the user's configuration. The subfolder was decided (Fable, after reading the directory's checklist on 2026-11-26). The directory's checklist says people who install get only the plugin folder, holds a version for each file over 256 KiB (seven at the root) and for a lockfile install, raises the same hold on every new version, and fixes a submission's folder at submit. Paths inside the plugin's folder keep their spelling (scripts/ennyn.mjs under the plugin root); measure that a commit hook written before the move still finds the CLI after an update. It lands alone, as a one-task run, before the first submission",
-      "source": "cycle 2026-10-25 (11), security audit review round 1 (R4), binary read; the record size decision; GoogleChrome/modern-web-guidance (Apache-2.0, 4dd9683, read 2026-11-13) installs from a publish-target repository that holds only the manifests, the skills and their guides, with source, tests and evals in a second repository (CONTRIBUTING.md: 'is a publish target'); Ennyn's tracked tree on 2026-11-13 is 10.2 MB, 5.9 MB of it test/ and 1.7 MB .ennyn/",
-      "since": 11
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "id": "reference-npm-majors",
       "value": "high",
       "cost": "M",
@@ -1481,7 +1470,7 @@
         "readme-says-what-runs"
       ],
       "id": "directory-submission",
-      "title": "Submit the plugin to Anthropic's plugin directory (claude.ai/directory/manage; the repository may be private while it validates, public before the listing goes live): the listing comes from plugin.json and the README; new versions published by hand or by a reviewer, never auto-published; the icon is in place (.claude-plugin/icon.svg, 140e7be); the README says what Ennyn sends over the network and how to turn it off Submitted from the plugin's subfolder at a release tag (v0.1.2 or later), never from the root or from main; the portal's Validate step runs first and a Blocks row stops the submission; a hold is the reviewer's to read. The listing is no launch condition: the docs give no review time (checklist and submit page read 2026-11-26)",
+      "title": "Submit the plugin to Anthropic's plugin directory (claude.ai/directory/manage; the repository may be private while it validates, public before the listing goes live): the listing comes from plugin.json and the README; new versions published by hand or by a reviewer, never auto-published; the icon is in place (.claude-plugin/icon.svg, 140e7be); the README says what Ennyn sends over the network and how to turn it off Submitted from the plugin's subfolder at a release tag (v0.1.2 or later), never from the root or from main; the portal's Validate step runs first and a Blocks row stops the submission; a hold is the reviewer's to read. The listing is no launch condition: the docs give no review time (checklist and submit page read 2026-11-26) Cycle 57: the plugin folder is plugin/ (8706e8d); claude plugin validate --strict passes on the marketplace and on plugin/ (2.1.310).",
       "value": "high",
       "cost": "S",
       "cluster": "distribution",
@@ -6620,7 +6609,7 @@
       "cluster": "method",
       "mechanization": true,
       "sourceClass": "doc-lags-code",
-      "title": "doc-lags-code came three times in cycle 46 (tally-late-registration): a test still asserting the limit the change closed, the not-gate allow list missing the test's new reads of the repository, and the class registry's proof still stating the closed limit; the same limit was written in six places (test/tally.mjs and test/run.mjs headers, DESIGN.md, CHANGELOG, a class proof, the handoff) and only the handoff named the node that would close it. Two of three were caught by a gate already; the stated limits were found by reading. Two rungs, in order: (1) a convention and a grep-shaped test: a sentence in a comment, DESIGN.md or a class proof that states a limit (not yet, until, left to, unseen) carries an open node id; (2) in the existing closing step, not a new gate, a check over tracked text only (git ls-files: scratch and keep folders never count) lists every text that names a node now done, and the closing fails unless each is changed or kept with why. Sibling of one-decision-one-site (one limit written six times is its case too). After 0.1.0 (Fable, 2026-11-18)",
+      "title": "doc-lags-code came three times in cycle 46 (tally-late-registration): a test still asserting the limit the change closed, the not-gate allow list missing the test's new reads of the repository, and the class registry's proof still stating the closed limit; the same limit was written in six places (test/tally.mjs and test/run.mjs headers, DESIGN.md, CHANGELOG, a class proof, the handoff) and only the handoff named the node that would close it. Two of three were caught by a gate already; the stated limits were found by reading. Two rungs, in order: (1) a convention and a grep-shaped test: a sentence in a comment, DESIGN.md or a class proof that states a limit (not yet, until, left to, unseen) carries an open node id; (2) in the existing closing step, not a new gate, a check over tracked text only (git ls-files: scratch and keep folders never count) lists every text that names a node now done, and the closing fails unless each is changed or kept with why. Sibling of one-decision-one-site (one limit written six times is its case too). After 0.1.0 (Fable, 2026-11-18) Cycle 57: doc-lags-code came five times again (the plugin folder move: inline module paths in docs/modules.md, a release step, shipped skill citations), and docs/modules.md reached rung 2 of the ladder with previous-fix rows in cycles 56 and 57; a test that every path docs/modules.md names exists would have caught four of them.",
       "source": "cycle 2026-11-17 (46) closing: convergence's most recurring class (doc-lags-code, 3 rows: c46-t1-author-r0-01, -03, -04)"
     },
     {
@@ -7125,7 +7114,7 @@
       "needs": [],
       "since": 56,
       "id": "readme-says-what-runs",
-      "title": "README.md and README.tr.md say everything Ennyn runs, sends, fetches and writes, as the plugin directory's checklist asks, and agree with SECURITY.md. README.md:33 says network requests happen in two cases only; the code has more: clone-setup asks api.github.com for a login's public signing keys (setup/clone-setup.mjs:20, no token), push-check fetches from the branch's remote, the closing pushes there (asked unless push.mode is after-closing), git itself fetches objects in a partial clone, and while a lock file sits in the plugin's folder the install downloads the development dependencies. The Setup row says that /ennyn:init, on a yes, writes ask rules and the no-bypass block into the project's .claude/settings.json; one line says the session-start hook adds two ENNYN_ variables to the session's environment file. Each destination with what is sent and its off switch where there is one. It lands with network-claim-test, whose list becomes the README's",
+      "title": "README.md and README.tr.md say everything Ennyn runs, sends, fetches and writes, as the plugin directory's checklist asks, and agree with SECURITY.md. README.md:33 says network requests happen in two cases only; the code has more: clone-setup asks api.github.com for a login's public signing keys (setup/clone-setup.mjs:20, no token), push-check fetches from the branch's remote, the closing pushes there (asked unless push.mode is after-closing), git itself fetches objects in a partial clone, and while a lock file sits in the plugin's folder the install downloads the development dependencies. The Setup row says that /ennyn:init, on a yes, writes ask rules and the no-bypass block into the project's .claude/settings.json; one line says the session-start hook adds two ENNYN_ variables to the session's environment file. Each destination with what is sent and its off switch where there is one. It lands with network-claim-test, whose list becomes the README's Cycle 57: with the plugin in plugin/ there is no lock file in the plugin's folder, so the install downloads nothing (measured on 2.1.310 and 2.1.330); the README says so instead of naming a download.",
       "value": "high",
       "cost": "S",
       "cluster": "distribution",
@@ -7178,6 +7167,40 @@
       "cluster": "security",
       "title": "plugin-eval arms granted a path rule for Read, Glob or Grep at the eval level (--allow-tools, as the git run does for its home-read-tool cell) read the HOME the eval is given: the sandbox holds Bash only (measured 2.1.310 and 2.1.330; a case-level allowed_tools path rule has no effect). Find a layout or setting that denies the read tools the home, and turn the home-read-tool gap cell in test/eval/git-cell.json into a deny check. No paid run until this closes. Measured in cycle 56 (no commit; a lab kept outside the repository; 2.1.310 and 2.1.330): a bare-name or ~ grant of Read, Glob and Grep keeps them to the arm's own home and the read roots and refuses the HOME the eval is given (dontAsk text), with an in-grant control read in the same arm; a path grant that reaches that HOME is read in full, since --disallow-tools and a case's disallowed_tools take bare names only and no measured settings place (the eval's configuration, its HOME, the arm's cwd, the plugin) reaches an arm; by the code, server-managed organization policy does reach an arm (2.1.330, unmeasured). What is left is the cell, recorder code under the brake: Turn test/eval/git-cell.json's home-read-tool gap cell into a deny check: the git run's third eval grants Read, Glob and Grep by bare name (or ~) instead of Read(//**); its play adds one Bash write of a canary in the arm's own home and one Read of it (the in-grant control, must return the token); the home Read must be refused with the dontAsk text in permission_denials; then GIT_CELLS home-read-tool becomes a deny cell with readable false, and test/eval-selftest.test.mjs's EVALS, case and GIT_CELLS assertions follow. Recorder code, so it waits for the brake decision on test/eval/selftest.mjs",
       "source": "cycle 2026-11-24 (54) security review of eval-arm-reads-home, rounds 1 and 2"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 57,
+      "id": "plugin-root-dev-deps-lows",
+      "value": "low",
+      "cost": "S",
+      "cluster": "distribution",
+      "title": "plugin-root-dev-deps lows (cycle 57): shipped skill and agent text cites repository documents the install no longer holds, as citations, not steps: docs/evidence.md in plugin/skills/cycle/impact-table.md, task-brief.md and report-formats.md (test/cited-numbers.test.mjs reads those pointers as sources, so a URL form needs that test to follow), SECURITY.md in plugin/agents/security-reviewer.md and finding-schema.md (they may read as the reviewed project's own); the named-path test checks only ${CLAUDE_PLUGIN_ROOT}/ paths, not bare mentions; hookCliPath knows the forwarder by the text of its import, so a rewritten forwarder falls back to the moved path unseen",
+      "source": "cycle 2026-11-26 (57) plugin-root-dev-deps, author and review round 1"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 57,
+      "id": "loosening-renamed-globs",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "title": "The loosening check reads globs in review.impactRequiredGlobs and review.cochange renamed together with the files they match (a folder move) as globs dropped, and asks for User-Approved-Loosening; a rename whose new glob matches every file the old one matched at the parent is no loosening",
+      "source": "cycle 2026-11-26 (57) plugin-root-dev-deps, measured at its commit"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 57,
+      "id": "config-dead-old-globs",
+      "value": "low",
+      "cost": "S",
+      "cluster": "gates",
+      "gate": "user",
+      "title": "Remove the eight globs in .ennyn/config.json's review.impactRequiredGlobs and review.cochange that name the paths from before the plugin moved to plugin/ (doctor warns that they match nothing; their plugin/ forms stand beside them). Removing them is a loosening of those two keys: it waits for the user's yes, or for loosening-renamed-globs",
+      "source": "cycle 2026-11-26 (57) plugin-root-dev-deps"
     }
   ],
   "done": [
@@ -8449,6 +8472,13 @@
       "status": "done",
       "finished": "2026-11-26",
       "cluster": "gates"
+    },
+    {
+      "id": "plugin-root-dev-deps",
+      "title": "Closed in cycle 57 (8706e8d), a one-task run: the plugin lives in plugin/ and the marketplace entry installs from ./plugin, so an install copies 89 files instead of 236 and runs no npm ci (Claude Code 2.1.310 and 2.1.330, measured under a temporary home with a local marketplace; the root layout with its lock ran npm ci --ignore-scripts). plugin/ holds no package.json; its version is plugin/.claude-plugin/plugin.json's. scripts/ennyn.mjs at the top stays as a forwarder, shipped in the npm package, and install-hook writes it into a plain cli= hook whatever the session (hookCliPath in plugin/setup/hook.mjs), so a hook from a clone or the package still checks commits on a checkout from before the move. plugin/LICENSE is the root LICENSE. Tests hold the folder to what the plugin runs (no lock, no dependencies, no development file, nothing over 256 KiB), run the CLI and every hook from a copy of plugin/ alone, and check each path a skill or agent names under the plugin root. A user on 0.1.1 sees the new layout only after a version bump (claude plugin update compares versions). Leftovers: plugin-root-dev-deps-lows, loosening-renamed-globs, config-dead-old-globs",
+      "status": "done",
+      "finished": "2026-11-26",
+      "cluster": "distribution"
     }
   ],
   "declined": [
