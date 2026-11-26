@@ -107,7 +107,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "24"
+          node-version: "24.22.3"
           registry-url: "https://registry.npmjs.org"
           package-manager-cache: false
       - name: The tag names package.json's version
@@ -121,6 +121,11 @@ jobs:
 
 test("engines: the release workflow publishes only a version tag, behind the npm environment, and is the only file that asks for an OIDC token", () => {
   assert.equal(read(".github/workflows/release.yml"), RELEASE);
+  // The job that can mint the publish token runs one exact Node release, not what the runner caches for a major;
+  // its bundled npm must be 11.5.1 or later for trusted publishing (24.22.3 ships 11.19.1: nodejs.org/dist/index.json).
+  const specs = yamlRead(RELEASE).entries.filter((e) => e.key === "node-version").map((e) => e.value);
+  assert.deepEqual(specs.filter((v) => !/^\d+\.\d+\.\d+$/.test(v)), [], "the release job's Node is an exact x.y.z");
+  assert.equal(specs.length, 1);
   const files = git(["ls-files", "-z"], { cwd: ROOT }).split("\0").filter((f) => matchAny(f, DEFAULTS.security.ci.paths));
   // Keys as YAML decodes them, so an escaped spelling of the key is found too; a file this reading cannot take is listed.
   const oidc = files.filter((f) => { const r = yamlRead(read(f)); return r.unread.length > 0 || r.entries.some((e) => e.key === "id-token"); });
