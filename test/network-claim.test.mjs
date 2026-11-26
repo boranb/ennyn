@@ -8,7 +8,9 @@
  * gives Claude Code to run, counted per file. An entry that reaches the network names a claim, and the claim's words
  * stand in the README's list, in both languages, and in SECURITY.md's "What Ennyn runs on a machine". A new call, or
  * a claim dropped from a document, fails here; an entry the code no longer holds fails too, so the list stays the
- * code's. Then the behaviours: the OSV request body carries only name, ecosystem and version, `ennyn deps` asks OSV
+ * code's. The skills and agents (`plugin/skills/**.md`, `plugin/agents/**.md`) are held the same way (graph node
+ * network-claim-skill-steps): each command they give the agent that starts with a network program, or runs one of
+ * Ennyn's commands that reach the network, is on the list by file and command, as written. Then the behaviours: the OSV request body carries only name, ecosystem and version, `ennyn deps` asks OSV
  * nothing with `security.deps.advisories` empty, and with `security.deps.online: false` the commit hook asks nothing
  * of the registry, which it does ask with the key on.
  *
@@ -23,6 +25,16 @@
  * A network call made through a name this scan does not know (a program held in a variable that the allow list
  * names, a module loaded under a computed name) is past it: the allow list says why each such variable runs nothing
  * of its own on the network.
+ *
+ * A skill's Markdown is read for its commands only: each line of a fenced block and each code span on one line (a
+ * line with an odd count of backticks fails), each command as shell words past assignments, shell keywords, `env`,
+ * `timeout` and Ennyn's own `lock … --`. Not read: prose outside code spans ("fetch first"), an indented code block,
+ * a block in a quote or HTML `<code>` (none in these files today); a command behind another wrapper (`sudo`, `nice`,
+ * `xargs`, `sh -c "…"`, `perl -e … exec`, `docker run … npm`) or a placeholder (`<runner> install`); programs
+ * outside `NET_PROGRAMS` (`docker pull`, `pip`, `bunx`, `uvx`, `corepack`, `cargo`, `go get`); node with an option
+ * that takes a value before Ennyn's path (`node --import x ennyn.mjs`); and the network use of an Ennyn command
+ * missing from `ENNYN_NET`: that table is written by hand from the code sites, and a new command that reaches the
+ * network goes into it.
  */
 
 import { test } from "node:test";
@@ -64,8 +76,35 @@ const LITERAL = /(["'`])((?:\\.|(?!\1)[^\\\n])*)\1/g;
 const NET_WORDS = new Set(["fetch", "push", "pull", "clone", "ls-remote", "remote", "submodule", "curl", "wget", "gh", "npm", "npx", "pnpm", "yarn", "ssh", "scp", "sftp", "rsync", "nc", "telnet", "ftp"]);
 /** A literal that is a command line for a network program. */
 const NET_LINE = /^(?:curl|wget|scp|rsync|git\s+(?:fetch|push|pull|clone|ls-remote))(?:\s|$)/;
+/** Programs that reach the network: a shell line is read for them anywhere, a skill's command by its head. */
+const NET_PROGRAMS = ["curl", "wget", "npm", "npx", "pnpm", "yarn", "gh", "ssh", "scp", "sftp", "rsync", "nc", "ncat", "telnet", "ftp", "Invoke-WebRequest", "Invoke-RestMethod", "iwr", "irm"];
+/** git's subcommands that reach a remote. */
+const GIT_NET = "(?:fetch|push|pull|clone|ls-remote)";
 /** A network program or git network subcommand as a shell line runs it. */
-const SHELL_NET = /(?<![\w./-])(curl|wget|npm|npx|pnpm|yarn|gh|ssh|scp|sftp|rsync|nc|ncat|telnet|ftp|Invoke-WebRequest|Invoke-RestMethod|iwr|irm|git\s+(?:fetch|push|pull|clone|ls-remote))(?![\w-])/gi;
+const SHELL_NET = new RegExp(String.raw`(?<![\w./-])(${NET_PROGRAMS.join("|")}|git\s+${GIT_NET})(?![\w-])`, "gi");
+/** The Markdown the agent follows: the skills and the agents. */
+const STEP_FILES = /^plugin\/(?:skills|agents)\/.*\.md$/;
+/** The network programs by name, as a step's command word is compared (any case, any folder). */
+const NET_NAMES = new Set(NET_PROGRAMS.map((p) => p.toLowerCase()));
+/** git's subcommands a step is read for: those that reach a remote, and `remote` and `submodule`, which the code reading counts too. */
+const GIT_STEP = new Set(["fetch", "push", "pull", "clone", "ls-remote", "remote", "submodule"]);
+/** git's options before the subcommand that take the next word as their value. */
+const GIT_VALUED = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"]);
+/** Words the shell reads before a command: keywords, negation, a group's opening. */
+const LEADING = new Set(["if", "then", "else", "elif", "do", "while", "until", "!", "{", "time"]);
+/** A shell word: unquoted runs and quoted parts together; a quote left open runs to the end. */
+const WORD = /(?:[^\s"']+|"(?:\\.|[^"\\])*(?:"|$)|'[^']*(?:'|$))+/g;
+/**
+ * Ennyn's commands that reach the network, with the claim that names each: the code sites below carry the same
+ * claims (`deps` asks OSV, `commit-check` is the hook that asks the registry, `push-check` fetches, `clone-setup`
+ * asks GitHub). A skill step that runs one maps to its claim.
+ * @type {Record<string, keyof typeof CLAIMS>}
+ */
+const ENNYN_NET = { deps: "osv", "commit-check": "registry", "push-check": "pushCheck", "clone-setup": "cloneSetup" };
+/** Where a command line breaks into commands. */
+const SEPARATORS = /&&|\|\||[;|&()]|\$\(/;
+/** A code span on one line: its backticks, then its text. */
+const SPAN = /(`+)(?!`)(.*?[^`])\1(?!`)/g;
 /** The one form of a manifest's command that runs Ennyn's own code, which this scan reads. */
 const OWN_COMMAND = /^node "\$\{CLAUDE_PLUGIN_ROOT\}\/[\w./-]+\.mjs"$/;
 
@@ -159,6 +198,38 @@ export function shellSites(text) {
 }
 
 /**
+ * The commands a skill or an agent gives the agent to run: each line of a fenced block (a `$ ` prompt dropped) and
+ * each code span, inside a block too, split where the shell would run the next command (`&&`, `||`, `;`, `|`, `&`,
+ * `(`, `$(`). A command that runs a network program, git on a subcommand of `GIT_STEP` or one of Ennyn's commands
+ * that reach the network (stepCommand), is a site; its key is the command as written, spaces collapsed. A line outside a
+ * block with an odd count of backticks holds a span this reading cannot pair: it is a site of its own, on no list.
+ * @param {string} text
+ * @returns {{ kind: string, key: string, line: number }[]}
+ */
+export function stepSites(text) {
+  /** @type {{ kind: string, key: string, line: number }[]} */
+  const out = [];
+  /** @type {string | null} */
+  let fence = null;
+  text.split(/\r?\n/).forEach((l, i) => {
+    const line = i + 1;
+    const f = /^\s*(`{3,}|~{3,})(.*)$/.exec(l);
+    if (f && (fence === null || (f[1][0] === fence[0] && f[1].length >= fence.length && !f[2].trim()))) {
+      fence = fence === null ? f[1] : null;
+      return;
+    }
+    if (fence === null && (l.match(/`/g) ?? []).length % 2) out.push({ kind: "step", key: "unread: a code span this reading cannot pair", line });
+    const commands = [...(fence === null ? [] : [l.replace(/^\s*\$\s+/, "")]), ...[...l.matchAll(SPAN)].map((m) => m[2])];
+    for (const c of commands)
+      for (const part of c.split(SEPARATORS)) {
+        const cmd = part.trim().replace(/\s+/g, " ");
+        if (stepCommand(cmd).net) out.push({ kind: "step", key: cmd, line });
+      }
+  });
+  return out;
+}
+
+/**
  * What a manifest gives Claude Code to run: each `command` that is not `node` on a module of Ennyn's own (whose code
  * the scan reads), each hook of another type (an HTTP hook reaches a URL), and each MCP or LSP server.
  * @param {string} text
@@ -200,14 +271,15 @@ export function fileSites(file, text) {
   if (CODE.test(file)) return sites(text);
   if (SHELL.test(file)) return shellSites(text);
   if (MANIFEST.test(file)) return manifestSites(text);
+  if (STEP_FILES.test(file)) return stepSites(text);
   return [];
 }
 
 /**
  * What the documents say. Each claim's code spans stand in the README's list in both languages (`readme`), its
  * words in each language's list (`en`, `tr`), and its words in SECURITY.md's section (`security`). `sources`: the
- * files and words a claim stands on beside a code site: a step the skills give the agent (the closing's push, its
- * `ennyn deps`, init's issues) or git's own fetch in a partial clone. A claim no code site carries needs one.
+ * files and words a claim stands on where no site of the allow list carries it: git's own fetch in a partial clone.
+ * A claim no site carries needs one.
  * @type {Record<string, { readme: string[], en: string[], tr: string[], security: string[], sources?: { file: string, text: string }[] }>}
  */
 const CLAIMS = {
@@ -217,12 +289,23 @@ const CLAIMS = {
     en: ["when you run it and at the end of each cycle"],
     tr: ["siz çalıştırdığınızda ve her döngünün sonunda"],
     security: ["`ennyn deps`, run by hand and at each cycle's closing", "by default `api.osv.dev`", '`security.deps.advisories: ""` stops it'],
-    sources: [{ file: "plugin/skills/cycle/SKILL.md", text: "**Security checks:** `ennyn.mjs deps`" }],
   },
   pushCheck: { readme: ["`ennyn push-check`", "`git fetch`"], en: ["`ennyn push-check` runs `git fetch`"], tr: ["`ennyn push-check` dalınızın remote'unda `git fetch`"], security: ["`push-check` fetches the branch's upstream remote"] },
   cloneSetup: { readme: ["`ennyn clone-setup`", "`api.github.com`"], en: ["signing keys"], tr: ["imzalama anahtarlarını"], security: ["`clone-setup`, with `commits.signed` set and a GitHub login, asks `api.github.com`"] },
-  closingPush: { readme: ["`push.mode`", "`after-closing`"], en: ["the agent pushes there"], tr: ["agent da oraya push eder"], security: ["then a `git push` to the branch's upstream"], sources: [{ file: "plugin/skills/cycle/push.md", text: "`git fetch` first" }] },
-  initIssues: { readme: ["`/ennyn:init`", "`gh`"], en: ["GitHub issues"], tr: ["GitHub issue'larınızı"], security: ["`/ennyn:init` reads the open issues with `gh issue list`"], sources: [{ file: "plugin/skills/init/SKILL.md", text: "`gh issue list --state open" }] },
+  closingPush: { readme: ["`push.mode`", "`after-closing`"], en: ["the agent pushes there"], tr: ["agent da oraya push eder"], security: ["then a `git push` to the branch's upstream"] },
+  initIssues: { readme: ["`/ennyn:init`", "`gh`"], en: ["GitHub issues"], tr: ["GitHub issue'larınızı"], security: ["`/ennyn:init` reads the open issues with `gh issue list`"] },
+  initNpm: {
+    readme: ["`npm prefix`", "`npm config get`", "`update-notifier=false`"],
+    en: ["In a new project", "npm itself may ask its registry"],
+    tr: ["Yeni bir projede", "npm de kendi registry'sine"],
+    security: ["Before that first install `/ennyn:init` runs `npm prefix` and `npm config get`", "npm's own update check", "`update-notifier=false`"],
+  },
+  initScaffold: {
+    readme: [],
+    en: ["once you agree on the stack, the agent scaffolds it and installs its packages", "downloads them from that manager's registry"],
+    tr: ["agent projenin iskeletini kurar ve paketleri seçtiğiniz paket yöneticisiyle yükler", "o paket yöneticisinin registry'sinden iner"],
+    security: ["the agent scaffolds it and installs its packages with the agreed package manager, which downloads from that manager's registry"],
+  },
   partialClone: { readme: [], en: ["In a partial clone, git itself fetches"], tr: ["Partial clone'da git"], security: ["in a partial clone (`git clone --filter`) git itself fetches"], sources: [{ file: "plugin/core/git.mjs", text: "GIT_NO_LAZY_FETCH" }] },
 };
 
@@ -256,7 +339,132 @@ const ALLOWED = [
   { file: "plugin/impact/reference-run.mjs", kind: "program", key: "program", count: 1, why: "the program impact.referenceCommand names, the project's own" },
   { file: "plugin/metrics/mutation.mjs", kind: "program", key: "command", count: 1, why: "the test command given to ennyn mutate, the project's own" },
   { file: "plugin/scripts/ennyn.mjs", kind: "program", key: "command", count: 1, why: "commands.fastTest or commands.wholeTest for ennyn test, the project's own" },
+  // The commands the skills give the agent.
+  { file: "plugin/skills/cycle/SKILL.md", kind: "step", key: "ennyn.mjs deps", count: 1, claim: "osv", why: "the closing's security checks" },
+  { file: "plugin/skills/cycle/report-formats.md", kind: "step", key: "ennyn.mjs deps", count: 1, claim: "osv", why: "the closing report's line for the same check" },
+  { file: "plugin/skills/cycle/SKILL.md", kind: "step", key: "ennyn.mjs push-check", count: 1, claim: "pushCheck", why: "the closing's push step" },
+  { file: "plugin/skills/cycle/push.md", kind: "step", key: "ennyn.mjs push-check", count: 2, claim: "pushCheck" },
+  { file: "plugin/skills/init/gates.md", kind: "step", key: "ennyn push-check --tested", count: 1, claim: "pushCheck", why: "what after-closing runs before its push" },
+  { file: "plugin/skills/cycle/push.md", kind: "step", key: "git fetch", count: 1, claim: "closingPush", why: "the closing's first push step" },
+  { file: "plugin/skills/cycle/push.md", kind: "step", key: "git push", count: 6, claim: "closingPush", why: "the closing's push, asked unless push.mode is after-closing" },
+  { file: "plugin/skills/cycle/push.md", kind: "step", key: "ennyn.mjs clone-setup", count: 1, claim: "cloneSetup", why: "prints the clone's settings; with a login it asks GitHub for keys" },
+  { file: "plugin/skills/init/SKILL.md", kind: "step", key: "gh issue list --state open --limit 50 --json number,title,labels", count: 1, claim: "initIssues" },
+  { file: "plugin/skills/init/SKILL.md", kind: "step", key: "gh", count: 1, claim: "initIssues", why: "the issue question's condition: gh works" },
+  { file: "plugin/skills/init/new-project.md", kind: "step", key: "npm -v", count: 1, claim: "initNpm", why: "asked nothing on npm 10.9.9; claimed with init's other npm checks" },
+  { file: "plugin/skills/init/new-project.md", kind: "step", key: "npm prefix", count: 1, claim: "initNpm", why: "npm 10.9.9's update check asked its registry for npm, once a cache" },
+  { file: "plugin/skills/init/new-project.md", kind: "step", key: "npm config get ignore-scripts", count: 1, claim: "initNpm", why: "as npm prefix" },
+  { file: "plugin/skills/init/new-project.md", kind: "step", key: "npm test", count: 1, why: "what .npmrc leaves running, said; the test command is the project's own" },
+  { file: "plugin/skills/init/new-project.md", kind: "step", key: "npm run", count: 1, why: "what .npmrc leaves running, said" },
+  { file: "plugin/skills/init/new-project.md", kind: "step", key: "npm create vite@latest my-app", count: 1, claim: "initScaffold", why: "the scaffold of a new project, which reaches the package manager's registry" },
+  { file: "plugin/skills/cycle/push.md", kind: "step", key: "git remote set-url", count: 1, why: "how a remote's url changes, said; it writes the config" },
+  { file: "plugin/skills/cycle/push.md", kind: "step", key: "git remote get-url --push --all", count: 1, why: "push-check's read of the push url: reads the config" },
+  { file: "plugin/skills/cycle/task-brief.md", kind: "step", key: "git remote add origin ../up.git", count: 1, why: "a lab's upstream, a folder on the machine: writes the config" },
+  { file: "plugin/skills/init/agent-mode.md", kind: "step", key: "gh", count: 1, why: "a token a gh call uses, for the sandbox's credentials" },
+  { file: "plugin/skills/init/agent-mode.md", kind: "step", key: "git push", count: 1, why: "how the sandbox treats the closing's push, which closingPush names" },
+  { file: "plugin/skills/cycle/task-brief.md", kind: "step", key: "git push", count: 2, why: "the rule that a lab never pushes, and the ask rule that waits" },
+  { file: "plugin/skills/cycle/task-brief.md", kind: "step", key: "git -C up.git fetch -q ../repo main:main", count: 1, why: "a lab's upstream: a fetch between two folders on the machine" },
+  { file: "plugin/skills/cycle/task-brief.md", kind: "step", key: "git fetch -q origin", count: 1, why: "a lab's upstream, origin being ../up.git" },
+  { file: "plugin/skills/init/gates.md", kind: "step", key: "git push", count: 9, why: "the ask rule init proposes and the push mode question; the push is closingPush's" },
+  { file: "plugin/skills/init/gates.md", kind: "step", key: "npm publish", count: 1, why: "an ask rule's command, proposed" },
+  { file: "plugin/skills/init/gates.md", kind: "step", key: "pnpm publish", count: 1, why: "an ask rule's command, proposed" },
+  { file: "plugin/skills/init/gates.md", kind: "step", key: "npm run deploy", count: 1, why: "an ask rule's command, proposed" },
+  { file: "plugin/skills/init/gates.md", kind: "step", key: "gh repo create x --source . --push", count: 1, why: "why a repository with no remote gets the gh rules" },
+  { file: "plugin/skills/init/gates.md", kind: "step", key: "gh pr merge", count: 1, why: "an ask rule's command, proposed" },
+  { file: "plugin/skills/init/gates.md", kind: "step", key: "gh repo sync", count: 1, why: "an ask rule's command, proposed" },
+  { file: "plugin/skills/init/gates.md", kind: "step", key: "gh release", count: 1, why: "an ask rule's command, proposed" },
+  { file: "plugin/skills/init/gates.md", kind: "step", key: "gh repo create", count: 2, why: "an ask rule's command, proposed, and what runs unasked without it" },
+  { file: "plugin/skills/init/gates.md", kind: "step", key: "gh gist create", count: 1, why: "an ask rule's command, proposed" },
+  { file: "plugin/skills/init/gates.md", kind: "step", key: "gh api", count: 3, why: "an ask rule's command and its limits" },
+  { file: "plugin/skills/init/gates.md", kind: "step", key: "gh api *-X POST*", count: 1, why: "an ask rule as the scan writes it" },
+  { file: "plugin/skills/init/gates.md", kind: "step", key: "gh api repos/x -X POST", count: 1, why: "what a mistyped rule lets run" },
+  { file: "plugin/skills/init/gates.md", kind: "step", key: "gh release *", count: 1, why: "an ask rule, as doctor counts it" },
+  { file: "plugin/skills/init/gates.md", kind: "step", key: "gh release view", count: 1, why: "a read that rule asks about too" },
+  { file: "plugin/skills/init/gates.md", kind: "step", key: "npm install -g", count: 1, why: "an offered rule's command" },
+  { file: "plugin/skills/init/gates.md", kind: "step", key: "pnpm add -g", count: 1, why: "an offered rule's command" },
+  { file: "plugin/skills/init/gates.md", kind: "step", key: "npm install --global-style tsx", count: 1, why: "a harmless command such a rule stops, as a limit" },
+  { file: "plugin/skills/init/gates.md", kind: "step", key: "pnpm exec", count: 1, why: "a spelling such a rule does not stop, as a limit" },
 ];
+
+/**
+ * The sites of `files` set against an allow list, both ways: a site whose count the list does not hold, and an
+ * entry no file holds.
+ * @param {string[]} files @param {(file: string) => string} readFile @param {{ file: string, kind: string, key: string, count: number }[]} list
+ */
+function offList(files, readFile, list) {
+  /** @type {Map<string, number>} */
+  const counted = new Map();
+  /** @type {Map<string, number[]>} */
+  const lines = new Map();
+  for (const file of files) {
+    for (const s of fileSites(file, readFile(file))) {
+      const k = `${file} ${s.kind} ${s.key}`;
+      counted.set(k, (counted.get(k) ?? 0) + 1);
+      lines.set(k, [...(lines.get(k) ?? []), s.line]);
+    }
+  }
+  const allowed = new Map(list.map((a) => [`${a.file} ${a.kind} ${a.key}`, a.count]));
+  const unlisted = [...counted].filter(([k, n]) => allowed.get(k) !== n).map(([k, n]) => `${k}: ${n} in the code (lines ${lines.get(k)?.join(", ")}), ${allowed.get(k) ?? 0} allowed`);
+  const gone = [...allowed].filter(([k]) => !counted.has(k)).map(([k, n]) => `${k}: ${n} allowed, none in the code`);
+  return { counted, problems: [...unlisted, ...gone] };
+}
+
+/**
+ * What one command runs, read as shell words (quoted parts unquoted, a quoted word with spaces one word), past what
+ * stands in front of it: assignments, shell keywords, `env`, `timeout` and Ennyn's own `lock … --`. `net`: it starts
+ * a network program, git on one of `GIT_STEP` (its global options skipped) or one of Ennyn's network commands, named
+ * in `ennyn` (Ennyn by name or path, or node with its options on that path).
+ * @param {string} cmd
+ * @returns {{ net: boolean, ennyn?: string }}
+ */
+export function stepCommand(cmd) {
+  return runs((cmd.match(WORD) ?? []).map((w) => w.replace(/"((?:\\.|[^"\\])*)"?|'([^']*)'?/g, (_, d, s) => d ?? s)));
+}
+
+/** @param {string[]} words @returns {{ net: boolean, ennyn?: string }} */
+function runs(words) {
+  let i = 0;
+  const options = (/** @type {(w: string) => boolean} */ valued) => {
+    while (words[i]?.startsWith("-")) i += valued(words[i]) ? 2 : 1;
+  };
+  for (;;) {
+    while (/^\w+=/.test(words[i] ?? "")) i++;
+    if (LEADING.has(words[i])) i++;
+    else if (words[i] === "env") (i++, options((w) => w === "-u" || w === "-C" || w === "-S"));
+    else if (words[i] === "timeout") (i++, options((w) => w === "-k" || w === "-s"), i++);
+    else break;
+  }
+  const program = words[i];
+  if (program === undefined) return { net: false };
+  const name = program.slice(program.lastIndexOf("/") + 1).toLowerCase();
+  if (NET_NAMES.has(name)) return { net: true };
+  i++;
+  if (name === "git") {
+    options((w) => GIT_VALUED.has(w));
+    return { net: GIT_STEP.has(words[i]) };
+  }
+  if (name === "node") {
+    options(() => false);
+    if (!/(?:^|\/)ennyn\.mjs$/.test(words[i++] ?? "")) return { net: false };
+  } else if (name !== "ennyn" && name !== "ennyn.mjs") return { net: false };
+  options(() => false);
+  const sub = words[i];
+  if (sub === "lock") {
+    const end = words.indexOf("--", i);
+    return end < 0 ? { net: false } : runs(words.slice(end + 1));
+  }
+  return sub !== undefined && Object.hasOwn(ENNYN_NET, sub) ? { net: true, ennyn: sub } : { net: false };
+}
+
+/**
+ * The allow-list steps that run one of Ennyn's network commands with a claim other than that command's.
+ * @param {typeof ALLOWED} list
+ */
+function wrongClaims(list) {
+  return list.flatMap((a) => {
+    const c = a.kind === "step" ? stepCommand(a.key).ennyn : undefined;
+    return c && Object.hasOwn(ENNYN_NET, c) && a.claim !== ENNYN_NET[c] ? [`${a.file} ${a.key}: claim ${a.claim ?? "none"}, not ${ENNYN_NET[c]}`] : [];
+  });
+}
 
 /** The README's list: from its lead to the line that points at SECURITY.md's section. @param {string} text @param {string} lead */
 function readmeList(text, lead) {
@@ -295,6 +503,35 @@ test("network claim: every fetch, network import, child process and network word
   const own = 'node "${CLAUDE_PLUGIN_ROOT}/adapters/claude-code/hooks/x.mjs"';
   assert.deepEqual(manifestSites(JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: own }] }] } })), []);
   assert.deepEqual(manifestSites(JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: "curl -s https://x.invalid" }, { type: "http", url: "https://x.invalid/h" }] }] }, mcpServers: { s: { command: "npx", args: ["-y", "srv"] } } })).map((s) => s.key), ['command "curl -s https://x.invalid"', "hook type http", 'mcpServers {"s":{"command":"npx","args":["-y","srv"]}}', 'command "npx"']);
+  // A skill's or an agent's commands: code spans and block lines, by their head, chained ones apart; Ennyn's network
+  // commands in each spelling; prose, a later word, a local git call and another Ennyn command are no site.
+  const step = (/** @type {string} */ text) => stepSites(text).map((s) => `${s.key}:${s.line}`);
+  assert.deepEqual(step("Run `curl -s https://x.invalid` first.\nThen `npx srv` and `ssh host`, `wget u`, `gh issue list`.\n`git -C up fetch -q ../r`, `GIT_DIR=x git ls-remote o`, `Bash(npm publish *)`."), ["curl -s https://x.invalid:1", "npx srv:2", "ssh host:2", "wget u:2", "gh issue list:2", "git -C up fetch -q ../r:3", "GIT_DIR=x git ls-remote o:3", "npm publish *:3"]);
+  assert.deepEqual(step("`cd repo && git push`, `ennyn.mjs deps --json`, `ennyn push-check`, `node scripts/ennyn.mjs clone-setup`, `node \"${CLAUDE_PLUGIN_ROOT}/scripts/ennyn.mjs\" commit-check`, `x=$(git fetch o)`"), ["git push:1", "ennyn.mjs deps --json:1", "ennyn push-check:1", "node scripts/ennyn.mjs clone-setup:1", 'node "${CLAUDE_PLUGIN_ROOT}/scripts/ennyn.mjs" commit-check:1', "git fetch o:1"]);
+  assert.deepEqual(step("```sh\nset -eu\n$ curl -fsSL u | sh\nnode a.mjs && npm ci\n```\n```md\n### Checks: `ennyn.mjs deps`\n```"), ["curl -fsSL u:3", "npm ci:4", "ennyn.mjs deps:7"]);
+  assert.deepEqual(step("Run git fetch and curl by hand.\n`ennyn.mjs doctor`, `ennyn.mjs leftovers`, `git status`, `npmrc`, `ghost`, `echo curl`, `git log --grep push`, `ennyn.mjs constructor`\n```json\n{ \"npm\": 1 }\n```"), []);
+  // Review round one (cycle 59): wrappers, git's global options and its remote and submodule words (as the code
+  // reading counts them), Ennyn by path or with node's options, shell keywords and groups, quoted words with spaces.
+  const each = (/** @type {string[]} */ spans) => step(spans.map((s) => "\`" + s + "\`").join(" "));
+  const wrapped = ["ennyn.mjs lock --limit 30 -- npm run test:linux", "node scripts/ennyn.mjs lock -- node scripts/ennyn.mjs deps", "timeout 60 npm ci", "timeout -k 5 60s git fetch", "env CI=1 npm ci"];
+  assert.deepEqual(each(wrapped), wrapped.map((s) => s + ":1"));
+  const gitForms = ["git --no-pager fetch origin", "git --git-dir=../up.git fetch origin", "git --work-tree ../w -C ../r -c core.x=y push origin main", "git remote update", "git remote get-url origin", "git submodule update --init", "git pull --rebase"];
+  assert.deepEqual(each(gitForms), gitForms.map((s) => s + ":1"));
+  const ennynForms = ["plugin/scripts/ennyn.mjs deps", "node --no-warnings scripts/ennyn.mjs deps", "ennyn.mjs --json deps", 'node "${CLAUDE_PLUGIN_ROOT}/scripts/ennyn.mjs"  deps'];
+  assert.deepEqual(each(ennynForms), ennynForms.map((s) => s.replace(/\s+/g, " ") + ":1"));
+  assert.deepEqual(step("\`if true; then git push; fi\`, \`! git fetch origin\`, \`{ git fetch origin; }\`, \`while true; do curl u; done\`"), ["then git push:1", "! git fetch origin:1", "{ git fetch origin:1", "do curl u:1"]);
+  assert.deepEqual(step('\`GIT_SSH_COMMAND="ssh -o BatchMode=yes" git push\`, \`git -C "$HOME/my repo" fetch\`, \`X=\'a b\' npm ci\`'), ['GIT_SSH_COMMAND="ssh -o BatchMode=yes" git push:1', 'git -C "$HOME/my repo" fetch:1', "X='a b' npm ci:1"]);
+  // Look-alikes the wrappers and keywords must not turn into sites.
+  assert.deepEqual(step("\`ennyn.mjs lock --limit 30 -- node scripts/ennyn.mjs test fast\`, \`timeout 60 node a.mjs\`, \`env CI=1 node a.mjs\`, \`then echo push\`, \`git -C ../r status\`, \`git --no-pager log --grep fetch\`, \`node --check scripts/ennyn.mjs\`, \`ennyn.mjs --json doctor\`"), []);
+  // A fence line with an info string inside a block is the block's text, not its end (CommonMark: a closing fence has none).
+  assert.deepEqual(step("```md\n```sh\ncurl x\n```"), ["curl x:3"]);
+  assert.deepEqual(step("A `span broken\nover` two lines."), ["unread: a code span this reading cannot pair:1", "unread: a code span this reading cannot pair:2"]);
+  // Which files are read as steps: the skills' and the agents' Markdown, no other.
+  for (const f of ["plugin/skills/x/SKILL.md", "plugin/agents/x.md"]) assert.deepEqual(fileSites(f, "`curl u`").map((s) => s.key), ["curl u"], f);
+  for (const f of ["docs/x.md", "plugin/skills/x/notes.txt", "README.md"]) assert.deepEqual(fileSites(f, "`curl u`"), [], f);
+  // Each of Ennyn's network commands is one the CLI has.
+  const cliText = read("plugin/scripts/ennyn.mjs");
+  for (const c of Object.keys(ENNYN_NET)) assert.match(cliText, new RegExp(String.raw`^  (?:async )?(?:"${escape(c)}"|${escape(c)})\(args\) \{$`, "m"), `ennyn ${c}`);
   // The files are git's: tracked and untracked unignored, not an ignored worktree, a nested repository or test/.
   const box = mkdtempSync(join(tmpdir(), "nc-walk-"));
   git(["init", "-q", "-b", "main"], { cwd: box });
@@ -309,24 +546,19 @@ test("network claim: every fetch, network import, child process and network word
   assert.deepEqual(ownFiles(box), [".gitignore", "a.mjs", "lab/b.mjs"]);
   const files = ownFiles(TOP);
   assert.ok(["plugin/checks/deps.mjs", "plugin/scripts/ennyn.mjs", "scripts/ennyn.mjs", "plugin/hooks/hooks.json", "plugin/.claude-plugin/plugin.json"].every((f) => files.includes(f)), `the walk found the shipped code: ${files.length} files`);
-  /** @type {Map<string, number>} */
-  const counted = new Map();
-  /** @type {Map<string, number[]>} */
-  const lines = new Map();
-  for (const file of files) {
-    for (const s of fileSites(file, read(file))) {
-      const k = `${file} ${s.kind} ${s.key}`;
-      counted.set(k, (counted.get(k) ?? 0) + 1);
-      lines.set(k, [...(lines.get(k) ?? []), s.line]);
-    }
-  }
-  const allowed = new Map(ALLOWED.map((a) => [`${a.file} ${a.kind} ${a.key}`, a.count]));
-  assert.equal(allowed.size, ALLOWED.length, "each allow-list entry once");
-  const unlisted = [...counted].filter(([k, n]) => allowed.get(k) !== n).map(([k, n]) => `${k}: ${n} in the code (lines ${lines.get(k)?.join(", ")}), ${allowed.get(k) ?? 0} allowed`);
-  const gone = [...allowed].filter(([k]) => !counted.has(k)).map(([k, n]) => `${k}: ${n} allowed, none in the code`);
-  assert.deepEqual([...unlisted, ...gone], [], "a network site the allow list does not hold, or an entry the code no longer holds: name it in the README's list and SECURITY.md, or say why it reaches nothing");
+  const { counted, problems } = offList(files, read, ALLOWED);
+  assert.equal(new Set(ALLOWED.map((a) => `${a.file} ${a.kind} ${a.key}`)).size, ALLOWED.length, "each allow-list entry once");
+  assert.deepEqual(problems, [], "a network site the allow list does not hold, or an entry the code no longer holds: name it in the README's list and SECURITY.md, or say why it reaches nothing");
+  // The comparison's control: a step off the list, a count that differs and an entry no file holds, each said.
+  const fake = /** @type {Record<string, string>} */ ({ "plugin/skills/a/SKILL.md": "Run `curl u`, then `gh api x` and `gh api x`.\n", "plugin/agents/b.md": "" });
+  const fakeList = [{ file: "plugin/skills/a/SKILL.md", kind: "step", key: "gh api x", count: 1, why: "made up" }, { file: "plugin/agents/b.md", kind: "step", key: "ssh h", count: 1, why: "made up" }];
+  assert.deepEqual(offList(Object.keys(fake), (f) => fake[f], fakeList).problems, ["plugin/skills/a/SKILL.md step curl u: 1 in the code (lines 1), 0 allowed", "plugin/skills/a/SKILL.md step gh api x: 2 in the code (lines 1, 1), 1 allowed", "plugin/agents/b.md step ssh h: 1 allowed, none in the code"]);
   // The calls the documents name are there: the scan reads what it says it reads.
-  for (const k of ["plugin/checks/deps.mjs call fetch", "plugin/setup/clone-setup.mjs call fetch", "plugin/checks/test-runs.mjs word fetch"]) assert.ok(counted.has(k), k);
+  for (const k of ["plugin/checks/deps.mjs call fetch", "plugin/setup/clone-setup.mjs call fetch", "plugin/checks/test-runs.mjs word fetch", "plugin/skills/cycle/SKILL.md step ennyn.mjs deps", "plugin/skills/init/SKILL.md step gh issue list --state open --limit 50 --json number,title,labels"]) assert.ok(counted.has(k), k);
+  // A step that runs one of Ennyn's network commands maps to that command's claim, not to a why or another claim.
+  assert.deepEqual(wrongClaims(ALLOWED), []);
+  const bad = [{ file: "f.md", kind: "step", key: "ennyn.mjs deps", count: 1, why: "said elsewhere" }, { file: "f.md", kind: "step", key: "node scripts/ennyn.mjs push-check", count: 1, claim: /** @type {const} */ ("osv") }];
+  assert.deepEqual(wrongClaims(bad), ["f.md ennyn.mjs deps: claim none, not osv", "f.md node scripts/ennyn.mjs push-check: claim osv, not pushCheck"]);
 });
 
 /**
@@ -340,7 +572,7 @@ function unsaid(docs, readFile) {
   /** @type {string[]} */
   const missing = [];
   for (const [id, c] of Object.entries(CLAIMS)) {
-    if (!used.has(id) && !c.sources?.length) missing.push(`${id}: no code site carries it and it names no source`);
+    if (!used.has(id) && !c.sources?.length) missing.push(`${id}: no site carries it and it names no source`);
     for (const s of c.sources ?? []) if (!readFile(s.file).includes(s.text)) missing.push(`${id}: ${s.file} no longer holds ${s.text}`);
     for (const w of [...c.readme, ...c.en]) if (!docs.en.includes(w)) missing.push(`README.md: ${id} needs ${w}`);
     for (const w of [...c.readme, ...c.tr]) if (!docs.tr.includes(w)) missing.push(`README.tr.md: ${id} needs ${w}`);
@@ -360,8 +592,9 @@ test("network claim: each allowed call that reaches the network is named in READ
   // The positive control: with empty documents and sources every claim is missing, in each place.
   const none = unsaid({ en: "", tr: "", security: "" }, () => "");
   for (const id of Object.keys(CLAIMS)) for (const place of ["README.md", "README.tr.md", "SECURITY.md"]) assert.ok(none.some((m) => m.startsWith(`${place}: ${id} `)), `${place}: ${id} is checked`);
-  assert.ok(none.some((m) => m.startsWith("closingPush: plugin/skills/cycle/push.md")), "a source is checked");
-  assert.ok(none.some((m) => m.startsWith("osv: plugin/skills/cycle/SKILL.md")), "a source beside a code site is checked");
+  assert.ok(none.some((m) => m.startsWith("partialClone: plugin/core/git.mjs")), "a source is checked");
+  // A claim only skill steps carry counts as carried: the steps are read.
+  for (const id of ["closingPush", "initIssues", "initNpm"]) assert.ok(!none.some((m) => m.startsWith(`${id}: no site`)), `${id} is carried by a step`);
   // The list names nothing it no longer is: there are more than two cases.
   for (const text of [en, tr]) assert.doesNotMatch(text, /only two cases|iki durumda/);
 });
