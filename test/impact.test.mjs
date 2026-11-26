@@ -311,8 +311,10 @@ test("impact: referenceCommand output replaces git grep (first 40 lines), failur
 
 test("impact: a reference command whose runner is asked to stop reads as ended by that signal, not as a runner that failed", () => {
   const dir = fixtureRepo();
-  // The command asks its parent, the runner, to stop: the runner stops the command's group and says so.
-  writeFileSync(join(dir, "ask.mjs"), 'process.kill(process.ppid, "SIGTERM");\nsetInterval(() => {}, 1000);\n');
+  // The command asks its parent, the runner, to stop: the runner stops the command's group and says so. The command
+  // still runs when the runner stops it, and ends by itself 30 s later: a runner that died before it could stop the
+  // group (impact-signal-test-under-load) leaves no process behind.
+  writeFileSync(join(dir, "ask.mjs"), 'process.kill(process.ppid, "SIGTERM");\nsetTimeout(() => process.exit(0), 30_000);\n');
   const row = buildImpactTable({ cwd: dir, config: cfg({ impact: { referenceCommand: "node ask.mjs {symbol}" } }), symbol: "x", files: ["src/lib/engine/parse.js"] }).rows[0];
   assert.match(row.answer, /reference command failed: killed by SIGTERM/);
 });
