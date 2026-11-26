@@ -9,7 +9,9 @@ Ennyn, Claude Code için bir plugin ve Node CLI aracı. Agent'a bir çalışma d
 
 [Kurulum](#kurulum-claude-code) · [Kurmadan deneyin](#kurmadan-deneyin)
 
-![Ennyn reposunda çalıştırılan ennyn rework, ennyn doctor ve ennyn core çıktısı](docs/assets/terminal.png)
+![Uydurma bir örnek projede ennyn init-scan, ennyn core ve ennyn convergence çıktısı](docs/assets/demo.svg)
+
+Uydurma bir mağaza projesi, bir döngüden önce ve sonra: `ennyn init-scan`, `/ennyn:init` daha hiçbir şey sormadan repoyu okuyor; `ennyn core` iş grafından sıradaki görevi seçiyor; `ennyn convergence` da döngüdeki kontrollerin ve review'ların bulduklarını sayıyor. Görüntü bir Claude oturumunun kaydı değil, CLI'ın kendi çıktısı.
 
 > Proje henüz erken aşamada (0.1.x). Ennyn, Claude Code ile ve kendi döngüsü kullanılarak geliştiriliyor; iş grafı, bulguları ve metrikleri `.ennyn/` klasöründe; döngüler arası devir notları çalışma notu olduğu için repo dışında tutuluyor. Config formatı 1.0'a kadar değişebilir.
 

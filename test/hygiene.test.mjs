@@ -72,7 +72,8 @@ export function scanRepo(root) {
   const files = git(["-c", "core.quotePath=false", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], { cwd: root }).split("\0").filter(Boolean);
   /** @type {string[]} */
   const bad = [];
-  let read = 0;
+  /** @type {string[]} */
+  const seen = [];
   for (const f of files) {
     for (const what of findings(f, list)) bad.push(`path ${f}: ${what}`);
     let text;
@@ -81,13 +82,13 @@ export function scanRepo(root) {
     } catch {
       continue;
     }
-    read++;
+    seen.push(f);
     for (const what of findings(text, list)) bad.push(`${f}: ${what}`);
   }
   const head = gitMaybe(["rev-parse", "--verify", "-q", "HEAD"], { cwd: root, absent: [1] });
   const log = head ? git(["log", "-z", "--format=%H%x00%B"], { cwd: root }).split("\0") : [];
   for (let i = 0; i + 1 < log.length; i += 2) for (const what of findings(log[i + 1], list)) bad.push(`commit ${log[i].replace(/^\n/, "").slice(0, 10)}: ${what}`);
-  return { bad, read, commits: log.length / 2, missing };
+  return { bad, read: seen.length, seen, commits: log.length / 2, missing };
 }
 
 test("hygiene: a name is found whole, as part of a word, in any case it is listed for; a home path in its usual forms", () => {
@@ -113,11 +114,14 @@ test("hygiene: the repository scan finds a name in a file, a path, a symlink tar
   writeFileSync(join(dir, "docs", "a.md"), `about ${name}\n`);
   writeFileSync(join(dir, "docs", `${name.toLowerCase()}-notes.md`), "plain\n");
   writeFileSync(join(dir, "bin.dat"), Buffer.from(`\0\0${name}\0`));
+  // An image made of text, as the README's demo is: what it shows is read like any other file.
+  writeFileSync(join(dir, "shot.svg"), `<svg xmlns="http://www.w3.org/2000/svg"><text x="1" y="1">~/${name.toLowerCase()} $ ennyn core</text></svg>\n`);
   symlinkSync("/" + "Users/someone/notes.md", join(dir, "link.md"));
   git(["add", "-A"], { cwd: dir });
   git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", `docs: from ${name}`], { cwd: dir });
   const res = scanRepo(dir);
-  assert.equal(res.bad.length, 5, res.bad.join("\n"));
+  assert.equal(res.bad.length, 6, res.bad.join("\n"));
+  assert.ok(res.bad.includes("shot.svg: a project name (7 characters)"), res.bad.join("\n"));
 });
 
 /**
@@ -130,10 +134,13 @@ export function repoCheck(t, root) {
   if (res.missing) t.diagnostic(res.missing);
   assert.ok(res.read > 50 && res.commits > 10, `read ${res.read} files and ${res.commits} commits: a scan that reads nothing finds nothing`);
   assert.deepEqual(res.bad, []);
+  return res;
 }
 
 test("hygiene: no file, path, symlink or commit message here names a project that uses Ennyn or holds a home path", (t) => {
-  repoCheck(t, ROOT);
+  const res = repoCheck(t, ROOT);
+  // The README's demo is an image a script writes from a sample project: the scan reads its text too.
+  assert.ok(res.seen.includes("docs/assets/demo.svg"), "the demo image was not read");
 });
 
 test("hygiene: the repository check says so when the clone has no list, and says nothing when it has one", () => {

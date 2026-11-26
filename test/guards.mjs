@@ -90,8 +90,27 @@ export const GATES = [
         new: "",
         pattern: "hygiene: the repository check says so",
       },
+      {
+        id: "hygiene-svg-skipped",
+        why: "an image made of text, the README's demo, not read",
+        file: "test/hygiene.test.mjs",
+        old: "    seen.push(f);\n",
+        new: '    if (f.endsWith(".svg")) continue;\n    seen.push(f);\n',
+        pattern: "hygiene: the repository scan finds",
+      },
       { id: "hygiene-secret", why: "a secret shape in a tracked file", file: "DESIGN.md", old: "# ennyn — design\n", new: `# ennyn — design\n\nnpmrc: ${TOKEN}\n`, pattern: "hygiene: no tracked file holds a secret" },
       { id: "hygiene-secret-judge", why: "a secret scan that finds nothing", file: "plugin/checks/secrets.mjs", old: "    if (matchAny(path, except)) continue;\n", new: "    if (path) continue;\n", pattern: "hygiene: no tracked file holds a secret" },
+    ],
+  },
+  {
+    test: "test/demo.test.mjs",
+    guards: [
+      { id: "demo-image-edited", why: "the committed image no longer what the CLI prints", file: "docs/assets/demo.svg", old: "found in review 2", new: "found in review 3", pattern: "demo: the committed image" },
+      { id: "demo-cli-drift", why: "the CLI prints another line than the image shows", file: "plugin/i18n/en.json", old: '"core.oldest": "oldest: {id} ({value}, {cost})",', new: '"core.oldest": "oldest task: {id} ({value}, {cost})",', pattern: "demo: the committed image" },
+      { id: "demo-generator-drift", why: "the generator writes another transcript than the image shows", file: "test/demo/make.mjs", old: 'const PLACE = "~/lamplight";', new: 'const PLACE = "~/lamplight-shop";', pattern: "demo: the committed image" },
+      { id: "demo-wrap-drops", why: "a wrapped line loses a character", file: "test/demo/make.mjs", old: "rest = rest.slice(space > 0 ? cut + 1 : cut);", new: "rest = rest.slice(space > 0 ? cut + 2 : cut);", pattern: "demo: wrapping keeps" },
+      { id: "demo-escape-dropped", why: "the CLI's text written into the image as markup", file: "test/demo/make.mjs", old: '.replace(/</g, "&lt;")', new: "", pattern: "demo: wrapping keeps" },
+      { id: "demo-readme", why: "a README without the image at its top", file: "README.tr.md", old: "](docs/assets/demo.svg)", new: "](docs/assets/terminal.png)", pattern: "demo: both READMEs" },
     ],
   },
   {

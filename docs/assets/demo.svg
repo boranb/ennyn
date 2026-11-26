@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="870" viewBox="0 0 880 870" role="img" aria-labelledby="t">
+<title id="t">ennyn init-scan, core and convergence on a made-up sample project, as the CLI prints them</title>
+<style>
+text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;font-size:14px;fill:#d1d7e0;white-space:pre}
+.p{fill:#8b949e}.c{fill:#f0f6fc;font-weight:bold}.h{fill:#8b949e;font-size:13px}
+</style>
+<rect x="0.5" y="0.5" width="879" height="869" rx="10" fill="#161b22" stroke="#3d444d"/>
+<path d="M0.5 36H879.5" stroke="#3d444d"/>
+<circle cx="20" cy="18" r="6" fill="#f85149"/><circle cx="40" cy="18" r="6" fill="#d29922"/><circle cx="60" cy="18" r="6" fill="#3fb950"/>
+<text class="h" x="440" y="23" text-anchor="middle">~/lamplight — a made-up sample project</text>
+<g xml:space="preserve">
+<text x="20" y="60"><tspan class="p">$ </tspan><tspan class="c">ennyn init-scan</tspan></text>
+<text x="20" y="80">Config: none yet; defaults apply.</text>
+<text x="20" y="100">Work graph: none at ~/lamplight/.ennyn/graph.json.</text>
+<text x="20" y="120">New project: no; outside the names a new project holds: docs/, package-lock.json, package.json,</text>
+<text x="20" y="140">  src/, test/.</text>
+<text x="20" y="160">History: 32 recent commits touch production code (the rework rate counts these); share with</text>
+<text x="20" y="180">  conventional prefixes (type: subject) 100%.</text>
+<text x="20" y="200">Commit language: en (0 subjects read as Turkish, 23 as English).</text>
+<text x="20" y="220">Subject types in use: feat 15 · fix 13 · test 5 · refactor 3 · chore 2 · docs 2</text>
+<text x="20" y="240">Fix label: ^fix(\(|!?:) matches 13 of 32 commits (41%). Proposed for metrics.fixSubject.</text>
+<text x="20" y="260">Tests: 4 tracked files match metrics.testRe.</text>
+<text x="20" y="280">Risky-looking paths (candidates for review.impactRequiredGlobs): src/orders.mjs</text>
+<text x="20" y="300">Commands: npm test</text>
+<text x="20" y="320">Mutation: no tool configured; the cycle hand-picks mutants and runs them with ennyn mutate until one</text>
+<text x="20" y="340">  is.</text>
+<text x="20" y="360">Ask rules before what leaves the machine: none: Bash(git push *), PowerShell(git push *), Bash(npm</text>
+<text x="20" y="380">  publish *), PowerShell(npm publish *), Bash(gh pr merge *), PowerShell(gh pr merge *), Bash(gh</text>
+<text x="20" y="400">  repo sync *), PowerShell(gh repo sync *), +30.</text>
+<text x="20" y="420">Ask rules to offer, never written unasked: 46 for what destroys local work or data, 32 for what</text>
+<text x="20" y="440">  installs outside the project (init-scan --json lists them).</text>
+<text x="20" y="480"><tspan class="p"># later: /ennyn:init has written the config and the work graph, and cycle 1 has landed</tspan></text>
+<text x="20" y="520"><tspan class="p">$ </tspan><tspan class="c">ennyn core</tspan></text>
+<text x="20" y="540">oldest: refund-flow (high, M)</text>
+<text x="20" y="560">by score:</text>
+<text x="20" y="580">  charge-idempotency (3.00, pay)</text>
+<text x="20" y="600">  stock-lock (2.00, catalog)</text>
+<text x="20" y="620">  search-typos (0.50, catalog)</text>
+<text x="20" y="660"><tspan class="p">$ </tspan><tspan class="c">ennyn convergence --cycle 1 --from 6fd7076</tspan></text>
+<text x="20" y="680">Findings: found in review 2 · fix-introduced 1 · pre-existing 1 · gate-caught 1 · escaped past</text>
+<text x="20" y="700">  commit new 0 · escaped past commit old 0</text>
+<text x="20" y="720">New classes per round: round 1 → 1 · round 2 → 1 · round 3+ → 0</text>
+<text x="20" y="740">Recurring class: retry-pays-twice — 2 times: review 2 · unchecked-amount — 2 times: gate:mutation 1,</text>
+<text x="20" y="760">  review 1</text>
+<text x="20" y="780">cycle 1: 5 of 5 rows</text>
+<text x="20" y="800">Recurrence ladder, cycles 1: rows 1 → 5; a cycle's rows count once they are in the ledger</text>
+<text x="20" y="820">rung 2: src/pay/ledger.mjs — previous-fix rows in 1: rows 4: c1-t1-author-r0-01, c1-t1-rev-r1-01,</text>
+<text x="20" y="840">  c1-t1-rev-r1-02, c1-t1-rev-r2-01</text>
+</g>
+</svg>
