@@ -5,8 +5,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { alive, git, waitGone } from "../core/git.mjs";
-import { REFERENCE_GRACE_MS } from "../impact/table.mjs";
+import { alive, git, waitGone } from "../plugin/core/git.mjs";
+import { REFERENCE_GRACE_MS } from "../plugin/impact/table.mjs";
 import { limitProblems } from "./kill-signal.mjs";
 import { lexInChild } from "./reference/markdown.mjs";
 import { fenceName, inFence, shellBox } from "./shell-box.mjs";
@@ -209,7 +209,7 @@ test("kill signal: the allow list covers an unreadable call on its line only, ne
 
 test("kill signal: every call in the tree with a time limit names its kill signal, and every call the reader cannot read is allowed by name", () => {
   const files = sources();
-  assert.ok(files.includes("core/git.mjs") && files.includes("test/shell-box.mjs"), "the tree's files were not listed");
+  assert.ok(files.includes("plugin/core/git.mjs") && files.includes("test/shell-box.mjs"), "the tree's files were not listed");
   /** @type {Map<number, number>} */
   const used = new Map();
   const refused = [];
@@ -366,7 +366,7 @@ test("kill signal: a reference command's group gets SIGTERM at the impact table'
       writeFileSync(join(w, "ref.sh"), `${start}${waits}\necho done-$1\n`);
       writeFileSync(join(repo, ".ennyn", "config.json"), JSON.stringify({ impact: { referenceCommand: `/bin/sh ${w}/ref.sh {symbol}`, referenceTimeout: 1 } }));
       const at = performance.now();
-      const r = spawnSync(process.execPath, [join(ROOT, "scripts", "ennyn.mjs"), "impact", "--symbol", "add", "--files", "a.js"], { cwd: repo, encoding: "utf8", timeout: HOLD_S * 2000, killSignal: "SIGKILL" });
+      const r = spawnSync(process.execPath, [join(ROOT, "plugin", "scripts", "ennyn.mjs"), "impact", "--symbol", "add", "--files", "a.js"], { cwd: repo, encoding: "utf8", timeout: HOLD_S * 2000, killSignal: "SIGKILL" });
       const took = performance.now() - at;
       const s1 = String(r.stdout.split("\n").find((l) => l.startsWith("| S1 ")));
       if (worker === "cleans" || worker === "deaf") assert.match(s1, /timed out after 1 s/, `${worker}: ${r.stderr}`);

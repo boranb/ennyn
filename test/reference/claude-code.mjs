@@ -59,11 +59,11 @@ import { createServer } from "node:http";
 import { devNull, tmpdir } from "node:os";
 import { delimiter, dirname, join, posix } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { DEFAULTS } from "../../core/config.mjs";
-import { sensitivePaths } from "../../plan/audit.mjs";
-import { askRules } from "../../setup/permissions.mjs";
-import { agentSetup, projectFiles } from "../../setup/scan.mjs";
-import { loadPathScopedRules, rulesForPath } from "../../adapters/claude-code/rules-index.mjs";
+import { DEFAULTS } from "../../plugin/core/config.mjs";
+import { sensitivePaths } from "../../plugin/plan/audit.mjs";
+import { askRules } from "../../plugin/setup/permissions.mjs";
+import { agentSetup, projectFiles } from "../../plugin/setup/scan.mjs";
+import { loadPathScopedRules, rulesForPath } from "../../plugin/adapters/claude-code/rules-index.mjs";
 import { claudeBinary, safePath, versionOf } from "./claude-bin.mjs";
 
 export { claudeBinary, safePath, versionOf };

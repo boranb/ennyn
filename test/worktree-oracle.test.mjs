@@ -21,8 +21,8 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { appendFileSync, chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { GIT_FLOOR, gitVersion, parseVersion, versionAtLeast } from "../core/git.mjs";
-import { AGENT_WORKTREES, checkSetup } from "../setup/doctor.mjs";
+import { GIT_FLOOR, gitVersion, parseVersion, versionAtLeast } from "../plugin/core/git.mjs";
+import { AGENT_WORKTREES, checkSetup } from "../plugin/setup/doctor.mjs";
 import { ownHome } from "./own-home.mjs";
 
 const { root: ROOT, home: HOME } = ownHome("en-worktree-oracle-");

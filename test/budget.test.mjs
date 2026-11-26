@@ -5,13 +5,13 @@ import { chmodSync, mkdtempSync, mkdirSync, readdirSync, rmSync, statSync, symli
 import { tmpdir } from "node:os";
 import { basename, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { git, indexEntries } from "../core/git.mjs";
-import { ruleKey, instructionBudget, readBudgets, recordBudget, previousBudget } from "../setup/budget.mjs";
-import { importsOf } from "../setup/scan.mjs";
-import { lineKey } from "../plan/audit.mjs";
-import { checkSetup } from "../setup/doctor.mjs";
+import { git, indexEntries } from "../plugin/core/git.mjs";
+import { ruleKey, instructionBudget, readBudgets, recordBudget, previousBudget } from "../plugin/setup/budget.mjs";
+import { importsOf } from "../plugin/setup/scan.mjs";
+import { lineKey } from "../plugin/plan/audit.mjs";
+import { checkSetup } from "../plugin/setup/doctor.mjs";
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "scripts", "ennyn.mjs");
 /** The metrics-log corpus of the cycle 14 security audit's data review. */
 const CELLS = join(dirname(fileURLToPath(import.meta.url)), "__fixtures__", "metrics-log", "cells.json");
 
@@ -168,7 +168,7 @@ test("cli and doctor: budget --record keeps a number per cycle; growth warns wit
 });
 
 test("budget: descriptions written as YAML blocks and command descriptions count", async () => {
-  const { frontMatterField } = await import("../setup/budget.mjs");
+  const { frontMatterField } = await import("../plugin/setup/budget.mjs");
   assert.equal(frontMatterField("name: x\ndescription: >\n  folded over\n  two lines\nother: y", "description"), "folded over two lines");
   assert.equal(frontMatterField("description: |\n  kept\n  apart\n", "description"), "kept\napart");
   assert.equal(frontMatterField("description: plain", "description"), "plain");
@@ -755,8 +755,8 @@ test("budget audit: a code block ends only at a fence of its own character, as l
 });
 
 test("budget audit (sweep): a text kept to its bound is never cut inside a character, in budget, init-scan and impact", async () => {
-  const { clipped } = await import("../core/i18n.mjs");
-  const { commitRuleLines, banLines } = await import("../setup/scan.mjs");
+  const { clipped } = await import("../plugin/core/i18n.mjs");
+  const { commitRuleLines, banLines } = await import("../plugin/setup/scan.mjs");
   const cutAt = (/** @type {number} */ n) => `${"a".repeat(n)}😀${"b".repeat(200)}`;
   assert.equal(clipped(cutAt(116), 120), `${"a".repeat(116)}…`);
   assert.equal(clipped("x".repeat(120), 120), "x".repeat(120));
@@ -870,7 +870,7 @@ test("budget audit: a write that stops short goes on; one that fails is said and
   assert.ok(readFileSync(log, "utf8").endsWith('{"kind":"other"}\n'));
   // A file other processes append to (the gate log, which worktrees share) is never cut: a cut could erase a line
   // appended in between. What the failed append put in stays, cut short, and the next append closes it.
-  const { writeState } = await import("../core/files.mjs");
+  const { writeState } = await import("../plugin/core/files.mjs");
   const shared = join(dir, "shared.jsonl");
   writeFileSync(shared, '{"n":1}\n');
   try {

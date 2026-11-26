@@ -13,10 +13,10 @@ import * as nodeModule from "node:module";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { git } from "../core/git.mjs";
-import { matchAny } from "../core/glob.mjs";
+import { git } from "../plugin/core/git.mjs";
+import { matchAny } from "../plugin/core/glob.mjs";
 import { testNames } from "./declarations.mjs";
-import { DEFAULTS } from "../core/config.mjs";
+import { DEFAULTS } from "../plugin/core/config.mjs";
 import { ACCOUNTING, READS, SLOW, choose, codeHash, decide, isCode, reasons, testFiles, whatChanged } from "./short.mjs";
 
 const { registerHooks } = nodeModule;
@@ -136,10 +136,10 @@ const CORPUS = [
   // Stays out: what none of the three reads, and the code the short set already covers.
   ["the graph and the handoff", [".ennyn/graph.json", ".ennyn/handoff.md", ".ennyn/metrics.jsonl"], [], []],
   ["documents", ["README.md", "README.tr.md", "DESIGN.md", "CHANGELOG.md", "docs/evidence.md"], [], []],
-  ["the method", ["skills/cycle/SKILL.md", "skills/cycle/task-brief.md", "agents/security-reviewer.md"], [], []],
-  ["catalogs", ["i18n/en.json", "i18n/tr.json"], [], []],
-  ["a metric", ["metrics/convergence.mjs", "metrics/findings.mjs"], [], []],
-  ["a check", ["checks/secrets.mjs", "checks/ci.mjs", "checks/deps.mjs"], [], []],
+  ["the method", ["plugin/skills/cycle/SKILL.md", "plugin/skills/cycle/task-brief.md", "plugin/agents/security-reviewer.md"], [], []],
+  ["catalogs", ["plugin/i18n/en.json", "plugin/i18n/tr.json"], [], []],
+  ["a metric", ["plugin/metrics/convergence.mjs", "plugin/metrics/findings.mjs"], [], []],
+  ["a check", ["plugin/checks/secrets.mjs", "plugin/checks/ci.mjs", "plugin/checks/deps.mjs"], [], []],
   ["a test that is no gate", ["test/budget.test.mjs", "test/setup.test.mjs"], [], []],
   ["a new helper", ["test/helper.mjs"], ["test/helper.mjs"], []],
   ["a new fixture", ["test/__fixtures__/a.test.mjs"], ["test/__fixtures__/a.test.mjs"], []],
@@ -147,25 +147,26 @@ const CORPUS = [
   ["the guard list", ["test/guards.mjs"], [], [GUARDS]],
   ["the guards test", [GUARDS], [], [GUARDS]],
   ["how a gate file is read", ["test/declarations.mjs"], [], [GUARDS]],
-  ["the guards' runner", ["metrics/mutation.mjs"], [], [GUARDS]],
+  ["the guards' runner", ["plugin/metrics/mutation.mjs"], [], [GUARDS]],
   ["a gate test", ["test/plugin.test.mjs"], [], [GUARDS]],
   ["this gate", ["test/short.test.mjs"], [], [GUARDS]],
   ["a new test file", ["test/new.test.mjs"], ["test/new.test.mjs"], [GUARDS]],
   // The hook.
   ["the hook's file", [HOOK], [], [HOOK]],
-  ["the hook's installer", ["setup/hook.mjs"], [], [HOOK]],
-  ["what the hook runs", ["checks/commit-shape.mjs"], [], [HOOK]],
-  ["the hook's staged reads", ["core/git.mjs"], [], [HOOK, FAULT]],
-  ["the commit-check and fold commands", ["scripts/ennyn.mjs"], [], [HOOK, FAULT]],
-  ["what reports on the hook", ["setup/doctor.mjs"], [], [HOOK, FAULT]],
-  ["the plugin record", ["adapters/claude-code/hooks/plugin-root.mjs"], [], [HOOK, FAULT]],
+  ["the hook's installer", ["plugin/setup/hook.mjs"], [], [HOOK]],
+  ["what the hook runs", ["plugin/checks/commit-shape.mjs"], [], [HOOK]],
+  ["the hook's staged reads", ["plugin/core/git.mjs"], [], [HOOK, FAULT]],
+  ["the commit-check and fold commands", ["plugin/scripts/ennyn.mjs"], [], [HOOK, FAULT]],
+  ["the CLI's old place, which a hook written from a clone runs", ["scripts/ennyn.mjs"], [], [HOOK]],
+  ["what reports on the hook", ["plugin/setup/doctor.mjs"], [], [HOOK, FAULT]],
+  ["the plugin record", ["plugin/adapters/claude-code/hooks/plugin-root.mjs"], [], [HOOK, FAULT]],
   // The fault matrix.
   ["the matrix", [FAULT], [], [FAULT, GUARDS]],
   ["its preload", ["test/fault-fs.mjs"], [], [FAULT]],
-  ["file reads", ["core/files.mjs"], [], [FAULT]],
-  ["the config", ["core/config.mjs"], [], [FAULT]],
-  ["the hook list", ["hooks/hooks.json"], [], [FAULT]],
-  ["a Claude Code hook", ["adapters/claude-code/hooks/side-copy-rules.mjs"], [], [FAULT]],
+  ["file reads", ["plugin/core/files.mjs"], [], [FAULT]],
+  ["the config", ["plugin/core/config.mjs"], [], [FAULT]],
+  ["the hook list", ["plugin/hooks/hooks.json"], [], [FAULT]],
+  ["a Claude Code hook", ["plugin/adapters/claude-code/hooks/side-copy-rules.mjs"], [], [FAULT]],
   // Every test file loads these.
   ["the hermetic setup", ["test/hermetic.mjs"], [], [GUARDS, HOOK, FAULT]],
   ["the hostile machine", ["test/hostile.mjs"], [], [GUARDS, HOOK, FAULT]],
@@ -182,8 +183,8 @@ test("short: a slow file comes back for its listed paths and for nothing else, w
 });
 
 test("short: each rule that matches says so, with the first path that matched it", () => {
-  const back = reasons({ paths: ["docs/a.md", "core/git.mjs", "core/files.mjs", "core/config.mjs"], added: [] }, () => "");
-  assert.deepEqual(back.get(FAULT), ["core/git.mjs: every git call and file read goes through them", "core/config.mjs: the code that most often changed with the matrix"]);
+  const back = reasons({ paths: ["docs/a.md", "plugin/core/git.mjs", "plugin/core/files.mjs", "plugin/core/config.mjs"], added: [] }, () => "");
+  assert.deepEqual(back.get(FAULT), ["plugin/core/git.mjs: every git call and file read goes through them", "plugin/core/config.mjs: the code that most often changed with the matrix"]);
 });
 
 test("short: a guarded line brings the guards back; another line of the same file does not", () => {
@@ -320,14 +321,14 @@ test("short: a guarded file that cannot be read runs everything and says so", ()
 });
 
 test("short: what comes back is run and said with its reason, what stays out is said too", () => {
-  const dir = repo({ ...SUITE, "core/config.mjs": "one\n" });
-  put(dir, { "core/config.mjs": "two\n", "other.txt": "new\n" });
+  const dir = repo({ ...SUITE, "plugin/core/config.mjs": "one\n" });
+  put(dir, { "plugin/core/config.mjs": "two\n", "other.txt": "new\n" });
   const { files, says } = decide(dir);
   assert.deepEqual(files, ["test/a.test.mjs", FAULT]);
   assert.match(says[0], /^short suite, 2 of 4 test files \(changed on work since main at [0-9a-f]{7}: 2\)$/);
   assert.deepEqual(says.slice(1), [
-    "read list: not used, core/config.mjs is code",
-    `added ${FAULT}: core/config.mjs: the code that most often changed with the matrix`,
+    "read list: not used, plugin/core/config.mjs is code",
+    `added ${FAULT}: plugin/core/config.mjs: the code that most often changed with the matrix`,
     `left out ${GUARDS}: none of its listed paths changed, and it runs at the closing; its accounting test runs now`,
     `left out ${HOOK}: none of its listed paths changed, and it runs at the closing`,
   ]);
@@ -339,7 +340,7 @@ const file = (name) => `import { test } from "node:test";\ntest(${JSON.stringify
 /** The script in a copy of what it needs, with a suite of its own. @param {Record<string, string>} tests */
 function copy(tests) {
   const dir = repo({ "test/hermetic.mjs": "globalThis.HERMETIC = true;\n", [HOOK]: file("the slow file ran"), ...tests });
-  cpSync(join(ROOT, "core"), join(dir, "core"), { recursive: true });
+  cpSync(join(ROOT, "plugin", "core"), join(dir, "plugin", "core"), { recursive: true });
   copyFileSync(join(ROOT, "test", "short.mjs"), join(dir, "test", "short.mjs"));
   copyFileSync(join(ROOT, "test", "guards.mjs"), join(dir, "test", "guards.mjs"));
   copyFileSync(join(ROOT, "test", "run.mjs"), join(dir, "test", "run.mjs"));
@@ -369,12 +370,12 @@ test("short: the script runs what it chose, says so before and after the run, an
   assert.equal(good.stdout.split(left).length - 1, 2, "said before the run and after it");
   assert.ok(good.stdout.lastIndexOf(left) > good.stdout.lastIndexOf("the fast file ran"), "the last copy comes after the run's output");
 
-  put(dir, { "setup/hook.mjs": "changed\n" });
+  put(dir, { "plugin/setup/hook.mjs": "changed\n" });
   const back = run(script, dir);
   assert.equal(back.status, 0, back.stdout + back.stderr);
   assert.match(back.stdout, /the fast file ran/);
   assert.match(back.stdout, /the slow file ran/);
-  rmSync(join(dir, "setup"), { recursive: true });
+  rmSync(join(dir, "plugin", "setup"), { recursive: true });
 
   put(dir, { "test/b.test.mjs": 'import { test } from "node:test";\ntest("a failure", () => { throw new Error("no"); });\n' });
   const bad = run(script, dir);
@@ -641,13 +642,13 @@ test("short: push.codeGlobs reads as code what isCode reads, over every tracked 
 
 test("short: the method names the whole test command, runs it once at the closing and the fast one at landing, and answers a fast command with no slow list and a new slow test", () => {
   const read = (/** @type {string} */ f) => readFileSync(join(ROOT, f), "utf8");
-  const brief = read("skills/cycle/task-brief.md");
-  assert.match(read("skills/cycle/SKILL.md"), /\(fast test, whole test, lint, typecheck, the mutation tool;/);
-  assert.match(read("skills/init/SKILL.md"), /fast test, whole test \(holds every slow gate\), lint and typecheck/);
+  const brief = read("plugin/skills/cycle/task-brief.md");
+  assert.match(read("plugin/skills/cycle/SKILL.md"), /\(fast test, whole test, lint, typecheck, the mutation tool;/);
+  assert.match(read("plugin/skills/init/SKILL.md"), /fast test, whole test \(holds every slow gate\), lint and typecheck/);
   assert.match(brief, /\| \*\*Landing\*\* \| One task at a time: rebase, the fast test command and every slow gate the task touches \(no command short of the whole suite: the whole test command\), and the platform runs its brief names, whatever the agent ran, then the main branch moves; the whole test command waits for the closing \(section 3 of `SKILL\.md`\)\./);
   assert.match(brief, /The landing runs the fast test command and the slow gates the task touches \(the \*\*Landing\*\* row below\), before the main branch moves/);
   assert.match(brief, /One heavy job at a time on the machine: a whole suite, a mutation run, a platform image\./);
-  assert.match(read("skills/cycle/SKILL.md"), /7\. \*\*Push:\*\* `ennyn\.mjs worktrees --remove`; `ennyn\.mjs test whole`, once \(red: task-brief\.md's Landing row\);/);
+  assert.match(read("plugin/skills/cycle/SKILL.md"), /7\. \*\*Push:\*\* `ennyn\.mjs worktrees --remove`; `ennyn\.mjs test whole`, once \(red: task-brief\.md's Landing row\);/);
   assert.match(brief, /Red there stops the push: a timing failure is rerun alone first; a real one is traced to the landing commit that brought it and fixed in a new `fix:` commit, written and reviewed as a first write, or the push waits\. The whole run repeats on the fixed tree, and what follows the last edit is done again: the `fix:` commit's rows appended first, convergence run again \(a new block\), the graph, the budget record, leftovers, and `bypass` over the new commit\. A red closing run is a landed task's defect: it counts against no task \(\*\*Landed\*\*\), its `fix:` commit is written by a fresh agent on the session's model and reviewed as a first write, and no escalation applies\./);
   assert.ok(brief.includes("A platform run the handoff names (another operating system, a container image, the oldest supported runtime) runs before a task lands, on the test files the task adds or changes, when the task touches what differs there (paths, processes, signals, shells, the file system, a tool's version): red there is the task's finding, before the main branch moves. The brief names which runs, or `none` and why; a platform the change touches and no run reaches is said as unmeasured in the report, never as passed. The whole matrix runs before a release, never at the closing."), "a platform run the brief names runs before the task lands, the whole matrix before a release");
   assert.match(brief, /a fast command with no slow list is run as it is/);
@@ -721,11 +722,11 @@ test("short: with a fresh read list a branch that changes no code runs the short
   rmSync(join(dir, "notes", "subway.md"));
 
   // A slow file a text change brings back runs whole, as before: the list does not narrow it.
-  put(dir, { "skills/cycle/SKILL.md": "a guarded line gone\n" });
+  put(dir, { "plugin/skills/cycle/SKILL.md": "a guarded line gone\n" });
   const back = decide(dir);
   assert.deepEqual(back.files, ["test/c.test.mjs", GUARDS]);
   assert.equal(back.accounting, false);
-  rmSync(join(dir, "skills"), { recursive: true });
+  rmSync(join(dir, "plugin", "skills"), { recursive: true });
 
   // Nobody read it: only what could not be named runs, and with no file at all node --test is not started bare.
   put(dir, { "notes/none.md": "changed\n" });
@@ -770,7 +771,7 @@ test("short: a code change, or a read list missing, unreadable, of another shape
     assert.ok(!says.some((l) => /^(kept|left out) test\/[a-d]\./.test(l)), says.join("\n"));
   };
   put(dir, { "notes/a.md": "changed\n" });
-  for (const code of ["core/glob.mjs", "tool/new.cjs", "web/app.js", "package.json", "sub/package.json"]) {
+  for (const code of ["plugin/core/glob.mjs", "tool/new.cjs", "web/app.js", "package.json", "sub/package.json"]) {
     put(dir, { [code]: `${existsSync(join(dir, code)) ? readFileSync(join(dir, code), "utf8") : ""}// changed\n` });
     asBefore(new RegExp(`^read list: not used, ${code.replace(/\./g, "\\.")} is code$`));
     git(["checkout", "-q", "--", "."], { cwd: dir });
@@ -815,7 +816,7 @@ test("short: a code change, or a read list missing, unreadable, of another shape
   assert.deepEqual(decide(dir).files, ["test/c.test.mjs"], "main's list narrows");
 
   // Code changed since the recording, committed on the branch: the hash says so even when the list came along.
-  put(dir, { "core/glob.mjs": `${readFileSync(join(dir, "core/glob.mjs"), "utf8")}// changed\n` });
+  put(dir, { "plugin/core/glob.mjs": `${readFileSync(join(dir, "plugin/core/glob.mjs"), "utf8")}// changed\n` });
   commit(dir, "code");
   git(["branch", "-q", "-f", "main", "work"], { cwd: dir });
   asBefore(/was recorded on other code/);

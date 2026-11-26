@@ -5,12 +5,12 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { git } from "../core/git.mjs";
-import { loadConfig } from "../core/config.mjs";
-import { bypassUses } from "../metrics/bypass.mjs";
-import { allowMarkerReason, checkCommitShape } from "../checks/commit-shape.mjs";
+import { git } from "../plugin/core/git.mjs";
+import { loadConfig } from "../plugin/core/config.mjs";
+import { bypassUses } from "../plugin/metrics/bypass.mjs";
+import { allowMarkerReason, checkCommitShape } from "../plugin/checks/commit-shape.mjs";
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "scripts", "ennyn.mjs");
 const cfg = () => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "en-bp-")), env: {} });
 
 function repo() {

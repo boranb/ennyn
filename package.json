@@ -22,7 +22,7 @@
   ],
   "type": "module",
   "bin": {
-    "ennyn": "scripts/ennyn.mjs"
+    "ennyn": "plugin/scripts/ennyn.mjs"
   },
   "license": "MIT",
   "author": "Berkay Boran",
@@ -43,25 +43,11 @@
     "test:linux": "node test/linux-run.mjs",
     "test:reference": "node test/reference/npm.mjs check && node test/reference/markdown.mjs check && node test/reference/actions-yaml.mjs check && node test/reference/claude.mjs",
     "typecheck": "tsc -p jsconfig.json",
-    "validate:plugin": "claude plugin validate --strict . && claude plugin validate --strict .claude-plugin/plugin.json"
+    "validate:plugin": "claude plugin validate --strict . && claude plugin validate --strict plugin && claude plugin validate --strict plugin/.claude-plugin/plugin.json"
   },
   "files": [
-    "core",
-    "checks",
-    "side-copy",
-    "impact",
-    "metrics",
-    "plan",
-    "setup",
-    "styles",
-    "adapters",
-    "i18n",
-    "schema",
-    "scripts",
-    "skills",
-    "agents",
-    "hooks",
-    ".claude-plugin"
+    "plugin",
+    "scripts"
   ],
   "devDependencies": {
     "@types/node": "22.20.1",

@@ -33,7 +33,7 @@ Nothing else is asked but that offer; everything else keeps its default.
 
 ## 3. Write `.ennyn/config.json`
 
-Write only the keys that differ from the defaults (DESIGN.md lists them). JSON-escape regex values.
+Write only the keys that differ from the defaults (`DEFAULTS` in `${CLAUDE_PLUGIN_ROOT}/core/config.mjs` lists them). JSON-escape regex values.
 
 - `commitMsg.language`: only when it differs from `language`.
 - `commitMsg.types` and `commitMsg.fixType`: the agreed convention; the fix type is one of them.

@@ -16,7 +16,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { killTarget } from "../adapters/claude-code/kill-targets.mjs";
+import { killTarget } from "../plugin/adapters/claude-code/kill-targets.mjs";
 import { FIRST_PID_NS, PROFILE, UNSHARE_ARGS, fenceExit, fenceName, fencedArgv, inFence, inRoot, namespaceArgv, pickFence, refusedExit, shellBox, unsafeTexts } from "./shell-box.mjs";
 
 /** A kill by a literal PID or process group, a job of this shell, a PID this text took from `$!` or Start-Process, and text that only names a kill. */
@@ -466,7 +466,7 @@ test("kill reader: the differential judge counts a process outside the box as a 
   }
 });
 
-const HOOK = fileURLToPath(new URL("../adapters/claude-code/hooks/kill-targets.mjs", import.meta.url));
+const HOOK = fileURLToPath(new URL("../plugin/adapters/claude-code/hooks/kill-targets.mjs", import.meta.url));
 const neutral = mkdtempSync(join(tmpdir(), "en-kill-cwd-"));
 
 /** A repository, with an Ennyn config as `config` says: its text, or nothing. @param {string | null} config */
@@ -570,7 +570,7 @@ test("kill hook: a reader that fails is input it cannot read: the call runs and 
 
 test("kill hook: a broken or missing catalog still refuses, with a plain English line", () => {
   const box = realpathSync(mkdtempSync(join(tmpdir(), "en-kill-copy-")));
-  const top = fileURLToPath(new URL("..", import.meta.url));
+  const top = fileURLToPath(new URL("../plugin", import.meta.url));
   for (const d of ["adapters", "core", "i18n"]) cpSync(join(top, d), join(box, d), { recursive: true });
   const repo = project("{}\n");
   for (const damage of [() => writeFileSync(join(box, "i18n", "en.json"), "{ broken"), () => rmSync(join(box, "i18n", "en.json"))]) {
@@ -970,7 +970,7 @@ test("kill reader's harness: with no boundary every test that makes a box ends, 
 });
 
 test("kill hook: the header and SECURITY.md name what gets past it", () => {
-  const header = readFileSync(fileURLToPath(new URL("../adapters/claude-code/kill-targets.mjs", import.meta.url)), "utf8").split("*/")[0];
+  const header = readFileSync(fileURLToPath(new URL("../plugin/adapters/claude-code/kill-targets.mjs", import.meta.url)), "utf8").split("*/")[0];
   const security = readFileSync(fileURLToPath(new URL("../SECURITY.md", import.meta.url)), "utf8");
   for (const limit of ["a script the agent writes and then runs", "an interpreter", "an alias", "a PID read in an earlier call"]) {
     assert.ok(header.includes(limit), `header: ${limit}`);

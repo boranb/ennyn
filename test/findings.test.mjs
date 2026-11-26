@@ -5,15 +5,15 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ConfigError, loadConfig } from "../core/config.mjs";
-import { READ_LIMIT } from "../core/files.mjs";
-import { git } from "../core/git.mjs";
-import { CLASS_LIST_MAX, currentClass, emptyRegistry, parseClasses } from "../metrics/classes.mjs";
-import { parseConvergence } from "../metrics/convergence.mjs";
+import { ConfigError, loadConfig } from "../plugin/core/config.mjs";
+import { READ_LIMIT } from "../plugin/core/files.mjs";
+import { git } from "../plugin/core/git.mjs";
+import { CLASS_LIST_MAX, currentClass, emptyRegistry, parseClasses } from "../plugin/metrics/classes.mjs";
+import { parseConvergence } from "../plugin/metrics/convergence.mjs";
 import { frozenRows, noAgeRows } from "./__fixtures__/findings/frozen.mjs";
-import { FINGERPRINT_MAX, KEPT_MAX, NOTE_MAX, REFUSED_MAX, cycleReport, ledgerLine, loadLedger, parseFindings, recentRecurrence, reportLines } from "../metrics/findings.mjs";
+import { FINGERPRINT_MAX, KEPT_MAX, NOTE_MAX, REFUSED_MAX, cycleReport, ledgerLine, loadLedger, parseFindings, recentRecurrence, reportLines } from "../plugin/metrics/findings.mjs";
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "scripts", "ennyn.mjs");
 const HASH = "a".repeat(40);
 const SHA256 = "b".repeat(64);
 

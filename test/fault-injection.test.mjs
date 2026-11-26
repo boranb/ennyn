@@ -38,17 +38,17 @@ import { createServer } from "node:http";
 import { availableParallelism, tmpdir } from "node:os";
 import { delimiter, dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { git } from "../core/git.mjs";
-import { USAGE } from "../scripts/ennyn.mjs";
+import { git } from "../plugin/core/git.mjs";
+import { USAGE } from "../plugin/scripts/ennyn.mjs";
 import { ownHome } from "./own-home.mjs";
 import { TOKENS } from "./secret-shapes.mjs";
 
 // install-hook runs at the top, with this process's environment: a home of the file's own, or it refuses to run.
 const { root: ROOT } = ownHome("en-fault-");
-const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "scripts", "ennyn.mjs");
 /** Loaded into every run: counts the file reads, and fails the one a cell names. */
 const FAULT_FS = join(dirname(fileURLToPath(import.meta.url)), "fault-fs.mjs");
-const HOOKS = join(dirname(fileURLToPath(import.meta.url)), "..", "adapters", "claude-code", "hooks");
+const HOOKS = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "adapters", "claude-code", "hooks");
 const NODE = JSON.stringify(process.execPath);
 /** What a changed line says when a value could not be measured or an action could not be done (English: the fixture's language). */
 // Named one by one: "could not be found" is the very claim a failed read must not make.
@@ -1095,7 +1095,7 @@ test("fault matrix control: a git call that never ends is stopped at its limit a
   assert.equal(first.status, 0, "the hung git did not start");
   t.diagnostic(`the first run of the hung git took ${Math.round(performance.now() - firstAt)} ms`);
   const box = mkdtempSync(join(tmpdir(), "en-fault-hang-"));
-  const gitModule = JSON.stringify(new URL("../core/git.mjs", import.meta.url).href);
+  const gitModule = JSON.stringify(new URL("../plugin/core/git.mjs", import.meta.url).href);
   // Each call alone, timed, with its own variables. A line handed on after a call failed is counted. The probe ends
   // by itself, and says what it still holds: a pipe, a child or a timer left behind. A limit that falls on a git that
   // has not started shows nothing about the call, and with processes slow to start it does (cycle 17: 2 of 12 runs at

@@ -25,18 +25,18 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { installHook } from "../setup/hook.mjs";
-import { checkCommitShape, forbiddenScan } from "../checks/commit-shape.mjs";
-import { loadConfig } from "../core/config.mjs";
-import { decodeWide, wideEncoding, wideLines } from "../core/encoding.mjs";
-import { git, gitBytes, gitError, stagedAddedLines, stagedPaths } from "../core/git.mjs";
-import { matchAny } from "../core/glob.mjs";
-import { shown } from "../core/i18n.mjs";
-import { indexMatches } from "../setup/scan.mjs";
+import { installHook } from "../plugin/setup/hook.mjs";
+import { checkCommitShape, forbiddenScan } from "../plugin/checks/commit-shape.mjs";
+import { loadConfig } from "../plugin/core/config.mjs";
+import { decodeWide, wideEncoding, wideLines } from "../plugin/core/encoding.mjs";
+import { git, gitBytes, gitError, stagedAddedLines, stagedPaths } from "../plugin/core/git.mjs";
+import { matchAny } from "../plugin/core/glob.mjs";
+import { shown } from "../plugin/core/i18n.mjs";
+import { indexMatches } from "../plugin/setup/scan.mjs";
 import { TOKENS, body, pem } from "./secret-shapes.mjs";
 import { moves, movesText, readCells } from "./verdicts.mjs";
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "scripts", "ennyn.mjs");
 const run = promisify(execFile);
 /** What the hook says when it let a commit through unchecked: the fault matrix's words. */
 export const SAYS = /unmeasured|could not be (measured|read|applied|reset)|was not checked/i;
@@ -518,7 +518,7 @@ test("input shapes control: the judge flags a silent pass, a refusal with nothin
 });
 
 test("input shapes: a line holds a text as written or composed; an 8-bit line is said where a text has no one spelling, a NUL line is binary", () => {
-  /** @param {string} text @param {[string, import("../core/git.mjs").AddedLine[]][]} files */
+  /** @param {string} text @param {[string, import("../plugin/core/git.mjs").AddedLine[]][]} files */
   const scan = (text, ...files) => forbiddenScan(new Map(files), [{ text, paths: ["**"] }]);
   const line = (/** @type {string} */ text, n = 1) => ({ line: n, text });
   const bytes = (/** @type {Buffer} */ raw, n = 1) => ({ line: n, text: raw.toString("utf8"), raw });

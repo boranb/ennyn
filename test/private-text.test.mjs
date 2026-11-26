@@ -5,15 +5,15 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { git } from "../core/git.mjs";
-import { loadConfig } from "../core/config.mjs";
-import { LOOSENING_LINE, gateKeyKind, loosenedKeys } from "../checks/loosening.mjs";
-import { installHook } from "../setup/hook.mjs";
-import { addressHits, closedSource, conversationHits, digest, foldCase, homeHits, lineHits, literalEntry, literalHits, newLines, parseLiterals, privateErrors, sourceHits, textRules } from "../checks/private-text.mjs";
+import { git } from "../plugin/core/git.mjs";
+import { loadConfig } from "../plugin/core/config.mjs";
+import { LOOSENING_LINE, gateKeyKind, loosenedKeys } from "../plugin/checks/loosening.mjs";
+import { installHook } from "../plugin/setup/hook.mjs";
+import { addressHits, closedSource, conversationHits, digest, foldCase, homeHits, lineHits, literalEntry, literalHits, newLines, parseLiterals, privateErrors, sourceHits, textRules } from "../plugin/checks/private-text.mjs";
 
 // Every fixture that a rule refuses is built from parts at run time, as test/hygiene.test.mjs builds its own: this
 // file holds no word, path, address or shape the gate refuses, so a commit that changes it passes the gate.
-const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "scripts", "ennyn.mjs");
 const NAME = "Vex" + "moorle";
 const HOME = "/" + "Users/" + "someone";
 const HOME_WIN = "C:" + "\\" + "Users" + "\\" + "dev";

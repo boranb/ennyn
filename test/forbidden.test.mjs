@@ -5,15 +5,15 @@ import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { delimiter, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { banLines, banMatches, scanProject } from "../setup/scan.mjs";
-import { loadConfig, ConfigError } from "../core/config.mjs";
-import { checkCommitShape, forbiddenHits } from "../checks/commit-shape.mjs";
-import { addedLines, git, stagedAddedLines, stagedPaths, unquotePath } from "../core/git.mjs";
-import { installHook } from "../setup/hook.mjs";
-import { checkSetup } from "../setup/doctor.mjs";
+import { banLines, banMatches, scanProject } from "../plugin/setup/scan.mjs";
+import { loadConfig, ConfigError } from "../plugin/core/config.mjs";
+import { checkCommitShape, forbiddenHits } from "../plugin/checks/commit-shape.mjs";
+import { addedLines, git, stagedAddedLines, stagedPaths, unquotePath } from "../plugin/core/git.mjs";
+import { installHook } from "../plugin/setup/hook.mjs";
+import { checkSetup } from "../plugin/setup/doctor.mjs";
 import { TOKENS } from "./secret-shapes.mjs";
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "scripts", "ennyn.mjs");
 const cfg = (/** @type {Record<string, unknown>} */ override = {}) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "en-fb-")), env: {}, override });
 const RULE = { text: "console.log", paths: ["src/**"], except: ["src/log.js"], note: "use the logger" };
 
@@ -580,7 +580,7 @@ test("round two: only the files a rule names are diffed, so a big file elsewhere
 });
 
 test("round two: a glob's ** reaches names that hold a line break or a line separator", async () => {
-  const { matchAny } = await import("../core/glob.mjs");
+  const { matchAny } = await import("../plugin/core/glob.mjs");
   for (const p of ["src/a\nb.js", "src/a\r.js", "src/util /a.js", "src/x y.js"]) {
     assert.ok(matchAny(p, ["src/**"]), JSON.stringify(p));
     assert.ok(matchAny(p, ["**"]), JSON.stringify(p));

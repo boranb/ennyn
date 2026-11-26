@@ -8,7 +8,7 @@
       "gates": [
         {
           "commit": "6f04584cea8489ac340c2f9c7e84cb0ebf34a5fc",
-          "file": "checks/commit-shape.mjs",
+          "file": "plugin/checks/commit-shape.mjs",
           "action": "advice",
           "proof": "commit-check warns when a path changes and none of its documents do; any document touched meets it, and it never stops a commit."
         },
@@ -226,7 +226,7 @@
         },
         {
           "commit": "f726b8e7f91a829752180b4ab7fe4b59ef9ab934",
-          "file": "core/git.mjs",
+          "file": "plugin/core/git.mjs",
           "action": "past-defects",
           "proof": "Under the hook a failed read of what a commit adds or changes refuses, unless it is a machine's fault, in four gates; test/ci.test.mjs and the fault matrix."
         }
@@ -1040,7 +1040,7 @@
       "gates": [
         {
           "commit": "ff0c5fa4e4e117e4fef75ea6fb25acc611dcb04b",
-          "file": "checks/loosening.mjs",
+          "file": "plugin/checks/loosening.mjs",
           "action": "past-defects",
           "proof": "The hook reads every gate key from the commit's own config, and a commit that loosens one needs the user's line; test/loosening.test.mjs."
         }
@@ -1116,7 +1116,7 @@
       "gates": [
         {
           "commit": "2bbc47f5bbbf44ec2d6db99a5ff7d9d2f0c600a0",
-          "file": "checks/private-text.mjs",
+          "file": "plugin/checks/private-text.mjs",
           "action": "ban-list",
           "proof": "commit-check refuses a listed word, a home path, an address outside commits.addresses and conversation shapes in the lines, names and message a commit adds; a paraphrase passes."
         }

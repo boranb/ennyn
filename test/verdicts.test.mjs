@@ -8,9 +8,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { loadConfig } from "../core/config.mjs";
-import { git } from "../core/git.mjs";
-import { loadGraph } from "../plan/mechanization.mjs";
+import { loadConfig } from "../plugin/core/config.mjs";
+import { git } from "../plugin/core/git.mjs";
+import { loadGraph } from "../plugin/plan/mechanization.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DIR, GATES, bytesOf, filled, hookOutcome, moves, movesText, readCells, reasonOf, record, run } from "./verdicts.mjs";

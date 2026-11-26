@@ -15,13 +15,13 @@ import { createServer } from "node:http";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ConfigError, DEFAULTS, loadConfig } from "../core/config.mjs";
-import { gateKeyKind, loosenedKeys } from "../checks/loosening.mjs";
-import { addressFold, cloneGaps, commitRule, commitsRefused, strictest } from "../checks/commit-identity.mjs";
-import { apiBase, noreplyLogin, signersText, signingKeys } from "../setup/clone-setup.mjs";
+import { ConfigError, DEFAULTS, loadConfig } from "../plugin/core/config.mjs";
+import { gateKeyKind, loosenedKeys } from "../plugin/checks/loosening.mjs";
+import { addressFold, cloneGaps, commitRule, commitsRefused, strictest } from "../plugin/checks/commit-identity.mjs";
+import { apiBase, noreplyLogin, signersText, signingKeys } from "../plugin/setup/clone-setup.mjs";
 import { ownHome } from "./own-home.mjs";
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "scripts", "ennyn.mjs");
 const { root: ROOT } = ownHome("en-clone-setup-");
 const DIR = realpathSync(ROOT);
 

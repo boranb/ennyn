@@ -14,8 +14,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { loadConfig } from "../core/config.mjs";
-import { loadGraph } from "../plan/mechanization.mjs";
+import { loadConfig } from "../plugin/core/config.mjs";
+import { loadGraph } from "../plugin/plan/mechanization.mjs";
 import { ALLOWED, CALLS, CHECKS, JUDGED, NEVER, REFERENCES, SUBAGENTS, fateOf, graderFile, traceCalls } from "./eval/checks.mjs";
 import { WRAPPERS, realGit, shq, writeGitPath } from "./eval/git-path.mjs";
 import { CONFIG_INSTRUCTIONS, CONTROLS, GIT_CELLS, EVALS, HOME_INSTRUCTIONS, INSTRUCTIONS, NO_NETWORK, PROGRAMS, NotMeasured, RECORD, SANDBOX, callsOf, canaryProblems, exitOf, exitsOf, gitCases, gitMoves, gitPluginFiles, gitProblems, gitRunPlan, keptCwd, watchSockets, landedIn, newRunDirs, outboundOf, plan, plantedHome, plantedInstructions, pluginFiles, problems, readGitRecord, readRecord, readTrace, recordGit, recordRuns, runPlan, scaffolded, treeOf, unseal } from "./eval/selftest.mjs";

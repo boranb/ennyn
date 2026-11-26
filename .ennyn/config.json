@@ -11,14 +11,15 @@
     "fixType": "fix"
   },
   "review": {
-    "impactRequiredGlobs": [".ennyn/config.json", "checks/**", "core/config.mjs", "metrics/szz.mjs", "setup/scan.mjs", "test/verdicts/**"],
+    "impactRequiredGlobs": [".ennyn/config.json", "checks/**", "core/config.mjs", "metrics/szz.mjs", "setup/scan.mjs", "test/verdicts/**", "plugin/checks/**", "plugin/core/config.mjs", "plugin/metrics/szz.mjs", "plugin/setup/scan.mjs"],
     "cochange": [
       { "paths": ["README.md"], "docs": ["README.tr.md"], "note": "the twins change together" },
       { "paths": ["README.tr.md"], "docs": ["README.md"], "note": "the twins change together" },
-      { "paths": ["core/*.mjs", "checks/*.mjs", "metrics/*.mjs", "impact/*.mjs", "plan/*.mjs", "setup/*.mjs", "side-copy/*.mjs", "adapters/**/*.mjs"], "docs": ["docs/modules.md"], "note": "module contracts" },
-      { "paths": ["core/config.mjs"], "docs": ["DESIGN.md"], "note": "the config table" },
+      { "paths": ["core/*.mjs", "checks/*.mjs", "metrics/*.mjs", "impact/*.mjs", "plan/*.mjs", "setup/*.mjs", "side-copy/*.mjs", "adapters/**/*.mjs", "plugin/core/*.mjs", "plugin/checks/*.mjs", "plugin/metrics/*.mjs", "plugin/impact/*.mjs", "plugin/plan/*.mjs", "plugin/setup/*.mjs", "plugin/side-copy/*.mjs", "plugin/adapters/**/*.mjs"], "docs": ["docs/modules.md"], "note": "module contracts" },
+      { "paths": ["core/config.mjs", "plugin/core/config.mjs"], "docs": ["DESIGN.md"], "note": "the config table" },
       { "paths": ["i18n/en.json"], "docs": ["i18n/tr.json"] },
-      { "paths": ["core/*.mjs", "checks/*.mjs", "metrics/*.mjs", "impact/*.mjs", "plan/*.mjs", "setup/*.mjs", "side-copy/*.mjs", "scripts/**", "adapters/**", "hooks/**", "skills/**", "agents/**", "styles/**"], "docs": ["CHANGELOG.md"], "note": "user-visible changes" }
+      { "paths": ["plugin/i18n/en.json"], "docs": ["plugin/i18n/tr.json"] },
+      { "paths": ["core/*.mjs", "checks/*.mjs", "metrics/*.mjs", "impact/*.mjs", "plan/*.mjs", "setup/*.mjs", "side-copy/*.mjs", "scripts/**", "adapters/**", "hooks/**", "skills/**", "agents/**", "styles/**", "plugin/core/*.mjs", "plugin/checks/*.mjs", "plugin/metrics/*.mjs", "plugin/impact/*.mjs", "plugin/plan/*.mjs", "plugin/setup/*.mjs", "plugin/side-copy/*.mjs", "plugin/scripts/**", "plugin/adapters/**", "plugin/hooks/**", "plugin/skills/**", "plugin/agents/**", "plugin/styles/**"], "docs": ["CHANGELOG.md"], "note": "user-visible changes" }
     ]
   }
 }

@@ -18,7 +18,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { hostileHome } from "./hostile.mjs";
 import { TEST_FILE_MARK, takeRefused } from "./hermetic.mjs";
 import { wholeArgs } from "./run.mjs";
-import { hookCommitMode } from "../checks/commit-shape.mjs";
+import { hookCommitMode } from "../plugin/checks/commit-shape.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 

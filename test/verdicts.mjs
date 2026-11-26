@@ -39,18 +39,18 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { availableParallelism, devNull, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { catalog } from "../core/i18n.mjs";
-import { killTarget } from "../adapters/claude-code/kill-targets.mjs";
-import { banLines } from "../setup/scan.mjs";
-import { hookBlock, namesCheck, printedCheck } from "../setup/hook.mjs";
+import { catalog } from "../plugin/core/i18n.mjs";
+import { killTarget } from "../plugin/adapters/claude-code/kill-targets.mjs";
+import { banLines } from "../plugin/setup/scan.mjs";
+import { hookBlock, namesCheck, printedCheck } from "../plugin/setup/hook.mjs";
 import { accounting, declarations, testNames } from "./declarations.mjs";
 import { B62, B64, B64URL, HEX, TOKENS, UPPER_DIGITS, body, pem, rand } from "./secret-shapes.mjs";
 
 const ALPHABETS = { B62, B64, B64URL, UPPER_DIGITS, HEX };
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const DIR = join(HERE, "verdicts");
-const CLI = join(HERE, "..", "scripts", "ennyn.mjs");
-const PUSH_HOOK = join(HERE, "..", "adapters", "claude-code", "hooks", "push-spellings.mjs");
+const CLI = join(HERE, "..", "plugin", "scripts", "ennyn.mjs");
+const PUSH_HOOK = join(HERE, "..", "plugin", "adapters", "claude-code", "hooks", "push-spellings.mjs");
 export const VERDICTS = /** @type {const} */ (["refused", "said", "pass"]);
 
 /** The keys of a cell beside its input. */

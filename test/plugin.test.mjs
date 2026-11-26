@@ -1,31 +1,34 @@
-import { GIT_CALLS, GIT_MS, SETTLE_MS } from "../adapters/claude-code/compact-boundary.mjs";
+import { GIT_CALLS, GIT_MS, SETTLE_MS } from "../plugin/adapters/claude-code/compact-boundary.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, readFileSync, readdirSync, readlinkSync, existsSync, rmSync, statSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, readFileSync, readdirSync, readlinkSync, realpathSync, existsSync, rmSync, statSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, basename, posix, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { git } from "../core/git.mjs";
-import { ConfigError, loadConfig } from "../core/config.mjs";
-import { checkCommitShape } from "../checks/commit-shape.mjs";
-import { npmrcEntries } from "../checks/deps.mjs";
-import { GATE_KEYS, LOOSENING_LINE } from "../checks/loosening.mjs";
-import { t } from "../core/i18n.mjs";
-import { hookProjectDir, projectConfig } from "../adapters/claude-code/project.mjs";
-import { FILE_TOOLS } from "../adapters/claude-code/hooks/side-copy-rules.mjs";
-import { askRules, OFFERED, outwardCommands } from "../setup/permissions.mjs";
-import { projectFiles } from "../setup/scan.mjs";
-import { formatConvergence } from "../metrics/convergence.mjs";
-import { killTarget } from "../adapters/claude-code/kill-targets.mjs";
+import { git } from "../plugin/core/git.mjs";
+import { ConfigError, loadConfig } from "../plugin/core/config.mjs";
+import { checkCommitShape } from "../plugin/checks/commit-shape.mjs";
+import { npmrcEntries } from "../plugin/checks/deps.mjs";
+import { GATE_KEYS, LOOSENING_LINE } from "../plugin/checks/loosening.mjs";
+import { t } from "../plugin/core/i18n.mjs";
+import { hookProjectDir, projectConfig } from "../plugin/adapters/claude-code/project.mjs";
+import { FILE_TOOLS } from "../plugin/adapters/claude-code/hooks/side-copy-rules.mjs";
+import { askRules, OFFERED, outwardCommands } from "../plugin/setup/permissions.mjs";
+import { projectFiles } from "../plugin/setup/scan.mjs";
+import { formatConvergence } from "../plugin/metrics/convergence.mjs";
+import { killTarget } from "../plugin/adapters/claude-code/kill-targets.mjs";
 
 // What `claude plugin validate --strict` checks, for machines without the claude CLI.
 // Origin: a ": " inside an unquoted agent description made the YAML unparsable, and
 // Claude Code then loaded the security reviewer with no name and no description.
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const read = (/** @type {string} */ p) => readFileSync(join(ROOT, p), "utf8");
+/** The repository's top, and the plugin's root below it: what Claude Code installs (the marketplace entry's source). */
+const TOP = join(dirname(fileURLToPath(import.meta.url)), "..");
+const ROOT = join(TOP, "plugin");
+/** A file of the plugin, or with a `/` first of the repository (`/SECURITY.md`). @param {string} p */
+const read = (p) => readFileSync(p.startsWith("/") ? join(TOP, p.slice(1)) : join(ROOT, p), "utf8");
 
 /** @param {string} text @returns {Map<string, string> | null} raw values by key */
 function frontMatter(text) {
@@ -125,7 +128,7 @@ const beyondName = (text) => (frontMatterLines(text) ?? []).filter((line) => !["
 
 
 test("plugin: what SECURITY.md says of this repository's own files holds: no runtime dependency, no install script, tools a reviewer is given, no shell a skill runs, an icon that runs nothing", () => {
-  const pkg = JSON.parse(read("package.json"));
+  const pkg = JSON.parse(read("/package.json"));
   // Only the dev dependencies, each at one exact version: a URL or a range would be another package tomorrow.
   assert.deepEqual(packagesBeyond({ devDependencies: { a: "1.2.3" } }), []);
   for (const key of ["dependencies", "optionalDependencies", "peerDependencies", "peerDependenciesMeta", "bundleDependencies", "bundledDependencies", "overrides"]) assert.deepEqual(packagesBeyond({ [key]: {} }), [key]);
@@ -136,7 +139,7 @@ test("plugin: what SECURITY.md says of this repository's own files holds: no run
   assert.deepEqual(Object.keys(pkg.scripts).sort(), ["test", "test:linux", "test:reference", "test:short", "typecheck", "validate:plugin"], "no script npm runs by itself");
   assert.ok(scriptsKeptOff("ignore-scripts=true\n"));
   for (const text of ["ignore-scripts=true\nignore-scripts=false\n", "[x]\nignore-scripts=true\n", "ignore-scripts=true\n[x]\n", "ignore-scripts=false\n", "; ignore-scripts=true\n", "ignore-scripts[]=true\n", "IGNORE-SCRIPTS=true\n", ""]) assert.ok(!scriptsKeptOff(text), text);
-  assert.ok(scriptsKeptOff(read(".npmrc")), ".npmrc keeps install scripts off");
+  assert.ok(scriptsKeptOff(read("/.npmrc")), ".npmrc keeps install scripts off");
   // A plugin agent's hooks, mcpServers and permissionMode are ignored (2.1.310, read from the binary); its tools are not.
   // The model of each agent is named (2.1.310 honours a plugin agent's `model`): reviewers the session's, the two helpers haiku and without a shell.
   const helpers = ["scout", "summarizer"];
@@ -257,19 +260,19 @@ test("plugin: the approval line of a loosening is the user's: the cycle skill sa
   assert.ok(read("skills/cycle/SKILL.md").includes("a task agent stops and reports the keys"));
   assert.match(read("skills/cycle/task-brief.md"), /it stops and reports the keys and why the task needs them\. The orchestrator asks the user/);
   assert.ok(read("skills/init/gates.md").includes(`${LOOSENING_LINE} <key>, <key>`));
-  const design = read("DESIGN.md");
+  const design = read("/DESIGN.md");
   const section = design.slice(design.indexOf("## What a commit may loosen"), design.indexOf("## Module contracts"));
   for (const key of GATE_KEYS) assert.ok(section.includes(`\`${key}\``) || section.includes(`\`${key.split(".").at(-1)}\``), key);
   assert.match(section, /a tripwire and a record, not a boundary/);
-  assert.match(read("SECURITY.md"), /a tripwire and a record, not a boundary/);
+  assert.match(read("/SECURITY.md"), /a tripwire and a record, not a boundary/);
   // push.mode's approval is the same line: an agent that writes it lets its own bare push run unasked (cycle 27 audit).
   // Each document states the limit whole: who writes the line, what it turns on, and the ask rule that still stops it.
   const limit = "an agent that writes it itself turns `after-closing` on, and its next bare `git push` runs unasked where no ask rule stands";
-  for (const doc of ["skills/cycle/push.md", "SECURITY.md"]) {
+  for (const doc of ["skills/cycle/push.md", "/SECURITY.md"]) {
     assert.ok(read(doc).includes(limit), `${doc}: the approval an agent writes itself`);
     assert.doesNotMatch(read(doc), /agent (cannot|can't|can not) (grant|approve|give)/, `${doc}: an agent cannot approve the push`);
   }
-  assert.ok(read("SECURITY.md").includes("under `push.mode` `after-closing` a bare `git push` the decision allows runs unasked where no ask rule stands"), "SECURITY.md: the push hook under after-closing");
+  assert.ok(read("/SECURITY.md").includes("under `push.mode` `after-closing` a bare `git push` the decision allows runs unasked where no ask rule stands"), "SECURITY.md: the push hook under after-closing");
 });
 
 test("plugin: under push.mode ask a push never holds a turn: the closing ends before the question, a waiting push holds nothing, a push runs only on a yes in the same exchange, and init's question names what each answer costs", () => {
@@ -472,7 +475,7 @@ test("plugin: the machine stays awake on one wake process tied to the session's 
   assert.ok(stop, "the stop form");
   assert.equal(killTarget(stop), null, stop);
   // No shipped text starts a caffeinate with a limit.
-  const shipped = [...skills.flatMap(({ name }) => readdirSync(join(ROOT, "skills", name)).map((f) => `skills/${name}/${f}`)), ...agents.map((a) => a.path), "README.md", "README.tr.md"];
+  const shipped = [...skills.flatMap(({ name }) => readdirSync(join(ROOT, "skills", name)).map((f) => `skills/${name}/${f}`)), ...agents.map((a) => a.path), "/README.md", "/README.tr.md"];
   for (const f of shipped) assert.doesNotMatch(read(f), /caffeinate(?: -[a-z]+)* -[a-z]*t\b/, f);
 });
 
@@ -556,7 +559,7 @@ test("plugin: the fix label /ennyn:init writes reads every form the commit gate 
 
 test("plugin: the repository asks before every command that leaves the machine, as /ennyn:init proposes", () => {
   // Read as the work tree holds it: whether git holds it committed is doctor's line, not this test's.
-  const pf = projectFiles(ROOT);
+  const pf = projectFiles(TOP);
   const res = askRules(pf, outwardCommands(["package.json"], true), { committed: (path) => ({ text: pf.read(path) ?? "" }) });
   assert.deepEqual(res.unread, []);
   assert.equal(res.rules.length, 38, "git push, npm publish and seventeen gh commands, each for Bash and PowerShell");
@@ -564,16 +567,16 @@ test("plugin: the repository asks before every command that leaves the machine, 
 });
 
 test("plugin: the repository writes no offered rule: it runs cycles, and such a rule stops them", () => {
-  const ask = JSON.parse(read(".claude/settings.json")).permissions.ask;
-  const held = askRules(projectFiles(ROOT), [...OFFERED.destroys, ...OFFERED.installs], { committed: () => ({ text: read(".claude/settings.json") }) }).rules.filter((r) => r.where !== null);
+  const ask = JSON.parse(read("/.claude/settings.json")).permissions.ask;
+  const held = askRules(projectFiles(TOP), [...OFFERED.destroys, ...OFFERED.installs], { committed: () => ({ text: read("/.claude/settings.json") }) }).rules.filter((r) => r.where !== null);
   assert.deepEqual(held, []);
   assert.equal(ask.some((/** @type {string} */ r) => /git (clean|reset|checkout|restore|branch|worktree|stash)/.test(r)), false);
 });
 
 test("plugin: Claude Code keeps the repository's ask rules as one file: the record holds that file whole, and its rules stop what they name", () => {
-  const rec = JSON.parse(read("test/reference/claude-code.json"));
+  const rec = JSON.parse(read("/test/reference/claude-code.json"));
   // The whole file, not its ask list: one wrong value of any key and Claude Code skips the file, every ask rule with it.
-  const own = JSON.parse(read(".claude/settings.json"));
+  const own = JSON.parse(read("/.claude/settings.json"));
   for (const id of ["repo-settings-whole-push", "repo-settings-whole-gh"]) {
     const cell = rec.cells.find((/** @type {{ id: string }} */ c) => c.id === id);
     assert.deepEqual(JSON.parse(cell.files[".claude/settings.json"]), own, `${id}: .claude/settings.json changed since the record; add cells holding it whole (node test/reference/claude-code.mjs add) and name them here`);
@@ -680,7 +683,108 @@ test("plugin: /ennyn:init offers what destroys or installs apart, writes none un
 
 test("plugin: the repository ignores .claude/worktrees/, where Claude Code puts agent worktrees, by its .gitignore, as /ennyn:init proposes", () => {
   // As the work tree holds it: doctor reads HEAD, and a guard edits the work tree of a clone.
-  assert.ok(read(".gitignore").split("\n").includes(".claude/worktrees/"));
+  assert.ok(read("/.gitignore").split("\n").includes(".claude/worktrees/"));
+});
+
+/**
+ * What the plugin's folder holds, and so what Claude Code copies onto every user's machine: the folders the hooks, the
+ * skills, the agents and the CLI load, the manifest and the licence. Claude Code 2.1.310 and 2.1.330 run `npm ci --ignore-scripts`
+ * in the installed copy when it holds package-lock.json, and copy nothing else of the repository with a `./plugin`
+ * source (measured with a local marketplace, the impact table of cycle 57's t1); the plugin directory's checklist
+ * holds every version with a file over 256 KiB.
+ */
+const PLUGIN_TOP = [".claude-plugin", "LICENSE", "adapters", "agents", "checks", "core", "hooks", "i18n", "impact", "metrics", "plan", "scripts", "setup", "side-copy", "skills", "styles"];
+const PLUGIN_MAX_BYTES = 256 * 1024;
+const LOCK_FILES = new Set(["package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "pnpm-lock.yaml", "bun.lock", "bun.lockb"]);
+/** A path part only development uses: tests and their fixtures, the work graph's folder, CI, installed packages. */
+const DEVELOPMENT_PARTS = new Set(["test", "tests", "__fixtures__", ".ennyn", ".github", "node_modules"]);
+/** A file name only development uses: a test file, the work graph, the findings ledger. */
+const DEVELOPMENT_NAME = /\.test\.[cm]?js$|^graph\.(json|mjs)$|^findings\.jsonl$/;
+
+/**
+ * Why the plugin's folder would install more than the plugin runs, one line a problem.
+ * @param {{ path: string, size: number }[]} files paths below the plugin's folder, `/`-separated
+ * @param {(path: string) => string} read
+ */
+function pluginLayoutProblems(files, read) {
+  const out = [];
+  for (const { path, size } of files) {
+    const parts = path.split("/");
+    const name = parts[parts.length - 1];
+    if (!PLUGIN_TOP.includes(parts[0])) out.push(`${path}: outside the folders the plugin loads`);
+    if (LOCK_FILES.has(name)) out.push(`${path}: a lock file (Claude Code installs from it)`);
+    if (parts.some((p) => DEVELOPMENT_PARTS.has(p)) || DEVELOPMENT_NAME.test(name)) out.push(`${path}: development only`);
+    if (size > PLUGIN_MAX_BYTES) out.push(`${path}: ${size} bytes, over ${PLUGIN_MAX_BYTES}`);
+    if (name === "package.json") {
+      let pkg;
+      try {
+        pkg = JSON.parse(read(path));
+      } catch {
+        out.push(`${path}: a package.json that does not parse`);
+        continue;
+      }
+      const deps = Object.keys(pkg ?? {}).filter((k) => /dependencies$|^bundleDependencies$|^overrides$/i.test(k));
+      if (deps.length) out.push(`${path}: ${deps.join(", ")}`);
+    }
+  }
+  return out;
+}
+
+test("plugin: its folder holds only what the plugin runs: no lock file, no dependencies, no development file, no file over 256 KiB", () => {
+  const ok = [{ path: "core/git.mjs", size: 10 }, { path: ".claude-plugin/plugin.json", size: 10 }, { path: "skills/cycle/SKILL.md", size: PLUGIN_MAX_BYTES }, { path: "core/package.json", size: 10 }];
+  const texts = /** @type {Record<string, string>} */ ({ "core/package.json": '{ "type": "module" }', "package.json": '{ "devDependencies": { "typescript": "5.9.3" } }', "a/package.json": '{ "peerDependencies": {} }', "b/package.json": "{" });
+  const read = (/** @type {string} */ p) => texts[p] ?? "";
+  assert.deepEqual(pluginLayoutProblems(ok, read), []);
+  /** @type {[string, { path: string, size: number }, RegExp][]} */
+  const refused = [
+    ["the lock", { path: "scripts/package-lock.json", size: 10 }, /a lock file/],
+    ["another lock", { path: "core/pnpm-lock.yaml", size: 10 }, /a lock file/],
+    ["dev dependencies", { path: "core/package.json", size: 10 }, /devDependencies/],
+    ["a test", { path: "core/git.test.mjs", size: 10 }, /development only/],
+    ["a test folder", { path: "core/test/a.mjs", size: 10 }, /development only/],
+    ["the graph", { path: "core/.ennyn/graph.json", size: 10 }, /development only/],
+    ["the findings", { path: "metrics/findings.jsonl", size: 10 }, /development only/],
+    ["a big file", { path: "i18n/en.json", size: PLUGIN_MAX_BYTES + 1 }, /over 262144/],
+    ["a root file", { path: "package.json", size: 10 }, /outside the folders/],
+    ["a top folder of development", { path: "test/a.test.mjs", size: 10 }, /outside the folders/],
+  ];
+  texts["core/package.json"] = texts["package.json"];
+  for (const [what, file, why] of refused) assert.match(pluginLayoutProblems([file], read).join("\n"), why, what);
+  assert.match(pluginLayoutProblems([{ path: "core/package.json", size: 10 }], () => '{ "peerDependencies": {} }').join(""), /peerDependencies/);
+  assert.match(pluginLayoutProblems([{ path: "core/package.json", size: 10 }], () => "{").join(""), /does not parse/);
+  // The tree as it is, tracked or not yet: every file Claude Code would copy.
+  const files = treeFiles(ROOT, ".").map((path) => ({ path, size: statSync(join(ROOT, path)).size }));
+  assert.ok(files.some((f) => f.path === "scripts/ennyn.mjs") && files.some((f) => f.path === ".claude-plugin/plugin.json"), `the plugin's files read: ${files.length}`);
+  assert.deepEqual(pluginLayoutProblems(files, (p) => readFileSync(join(ROOT, p), "utf8")), []);
+  for (const top of PLUGIN_TOP) assert.ok(existsSync(join(ROOT, top)), `${top} is in the plugin's folder`);
+  // The MIT notice goes with every copy: the install's is the repository's, byte for byte.
+  assert.equal(readFileSync(join(ROOT, "LICENSE"), "utf8"), readFileSync(join(TOP, "LICENSE"), "utf8"), "plugin/LICENSE is the repository's LICENSE");
+});
+
+test("plugin: every file a skill or an agent names under the plugin's root is in its folder", () => {
+  const named = pluginMarkdown().flatMap((f) => [...read(f).matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/([^\s`"')]+)/g)].map((m) => ({ f, path: m[1].replace(/[.,:;]+$/, "") })));
+  assert.ok(named.some((n) => n.path === "core/config.mjs") && named.some((n) => n.path === "scripts/ennyn.mjs"), `named: ${named.map((n) => n.path)}`);
+  assert.deepEqual(named.filter((n) => !existsSync(join(ROOT, n.path))).map((n) => `${n.f}: ${n.path}`), []);
+});
+
+test("plugin: a copy of its folder alone runs the CLI and every hook, as an install has nothing else", () => {
+  // What Claude Code copies is the folder: a module that reaches a file outside it loads here and fails there.
+  const box = realpathSync(mkdtempSync(join(tmpdir(), "pl-alone-")));
+  const copy = join(box, "ennyn", "0.0.1");
+  cpSync(ROOT, copy, { recursive: true });
+  const neutral = mkdtempSync(join(tmpdir(), "pl-alone-cwd-"));
+  const env = { ...process.env, CLAUDE_PLUGIN_ROOT: copy, CLAUDE_PLUGIN_DATA: join(box, "data"), CLAUDE_PROJECT_DIR: neutral };
+  delete env.CLAUDE_ENV_FILE;
+  const help = spawnSync(process.execPath, [join(copy, "scripts", "ennyn.mjs"), "--help"], { cwd: neutral, env, encoding: "utf8" });
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /^Usage: ennyn /);
+  const commands = Object.values(JSON.parse(read("hooks/hooks.json")).hooks).flatMap((/** @type {any[]} */ groups) => groups.flatMap((g) => g.hooks.map((/** @type {any} */ h) => /\$\{CLAUDE_PLUGIN_ROOT\}\/([^"]+)"/.exec(h.command)?.[1])));
+  assert.ok(commands.length >= 5 && commands.every(Boolean), `hook scripts read: ${commands}`);
+  for (const script of new Set(commands)) {
+    const r = spawnSync(process.execPath, [join(copy, script)], { input: JSON.stringify({ session_id: "s1", hook_event_name: "SessionStart", source: "startup", cwd: neutral }), cwd: neutral, env, encoding: "utf8" });
+    assert.equal(r.status, 0, `${script}: ${r.stderr}`);
+    assert.doesNotMatch(r.stderr, /ERR_MODULE_NOT_FOUND|Cannot find module/, script);
+  }
 });
 
 test("plugin: hook commands point at files that exist; manifests agree on name and version", () => {
@@ -692,18 +796,19 @@ test("plugin: hook commands point at files that exist; manifests agree on name a
     assert.ok(m, `command names a file under the plugin root: ${c}`);
     assert.ok(existsSync(join(ROOT, m[1])), `${m[1]} exists`);
   }
-  const pkg = JSON.parse(read("package.json"));
+  const pkg = JSON.parse(read("/package.json"));
   const plugin = JSON.parse(read(".claude-plugin/plugin.json"));
-  const market = JSON.parse(read(".claude-plugin/marketplace.json"));
+  const market = JSON.parse(read("/.claude-plugin/marketplace.json"));
   assert.equal(plugin.name, pkg.name);
   assert.equal(market.name, pkg.name);
   assert.deepEqual(market.plugins.map((/** @type {any} */ p) => p.name), [pkg.name]);
-  // The install source is this repository's root: another repository or a URL would install code no review here read.
-  assert.deepEqual(market.plugins.map((/** @type {any} */ p) => p.source), ["./"], "the marketplace entry installs from this repository's root");
+  // The install source is this repository's plugin folder: another repository or a URL would install code no review here read,
+  // and the repository's top would install the tests, the lock file and its development dependencies.
+  assert.deepEqual(market.plugins.map((/** @type {any} */ p) => p.source), ["./plugin"], "the marketplace entry installs from this repository's plugin folder");
   assert.equal(plugin.version, pkg.version, "a push without a version bump never reaches users; bump both together");
   // One description for the package, the plugin and its marketplace entry: the install description says what the hooks do.
   assert.deepEqual([plugin.description, market.plugins[0].description], [pkg.description, pkg.description]);
-  // The plugin root is the repository root, so a root CLAUDE.md would be shipped and ignored.
+  // A CLAUDE.md in the plugin's folder would be shipped and ignored.
   assert.ok(!existsSync(join(ROOT, "CLAUDE.md")), "developer notes live in .claude/CLAUDE.md");
 });
 
@@ -713,7 +818,7 @@ test("plugin: hook commands point at files that exist; manifests agree on name a
  * @param {string} dir @returns {string[]}
  */
 function markdownFiles(dir) {
-  return readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap((e) => {
+  return readdirSync(join(TOP, dir), { withFileTypes: true }).flatMap((e) => {
     const rel = dir ? `${dir}/${e.name}` : e.name;
     if (e.isDirectory()) return e.name === "node_modules" || e.name === ".git" ? [] : markdownFiles(rel);
     return e.name.endsWith(".md") ? [rel] : [];
@@ -722,10 +827,10 @@ function markdownFiles(dir) {
 
 test("docs: no table cell holds an unescaped | inside code (GitHub splits the row there)", () => {
   const tracked = markdownFiles("");
-  assert.ok(["docs/evidence.md", "skills/cycle/SKILL.md", "agents/code-reviewer.md", "README.md"].every((f) => tracked.includes(f)), `nested documents read: ${tracked.length}`);
+  assert.ok(["docs/evidence.md", "plugin/skills/cycle/SKILL.md", "plugin/agents/code-reviewer.md", "README.md"].every((f) => tracked.includes(f)), `nested documents read: ${tracked.length}`);
   const bad = [];
   for (const f of tracked) {
-    read(f)
+    read(`/${f}`)
       .split("\n")
       .forEach((line, i) => {
         if (!line.startsWith("|")) return;

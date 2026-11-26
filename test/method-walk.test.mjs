@@ -20,7 +20,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const BRIEF = "skills/cycle/task-brief.md";
+const BRIEF = "plugin/skills/cycle/task-brief.md";
 /** The section the data walks: from its heading to the consolidated brief, which is the restart's content. */
 const FROM = "## The failure count";
 const TO = "**The consolidated brief**";

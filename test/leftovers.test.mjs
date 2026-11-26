@@ -5,10 +5,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { git } from "../core/git.mjs";
-import { leftovers, recordStart, startPath } from "../metrics/leftovers.mjs";
+import { git } from "../plugin/core/git.mjs";
+import { leftovers, recordStart, startPath } from "../plugin/metrics/leftovers.mjs";
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "scripts", "ennyn.mjs");
 const config = { paths: { stateDir: ".git/ennyn" } };
 const ID = ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"];
 

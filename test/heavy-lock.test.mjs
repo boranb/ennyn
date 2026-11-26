@@ -11,9 +11,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpath
 import { cpus, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { LOG_MAX, OLD_LOCK_MS, ROOM_DEFAULTS, deadLock, dropRecorded, judgeRoom, processStart, readRoom, roomThresholds, runLocked } from "../core/heavy-lock.mjs";
+import { LOG_MAX, OLD_LOCK_MS, ROOM_DEFAULTS, deadLock, dropRecorded, judgeRoom, processStart, readRoom, roomThresholds, runLocked } from "../plugin/core/heavy-lock.mjs";
 
-const CLI = fileURLToPath(new URL("../scripts/ennyn.mjs", import.meta.url));
+const CLI = fileURLToPath(new URL("../plugin/scripts/ennyn.mjs", import.meta.url));
 const LOCKED_SH = fileURLToPath(new URL("__fixtures__/locked.sh", import.meta.url));
 
 /**
@@ -64,7 +64,7 @@ function box(t) {
  * The room itself is tested with readings given to runLocked, never by filling the machine.
  */
 const ANY_ROOM = { ENNYN_LOCK_MIN_MEMORY: "0", ENNYN_LOCK_MAX_LOAD: "1000", ENNYN_LOCK_MIN_DISK: "0" };
-/** A machine with room. @returns {import("../core/heavy-lock.mjs").Room} */
+/** A machine with room. @returns {import("../plugin/core/heavy-lock.mjs").Room} */
 const roomy = () => ({ memory: { value: 50 }, swap: { value: 0 }, load: { value: 0.1 }, disk: [{ dir: "/tmp", read: { value: 100 } }] });
 
 /**
@@ -772,7 +772,7 @@ test("lock room: each platform's readings, as the system prints them, and a read
   const G = 2 ** 30;
   const ROOMY = "MemTotal:       16000000 kB\nMemAvailable:   12800000 kB\n";
   const v2 = (/** @type {Record<string, string>} */ more) => readRoom({ platform: "linux", read: files({ "/proc/meminfo": ROOMY, "/sys/fs/cgroup/memory.max": `${2 * G}\n`, "/sys/fs/cgroup/memory.current": `${Math.round(1.9 * G)}\n`, ...more }), ...DISK }).memory;
-  const pct = (/** @type {import("../core/heavy-lock.mjs").Reading} */ r) => Math.round("value" in r ? r.value : NaN);
+  const pct = (/** @type {import("../plugin/core/heavy-lock.mjs").Reading} */ r) => Math.round("value" in r ? r.value : NaN);
   assert.equal(pct(v2({ "/sys/fs/cgroup/memory.stat": `anon 1000\ninactive_file ${1 * G}\nactive_file 10\n` })), 55);
   assert.equal(pct(v2({ "/sys/fs/cgroup/memory.stat": `inactive_file ${1.5 * G}\n` })), 80, "the container's share, up to the host's");
   assert.equal(pct(v2({})), 5, "no memory.stat: the use as it stands");
@@ -836,7 +836,7 @@ test("lock room: thresholds come from the option, else the variable, else the de
 test("lock room: short of room the job keeps its place and waits, says what is short once, and runs once there is room", async (t) => {
   const at = box(t);
   const env = { ...process.env, ENNYN_LOCK_DIR: at.lock };
-  /** @type {import("../core/heavy-lock.mjs").Said[]} */
+  /** @type {import("../plugin/core/heavy-lock.mjs").Said[]} */
   const said = [];
   let reads = 0;
   const short = { memory: { value: 9 }, swap: { value: 91.6 }, load: { value: 0.7 }, disk: [{ dir: "/t", read: { value: 100 } }] };
@@ -873,7 +873,7 @@ test("lock room: a job short of room past its own limit starts anyway and says s
   assert.equal(logLines(at.lock)[0].short, "memory 1% free (min 15%)");
   // A reader that throws, or readings that cannot be made: said once as unmeasured, and the run starts at once.
   for (const room of [() => { throw new Error("EACCES"); }, () => ({ memory: { unmeasured: "sysctl failed" }, swap: { unmeasured: "sysctl failed" }, load: { unmeasured: "x" }, disk: [] })]) {
-    /** @type {import("../core/heavy-lock.mjs").Said[]} */
+    /** @type {import("../plugin/core/heavy-lock.mjs").Said[]} */
     const heard = [];
     assert.equal(await runLocked({ command: "true", args: [], limitMs: 60_000, cwd: at.dir, env, say: (s) => heard.push(s), room: /** @type {any} */ (room) }), 0);
     assert.deepEqual(heard.map((s) => s.key), ["lock.roomUnmeasured"]);

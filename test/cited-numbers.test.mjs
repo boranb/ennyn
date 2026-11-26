@@ -50,20 +50,20 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
  * @type {{ file: string, at: string, number: string, why: string }[]}
  */
 const ALLOW = [
-  { file: "skills/init/SKILL.md", at: "a security audit every 3 cycles", number: "3 cycles", why: "a default the setup step proposes (security.everyCycles), not a measurement" },
-  { file: "skills/init/SKILL.md", at: "refused under 1% of its package's", number: "1%", why: "a default the setup step proposes (security.deps.minShare), not a measurement" },
-  { file: "skills/init/graph.md", at: "5 to 15 open nodes", number: "15 open nodes", why: "a size the first graph aims at, not a measurement" },
-  { file: "skills/cycle/task-brief.md", at: "a reported 0 of 8 was 4 of 8 on a rerun", number: "0 of 8", why: "a rerun's count first written in 084171f (2026-10-31); no record in the repository holds it" },
-  { file: "skills/cycle/task-brief.md", at: "a reported 0 of 8 was 4 of 8 on a rerun", number: "4 of 8", why: "the same rerun as 0 of 8" },
-  { file: "skills/cycle/task-brief.md", at: "at most 10 minutes in Claude Code 2.1.310", number: "10 minutes", why: "a limit of another program read in its version: the sibling node measured-claim-names-cell's" },
-  { file: "skills/cycle/task-brief.md", at: "came back rejected 10 minutes after", number: "10 minutes", why: "cycle 36's loss, which the sentence names; the sentence is pinned word for word by test/plugin.test.mjs" },
-  { file: "skills/cycle/task-brief.md", at: "stopped writing about 10 minutes after", number: "10 minutes", why: "cycle 36's other loss; the sentence is pinned word for word by test/plugin.test.mjs" },
-  { file: "skills/cycle/task-brief.md", at: "each under 10 minutes and bounded", number: "10 minutes", why: "a bound the rule sets, not a measurement" },
-  { file: "skills/cycle/task-brief.md", at: "no new line for 30 minutes", number: "30 minutes", why: "a bound the rule sets, not a measurement" },
-  { file: "skills/cycle/task-brief.md", at: "run open 47 minutes", number: "47 minutes", why: "a run behind node cycle-wake-lock; no file in the repository holds the count, and test/plugin.test.mjs pins the sentence word for word" },
-  { file: "skills/cycle/task-brief.md", at: "258K to 540K tokens", number: "540K tokens", why: "cycles 16 to 19, which the sentence names; test/method-walk.test.mjs pins it word for word" },
-  { file: "skills/init/new-project.md", at: "after 60 s, 5 min or 10 min", number: "5 min", why: "a setting's values in Claude Code 2.1.310, not a measurement" },
-  { file: "skills/init/new-project.md", at: "after 60 s, 5 min or 10 min", number: "10 min", why: "a setting's values in Claude Code 2.1.310, not a measurement" },
+  { file: "plugin/skills/init/SKILL.md", at: "a security audit every 3 cycles", number: "3 cycles", why: "a default the setup step proposes (security.everyCycles), not a measurement" },
+  { file: "plugin/skills/init/SKILL.md", at: "refused under 1% of its package's", number: "1%", why: "a default the setup step proposes (security.deps.minShare), not a measurement" },
+  { file: "plugin/skills/init/graph.md", at: "5 to 15 open nodes", number: "15 open nodes", why: "a size the first graph aims at, not a measurement" },
+  { file: "plugin/skills/cycle/task-brief.md", at: "a reported 0 of 8 was 4 of 8 on a rerun", number: "0 of 8", why: "a rerun's count first written in 084171f (2026-10-31); no record in the repository holds it" },
+  { file: "plugin/skills/cycle/task-brief.md", at: "a reported 0 of 8 was 4 of 8 on a rerun", number: "4 of 8", why: "the same rerun as 0 of 8" },
+  { file: "plugin/skills/cycle/task-brief.md", at: "at most 10 minutes in Claude Code 2.1.310", number: "10 minutes", why: "a limit of another program read in its version: the sibling node measured-claim-names-cell's" },
+  { file: "plugin/skills/cycle/task-brief.md", at: "came back rejected 10 minutes after", number: "10 minutes", why: "cycle 36's loss, which the sentence names; the sentence is pinned word for word by test/plugin.test.mjs" },
+  { file: "plugin/skills/cycle/task-brief.md", at: "stopped writing about 10 minutes after", number: "10 minutes", why: "cycle 36's other loss; the sentence is pinned word for word by test/plugin.test.mjs" },
+  { file: "plugin/skills/cycle/task-brief.md", at: "each under 10 minutes and bounded", number: "10 minutes", why: "a bound the rule sets, not a measurement" },
+  { file: "plugin/skills/cycle/task-brief.md", at: "no new line for 30 minutes", number: "30 minutes", why: "a bound the rule sets, not a measurement" },
+  { file: "plugin/skills/cycle/task-brief.md", at: "run open 47 minutes", number: "47 minutes", why: "a run behind node cycle-wake-lock; no file in the repository holds the count, and test/plugin.test.mjs pins the sentence word for word" },
+  { file: "plugin/skills/cycle/task-brief.md", at: "258K to 540K tokens", number: "540K tokens", why: "cycles 16 to 19, which the sentence names; test/method-walk.test.mjs pins it word for word" },
+  { file: "plugin/skills/init/new-project.md", at: "after 60 s, 5 min or 10 min", number: "5 min", why: "a setting's values in Claude Code 2.1.310, not a measurement" },
+  { file: "plugin/skills/init/new-project.md", at: "after 60 s, 5 min or 10 min", number: "10 min", why: "a setting's values in Claude Code 2.1.310, not a measurement" },
 ];
 
 const COUNTED = "rows|runs|cells|findings|defects|commits|tasks|sessions|cases|turns|entries|hits|messages|cycles|rounds|lines|tests|nodes|inspections|repositories|sources|claims|mutants|studies|reviews|proposals|files|tokens|agents|escapes|minutes|min";
@@ -280,11 +280,11 @@ function resolve(root, span, after) {
     // A git command names a read-only subcommand and the revision it reads.
     if (program === "git") return GIT_READS.includes(first ?? "") && /\b[0-9a-f]{7,40}\b/.test(span) ? { covers: true } : { why: `${span}: a git pointer names a read-only command (${GIT_READS.join(", ")}) and a revision` };
     const cli = (/** @type {string | undefined} */ sub) => {
-      const f = fileAt(root, "scripts/ennyn.mjs");
+      const f = fileAt(root, "plugin/scripts/ennyn.mjs");
       return !!(sub && f.text && new RegExp(`^  (?:async )?"?${sub.replace(/[^a-z-]/g, "")}"?\\(`, "m").test(f.text));
     };
     if (program === "ennyn") return cli(first) ? { covers: true } : { why: `${span}: no such ennyn command` };
-    if (program === "node" && first === "scripts/ennyn.mjs") return cli(second) ? { covers: true } : { why: `${span}: no such ennyn command` };
+    if (program === "node" && (first === "scripts/ennyn.mjs" || first === "plugin/scripts/ennyn.mjs")) return cli(second) ? { covers: true } : { why: `${span}: no such ennyn command` };
     if (program === "node") return first && fileAt(root, first).text !== undefined ? { covers: true } : { why: `${span}: no such script` };
     const pkg = fileAt(root, "package.json");
     const scripts = pkg.text ? JSON.parse(pkg.text).scripts ?? {} : {};
@@ -391,17 +391,17 @@ function check(root, files, allow = []) {
   return problems;
 }
 
-/** The files the gate reads: docs/evidence.md and every markdown file under skills/. @param {string} root */
+/** The files the gate reads: docs/evidence.md and every markdown file under plugin/skills/. @param {string} root */
 function scope(root) {
   /** @param {string} dir @returns {string[]} */
   const walk = (dir) =>
     readdirSync(join(root, dir), { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(`${dir}/${e.name}`) : e.name.endsWith(".md") ? [`${dir}/${e.name}`] : []));
-  return ["docs/evidence.md", ...walk("skills").sort()];
+  return ["docs/evidence.md", ...walk("plugin/skills").sort()];
 }
 
 test("cited numbers: every evidence number in docs/evidence.md and the skills names a source the test reads", (t) => {
   const files = scope(ROOT);
-  assert.ok(files.includes("skills/cycle/SKILL.md") && files.includes("skills/init/SKILL.md") && files.length > 10, `the scope read ${files.length} files`);
+  assert.ok(files.includes("plugin/skills/cycle/SKILL.md") && files.includes("plugin/skills/init/SKILL.md") && files.length > 10, `the scope read ${files.length} files`);
   const problems = check(ROOT, files, ALLOW);
   for (const p of problems) t.diagnostic(p);
   assert.equal(problems.length, 0, `${problems.length} numbers or pointers fail: the diagnostics name each`);
@@ -468,7 +468,7 @@ test("cited numbers: what counts as a source, and what the test reads at it", ()
   const root = mkdtempSync(join(tmpdir(), "cited-"));
   mkdirSync(join(root, "docs"));
   mkdirSync(join(root, "test"));
-  mkdirSync(join(root, "scripts"));
+  mkdirSync(join(root, "plugin", "scripts"), { recursive: true });
   writeFileSync(join(root, "docs", "s.md"), "# S\n\n## A section\n\nIt held 57% and 87/90.\n\n## Other\n\n12 rows.\n");
   writeFileSync(join(root, "docs", "t.md"), "Read 1149 of 1371.\n");
   writeFileSync(join(root, "docs", "r.md"), "The ladder cut code by 53% over 38 tasks. The code of 18 of the 38 was run: there the cut was 30% (87/90 against 86/90).\nAnother run wrote 53% fewer statements.\n");
@@ -476,7 +476,7 @@ test("cited numbers: what counts as a source, and what the test reads at it", ()
   writeFileSync(join(root, "docs", "g.md"), "It grew from 5593 lines and stood at 652 tokens.\n");
   writeFileSync(join(root, "docs", "f.md"), "Of 32 findings, 21 (66%) were fixes; 18 of them came in 38 tasks.\n");
   writeFileSync(join(root, "test", "a.test.mjs"), 'test("a named check", () => {});\n');
-  writeFileSync(join(root, "scripts", "ennyn.mjs"), "const COMMANDS = {\n  convergence(args) {},\n  async core(args) {},\n};\n");
+  writeFileSync(join(root, "plugin", "scripts", "ennyn.mjs"), "const COMMANDS = {\n  convergence(args) {},\n  async core(args) {},\n};\n");
   writeFileSync(join(root, "package.json"), JSON.stringify({ scripts: { test: "x", "test:short": "y" } }));
   const one = (/** @type {string} */ text) => {
     writeFileSync(join(root, "docs", "u.md"), text);

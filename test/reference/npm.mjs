@@ -45,7 +45,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, posix, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { DEFAULT_REGISTRY, exactVersion, judgeLock, specTag, lockEntries, pathFromLock, registryResolver, sourceForm } from "../../checks/deps.mjs";
+import { DEFAULT_REGISTRY, exactVersion, judgeLock, specTag, lockEntries, pathFromLock, registryResolver, sourceForm } from "../../plugin/checks/deps.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const RECORD = join(HERE, "npm.json");
@@ -86,7 +86,7 @@ const lockTextOf = (c) => (typeof c.lock === "string" ? filled(c.lock) : JSON.st
 /** The rule the gate judges with: the cell's registries (else its own, listed) and sources. @param {Cell} c */
 function ruleOf(c) {
   const r = filled(c.rule ?? {});
-  return /** @type {import("../../checks/deps.mjs").DepsRule} */ ({
+  return /** @type {import("../../plugin/checks/deps.mjs").DepsRule} */ ({
     paths: [], cooldownDays: 0, minShare: 0, minWeekly: 0, allow: [], allowScripts: [], online: false, timeout: 1, advisories: "", advisoryRegistries: [],
     registries: r.registries ?? { [REGISTRY]: null },
     sources: r.sources ?? [],

@@ -13,7 +13,7 @@ import { mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { GIT_FLOOR, parseVersion } from "../core/git.mjs";
+import { GIT_FLOOR, parseVersion } from "../plugin/core/git.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 

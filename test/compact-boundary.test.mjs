@@ -12,11 +12,11 @@ import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, rea
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { GIT_CALLS, GIT_MS, HEADROOM, IDLE_GAP_MS, MODEL_WINDOWS, SETTLE_MS, SUBAGENT_ENTRIES, TAIL_BYTES, TREE_PATHS, judge, listed, subagentBusy, summaryRequest, tailFacts, within } from "../adapters/claude-code/compact-boundary.mjs";
-import { appendBounded, readTail, writeState } from "../core/files.mjs";
-import { loadConfig } from "../core/config.mjs";
+import { GIT_CALLS, GIT_MS, HEADROOM, IDLE_GAP_MS, MODEL_WINDOWS, SETTLE_MS, SUBAGENT_ENTRIES, TAIL_BYTES, TREE_PATHS, judge, listed, subagentBusy, summaryRequest, tailFacts, within } from "../plugin/adapters/claude-code/compact-boundary.mjs";
+import { appendBounded, readTail, writeState } from "../plugin/core/files.mjs";
+import { loadConfig } from "../plugin/core/config.mjs";
 
-const HOOK = fileURLToPath(new URL("../adapters/claude-code/hooks/compact-boundary.mjs", import.meta.url));
+const HOOK = fileURLToPath(new URL("../plugin/adapters/claude-code/hooks/compact-boundary.mjs", import.meta.url));
 const ONE_M = "claude-opus-5-5";
 const SMALL = "claude-sonnet-4-6";
 const HOUR = 3_600_000;

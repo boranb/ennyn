@@ -33,8 +33,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpath
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { recordRun } from "../../checks/test-runs.mjs";
-import { DEFAULTS } from "../../core/config.mjs";
+import { recordRun } from "../../plugin/checks/test-runs.mjs";
+import { DEFAULTS } from "../../plugin/core/config.mjs";
 import { claudeBinary, safePath, versionOf } from "./claude-bin.mjs";
 import { gitEnv } from "./claude-code.mjs";
 import { standIn } from "./precompact.mjs";

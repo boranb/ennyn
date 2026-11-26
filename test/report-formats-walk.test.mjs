@@ -19,7 +19,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const FORMATS = "skills/cycle/report-formats.md";
+const FORMATS = "plugin/skills/cycle/report-formats.md";
 const TESTS = "test/findings.test.mjs";
 /** Where each block opens: the line that starts with this, then the table or the list after blank lines. */
 const TABLE_LEAD = "**One row, one column.**";
@@ -299,11 +299,11 @@ function pointers(text, source, labels, data = { table: TABLE, age: AGE }) {
 }
 
 const read = (/** @type {string} */ path) => readFileSync(join(ROOT, path), "utf8");
-const catalog = /** @type {Record<string, string>} */ (JSON.parse(read("i18n/en.json")));
+const catalog = /** @type {Record<string, string>} */ (JSON.parse(read("plugin/i18n/en.json")));
 const LABELS = Object.fromEntries(COLUMNS.map((key) => [key, catalog[`convergence.${key}`]]));
 
 test("report formats walk: every line of the convergence table and of By age is claimed by the data, each condition tied to the findings tests that run it", (t) => {
-  for (const key of COLUMNS) assert.ok(LABELS[key], `i18n/en.json has no label for ${key}`);
+  for (const key of COLUMNS) assert.ok(LABELS[key], `plugin/i18n/en.json has no label for ${key}`);
   const wrong = pointers(read(FORMATS), read(TESTS), LABELS);
   for (const w of wrong) t.diagnostic(w);
   assert.equal(wrong.length, 0, `${wrong.length} line(s) part; the first: ${wrong[0]}`);

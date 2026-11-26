@@ -3,10 +3,10 @@ import assert from "node:assert/strict";
 import { chmodSync, mkdtempSync, writeFileSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig } from "../core/config.mjs";
-import { t, tShown } from "../core/i18n.mjs";
-import { byAge, clarification, costWeight, heldNodes, sinceOf, splitAt, graphProblems, loadGraph, pickMechanization, pickOldest, rankMechanization, readyMechanization, readyNodes, scoreNode, splitFirst, GraphError } from "../plan/mechanization.mjs";
-import { cycleRecords, folded, lineKey, markCovers, securityDue, sensitivePaths, uncovered } from "../plan/audit.mjs";
+import { loadConfig } from "../plugin/core/config.mjs";
+import { t, tShown } from "../plugin/core/i18n.mjs";
+import { byAge, clarification, costWeight, heldNodes, sinceOf, splitAt, graphProblems, loadGraph, pickMechanization, pickOldest, rankMechanization, readyMechanization, readyNodes, scoreNode, splitFirst, GraphError } from "../plugin/plan/mechanization.mjs";
+import { cycleRecords, folded, lineKey, markCovers, securityDue, sensitivePaths, uncovered } from "../plugin/plan/audit.mjs";
 
 const cfg = (override = {}) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-p-")), env: {}, override });
 

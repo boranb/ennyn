@@ -7,11 +7,11 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ANSWER_LIMIT, HELD_LIMIT, advisoriesOf, depsMessages, fetchJson, lockEntries, lockPath, newEntries, npmrcEntries, npmrcFindings, scriptsGuardDropped, judgeEntry, pathInside, pkgJson, pkgPathOf, folderKeys, reasonText, registryOf, registryResolver, registryVerdicts, shownSource, sourceForm, specSource, thresholdPercent } from "../checks/deps.mjs";
-import { git, indexKinds } from "../core/git.mjs";
-import { loadConfig, ConfigError } from "../core/config.mjs";
+import { ANSWER_LIMIT, HELD_LIMIT, advisoriesOf, depsMessages, fetchJson, lockEntries, lockPath, newEntries, npmrcEntries, npmrcFindings, scriptsGuardDropped, judgeEntry, pathInside, pkgJson, pkgPathOf, folderKeys, reasonText, registryOf, registryResolver, registryVerdicts, shownSource, sourceForm, specSource, thresholdPercent } from "../plugin/checks/deps.mjs";
+import { git, indexKinds } from "../plugin/core/git.mjs";
+import { loadConfig, ConfigError } from "../plugin/core/config.mjs";
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "scripts", "ennyn.mjs");
 /** Answers recorded from the real services on 2026-10-24 and cut down; each file names its request. */
 const FIX = join(dirname(fileURLToPath(import.meta.url)), "__fixtures__", "deps");
 const fixture = (/** @type {string} */ name) => JSON.parse(readFileSync(join(FIX, name), "utf8"));
@@ -86,8 +86,8 @@ const under = (at, e) => Object.fromEntries(Object.entries(e).map(([k, v]) => [`
 /** @param {Record<string, unknown>} packages */
 const lock = (packages) => `${JSON.stringify({ name: "demo", version: "1.0.0", lockfileVersion: 3, requires: true, packages: { "": { name: "demo", version: "1.0.0" }, ...packages } }, null, 2)}\n`;
 /** A rule with a long budget, so a loaded machine is no timeout; the budget tests set their own. @param {Record<string, unknown>} [deps] */
-const rule = (deps = {}) => /** @type {import("../checks/deps.mjs").DepsRule} */ (loadConfig({ cwd: mkdtempSync(join(tmpdir(), "en-deps-cfg-")), env: {}, override: { security: { deps: { timeout: 120, ...deps } } } }).security.deps);
-/** @param {{ reason: import("../checks/deps.mjs").Reason }} x */
+const rule = (deps = {}) => /** @type {import("../plugin/checks/deps.mjs").DepsRule} */ (loadConfig({ cwd: mkdtempSync(join(tmpdir(), "en-deps-cfg-")), env: {}, override: { security: { deps: { timeout: 120, ...deps } } } }).security.deps);
+/** @param {{ reason: import("../plugin/checks/deps.mjs").Reason }} x */
 const why = (x) => reasonText(x.reason, "en");
 
 test("deps lock: entries under node_modules are read, links and the project's own folders are not; a lock it cannot read says why", () => {
@@ -244,10 +244,10 @@ test("deps new: a package that moves in the tree is not new; a new version, a ne
 
 test("deps identity: an entry is the registry's tarball of its own name and version, or it is refused; another source says why", () => {
   const r = rule();
-  const e = (/** @type {Partial<import("../checks/deps.mjs").LockEntry>} */ x) => ({ key: "node_modules/a", name: "a", version: "1.0.0", resolved: "https://registry.npmjs.org/a/-/a-1.0.0.tgz", integrity: "sha512-x", scripts: false, bundled: false, ...x });
+  const e = (/** @type {Partial<import("../plugin/checks/deps.mjs").LockEntry>} */ x) => ({ key: "node_modules/a", name: "a", version: "1.0.0", resolved: "https://registry.npmjs.org/a/-/a-1.0.0.tgz", integrity: "sha512-x", scripts: false, bundled: false, ...x });
   assert.deepEqual(registryOf(e({}), r), { origin: "https://registry.npmjs.org", registry: "https://registry.npmjs.org" });
   assert.deepEqual(registryOf(e({ name: "@s/a", resolved: "https://registry.npmjs.org/@s%2fa/-/a-1.0.0.tgz" }), r), { origin: "https://registry.npmjs.org", registry: "https://registry.npmjs.org" });
-  /** @param {Partial<import("../checks/deps.mjs").LockEntry>} x */
+  /** @param {Partial<import("../plugin/checks/deps.mjs").LockEntry>} x */
   const refused = (x) => {
     const w = /** @type {any} */ (registryOf(e(x), r));
     return [w.refuse === true, reasonText(w.reason, "en")];
@@ -271,7 +271,7 @@ test("deps identity: an entry is the registry's tarball of its own name and vers
   assert.deepEqual(registryOf(e({ name: "@s/a", resolved: "https://corp.example/artifactory/api/npm/npm/@s/a/-/a-1.0.0.tgz" }), prefixed), { origin: "https://corp.example", registry: "https://corp.example/artifactory/api/npm/npm" });
   const wrong = /** @type {any} */ (registryOf(e({ resolved: "https://corp.example/artifactory/api/npm/npm/evil/-/evil-0.0.1.tgz" }), prefixed));
   assert.deepEqual([wrong.refuse, reasonText(wrong.reason, "en")], [true, "resolved is /artifactory/api/npm/npm/evil/-/evil-0.0.1.tgz, not /artifactory/api/npm/npm/a/-/a-1.0.0.tgz"]);
-  /** @param {string} resolved @param {import("../checks/deps.mjs").DepsRule} on */
+  /** @param {string} resolved @param {import("../plugin/checks/deps.mjs").DepsRule} on */
   const unproven = (resolved, on) => {
     const w = /** @type {any} */ (registryOf(e({ resolved }), on));
     return [w.refuse, w.reason?.key];
@@ -384,7 +384,7 @@ test("deps specs: every dependency spec npm may fetch from that is no registry s
 test("deps verdicts by source: an entry passes only on a reading with one meaning; every other spelling npm reads is refused, whatever npm makes of it", () => {
   const r = rule({ registries: { "https://registry.npmjs.org": null, "https://corp.example/npm": null }, sources: [`git+ssh://git@github.com/o/listed.git#${SHA}`, "git+ssh://git@github.com/o/moving.git#main", "https://github.com/o/r.tgz", "https://mirror.example/x-1.0.0.tgz", "file:../shared/x.tgz", "../dir", "FILE:../y"] });
   const proven = registryResolver({ staged: Buffer.from("registry=https://registry.npmjs.org/\nscope=\n@corp:registry=https://corp.example/npm\n") });
-  /** @param {Partial<import("../checks/deps.mjs").LockEntry>} x @param {string} [dir] @param {boolean} [link] */
+  /** @param {Partial<import("../plugin/checks/deps.mjs").LockEntry>} x @param {string} [dir] @param {boolean} [link] */
   const verdict = (x, dir = "", link = false) => {
     const e = { key: "node_modules/x", name: "x", version: "1.0.0", resolved: null, integrity: "sha512-x", scripts: false, bundled: false, odd: null, ...x };
     const j = /** @type {any} */ (judgeEntry(e, r, { lockDir: dir, registry: e.resolved === null ? proven(e.name) : undefined, link }));
@@ -477,7 +477,7 @@ test("deps verdicts by source: an entry passes only on a reading with one meanin
     [{}, { name: "@corp/y" }, { version: "1.0.0-rc.1+build.5" }, { version: "git+file:///srv/r.git" }, { version: "https://evil.example/x.tgz" }, { version: "^1.0.0" }, { name: "foo@https://evil.example/x#" }].map((x) => verdict(x)),
     ["listed", "listed", "listed", "refused unlisted", "refused unlisted", "refused unlisted", "refused unlisted"],
   );
-  const reasonOf = (/** @type {Partial<import("../checks/deps.mjs").LockEntry>} */ x) => /** @type {any} */ (judgeEntry({ key: "node_modules/x", name: "x", version: "1.0.0", resolved: null, integrity: "sha512-x", scripts: false, bundled: false, ...x }, r, { registry: proven(x.name ?? "x") })).reason?.key;
+  const reasonOf = (/** @type {Partial<import("../plugin/checks/deps.mjs").LockEntry>} */ x) => /** @type {any} */ (judgeEntry({ key: "node_modules/x", name: "x", version: "1.0.0", resolved: null, integrity: "sha512-x", scripts: false, bundled: false, ...x }, r, { registry: proven(x.name ?? "x") })).reason?.key;
   assert.deepEqual([reasonOf({ name: "foo@https://evil.example/x#" }), reasonOf({ version: "^1" })], ["noResolvedName", "noResolvedVersion"]);
   // The registry as npm-registry-fetch picks it: the package's own scope, the project's scope, then registry. What
   // the project leaves unset a user's config may set (npm 10.9.9 then asks that one): refused either way.
@@ -551,7 +551,7 @@ test("deps sources: an entry from a place no list names fails, a git dependency 
   const LISTED = "https://registry.example";
   const r = rule({ registries: { [LISTED]: null }, online: false });
   const withSources = rule({ registries: { [LISTED]: null }, online: false, sources: [`git+ssh://git@github.com/o/pinned.git#${SHA}`, "git+ssh://git@github.com/o/moving.git#main", "https://mirror.example/sealed-1.0.0.tgz", "https://mirror.example/open-1.0.0.tgz", "file:../shared/x.tgz", "../linked"] });
-  /** @param {string} text @param {import("../checks/deps.mjs").DepsRule} on @param {string} [path] */
+  /** @param {string} text @param {import("../plugin/checks/deps.mjs").DepsRule} on @param {string} [path] */
   const check = (text, on, path = "package-lock.json") => depsMessages(new Map([[path, { staged: Buffer.from(text), head: Buffer.from(lock({})) }]]), on, "en");
   const brought = lock({
     "node_modules/tarball": { version: "1.0.0", resolved: "https://evil.example/tarball-1.0.0.tgz", integrity: "sha512-x" },

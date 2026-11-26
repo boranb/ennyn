@@ -37,9 +37,9 @@ import * as nodeModule from "node:module";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readIfThere } from "../core/files.mjs";
-import { git, gitMaybe } from "../core/git.mjs";
-import { matchAny } from "../core/glob.mjs";
+import { readIfThere } from "../plugin/core/files.mjs";
+import { git, gitMaybe } from "../plugin/core/git.mjs";
+import { matchAny } from "../plugin/core/glob.mjs";
 import { GATES } from "./guards.mjs";
 import { runCounted, suiteConcurrency } from "./run.mjs";
 
@@ -70,19 +70,19 @@ const EVERY_FILE = { paths: ["test/hermetic.mjs", "test/hostile.mjs"], why: "loa
  * @type {Record<string, { paths: string[], why: string }[]>}
  */
 export const SLOW = {
-  [GUARDS]: [EVERY_FILE, { paths: ["test/guards.mjs", GUARDS, "test/declarations.mjs", "metrics/mutation.mjs"], why: "the guards, and what runs and reads them" }],
+  [GUARDS]: [EVERY_FILE, { paths: ["test/guards.mjs", GUARDS, "test/declarations.mjs", "plugin/metrics/mutation.mjs"], why: "the guards, and what runs and reads them" }],
   "test/hook.test.mjs": [
     EVERY_FILE,
     { paths: ["test/hook.test.mjs"], why: "the file itself" },
-    { paths: ["setup/hook.mjs", "setup/doctor.mjs", "checks/commit-shape.mjs", "core/git.mjs", "scripts/ennyn.mjs"], why: "what installs the hook, what it runs and what reports on it" },
-    { paths: ["adapters/claude-code/hooks/plugin-root.mjs"], why: "writes the record a hook installed from the plugin follows" },
+    { paths: ["plugin/setup/hook.mjs", "plugin/setup/doctor.mjs", "plugin/checks/commit-shape.mjs", "plugin/core/git.mjs", "plugin/scripts/ennyn.mjs", "scripts/ennyn.mjs"], why: "what installs the hook, what it runs and what reports on it" },
+    { paths: ["plugin/adapters/claude-code/hooks/plugin-root.mjs"], why: "writes the record a hook installed from the plugin follows" },
   ],
   "test/fault-injection.test.mjs": [
     EVERY_FILE,
     { paths: ["test/fault-injection.test.mjs", "test/fault-fs.mjs"], why: "the matrix and its preload" },
-    { paths: ["core/git.mjs", "core/files.mjs"], why: "every git call and file read goes through them" },
-    { paths: ["core/config.mjs", "setup/doctor.mjs"], why: "the code that most often changed with the matrix" },
-    { paths: ["scripts/ennyn.mjs", "hooks/hooks.json", "adapters/claude-code/hooks/*.mjs"], why: "every command and hook needs a case" },
+    { paths: ["plugin/core/git.mjs", "plugin/core/files.mjs"], why: "every git call and file read goes through them" },
+    { paths: ["plugin/core/config.mjs", "plugin/setup/doctor.mjs"], why: "the code that most often changed with the matrix" },
+    { paths: ["plugin/scripts/ennyn.mjs", "plugin/hooks/hooks.json", "plugin/adapters/claude-code/hooks/*.mjs"], why: "every command and hook needs a case" },
   ],
 };
 

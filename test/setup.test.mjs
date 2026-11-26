@@ -1,12 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, writeFileSync, mkdirSync, symlinkSync, chmodSync, rmSync, utimesSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, writeFileSync, mkdirSync, symlinkSync, chmodSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, delimiter, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { git, parseVersion, versionAtLeast, GIT_FLOOR } from "../core/git.mjs";
-import { DEFAULTS, loadConfig } from "../core/config.mjs";
+import { git, parseVersion, versionAtLeast, GIT_FLOOR } from "../plugin/core/git.mjs";
+import { DEFAULTS, loadConfig } from "../plugin/core/config.mjs";
 import {
   FIX_CANDIDATES,
   MIN_HISTORY,
@@ -21,15 +21,15 @@ import {
   projectCommands,
   commitStyle,
   scanProject,
-} from "../setup/scan.mjs";
-import { askReport, checkSetup, pipes, worktreesIgnored } from "../setup/doctor.mjs";
-import { shown, t, tShown } from "../core/i18n.mjs";
+} from "../plugin/setup/scan.mjs";
+import { askReport, checkSetup, pipes, worktreesIgnored } from "../plugin/setup/doctor.mjs";
+import { shown, t, tShown } from "../plugin/core/i18n.mjs";
 import { ownHome } from "./own-home.mjs";
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "scripts", "ennyn.mjs");
 // The doctor tests write the global git ignore under the home: one of this file's own, or it refuses to run.
 const { root: ROOT, home: HOME } = ownHome("en-setup-");
-const SELF = join(dirname(CLI), "..", "test", "setup.test.mjs");
+const SELF = join(dirname(CLI), "..", "..", "test", "setup.test.mjs");
 const cfg = () => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "en-s-")), env: {} });
 const pat = () => pathPatterns(DEFAULTS, []).re;
 
@@ -71,6 +71,63 @@ test("setup: run with a home outside the temporary folder it refuses, before any
   assert.notEqual(r.status, 0);
   assert.match(r.stderr, /refuses to run: HOME/);
   assert.deepEqual(readdirSync(tmp), []);
+});
+
+test("setup: install-hook from a clone names the forwarder at the clone's top, so a checkout from before the plugin moved still refuses a bad subject", async () => {
+  const { hookCliPath } = await import("../plugin/setup/hook.mjs");
+  // A clone of the new layout: plugin/ and the forwarder, copied from this tree.
+  const clone = mkdtempSync(join(ROOT, "clone-"));
+  const plugin = dirname(dirname(CLI));
+  cpSync(plugin, join(clone, "plugin"), { recursive: true });
+  mkdirSync(join(clone, "scripts"));
+  copyFileSync(join(dirname(plugin), "scripts", "ennyn.mjs"), join(clone, "scripts", "ennyn.mjs"));
+  const forwarder = join(clone, "scripts", "ennyn.mjs");
+  const moved = join(clone, "plugin", "scripts", "ennyn.mjs");
+  assert.equal(hookCliPath(moved), forwarder);
+  // Elsewhere the CLI's own path: an installed plugin (no forwarder), a forwarder that runs something else, a link.
+  assert.equal(hookCliPath(CLI.replace(`${sep}plugin${sep}`, `${sep}cache${sep}`)), CLI.replace(`${sep}plugin${sep}`, `${sep}cache${sep}`));
+  const other = mkdtempSync(join(ROOT, "other-"));
+  cpSync(join(clone, "plugin"), join(other, "plugin"), { recursive: true });
+  put(other, { "scripts/ennyn.mjs": 'import "./elsewhere.mjs";\n' });
+  assert.equal(hookCliPath(join(other, "plugin", "scripts", "ennyn.mjs")), join(other, "plugin", "scripts", "ennyn.mjs"));
+  rmSync(join(other, "scripts", "ennyn.mjs"));
+  symlinkSync(forwarder, join(other, "scripts", "ennyn.mjs"));
+  assert.equal(hookCliPath(join(other, "plugin", "scripts", "ennyn.mjs")), join(other, "plugin", "scripts", "ennyn.mjs"));
+  rmSync(join(other, "scripts"), { recursive: true });
+  assert.equal(hookCliPath(join(other, "plugin", "scripts", "ennyn.mjs")), join(other, "plugin", "scripts", "ennyn.mjs"), "no forwarder there");
+
+  const r = repo();
+  r.commit("feat: config", { ".ennyn/config.json": '{ "commitMsg": { "types": ["feat", "fix"] } }\n' });
+  const env = { ...process.env, ENNYN_PLUGIN_DATA: "", ENNYN_PLUGIN_ROOT: "" };
+  // Inside a Claude Code session whose plugin is an installed copy (the session's variables name it, not this clone),
+  // run as the repository's own commands spell it, through the forwarder: no data directory comes of it, so the same.
+  const installed = mkdtempSync(join(ROOT, "installed-"));
+  const cache = join(installed, "cache", "mkt", "ennyn", "0.0.1");
+  cpSync(plugin, cache, { recursive: true });
+  const session = { ...env, ENNYN_PLUGIN_DATA: join(installed, "data", "ennyn-mkt"), ENNYN_PLUGIN_ROOT: cache };
+  for (const [name, runEnv] of /** @type {const} */ ([["no session", env], ["a plugin session of an installed copy", session]])) {
+    rmSync(join(r.dir, ".git", "hooks", "commit-msg"), { force: true });
+    const run = spawnSync(process.execPath, [forwarder, "install-hook"], { cwd: r.dir, encoding: "utf8", env: runEnv });
+    assert.equal(run.status, 0, `${name}: ${run.stdout}${run.stderr}`);
+    const hook = readFileSync(join(r.dir, ".git", "hooks", "commit-msg"), "utf8");
+    assert.ok(hook.includes(`cli='${realpathSync(forwarder)}'`), `${name}: ${hook}`);
+  }
+  const commit = (/** @type {string} */ message) => {
+    put(r.dir, { [`f${Math.random()}`]: "x\n" });
+    git(["add", "-A"], { cwd: r.dir });
+    return spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "commit", "-q", "-m", message], { cwd: r.dir, encoding: "utf8", env });
+  };
+  const newBad = commit("bad subject");
+  assert.equal(newBad.status, 1, newBad.stderr);
+  assert.match(newBad.stderr, /commitMsg\.types/);
+  // The clone checks out a commit from before the move: the plugin's folders at its top, scripts/ennyn.mjs the CLI.
+  rmSync(join(clone, "scripts"), { recursive: true });
+  for (const name of readdirSync(join(clone, "plugin"))) renameSync(join(clone, "plugin", name), join(clone, name));
+  rmSync(join(clone, "plugin"), { recursive: true });
+  const oldBad = commit("bad subject");
+  assert.equal(oldBad.status, 1, oldBad.stderr);
+  assert.match(oldBad.stderr, /commitMsg\.types/);
+  assert.equal(commit("feat: good").status, 0);
 });
 
 test("setup: ownHome takes away every variable a write follows out of the home, so install-hook run from a plugin session leaves the session's record alone", () => {
@@ -471,7 +528,7 @@ function gitAboveHere(dir) {
 }
 
 test("new project: a README, a licence, .gitignore, agent instruction files, .claude/ settings and Markdown and .ennyn/ data are all a new project holds; any other name is not new (corpus, accept and reject)", async () => {
-  const { newProjectPath } = await import("../setup/scan.mjs");
+  const { newProjectPath } = await import("../plugin/setup/scan.mjs");
   // What `gh repo create --add-readme --license --gitignore` and a first agent session leave, in the spellings projects use.
   const yes = [
     "README", "README.md", "readme.md", "Readme.rst", "README.markdown", "readme.txt", "README.tr.md", "README_zh.md", "README-ja.md", "README.zh-CN.md", "README.MD", "README.TXT",
@@ -640,7 +697,7 @@ test("new project: a .git above that git does not read, or does not look for, is
 });
 
 test("new project: no git init over a repository below, at a filesystem root or in the home folder; past the entries looked at, none (review round 1)", async () => {
-  const { NEW_DEPTH, NEW_ENTRIES } = await import("../setup/scan.mjs");
+  const { NEW_DEPTH, NEW_ENTRIES } = await import("../plugin/setup/scan.mjs");
   // A folder holding repositories (folder-holding-repositories): not new, and git init would take them in.
   const holder = folder();
   committed({ "package.json": "{}" }, made(join(holder, "a")));
@@ -667,7 +724,7 @@ test("new project: no git init over a repository below, at a filesystem root or 
 });
 
 test("new project: .claude/ holds settings and Markdown, .ennyn/ Ennyn's data; code in either is not new, and past the entries read it is unmeasured (review round 1)", async () => {
-  const { NEW_ENTRIES } = await import("../setup/scan.mjs");
+  const { NEW_ENTRIES } = await import("../plugin/setup/scan.mjs");
   // A Claude Code setup project (claude-folder-holds-code): hooks and skill scripts are code, committed or only on disk.
   const setup = committed({ "README.md": "# team agent setup\n", ".claude/hooks/format.py": "print(1)\n", ".claude/skills/deploy/scripts/run.sh": "echo\n", ".claude/settings.json": "{}", ".claude/commands/deploy.md": "deploy\n" });
   for (let i = 0; i < 3; i++) {
@@ -698,7 +755,7 @@ test("new project: .claude/ holds settings and Markdown, .ennyn/ Ennyn's data; c
 });
 
 test("new project: an unreadable folder below is said, the scan goes on; the walk below counts folders, not files; links are not followed (review round 2)", async (t) => {
-  const { NEW_FOLDERS } = await import("../setup/scan.mjs");
+  const { NEW_FOLDERS } = await import("../plugin/setup/scan.mjs");
   // As many folders below as are read: all read; one more, and a repository there is not ruled out.
   // Beside test/hostile.mjs's repository, so the CLI can walk below; the scan's own walk up stops at once.
   const outside = (/** @type {Record<string, string>} */ files = {}) => folder(files, process.env.ENNYN_HOSTILE_HOME ?? tmpdir());
@@ -809,7 +866,7 @@ test("new project: the stash reflog and nested notes read as git reads them; nam
 });
 
 test("new project: could not measure is never new: a shallow history, one past the commits read, a .git git does not read, GIT_DIR in the environment", async () => {
-  const { NEW_HISTORY } = await import("../setup/scan.mjs");
+  const { NEW_HISTORY } = await import("../plugin/setup/scan.mjs");
   const shallow = committed({ "README.md": "# x\n" });
   writeFileSync(join(shallow, ".git", "shallow"), `${git(["rev-parse", "HEAD"], { cwd: shallow })}\n`);
   assert.deepEqual(newVerdict(shallow), { ...notNew([]), unmeasured: [{ reason: "shallow" }] });
@@ -931,7 +988,7 @@ test("new project: the review's other probes (round 1): repositories git reads, 
 });
 
 test("cli: init-scan says whether the project is new, what is not, what went unmeasured, and when it proposes git init", async () => {
-  const { NEW_HISTORY } = await import("../setup/scan.mjs");
+  const { NEW_HISTORY } = await import("../plugin/setup/scan.mjs");
   const run = (/** @type {string} */ cwd) => {
     const r = spawnSync(process.execPath, [CLI, "init-scan"], { cwd, encoding: "utf8" });
     assert.equal(r.status, 0, r.stderr);
@@ -1695,7 +1752,7 @@ test("doctor: what the index holds in the folder: a worktree's files and a gitli
 });
 
 test("doctor: the worktrees line says what git said, its source, its remedy; a question git does not answer is unmeasured (agent-worktrees-ignored)", async (c) => {
-  /** The line in English. @param {{ key: string, vars: import("../core/i18n.mjs").Vars }} item */
+  /** The line in English. @param {{ key: string, vars: import("../plugin/core/i18n.mjs").Vars }} item */
   const words = (item) => t(item.key, item.vars, "en");
   /** The one worktrees line of a doctor run. @param {string} dir */
   const line = async (dir) => {
@@ -1916,7 +1973,7 @@ test("doctor: the worktrees line says what git said, its source, its remedy; a q
 });
 
 test("agent setup: cycle-like skills and reviewer agents by name, on a corpus of real names (accept and reject)", async () => {
-  const { CYCLE_SKILL, REVIEWER } = await import("../setup/scan.mjs");
+  const { CYCLE_SKILL, REVIEWER } = await import("../plugin/setup/scan.mjs");
   const cycleYes = ["phase-run", "cycle", "faz-dongusu", "döngü", "sprint-plan", "dev-loop"];
   const cycleNo = ["strateji-ekle", "swiftui-engineering", "mobil-dogrulama", "hata-sonrasi", "post-fix", "phaser-game", "fazla", "loophole-scan", "codebase-design"];
   for (const n of cycleYes) assert.ok(CYCLE_SKILL.test(n), `cycle: ${n}`);
@@ -1928,7 +1985,7 @@ test("agent setup: cycle-like skills and reviewer agents by name, on a corpus of
 });
 
 test("agent setup: AGENTS.md loads in place of a folder's CLAUDE.md files when it has none, untracked ones counted from disk", async () => {
-  const { agentSetup } = await import("../setup/scan.mjs");
+  const { agentSetup } = await import("../plugin/setup/scan.mjs");
   const kinds = (/** @type {Record<string, string>} */ files, /** @type {string[]} */ tracked) => {
     const dir = mkdtempSync(join(tmpdir(), "en-agents-md-"));
     put(dir, files);
@@ -1976,7 +2033,7 @@ test("agent setup: AGENTS.md loads in place of a folder's CLAUDE.md files when i
 });
 
 test("agent setup: a tracked claude.md or agents.md is the file Claude Code loads, by its own name, where the disk ignores case, and no file it asks for where the disk tells case apart", async () => {
-  const { agentSetup } = await import("../setup/scan.mjs");
+  const { agentSetup } = await import("../plugin/setup/scan.mjs");
   const dir = mkdtempSync(join(tmpdir(), "en-agents-case-"));
   put(dir, { "claude.md": "c", "x/agents.md": "a" });
   if (!existsSync(join(dir, "CLAUDE.md"))) {
@@ -2005,7 +2062,7 @@ test("agent setup: a tracked claude.md or agents.md is the file Claude Code load
 });
 
 test("agent setup: every instruction and rule file with size, load kind and commit-rule lines; skills, agents, commands, hooks, MCP", async () => {
-  const { agentSetup } = await import("../setup/scan.mjs");
+  const { agentSetup } = await import("../plugin/setup/scan.mjs");
   const dir = mkdtempSync(join(tmpdir(), "en-agents-"));
   const claude = "# Rules\nLanguage: Turkish in chat, commit and docs\n7. Sweep: fix every copy in the same commit\nnothing else\n- **Commit:** one line, Turkish\n9. COMMIT → one commit, Turkish subject\n";
   put(dir, {
@@ -2056,7 +2113,7 @@ test("agent setup: every instruction and rule file with size, load kind and comm
 });
 
 test("agent setup: linked skills and agents count; a decomposed (NFD) name is matched as written", async () => {
-  const { agentSetup } = await import("../setup/scan.mjs");
+  const { agentSetup } = await import("../plugin/setup/scan.mjs");
   // Linked from inside the repository: counted. Linked out of it: named, not read.
   const dir = mkdtempSync(join(tmpdir(), "en-agents-ln-"));
   put(dir, { "shared/cycle/SKILL.md": "x", "shared/code-reviewer.md": "x" });
@@ -2087,7 +2144,7 @@ test("cli: init-scan prints the agent setup: sizes by load kind, the commit rule
 });
 
 test("agent setup: a real rule beats step headings that only start with commit; SQL is not a rule; nested and linked rule directories are read", async () => {
-  const { commitRuleLines, agentSetup } = await import("../setup/scan.mjs");
+  const { commitRuleLines, agentSetup } = await import("../plugin/setup/scan.mjs");
   const steps = Array.from({ length: 8 }, (_, i) => `${i + 1}. Commit öncesi adım ${i + 1}`);
   const lines = commitRuleLines([...steps, "- İngilizce commit mesajı YASAK (Türkçe)", "BEGIN; UPDATE t SET a = 1; COMMIT;", "COMMIT;"].join("\n"));
   assert.equal(lines[0], "- İngilizce commit mesajı YASAK (Türkçe)");
@@ -2327,7 +2384,7 @@ const RLO = String.fromCharCode(0x202e);
 const LS = String.fromCharCode(0x2028);
 
 test("scan audit: what the project holds reaches the terminal escaped (subjects, lines, names, hook events); --json escapes what JSON.stringify leaves", async () => {
-  const { UNSHOWN } = await import("../core/i18n.mjs");
+  const { UNSHOWN } = await import("../plugin/core/i18n.mjs");
   const r = repo();
   const hook = { hooks: [{ type: "command", command: "x" }] };
   r.commit("feat: start", {
@@ -2388,7 +2445,7 @@ test("scan audit: init-scan says a package.json it could not read, a roadmap fil
 });
 
 test("scan audit: a hooks or mcpServers value that is no object is said as not read, not listed as events \"0\"…; an event with no hook is none", async () => {
-  const { agentSetup } = await import("../setup/scan.mjs");
+  const { agentSetup } = await import("../plugin/setup/scan.mjs");
   const dir = mkdtempSync(join(tmpdir(), "en-agents-shape-"));
   const hook = { hooks: [{ type: "command", command: "x" }] };
   put(dir, {
@@ -2457,8 +2514,8 @@ test("scan audit: a git log field that is no commit fails the scan, never a list
 });
 
 test("scan audit: links back to a parent list a rule once, as the side-copy hook reads it; a directory past the depth is said, not dropped", async () => {
-  const { agentSetup } = await import("../setup/scan.mjs");
-  const { loadPathScopedRules } = await import("../adapters/claude-code/rules-index.mjs");
+  const { agentSetup } = await import("../plugin/setup/scan.mjs");
+  const { loadPathScopedRules } = await import("../plugin/adapters/claude-code/rules-index.mjs");
   const dir = mkdtempSync(join(tmpdir(), "en-rules-loop-"));
   put(dir, { ".claude/rules/r.md": "Never use `eval`.\n", ".claude/commands/c.md": "x" });
   // Seven links to the rules directory itself: each walk of its own read 7^8 paths and ran out of stack.
@@ -2480,7 +2537,7 @@ test("scan audit: links back to a parent list a rule once, as the side-copy hook
 });
 
 test("scan audit: the fence reader, the roadmap checkboxes and the commit-rule start take time linear in the text; they answer as before", async (t) => {
-  const { importsOf, banLines, outsideFences, commitRuleLines } = await import("../setup/scan.mjs");
+  const { importsOf, banLines, outsideFences, commitRuleLines } = await import("../plugin/setup/scan.mjs");
   // One reader of code blocks for the imports and the ban lines: a block ends at its own character, at least
   // as many, nothing after; one left open runs to the end.
   const text = ["````", "```", "@in-block.md", "never use `a1`", "````", "@after.md never use `b2`", "~~~js", "@tilde.md", "```", "@other-char.md", "~~~ not a close", "@still.md", "~~~", "see ` @span.md ` here", "```", "@open.md", "never use `c3`"].join("\n");
@@ -2566,8 +2623,8 @@ test("scan audit (review): an error that names a path reaches stderr on one line
 });
 
 test("scan audit (review): a directory is as deep as its own place, not the first path that reaches it; a link out of the repository is named, not read, by the hook and the scan", async () => {
-  const { agentSetup } = await import("../setup/scan.mjs");
-  const { loadPathScopedRules, LEAVES } = await import("../adapters/claude-code/rules-index.mjs");
+  const { agentSetup } = await import("../plugin/setup/scan.mjs");
+  const { loadPathScopedRules, LEAVES } = await import("../plugin/adapters/claude-code/rules-index.mjs");
   const dir = mkdtempSync(join(tmpdir(), "en-walk-"));
   // The review's case: a link thirty levels down reaches b before b's own path does, walking depth first.
   const deep = Array.from({ length: 30 }, () => "d").join("/");
@@ -2619,7 +2676,7 @@ test("scan audit (review): a directory is as deep as its own place, not the firs
 });
 
 test("scan audit (review): a walk stops at its entry ceiling inside the repository too, and says where", async () => {
-  const { loadPathScopedRules } = await import("../adapters/claude-code/rules-index.mjs");
+  const { loadPathScopedRules } = await import("../plugin/adapters/claude-code/rules-index.mjs");
   const dir = mkdtempSync(join(tmpdir(), "en-walk-many-"));
   mkdirSync(join(dir, ".claude", "rules"), { recursive: true });
   for (let i = 0; i <= 10000; i++) writeFileSync(join(dir, ".claude", "rules", `r${i}.md`), "x");
@@ -2699,7 +2756,7 @@ test("doctor audit (init-scan review): an impact glob that names no tracked file
 });
 
 test("scan audit (review): the bounds a scan keeps: a literal past 200 characters is not offered, a config problem and a GitHub name are cut, a big churn file is read by its head", async () => {
-  const { banLines } = await import("../setup/scan.mjs");
+  const { banLines } = await import("../plugin/setup/scan.mjs");
   const at = (/** @type {number} */ n) => "x".repeat(n);
   assert.deepEqual(banLines(`Never use \`${at(200)}\` or \`${at(201)}\`.`).map((b) => b.literals.map((l) => l.length)), [[200]]);
   const dir = mkdtempSync(join(tmpdir(), "en-bounds-"));
@@ -2716,7 +2773,7 @@ test("scan audit (review): the bounds a scan keeps: a literal past 200 character
 });
 
 test("scan audit (review): a rule file that cannot be read fails the scan with its reason", async (t) => {
-  const { loadPathScopedRules } = await import("../adapters/claude-code/rules-index.mjs");
+  const { loadPathScopedRules } = await import("../plugin/adapters/claude-code/rules-index.mjs");
   if (process.getuid?.() === 0) return t.skip("root reads any file");
   const dir = mkdtempSync(join(tmpdir(), "en-rule-unread-"));
   put(dir, { ".claude/rules/r.md": "---\npaths: ['**']\n---\nr\n" });
@@ -2838,7 +2895,7 @@ test("scan audit (review two): `unmeasured` names what was not measured with why
 });
 
 test("scan audit (review two): at the entry ceiling the directories still waiting are counted; a proposal is shown whole; an error line is bounded", async () => {
-  const { loadPathScopedRules } = await import("../adapters/claude-code/rules-index.mjs");
+  const { loadPathScopedRules } = await import("../plugin/adapters/claude-code/rules-index.mjs");
   const dir = mkdtempSync(join(tmpdir(), "en-ceiling-"));
   mkdirSync(join(dir, ".claude", "rules", "a-assets"), { recursive: true });
   for (let i = 0; i < 10050; i++) writeFileSync(join(dir, ".claude", "rules", "a-assets", `f${i}.png`), "");
@@ -2899,7 +2956,7 @@ test("scan audit (review three): budget reads a listing as the scan does: one li
 });
 
 test("scan audit (review three): what was not measured, and a walk's limit, read in the project's language", async () => {
-  const { reasonText } = await import("../adapters/claude-code/rules-index.mjs");
+  const { reasonText } = await import("../plugin/adapters/claude-code/rules-index.mjs");
   const r = setup({ language: "tr" }, { nodes: [{ id: "a" }] });
   put(r.dir, { "package.json": "{ broken" });
   const out = spawnSync(process.execPath, [CLI, "init-scan"], { cwd: r.dir, encoding: "utf8" }).stdout;
@@ -2916,7 +2973,7 @@ test("scan audit (review three): what was not measured, and a walk's limit, read
 // push-approval-gate: a Claude Code ask rule as the backstop to the cycle's push approval. Cells named as the
 // reviewers' probes of round one.
 test("ask rules: a content rule counts in the forms whose reading the docs fix; a tool-wide rule and any other form do not", async () => {
-  const { ruleCovers } = await import("../setup/permissions.mjs");
+  const { ruleCovers } = await import("../plugin/setup/permissions.mjs");
   // ask-plain-shared, ask-deny-colon-form, ask-nospace-star: each matches every command that starts with "git push".
   const accept = ["Bash(git push *)", "Bash(git push:*)", "Bash(git *)", "Bash(git:*)", "Bash(git push*)", "Bash(git p*)", "Bash(g*)"];
   // ask-bare-bash-*: a tool-wide rule is skipped for a sandboxed command; ask-empty-parens. The rest: an exact rule
@@ -2964,7 +3021,7 @@ test("ask rules: a content rule counts in the forms whose reading the docs fix; 
 // destructive-ask-rules. Each accept and reject here is a reading of Claude Code's: test/reference/claude-code.json
 // holds them (ask-gh-*, ask-reset-*), and compare() holds ruleCovers to them.
 test("ask rules: a command that holds its own wildcard counts only under a rule Claude Code stops it with", async () => {
-  const { ruleCovers, ruleFor } = await import("../setup/permissions.mjs");
+  const { ruleCovers, ruleFor } = await import("../plugin/setup/permissions.mjs");
   const post = "gh api *-X POST*";
   const accept = ["Bash(gh api *-X POST*)", "Bash(gh api *)", "Bash(gh api:*)", "Bash(gh *)", "Bash(gh api *-X*)", "Bash(gh api *-X *)"];
   // `gh api repos/x -X POST`: a ` *` at the end of a rule with another `*` in it does not match the bare end, and a
@@ -2988,8 +3045,8 @@ test("ask rules: a command that holds its own wildcard counts only under a rule 
 });
 
 test("ask rules: a `:*` after another wildcard stops nothing, so it is never read as held", async () => {
-  const { askRules, ruleCovers } = await import("../setup/permissions.mjs");
-  const { projectFiles } = await import("../setup/scan.mjs");
+  const { askRules, ruleCovers } = await import("../plugin/setup/permissions.mjs");
+  const { projectFiles } = await import("../plugin/setup/scan.mjs");
   // Corpus c1, c2 of the review: with a wildcard before it Claude Code reads the colon as text (ask-colon-*).
   const nothing = [["Bash(gh api *-X:*)", "gh api *-X POST*"], ["Bash(gh api *--method:*)", "gh api *--method DELETE*"], ["Bash(gh api *-X POST:*)", "gh api *-X POST*"], ["Bash(git checkout *--:*)", "git checkout *-- *"], ["Bash(docker compose down *-v:*)", "docker compose down *-v*"], ["Bash(git reset *--hard:*)", "git reset *--hard*"]];
   for (const [rule, command] of nothing) assert.equal(ruleCovers(rule, command), false, rule);
@@ -3004,7 +3061,7 @@ test("ask rules: a `:*` after another wildcard stops nothing, so it is never rea
 });
 
 test("ask rules: the gh commands come with a GitHub remote or with no remote at all; a project whose remotes are all elsewhere is told what that leaves", async () => {
-  const { GH_COMMANDS, ghApplies, ruleFor, TOOLS } = await import("../setup/permissions.mjs");
+  const { GH_COMMANDS, ghApplies, ruleFor, TOOLS } = await import("../plugin/setup/permissions.mjs");
   const graph = { nodes: [{ id: "a" }] };
   const rules = (/** @type {string} */ dir) => JSON.parse(spawnSync(process.execPath, [CLI, "init-scan", "--json"], { cwd: dir, encoding: "utf8" }).stdout).agentSetup.ask.rules.map((/** @type {any} */ x) => x.command);
   const missing = async (/** @type {string} */ dir) => (await checkSetup({ cwd: dir, env: {} })).items.find((i) => i.key === "doctor.askMissing")?.vars.rules;
@@ -3040,7 +3097,7 @@ test("ask rules: the gh commands come with a GitHub remote or with no remote at 
 });
 
 test("ask rules: what leaves the machine is proposed; what destroys local work or installs outside the project is offered apart", async () => {
-  const { GH_COMMANDS, OFFERED, outwardCommands, ruleFor } = await import("../setup/permissions.mjs");
+  const { GH_COMMANDS, OFFERED, outwardCommands, ruleFor } = await import("../plugin/setup/permissions.mjs");
   const gh = outwardCommands([], true);
   for (const c of ["gh repo create", "gh repo edit", "gh repo delete", "gh repo rename", "gh repo archive", "gh gist create"]) assert.ok(gh.includes(c), c);
   assert.deepEqual(gh.filter((c) => c.startsWith("gh api")), ["-X", "--method"].flatMap((f) => ["POST", "PATCH", "PUT", "DELETE"].map((m) => `gh api *${f} ${m}*`)));
@@ -3060,7 +3117,7 @@ test("ask rules: what leaves the machine is proposed; what destroys local work o
 });
 
 test("ask rules: init-scan names the offered rules apart from the outward ones, and doctor says nothing of one declined", async () => {
-  const { OFFERED, ruleFor, TOOLS } = await import("../setup/permissions.mjs");
+  const { OFFERED, ruleFor, TOOLS } = await import("../plugin/setup/permissions.mjs");
   const r = elsewhere(setup({}, { nodes: [{ id: "a" }] }));
   const both = (/** @type {string} */ c) => TOOLS.map((tool) => ruleFor(c, tool));
   r.commit("feat: ask", { ".claude/settings.json": JSON.stringify({ permissions: { ask: [...both("git push"), ...both("git clean")] } }) });
@@ -3089,7 +3146,7 @@ test("ask rules: init-scan names the offered rules apart from the outward ones, 
 });
 
 test("ask rules: doctor counts what it holds and caps what it names, whatever the number of rules", async () => {
-  const { capped, GH_COMMANDS, ruleFor, TOOLS } = await import("../setup/permissions.mjs");
+  const { capped, GH_COMMANDS, ruleFor, TOOLS } = await import("../plugin/setup/permissions.mjs");
   const setupGithub = () => {
     const made = setup({}, { nodes: [{ id: "a" }] });
     git(["remote", "add", "origin", "https://github.com/acme/demo.git"], { cwd: made.dir });
@@ -3125,8 +3182,8 @@ test("ask rules: doctor counts what it holds and caps what it names, whatever th
 });
 
 test("ask rules: what is asked about, and where each rule is: committed, uncommitted, local; a file Claude Code skips gives none", async () => {
-  const { askRules, GH_COMMANDS, outwardCommands, parseSettings, SETTINGS_LIMIT } = await import("../setup/permissions.mjs");
-  const { projectFiles } = await import("../setup/scan.mjs");
+  const { askRules, GH_COMMANDS, outwardCommands, parseSettings, SETTINGS_LIMIT } = await import("../plugin/setup/permissions.mjs");
+  const { projectFiles } = await import("../plugin/setup/scan.mjs");
   // ask-monorepo-private-root: a package.json anywhere proposes npm publish; a GitHub remote, the gh commands.
   assert.deepEqual(outwardCommands([], false), ["git push"]);
   assert.deepEqual(outwardCommands(["packages/a/package.json"], false), ["git push", "npm publish"]);
@@ -3198,7 +3255,7 @@ test("ask rules: what is asked about, and where each rule is: committed, uncommi
 });
 
 test("ask rules: init-scan's hooks reader and the ask rules count the same files (one predicate): a file Claude Code skips runs no hook", async () => {
-  const { agentSetup } = await import("../setup/scan.mjs");
+  const { agentSetup } = await import("../plugin/setup/scan.mjs");
   const dir = mkdtempSync(join(tmpdir(), "en-ask-hooks-"));
   const hook = { hooks: [{ type: "command", command: "x" }] };
   put(dir, {
@@ -3238,7 +3295,7 @@ test("push.mode: doctor names the mode both ways; with after-closing no git push
 });
 
 test("ask rules: doctor says which file holds each rule and whether it is committed, with where Claude Code applies it; init-scan lists them", async () => {
-  const { GH_COMMANDS, ruleFor, TOOLS } = await import("../setup/permissions.mjs");
+  const { GH_COMMANDS, ruleFor, TOOLS } = await import("../plugin/setup/permissions.mjs");
   const graph = { nodes: [{ id: "a" }] };
   const ask = (/** @type {Awaited<ReturnType<typeof checkSetup>>} */ res) => res.items.filter(askItem).map((i) => ({ level: i.level, key: i.key, vars: i.vars }));
   const both = (/** @type {string} */ c) => [`Bash(${c} *)`, `PowerShell(${c} *)`];
@@ -3292,7 +3349,7 @@ test("ask rules: doctor says which file holds each rule and whether it is commit
   assert.match(String(broken[1].vars.error), /settings\.local\.json could not be read: EISDIR/);
   // A file over 2 MB is no failed read: Claude Code skips it, and doctor names it as giving no rule.
   rmSync(join(r.dir, ".claude", "settings.local.json"), { recursive: true });
-  const { SETTINGS_LIMIT } = await import("../setup/permissions.mjs");
+  const { SETTINGS_LIMIT } = await import("../plugin/setup/permissions.mjs");
   put(r.dir, { ".claude/settings.local.json": JSON.stringify({ pad: "x".repeat(SETTINGS_LIMIT) }) });
   assert.deepEqual(ask(await checkSetup({ cwd: r.dir, env: {} }))[0], { level: "unmeasured", key: "doctor.askUnread", vars: { list: [".claude/settings.json", ".claude/settings.local.json (over 2 MB)"] } });
   // Outside a repository there is no push to ask about.
@@ -3357,7 +3414,7 @@ test("ask rules (review two): a HEAD that cannot be read, or holds no regular fi
   assert.deepEqual(items(bare.dir, { headFile: () => { throw new Error("no"); } }).map((i) => i.key), ["doctor.askMissing"]);
   // headFile: a regular file (executable too), a link (itself or a directory on its way), something else, past
   // the limit, nothing there, no commit yet.
-  const { headFile } = await import("../core/git.mjs");
+  const { headFile } = await import("../plugin/core/git.mjs");
   assert.deepEqual(headFile(link.dir, ".claude/settings.json", 1e6), { kind: "link" });
   assert.deepEqual(headFile(dirLink.dir, ".claude/settings.json", 1e6), { kind: "link" });
   assert.deepEqual(headFile(link.dir, "shared/settings.json", 1e6), { text: all });
@@ -3371,7 +3428,7 @@ test("ask rules (review two): a HEAD that cannot be read, or holds no regular fi
   git(["init", "-q"], { cwd: unborn });
   assert.equal(headFile(unborn, ".claude/settings.json", 1e6), null);
   // A settings file that cannot be read: what it holds is unknown, not missing.
-  const { projectFiles } = await import("../setup/scan.mjs");
+  const { projectFiles } = await import("../plugin/setup/scan.mjs");
   const pf = projectFiles(r.dir);
   const unread = items(r.dir, {
     read: (/** @type {string} */ rel, /** @type {any} */ opts) => {
@@ -3383,9 +3440,9 @@ test("ask rules (review two): a HEAD that cannot be read, or holds no regular fi
 });
 
 test("ask rules (review two): doctor reads every remote for a GitHub host; a remote read that fails names the gh commands not checked", async () => {
-  const { urlHost, isGithubHost } = await import("../setup/permissions.mjs");
+  const { urlHost, isGithubHost } = await import("../plugin/setup/permissions.mjs");
   const graph = { nodes: [{ id: "a" }] };
-  const { GH_COMMANDS: gh, capped, ruleFor, TOOLS } = await import("../setup/permissions.mjs");
+  const { GH_COMMANDS: gh, capped, ruleFor, TOOLS } = await import("../plugin/setup/permissions.mjs");
   const r = setup({}, graph);
   // A GitHub Enterprise remote not named origin.
   git(["remote", "add", "upstream", "git@github.mycorp.com:org/repo.git"], { cwd: r.dir });
@@ -3415,12 +3472,12 @@ test("ask rules (review two): doctor reads every remote for a GitHub host; a rem
 });
 
 test("permissions audit: a GitHub Enterprise Cloud remote on a ghe.com subdomain is GitHub, so its gh commands are asked about; lookalikes stay out", async () => {
-  const { urlHost, isGithubHost } = await import("../setup/permissions.mjs");
+  const { urlHost, isGithubHost } = await import("../plugin/setup/permissions.mjs");
   // GitHub's documented forms: the tenant is the SSH user, and every host under ghe.com is GitHub's.
   for (const url of ["octo@octo.ghe.com:org/repo.git", "https://octo.ghe.com/org/repo.git", "ssh://octo@Octo.GHE.com/org/repo.git"]) assert.equal(isGithubHost(urlHost(url)), true, url);
   for (const h of ["ghe.com", "evilghe.com", "octo.ghe.com.evil.test", "octo.ghe.co", "octo-ghe.com", "octo.ghe.com."]) assert.equal(isGithubHost(h), false, h);
   // End to end: the only remote is on ghe.com, and doctor asks for the gh rules as it does for github.com.
-  const { GH_COMMANDS: gh, capped, ruleFor, TOOLS } = await import("../setup/permissions.mjs");
+  const { GH_COMMANDS: gh, capped, ruleFor, TOOLS } = await import("../plugin/setup/permissions.mjs");
   const r = setup({}, { nodes: [{ id: "a" }] });
   git(["remote", "add", "origin", "octo@octo.ghe.com:org/repo.git"], { cwd: r.dir });
   const missing = (await checkSetup({ cwd: r.dir, env: {} })).items.find((i) => i.key === "doctor.askMissing");
@@ -3450,8 +3507,8 @@ test("permissions audit (review): the proposed sandbox opens each GitHub remote'
 });
 
 test("permissions audit (review, mutation): remotesByHost lists the GitHub hosts only, and githubHosts gives none for another host, in any case", async () => {
-  const { remotesByHost } = await import("../setup/scan.mjs");
-  const { githubHosts } = await import("../setup/permissions.mjs");
+  const { remotesByHost } = await import("../plugin/setup/scan.mjs");
+  const { githubHosts } = await import("../plugin/setup/permissions.mjs");
   const r = setup({}, { nodes: [{ id: "a" }] });
   for (const [name, url] of [["a", "git@gitlab.test:o/r.git"], ["b", "https://GitHub.com/o/r.git"]]) git(["remote", "add", name, url], { cwd: r.dir });
   assert.deepEqual(remotesByHost(r.dir), { github: ["b"], others: ["a"], hosts: ["github.com"] });
@@ -3465,7 +3522,7 @@ test("permissions audit (review, mutation): remotesByHost lists the GitHub hosts
 });
 
 test("permissions audit (review): with remotes and none on a GitHub host, doctor says the gh commands were not checked, as init-scan says they were not proposed", async () => {
-  const { GH_COMMANDS: gh, capped } = await import("../setup/permissions.mjs");
+  const { GH_COMMANDS: gh, capped } = await import("../plugin/setup/permissions.mjs");
   const items = async (/** @type {string | null} */ url) => {
     const r = setup({}, { nodes: [{ id: "a" }] });
     if (url) git(["remote", "add", "origin", url], { cwd: r.dir });
@@ -3481,7 +3538,7 @@ test("permissions audit (review): with remotes and none on a GitHub host, doctor
 });
 
 test("permissions audit (mutation): a settings file that leads out of the repository reads as undefined, not as unread; a scheme git takes no transport for names no host", async () => {
-  const { readSettings, urlHost } = await import("../setup/permissions.mjs");
+  const { readSettings, urlHost } = await import("../plugin/setup/permissions.mjs");
   // init-scan's hooks reader says a link out under its own line, not among the files Claude Code skips.
   assert.equal(readSettings({ read: () => undefined }, ".claude/settings.json"), undefined);
   assert.equal(readSettings({ read: () => null }, ".claude/settings.json"), null);
@@ -3490,8 +3547,8 @@ test("permissions audit (mutation): a settings file that leads out of the reposi
 });
 
 test("ask rules (review two): a hooks value Claude Code drops leaves the file counting; a package.json git does not list still brings npm publish; init-scan says why no gh rule", async () => {
-  const { parseSettings, outwardCommands } = await import("../setup/permissions.mjs");
-  const { agentSetup } = await import("../setup/scan.mjs");
+  const { parseSettings, outwardCommands } = await import("../plugin/setup/permissions.mjs");
+  const { agentSetup } = await import("../plugin/setup/scan.mjs");
   // 2.1.207 deletes a hooks value that is no object ("This field was ignored") and keeps the file.
   assert.deepEqual(parseSettings(JSON.stringify({ hooks: "x", permissions: { ask: ["Bash(git push *)"] } }), "p"), { json: { permissions: { ask: ["Bash(git push *)"] } }, dropped: ["p hooks"] });
   assert.deepEqual(parseSettings(JSON.stringify({ hooks: null }), "p"), { json: {}, dropped: ["p hooks"] });
@@ -3509,7 +3566,7 @@ test("ask rules (review two): a hooks value Claude Code drops leaves the file co
   const out = mkdtempSync(join(tmpdir(), "en-ask-norepo-scan-"));
   put(out, { "package.json": "{}", ".ennyn/config.json": "{}" });
   const json = JSON.parse(spawnSync(process.execPath, [CLI, "init-scan", "--json"], { cwd: out, encoding: "utf8" }).stdout);
-  assert.deepEqual([...new Set(json.agentSetup.ask.rules.map((/** @type {any} */ x) => x.command))], ["git push", "npm publish", ...(await import("../setup/permissions.mjs")).GH_COMMANDS]);
+  assert.deepEqual([...new Set(json.agentSetup.ask.rules.map((/** @type {any} */ x) => x.command))], ["git push", "npm publish", ...(await import("../plugin/setup/permissions.mjs")).GH_COMMANDS]);
   // Every remote on another host: the gh rules are not proposed, and init-scan says what that leaves.
   const r = setup({}, { nodes: [{ id: "a" }] });
   git(["remote", "add", "origin", "https://gitlab.com/a/b.git"], { cwd: r.dir });
@@ -3526,7 +3583,7 @@ test("ask rules (review two): a hooks value Claude Code drops leaves the file co
 });
 
 test("uninstall: install-hook records its hook by sha256; uninstall-hook removes it while unchanged, then the state dir, and lists what stays", async () => {
-  const { WRITTEN } = await import("../setup/uninstall.mjs");
+  const { WRITTEN } = await import("../plugin/setup/uninstall.mjs");
   const cli = (/** @type {string} */ cwd, /** @type {string[]} */ ...args) => spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: "utf8", env: { ...process.env, ENNYN_PLUGIN_DATA: "", ENNYN_PLUGIN_ROOT: "" } });
   for (const plugin of [false, true]) {
     const r = repo();
@@ -3570,8 +3627,8 @@ test("uninstall: install-hook records its hook by sha256; uninstall-hook removes
 });
 
 test("uninstall: a hook edited since, one with the marker and no record, a link in its place, another hook and a record naming a place outside the git dir all stay", async () => {
-  const { WRITTEN } = await import("../setup/uninstall.mjs");
-  const { HOOK_MARKER } = await import("../setup/hook.mjs");
+  const { WRITTEN } = await import("../plugin/setup/uninstall.mjs");
+  const { HOOK_MARKER } = await import("../plugin/setup/hook.mjs");
   const cli = (/** @type {string} */ cwd, /** @type {string[]} */ ...args) => spawnSync(process.execPath, [CLI, ...args], { cwd, encoding: "utf8", env: { ...process.env, ENNYN_PLUGIN_DATA: "", ENNYN_PLUGIN_ROOT: "" } });
   const hookOf = (/** @type {string} */ dir) => join(dir, ".git", "hooks", "commit-msg");
   // Edited since install-hook wrote it.
@@ -3624,8 +3681,8 @@ test("uninstall: a hook edited since, one with the marker and no record, a link 
 });
 
 test("uninstall: under a tracked hooks directory the lines that call commit-check are named, and nothing is removed", async () => {
-  const { hookBlock } = await import("../setup/hook.mjs");
-  const { checkLines } = await import("../setup/uninstall.mjs");
+  const { hookBlock } = await import("../plugin/setup/hook.mjs");
+  const { checkLines } = await import("../plugin/setup/uninstall.mjs");
   const r = repo();
   const block = hookBlock(join(tmpdir(), "ennyn-ennyn"));
   const text = `#!/bin/sh\n${block}echo mine\n`;
@@ -3644,7 +3701,7 @@ test("uninstall: under a tracked hooks directory the lines that call commit-chec
 });
 
 test("uninstall: the state dir goes only when paths.stateDir names a folder called ennyn in the git dir, and not while a mutation journal is there (corpus)", async () => {
-  const { ownStateDir } = await import("../setup/uninstall.mjs");
+  const { ownStateDir } = await import("../plugin/setup/uninstall.mjs");
   for (const yes of [".git/ennyn", "./.git/ennyn", ".git\\ennyn", ".git/ennyn/sub", ".git//ennyn/"]) assert.equal(ownStateDir(yes), true, yes);
   for (const no of [".git", ".git/", ".git/hooks", ".git/objects", ".git/ennyn/..", ".git/ennyn-x", ".git/x/ennyn", "ennyn", ".ennyn", "/abs/.git/ennyn"]) assert.equal(ownStateDir(no), false, no);
   const cli = (/** @type {string} */ cwd) => spawnSync(process.execPath, [CLI, "uninstall-hook"], { cwd, encoding: "utf8", env: { ...process.env, ENNYN_PLUGIN_DATA: "", ENNYN_PLUGIN_ROOT: "" } });
@@ -3672,7 +3729,7 @@ test("uninstall: the state dir goes only when paths.stateDir names a folder call
 });
 
 test("uninstall (review round 1): only the commit-msg hook git runs is removed on the record's word, re-read at the removal; a link on the way to the state dir keeps it", async () => {
-  const { WRITTEN } = await import("../setup/uninstall.mjs");
+  const { WRITTEN } = await import("../plugin/setup/uninstall.mjs");
   const { createHash } = await import("node:crypto");
   const sha = (/** @type {string} */ p) => createHash("sha256").update(readFileSync(p)).digest("hex");
   const env = { ...process.env, ENNYN_PLUGIN_DATA: "", ENNYN_PLUGIN_ROOT: "" };
@@ -3754,7 +3811,7 @@ test("uninstall (review round 1): only the commit-msg hook git runs is removed o
 });
 
 test("uninstall (review round 1): the hook is moved aside and hashed again before it goes; one that no longer matches goes back", async () => {
-  const { removeIfSame } = await import("../setup/uninstall.mjs");
+  const { removeIfSame } = await import("../plugin/setup/uninstall.mjs");
   const { createHash } = await import("node:crypto");
   const dir = mkdtempSync(join(tmpdir(), "en-un-aside-"));
   const p = join(dir, "commit-msg");
@@ -3771,7 +3828,7 @@ test("uninstall (review round 1): the hook is moved aside and hashed again befor
 });
 
 test("uninstall (review round 2): no hard links puts the hook back by rename; a missing hooks folder reads as gone; a recorded hook git no longer runs is said; a path recorded twice is read once", async () => {
-  const { removeIfSame, WRITTEN } = await import("../setup/uninstall.mjs");
+  const { removeIfSame, WRITTEN } = await import("../plugin/setup/uninstall.mjs");
   const { createHash } = await import("node:crypto");
   const noLink = () => { throw Object.assign(new Error("ENOTSUP: operation not supported"), { code: "ENOTSUP" }); };
   // A file system with no hard links: the edited hook goes back by rename, nothing left aside.
@@ -3825,8 +3882,8 @@ test("uninstall (review round 2): no hard links puts the hook back by rename; a 
 
 // scan-design-decision (cycle 56): each question scan.mjs shares with another module has one site that answers it.
 test("scan design decision: origin names a GitHub repository exactly when isGithubHost reads the remote's host GitHub", async () => {
-  const scan = await import("../setup/scan.mjs");
-  const { isGithubHost, urlHost } = await import("../setup/permissions.mjs");
+  const scan = await import("../plugin/setup/scan.mjs");
+  const { isGithubHost, urlHost } = await import("../plugin/setup/permissions.mjs");
   /** @type {Record<string, string | null>} remote URL → the repository the scan names */
   const remotes = {
     "https://github.com/o/r.git": "o/r",
@@ -3870,7 +3927,7 @@ test("scan design decision: origin names a GitHub repository exactly when isGith
 });
 
 test("scan design decision: one parser cuts git log -z --raw, and scan.mjs reads the log only through it", async () => {
-  const { rawLog } = await import("../core/git.mjs");
+  const { rawLog } = await import("../plugin/core/git.mjs");
   const r = repo();
   r.commit("feat: one", { a: "1", [`${"a".repeat(40)}`]: "1" });
   // An empty commit whose subject is shaped like a change field.
@@ -3897,8 +3954,8 @@ test("scan design decision: one parser cuts git log -z --raw, and scan.mjs reads
 });
 
 test("scan design decision: the risky list's two views, init's glob and the audit's path, select the same files", async () => {
-  const { sensitivePaths } = await import("../plan/audit.mjs");
-  const { matchAny } = await import("../core/glob.mjs");
+  const { sensitivePaths } = await import("../plugin/plan/audit.mjs");
+  const { matchAny } = await import("../plugin/core/glob.mjs");
   const files = [
     "src/auth/login.ts", "src/auth/deep/x.ts", "app/[locale]/auth/page.tsx", "src/{legacy}/payments/y.ts", "lib/[id]/session.ts",
     "src/a*b/auth/z.ts", "src/q?/security/k.py", "src/a,b/auth/x.ts", "src/x!/auth/y.ts", "app/security.py", "src/auth.service.ts",
@@ -3916,7 +3973,7 @@ test("scan design decision: the risky list's two views, init's glob and the audi
 });
 
 test("scan design decision: the history a new project is judged by counts empty commits and a submodule's path, through rawLog", async () => {
-  const { NEW_HISTORY } = await import("../setup/scan.mjs");
+  const { NEW_HISTORY } = await import("../plugin/setup/scan.mjs");
   /** A repository written by git fast-import, nothing checked out: commit i holds ops[i]. @param {string[]} ops */
   const imported = (ops) => {
     const dir = folder();

@@ -5,15 +5,15 @@ import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { LINE_PATTERNS, SecretScanner, keyCandidates, masked, secretHits } from "../checks/secrets.mjs";
-import { checkCommitShape, secretErrors } from "../checks/commit-shape.mjs";
-import { loadConfig, ConfigError } from "../core/config.mjs";
-import { git } from "../core/git.mjs";
-import { installHook } from "../setup/hook.mjs";
-import { checkSetup } from "../setup/doctor.mjs";
+import { LINE_PATTERNS, SecretScanner, keyCandidates, masked, secretHits } from "../plugin/checks/secrets.mjs";
+import { checkCommitShape, secretErrors } from "../plugin/checks/commit-shape.mjs";
+import { loadConfig, ConfigError } from "../plugin/core/config.mjs";
+import { git } from "../plugin/core/git.mjs";
+import { installHook } from "../plugin/setup/hook.mjs";
+import { checkSetup } from "../plugin/setup/doctor.mjs";
 import { B62, B64, B64URL, HEX, KIND, PREFIX as P, TOKENS, UPPER_DIGITS, body, pem, rand } from "./secret-shapes.mjs";
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "scripts", "ennyn.mjs");
 const ID = ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"];
 
 /** The hits in one file's added lines, numbered from 1. @param {string[]} lines @param {string[]} [except] */
@@ -636,7 +636,7 @@ test("secrets round two (mutation): a body line's floor is 40 characters; one se
 });
 
 test("secrets round two (mutation): the budget is spent as files are read, and whole-file reads have one too", async () => {
-  const { stagedBlobs } = await import("../core/git.mjs");
+  const { stagedBlobs } = await import("../plugin/core/git.mjs");
   const { dir, put, commit } = repo();
   // Two files that each fit the budget, together not: the second is said.
   put({ "a.bin": "a".repeat(40 * 1024 * 1024), "b.bin": "b".repeat(40 * 1024 * 1024) });

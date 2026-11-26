@@ -78,7 +78,7 @@ const ALLOW = [
   { file: "DESIGN.md", at: "- **v0.2** — Codex manifest", why: "Ennyn's own planned release, no program measured" },
   { file: "DESIGN.md", at: "- **v1.0** — stable config", why: "Ennyn's own planned release, no program measured" },
   { file: "docs/acceptance.md", at: "the second half of 0.1.0", why: "Ennyn's own release, no program measured" },
-  { file: "checks/deps.mjs", at: "react 19.0.9 0.00%", why: "a package version in a download sample, the data the calibration read, not a program's behaviour" },
+  { file: "plugin/checks/deps.mjs", at: "react 19.0.9 0.00%", why: "a package version in a download sample, the data the calibration read, not a program's behaviour" },
   { file: "docs/modules.md", at: "Not seen: `GIT_EDITOR=:` set by the user", why: "a list of what the reader does not see: it claims nothing measured" },
   { file: "docs/modules.md", at: "a drive letter's case and an 8.3 name are one folder on Windows", why: "an 8.3 name is the short file-name form, no version" },
   { file: "docs/related-work.md", at: "did nothing from v1.65.0 until v2.2.4", why: "another project's releases, from its public history, an outside report" },
@@ -441,13 +441,13 @@ function scope(root) {
   const docs = readdirSync(join(root, "docs"))
     .filter((f) => f.endsWith(".md"))
     .map((f) => `docs/${f}`);
-  const modules = ["core", "checks", "metrics", "impact", "plan", "setup", "side-copy", "adapters", "scripts"].flatMap(walk);
+  const modules = ["core", "checks", "metrics", "impact", "plan", "setup", "side-copy", "adapters", "scripts"].map((d) => `plugin/${d}`).flatMap(walk);
   return ["DESIGN.md", "SECURITY.md", ...docs, ...modules].sort();
 }
 
 test("measured claims: every sentence in DESIGN.md, SECURITY.md, docs and module headers that names a program at a version names where it was measured", (t) => {
   const files = scope(ROOT);
-  assert.ok(files.includes("docs/modules.md") && files.includes("core/git.mjs") && files.length > 40, `the scope read ${files.length} files`);
+  assert.ok(files.includes("docs/modules.md") && files.includes("plugin/core/git.mjs") && files.length > 40, `the scope read ${files.length} files`);
   const problems = check(ROOT, files, ALLOW);
   for (const p of problems) t.diagnostic(p);
   assert.equal(problems.length, 0, `${problems.length} sentences or pointers fail: the diagnostics name each`);

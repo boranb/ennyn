@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadConfig } from "../core/config.mjs";
-import { checkCommitShape, storedMessage, gitCuts, commentMarker, hookCommitMode } from "../checks/commit-shape.mjs";
-import { git } from "../core/git.mjs";
+import { loadConfig } from "../plugin/core/config.mjs";
+import { checkCommitShape, storedMessage, gitCuts, commentMarker, hookCommitMode } from "../plugin/checks/commit-shape.mjs";
+import { git } from "../plugin/core/git.mjs";
 
 const cfg = (override = {}) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-cs-")), env: {}, override });
 

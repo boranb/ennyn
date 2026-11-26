@@ -12,10 +12,10 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, dirname, posix, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { GIT_FLOOR, git } from "../core/git.mjs";
-import { DEFAULTS } from "../core/config.mjs";
-import { matchAny } from "../core/glob.mjs";
-import { ciFindings, ciKind, yamlRead } from "../checks/ci.mjs";
+import { GIT_FLOOR, git } from "../plugin/core/git.mjs";
+import { DEFAULTS } from "../plugin/core/config.mjs";
+import { matchAny } from "../plugin/core/glob.mjs";
+import { ciFindings, ciKind, yamlRead } from "../plugin/checks/ci.mjs";
 import { nodeFloor, versionIs, runs, pinned, NEWER, FLOOR_BASE } from "./linux-run.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -180,19 +180,25 @@ test("engines: the package npm ships holds its bin and every module the CLI and 
   const ships = (/** @type {string} */ p) => pkg.files.some((/** @type {string} */ f) => p === f || p.startsWith(`${f}/`));
   assert.deepEqual(Object.keys(pkg.bin), ["ennyn"]);
   assert.ok(read(pkg.bin.ennyn).startsWith("#!/usr/bin/env node\n"), "the bin runs under node from any shell");
-  const hooks = [...read("hooks/hooks.json").matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/([^"\\\s]+)/g)].map((m) => m[1]);
+  const hooks = [...read("plugin/hooks/hooks.json").matchAll(/\$\{CLAUDE_PLUGIN_ROOT\}\/([^"\\\s]+)/g)].map((m) => `plugin/${m[1]}`);
   assert.ok(hooks.length >= 5, `hook commands read: ${hooks}`);
   const all = reached([pkg.bin.ennyn, ...hooks]);
   // Each kind of reference is followed: an import (config), a dynamic import (i18n, from the kill hook alone too),
   // a file by URL (the lock's runner).
-  for (const p of ["core/config.mjs", "core/i18n.mjs", "impact/reference-run.mjs"]) assert.ok(all.includes(p), p);
-  assert.ok(reached(["adapters/claude-code/hooks/kill-targets.mjs"]).includes("core/i18n.mjs"), "a dynamic import is followed");
+  for (const p of ["plugin/core/config.mjs", "plugin/core/i18n.mjs", "plugin/impact/reference-run.mjs"]) assert.ok(all.includes(p), p);
+  assert.ok(reached(["plugin/adapters/claude-code/hooks/kill-targets.mjs"]).includes("plugin/core/i18n.mjs"), "a dynamic import is followed");
   const quoted = ['import("../a/x.mjs")', "import('../a/x.mjs')", "import(`../a/x.mjs`)", 'export { x } from "../a/x.mjs"', "new URL(`../a/x.mjs`, import.meta.url)", "new URL('../a/x.mjs', import.meta.url)"];
   for (const text of quoted) assert.deepEqual(specsOf(text), ["../a/x.mjs"], text);
   for (const text of ["import(`../a/${name}.mjs`)", "new URL(`../a/${name}.mjs`, import.meta.url)", 'import("../a/x.mjs`)']) assert.deepEqual(specsOf(text), [], text);
   assert.deepEqual(all.filter((p) => !existsSync(join(ROOT, p))), [], "every reached file is in the tree");
+  // An install holds the plugin's folder alone: a reference out of it loads here and fails there.
+  assert.deepEqual(all.filter((p) => !p.startsWith("plugin/")), [], "every reached file is in the plugin's folder");
   // Folders read by a path built at run time (core/i18n.mjs, core/style.mjs), which no reference names whole.
-  assert.deepEqual([...all, "i18n/en.json", "styles/terse.en.md"].filter((p) => !ships(p)), [], "every reached file is in the package");
+  assert.deepEqual([...all, "plugin/i18n/en.json", "plugin/styles/terse.en.md"].filter((p) => !ships(p)), [], "every reached file is in the package");
+  // The CLI's place before the plugin moved: a commit-msg hook an earlier version wrote names it, and lets every
+  // commit through unchecked once it is gone. It ships, and it reaches the CLI.
+  assert.ok(ships("scripts/ennyn.mjs") && read("scripts/ennyn.mjs").startsWith("#!/usr/bin/env node\n"), "the old place of the CLI ships");
+  assert.ok(reached(["scripts/ennyn.mjs"]).includes(pkg.bin.ennyn), "the old place reaches the CLI");
   const lock = JSON.parse(read("package-lock.json"));
   assert.deepEqual([lock.version, lock.packages[""].version], [pkg.version, pkg.version], "package-lock.json names package.json's version in both places");
 });

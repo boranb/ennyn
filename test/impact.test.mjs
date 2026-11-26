@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, chmodSync, realpathSync, appendFileSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { loadConfig } from "../core/config.mjs";
-import { git } from "../core/git.mjs";
-import { buildImpactTable, formatImpactTable, specifierRefersTo } from "../impact/table.mjs";
+import { loadConfig } from "../plugin/core/config.mjs";
+import { git } from "../plugin/core/git.mjs";
+import { buildImpactTable, formatImpactTable, specifierRefersTo } from "../plugin/impact/table.mjs";
 
 const cfg = (override = {}) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-i-")), env: {}, override });
 

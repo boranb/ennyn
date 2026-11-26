@@ -46,7 +46,7 @@ Source: the origin study (origin project, October 2026).
 - 45% of a task's tool calls came after the first review result. First review to commit: median 43 min with one round, 72 min with two, 77 min with three or more.
 - One family, a change that loosens or tightens a rejection rule and newly accepts or rejects the wrong input, was fix-introduced in 43 of 49 rows.
 
-→ Review is capped at two rounds; a third needs an independent signal (`skills/cycle/`, `agents/`, `skills/cycle/finding-schema.md`).
+→ Review is capped at two rounds; a third needs an independent signal (`plugin/skills/cycle/`, `plugin/agents/`, `plugin/skills/cycle/finding-schema.md`).
 
 ## The questions were known, but asked too late
 
@@ -58,7 +58,7 @@ Source: the origin study (origin project, October 2026).
 - Two raters, 40 change-caused findings: "at least partly answerable before writing" 33/40 and 40/40. On 30 serious defects the blind rater said 10 fully, 18 partly, 2 no (both were outputs of a real model in production).
 - Asking before writing directly prevents about a third; for the rest the question needs a measured answer (a corpus, a trial, a failing test).
 
-→ Five-row impact table before the first edit, each row answered by a command (`ennyn impact`, `skills/cycle/impact-table.md`); for heuristic rules, an accept and reject corpus and a failing test come first.
+→ Five-row impact table before the first edit, each row answered by a command (`ennyn impact`, `plugin/skills/cycle/impact-table.md`); for heuristic rules, an accept and reject corpus and a failing test come first.
 
 ## Code the task did not ask for
 
@@ -73,7 +73,7 @@ Source: outside sources on ponytail, its repository and two runs of it (ponytail
 
 **Limits.** One author's run, partly judged by a model, and one independent run of an older version. Both count code size and a pass rate, not defects or later rework, and the robustness drop was measured on one kind of program. The row is asked in prose; whether it changes what Ennyn's tasks write is not yet measured.
 
-→ Before its first edit, a core task answers a smallest-change row: the line of the task that asks for each new piece, what the repository already has (`git grep -w`), what the platform, git or an installed dependency does, and only then new code. Validation of input from outside the process, data-loss handling, security, accessibility and anything the task asks for are never cut (`skills/cycle/impact-table.md`).
+→ Before its first edit, a core task answers a smallest-change row: the line of the task that asks for each new piece, what the repository already has (`git grep -w`), what the platform, git or an installed dependency does, and only then new code. Validation of input from outside the process, data-loss handling, security, accessibility and anything the task asks for are never cut (`plugin/skills/cycle/impact-table.md`).
 
 ## Gates stop recurrence, prose does not
 
@@ -91,7 +91,7 @@ Source: the origin study (origin project, October 2026).
 - Proposals that became work-graph nodes were done 8 times out of 11, within 1-4 cycles. Proposals without a node were done 0 times out of 5; one was proposed four cycles in a row.
 - A size latch on the rules file kept new lessons out of it; they lived only in a searchable catalog.
 
-→ One slot per cycle for a mechanization node (`ennyn mechanization`); convergence counted in columns that separate these: found in review, fix-introduced, pre-existing, gate-caught, escaped past commit (`skills/cycle/report-formats.md`, `metrics/convergence.mjs`); a lesson whose reason lives in a test is deleted from the rules.
+→ One slot per cycle for a mechanization node (`ennyn mechanization`); convergence counted in columns that separate these: found in review, fix-introduced, pre-existing, gate-caught, escaped past commit (`plugin/skills/cycle/report-formats.md`, `plugin/metrics/convergence.mjs`); a lesson whose reason lives in a test is deleted from the rules.
 
 ## Context and rules
 
@@ -102,7 +102,7 @@ Source: the origin study (origin project, October 2026).
 - Reading files in parallel could save at most 12.7% of task turns (about 3 minutes per task). A small lever.
 - Earlier cycles ran tasks in forks of the orchestrator; the second project's orchestrator stood at about 652K tokens in the middle of its cycle 2. In cycle 15, tasks ran in fresh agents on a written brief; two tasks that reached a third correction (566K and 533K tokens) moved to a new agent with one consolidated brief, and the first passed both reviewers' checks at once. Two tasks, one author: an example, not a measurement.
 
-→ The side-copy hook maps a side-copy path back to the project and injects the matching rules (`hooks/hooks.json`, `adapters/claude-code/`). Each task runs in a fresh agent on a written brief (`skills/cycle/task-brief.md`).
+→ The side-copy hook maps a side-copy path back to the project and injects the matching rules (`plugin/hooks/hooks.json`, `plugin/adapters/claude-code/`). Each task runs in a fresh agent on a written brief (`plugin/skills/cycle/task-brief.md`).
 
 ## Speed and rework
 
@@ -141,7 +141,7 @@ Source: the origin study (origin project, October 2026).
 
 Source: the replay of the private-text rules over the history kept from before the rewrite (the replay behind commit 2bbc47f, 2026-11-20).
 
-Ennyn's own history was rewritten before the repository went public, to take out what a full read found private. The rules of `security.privateText` (`checks/private-text.mjs`) were replayed over the history kept from before that rewrite: every added line (a line its parent's file already held, moved, left out), every added file name and every message of the 348 commits of its main line. The words, paths and sentences stay outside the repository; only counts are here.
+Ennyn's own history was rewritten before the repository went public, to take out what a full read found private. The rules of `security.privateText` (`plugin/checks/private-text.mjs`) were replayed over the history kept from before that rewrite: every added line (a line its parent's file already held, moved, left out), every added file name and every message of the 348 commits of its main line. The words, paths and sentences stay outside the repository; only counts are here.
 
 - **Against the rewrite's tables** (what was replaced, by the first commit each entered in): of 116 text entries, 60 are caught where they stand and 2 in part, 37 are missed, 17 never entered the main line; 69 stand on a line the rules refuse. Of the 35 quoted sentences of the user and their 32 paraphrases, none is caught where it stands (no shape reads a quote), but 31 and 28 stand on a line the rules refuse, beside a dated attribution. Of 23 message entries, 7 are caught, 16 missed.
 - **Against the full read's ten categories** (quoted phrases found in the main line, caught where they stand): the user's words in the graph 4 of 7, an analysis of the user's messages 3 of 4 (4 on refused lines), account security state 1 of 1, the work environment 0 of 5, account plan and quota 0 of 6, other projects and incidents 0 of 9, the machines' timings 0 of 3, test data 0 of 2; the third parties named are caught by a listed word only (37 table entries, with 48 candidate words), and the release's own notes never entered the main line. What escapes is retold in the session's own words: no shape catches a paraphrase, so the prose rule against it stays.
@@ -195,7 +195,7 @@ A third project, by the same author, covered those the same day with init and on
 
 Source: the closing handoffs and the surviving ledgers of cycles 1 to 15 (cycles 1-15, kept outside this repository).
 
-The first 15 cycles on Ennyn itself wrote four numbers. Their sums, read from the 15 closing handoffs, are 438, 407, 321 and 178. The handoffs are working notes kept outside this repository, so these sums cannot be recounted from it. The columns changed after that. By the research's reading of the handoffs, a judgement and not a count of rows, all 438 "real escapes" were caught by a reviewer before the commit, so they had not escaped the loop; and what each column held had moved from cycle to cycle. Each column now has one definition, in `skills/cycle/report-formats.md`, and each finding lands in one column. The numbers already written, here and in the handoffs, stay as they are. A new cycle compares with them this way:
+The first 15 cycles on Ennyn itself wrote four numbers. Their sums, read from the 15 closing handoffs, are 438, 407, 321 and 178. The handoffs are working notes kept outside this repository, so these sums cannot be recounted from it. The columns changed after that. By the research's reading of the handoffs, a judgement and not a count of rows, all 438 "real escapes" were caught by a reviewer before the commit, so they had not escaped the loop; and what each column held had moved from cycle to cycle. Each column now has one definition, in `plugin/skills/cycle/report-formats.md`, and each finding lands in one column. The numbers already written, here and in the handoffs, stay as they are. A new cycle compares with them this way:
 
 | Written then | Sum, 15 cycles | Written now | How to compare |
 |---|---|---|---|
@@ -214,7 +214,7 @@ So the rise in the gate's share of findings, gate-caught over gate-caught + real
 
 All 15 cycles are hand counts. Rechecked against the ledgers that survive, cycle 4 matched, cycle 10 was about 1% apart, and cycle 15's real escapes moved 18%, from 39 to 46. The catches named in a handoff do not always add up either: cycle 8's sum to 5 against 4 written, cycle 9's to 8 against 9. Duplicates were removed only from cycle 10 (10, 13 and 29 in cycles 10 to 12), and cycle 12's gate-caught holds 6 timing failures under load.
 
-The fifth column starts empty. The 321 cannot be split by age: the rows of those cycles record no commit for the defective line. The age rule asks whether a tree held the config, not whether a cycle wrote the line. So a config moved in or committed late reads as pre-existing, while the lines of the commit that adds the config, and old work rebased or squashed in after it, read as through the loop. A report with no such column reads as unreported, not as 0, and a report's `real escape` label reads as `found in review` (`metrics/convergence.mjs`). An old block's gate-caught reads as written, under its old meaning: a block that says `real escape`, or has no fifth column, is an old one.
+The fifth column starts empty. The 321 cannot be split by age: the rows of those cycles record no commit for the defective line. The age rule asks whether a tree held the config, not whether a cycle wrote the line. So a config moved in or committed late reads as pre-existing, while the lines of the commit that adds the config, and old work rebased or squashed in after it, read as through the loop. A report with no such column reads as unreported, not as 0, and a report's `real escape` label reads as `found in review` (`plugin/metrics/convergence.mjs`). An old block's gate-caught reads as written, under its old meaning: a block that says `real escape`, or has no fifth column, is an old one.
 
 ## What the package does not do
 

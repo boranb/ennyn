@@ -5,13 +5,13 @@ import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { MAX_TEXT, ciCallees, ciFindings, ciIntroduced, ciKind, ciMessages, ciSet, ciText, localPath, pinnedUses, prExpression, stripComment, yamlRead } from "../checks/ci.mjs";
-import { git, stagedVersions } from "../core/git.mjs";
-import { loadConfig, ConfigError } from "../core/config.mjs";
-import { checkSetup } from "../setup/doctor.mjs";
+import { MAX_TEXT, ciCallees, ciFindings, ciIntroduced, ciKind, ciMessages, ciSet, ciText, localPath, pinnedUses, prExpression, stripComment, yamlRead } from "../plugin/checks/ci.mjs";
+import { git, stagedVersions } from "../plugin/core/git.mjs";
+import { loadConfig, ConfigError } from "../plugin/core/config.mjs";
+import { checkSetup } from "../plugin/setup/doctor.mjs";
 import { TOKENS } from "./secret-shapes.mjs";
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "scripts", "ennyn.mjs");
 const SHA = "3d3c42e5aac5ba805825da76410c181273ba90b1";
 const DIGEST = `sha256:${"0a98".repeat(16)}`;
 

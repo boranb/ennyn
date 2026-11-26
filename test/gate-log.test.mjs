@@ -5,11 +5,11 @@ import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, readdirSync, appen
 import { tmpdir } from "node:os";
 import { basename, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadConfig } from "../core/config.mjs";
-import { git } from "../core/git.mjs";
-import { recordAttempt, readAttempts, summarizeAttempts, durationStats, gateLogPath, isAttempt, cleanName } from "../metrics/gate-log.mjs";
+import { loadConfig } from "../plugin/core/config.mjs";
+import { git } from "../plugin/core/git.mjs";
+import { recordAttempt, readAttempts, summarizeAttempts, durationStats, gateLogPath, isAttempt, cleanName } from "../plugin/metrics/gate-log.mjs";
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "scripts", "ennyn.mjs");
 /** A start in epoch seconds (2027-01-15): attempts are written relative to it. */
 const T = 1_800_000_000;
 
@@ -187,7 +187,7 @@ test("gate-log: durationStats uses nearest rank", () => {
   assert.deepEqual(durationStats(ten), { n: 10, median: 300, p90: 540 });
 });
 
-/** @param {Partial<import("../metrics/gate-log.mjs").GateAttempt>} o */
+/** @param {Partial<import("../plugin/metrics/gate-log.mjs").GateAttempt>} o */
 const att = (o) => ({ v: 1, kind: "full", start: "2026-03-10T12:00:00.000Z", end: "", seconds: 60, exit: 0, result: "pass", commit: "c", files: [], step: null, runner: null, ...o });
 
 test("gate-log: summary counts passes, failures, message rejections, waste and failing steps", () => {

@@ -24,11 +24,11 @@ import { delimiter, dirname, join, relative as relativePath, sep } from "node:pa
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { loadConfig } from "../core/config.mjs";
-import { GIT_FLOOR, gitVersion, parseVersion, versionAtLeast } from "../core/git.mjs";
-import { t } from "../core/i18n.mjs";
-import { loadGraph } from "../plan/mechanization.mjs";
-import { HOOK_MARKER, hookBlock, hookLine, hookScript, printedCheck, recordPluginRoot } from "../setup/hook.mjs";
+import { loadConfig } from "../plugin/core/config.mjs";
+import { GIT_FLOOR, gitVersion, parseVersion, versionAtLeast } from "../plugin/core/git.mjs";
+import { t } from "../plugin/core/i18n.mjs";
+import { loadGraph } from "../plugin/plan/mechanization.mjs";
+import { HOOK_MARKER, hookBlock, hookLine, hookScript, printedCheck, recordPluginRoot } from "../plugin/setup/hook.mjs";
 import { ownHome } from "./own-home.mjs";
 import { KIND, TOKENS } from "./secret-shapes.mjs";
 import { pool } from "./verdicts.mjs";

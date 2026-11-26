@@ -21,18 +21,18 @@ import { devNull, tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
-import { loadConfig } from "../core/config.mjs";
-import { t } from "../core/i18n.mjs";
-import { loadGraph } from "../plan/mechanization.mjs";
+import { loadConfig } from "../plugin/core/config.mjs";
+import { t } from "../plugin/core/i18n.mjs";
+import { loadGraph } from "../plugin/plan/mechanization.mjs";
 import { RECORD, RELATIONS, cellProblems, compare, moves, readRecord, unmeasuredOf } from "./reference/npm.mjs";
 import * as cc from "./reference/claude-code.mjs";
 import * as precompact from "./reference/precompact.mjs";
 import * as pretooluse from "./reference/pretooluse.mjs";
 import * as md from "./reference/markdown.mjs";
 import * as ay from "./reference/actions-yaml.mjs";
-import { MIN_RULE, ruleKey, ruleLines } from "../setup/budget.mjs";
-import { banLiterals, outsideFenceLines } from "../setup/scan.mjs";
-import { noBypassBlock } from "../setup/secret-setup.mjs";
+import { MIN_RULE, ruleKey, ruleLines } from "../plugin/setup/budget.mjs";
+import { banLiterals, outsideFenceLines } from "../plugin/setup/scan.mjs";
+import { noBypassBlock } from "../plugin/setup/secret-setup.mjs";
 
 /** The open nodes of the work graph: a `gap:` names one. */
 async function openNodes() {

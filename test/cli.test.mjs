@@ -5,10 +5,10 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, realpathSync, writeFi
 import { tmpdir } from "node:os";
 import { delimiter, join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { MISSING_OBJECT, git, gitMaybe, gitVersion, stagedAddedLines, versionAtLeast } from "../core/git.mjs";
+import { MISSING_OBJECT, git, gitMaybe, gitVersion, stagedAddedLines, versionAtLeast } from "../plugin/core/git.mjs";
 import { TOKENS } from "./secret-shapes.mjs";
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "scripts", "ennyn.mjs");
 
 /** @param {string} cwd @param {string[]} args */
 function run(cwd, ...args) {
@@ -942,8 +942,8 @@ test("cli: a run recorded in a linked worktree counts for the main checkout afte
   assert.match(behind.stdout, /The branch is 1 commits behind its upstream: rebase/);
   assert.doesNotMatch(behind.stdout, /: met/);
   // Behind and ahead at once: no need is named, whatever the record holds.
-  const { pushNeeds } = await import("../checks/test-runs.mjs");
-  const { loadConfig } = await import("../core/config.mjs");
+  const { pushNeeds } = await import("../plugin/checks/test-runs.mjs");
+  const { loadConfig } = await import("../plugin/core/config.mjs");
   const both = pushNeeds(p.dir, loadConfig({ cwd: p.dir, env: {} }));
   assert.ok(!("unmeasured" in both) && both.behind === 1 && both.ahead === 1 && both.need === null && !both.met, JSON.stringify(both));
   // No upstream: unmeasured, and it asks.
@@ -1030,8 +1030,8 @@ test("cli: a red run of either kind on HEAD's tree stops --tested; a fast run co
   assert.match(again.stdout, /Recorded: fast run/);
   assert.equal(q.ran(), "fast fast");
   assert.equal(q.go(q.dir, ["push-check"]).code, 3);
-  const { readRuns } = await import("../checks/test-runs.mjs");
-  const { loadConfig } = await import("../core/config.mjs");
+  const { readRuns } = await import("../plugin/checks/test-runs.mjs");
+  const { loadConfig } = await import("../plugin/core/config.mjs");
   const runs = readRuns(q.dir, loadConfig({ cwd: q.dir, env: {} })).runs;
   assert.deepEqual(runs.map((r) => r.base), [git(["rev-parse", "HEAD~1"], { cwd: q.dir }).trim(), git(["rev-parse", "origin/main"], { cwd: q.dir }).trim()]);
   // A bare push that goes to another remote: the upstream says nothing of it.

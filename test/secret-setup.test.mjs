@@ -3,12 +3,12 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { git } from "../core/git.mjs";
-import { t } from "../core/i18n.mjs";
-import { parseSettings } from "../setup/permissions.mjs";
-import { projectFiles, scanProject } from "../setup/scan.mjs";
-import { secretReport } from "../setup/doctor.mjs";
-import { noBypassBlock, scrubOn, secretSetup } from "../setup/secret-setup.mjs";
+import { git } from "../plugin/core/git.mjs";
+import { t } from "../plugin/core/i18n.mjs";
+import { parseSettings } from "../plugin/setup/permissions.mjs";
+import { projectFiles, scanProject } from "../plugin/setup/scan.mjs";
+import { secretReport } from "../plugin/setup/doctor.mjs";
+import { noBypassBlock, scrubOn, secretSetup } from "../plugin/setup/secret-setup.mjs";
 
 /** The test's environment without what names a token or the scrub variable: a test sets those it reads. */
 const clean = () => Object.fromEntries(Object.entries(process.env).filter(([k]) => !/TOKEN|_KEY|SCRUB/.test(k)));

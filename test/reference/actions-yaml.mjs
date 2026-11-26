@@ -54,9 +54,9 @@ import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:f
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { RUNNER_HEAD, ciFindingsOf, clones, holdsRef, localPath, pinnedUses, runFetches, workspaceDir, yamlRead } from "../../checks/ci.mjs";
-import { git as gitCall } from "../../core/git.mjs";
-import { shown } from "../../core/i18n.mjs";
+import { RUNNER_HEAD, ciFindingsOf, clones, holdsRef, localPath, pinnedUses, runFetches, workspaceDir, yamlRead } from "../../plugin/checks/ci.mjs";
+import { git as gitCall } from "../../plugin/core/git.mjs";
+import { shown } from "../../plugin/core/i18n.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const RECORD = join(HERE, "actions-yaml.json");

@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, realpathSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { markedWorktrees, removeWorktree } from "../plan/worktrees.mjs";
+import { markedWorktrees, removeWorktree } from "../plugin/plan/worktrees.mjs";
 import { head, holds, index, listing, missingFrom, refs, tree, unreachable } from "./repo-facts.mjs";
 import { ownHome } from "./own-home.mjs";
 

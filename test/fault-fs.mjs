@@ -121,7 +121,7 @@ if (SPAWN_AT > 0) {
 
 const GIT_LIMIT = Number(process.env.ENNYN_FAULT_GIT_LIMIT_MS ?? 0);
 if (GIT_LIMIT > 0) {
-  const { GIT_LIMITS } = await import("../core/git.mjs");
+  const { GIT_LIMITS } = await import("../plugin/core/git.mjs");
   GIT_LIMITS.call = GIT_LIMIT;
   GIT_LIMITS.walk = 2 * GIT_LIMIT;
 }

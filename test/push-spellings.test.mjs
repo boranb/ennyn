@@ -15,11 +15,11 @@ import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { mayHold } from "../adapters/claude-code/config-place.mjs";
-import { pushAliases, pushSpelling } from "../adapters/claude-code/push-spellings.mjs";
-import { pushVerdict, saidText } from "../checks/push-mode.mjs";
-import { recordRun } from "../checks/test-runs.mjs";
-import { DEFAULTS, loadConfig } from "../core/config.mjs";
+import { mayHold } from "../plugin/adapters/claude-code/config-place.mjs";
+import { pushAliases, pushSpelling } from "../plugin/adapters/claude-code/push-spellings.mjs";
+import { pushVerdict, saidText } from "../plugin/checks/push-mode.mjs";
+import { recordRun } from "../plugin/checks/test-runs.mjs";
+import { DEFAULTS, loadConfig } from "../plugin/core/config.mjs";
 import { SPELLINGS, readRecord } from "./reference/claude-code.mjs";
 import { inFence, inRoot, shellBox, unsafeTexts } from "./shell-box.mjs";
 
@@ -1225,7 +1225,7 @@ const LIMITS = [
 
 test("push reader: the stated limits are limits: each is left, and the header and SECURITY.md name it", () => {
   for (const c of LIMITS) assert.equal(pushSpelling(c), null, JSON.stringify(c));
-  const header = readFileSync(fileURLToPath(new URL("../adapters/claude-code/push-spellings.mjs", import.meta.url)), "utf8").split("*/")[0];
+  const header = readFileSync(fileURLToPath(new URL("../plugin/adapters/claude-code/push-spellings.mjs", import.meta.url)), "utf8").split("*/")[0];
   for (const word of ["shell grammar the reader does not read", "echo ${x:-{}; # }; git push origin main", "echo <1-2># | git push origin main", "unmeasured under load", "a script the agent writes", "an interpreter", "an MCP tool", "`gh api`", "another machine", "held whole in a variable", "encoded words", "a word a run puts together", "under another name", "an alias in a config file", "runs a command", "PowerShell's own spellings", "a Skill's shell block", "disableAllHooks", "NODE_OPTIONS", "crashes, is killed or times out", "no boundary", "hand-crafted", "a group, a function", "only if Claude Code's parser finishes"]) assert.ok(header.includes(word), word);
   const security = readFileSync(fileURLToPath(new URL("../SECURITY.md", import.meta.url)), "utf8");
   for (const word of ["shell grammar it does not read", "echo ${x:-{}; # }; git push origin main", "echo <1-2># | git push origin main", "unmeasured", "a script the agent writes", "an interpreter", "an MCP tool", "another machine", "held whole in a variable", "encoded words", "a word a run puts together", "under another name", "an alias in a config file", "disableAllHooks", "NODE_OPTIONS", "no boundary", "only if Claude Code's parser finishes"]) assert.ok(security.includes(word), word);
@@ -1333,7 +1333,7 @@ test("push reader: a verb that names an alias in the environment is a push, what
   for (const c of ["git commit -qm alias.go=push; git go", "echo alias.go=push; git go", "git log -S alias.go; git go"]) assert.equal(pushSpelling(c), null, c);
 });
 
-const HOOK = fileURLToPath(new URL("../adapters/claude-code/hooks/push-spellings.mjs", import.meta.url));
+const HOOK = fileURLToPath(new URL("../plugin/adapters/claude-code/hooks/push-spellings.mjs", import.meta.url));
 const neutral = mkdtempSync(join(tmpdir(), "en-push-cwd-"));
 
 /** A repository, with an Ennyn config as `config` says: its text, or nothing. @param {string | null} config */
@@ -1791,7 +1791,7 @@ test("push hook: a Monitor on a socket holds no command and runs none: it passes
 
 test("push hook: a broken or missing catalog still refuses, with a plain English line", () => {
   const box = realpathSync(mkdtempSync(join(tmpdir(), "en-push-copy-")));
-  const top = fileURLToPath(new URL("..", import.meta.url));
+  const top = fileURLToPath(new URL("../plugin", import.meta.url));
   for (const d of ["adapters", "core", "i18n"]) cpSync(join(top, d), join(box, d), { recursive: true });
   const repo = project("{}\n");
   const go = () => spawnSync(process.execPath, [join(box, "adapters/claude-code/hooks/push-spellings.mjs")], { input: JSON.stringify(call("git -C . push")), env: { ...process.env, CLAUDE_PROJECT_DIR: repo }, cwd: neutral, encoding: "utf8", timeout: 20000, killSignal: "SIGKILL" });

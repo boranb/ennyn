@@ -5,15 +5,15 @@ import { chmodSync, lstatSync, mkdtempSync, mkdirSync, writeFileSync, readFileSy
 import { tmpdir } from "node:os";
 import { join, dirname, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { git } from "../core/git.mjs";
-import * as hookModule from "../setup/hook.mjs";
-import { BLOCK_MARKER, HOOK_MARKER, hookBlock, hookLine as printedLine, hookScript, hookStatus, idleReason, installHook, namesCheck, printedCheck } from "../setup/hook.mjs";
+import { git } from "../plugin/core/git.mjs";
+import * as hookModule from "../plugin/setup/hook.mjs";
+import { BLOCK_MARKER, HOOK_MARKER, hookBlock, hookLine as printedLine, hookScript, hookStatus, idleReason, installHook, namesCheck, printedCheck } from "../plugin/setup/hook.mjs";
 import { ownHome } from "./own-home.mjs";
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "scripts", "ennyn.mjs");
 // A test here writes the plugin's record under the home: one of this file's own, or it refuses to run.
 const { root: ROOT, home: HOME } = ownHome("en-hook-");
-const FILE = join(dirname(CLI), "..", "test", "hook.test.mjs");
+const FILE = join(dirname(CLI), "..", "..", "test", "hook.test.mjs");
 
 /** What husky 9.1.7's index.js writes as .husky/_/commit-msg. */
 const HUSKY_STUB = '#!/usr/bin/env sh\n. "$(dirname "$0")/h"';
@@ -160,7 +160,7 @@ test("hook: git commit --fixup and --squash still work with the hook in place (a
 });
 
 test("doctor: declared commit types without a hook warn; with the hook installed they pass", async () => {
-  const { checkSetup } = await import("../setup/doctor.mjs");
+  const { checkSetup } = await import("../plugin/setup/doctor.mjs");
   const dir = repo();
   writeFileSync(join(dir, ".ennyn", "graph.json"), JSON.stringify({ nodes: [{ id: "a" }] }));
   const keys = async () => (await checkSetup({ cwd: dir, env: {} })).items.map((i) => `${i.level} ${i.key}`);
@@ -179,7 +179,7 @@ test("doctor: declared commit types without a hook warn; with the hook installed
 });
 
 test("hook: husky's stubs are not ours to edit; .husky/commit-msg holding the printed block counts as wired, for install and doctor", async () => {
-  const { checkSetup } = await import("../setup/doctor.mjs");
+  const { checkSetup } = await import("../plugin/setup/doctor.mjs");
   const { home, data } = plugged();
   const dir = repo();
   writeFileSync(join(dir, ".ennyn", "graph.json"), JSON.stringify({ nodes: [{ id: "a" }] }));
@@ -352,7 +352,7 @@ test("hook: a chained squash! finds the commit autosquash folds into, and that c
 });
 
 test("doctor audit: a hook whose CLI is gone, or one git does not run (not executable, a husky stub never generated), is no ✓; install-hook makes it run again", async () => {
-  const { checkSetup } = await import("../setup/doctor.mjs");
+  const { checkSetup } = await import("../plugin/setup/doctor.mjs");
   const dir = repo();
   writeFileSync(join(dir, ".ennyn", "graph.json"), JSON.stringify({ nodes: [{ id: "a" }] }));
   const keys = async () => (await checkSetup({ cwd: dir, env: {} })).items.map((i) => `${i.level} ${i.key}`);
@@ -387,7 +387,7 @@ test("doctor audit: a hook whose CLI is gone, or one git does not run (not execu
 });
 
 test("doctor audit: review.impactRequiredGlobs with no hook is a rule on paper too", async () => {
-  const { checkSetup } = await import("../setup/doctor.mjs");
+  const { checkSetup } = await import("../plugin/setup/doctor.mjs");
   const dir = mkdtempSync(join(tmpdir(), "en-hook-impact-"));
   git(["init", "-q", "-b", "main"], { cwd: dir });
   mkdirSync(join(dir, ".ennyn"));
@@ -401,7 +401,7 @@ test("doctor audit: review.impactRequiredGlobs with no hook is a rule on paper t
 });
 
 test("install-hook audit (review): for every hook state doctor and install-hook agree: a ✓ is nothing to do, a warning is fixed or refused with why", async () => {
-  const { checkSetup } = await import("../setup/doctor.mjs");
+  const { checkSetup } = await import("../plugin/setup/doctor.mjs");
   /** @param {string} dir */
   const hookLine = async (dir) => (await checkSetup({ cwd: dir, env: { HOME, PATH: process.env.PATH } })).items.find((i) => i.key.startsWith("doctor.hook"));
   /** @param {string} dir */
@@ -543,8 +543,8 @@ test("install-hook audit (review): for every hook state doctor and install-hook 
 });
 
 test("doctor audit (review): every rule only the commit-msg hook checks warns without a hook, named in one line", async () => {
-  const { checkSetup } = await import("../setup/doctor.mjs");
-  const { t } = await import("../core/i18n.mjs");
+  const { checkSetup } = await import("../plugin/setup/doctor.mjs");
+  const { t } = await import("../plugin/core/i18n.mjs");
   // The secret scan off (except names every path), so each list holds only the rule the config sets.
   const off = { secrets: { except: ["**/*"] } };
   for (const [config, named, rules] of /** @type {[Record<string, unknown>, RegExp, string[]][]} */ ([
@@ -682,12 +682,17 @@ function pluginVersion(base, version) {
 
 /** This checkout as a plugin version: the real CLI, so a commit is checked as it would be. */
 const SELF = dirname(dirname(CLI));
+/**
+ * A hook naming this checkout's CLI by its path, as install-hook writes one from an installed version with no data
+ * directory: an install holds no forwarder, which install-hook would name here (hookCliPath). @param {string} dir
+ */
+const pinnedHook = (dir) => writeFileSync(hookStatus(dir).path, hookScript(CLI), { mode: 0o755 });
 const PLUGIN_ROOT_HOOK = join(SELF, "adapters", "claude-code", "hooks", "plugin-root.mjs");
 const cliOf = (/** @type {string} */ root) => join(root, "scripts", "ennyn.mjs");
 const record = (/** @type {string} */ data) => readFileSync(join(data, "root"), "utf8");
 /** The hook lines of doctor's report. @param {string} dir @param {Record<string, string>} [env] @param {string} [self] */
 const hookKeys = async (dir, env = {}, self = undefined) => {
-  const { checkSetup } = await import("../setup/doctor.mjs");
+  const { checkSetup } = await import("../plugin/setup/doctor.mjs");
   return (await checkSetup({ cwd: dir, env: { PATH: process.env.PATH, ...env }, ...(self ? { self } : {}) })).items.filter((i) => i.key.startsWith("doctor.hook")).map((i) => i.key);
 };
 /** A repository doctor reads a hook line for. */
@@ -749,7 +754,7 @@ test("install-hook npx cache: run from npm's npx cache it writes no hook, no rec
   assert.equal(existsSync(hookStatus(fresh).path), false);
   assert.equal(existsSync(join(fresh, ".git", "ennyn")), false, "no state written");
   // The remedies name no install inside the work tree: a node_modules clean, or a commit to the dependency, turns that gate off.
-  const { t } = await import("../core/i18n.mjs");
+  const { t } = await import("../plugin/core/i18n.mjs");
   for (const lang of ["en", "tr"]) for (const key of ["hook.npxCopy", "doctor.hookNpxCache"]) assert.doesNotMatch(t(key, {}, lang), /npm install|save-dev|npx ennyn install-hook/, `${lang} ${key}`);
 });
 
@@ -811,10 +816,10 @@ test("hook follows the plugin: installed from the plugin, it runs the version th
   // From another copy (a clone run inside a v2 session): the hook that follows the plugin is not turned into one pinned to the clone.
   const clone = installHook({ cwd: dir, cliPath: CLI, session: { data, root: v2 } });
   assert.deepEqual([clone.result, readFileSync(st.path, "utf8"), record(data)], ["followsRecord", hook, `${v2}\n`]);
-  // A repository with no hook yet gets the clone by its path.
+  // A repository with no hook yet gets the clone by a path every version of the clone holds: its forwarder.
   const fresh = repo();
   assert.equal(installHook({ cwd: fresh, cliPath: CLI, session: { data, root: v2 } }).result, "installed");
-  assert.deepEqual([hookStatus(fresh).cli, hookStatus(fresh).data], [CLI, null]);
+  assert.deepEqual([hookStatus(fresh).cli, hookStatus(fresh).data], [hookModule.hookCliPath(CLI), null]);
 });
 
 test("hook follows the plugin: a session root spelled another way that names this copy is the session, so the hook follows the record", async () => {
@@ -850,7 +855,7 @@ test("hook follows the plugin: a session root that cannot be looked at is no pro
   try {
     const dir = repo();
     const res = installHook({ cwd: dir, cliPath: CLI, session: { data: join(box, "data"), root: join(shut, "root") } });
-    assert.deepEqual([res.result, hookStatus(dir).data, hookStatus(dir).cli], ["installed", null, CLI]);
+    assert.deepEqual([res.result, hookStatus(dir).data, hookStatus(dir).cli], ["installed", null, hookModule.hookCliPath(CLI)]);
   } finally {
     chmodSync(shut, 0o755);
   }
@@ -1103,7 +1108,7 @@ test("hook follows the plugin: every piece of advice, followed from a plugin ses
   const cases = [
     ["no hook", () => {}, "doctor.hookMissing"],
     // Installed before hooks followed updates, or without the data directory: it names the version the session runs.
-    ["a hook naming this version by its path", (d) => installHook({ cwd: d, cliPath: CLI }), "doctor.hookPinned"],
+    ["a hook naming this version by its path", (d) => pinnedHook(d), "doctor.hookPinned"],
     ["a hook whose CLI moved", (d) => installHook({ cwd: d, cliPath: join(d, "moved", "ennyn.mjs") }), "doctor.hookCliGone"],
     [
       "a plugin hook git does not run",
@@ -1127,7 +1132,8 @@ test("hook follows the plugin: every piece of advice, followed from a plugin ses
   // Without the session (hooks disabled, --bare): no data directory to go by, and doctor cannot tell; the init skill passes it.
   const bare = repo();
   assert.equal(installCli(bare, {}).status, 0);
-  assert.deepEqual([hookStatus(bare).cli, hookStatus(bare).data], [CLI, null]);
+  // From a clone (this checkout), the forwarder at its top: every version of the clone holds it.
+  assert.deepEqual([hookStatus(bare).cli, hookStatus(bare).data], [hookModule.hookCliPath(CLI), null]);
 });
 
 test("hook follows the plugin (review round two): in a session whose record names a replaced or another scope's version, the advice ends in the record form with this session's version, and a pinned hook is never ✓", async () => {
@@ -1163,7 +1169,7 @@ test("hook follows the plugin (review round two): in a session whose record name
   installHook({ cwd: pinned, cliPath: cliOf(old) });
   assert.deepEqual(await hookKeys(pinned, env), ["doctor.hookPinned"]);
   const ours = doctorRepo();
-  installHook({ cwd: ours, cliPath: CLI });
+  pinnedHook(ours);
   assert.deepEqual(await hookKeys(ours, env), ["doctor.hookPinned"]);
   // A session is named by absolute paths only.
   assert.equal(hookModule.sessionOf({ ENNYN_PLUGIN_DATA: "data", ENNYN_PLUGIN_ROOT: SELF }), null);
@@ -1485,7 +1491,7 @@ test("hook in a tracked hooks directory: a block behind a command that may exit 
   git(["config", "core.hooksPath", ".husky/_"], { cwd: husky });
   assert.equal(hookStatus(husky).unread, join(husky, ".husky", "commit-msg"));
   assert.deepEqual(await hookKeys(husky, { HOME: home }), ["doctor.hookUnread"]);
-  const { checkSetup } = await import("../setup/doctor.mjs");
+  const { checkSetup } = await import("../plugin/setup/doctor.mjs");
   assert.deepEqual((await checkSetup({ cwd: husky, env: { PATH: process.env.PATH } })).items.find((i) => i.key === "doctor.hookUnread")?.vars.path, [join(husky, ".husky", "commit-msg")]);
   writeFileSync(join(husky, ".husky", "commit-msg"), `${block}npx lint-staged\n`);
   assert.deepEqual(await hookKeys(husky, { HOME: home }), ["doctor.hookOk"]);
@@ -2544,7 +2550,7 @@ test("a hand-written call in the local hook, with no plugin in sight: install-ho
   const r = installCli(dir, outside({ HOME: home }));
   assert.equal(r.status, 1, r.stdout);
   const advice = /first and as it stands here: (.+)$/m.exec(r.stdout)?.[1];
-  assert.equal(advice, printedLine(CLI), r.stdout);
+  assert.equal(advice, printedLine(hookModule.hookCliPath(CLI)), r.stdout);
   writeFileSync(hook, `#!/bin/sh\n${advice}\n`);
   assert.deepEqual(await hookKeys(dir, { HOME: home }), ["doctor.hookOk"]);
   assert.equal(installCli(dir, outside({ HOME: home })).status, 0);

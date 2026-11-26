@@ -5,12 +5,12 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, 
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ConfigError, loadConfig } from "../core/config.mjs";
-import { readRegular } from "../core/files.mjs";
-import { git } from "../core/git.mjs";
-import { ACTIONS, CLASSES_LIMIT, CLASS_LIST_MAX, CLASS_STATES, NAME_MAX, PROBLEMS_SHOWN, TEXT_MAX, checkProofs, classProblems, currentClass, emptyRegistry, foldName, loadClasses, parseClasses, stateCounts, valueProblem } from "../metrics/classes.mjs";
+import { ConfigError, loadConfig } from "../plugin/core/config.mjs";
+import { readRegular } from "../plugin/core/files.mjs";
+import { git } from "../plugin/core/git.mjs";
+import { ACTIONS, CLASSES_LIMIT, CLASS_LIST_MAX, CLASS_STATES, NAME_MAX, PROBLEMS_SHOWN, TEXT_MAX, checkProofs, classProblems, currentClass, emptyRegistry, foldName, loadClasses, parseClasses, stateCounts, valueProblem } from "../plugin/metrics/classes.mjs";
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "scripts", "ennyn.mjs");
 const COMMIT = "a".repeat(40);
 const SAYS = "A thing goes wrong the same way twice.";
 

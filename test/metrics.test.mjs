@@ -4,12 +4,12 @@ import { mkdtempSync, writeFileSync, mkdirSync, chmodSync, rmSync } from "node:f
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { loadConfig } from "../core/config.mjs";
-import { git } from "../core/git.mjs";
-import { reworkRate, deletedCodeLines, isCodeLine, parseBound, commitMessages, readLog } from "../metrics/szz.mjs";
-import { parseConvergence, formatConvergence, MAX_ROUNDS } from "../metrics/convergence.mjs";
-import { t } from "../core/i18n.mjs";
-import { READ_LIMIT } from "../core/files.mjs";
+import { loadConfig } from "../plugin/core/config.mjs";
+import { git } from "../plugin/core/git.mjs";
+import { reworkRate, deletedCodeLines, isCodeLine, parseBound, commitMessages, readLog } from "../plugin/metrics/szz.mjs";
+import { parseConvergence, formatConvergence, MAX_ROUNDS } from "../plugin/metrics/convergence.mjs";
+import { t } from "../plugin/core/i18n.mjs";
+import { READ_LIMIT } from "../plugin/core/files.mjs";
 
 const cfg = (override = {}) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "pl-m-")), env: {}, override });
 /** One-line fixtures: the strong-link floor is lowered so window, filter and range logic are under test. */
@@ -922,7 +922,7 @@ test("szz audit: with log.showSignature on, signed commits are read like any oth
 
 test("rework audit: a shallow file that is there but cannot be read is no full clone", async (t) => {
   if (process.getuid?.() === 0) return t.skip("root reads any file");
-  const { shallowEdge } = await import("../metrics/szz.mjs");
+  const { shallowEdge } = await import("../plugin/metrics/szz.mjs");
   const r = repo();
   r.commit(0, "feat: one", { "a.js": "a\n" });
   assert.deepEqual([...shallowEdge(r.dir)], [], "no shallow file: a full clone");
@@ -1061,8 +1061,8 @@ test("rework audit: a textconv driver in the config does not change the lines re
 });
 
 test("rework audit: the default fix label reads every subject the commit gate admits as the fix type, and no other type, autosquash marker or longer word", async () => {
-  const { checkCommitShape } = await import("../checks/commit-shape.mjs");
-  const { DEFAULTS } = await import("../core/config.mjs");
+  const { checkCommitShape } = await import("../plugin/checks/commit-shape.mjs");
+  const { DEFAULTS } = await import("../plugin/core/config.mjs");
   const label = new RegExp(DEFAULTS.metrics.fixSubject);
   const gate = cfg({ commitMsg: { types: ["feat", "fix"], fixType: "fix" } });
   const fixes = ["fix: a", "fix(ui): a", "fix!: a", "fix(ui)!: a"];

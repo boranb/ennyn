@@ -16,9 +16,9 @@ import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rea
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { markedWorktrees, verdict } from "../plan/worktrees.mjs";
+import { markedWorktrees, verdict } from "../plugin/plan/worktrees.mjs";
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "scripts", "ennyn.mjs");
 
 /** An identity of its own (a container derives none), no maintenance racing the test's deletes. */
 const SET = ["user.name=t", "user.email=t@t", "commit.gpgsign=false", "protocol.file.allow=always", "advice.detachedHead=false", "gc.auto=0", "maintenance.auto=false"].flatMap((kv) => ["-c", kv]);

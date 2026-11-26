@@ -5,14 +5,14 @@ import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, w
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { git, stagedVersions } from "../core/git.mjs";
-import { ConfigError, DEFAULTS, STRING_LISTS, configFrom, loadConfig } from "../core/config.mjs";
-import { FOLDED, LOOSENING_LINE, approvedKeys, gateKeyKind, loaded, loosenedKeys, sameValue } from "../checks/loosening.mjs";
-import { addressFold } from "../checks/commit-identity.mjs";
-import { installHook } from "../setup/hook.mjs";
+import { git, stagedVersions } from "../plugin/core/git.mjs";
+import { ConfigError, DEFAULTS, STRING_LISTS, configFrom, loadConfig } from "../plugin/core/config.mjs";
+import { FOLDED, LOOSENING_LINE, approvedKeys, gateKeyKind, loaded, loosenedKeys, sameValue } from "../plugin/checks/loosening.mjs";
+import { addressFold } from "../plugin/checks/commit-identity.mjs";
+import { installHook } from "../plugin/setup/hook.mjs";
 import { TOKENS } from "./secret-shapes.mjs";
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "scripts", "ennyn.mjs");
 const LINE = LOOSENING_LINE;
 const CONFIG = ".ennyn/config.json";
 

@@ -13,9 +13,9 @@ import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, utimesSync, writeFil
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { BUILT_IN, READ_LINE_MAX, agentFileFields, context, folderName, modelMatches, namedFolder } from "../adapters/claude-code/agent-usage.mjs";
+import { BUILT_IN, READ_LINE_MAX, agentFileFields, context, folderName, modelMatches, namedFolder } from "../plugin/adapters/claude-code/agent-usage.mjs";
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "scripts", "ennyn.mjs");
 /** Text a transcript holds that the output must never show. */
 const SECRET = "prompt-text-that-must-not-show";
 

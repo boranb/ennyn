@@ -72,8 +72,8 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, posix } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
-import { banLinesAt, banLiterals, importsOf, outsideFenceLines } from "../../setup/scan.mjs";
-import { MIN_RULE, ruleKey, ruleLines } from "../../setup/budget.mjs";
+import { banLinesAt, banLiterals, importsOf, outsideFenceLines } from "../../plugin/setup/scan.mjs";
+import { MIN_RULE, ruleKey, ruleLines } from "../../plugin/setup/budget.mjs";
 import { claudeBinary, versionOf } from "./claude-bin.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));

@@ -6,10 +6,10 @@ import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { git } from "../core/git.mjs";
-import { journalPath, moduleGoal, MutationError, nodeParses, otherNames, parseMutants, restoreJournal, runCommand, runMutants, summarizeMutants } from "../metrics/mutation.mjs";
+import { git } from "../plugin/core/git.mjs";
+import { journalPath, moduleGoal, MutationError, nodeParses, otherNames, parseMutants, restoreJournal, runCommand, runMutants, summarizeMutants } from "../plugin/metrics/mutation.mjs";
 
-const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");
+const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "scripts", "ennyn.mjs");
 const NODE = JSON.stringify(process.execPath);
 const sleep = (/** @type {number} */ ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -105,7 +105,7 @@ function project() {
 }
 
 const m = (/** @type {string} */ id, /** @type {string} */ file, /** @type {string} */ old, /** @type {string} */ nu) => ({ id, file, old, new: nu });
-/** @param {import("../metrics/mutation.mjs").MutantResult} r */
+/** @param {import("../plugin/metrics/mutation.mjs").MutantResult} r */
 const said = (r) => `${r.outcome}${r.reason ? ` ${r.reason.key}${r.reason.vars ? ` ${JSON.stringify(r.reason.vars)}` : ""}` : ""}`;
 
 test("mutate: the list loads whole or not at all, with every problem named", () => {
@@ -953,7 +953,7 @@ const inQuotes = (path) => JSON.stringify(JSON.stringify(path)).slice(1, -1);
 const linkWhileIn = (to) => `${NODE} -e "const f = require('fs'); if (f.readFileSync('notes.txt', 'utf8').includes('beta') && !f.existsSync(${inQuotes(to)})) f.linkSync('notes.txt', ${inQuotes(to)})"`;
 /** A test command that runs `act`, with `f` for node:fs, while a mutant ("beta") is in notes.txt, once. @param {string} act */
 const whileIn = (act) => `${NODE} -e "const f = require('fs'); if (f.readFileSync('notes.txt', 'utf8').includes('beta') && !f.existsSync('acted')) { f.writeFileSync('acted', ''); ${act}; }"`;
-/** A notice as the tests compare it: how many entries the search looked at is the tree's, not the rule's. @param {import("../metrics/mutation.mjs").LinkNotice} l */
+/** A notice as the tests compare it: how many entries the search looked at is the tree's, not the rule's. @param {import("../plugin/metrics/mutation.mjs").LinkNotice} l */
 const noticed = ({ looked, ...l }) => (assert.ok(looked > 0, "the search looked"), l);
 /** What a notice holds that came with no search: only `how`, `file` and `id` say anything. */
 const NOT_SEARCHED = { names: [], unfound: 0, looked: 0, trees: 0, capped: false, unread: 0 };
@@ -972,7 +972,7 @@ test("mutate: a file that got another name while the mutant was in it gets its o
   const p = project();
   mkdirSync(join(p.dir, ".claude", "worktrees", "a"), { recursive: true });
   const inside = join(p.dir, ".claude", "worktrees", "a", "notes.txt");
-  /** @type {import("../metrics/mutation.mjs").LinkNotice[]} */
+  /** @type {import("../plugin/metrics/mutation.mjs").LinkNotice[]} */
   const linked = [];
   const res = await runMutants({
     cwd: p.dir,
@@ -1089,7 +1089,7 @@ test("mutate: a file that got another name and already holds the original has no
   for (const [name, [act, names]] of Object.entries(cases)) {
     const p = project();
     mkdirSync(join(p.dir, "copy"));
-    /** @type {import("../metrics/mutation.mjs").LinkNotice[]} */
+    /** @type {import("../plugin/metrics/mutation.mjs").LinkNotice[]} */
     const linked = [];
     const res = await runMutants({ cwd: p.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: whileIn(act), journal: p.journal, onLinked: (l) => linked.push(l) });
     assert.deepEqual(res.results.map(said), ["survived mutate.reason.noCheck"], name);
@@ -1101,7 +1101,7 @@ test("mutate: a file that got another name and already holds the original has no
   const store = join(realpathSync(mkdtempSync(join(tmpdir(), "en-mut-out-"))), "store.txt");
   writeFileSync(store, "alpha\n");
   utimesSync(store, 1_000_000_000, 1_000_000_000);
-  /** @type {import("../metrics/mutation.mjs").LinkNotice[]} */
+  /** @type {import("../plugin/metrics/mutation.mjs").LinkNotice[]} */
   const stored = [];
   await runMutants({ cwd: r.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: whileIn(`f.linkSync(${inQuotes(store)}, 'n.new'); f.renameSync('n.new', 'notes.txt')`), journal: r.journal, onLinked: (l) => stored.push(l) });
   assert.deepEqual(stored.map(noticed), [{ how: "already", file: "notes.txt", id: "e1", names: [], unfound: 1, trees: 1, capped: false, unread: 0 }]);
@@ -1114,7 +1114,7 @@ test("mutate: a file that got another name and already holds the original has no
   assert.deepEqual(restoreJournal(q.dir, q.journal), { restored: null, found: true, linked: { how: "already", file: "notes.txt", id: "e1", ...NOT_SEARCHED } });
   assert.deepEqual([readFileSync(notes, "utf8"), existsSync(q.journal)], ["alpha\n", false]);
   killedJournal(q.journal);
-  /** @type {import("../metrics/mutation.mjs").LinkNotice[]} */
+  /** @type {import("../plugin/metrics/mutation.mjs").LinkNotice[]} */
   const next = [];
   const res = await runMutants({ cwd: q.dir, mutants: [m("s1", "src/add.mjs", "x * 2", "x * 3")], command: `${NODE} check.mjs`, journal: q.journal, onLinked: (l) => next.push(l) });
   assert.deepEqual([res.restored, next, res.results.map(said)], [null, [{ how: "already", file: "notes.txt", id: "e1", ...NOT_SEARCHED }], ["survived"]]);
@@ -1194,7 +1194,7 @@ test("mutate: a name that keeps the mutant while the path became another file is
     const p = project();
     git(["add", "notes.txt"], { cwd: p.dir });
     git(["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "a"], { cwd: p.dir });
-    /** @type {import("../metrics/mutation.mjs").LinkNotice[]} */
+    /** @type {import("../plugin/metrics/mutation.mjs").LinkNotice[]} */
     const linked = [];
     const res = await runMutants({ cwd: p.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: whileIn(act), journal: p.journal, onLinked: (l) => linked.push(l) });
     assert.deepEqual(res.results.map(said), ["survived mutate.reason.noCheck"], name);
@@ -1214,7 +1214,7 @@ test("mutate: a name that keeps the mutant while the path became another file is
   };
   for (const [name, [act, names, unfound]] of Object.entries(seen)) {
     const s = project();
-    /** @type {import("../metrics/mutation.mjs").LinkNotice[]} */
+    /** @type {import("../plugin/metrics/mutation.mjs").LinkNotice[]} */
     const notices = [];
     const res = await runMutants({ cwd: s.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: whileIn(/** @type {string} */ (act)), journal: s.journal, onLinked: (l) => notices.push(l) });
     assert.deepEqual(res.results.map(said), ["survived mutate.reason.noCheck"], name);
@@ -1294,7 +1294,7 @@ test("mutate: a search that stops at its limit counts the names it did not reach
     ])) {
       const p = project();
       dirs[0] = p.dir;
-      /** @type {import("../metrics/mutation.mjs").LinkNotice[]} */
+      /** @type {import("../plugin/metrics/mutation.mjs").LinkNotice[]} */
       const linked = [];
       await runMutants({ cwd: p.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: whileIn(act), journal: p.journal, onLinked: (l) => linked.push(l) });
       assert.deepEqual(linked, expected);
@@ -1408,7 +1408,7 @@ test("mutate: a rename or a deletion between the mutant and the put-back: the pa
   const run = async (/** @type {string} */ act) => {
     const p = project();
     mkdirSync(join(p.dir, "copy"));
-    /** @type {import("../metrics/mutation.mjs").LinkNotice[]} */
+    /** @type {import("../plugin/metrics/mutation.mjs").LinkNotice[]} */
     const linked = [];
     /** @type {string | null} */
     let thrown = null;
@@ -1461,7 +1461,7 @@ test("mutate: the other names are searched after the file is back and the journa
         seen.push(readFileSync(notes, "utf8"), Object.keys(JSON.parse(readFileSync(p.journal, "utf8"))));
         act(p.dir);
       };
-      /** @type {import("../metrics/mutation.mjs").LinkNotice[]} */
+      /** @type {import("../plugin/metrics/mutation.mjs").LinkNotice[]} */
       const linked = [];
       await runMutants({ cwd: p.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: `${linkWhileIn("copy/notes.txt")} && ${NODE} -e 0`, journal: p.journal, onLinked: (l) => linked.push(l) });
       assert.deepEqual(seen, ["alpha\n", ["pid"]], name);
@@ -1473,7 +1473,7 @@ test("mutate: the other names are searched after the file is back and the journa
     const e = project();
     mkdirSync(join(e.dir, "copy"));
     look = () => linkSync(join(e.dir, "keep.txt"), join(e.dir, "copy", "late.txt"));
-    /** @type {import("../metrics/mutation.mjs").LinkNotice[]} */
+    /** @type {import("../plugin/metrics/mutation.mjs").LinkNotice[]} */
     const left = [];
     await runMutants({ cwd: e.dir, mutants: [m("e1", "notes.txt", "alpha", "beta")], command: whileIn(`f.linkSync('notes.txt', 'keep.txt'); f.writeFileSync('n.tmp', 'alpha\\n'); f.renameSync('n.tmp', 'notes.txt')`), journal: e.journal, onLinked: (l) => left.push(l) });
     assert.deepEqual(left.map(({ how, names, unfound }) => ({ how, names: [...names].sort(), unfound })), [{ how: "elsewhere", names: ["copy/late.txt", "keep.txt"], unfound: 0 }]);

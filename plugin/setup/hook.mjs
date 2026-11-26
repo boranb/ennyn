@@ -41,6 +41,30 @@ const rootOf = (cliPath) => dirname(dirname(cliPath));
 /** The CLI below an Ennyn root. @param {string} root */
 const cliOf = (root) => join(root, "scripts", "ennyn.mjs");
 
+/** What the CLI's old place at the top of a clone or the npm package runs: the CLI below plugin/. */
+export const FORWARDS_TO = "../plugin/scripts/ennyn.mjs";
+
+/**
+ * The CLI path a hook written without the plugin's data directory names. In a clone of Ennyn or its npm package, the
+ * CLI below `plugin/` has a forwarder at the tree's top (`scripts/ennyn.mjs`, a regular file that imports
+ * FORWARDS_TO): every version of that tree holds the forwarder's path, the CLI's before the move and the forwarder
+ * after it, so a checkout of an older commit or a downgraded package still checks commits; a hook naming the moved
+ * path would find nothing there and let every commit through. Anywhere else (an installed plugin, a copy without
+ * the forwarder) the CLI's own path.
+ * @param {string} cliPath absolute path of the CLI that runs
+ */
+export function hookCliPath(cliPath) {
+  const pluginDir = dirname(dirname(cliPath));
+  if (basename(cliPath) !== "ennyn.mjs" || basename(dirname(cliPath)) !== "scripts" || basename(pluginDir) !== "plugin") return cliPath;
+  const forwarder = join(dirname(pluginDir), "scripts", "ennyn.mjs");
+  try {
+    if (!lstatSync(forwarder).isFile()) return cliPath;
+    return readFileSync(forwarder, "utf8").includes(JSON.stringify(FORWARDS_TO)) ? forwarder : cliPath;
+  } catch {
+    return cliPath;
+  }
+}
+
 /** @param {string} s */
 const shQuote = (s) => `'${s.replace(/'/g, `'\\''`)}'`;
 
@@ -958,7 +982,9 @@ function installWith(st, { cwd, cliPath, pluginData, session }) {
   const kept = st.data !== null && st.problem === null && sameRoot(/** @type {string} */ (st.recorded), self) ? st.data : null;
   const data = pluginData ?? fromSession ?? kept;
   if (data !== null && inRepository(cwd, data)) return { ...base, result: "dataInRepository", data };
-  const line = hookLine(cliPath, data);
+  // A hook with no data directory names a path every version of this tree holds, whatever the session (hookCliPath).
+  const written = data === null ? hookCliPath(cliPath) : cliPath;
+  const line = hookLine(written, data);
   // A hook that names commit-check but is not Ennyn's to write here (the project's own, husky's, or a copy of
   // Ennyn's script in a hooks directory outside the repository): nothing to do while it checks; when it checks
   // nothing, with a replaced or pinned version, or with another scope's, why.
@@ -995,7 +1021,7 @@ function installWith(st, { cwd, cliPath, pluginData, session }) {
   if (data === null && st.data !== null) return { ...base, result: "followsRecord", line, root: self };
   // The record first: a version it refuses leaves the hook as it was.
   const moved = data !== null && recordPluginRoot(data, self);
-  const script = hookScript(cliPath, data);
+  const script = hookScript(written, data);
   // A hook that checks nothing (its mode lost in a copy or a chmod, its CLI moved) is written again, not called unchanged.
   if (st.state === "ennyn" && !moved && idleReason(st) === null && readFileSync(st.path, "utf8") === script) return { ...base, result: "unchanged", line, data };
   mkdirSync(resolve(st.path, ".."), { recursive: true });

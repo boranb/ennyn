@@ -25,9 +25,9 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadConfig } from "../core/config.mjs";
-import { git } from "../core/git.mjs";
-import { loadGraph } from "../plan/mechanization.mjs";
+import { loadConfig } from "../plugin/core/config.mjs";
+import { git } from "../plugin/core/git.mjs";
+import { loadGraph } from "../plugin/plan/mechanization.mjs";
 import { testNames } from "./declarations.mjs";
 
 const TOP = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -41,50 +41,50 @@ const LOG_READERS = "oracle: the log readers return what git stores";
 
 /** @type {Reader[]} */
 export const READERS = [
-  { module: "adapters/claude-code/compact-boundary.mjs", program: "Claude Code", harness: "test/reference.test.mjs", test: "reference: the PreCompact record holds what the compaction hook stands on", kind: "record" },
-  { module: "adapters/claude-code/kill-targets.mjs", program: "bash", harness: "test/kill-targets.test.mjs", test: "kill reader: a real bash agrees", kind: "live" },
-  { module: "adapters/claude-code/push-spellings.mjs", program: "bash", harness: "test/push-spellings.test.mjs", test: "push reader: a real shell and a real git agree", kind: "live" },
-  { module: "adapters/claude-code/push-spellings.mjs", program: "bash", harness: "test/push-spellings.test.mjs", test: "push reader: on generated texts a real bash agrees", kind: "live" },
-  { module: "adapters/claude-code/push-spellings.mjs", program: "Claude Code", harness: "test/reference.test.mjs", test: "reference: the PreToolUse record holds what the push hook stands on", kind: "record" },
-  { module: "adapters/claude-code/rules-index.mjs", program: "Claude Code", harness: "test/reference.test.mjs", test: CC_CELLS, kind: "record" },
-  { module: "checks/ci.mjs", program: "Actions YAML", harness: "test/reference.test.mjs", test: "reference: every Actions YAML cell compares as recorded", kind: "record" },
-  { module: "checks/commit-shape.mjs", program: "git", harness: "test/git-oracle.test.mjs", test: "oracle: the commit-msg hook computes the message git stores", kind: "live" },
-  { module: "checks/commit-identity.mjs", program: "git", harness: "test/push-check-oracle.test.mjs", test: "push-check oracle: it says the cycle may push only where", kind: "live" },
-  { module: "checks/commit-identity.mjs", program: "git", harness: "test/clone-setup.test.mjs", test: "commits: push-check refuses each commit the push sends", kind: "live" },
-  { module: "checks/deps.mjs", program: "npm", harness: "test/reference.test.mjs", test: "reference: every npm cell compares as recorded", kind: "record" },
-  { module: "checks/push-mode.mjs", program: "git", harness: "test/cli.test.mjs", test: "cli: push-check reads git config as git push does", kind: "live" },
-  { module: "checks/test-runs.mjs", program: "git", harness: "test/cli.test.mjs", test: "cli: test records a run by HEAD's tree on a clean work tree", kind: "live" },
-  { module: "checks/loosening.mjs", program: "git", harness: "test/loosening.test.mjs", test: "loosening hook: git commit -a and git commit <path> are read as what they will commit", kind: "runs" },
-  { module: "core/git.mjs", program: "git", harness: "test/git-oracle.test.mjs", test: LOG_READERS, kind: "live" },
-  { module: "core/git.mjs", program: "git", harness: "test/input-shapes.test.mjs", test: "input shapes: every staged content and name shape is refused, landed, or said to be unchecked", kind: "live" },
-  { module: "impact/table.mjs", program: "git", harness: "test/git-oracle.test.mjs", test: LOG_READERS, kind: "live" },
-  { module: "metrics/bypass.mjs", program: "git", harness: "test/git-oracle.test.mjs", test: LOG_READERS, kind: "live" },
-  { module: "metrics/szz.mjs", program: "git", harness: "test/git-oracle.test.mjs", test: LOG_READERS, kind: "live" },
-  { module: "metrics/leftovers.mjs", program: "git", harness: "test/leftovers.test.mjs", test: "leftovers: changes not committed: modified, staged, deleted and renamed are listed", kind: "runs" },
-  { module: "core/heavy-lock.mjs", program: "sh", harness: "test/heavy-lock.test.mjs", test: "lock: waiters take their turns in the order they came, an ennyn waiter and a locked.sh waiter alike", kind: "live" },
-  { module: "plan/worktrees.mjs", program: "git", harness: "test/worktrees.test.mjs", test: "worktrees: a marked worktree goes only when removing it loses nothing", kind: "runs" },
-  { module: "plan/audit.mjs", program: "Claude Code", harness: "test/reference.test.mjs", test: CC_CELLS, kind: "record" },
-  { module: "setup/budget.mjs", program: "Markdown", harness: "test/reference.test.mjs", test: "reference: every Markdown cell compares as recorded", kind: "record" },
-  { module: "setup/doctor.mjs", program: "git", harness: "test/worktree-oracle.test.mjs", test: "worktree oracle: for the folder, its parents and the lists a clone gets", kind: "live" },
-  { module: "setup/doctor.mjs", program: "sh", harness: "test/hook-oracle.test.mjs", test: "hook oracle: under /bin/sh, dash and bash, a ✓ is a secret refused by the check", kind: "live" },
-  { module: "setup/doctor.mjs", program: "Claude Code", harness: "test/reference.test.mjs", test: "reference: doctor's ask line names as unmatched every spelling Claude Code ran under a rule", kind: "record" },
-  { module: "setup/hook.mjs", program: "sh", harness: "test/hook-oracle.test.mjs", test: "hook oracle: the hooks install-hook writes stop a real secret", kind: "live" },
-  { module: "setup/permissions.mjs", program: "Claude Code", harness: "test/reference.test.mjs", test: CC_CELLS, kind: "record" },
-  { module: "setup/secret-setup.mjs", program: "Claude Code", harness: "test/reference.test.mjs", test: CC_CELLS, kind: "record" },
-  { module: "setup/scan.mjs", program: "git", harness: "test/git-oracle.test.mjs", test: LOG_READERS, kind: "live" },
-  { module: "setup/scan.mjs", program: "Markdown", harness: "test/reference.test.mjs", test: "reference: every Markdown cell compares as recorded", kind: "record" },
-  { module: "setup/scan.mjs", program: "Claude Code", harness: "test/reference.test.mjs", test: CC_CELLS, kind: "record" },
-  { module: "side-copy/map-path.mjs", program: "git", harness: "test/side-copy.test.mjs", test: "map-path: git worktree outside the roots maps by common git dir", kind: "runs" },
+  { module: "plugin/adapters/claude-code/compact-boundary.mjs", program: "Claude Code", harness: "test/reference.test.mjs", test: "reference: the PreCompact record holds what the compaction hook stands on", kind: "record" },
+  { module: "plugin/adapters/claude-code/kill-targets.mjs", program: "bash", harness: "test/kill-targets.test.mjs", test: "kill reader: a real bash agrees", kind: "live" },
+  { module: "plugin/adapters/claude-code/push-spellings.mjs", program: "bash", harness: "test/push-spellings.test.mjs", test: "push reader: a real shell and a real git agree", kind: "live" },
+  { module: "plugin/adapters/claude-code/push-spellings.mjs", program: "bash", harness: "test/push-spellings.test.mjs", test: "push reader: on generated texts a real bash agrees", kind: "live" },
+  { module: "plugin/adapters/claude-code/push-spellings.mjs", program: "Claude Code", harness: "test/reference.test.mjs", test: "reference: the PreToolUse record holds what the push hook stands on", kind: "record" },
+  { module: "plugin/adapters/claude-code/rules-index.mjs", program: "Claude Code", harness: "test/reference.test.mjs", test: CC_CELLS, kind: "record" },
+  { module: "plugin/checks/ci.mjs", program: "Actions YAML", harness: "test/reference.test.mjs", test: "reference: every Actions YAML cell compares as recorded", kind: "record" },
+  { module: "plugin/checks/commit-shape.mjs", program: "git", harness: "test/git-oracle.test.mjs", test: "oracle: the commit-msg hook computes the message git stores", kind: "live" },
+  { module: "plugin/checks/commit-identity.mjs", program: "git", harness: "test/push-check-oracle.test.mjs", test: "push-check oracle: it says the cycle may push only where", kind: "live" },
+  { module: "plugin/checks/commit-identity.mjs", program: "git", harness: "test/clone-setup.test.mjs", test: "commits: push-check refuses each commit the push sends", kind: "live" },
+  { module: "plugin/checks/deps.mjs", program: "npm", harness: "test/reference.test.mjs", test: "reference: every npm cell compares as recorded", kind: "record" },
+  { module: "plugin/checks/push-mode.mjs", program: "git", harness: "test/cli.test.mjs", test: "cli: push-check reads git config as git push does", kind: "live" },
+  { module: "plugin/checks/test-runs.mjs", program: "git", harness: "test/cli.test.mjs", test: "cli: test records a run by HEAD's tree on a clean work tree", kind: "live" },
+  { module: "plugin/checks/loosening.mjs", program: "git", harness: "test/loosening.test.mjs", test: "loosening hook: git commit -a and git commit <path> are read as what they will commit", kind: "runs" },
+  { module: "plugin/core/git.mjs", program: "git", harness: "test/git-oracle.test.mjs", test: LOG_READERS, kind: "live" },
+  { module: "plugin/core/git.mjs", program: "git", harness: "test/input-shapes.test.mjs", test: "input shapes: every staged content and name shape is refused, landed, or said to be unchecked", kind: "live" },
+  { module: "plugin/impact/table.mjs", program: "git", harness: "test/git-oracle.test.mjs", test: LOG_READERS, kind: "live" },
+  { module: "plugin/metrics/bypass.mjs", program: "git", harness: "test/git-oracle.test.mjs", test: LOG_READERS, kind: "live" },
+  { module: "plugin/metrics/szz.mjs", program: "git", harness: "test/git-oracle.test.mjs", test: LOG_READERS, kind: "live" },
+  { module: "plugin/metrics/leftovers.mjs", program: "git", harness: "test/leftovers.test.mjs", test: "leftovers: changes not committed: modified, staged, deleted and renamed are listed", kind: "runs" },
+  { module: "plugin/core/heavy-lock.mjs", program: "sh", harness: "test/heavy-lock.test.mjs", test: "lock: waiters take their turns in the order they came, an ennyn waiter and a locked.sh waiter alike", kind: "live" },
+  { module: "plugin/plan/worktrees.mjs", program: "git", harness: "test/worktrees.test.mjs", test: "worktrees: a marked worktree goes only when removing it loses nothing", kind: "runs" },
+  { module: "plugin/plan/audit.mjs", program: "Claude Code", harness: "test/reference.test.mjs", test: CC_CELLS, kind: "record" },
+  { module: "plugin/setup/budget.mjs", program: "Markdown", harness: "test/reference.test.mjs", test: "reference: every Markdown cell compares as recorded", kind: "record" },
+  { module: "plugin/setup/doctor.mjs", program: "git", harness: "test/worktree-oracle.test.mjs", test: "worktree oracle: for the folder, its parents and the lists a clone gets", kind: "live" },
+  { module: "plugin/setup/doctor.mjs", program: "sh", harness: "test/hook-oracle.test.mjs", test: "hook oracle: under /bin/sh, dash and bash, a ✓ is a secret refused by the check", kind: "live" },
+  { module: "plugin/setup/doctor.mjs", program: "Claude Code", harness: "test/reference.test.mjs", test: "reference: doctor's ask line names as unmatched every spelling Claude Code ran under a rule", kind: "record" },
+  { module: "plugin/setup/hook.mjs", program: "sh", harness: "test/hook-oracle.test.mjs", test: "hook oracle: the hooks install-hook writes stop a real secret", kind: "live" },
+  { module: "plugin/setup/permissions.mjs", program: "Claude Code", harness: "test/reference.test.mjs", test: CC_CELLS, kind: "record" },
+  { module: "plugin/setup/secret-setup.mjs", program: "Claude Code", harness: "test/reference.test.mjs", test: CC_CELLS, kind: "record" },
+  { module: "plugin/setup/scan.mjs", program: "git", harness: "test/git-oracle.test.mjs", test: LOG_READERS, kind: "live" },
+  { module: "plugin/setup/scan.mjs", program: "Markdown", harness: "test/reference.test.mjs", test: "reference: every Markdown cell compares as recorded", kind: "record" },
+  { module: "plugin/setup/scan.mjs", program: "Claude Code", harness: "test/reference.test.mjs", test: CC_CELLS, kind: "record" },
+  { module: "plugin/side-copy/map-path.mjs", program: "git", harness: "test/side-copy.test.mjs", test: "map-path: git worktree outside the roots maps by common git dir", kind: "runs" },
 ];
 
 /** Readers with no harness yet. PowerShell is on neither this suite's Mac nor its Linux image. */
 /** @type {Gap[]} */
 export const GAPS = [
-  { module: "adapters/claude-code/kill-targets.mjs", program: "PowerShell", node: "kill-reader-against-powershell", why: "PowerShell's grammar, measured by reviewers with pwsh 7.4 and 5.1, in no test" },
-  { module: "adapters/claude-code/push-spellings.mjs", program: "PowerShell", node: "push-reader-against-powershell", why: "PowerShell's grammar, measured by reviewers with pwsh 7.4 and 5.1, in no test" },
-  { module: "adapters/claude-code/agent-usage.mjs", program: "Claude Code", node: "agent-usage-against-claude-code", why: "transcripts and the project folder's name are built by hand in the shapes measured, not by a Claude Code run" },
-  { module: "metrics/mutation.mjs", program: "git", node: "mutation-worktree-porcelain", why: "reads `git worktree list --porcelain` without -z, which git 2.34, the floor, does not have" },
-  { module: "scripts/ennyn.mjs", program: "npm", node: "cli-npm-file-choice", why: "chooses the lock files and the .npmrc npm reads; the npm record holds only checks/deps.mjs's reading" },
+  { module: "plugin/adapters/claude-code/kill-targets.mjs", program: "PowerShell", node: "kill-reader-against-powershell", why: "PowerShell's grammar, measured by reviewers with pwsh 7.4 and 5.1, in no test" },
+  { module: "plugin/adapters/claude-code/push-spellings.mjs", program: "PowerShell", node: "push-reader-against-powershell", why: "PowerShell's grammar, measured by reviewers with pwsh 7.4 and 5.1, in no test" },
+  { module: "plugin/adapters/claude-code/agent-usage.mjs", program: "Claude Code", node: "agent-usage-against-claude-code", why: "transcripts and the project folder's name are built by hand in the shapes measured, not by a Claude Code run" },
+  { module: "plugin/metrics/mutation.mjs", program: "git", node: "mutation-worktree-porcelain", why: "reads `git worktree list --porcelain` without -z, which git 2.34, the floor, does not have" },
+  { module: "plugin/scripts/ennyn.mjs", program: "npm", node: "cli-npm-file-choice", why: "chooses the lock files and the .npmrc npm reads; the npm record holds only checks/deps.mjs's reading" },
 ];
 /** GAPS may only shrink: lower this with each gap closed, never raise it. */
 const GAP_CEILING = 5;
@@ -93,32 +93,33 @@ const HOOK_ENTRY = "a hook's entry file: the reading is its module's";
 const OWN = "reads only Ennyn's own formats";
 /** @type {Record<string, string>} */
 export const NOT_READERS = {
-  "impact/reference-run.mjs": "runs the reference command and passes its output on unread; it reads only how the command ended",
-  "adapters/claude-code/config-place.mjs": "finds the config by the folders Claude Code names a hook (its input and environment)",
-  "adapters/claude-code/project.mjs": "finds the project's config; git through core/git.mjs, taken whole",
-  "adapters/claude-code/hooks/compact-boundary.mjs": HOOK_ENTRY,
-  "adapters/claude-code/hooks/conversation-style.mjs": HOOK_ENTRY,
-  "adapters/claude-code/hooks/kill-targets.mjs": HOOK_ENTRY,
-  "adapters/claude-code/hooks/plugin-root.mjs": "writes the plugin's version record from the values Claude Code hands a hook",
-  "adapters/claude-code/hooks/push-spellings.mjs": HOOK_ENTRY,
-  "adapters/claude-code/hooks/side-copy-reset.mjs": "removes Ennyn's own state",
-  "adapters/claude-code/hooks/side-copy-rules.mjs": "a hook's entry file: the reading is rules-index.mjs's and map-path.mjs's",
-  "checks/secrets.mjs": "secret shapes are their issuers' documented prefixes and lengths, no program's reading",
-  "checks/private-text.mjs": "word, path, address and conversation shapes over lines git's readers hand it (core/git.mjs, checks/commit-shape.mjs), and the sources of Ennyn's own graph",
-  "core/config.mjs": OWN,
-  "core/encoding.mjs": "decodes Unicode encoding forms; what git splits is core/git.mjs's reading",
-  "core/files.mjs": "file presence and reads through node:fs",
-  "core/glob.mjs": "Ennyn's glob; where it stands for Claude Code's rule match, rules-index.mjs is the reader",
-  "core/i18n.mjs": OWN,
-  "core/style.mjs": OWN,
-  "metrics/classes.mjs": `${OWN}; git's answers taken whole`,
-  "metrics/convergence.mjs": OWN,
-  "metrics/findings.mjs": `${OWN}; git's answers taken whole`,
-  "metrics/gate-log.mjs": `${OWN}; git's answer taken whole`,
-  "plan/mechanization.mjs": OWN,
-  "setup/clone-setup.mjs": "reads GitHub's JSON answer by the shape its REST docs give, refused whole otherwise; the allowed-signers lines it writes git verifies with in test/clone-setup.test.mjs",
-  "setup/uninstall.mjs": `${OWN} (the install record) and file bytes by sha256; the hook and the settings are read through hook.mjs and permissions.mjs; the lines it names in a hook are advice, no verdict on what sh runs`,
-  "plan/cycle-journal.mjs": `${OWN} (the cycle journal); git's answers taken whole`,
+  "scripts/ennyn.mjs": "the CLI's place before the plugin moved: runs plugin/scripts/ennyn.mjs with the same arguments and reads nothing",
+  "plugin/impact/reference-run.mjs": "runs the reference command and passes its output on unread; it reads only how the command ended",
+  "plugin/adapters/claude-code/config-place.mjs": "finds the config by the folders Claude Code names a hook (its input and environment)",
+  "plugin/adapters/claude-code/project.mjs": "finds the project's config; git through core/git.mjs, taken whole",
+  "plugin/adapters/claude-code/hooks/compact-boundary.mjs": HOOK_ENTRY,
+  "plugin/adapters/claude-code/hooks/conversation-style.mjs": HOOK_ENTRY,
+  "plugin/adapters/claude-code/hooks/kill-targets.mjs": HOOK_ENTRY,
+  "plugin/adapters/claude-code/hooks/plugin-root.mjs": "writes the plugin's version record from the values Claude Code hands a hook",
+  "plugin/adapters/claude-code/hooks/push-spellings.mjs": HOOK_ENTRY,
+  "plugin/adapters/claude-code/hooks/side-copy-reset.mjs": "removes Ennyn's own state",
+  "plugin/adapters/claude-code/hooks/side-copy-rules.mjs": "a hook's entry file: the reading is rules-index.mjs's and map-path.mjs's",
+  "plugin/checks/secrets.mjs": "secret shapes are their issuers' documented prefixes and lengths, no program's reading",
+  "plugin/checks/private-text.mjs": "word, path, address and conversation shapes over lines git's readers hand it (core/git.mjs, checks/commit-shape.mjs), and the sources of Ennyn's own graph",
+  "plugin/core/config.mjs": OWN,
+  "plugin/core/encoding.mjs": "decodes Unicode encoding forms; what git splits is core/git.mjs's reading",
+  "plugin/core/files.mjs": "file presence and reads through node:fs",
+  "plugin/core/glob.mjs": "Ennyn's glob; where it stands for Claude Code's rule match, rules-index.mjs is the reader",
+  "plugin/core/i18n.mjs": OWN,
+  "plugin/core/style.mjs": OWN,
+  "plugin/metrics/classes.mjs": `${OWN}; git's answers taken whole`,
+  "plugin/metrics/convergence.mjs": OWN,
+  "plugin/metrics/findings.mjs": `${OWN}; git's answers taken whole`,
+  "plugin/metrics/gate-log.mjs": `${OWN}; git's answer taken whole`,
+  "plugin/plan/mechanization.mjs": OWN,
+  "plugin/setup/clone-setup.mjs": "reads GitHub's JSON answer by the shape its REST docs give, refused whole otherwise; the allowed-signers lines it writes git verifies with in test/clone-setup.test.mjs",
+  "plugin/setup/uninstall.mjs": `${OWN} (the install record) and file bytes by sha256; the hook and the settings are read through hook.mjs and permissions.mjs; the lines it names in a hook are advice, no verdict on what sh runs`,
+  "plugin/plan/cycle-journal.mjs": `${OWN} (the cycle journal); git's answers taken whole`,
 };
 
 /** Production modules: every .mjs outside test/, tracked or not yet. @param {string} top */

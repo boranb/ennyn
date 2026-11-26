@@ -23,7 +23,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { IDLE_GAP_MS, MODEL_WINDOWS } from "../../adapters/claude-code/compact-boundary.mjs";
+import { IDLE_GAP_MS, MODEL_WINDOWS } from "../../plugin/adapters/claude-code/compact-boundary.mjs";
 import { claudeBinary, safePath, versionOf } from "./claude-bin.mjs";
 import { gitEnv } from "./claude-code.mjs";
 

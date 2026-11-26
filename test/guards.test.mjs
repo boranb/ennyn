@@ -15,9 +15,9 @@ import * as nodeModule from "node:module";
 import { availableParallelism, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readIfThere } from "../core/files.mjs";
-import { git } from "../core/git.mjs";
-import { journalPath, runMutants } from "../metrics/mutation.mjs";
+import { readIfThere } from "../plugin/core/files.mjs";
+import { git } from "../plugin/core/git.mjs";
+import { journalPath, runMutants } from "../plugin/metrics/mutation.mjs";
 import { accounting, testNames } from "./declarations.mjs";
 import { GATES, NOT_GATES, guardRuns } from "./guards.mjs";
 
@@ -388,7 +388,7 @@ test("guards control (review round two): every way a test finds the repository i
   writeFileSync(join(dir, "url.test.mjs"), 'const t = readFileSync(new URL("../README.md", import.meta.url), "utf8");\n');
   writeFileSync(join(dir, "dirname.test.mjs"), 'const root = join(import.meta.dirname, "..");\n');
   writeFileSync(join(dir, "json.test.mjs"), 'import pkg from "../package.json" with { type: "json" };\n');
-  writeFileSync(join(dir, "cli.test.mjs"), 'const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "scripts", "ennyn.mjs");\nconst ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");\n');
+  writeFileSync(join(dir, "cli.test.mjs"), 'const CLI = join(dirname(fileURLToPath(import.meta.url)), "..", "plugin", "scripts", "ennyn.mjs");\nconst ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");\n');
   writeFileSync(join(dir, "plain.test.mjs"), "const x = 1;\n");
   // The test file's own path, as node gives it (cycle 2026-10-24 (8)); a child's arguments are no such path.
   writeFileSync(join(dir, "argv.test.mjs"), "const root = join(dirname(process.argv[1]), \"..\");\n");

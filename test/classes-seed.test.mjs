@@ -9,8 +9,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { git } from "../core/git.mjs";
-import { CLASS_STATES, checkProofs, currentClass, parseClasses } from "../metrics/classes.mjs";
+import { git } from "../plugin/core/git.mjs";
+import { CLASS_STATES, checkProofs, currentClass, parseClasses } from "../plugin/metrics/classes.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const read = (/** @type {string} */ path) => readFileSync(join(ROOT, path), "utf8");
@@ -74,7 +74,7 @@ test("class registry: the header says the file is data and the seed is judgement
 });
 
 test("class registry: the skill files name the registry, and no catalog of classes is left", () => {
-  for (const path of ["skills/cycle/SKILL.md", "skills/cycle/finding-schema.md", "skills/cycle/report-formats.md"]) {
+  for (const path of ["plugin/skills/cycle/SKILL.md", "plugin/skills/cycle/finding-schema.md", "plugin/skills/cycle/report-formats.md"]) {
     const text = read(path);
     assert.match(text, /\bregistry\b/, path);
     assert.ok(!/catalog id/.test(text), `${path} names a catalog id`);
@@ -82,9 +82,9 @@ test("class registry: the skill files name the registry, and no catalog of class
 });
 
 test("class registry: each reader is told where the ids and the source values are, and what a close writes", () => {
-  assert.match(String(read("skills/cycle/SKILL.md").split("\n").find((l) => l.includes("**Record findings**"))), /\[finding-schema\.md\]\(finding-schema\.md\)/);
-  assert.match(String(read("skills/cycle/finding-schema.md").split("\n").find((l) => l.startsWith("| Class |"))), /ennyn\.mjs classes/);
-  const close = String(read("skills/cycle/report-formats.md").split("\n").find((l) => l.startsWith("**Classes at the close:**")));
+  assert.match(String(read("plugin/skills/cycle/SKILL.md").split("\n").find((l) => l.includes("**Record findings**"))), /\[finding-schema\.md\]\(finding-schema\.md\)/);
+  assert.match(String(read("plugin/skills/cycle/finding-schema.md").split("\n").find((l) => l.startsWith("| Class |"))), /ennyn\.mjs classes/);
+  const close = String(read("plugin/skills/cycle/report-formats.md").split("\n").find((l) => l.startsWith("**Classes at the close:**")));
   assert.match(close, /both/i, "both branches write the name");
   assert.match(close, /`linked`/);
   assert.match(close, /folds/);

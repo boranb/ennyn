@@ -24,15 +24,15 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { recordRun } from "../checks/test-runs.mjs";
-import { DEFAULTS } from "../core/config.mjs";
+import { recordRun } from "../plugin/checks/test-runs.mjs";
+import { DEFAULTS } from "../plugin/core/config.mjs";
 import { ownHome } from "./own-home.mjs";
 
-const HOOK = fileURLToPath(new URL("../adapters/claude-code/hooks/push-spellings.mjs", import.meta.url));
+const HOOK = fileURLToPath(new URL("../plugin/adapters/claude-code/hooks/push-spellings.mjs", import.meta.url));
 /** The push hook's time limit in seconds, from its own entry in the plugin's hooks.json: past it Claude Code runs the call. */
 const LIMIT_S = (() => {
   /** @type {{ hooks: Record<string, { hooks: { command: string, timeout?: number }[] }[]> }} */
-  const wiring = JSON.parse(readFileSync(new URL("../hooks/hooks.json", import.meta.url), "utf8"));
+  const wiring = JSON.parse(readFileSync(new URL("../plugin/hooks/hooks.json", import.meta.url), "utf8"));
   const entry = Object.values(wiring.hooks).flat().flatMap((m) => m.hooks).find((h) => h.command.includes("/push-spellings.mjs"));
   if (typeof entry?.timeout !== "number") throw new Error("hooks.json gives the push hook no timeout");
   return entry.timeout;

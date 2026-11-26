@@ -5,13 +5,13 @@ import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFile
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ConfigError, loadConfig } from "../core/config.mjs";
-import { git } from "../core/git.mjs";
-import { t } from "../core/i18n.mjs";
-import { CYCLE_LINE_MAX, STEPS, journalFile, wordsFit } from "../plan/cycle-journal.mjs";
+import { ConfigError, loadConfig } from "../plugin/core/config.mjs";
+import { git } from "../plugin/core/git.mjs";
+import { t } from "../plugin/core/i18n.mjs";
+import { CYCLE_LINE_MAX, STEPS, journalFile, wordsFit } from "../plugin/plan/cycle-journal.mjs";
 
-const CLI = fileURLToPath(new URL("../scripts/ennyn.mjs", import.meta.url));
-const HOOK = fileURLToPath(new URL("../adapters/claude-code/hooks/conversation-style.mjs", import.meta.url));
+const CLI = fileURLToPath(new URL("../plugin/scripts/ennyn.mjs", import.meta.url));
+const HOOK = fileURLToPath(new URL("../plugin/adapters/claude-code/hooks/conversation-style.mjs", import.meta.url));
 const ID = ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"];
 /** Each test fails past this instead of holding the run: a hang once held the machine's test lock 20 minutes. */
 const LIMIT = { timeout: 60000 };

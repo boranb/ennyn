@@ -15,7 +15,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { chmodSync, cpSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { leftovers, recordStart } from "../metrics/leftovers.mjs";
+import { leftovers, recordStart } from "../plugin/metrics/leftovers.mjs";
 import { gitignores, head, ignoredBy, index, listing, localRules, skipWorktree, tree, written } from "./repo-facts.mjs";
 import { ownHome } from "./own-home.mjs";
 

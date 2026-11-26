@@ -5,13 +5,13 @@ import { mkdtempSync, mkdirSync, writeFileSync, readdirSync, readFileSync } from
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadConfig, ConfigError, CONVERSATION_STYLES } from "../core/config.mjs";
-import { styleRules } from "../core/style.mjs";
-import { t } from "../core/i18n.mjs";
-import { checkCommitShape } from "../checks/commit-shape.mjs";
+import { loadConfig, ConfigError, CONVERSATION_STYLES } from "../plugin/core/config.mjs";
+import { styleRules } from "../plugin/core/style.mjs";
+import { t } from "../plugin/core/i18n.mjs";
+import { checkCommitShape } from "../plugin/checks/commit-shape.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const HOOK = join(ROOT, "adapters", "claude-code", "hooks", "conversation-style.mjs");
+const HOOK = join(ROOT, "plugin", "adapters", "claude-code", "hooks", "conversation-style.mjs");
 const cfg = (/** @type {Record<string, unknown>} */ override = {}) => loadConfig({ cwd: mkdtempSync(join(tmpdir(), "en-st-")), env: {}, override });
 
 test("config: conversation.style and commitMsg.style take only their listed values", () => {
@@ -24,7 +24,7 @@ test("config: conversation.style and commitMsg.style take only their listed valu
 
 test("styles: every style but normal has rules in both languages, each keeping the never-shorten list and the conversation-only scope", () => {
   assert.equal(styleRules("normal", "tr"), null);
-  const files = readdirSync(join(ROOT, "styles")).sort();
+  const files = readdirSync(join(ROOT, "plugin", "styles")).sort();
   const expected = CONVERSATION_STYLES.filter((s) => s !== "normal").flatMap((s) => [`${s}.en.md`, `${s}.tr.md`]).sort();
   assert.deepEqual(files, expected, "no style without both languages, no stray file");
   for (const style of CONVERSATION_STYLES.filter((s) => s !== "normal")) {
@@ -129,7 +129,7 @@ test("hook: after a compaction, the re-read line in the config language, after t
 
 test("brief: a task agent re-reads its changed files and impact table after a compaction, by the commands the hook's line names", () => {
   // The rule stands in the brief too, for an agent whose hook is off or was never installed.
-  const brief = readFileSync(join(ROOT, "skills", "cycle", "task-brief.md"), "utf8");
+  const brief = readFileSync(join(ROOT, "plugin", "skills", "cycle", "task-brief.md"), "utf8");
   assert.match(brief, /After a compaction, before its next edit, it re-reads the files the task changed \(`git diff --name-only --merge-base <base branch>` and `git status --short --untracked-files=all`, in its worktree\) and its impact table/);
   // The brief names that branch, the first brief and the one a restart gets; no start commit, which a rebase leaves behind.
   assert.match(brief, /\| \*\*Place\*\* \| worktree, branch, the base branch \(the branch it rebases onto and lands on\), /);
@@ -141,7 +141,7 @@ test("brief: a task agent re-reads its changed files and impact table after a co
 test("docs: the re-read line's limits are said as they are: the summary names files changed since the last commit, and the session-start list stays one list", () => {
   // Where the hook's folder is the agent's own, the PreCompact request names what git shows changed since the last
   // commit: not a task's files committed before it.
-  for (const path of ["docs/modules.md", "CHANGELOG.md", "adapters/claude-code/hooks/conversation-style.mjs"]) {
+  for (const path of ["docs/modules.md", "CHANGELOG.md", "plugin/adapters/claude-code/hooks/conversation-style.mjs"]) {
     const text = readFileSync(join(ROOT, path), "utf8").replace(/\n \* /g, " ");
     assert.match(text, /already lists the files changed since the last commit/, path);
     assert.doesNotMatch(text, /already lists its changed files/, path);

@@ -12,5 +12,5 @@
     "maxNodeModuleJsDepth": 0,
     "types": ["node"]
   },
-  "include": ["core", "checks", "side-copy", "impact", "metrics", "plan", "setup", "adapters", "scripts"]
+  "include": ["plugin/core", "plugin/checks", "plugin/side-copy", "plugin/impact", "plugin/metrics", "plugin/plan", "plugin/setup", "plugin/adapters", "plugin/scripts", "scripts"]
 }

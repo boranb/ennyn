@@ -4,12 +4,12 @@ import { mkdtempSync, writeFileSync, mkdirSync, chmodSync, symlinkSync, linkSync
 import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { basename, delimiter, join, posix, win32 } from "node:path";
-import { globToRegExp, literalGlob, matchAny } from "../core/glob.mjs";
-import { loadConfig, ConfigError, DEFAULTS } from "../core/config.mjs";
-import { alive, DIFF_GROUP, GIT_LIMITS, MISSING_OBJECT, addedLines, argBatches, batchCheck, diffGroups, git, gitMaybe, headCommit, indexNames, machineFault, nameText, parseTrailers, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedPaths, stagedVersions, stagedVersionsEach, unpushedCount, waitGone } from "../core/git.mjs";
-import { shown, t } from "../core/i18n.mjs";
-import * as filesModule from "../core/files.mjs";
-import { readIfThere } from "../core/files.mjs";
+import { globToRegExp, literalGlob, matchAny } from "../plugin/core/glob.mjs";
+import { loadConfig, ConfigError, DEFAULTS } from "../plugin/core/config.mjs";
+import { alive, DIFF_GROUP, GIT_LIMITS, MISSING_OBJECT, addedLines, argBatches, batchCheck, diffGroups, git, gitMaybe, headCommit, indexNames, machineFault, nameText, parseTrailers, repoPath, stagedAddedLines, stagedBlobs, stagedChanges, stagedNames, stagedPaths, stagedVersions, stagedVersionsEach, unpushedCount, waitGone } from "../plugin/core/git.mjs";
+import { shown, t } from "../plugin/core/i18n.mjs";
+import * as filesModule from "../plugin/core/files.mjs";
+import { readIfThere } from "../plugin/core/files.mjs";
 
 test("glob: ** matches zero or more segments", () => {
   assert.ok(matchAny("src/lib/engine/x.ts", ["src/lib/engine/**"]));
@@ -396,7 +396,7 @@ test("git: parseTrailers reads only a trailer-only last paragraph", () => {
 });
 
 test("git: state dir under .git resolves through the common dir in a linked worktree", async () => {
-  const { resolveStateDir, commonDir } = await import("../core/git.mjs");
+  const { resolveStateDir, commonDir } = await import("../plugin/core/git.mjs");
   const repo = mkdtempSync(join(tmpdir(), "pl-sd-"));
   git(["init", "-q", "-b", "main"], { cwd: repo });
   writeFileSync(join(repo, "a.txt"), "a");
@@ -413,7 +413,7 @@ test("git: state dir under .git resolves through the common dir in a linked work
   assert.equal(resolveStateDir(wt, "./.git/ennyn"), join(commonDir(repo), "ennyn"));
   assert.equal(resolveStateDir(wt, ".git/../state"), join(wt, "state"));
   // Its files are read and written below the common git dir for a .git value, below the project for another.
-  const { stateRoot } = await import("../core/git.mjs");
+  const { stateRoot } = await import("../plugin/core/git.mjs");
   // In the git dir its own directory: no commit writes there, a link on the way is this machine's (user-git-state-link).
   assert.equal(stateRoot(wt, join(fromWorktree, "gate-attempts.jsonl")), fromWorktree);
   assert.equal(stateRoot(wt, join(wt, "state/x")), wt);
@@ -421,7 +421,7 @@ test("git: state dir under .git resolves through the common dir in a linked work
 });
 
 test("git: stagedPaths reads the index a hook was given, but only from the same repository", async () => {
-  const { hookIndexFile } = await import("../core/git.mjs");
+  const { hookIndexFile } = await import("../plugin/core/git.mjs");
   const repo = mkdtempSync(join(tmpdir(), "pl-idx-"));
   git(["init", "-q", "-b", "main"], { cwd: repo });
   writeFileSync(join(repo, "base.txt"), "x");
@@ -448,7 +448,7 @@ test("git: stagedPaths reads the index a hook was given, but only from the same 
 });
 
 test("files: nothing there is false or null; there but not readable throws, on every Node the engines allow", async (t) => {
-  const { present, readIfThere } = await import("../core/files.mjs");
+  const { present, readIfThere } = await import("../plugin/core/files.mjs");
   const dir = mkdtempSync(join(tmpdir(), "en-files-"));
   writeFileSync(join(dir, "f"), "x");
   assert.equal(present(join(dir, "f")), true);
@@ -586,7 +586,7 @@ test("config: commands.fastTest is a command, or none with its reason; no typo r
 });
 
 test("shown: a name holding a comma a list could part at is quoted; a value in a message's quotes holding a quote too; a long value keeps its start and end", async () => {
-  const { shown, tShown, SHOWN_MAX } = await import("../core/i18n.mjs");
+  const { shown, tShown, SHOWN_MAX } = await import("../plugin/core/i18n.mjs");
   const NBSP = String.fromCharCode(0xa0), FULL = String.fromCharCode(0xff0c), IDEO = String.fromCharCode(0x3001);
   for (const name of [`github,${NBSP}filesystem`, `github${FULL}filesystem`, `a${IDEO}b`, "a,\tb", "a, b"]) assert.equal(shown(name, { name: true }).quoted, true, JSON.stringify(name));
   for (const name of ["a,b", "a.b", "core,utils"]) assert.equal(shown(name, { name: true }).quoted, false, name);
@@ -623,7 +623,7 @@ test("files: readIfThere reads a regular file only, up to its limit (a head of i
 });
 
 test("t: a value holding a line break or a control character is escaped where it stands; text already shown is put as written; null renders", async () => {
-  const { tShown } = await import("../core/i18n.mjs");
+  const { tShown } = await import("../plugin/core/i18n.mjs");
   assert.equal(t("cli.hookConfigBroken", { error: "(\nMARKER-LINE \x1b[2J" }, "en").split("\n").length, 1);
   assert.match(t("cli.hookConfigBroken", { error: "(\nMARKER-LINE" }, "en"), /\(\\u000aMARKER-LINE/);
   assert.equal(t("mutate.listProblems", { path: "m.json", problems: { shown: "a\n- b" } }, "en"), "The mutant list m.json does not load; no mutant was run:\n- a\n- b");
@@ -632,7 +632,7 @@ test("t: a value holding a line break or a control character is escaped where it
 });
 
 test("shown: a comma look-alike in a name is quoted: a joiner, a combining mark or a variation selector after a comma, and the commas of other scripts", async () => {
-  const { shown } = await import("../core/i18n.mjs");
+  const { shown } = await import("../plugin/core/i18n.mjs");
   const c = (/** @type {number} */ n) => String.fromCharCode(n);
   for (const name of [`a,${c(0x200d)} b`, `a,${c(0x301)} b`, `a,${c(0xfe0f)} b`, `a${c(0x201a)}b`, `a${c(0x55d)}b`, `a${c(0x1363)}b`, `a${c(0x7f8)}b`]) {
     assert.equal(shown(name, { name: true }).quoted, true, JSON.stringify(name));
@@ -883,7 +883,7 @@ test("nameText: UTF-8 as it is; a name that is not keeps its bytes apart from an
 });
 
 test("jsonShown: a value with a cycle prints each object once, every later reach of it as the number its brace opened at; one with none prints as JSON.stringify does", async () => {
-  const { jsonShown } = await import("../core/i18n.mjs");
+  const { jsonShown } = await import("../plugin/core/i18n.mjs");
   // No cycle: the same text JSON.stringify writes, an object two places share printed in each, toJSON read as it reads it.
   const shared = { s: 1 };
   const tree = { a: [shared, shared], b: { when: new Date(0), own: { toJSON: () => ({ t: [shared] }) } } };
@@ -931,7 +931,7 @@ test("jsonShown: a value with a cycle prints each object once, every later reach
 });
 
 test("jsonShown: the cycle is looked for once per object, through toJSON as JSON.stringify reads it, so a value whose paths double at each level is no slower", { timeout: 20_000 }, async () => {
-  const { jsonShown } = await import("../core/i18n.mjs");
+  const { jsonShown } = await import("../plugin/core/i18n.mjs");
   /** @type {any} */
   const loop = { id: "l" };
   loop.me = loop;
@@ -966,7 +966,7 @@ test("jsonShown: the cycle is looked for once per object, through toJSON as JSON
 });
 
 test("jsonShown: a graph whose nodes all link to each other both ways prints in a size linear in its nodes and links", async () => {
-  const { jsonShown } = await import("../core/i18n.mjs");
+  const { jsonShown } = await import("../plugin/core/i18n.mjs");
   /** @param {number} n @param {"all" | "grid"} shape */
   const graph = (n, shape) => {
     /** @type {any[]} */

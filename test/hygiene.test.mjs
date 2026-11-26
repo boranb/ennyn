@@ -4,10 +4,10 @@ import { readFileSync, lstatSync, readlinkSync, mkdtempSync, mkdirSync, rmSync, 
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { git, gitMaybe } from "../core/git.mjs";
-import { secretHits } from "../checks/secrets.mjs";
-import { LITERALS_FILE, homeHits, literalEntry, literalHits, parseLiterals, readLiterals } from "../checks/private-text.mjs";
-import { loadConfig } from "../core/config.mjs";
+import { git, gitMaybe } from "../plugin/core/git.mjs";
+import { secretHits } from "../plugin/checks/secrets.mjs";
+import { LITERALS_FILE, homeHits, literalEntry, literalHits, parseLiterals, readLiterals } from "../plugin/checks/private-text.mjs";
+import { loadConfig } from "../plugin/core/config.mjs";
 import { TOKENS } from "./secret-shapes.mjs";
 
 // No names, paths or data of the projects that use Ennyn go into this repository (.claude/CLAUDE.md).
@@ -29,7 +29,7 @@ const CONTROLS = parseLiterals([NAME, "zor" + "-" + "blax"].map((w) => literalEn
  * holds no word, `missing` says so; a list that is there and cannot be read, or holds a line that is no entry,
  * throws (readLiterals): unread is never an empty list.
  * @param {string} root
- * @returns {{ list: import("../checks/private-text.mjs").Literals, missing: string | null }}
+ * @returns {{ list: import("../plugin/checks/private-text.mjs").Literals, missing: string | null }}
  */
 export function namesOf(root) {
   const config = loadConfig({ cwd: root, env: {} });
@@ -50,7 +50,7 @@ export function namesOf(root) {
  * each word whole, in its parts (name.md, name-server, NAME_HOME) and its ASCII runs (a Turkish suffix written without
  * the apostrophe), as written for an exact entry and in lower case for a folded one; a home directory, /Users/<name> or
  * /home/<name>, C:\Users\ with any number of backslashes (prose, a JS string, JSON in a string).
- * @param {string} text @param {import("../checks/private-text.mjs").Literals} [list] the names, the controls by default
+ * @param {string} text @param {import("../plugin/checks/private-text.mjs").Literals} [list] the names, the controls by default
  */
 export function findings(text, list = CONTROLS) {
   /** @type {string[]} */
@@ -213,7 +213,7 @@ test("hygiene: the scan reads the clone's private word list, shared with its wor
  */
 export function repoLines(root) {
   const files = git(["-c", "core.quotePath=false", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], { cwd: root }).split("\0").filter(Boolean);
-  /** @type {Map<string, import("../core/git.mjs").AddedLine[]>} */
+  /** @type {Map<string, import("../plugin/core/git.mjs").AddedLine[]>} */
   const out = new Map();
   for (const f of files) {
     let bytes;
@@ -222,7 +222,7 @@ export function repoLines(root) {
     } catch {
       continue;
     }
-    /** @type {import("../core/git.mjs").AddedLine[]} */
+    /** @type {import("../plugin/core/git.mjs").AddedLine[]} */
     const lines = [];
     for (let at = 0, n = 1; at <= bytes.length; n++) {
       let end = bytes.indexOf(0x0a, at);
