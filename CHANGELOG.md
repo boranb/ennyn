@@ -18,6 +18,7 @@
 - Tests: the engines test holds the npm package whole: `bin` names a file with a node shebang, every module the CLI and the hooks import (static, literal dynamic and `new URL` reads, in any quotes) and the folders read by built paths ship under `files`, no ignore file inside a shipped folder drops one, and the lock names the package's version.
 - init-scan names the GitHub repository for origins on ghe.com, GitHub Enterprise Server, ssh.github.com:443 and github.com-<name> SSH aliases, and no longer for look-alike hosts, a GitHub-looking path on another host, or local paths; it decides GitHub as the ask rules and the sandbox do.
 - A test now holds each version a sentence in DESIGN.md, SECURITY.md, docs/ or a module header names to a record or evidence section with that program's version, a test that holds that version, or a written "(not by a test: …)" limit; SECURITY.md no longer claims Claude Code 2.1.330 for a record taken on 2.1.310.
+- Installing the plugin now copies only its own `plugin/` folder: no tests, no work graph and no lock file, so Claude Code no longer downloads TypeScript and @types/node into the plugin's cache. The folder carries the licence. Commit hooks written by earlier versions keep working, and a hook installed from a clone or the npm package keeps working after checking out an older version.
 
 ## 0.1.1 (2026-11-23)
 

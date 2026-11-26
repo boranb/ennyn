@@ -24,7 +24,7 @@ A development loop for coding agents, shipped as a Claude Code plugin and a zero
 ## Release
 
 1. Move the `Unreleased` section of CHANGELOG.md under the new version.
-2. Set the version in `package.json`, `package-lock.json` (two places) and `.claude-plugin/plugin.json`.
+2. Set the version in `package.json`, `package-lock.json` (two places) and `plugin/.claude-plugin/plugin.json`.
 3. `npm test && npm run typecheck && npm run validate:plugin` (the last needs the claude CLI), `npm run test:reference` (needs docker), `npm run test:linux`, and, when a Windows machine is at hand, `npm test` in WSL; README dates each platform's last measurement.
 4. Commit `chore: release vX.Y.Z`, tag `vX.Y.Z` (signed), push the commit. Before the tag goes out: `git tag -v vX.Y.Z` verifies, and after a fetch the tag's commit is `origin/main`. The `no new tags` ruleset refuses every new tag: the owner sets it to disabled, the tag is pushed, the owner sets it active again, and it is read back.
 5. The tag starts `.github/workflows/release.yml`; its job waits in the `npm` environment until the owner approves it on GitHub, then checks the tag against package.json and main and publishes with npm trusted publishing. Afterwards `npm view ennyn@X.Y.Z dist.attestations --json` shows the provenance.
