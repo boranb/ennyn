@@ -47,7 +47,8 @@
         "new: guard left on replaced text",
         "new: new skill file not linked from SKILL.md",
         "new: doc of a changed exit left stale",
-        "new: stated limit made false by a new path"
+        "new: stated limit made false by a new path",
+        "new: count in prose outrun by an added case"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: not stopped, no catch since it landed. Named in cycle 1. Counting the doc twin of cycle 4 here is this reconstruction's merge."
     },
@@ -668,7 +669,8 @@
         "new: shown value rounds across its threshold",
         "new: message states an outcome it does not know",
         "new: wrong cause named in a comment",
-        "new: closed word list read as widening"
+        "new: closed word list read as widening",
+        "new: doc states a broader condition than the code checks"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet.",
       "nodes": [
@@ -1436,6 +1438,26 @@
         "new: registry of an old closing names gate commits a history rewrite replaced"
       ],
       "judged": "Named in cycle 57 by the orchestrator, from the security review of the plugin folder move (an install-hook from a clone named the moved CLI path)."
+    },
+    {
+      "id": "translated-text-register-drift",
+      "says": "A translated copy of a document switches its form of address or tone in a line written later than the rest, so the copy no longer reads as one text.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: register switch in translated text"
+      ]
+    },
+    {
+      "id": "gate-files-off-impact-list",
+      "says": "A file that holds a gate or a release path is not on the list of paths that require an impact line, so a change to it lands without the impact reading the list exists to force.",
+      "state": "open",
+      "gates": [],
+      "nodes": [],
+      "linked": [
+        "new: release gate files off the impact list"
+      ]
     }
   ]
 }

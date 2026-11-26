@@ -414,7 +414,7 @@
       "status": "planned",
       "needs": [],
       "id": "suite-wall-clock-limits",
-      "title": "Fixed wall-clock limits in tests fail npm test on a loaded machine: mutation.test.mjs's timeoutMs 1500/2000 (refused once the baseline passes 1 s: 4 tests failed in npm test at load 26-28, the file alone passed), the < 45 s, < 25 s and < 3000 ms asserts; scale them from a measured baseline; cycle 9 added < 5000 ms reads in test/ci.test.mjs (generous: the readings take under 300 ms at load 5); 2026-10-29: test/setup.test.mjs:1038 (scan linearity, a ratio of wall-clock times) failed in npm test at load 19-29 ('many distinct imports: eight times the text took 32.8 times as long') and passed alone 5 of 5 (3.4 to 3.6 times); on Node 24 in test:linux at load 41-44 it read 24.4 times, together with test/mutation.test.mjs:867 (timeoutMs 1500 under a 1.1 s baseline), the class 4f8a71a fixed at :814",
+      "title": "Fixed wall-clock limits in tests fail npm test on a loaded machine: mutation.test.mjs's timeoutMs 1500/2000 (refused once the baseline passes 1 s: 4 tests failed in npm test at load 26-28, the file alone passed), the < 45 s, < 25 s and < 3000 ms asserts; scale them from a measured baseline; cycle 9 added < 5000 ms reads in test/ci.test.mjs (generous: the readings take under 300 ms at load 5); 2026-10-29: test/setup.test.mjs:1038 (scan linearity, a ratio of wall-clock times) failed in npm test at load 19-29 ('many distinct imports: eight times the text took 32.8 times as long') and passed alone 5 of 5 (3.4 to 3.6 times); on Node 24 in test:linux at load 41-44 it read 24.4 times, together with test/mutation.test.mjs:867 (timeoutMs 1500 under a 1.1 s baseline), the class 4f8a71a fixed at :814 Cycles 55 to 57: a suite was red on a timing test that passed alone in each (test/impact.test.mjs:312, test/setup.test.mjs's linear-time reads, :2539 in cycle 57) and was run again, 23.9 minutes a whole run.",
       "value": "high",
       "cost": "M",
       "cluster": "gates",
@@ -2653,7 +2653,9 @@
     },
     {
       "status": "planned",
-      "needs": [],
+      "needs": [
+        "leftovers-machine-list"
+      ],
       "id": "run-leftover-diff",
       "title": "Each test, mutation or server command the cycle runs is wrapped in a snapshot of what a command can leave behind, taken before and after, and the difference is reported as left behind by that command (what resource-ledger records is explained, once it exists): untracked and ignored files in the work tree (git status --ignored), new entries in the temp folder, docker containers, volumes, networks and images, listening ports and processes whose cwd is in the repository or its worktrees, git worktrees, branches and stashes, global installs (npm -g, pip outside a virtualenv, brew, cargo install, go install, pipx), changes to the user's config files (~/.gitconfig, ~/.npmrc, shell profiles), and databases on the local servers the project declares, through a listing command init records, never a URL. It catches what no list names; the snapshot only reads, and removing stays with cleanup-command Also VMs and containers: what a cycle starts (colima profile, docker container, dev server) is stopped by what started it, and the closing lists those running that were not at the start (cycle 33 left colima ennyn-ci running 13 h, 1.6 GB). The closing report says memory, swap, load and free disk at the start and the end The snapshot also reads VM data disks (limactl disk list beside colima list), and the closing lists each disk whose profile is gone, with its size on disk",
       "value": "high",
@@ -3184,7 +3186,8 @@
         "one-task-run",
         "cycle-wake-lock",
         "headless-run-keeps-turn",
-        "push-ask-never-holds-turn"
+        "push-ask-never-holds-turn",
+        "leftovers-machine-list"
       ],
       "id": "fresh-session-run",
       "title": "ennyn run --cycles N (or --each task) from the terminal: each cycle or task is one claude -p with the cycle skill, a new process and so a new context. --cycles is required, there is no open-ended loop; a budget cap goes to --max-budget-usd. It runs doctor first and stops at the first red: non-zero exit, a stopped task, a gate that needs the user, the plan's limit, the budget; it prints why and what is next, and keeps a log in the state dir. It spawns only the claude on PATH. It decides from the journal, never from the model's words, and a run with no new commit and no node change ends the loop. With compact it resumes by session id, never --continue. Pushes follow push.mode. A -p run cannot ask, so it needs a mode that does not prompt (the no-bypass mode or the user's own bypass), and it says so when it has neither. Measure first (the first two from cycle 50, Fable 2026-11-21): one write of words/<id>.txt under .git/ in claude -p (in an interactive bypass session, 2.1.327, the Write tool and a Bash redirect did not prompt): if it prompts, the write moves into an ennyn command, which reopens the declined id check; permissions.denyInsteadOfPrompting passed to each child with --settings (its text in the 2.1.327 to 2.1.329 binaries: a call that would prompt is denied at once, subagents included): whether an ask rule then denies rather than waits, unmeasured; a task with subagents completes in -p, an ask rule refuses rather than hangs, hooks and the plugin load without --bare, and what breaks if --bare becomes the default for -p. If this threatens the release date it moves to the next version, ahead of everything else there; the 5-hour usage window does not end the run. The run reads claude -p's stream-json events, never the model's words: a rate_limit_event whose status is rejected and whose resetsAt is at most 5 hours away makes it wait until that time plus a minute and go on from the journal, and the cycle it cut does not count against --cycles; a later resetsAt (a weekly window), no resetsAt, or errorCode credits_required stops it as before, saying when the window resets. At a seam, when the last event said allowed_warning with a resetsAt within 5 hours, it starts no new cycle before that time. No threshold key: the warning is the server's. rateLimitType and unifiedWindows are in 2.1.310's schema but not in the docs, so they are not read. Measure first: what -p does when it is refused (exit status, whether the event comes before the result), at what use the server sends allowed_warning, and that a cycle cut mid-task resumes from the journal. A stopped task still ends the run: the next cycle could take the same node again, or build on work the user has not seen. It reports a silent stall (no stream event and no journal line for longer than the longest past step) and stops nothing by itself. Amended 2026-11-17 (Fable, after the audit runs of cycles 36-40, prototype runner scripts kept outside the repository): the first run of 0.2, from 2026-11-29. The child gets an allowlisted environment: a parent session's identity variables (session id, messaging socket, child-session mark) and GIT_* are dropped, auth and provider variables kept (measure first: hygiene, not a proven fix). --each <node> <node>... takes a list fixed at start; a second ennyn run queues behind the first on a lock, no open-ended queue. The runner is detached with its PID recorded; nothing between items reads stdin or waits for a session, and no step runs through a host that can show a permission prompt (in the audit runs an interactive session's git push waited on a git push ask rule until it was answered). A wait is not red: a loosening key, a user gate or an asked push under ask is recorded as a wait, that node and its dependants are skipped and the run goes on when the tree is clean and the closing complete; red still stops it. A result event with the journal still open is red. The runner holds the wake lock for each child's lifetime and the brief's own wake step is skipped under it. The runner never pushes; only the closing does, under push.mode",
@@ -5041,7 +5044,7 @@
       "status": "planned",
       "needs": [],
       "id": "kept-folder-closing",
-      "title": "The closing says what becomes of the cycle's kept folder (task-brief.md, Keeping the work, names the folder but not its end): it keeps what a later cycle, an audit or a person reads (ledger, briefs, impact tables, measurements, rows, every reviewer's and author's untracked probes and labs) and removes what git gives back (a reviewer's or lab's clone of a commit the repository holds: its tracked files go, its untracked files stay), each removal only after a check that nothing it holds is lost (the commit reachable, the untracked files kept); a live cycle folder left beside its kept copy goes without asking once a comparison shows nothing only it holds, a file only it holds first copied over; anything not proven a copy is asked. The report says the folder's size before and after. Cycle 31 stopped it after three review rounds (branch c31/t2 at 3292a98, worktree the cycle's worktree kept; brief, impact table, 20 author rows and every reviewer lab in the cycle folder): the design held in round 3 (no finding: bundle pin, move aside then lsof then recheck, home-folder rule, git-dir allow list), but the orchestrator's gate was red twice: test/fault-injection.test.mjs with its new kept cells ran 1956 s alone, past the file's 1800 s limit (the file-read matrix cancelled) and with hang cells in other commands under load. The restart: cut the kept cells to what the matrix must hold, then the two round-3 gaps (lsof's can't-opendir warning read as no process; HOME=/ lets volume roots through). Acceptance run 2026-11-15: about 1.2 GB after two cycles of a small library; nothing prunes a closed cycle's folder",
+      "title": "The closing says what becomes of the cycle's kept folder (task-brief.md, Keeping the work, names the folder but not its end): it keeps what a later cycle, an audit or a person reads (ledger, briefs, impact tables, measurements, rows, every reviewer's and author's untracked probes and labs) and removes what git gives back (a reviewer's or lab's clone of a commit the repository holds: its tracked files go, its untracked files stay), each removal only after a check that nothing it holds is lost (the commit reachable, the untracked files kept); a live cycle folder left beside its kept copy goes without asking once a comparison shows nothing only it holds, a file only it holds first copied over; anything not proven a copy is asked. The report says the folder's size before and after. Cycle 31 stopped it after three review rounds (branch c31/t2 at 3292a98, worktree the cycle's worktree kept; brief, impact table, 20 author rows and every reviewer lab in the cycle folder): the design held in round 3 (no finding: bundle pin, move aside then lsof then recheck, home-folder rule, git-dir allow list), but the orchestrator's gate was red twice: test/fault-injection.test.mjs with its new kept cells ran 1956 s alone, past the file's 1800 s limit (the file-read matrix cancelled) and with hang cells in other commands under load. The restart: cut the kept cells to what the matrix must hold, then the two round-3 gaps (lsof's can't-opendir warning read as no process; HOME=/ lets volume roots through). Acceptance run 2026-11-15: about 1.2 GB after two cycles of a small library; nothing prunes a closed cycle's folder Cycle 58's kept folder: 8.0 GB, 7.1 GB of it one lab's runs folder.",
       "value": "medium",
       "cost": "S",
       "cluster": "method",
@@ -5302,7 +5305,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "title": "A reviewer's or author's wait loop that starts a process each pass left 43 CPU-burning processes on the Windows machine (parent 1, found by the reviewer, stopped by the orchestrator by PID); no hook sees it. Briefs say: wait for a background run by its notification, never a polling loop that spawns; and the cycle's closing lists the session user's processes started during the cycle that are still alive",
+      "title": "A reviewer's or author's wait loop that starts a process each pass left 43 CPU-burning processes on the Windows machine (parent 1, found by the reviewer, stopped by the orchestrator by PID); no hook sees it. Briefs say: wait for a background run by its notification, never a polling loop that spawns; and the cycle's closing lists the session user's processes started during the cycle that are still alive Its closing list is leftovers-machine-list's; the brief rule stays here.",
       "source": "cycle 2026-11-09 (29), T1 code review round 1",
       "since": 29
     },
@@ -5354,7 +5357,7 @@
       "status": "planned",
       "needs": [],
       "id": "test-churn-off-host-fsevents",
-      "title": "Measure whether whole suites and docker runs grow macOS fseventsd (35 GB compressed after 5 days, 2026-11-09): MB growth over one whole suite and one Linux run after a fresh fseventsd. If they do, heavy runs write in the VM's own disk or a folder excluded from FSEvents",
+      "title": "Measure whether whole suites and docker runs grow macOS fseventsd (35 GB compressed after 5 days, 2026-11-09): MB growth over one whole suite and one Linux run after a fresh fseventsd. If they do, heavy runs write in the VM's own disk or a folder excluded from FSEvents 2026-11-26: 7.0 GB resident and one full core three days after a restart; 2026-11-27 01:50: 81 GB (75 GB compressed) and swap at 72 one-GB files. Read it before and after the release's whole suite and Linux run on a freshly restarted machine.",
       "value": "medium",
       "cost": "S",
       "cluster": "gates",
@@ -5365,7 +5368,7 @@
       "status": "planned",
       "needs": [],
       "id": "agent-tmp-leftovers",
-      "title": "Agent probes and labs leave folders in TMPDIR that no step removes (1927 entries, 2.6 GB, mostly cycles 24-25; 1480 removed by hand 2026-11-09). The brief names one folder per agent under the cycle folder, and the closing's leftovers check counts TMPDIR entries newer than the cycle's start 2026-11-14: 3356 en-* folders in os.tmpdir() since 2026-11-09 (removed by the restart); fseventsd held 9.3 GB and mds_stores 7.3 GB, kernel kalloc.1024 9.8 GB wired, growing while tests ran: one temp root per run, removed at exit, and measure fseventsd before and after",
+      "title": "Agent probes and labs leave folders in TMPDIR that no step removes (1927 entries, 2.6 GB, mostly cycles 24-25; 1480 removed by hand 2026-11-09). The brief names one folder per agent under the cycle folder, and the closing's leftovers check counts TMPDIR entries newer than the cycle's start 2026-11-14: 3356 en-* folders in os.tmpdir() since 2026-11-09 (removed by the restart); fseventsd held 9.3 GB and mds_stores 7.3 GB, kernel kalloc.1024 9.8 GB wired, growing while tests ran: one temp root per run, removed at exit, and measure fseventsd before and after 2026-11-26: 3504 pl-* roots straight in the temp folder three days after a restart, in 24 batches of exactly 146 by creation minute: one kind of run leaves a batch, with the preload's move or cleanup off (guard-temp-leftovers' guard is the candidate, unmeasured). Find it by counting the temp folder around each slow gate file run alone.",
       "value": "medium",
       "cost": "S",
       "cluster": "cycle",
@@ -5552,7 +5555,7 @@
       "status": "planned",
       "needs": [],
       "id": "cycle-record",
-      "title": "The closing records one line per cycle in the metrics log ({\"kind\":\"cycle\",\"n\":32,\"start\":...,\"close\":...,\"planned\":4,\"landed\":3,\"stopped\":1,\"findings\":83,\"previousFix\":32}), read from the journal and the ledger, through ennyn journal close --record (or budget --record, whichever reads less), and the lock's totals in the cycle's window from the lock log (runs, waited, ran)",
+      "title": "The closing records one line per cycle in the metrics log ({\"kind\":\"cycle\",\"n\":32,\"start\":...,\"close\":...,\"planned\":4,\"landed\":3,\"stopped\":1,\"findings\":83,\"previousFix\":32}), read from the journal and the ledger, through ennyn journal close --record (or budget --record, whichever reads less), and the lock's totals in the cycle's window from the lock log (runs, waited, ran) The cycle line also holds the stall minutes by kind (stall-lines).",
       "value": "medium",
       "cost": "S",
       "cluster": "metrics",
@@ -5864,7 +5867,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "security",
-      "title": "core/heavy-lock.mjs is at the fix-loop brake (stand-in-for-the-fact in cycles 31, 33 and 34; 11 rows, a round-2 previous-fix in 34): the lock decides from stand-ins, markers in a shared folder and readings of machine state. Decide on the top two rungs: a construct that refuses what it cannot read (the room reader in a module of its own, one reader per platform, each answering unreadable instead of a default; a ticket record that holds pid and start time, not a name) or removing the need (the queue gone for one lock file held by a process the OS reaps). Its leftover defects go into that decision, not patches: log-at-end (room wait and admission reach lock.log only in the run's end line, c34-t5-code-r1-06, c34-t5-sec-r1-04), empty-env (an empty ENNYN_LOCK_* variable refuses every run, c34-t5-sec-r1-05), own-ticket-order (a mutant moving the own-ticket check after the sweep loop survives, T2 security review), load-lag (the 1-minute load average lags a job that just ended, T5 author). Or say the limit and decline them",
+      "title": "core/heavy-lock.mjs is at the fix-loop brake (stand-in-for-the-fact in cycles 31, 33 and 34; 11 rows, a round-2 previous-fix in 34): the lock decides from stand-ins, markers in a shared folder and readings of machine state. Decide on the top two rungs: a construct that refuses what it cannot read (the room reader in a module of its own, one reader per platform, each answering unreadable instead of a default; a ticket record that holds pid and start time, not a name) or removing the need (the queue gone for one lock file held by a process the OS reaps). Its leftover defects go into that decision, not patches: log-at-end (room wait and admission reach lock.log only in the run's end line, c34-t5-code-r1-06, c34-t5-sec-r1-04), empty-env (an empty ENNYN_LOCK_* variable refuses every run, c34-t5-sec-r1-05), own-ticket-order (a mutant moving the own-ticket check after the sweep loop survives, T2 security review), load-lag (the 1-minute load average lags a job that just ended, T5 author). Or say the limit and decline them The decision also gives the log the minutes waited for room apart from the minutes in the queue: three days of the log (354 runs, 67.9 h waited, 33 admissions short of room, 29 on load, 4 on disk, none on memory) cannot say how much of the wait was room.",
       "source": "cycle 2026-11-14 (34) convergence: fix-loop brake, skills/cycle/report-formats.md"
     },
     {
@@ -6793,7 +6796,7 @@
       "cost": "S",
       "cluster": "security",
       "gate": "beside",
-      "title": "Security audit of cycle 53: low findings and items left. (a) push-check's fetch runs without --prune, so a remote branch deleted after the last fetch (a merged pull request) still reads as the upstream: push-check exits 0, the hook lets the bare push run and the push recreates the branch (c53-t4-audit-r0-01); the fetch prunes, or a gone upstream asks. (b) withConfig's comment in the push hook says a non-numeric GIT_CONFIG_COUNT makes git fail every call, while git's strtoul takes ' 1' and '+1' (cycle 53 review note; SECURITY.md already states the limit). Lean: (c) waits() allows a tab in the bare push pattern that the reader refuses earlier: unreachable; (d) firstLine in checks/push-mode.mjs and the same stderr-first-line expression in checks/test-runs.mjs are near-copies. Evidence gaps: whether Claude Code sends agent_id on a main thread started with --agent or on a teammate's call; whether npm's trusted publisher requires the npm environment (the owner's setting)",
+      "title": "Security audit of cycle 53: low findings and items left. (a) push-check's fetch runs without --prune, so a remote branch deleted after the last fetch (a merged pull request) still reads as the upstream: push-check exits 0, the hook lets the bare push run and the push recreates the branch (c53-t4-audit-r0-01); the fetch prunes, or a gone upstream asks. (b) withConfig's comment in the push hook says a non-numeric GIT_CONFIG_COUNT makes git fail every call, while git's strtoul takes ' 1' and '+1' (cycle 53 review note; SECURITY.md already states the limit). Lean: (c) waits() allows a tab in the bare push pattern that the reader refuses earlier: unreachable; (d) firstLine in checks/push-mode.mjs and the same stderr-first-line expression in checks/test-runs.mjs are near-copies. Evidence gaps: whether Claude Code sends agent_id on a main thread started with --agent or on a teammate's call; whether npm's trusted publisher requires the npm environment (the owner's setting) (2026-11-27: item (a), push-check's exit when the remote branch was deleted, moved to push-check-gone-upstream at medium)",
       "source": "cycle 2026-11-24 (53) security audit"
     },
     {
@@ -6817,7 +6820,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "method",
-      "title": "task-brief.md's Rules row says what an author or reviewer runs nothing of: a command that can ask the user (a push in any spelling, a publish, a forge write, an edit under .claude/ or .git/, rm -rf with a glob or a variable, which Claude Code's own check asks about), since Claude Code 2.1.330 routes a subagent's ask to the session's screen; a call rejected or asking is written as unmeasured and never retried. Cycle 53's briefs carried it by hand after prompts reached the screen",
+      "title": "task-brief.md's Rules row says what an author or reviewer runs nothing of: a command that can ask the user (a push in any spelling, a publish, a forge write, an edit under .claude/ or .git/, rm -rf with a glob or a variable, which Claude Code's own check asks about), since Claude Code 2.1.330 routes a subagent's ask to the session's screen; a call rejected or asking is written as unmeasured and never retried. Cycle 53's briefs carried it by hand after prompts reached the screen Cycle 56: a task waited on a Bash prompt with nobody there.",
       "source": "the user, 2026-11-24: a request; cycle 2026-11-24 (53) briefs"
     },
     {
@@ -6905,9 +6908,9 @@
       "since": 54,
       "id": "colima-delete-leaves-ssh-mux",
       "value": "medium",
-      "cost": "S",
+      "cost": "M",
       "cluster": "method",
-      "title": "Labs' Linux runs (colima start -p cNN-tN, then colima delete) left 14 ssh mux masters of deleted profiles running for 9 to 23 h (cycles 52 and 53); measure whether colima delete stops them, and if not, the lab template stops the mux by its PID or the closing lists them Same teardown, measured 2026-11-25 with colima 0.10.3: colima delete without --data also keeps the profile's data disk, and the data disks of many cycles' lab profiles filled the disk. The lab template deletes with --data, then checks that no disk and no mux of that profile is left, and the brief's Linux line says so; a named release or reference profile is torn down the same way by the run that made it With --data every lab pulls its images again: Docker Hub's anonymous pull limit (per address, per hour; read from the ratelimit headers of a HEAD request for ratelimitpreview/test with an anonymous token) can run out. The template counts a cycle's pulls against it, or loads the pinned images from a file saved on the host",
+      "title": "Labs' Linux runs (colima start -p cNN-tN, then colima delete) left 14 ssh mux masters of deleted profiles running for 9 to 23 h (cycles 52 and 53); measure whether colima delete stops them, and if not, the lab template stops the mux by its PID or the closing lists them Same teardown, measured 2026-11-25 with colima 0.10.3: colima delete without --data also keeps the profile's data disk, and the data disks of many cycles' lab profiles filled the disk. The lab template deletes with --data, then checks that no disk and no mux of that profile is left, and the brief's Linux line says so; a named release or reference profile is torn down the same way by the run that made it With --data every lab pulls its images again: Docker Hub's anonymous pull limit (per address, per hour; read from the ratelimit headers of a HEAD request for ratelimitpreview/test with an anonymous token) can run out. The template counts a cycle's pulls against it, or loads the pinned images from a file saved on the host 2026-11-26: 33 masters of deleted profiles from cycles 54 to 58 and four data disks (7.1 GB) were left; the briefs of cycles 57 and 58 still said delete -f though this node said --data. The rule leaves the hand brief: a tracked script (test/linux-files.mjs <test files>) starts the profile, runs the files in the pinned node:22 image (the floor image on a flag), stops the profile before deleting it with --data, and fails when a disk or master of its profile is left; the brief names the script and holds no colima command. Whether a stop before the delete ends the master is its first measurement. Cycle 59's briefs carried stop + delete --data + a pgrep and disk-list check by hand: every author reported nothing left.",
       "source": "the user, 2026-11-24: left to the session"
     },
     {
@@ -6981,10 +6984,10 @@
       "needs": [],
       "since": 55,
       "id": "impact-signal-test-under-load",
-      "value": "low",
+      "value": "medium",
       "cost": "S",
       "cluster": "tests",
-      "title": "test/impact.test.mjs:312 (a reference command whose runner is asked to stop) failed once in the cycle 55 whole run under load: the row read \"the reference command's runner ended with SIGTERM\" where the test wants \"killed by SIGTERM\"; alone 14/14, whole rerun green. Find which process the signal reaches first under load and make the test hold either the wording or the order",
+      "title": "test/impact.test.mjs:312 (a reference command whose runner is asked to stop) failed once in the cycle 55 whole run under load: the row read \"the reference command's runner ended with SIGTERM\" where the test wants \"killed by SIGTERM\"; alone 14/14, whole rerun green. Find which process the signal reaches first under load and make the test hold either the wording or the order Same test, 2026-11-26: two `node ask.mjs` processes with no parent were found. A reading, not reproduced: plugin/impact/reference-run.mjs spawns the command before it installs its signal handlers and before it says the pid, so a stop that arrives in between kills the runner with no pid said and the command runs on with no limit; `ennyn lock` runs through the same file. First measurement: a stand-in that delays the runner after the spawn shows a dead runner, no pid line and a live child. Then handlers first, the pid said at once after the spawn, and a test with that stand-in. Cycle 59 (41eca55): the test's fixture now ends by itself after 30 s, so a failed run leaves nothing; the runner's race stays here.",
       "source": "cycle 2026-11-25 (55) closing whole run"
     },
     {
@@ -6997,17 +7000,6 @@
       "cluster": "security",
       "title": "Trace which folders the plugin-eval sandbox shuts to an arm's Bash beyond the HOME it is given and that HOME's parent: in cycle 56 a sibling of the eval cwd's parent was denied too (Operation not permitted), with no rule read for it",
       "source": "cycle 2026-11-26 (56) eval-arm-read-tool-home lab, symlink-cwd first run"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 56,
-      "id": "security-audit-56-lows",
-      "value": "low",
-      "cost": "S",
-      "cluster": "security",
-      "title": "Security audit 56 lows: .github/workflows/release.yml's publish job (the one that can mint the npm token) installs a floating Node major (node-version \"24\") on ubuntu-latest; pin an exact release that ships npm 11.5.1 or later and change test/engines.test.mjs with it (c56-t4-audit-r0-01). SECURITY.md names github.com/boranb/ennyn as the only source and no release path: add npm, the release workflow's environment gate, OIDC trusted publishing and provenance (c56-t4-audit-r0-02). Also: ennyn@0.0.0-stage, the placeholder npm's staged publishing left, may be deprecated. Next audit: the release path once a tag first goes through release.yml (provenance, staged approval), and push-check's exit 0 when the remote branch was deleted",
-      "source": "cycle 2026-11-26 (56) security audit"
     },
     {
       "status": "planned",
@@ -7036,7 +7028,7 @@
       "needs": [],
       "since": 56,
       "id": "no-ready-node-rule",
-      "title": "A cycle with fewer ready core nodes than core slots says so and invents no task. Today ennyn core prints 'No ready core node.' at exit 0 for four different states and skills/cycle/SKILL.md section 1 has no rule for it; init asks where the work comes from once. (a) ennyn core says why none is ready, in text and --json: no open node, closed gates (ids), held questions, needs that wait behind a gate or a held node, each with its count. (b) With none ready the cycle does not start: it reports what the graph holds and asks init's question 5 again, with at most five candidates read from evidence, each naming it: roadmap files changed since the graph was written, open issues, leftover defects in the findings ledger that no node carries, the convergence report's most recurring class, gated nodes the user could open, held nodes' questions. Each candidate is a proposal: it enters the graph only on the user's yes, through the Verdicts rule (report-formats.md), never as a task of this cycle on the session's own word. Nobody to ask (a runner in a terminal): it stops and says why, and writes nothing. (c) With some ready but fewer than the slots, the cycle runs those and the audit, and the plan names the empty slots. (d) Before empty: a closing that leaves fewer ready core nodes than the next cycle's core slots (two, three when no mechanization node is ready) ends its report with that count and the same candidates, so the answer can come between cycles; the threshold is the slot count, no config key",
+      "title": "A cycle with fewer ready core nodes than core slots says so and invents no task. Today ennyn core prints 'No ready core node.' at exit 0 for four different states and skills/cycle/SKILL.md section 1 has no rule for it; init asks where the work comes from once. (a) ennyn core says why none is ready, in text and --json: no open node, closed gates (ids), held questions, needs that wait behind a gate or a held node, each with its count. (b) With none ready the cycle does not start: it reports what the graph holds and asks init's question 5 again, with at most five candidates read from evidence, each naming it: roadmap files changed since the graph was written, open issues, leftover defects in the findings ledger that no node carries, the convergence report's most recurring class, gated nodes the user could open, held nodes' questions. Each candidate is a proposal: it enters the graph only on the user's yes, through the Verdicts rule (report-formats.md), never as a task of this cycle on the session's own word. Nobody to ask (a runner in a terminal): it stops and says why, and writes nothing. (c) With some ready but fewer than the slots, the cycle runs those and the audit, and the plan names the empty slots. (d) Before empty: a closing that leaves fewer ready core nodes than the next cycle's core slots (two, three when no mechanization node is ready) ends its report with that count and the same candidates, so the answer can come between cycles; the threshold is the slot count, no config key (e) Every closing, thin graph or not, lists the nodes that wait on the user (a closed user gate, a held question), oldest first, each with the cycle it has waited since and how many open nodes need it, and names those whose wait looks over. Measured 2026-11-26: 16 open nodes carry the user gate, the oldest since cycles 6, 8 and 13, and five describe steps the handoff records as made.",
       "value": "high",
       "cost": "M",
       "cluster": "plan",
@@ -7150,39 +7142,6 @@
     {
       "status": "planned",
       "needs": [],
-      "since": 57,
-      "id": "config-dead-old-globs",
-      "value": "low",
-      "cost": "S",
-      "cluster": "gates",
-      "title": "Remove the eight globs in .ennyn/config.json's review.impactRequiredGlobs and review.cochange that name the paths from before the plugin moved to plugin/ (doctor warns that they match nothing; their plugin/ forms stand beside them). Removing them is a loosening of those two keys: it waits for the user's yes, or for loosening-renamed-globs Decided 2026-11-26 (Fable, by delegation): yes, in cycle 59 as one orchestrator chore commit before the version bump, with User-Approved-Loosening for review.impactRequiredGlobs and review.cochange and an Impact line; the body says the yes came by delegation. Remove impactRequiredGlobs checks/**, core/config.mjs, metrics/szz.mjs, setup/scan.mjs; cochange rule 3's unprefixed paths, rule 4's core/config.mjs, rule 5 whole (rule 6 is its plugin/ twin), rule 7's unprefixed paths but not scripts/** (scripts/ennyn.mjs is tracked). Every one has its plugin/ form beside it and no root file of those folders is tracked, so nothing is loosened in practice. After: doctor shows 0 warnings",
-      "source": "cycle 2026-11-26 (57) plugin-root-dev-deps"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 58,
-      "id": "readme-says-what-runs-lows",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "distribution",
-      "title": "readme-says-what-runs lows (cycle 58), before the directory submission: clone-setup's request also goes without --login when a GitHub noreply address is in commits.addresses, and only with commits.signed, which the README leaves out; the README names .claude/settings.json for init's no-bypass settings, not .claude/settings.local.json, which SECURITY.md names; 'installing the plugin downloads nothing' while the marketplace add fetches the repository (say no npm and no dependencies, only the plugin's files); the write list leaves out that worktrees --remove deletes the cycle's marked worktree folders; the Setup row does not name init's settings writes",
-      "source": "cycle 2026-11-26 (58) readme-says-what-runs, review round 1"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 58,
-      "id": "network-claim-skill-steps",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "security",
-      "title": "Hold the command lines of plugin/skills and plugin/agents to the README's network list as the code is held: each line that starts with a listed network program (git push or fetch, gh, npm, npx, curl, wget, ssh) maps to a README entry, through an allow list, not a shape scan; the closing's ennyn deps reached OSV unsaid because skill text is not scanned",
-      "source": "cycle 2026-11-26 (58) network-claim-test, author and security review round 1"
-    },
-    {
-      "status": "planned",
-      "needs": [],
       "since": 58,
       "id": "network-claim-refuses-unread",
       "value": "medium",
@@ -7214,6 +7173,119 @@
       "cluster": "init",
       "title": "init-scan's commit-language guess counts English words as Turkish: TR_WORD in plugin/setup/scan.mjs lists once (for önce without diacritics) and her; hold it with an English reject corpus so a subject like '... at once' reads English",
       "source": "cycle 2026-11-26 (58) launch-demo, measurement"
+    },
+    {
+      "id": "npm-publishing-access",
+      "title": "The owner sets the npm package's publishing access to require two-factor authentication and disallow tokens, at the sitting, only after 0.1.2's attestation reads back (so the hand fallback stays open until trusted publishing has worked once), reading the setting page's own text first and not setting it if it says trusted publishing is refused too; then release.yml's header line that no npm token is stored holds (c59-t2-audit-r0-02)",
+      "status": "planned",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "needs": [],
+      "source": "cycle 2026-11-27 (59) security audit, Fable",
+      "since": 59,
+      "gate": "user"
+    },
+    {
+      "id": "impact-globs-release-path",
+      "title": "Add .github/workflows/** and test/engines.test.mjs to review.impactRequiredGlobs (a tightening): a change to the release path or its test copy now lands without an Impact line (c59-t2-audit-r0-03). Taken with release-node-refresh",
+      "status": "planned",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "gates",
+      "needs": [],
+      "source": "cycle 2026-11-27 (59) security audit, Fable",
+      "since": 59
+    },
+    {
+      "id": "release-node-refresh",
+      "title": "The release job's Node pin holds its facts by a record, not a comment: a script reads nodejs.org dist/index.json and writes a record of the pinned release (version, bundled npm, security flag, date read); test/engines.test.mjs refuses a pin missing from the record or with npm under 11.5.1; the Release steps name the refresh before each tag (rung 3 for test/engines.test.mjs's vacuous-gate rows, c57 and c59)",
+      "status": "planned",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "distribution",
+      "needs": [],
+      "source": "cycle 2026-11-27 (59) security audit and closing, Fable",
+      "since": 59
+    },
+    {
+      "id": "test-fixtures-end-by-themselves",
+      "title": "Test children with an endless setInterval (test/mutation.test.mjs 424, 427, 464, 470, 521, 544, 550; test/heavy-lock.test.mjs 93, 290) are ended only by a test process still alive: give each a self-ending timer longer than its test needs, so a SIGKILLed suite leaves nothing; with impact-signal-test-under-load",
+      "status": "planned",
+      "value": "low",
+      "cost": "S",
+      "cluster": "tests",
+      "needs": [],
+      "source": "cycle 2026-11-27 (59) T4 sweep, Fable",
+      "since": 59
+    },
+    {
+      "id": "network-claim-ennyn-net-from-code",
+      "title": "Derive which CLI commands reach the network from the code (the commands that reach a fetch, registry or push site) instead of the hand table ENNYN_NET in test/network-claim.test.mjs, so a command that newly reaches OSV, the registry or GitHub through an existing site is held",
+      "status": "planned",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "needs": [],
+      "source": "cycle 2026-11-27 (59) network-claim-skill-steps, Fable",
+      "since": 59
+    },
+    {
+      "id": "readme-security-lists-design-decision",
+      "title": "README.md and SECURITY.md take no more sentence patches (both at the fix-loop brake, cycle 59). Decided: (rung 3) each entry of the run, write and network lists in README.md, README.tr.md and SECURITY.md is a claim key the test holds to a code site, as the network list is; the run list first (the scan already counts imports and child processes), the write list once its sites are counted (first measurement); an entry with no site and a site with no entry both fail. (rung 4) a sentence that states a condition is cut to the entry and its off switch, the condition said once in SECURITY.md; the 0.1.1 hand-check recipe is deleted once 0.1.2 shows its attestation, the sentence that 0.1.1 has none stays. Stated limit, the rest declined: what a scaffolder or package the user chose runs and reaches is outside the lists, in one sentence. Inputs: c59-t1-code-r1-01 (a noreply address vs the single one), c59-t1-sec-r1-01 (run list omits the .mjs graph module), c59-t1-sec-r1-02 (init's write list omits .gitignore and .npmrc), c59-t1-author-r0-01 (uninstall paragraph omits the plan-approval option), c59-t2-code-r2-01 (0.1.1 check steps lack the extract), c59-t3-sec-r2-01 (the scaffolder runs downloaded code). Nothing of it before the v0.1.2 tag",
+      "status": "planned",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "distribution",
+      "needs": [],
+      "source": "cycle 2026-11-27 (59) convergence brake, Fable",
+      "since": 59
+    },
+    {
+      "id": "network-claim-closed-heads",
+      "title": "test/network-claim.test.mjs reads known network names and passes any line whose head it does not know: every command line of skills and agents has its head, past the wrappers read today, on the network list or on a list of programs said to reach nothing, and a head on neither fails as unread (rung 3 for unreadable-shape-passes and reader-takes-lookalike, cycles 58 and 59); first measurement: the distinct heads today",
+      "status": "planned",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "security",
+      "needs": [],
+      "source": "cycle 2026-11-27 (59) convergence rung 2, Fable",
+      "since": 59,
+      "mechanization": true,
+      "sourceClass": "unreadable-shape-passes"
+    },
+    {
+      "id": "push-check-gone-upstream",
+      "title": "push-check in after-closing mode exits 0 when the branch's upstream was deleted on the remote after the last fetch (with --tested HEAD too), and the push then recreates the branch with every commit; in ask mode it exits 3. A gate that says ready for a deleted upstream accepts wrongly: refuse (exit 1) when the remote no longer holds the upstream branch (c59-t2-audit-r0-01, first seen as c53-t4-audit-r0-01). Not before the tag: the push path has a fix-loop history, and this repository's no-new-branches ruleset refuses the recreate",
+      "status": "planned",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "needs": [],
+      "source": "cycle 2026-11-27 (59) security audit, Fable",
+      "since": 59
+    },
+    {
+      "id": "stall-lines",
+      "title": "A stall is recorded and becomes work. `ennyn journal stall <kind> <minutes> [<node>] \"<line>\"` adds a journal line when work stood still for a reason that is neither a finding nor an ask: lock (queue or room minutes of the cycle's runs, read from the lock log, never typed), prompt (a permission prompt or question nobody was there to answer), rerun (a gate red under load and green alone, naming the test), machine (a full disk, no memory, a VM that would not start), peer (another session's lock, lease or open cycle), refuted (a brief's measurement that did not hold). The closing prints `### Stalled`, minutes by kind; every line names an open node or becomes one (source `cycle <date> (N): a stall`), and a named node gets the cycle and its minutes appended. SKILL.md section 1's blocker is then read, not judged: a node the stall lines of two of the last three cycles name is printed by `ennyn core` above the score list with its minutes, and the plan gives it a core slot or says in one line why not. `ennyn status` shows open stalls beside what waits for the user. The text goes in journal.md and report-formats.md. Measured 2026-11-26, cycles 54 to 58 and three days of the lock log: 67.9 h waited in the lock for 32.8 h run over 354 runs; one author waited 2 h 10 min; a suite rerun for a timing test in cycles 55, 56 and 57; a fast run red on a full disk; a task waiting on a prompt with nobody there. Cycle 59: author lock waits of 21 to 47 minutes per heavy job",
+      "status": "planned",
+      "value": "high",
+      "cost": "M",
+      "cluster": "cycle",
+      "needs": [],
+      "source": "the user, 2026-11-26: a request",
+      "since": 59
+    },
+    {
+      "id": "leftovers-machine-list",
+      "title": "`ennyn leftovers --start` and the closing's `ennyn leftovers` also read the machine, and only list. (a) Processes of the session's user whose parent is gone and whose working directory lies in the repository, one of its worktrees, the state dir, the cycle's kept folder or the temp folder: name, pid, age, CPU time and directory, never arguments or environment. (b) VM profiles running with no container, and data disks and ssh control masters whose profile no longer exists (the lima home the VM tool uses is passed: a disk listing without it reads empty). (c) The temp folder's entries by prefix, count and size, within a time limit. (d) Memory, swap (also the swap files' disk), load and free disk. The start prints what earlier runs left, since a session that died never reached its closing; the closing prints what is new since the start and still there. Each line is a question for the user; nothing is stopped or removed, a reading that cannot be made is unmeasured, no tool or VM is started to measure. First step of run-leftover-diff, and the listing code project-footprint-machine reuses; Windows unmeasured until read there. Measured 2026-11-26 on the origin machine: 43 parentless processes up to 25 h old, 33 of them ssh masters of deleted VM profiles; four data disks of deleted profiles; a VM idle for three days; 3504 test temp roots; no step listed any of it. 2026-11-27: swap grew to 72 GB of files and free disk fell from 65 to 29 GiB in five hours",
+      "status": "planned",
+      "value": "high",
+      "cost": "M",
+      "cluster": "cycle",
+      "needs": [],
+      "source": "the user, 2026-11-26: a request",
+      "since": 59
     }
   ],
   "done": [
@@ -8520,6 +8592,34 @@
       "status": "done",
       "finished": "2026-11-26",
       "cluster": "evidence"
+    },
+    {
+      "id": "readme-says-what-runs-lows",
+      "title": "Closed in cycle 59 (bb1884c): README, README.tr and SECURITY.md say adding the marketplace clones the repository and the install copies plugin/ with no npm, clone-setup asks GitHub only with commits.signed, worktrees --remove deletes the cycle's marked folders, and which settings file each of init's writes goes to. Leftovers: readme-security-lists-design-decision.",
+      "status": "done",
+      "finished": "2026-11-27",
+      "cluster": "distribution"
+    },
+    {
+      "id": "security-audit-56-lows",
+      "title": "Closed in cycle 59 (52f05a1), with the cycle's security audit: release.yml's publish job pins Node 24.22.3 (npm 11.19.1) and the engines test asserts an exact version; SECURITY.md names the npm release path from tag v0.1.2 on, 0.1.1 as published by hand with no attestation (integrity measured equal to the tagged commit's pack on 2026-11-26), 0.0.0-stage as a placeholder, and that the workflow checks no tag signature. Leftovers: npm-publishing-access, impact-globs-release-path, release-node-refresh, push-check-gone-upstream, readme-security-lists-design-decision.",
+      "status": "done",
+      "finished": "2026-11-27",
+      "cluster": "security"
+    },
+    {
+      "id": "network-claim-skill-steps",
+      "title": "Closed in cycle 59 (ae70c86): test/network-claim.test.mjs reads the command lines of plugin/skills and plugin/agents (fences and one-line spans, through env, timeout and ennyn lock, git's global options, remote and submodule, quoted words) and holds each network command to an allow entry and the README list; README and SECURITY.md now say a new project's scaffold and install download from the package manager's registry and init's npm checks can trigger npm's update check. Leftovers: network-claim-closed-heads, network-claim-ennyn-net-from-code, readme-security-lists-design-decision.",
+      "status": "done",
+      "finished": "2026-11-27",
+      "cluster": "security"
+    },
+    {
+      "id": "config-dead-old-globs",
+      "title": "Closed in cycle 59 (bf739a4): the root globs from before plugin/ left review.impactRequiredGlobs and review.cochange (rule 5 whole, rule 7 keeps scripts/**), with User-Approved-Loosening for both keys by delegation; doctor shows 0 warnings.",
+      "status": "done",
+      "finished": "2026-11-27",
+      "cluster": "gates"
     }
   ],
   "declined": [
@@ -8808,6 +8908,30 @@
       "source": "the user, 2026-11-23: a request; Fable, 2026-11-23; a public reel on AI code-analysis tools and decoy insertion (2026-11-22)",
       "since": 52,
       "reason": "Fable, 2026-11-23: the figures are the tool authors' own, unverified (tool repositories not fetched); the same source shows the remover restoring 6 of 6; a build-time transformer is third-party code rewriting the shipped artifact, the class preinstall-name-check and load-time-obfuscation guard against; behaviour seen from outside can be rebuilt without reading code. Protection is what is not shipped. A project that picks such a tool itself gets it as any dependency (name check, cooldown)"
+    },
+    {
+      "id": "readme-uninstall-plan-approval",
+      "title": "README's uninstall paragraph names the ask rules init added but not the plan-approval option uninstall lists",
+      "status": "planned",
+      "needs": [],
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-27 (59), proposed by an author",
+      "since": 59,
+      "reason": "Fable, 2026-11-27: README.md is at the fix-loop brake; folded into readme-security-lists-design-decision as its input c59-t1-author-r0-01"
+    },
+    {
+      "id": "network-claim-step-wrappers",
+      "title": "Read commands behind env, sudo, sh -c, xargs and placeholders in skill steps",
+      "status": "planned",
+      "needs": [],
+      "value": "low",
+      "cost": "S",
+      "cluster": "security",
+      "source": "cycle 2026-11-27 (59), proposed by an author",
+      "since": 59,
+      "reason": "Fable, 2026-11-27: it only reads more shapes (the brake rule's clause); network-claim-closed-heads replaces it"
     }
   ]
 }
