@@ -1460,7 +1460,7 @@
         "readme-says-what-runs-lows"
       ],
       "id": "directory-submission",
-      "title": "Submit the plugin to Anthropic's plugin directory (claude.ai/directory/manage; the repository may be private while it validates, public before the listing goes live): the listing comes from plugin.json and the README; new versions published by hand or by a reviewer, never auto-published; the icon is in place (.claude-plugin/icon.svg, 140e7be); the README says what Ennyn sends over the network and how to turn it off Submitted from the plugin's subfolder at a release tag (v0.1.2 or later), never from the root or from main; the portal's Validate step runs first and a Blocks row stops the submission; a hold is the reviewer's to read. The listing is no launch condition: the docs give no review time (checklist and submit page read 2026-11-26) Cycle 57: the plugin folder is plugin/ (8706e8d); claude plugin validate --strict passes on the marketplace and on plugin/ (2.1.310).",
+      "title": "Submit the plugin to Anthropic's plugin directory (claude.ai/directory/manage; the repository may be private while it validates, public before the listing goes live): the listing comes from plugin.json and the README; new versions published by hand or by a reviewer, never auto-published; the icon is in place (.claude-plugin/icon.svg, 140e7be); the README says what Ennyn sends over the network and how to turn it off Submitted from the plugin's subfolder at a release tag (v0.1.2 or later), never from the root or from main; the portal's Validate step runs first and a Blocks row stops the submission; a hold is the reviewer's to read. The listing is no launch condition: the docs give no review time (checklist and submit page read 2026-11-26) Cycle 57: the plugin folder is plugin/ (8706e8d); claude plugin validate --strict passes on the marketplace and on plugin/ (2.1.310). Decided 2026-11-26 (Fable, by delegation): yes, by the owner's own portal login in the same sitting as the v0.1.2 tag, once its provenance shows; readme-says-what-runs-lows inside v0.1.2",
       "value": "high",
       "cost": "S",
       "cluster": "distribution",
@@ -7155,8 +7155,7 @@
       "value": "low",
       "cost": "S",
       "cluster": "gates",
-      "gate": "user",
-      "title": "Remove the eight globs in .ennyn/config.json's review.impactRequiredGlobs and review.cochange that name the paths from before the plugin moved to plugin/ (doctor warns that they match nothing; their plugin/ forms stand beside them). Removing them is a loosening of those two keys: it waits for the user's yes, or for loosening-renamed-globs",
+      "title": "Remove the eight globs in .ennyn/config.json's review.impactRequiredGlobs and review.cochange that name the paths from before the plugin moved to plugin/ (doctor warns that they match nothing; their plugin/ forms stand beside them). Removing them is a loosening of those two keys: it waits for the user's yes, or for loosening-renamed-globs Decided 2026-11-26 (Fable, by delegation): yes, in cycle 59 as one orchestrator chore commit before the version bump, with User-Approved-Loosening for review.impactRequiredGlobs and review.cochange and an Impact line; the body says the yes came by delegation. Remove impactRequiredGlobs checks/**, core/config.mjs, metrics/szz.mjs, setup/scan.mjs; cochange rule 3's unprefixed paths, rule 4's core/config.mjs, rule 5 whole (rule 6 is its plugin/ twin), rule 7's unprefixed paths but not scripts/** (scripts/ennyn.mjs is tracked). Every one has its plugin/ form beside it and no root file of those folders is tracked, so nothing is loosened in practice. After: doctor shows 0 warnings",
       "source": "cycle 2026-11-26 (57) plugin-root-dev-deps"
     },
     {
