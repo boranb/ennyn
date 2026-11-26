@@ -32,7 +32,16 @@ Kodu bir agent'ın yazdığı bir projede zamanla şu sorunlar ortaya çıkar:
 - Her döngü beş metrikle kapanıyor: review'ın bulduğu hatalar, fix'lerin yol açtığı regression'lar, Ennyn'den önceki kodda bulunan eski hatalar, gate'lerin yakaladığı hatalar ve commit'i geçip sonradan ortaya çıkan hatalar. Her oturumda yüklenen talimat metninin büyüyüp büyümediği de ölçülüyor.
 - Görevler bir iş grafında, yani bir JSON dosyasında duruyor. Ennyn her döngüde bunlardan dördünü seçiyor ve değeri yüksek en eski göreve her zaman yer ayırıyor.
 
-Ennyn'in runtime bağımlılığı da install script'i de yok. İnternete yalnızca iki durumda çıkıyor: bir commit, lock dosyasına paket eklediğinde commit hook'u bu paketleri npm registry'sinde sorguluyor (`security.deps.online: false` ile kapatabilirsiniz). `ennyn deps` komutunu çalıştırdığınızda da OSV güvenlik açığı veritabanını sorguluyor. Ayrıntılar [SECURITY.md](SECURITY.md) dosyasında (İngilizce).
+Ennyn'in runtime bağımlılığı da install script'i de yok; plugin'i kurmak hiçbir şey indirmez. İnternete yalnızca şu durumlarda çıkar:
+
+- Bir commit lock dosyasına paket eklediğinde commit hook'u her yeni paketi npm registry'sinde sorgular (`registry.npmjs.org`, `api.npmjs.org`). Bunu `security.deps.online: false` ile kapatabilirsiniz.
+- `ennyn deps`, açık registry'den gelen her paketin adını ve sürümünü OSV güvenlik açığı veritabanına gönderir (`api.osv.dev`). Bunu siz çalıştırdığınızda ve her döngünün sonunda yapar; `security.deps.advisories: ""` ile kapatabilirsiniz.
+- `ennyn push-check` dalınızın remote'unda `git fetch` çalıştırır; döngünün sonunda agent da oraya push eder. `push.mode` değerini `after-closing` yapmadıysanız önce size sorar.
+- `ennyn clone-setup`, bir GitHub kullanıcı adı verildiğinde o hesabın herkese açık SSH imzalama anahtarlarını `api.github.com` adresinden okur; token göndermez.
+- `/ennyn:init` sırasında, reponun GitHub'da bir remote'u varsa ve `gh` kuruluysa, agent açık GitHub issue'larınızı `gh` ile listeler.
+- Partial clone'da git, eksik nesneleri her git komutunda olduğu gibi remote'unuzdan kendisi çeker.
+
+Ennyn; git, Node ve birkaç sistem aracı (`ps`, `sysctl`, `taskkill`, kendi süreçleri ve boş bellek için) dışında yalnızca sizin verdiğiniz komutları çalıştırır: config'teki test komutları, `ennyn mutate`'e verdiğiniz komut ve `impact.referenceCommand`. Reponuzun dışında yalnızca şuralara yazar: plugin'in kendi veri klasörüne (her oturumun çalıştırdığı sürüm), oturumun ortam dosyasına (iki `ENNYN_` değişkeni), `ennyn lock` kullanırsanız `~/.ennyn-lock` klasörüne ve geçici klasörlere. Repo içinde durumunu `.git/ennyn` klasöründe tutar. Commit hook'u yalnızca siz isterseniz kurulur; `/ennyn:init` de ask kurallarını ve bypass modu olmadan çalışma ayarlarını `.claude/settings.json` dosyasına ancak siz evet derseniz ekler. Ayrıntılar [SECURITY.md](SECURITY.md#what-ennyn-runs-on-a-machine) dosyasında (İngilizce).
 
 Ennyn'in tasarımının gerekçeleri [docs/evidence.md](docs/evidence.md) dosyasında (İngilizce).
 
@@ -54,7 +63,7 @@ claude plugin marketplace add boranb/ennyn
 claude plugin install ennyn@ennyn
 ```
 
-Sonra projenizde `/ennyn:init` çalıştırın. Komut repoyu tarar, birkaç soru sorar ve `.ennyn/` klasörünü hazırlar. Diğer projelerinizde plugin'in hook'ları, plugin'in sürümünü kendi klasörüne not etmek dışında hiçbir şey yapmaz.
+Sonra projenizde `/ennyn:init` çalıştırın. Komut repoyu tarar, birkaç soru sorar ve `.ennyn/` klasörünü hazırlar. Diğer projelerinizde plugin'in hook'ları, plugin'in sürümünü kendi klasörüne not edip oturuma bildirmek dışında hiçbir şey yapmaz.
 
 Ennyn'i yalnızca `github.com/boranb/ennyn` adresinden kurun: yukarıdaki komutlarla ya da bir klondan. Asıl Ennyn'de çalıştırılabilir dosya, çalışma zamanı bağımlılığı ya da kurulum script'i yoktur. Çalıştırılabilir dosya getiren ya da sizden bir kurulum programı çalıştırmanızı isteyen bir kopya Ennyn değildir.
 

@@ -32,7 +32,16 @@ In a project where an agent writes the code, these problems show up over time:
 - Each cycle closes with five metrics: bugs review found, regressions introduced by fixes, old bugs in code from before Ennyn, bugs a gate caught, and bugs that got past the commit and turned up later. It also measures whether the instruction text loaded in every session grew.
 - Tasks live in a work graph, a JSON file. Ennyn picks four per cycle and always keeps a slot for the oldest high-value task.
 
-Ennyn has no runtime dependencies and no install scripts. It makes network requests in only two cases. When a commit adds packages to a lock file, the commit hook looks them up on the npm registry (turn that off with `security.deps.online: false`). The `ennyn deps` command queries the OSV vulnerability database when you run it. More in [SECURITY.md](SECURITY.md).
+Ennyn has no runtime dependencies and no install scripts, and installing the plugin downloads nothing. It goes on the network only in these cases:
+
+- When a commit adds packages to a lock file, the commit hook looks each new one up on the npm registry (`registry.npmjs.org`, `api.npmjs.org`). Turn that off with `security.deps.online: false`.
+- `ennyn deps` sends the name and version of each package from the public registry to the OSV vulnerability database (`api.osv.dev`), when you run it and at the end of each cycle. Turn that off with `security.deps.advisories: ""`.
+- `ennyn push-check` runs `git fetch` on your branch's remote, and at the end of a cycle the agent pushes there. It asks you first unless you set `push.mode` to `after-closing`.
+- `ennyn clone-setup`, given a GitHub login, reads that account's public SSH signing keys from `api.github.com`, with no token.
+- During `/ennyn:init`, the agent lists your open GitHub issues with `gh`, if the repository has a GitHub remote and `gh` is set up.
+- In a partial clone, git itself fetches the objects it is missing from your remote, as it would for any git command.
+
+Besides git, Node and a few system tools (`ps`, `sysctl`, `taskkill`, for its own processes and the free memory), Ennyn runs only what you name: the test commands in your config, the command you give `ennyn mutate`, and `impact.referenceCommand`. Outside your repository it writes to the plugin's own data folder (the version each session runs), to the session's environment file (two `ENNYN_` variables), to `~/.ennyn-lock` when you use `ennyn lock`, and to temporary folders. In the repository it keeps its state in `.git/ennyn`. The commit hook is installed only when you ask for it, and `/ennyn:init` adds ask rules and the settings for running without bypass mode to `.claude/settings.json` only on your yes. Details in [SECURITY.md](SECURITY.md#what-ennyn-runs-on-a-machine).
 
 The reasoning behind Ennyn's design is in [docs/evidence.md](docs/evidence.md).
 
@@ -54,7 +63,7 @@ claude plugin marketplace add boranb/ennyn
 claude plugin install ennyn@ennyn
 ```
 
-Then run `/ennyn:init` in your project. It scans the repository, asks a few questions, and sets up `.ennyn/`. In your other projects, the plugin's hooks do nothing except note the plugin's version in the plugin's own folder.
+Then run `/ennyn:init` in your project. It scans the repository, asks a few questions, and sets up `.ennyn/`. In your other projects, the plugin's hooks do nothing except note the plugin's version in the plugin's own folder and name it to the session.
 
 Install Ennyn only from `github.com/boranb/ennyn`, with the commands above or from a clone. The real thing has no binaries, no runtime dependencies and no install scripts. A copy that ships an executable, or asks you to run a setup program, is not Ennyn.
 
