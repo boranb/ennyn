@@ -43,7 +43,7 @@ Ennyn'in runtime bağımlılığı da install script'i de yok; plugin'i kurmak h
 
 Ennyn; git, Node ve birkaç sistem aracı (`ps`, `sysctl`, `taskkill`, kendi süreçleri ve boş bellek için) dışında yalnızca sizin verdiğiniz komutları çalıştırır: config'teki test komutları, `ennyn mutate`'e verdiğiniz komut ve `impact.referenceCommand`. Reponuzun dışında yalnızca şuralara yazar: plugin'in kendi veri klasörüne (her oturumun çalıştırdığı sürüm), oturumun ortam dosyasına (iki `ENNYN_` değişkeni), `ennyn lock` kullanırsanız `~/.ennyn-lock` klasörüne ve geçici klasörlere. Repo içinde durumunu `.git/ennyn` klasöründe tutar. Commit hook'u yalnızca siz isterseniz kurulur; `/ennyn:init` de ask kurallarını ve bypass modu olmadan çalışma ayarlarını `.claude/settings.json` dosyasına ancak siz evet derseniz ekler. Ayrıntılar [SECURITY.md](SECURITY.md#what-ennyn-runs-on-a-machine) dosyasında (İngilizce).
 
-Ennyn'in tasarımının gerekçeleri [docs/evidence.md](docs/evidence.md) dosyasında (İngilizce).
+Ennyn'in tasarımının gerekçeleri [docs/evidence.md](docs/evidence.md) dosyasında (İngilizce). Şu ana kadar işe yarayıp yaramadığını, düzelmeyen yanlarıyla birlikte, [Does it work yet?](docs/evidence.md#does-it-work-yet) bölümünde bulabilirsiniz.
 
 ## Kurmadan deneyin
 

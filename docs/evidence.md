@@ -1,6 +1,6 @@
 # Evidence
 
-Ennyn was extracted from a production project (a web application, one author, one coding agent) where the loop ran for nearly 700 sessions; in October 2026 its last 21 cycles were measured to answer one question (origin study, October 2026): why do review rounds and mutation runs keep finding so many defects, and what would reduce them? This page gives the numbers behind each part of the package, their limits, and the published work they were checked against.
+Ennyn was extracted from a production project (a web application, one author, one coding agent) where the loop ran for nearly 700 sessions; in October 2026 its last 21 cycles were measured to answer one question (origin study, October 2026): why do review rounds and mutation runs keep finding so many defects, and what would reduce them? This page gives the numbers behind each part of the package, their limits, and the published work they were checked against. Whether the loop works on Ennyn itself so far is under [Does it work yet?](#does-it-work-yet).
 
 ## Method and limits
 
@@ -215,6 +215,64 @@ So the rise in the gate's share of findings, gate-caught over gate-caught + real
 All 15 cycles are hand counts. Rechecked against the ledgers that survive, cycle 4 matched, cycle 10 was about 1% apart, and cycle 15's real escapes moved 18%, from 39 to 46. The catches named in a handoff do not always add up either: cycle 8's sum to 5 against 4 written, cycle 9's to 8 against 9. Duplicates were removed only from cycle 10 (10, 13 and 29 in cycles 10 to 12), and cycle 12's gate-caught holds 6 timing failures under load.
 
 The fifth column starts empty. The 321 cannot be split by age: the rows of those cycles record no commit for the defective line. The age rule asks whether a tree held the config, not whether a cycle wrote the line. So a config moved in or committed late reads as pre-existing, while the lines of the commit that adds the config, and old work rebased or squashed in after it, read as through the loop. A report with no such column reads as unreported, not as 0, and a report's `real escape` label reads as `found in review` (`plugin/metrics/convergence.mjs`). An old block's gate-caught reads as written, under its old meaning: a block that says `real escape`, or has no fifth column, is an old one.
+
+## Does it work yet?
+
+Source: `node test/evidence-history.mjs 16 57` (the table and the lines under it), `node scripts/ennyn.mjs convergence` (one cycle at a time, given its start), `node scripts/ennyn.mjs classes`, `node scripts/ennyn.mjs rework`.
+
+Partly. Ennyn has run its loop on itself since its findings ledger began (`.ennyn/findings.jsonl`, the first band below), and every finding since then is a row of it. Counted by the rules a cycle's report uses, the rows say that a cycle seldom lands a defect it then finds itself. They also say that defects in code the loop landed keep turning up in later cycles, that fixes still make about a quarter of new code's defects, and that no class of defect has gone away. Whether rework fell is not measured. Every figure is in the block below, printed by a script; the text around it names none.
+
+<!-- evidence-history 16 57 -->
+| Cycles | Tasks | Found in review | Fix-introduced | Gate-caught | Escaped past commit, new | Escaped past commit, old | Of them, born since cycle 16 began | Pre-existing | New code's defects | Of them, made by a fix | New code's defects per task | New classes, round 1 / 2 / 3+ |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 16-19 | 22 | 324 | 140 | 211 | 0 | 53 | 3 | 38 | 792 | 170 (21%) | 36.0 | 17 / 6 / 0 |
+| 20-29 | 45 | 211 | 126 | 101 | 2 | 83 | 71 | 1 | 492 | 152 (31%) | 10.9 | 91 / 17 / 0 |
+| 30-39 | 25 | 84 | 48 | 67 | 1 | 24 | 12 | 0 | 229 | 70 (31%) | 9.2 | 48 / 18 / 0 |
+| 40-49 | 14 | 53 | 23 | 23 | 0 | 19 | 13 | 0 | 113 | 25 (22%) | 8.1 | 52 / 10 / 0 |
+| 50-57 | 27 | 70 | 22 | 32 | 0 | 55 | 41 | 11 | 136 | 31 (23%) | 5.0 | 40 / 7 / 0 |
+| **16-57** | 133 | 742 | 359 | 434 | 3 | 234 | 140 | 50 | 1,762 | 448 (25%) | 13.2 | 248 / 58 / 0 |
+
+- Escaped past commit, new, by cycle: cycle 24, cycle 25, cycle 33.
+- Old escapes born since cycle 16 began, by the type of the commit each row names as its fix: 16-19: 3 naming no fixing commit · 20-29: 36 of 38 under `fix:` (fix 36, test 2), 33 naming no fixing commit · 30-39: 1 of 4 under `fix:` (chore 1, feat 1, fix 1, test 1), 8 naming no fixing commit · 40-49: 1 of 7 under `fix:` (test 4, docs 2, fix 1), 6 naming no fixing commit · 50-57: 0 of 24 under `fix:` (feat 17, test 5, docs 1, refactor 1), 17 naming no fixing commit.
+- Defects a fix made per finding found in review, by band: 0.43, 0.60, 0.57, 0.43, 0.31 by the fix-introduced column; 0.52, 0.72, 0.83, 0.47, 0.44 by source (made by a fix, whatever caught it).
+- Rows of review round 3 or later: 17, in cycles 16, 17, 18, 20, 26.
+- Class registry at cycle 57's closing (e9dd7d3): 60 classes, 46 open, 14 partial.
+- Classes with a gate beyond a written rule or advice, landed by cycle 57: 18. Found again in new code in a later cycle than their first such gate: 16 of 18 classes, in 979 rows, 107 of them caught by a gate. Not found again: `foreign-text-in-template` (gate in cycle 50), `test-built-on-assumption` (gate in cycle 54).
+- Rework, 2026-10-18 to 2026-10-31 in UTC days: 29 of 86 commits had lines a `fix:` commit changed within 7 days (33.7%).
+- Rework, 2026-11-01 to 2026-11-10 in UTC days: 9 of 64 commits had lines a `fix:` commit changed within 7 days (14.1%).
+- Rework, 2026-11-11 to 2026-11-18 in UTC days: 1 of 46 commits had lines a `fix:` commit changed within 7 days (2.2%).
+<!-- /evidence-history -->
+
+The columns up to Pre-existing are those of `plugin/skills/cycle/report-formats.md`. A task here is a graph node or an audit with at least one row. New code's defects are the rows whose source is a first write or a fix, whatever caught them; made by a fix are those a fix brought in. The repository keeps no record of when a cycle started, so the script reads it from the ledger: the commit before the earliest commit of the main line that a row of the cycle names. Set against the blocks the closings wrote at the time, kept outside this repository, the recount matches them but in one cycle, where a row added at a later closing moved one finding to gate-caught and one class out of round one.
+
+**What holds**
+
+- **A cycle seldom lands a defect it finds itself.** Escaped past commit, new, counts code a cycle landed and then found wrong in the same cycle, with no gate catching it. Its line above names a handful of rows, none in the later cycles.
+- **Fewer defects per task.** New code's defects per task fell from the first band to the last. Part of that is the loop; part is smaller tasks and fewer reviewers (see the limits).
+
+**What does not, yet**
+
+- **Landed code keeps turning out wrong.** Escaped past commit, old, counts defects found in code that was already in the tree, with Ennyn's config, when their cycle began. Most of them are in code the loop itself landed, and every band has some. They were found later, by an audit, a new gate or a reviewer reading nearby. The column counts what was found, not what is left.
+- **Fixes still make defects.** A fix made about a quarter of new code's defects over all cycles. By band the share was lower in the forties and fifties than in the twenties and thirties, and flat between those two.
+- **Two rounds do not exhaust a change.** Round two still named new classes in every band. Review has stopped at two rounds since before the ledger began (`review.maxRounds`); the third rounds on the line above ran under a brief's third-round exception, all in early cycles, and named no class the first two had not. Too few ran for the later bands' zero to be a measurement. The round counts are first namings within each cycle, summed over cycles, so one class can count in many cycles, beside a registry far smaller than their sum.
+- **Classes come back.** At the last cycle's closing the class registry had closed no class. Most of the classes with a gate beyond a written rule or advice were found again in new code after their first gate landed, and gates caught only a small part of those rows. A gate holds the shapes it can list; a class is worded wider than that, and new shapes of it keep turning up. The classes not found again got their gate only a few cycles before the end of the range.
+
+**Not measured**
+
+- **Rework.** The rework lines fall from range to range, but they count only lines a `fix:` commit changed. The line on old escapes by commit type shows that in the last two bands nearly all repairs of code the loop had landed went out under other types. A falling rate of `fix:` rework there says how repairs were labelled, not whether there were fewer.
+
+**Limits**
+
+- One maintainer, and one model family writing and reviewing. The ledger is written by the loop itself, and with no users yet no defect has come back from outside: that measure is still empty.
+- The method changed while it was measured: the columns were redefined when the ledger began, reviewers and models per role changed, and most later cycles ran one task.
+- Cycles differ in size, from hundreds of rows to one. The bands are tens of cycles, not equal time or equal work, and a band's sum leans on its largest cycle.
+- A `test:` row counts as gate-caught only while its test file is in the tree, so a test removed later moves its rows; `test/evidence-history.test.mjs` then fails until the block above is printed again. The test also fails when the text of this section outside the block, before the second project, holds a digit. The words it uses for sizes (a handful, most, about a quarter, a small part) are read against the block by people, not by the test.
+
+**On the second project**
+
+Source: `docs/evidence.md#second-project`.
+
+Three cycles ran there in one day ([Second project](#second-project)). No task needed a third round. Fixes there made 10 to 16 fix-introduced per cycle, against 14 to 20 escapes in the old sense (findings stopped in review). Relative to what review stopped, that is about as high as Ennyn's worst bands on either of its two columns (the line on defects a fix made per finding, in the block), and it sets single cycles there against band sums here. Both counts were highest in the third cycle. One day says nothing about whether escapes fall with use.
 
 ## What the package does not do
 

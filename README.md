@@ -43,7 +43,7 @@ Ennyn has no runtime dependencies and no install scripts, and installing the plu
 
 Besides git, Node and a few system tools (`ps`, `sysctl`, `taskkill`, for its own processes and the free memory), Ennyn runs only what you name: the test commands in your config, the command you give `ennyn mutate`, and `impact.referenceCommand`. Outside your repository it writes to the plugin's own data folder (the version each session runs), to the session's environment file (two `ENNYN_` variables), to `~/.ennyn-lock` when you use `ennyn lock`, and to temporary folders. In the repository it keeps its state in `.git/ennyn`. The commit hook is installed only when you ask for it, and `/ennyn:init` adds ask rules and the settings for running without bypass mode to `.claude/settings.json` only on your yes. Details in [SECURITY.md](SECURITY.md#what-ennyn-runs-on-a-machine).
 
-The reasoning behind Ennyn's design is in [docs/evidence.md](docs/evidence.md).
+The reasoning behind Ennyn's design is in [docs/evidence.md](docs/evidence.md). Whether it works so far, including what has not improved, is in [Does it work yet?](docs/evidence.md#does-it-work-yet).
 
 ## Try it without installing
 

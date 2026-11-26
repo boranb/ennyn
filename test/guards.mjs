@@ -147,6 +147,17 @@ export const GATES = [
     others: {},
   },
   {
+    test: "test/evidence-history.test.mjs",
+    guards: [
+      { id: "evidence-history-count", why: "a count in the page's table the ledger does not give", file: "docs/evidence.md", old: "| 16-19 | 22 | 324 | 140 |", new: "| 16-19 | 22 | 325 | 140 |", pattern: "evidence history: the page's table is what the script prints" },
+      { id: "evidence-history-judge", why: "a comparison that finds no difference", file: "test/evidence-history.test.mjs", old: 'return held.text === lines.join("\\n") ? null :', new: 'return true ? null :', pattern: "evidence history: the page's table is what the script prints" },
+      { id: "evidence-history-unplaced", why: "a cycle with no landing counted from no start", file: "test/evidence-history.mjs", old: "    if (placed.length === 0) {", new: "    if (false) {", pattern: "evidence history: a cycle the ledger cannot place" },
+      { id: "evidence-history-prose", why: "a figure written into the section's prose, outside the printed block", file: "docs/evidence.md", old: "Its line above names a handful of rows, none in the later cycles.", new: "Its line above names 3 rows, none after cycle 33.", pattern: "evidence history: the section's prose names no figure" },
+      { id: "evidence-history-prose-judge", why: "a prose check that finds no digit", file: "test/evidence-history.test.mjs", old: '.filter((l) => !l.startsWith("Source:") && /\\d/.test(l));', new: '.filter((l) => !l.startsWith("Source:") && /(?!)/.test(l));', pattern: "evidence history: the section's prose names no figure" },
+      { id: "evidence-history-closing", why: "a registry read from a later closing than the range's", file: "test/evidence-history.mjs", old: '.split("\\n")[0];\n  if (!closing)', new: '.split("\\n").at(-1) ?? "";\n  if (!closing)', pattern: "evidence history: what each cycle is counted from" },
+    ],
+  },
+  {
     test: "test/measured-claims.test.mjs",
     guards: [
       { id: "mc-pointer-gone", why: "a version sentence that loses its test pointer", file: "SECURITY.md", old: " (`test/cli.test.mjs` \"cli: a bare-looking folder a clone brought in\").", new: ".", pattern: "measured claims: every sentence in DESIGN.md" },
