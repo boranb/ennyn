@@ -17,6 +17,18 @@
           "file": "test/findings-format.test.mjs",
           "action": "red-green",
           "proof": "The row format's fields, closed sets and bounds are compared with the validator's, with guard mutants. It holds that one document, and landed in cycle 16 with nothing shown yet."
+        },
+        {
+          "commit": "ecff417828e13e28700b281fc024feffd28462d2",
+          "file": "test/network-claim.test.mjs",
+          "action": "red-green",
+          "proof": "The network call sites of the code git lists outside test/ are held to an allow list both ways, and each network one to words in both READMEs and SECURITY.md, with guard mutants. It holds the network paragraph and no other document."
+        },
+        {
+          "commit": "552964fa0acb5b30f2bd43e6d508314ebf4594d1",
+          "file": "test/demo.test.mjs",
+          "action": "red-green",
+          "proof": "The README image is regenerated from the CLI's output on a fixed sample project and compared byte for byte, with guard mutants. It holds that one image."
         }
       ],
       "nodes": [
@@ -98,7 +110,8 @@
         "new: test reads a platform-only interface",
         "new: inherited test scope breaks guard verdicts",
         "new: gate on live machine state reached by tests that never set it",
-        "new: test result differs by platform, cause unmeasured"
+        "new: test result differs by platform, cause unmeasured",
+        "new: walk reads ignored copies"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: partial, it came back as tests that lean on the machine's identity, found at the Linux run. Named in cycle 3."
     },
@@ -364,7 +377,8 @@
         "new: second runner of untrusted texts outside the gate",
         "new: denylist of write-place variables misses one",
         "new: refusal echoes guarded text",
-        "new: refusal prints the private text it refused"
+        "new: refusal prints the private text it refused",
+        "new: control character written raw into XML"
       ],
       "judged": "Reconstruction of cycle 16, not the research: the notes give no verdict; no gate, both nodes are open. Named in cycle 8 as one-site escape or twin fix."
     },
@@ -606,6 +620,12 @@
           "file": "test/cited-numbers.test.mjs",
           "action": "red-green",
           "proof": "Evidence numbers in docs/evidence.md and the skills need a source: a percentage or ratio a line pointer holding it as written and in order, a count a line, section or file; citations and commands are checked for presence only."
+        },
+        {
+          "commit": "329b13c914e2a6cad51a7f0c9611db98344c3b49",
+          "file": "test/evidence-history.test.mjs",
+          "action": "red-green",
+          "proof": "The figures of docs/evidence.md's \"Does it work yet?\" must equal what test/evidence-history.mjs prints from the ledger, and the section's prose may name no figure, with guard mutants. It holds that section and no other statement."
         }
       ],
       "linked": [
@@ -791,7 +811,9 @@
         "new: share of a slow-draining total read as a shortage",
         "new: kill target filled by a name lookup through a file",
         "new: state of an abandoned read joins its redo",
-        "new: normalized copy reported as the text"
+        "new: normalized copy reported as the text",
+        "new: share named for a source computed from a column that precedence empties",
+        "new: count over memberships read as distinct rows"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate.",
       "gates": [
@@ -927,7 +949,8 @@
         "new: control expectations not updated for a new excuse",
         "new: fixture state outside the fact the oracle names",
         "new: reference fixture short of the state its cell names",
-        "new: test reads a repository file its guard does not allow"
+        "new: test reads a repository file its guard does not allow",
+        "new: fixture address outside the reserved test domain"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. No gate.",
       "gates": [
@@ -1409,7 +1432,8 @@
       "gates": [],
       "nodes": [],
       "linked": [
-        "new: hook names a layout-specific path that older trees lack"
+        "new: hook names a layout-specific path that older trees lack",
+        "new: registry of an old closing names gate commits a history rewrite replaced"
       ],
       "judged": "Named in cycle 57 by the orchestrator, from the security review of the plugin folder move (an install-hook from a clone named the moved CLI path)."
     }

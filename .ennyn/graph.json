@@ -1453,21 +1453,11 @@
     },
     {
       "status": "planned",
-      "needs": [],
-      "id": "launch-demo",
-      "title": "A terminal recording under a minute (asciinema cast or GIF) of /ennyn:init on a small sample repository and one cycle's convergence report, linked at the top of both READMEs; test/hygiene cannot read an image, so the sample holds no names or paths of projects that use Ennyn and is checked by hand; the images are made by a script from a fixture repository in a temporary directory, with a test that fails when the output drifts; the first hand-made images, from Ennyn's own repository, are in docs/assets. Schedule (the user, 2026-11-25: a request): a core task of the next cycle, before the launch",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "distribution",
-      "source": "discoverability review, 2026-10-27: the README shows no run",
-      "since": 13
-    },
-    {
-      "status": "planned",
       "needs": [
         "hooks-project-gate",
         "plugin-root-dev-deps",
-        "readme-says-what-runs"
+        "readme-says-what-runs",
+        "readme-says-what-runs-lows"
       ],
       "id": "directory-submission",
       "title": "Submit the plugin to Anthropic's plugin directory (claude.ai/directory/manage; the repository may be private while it validates, public before the listing goes live): the listing comes from plugin.json and the README; new versions published by hand or by a reviewer, never auto-published; the icon is in place (.claude-plugin/icon.svg, 140e7be); the README says what Ennyn sends over the network and how to turn it off Submitted from the plugin's subfolder at a release tag (v0.1.2 or later), never from the root or from main; the portal's Validate step runs first and a Blocks row stops the submission; a hold is the reviewer's to read. The listing is no launch condition: the docs give no review time (checklist and submit page read 2026-11-26) Cycle 57: the plugin folder is plugin/ (8706e8d); claude plugin validate --strict passes on the marketplace and on plugin/ (2.1.310).",
@@ -1576,17 +1566,6 @@
       "cost": "S",
       "cluster": "metrics",
       "source": "outside-eye review, verified in .ennyn/metrics.jsonl, 2026-10-27",
-      "since": 13
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "evidence-does-it-work",
-      "title": "docs/evidence.md gets 'Does it work yet?': the convergence numbers of Ennyn's own cycles and the second project's, plainly, linked from the README's evidence line (no measurement prose goes in the README itself). Schedule (the user, 2026-11-25: a request): a core task of the next cycle, before the launch",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "evidence",
-      "source": "outside-eye review (headline vs evidence.md:155 'not yet measured in use'), 2026-10-27; 2026-10-31 research on closing escaped classes: the evidence page's 'Gates stop recurrence' rests on the origin project; Ennyn's own data supports the narrower claim that a gate stops a class when the class can be enumerated from text or the rule stops needing a reading",
       "since": 13
     },
     {
@@ -2039,17 +2018,6 @@
       "cost": "M",
       "cluster": "security",
       "source": "review of Understand-Anything (MIT, 4e6d329), 2026-10-28: issue #432 reports a pull request (#206) that appended a self-decoding payload to homepage/astro.config.mjs under a title naming a real issue (#188); a comment says #198 and #261 carry the same change",
-      "since": 14
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "id": "network-claim-test",
-      "title": "A test holds the code to what README.md and SECURITY.md say about the network: outside test/, the only fetch is checks/deps.mjs's, no module imports node:http, node:https, node:net, node:tls or node:dgram, no child process runs curl or wget, the OSV request body carries only name, ecosystem and version, and with security.deps.online false the commit hook fetches nothing Its list is the README's after readme-says-what-runs: the fetch in setup/clone-setup.mjs, push-check's git fetch and the closing's push are named there, so the test holds the code to that list, not to one fetch",
-      "value": "high",
-      "cost": "S",
-      "cluster": "security",
-      "source": "review of ScrapeGraphAI (MIT, 194055e), 2026-10-28: its README says 'We collect anonymous usage metrics', while telemetry/telemetry.py, on by default, posts the prompt, the schema, the page content, the model's answer and the URL",
       "since": 14
     },
     {
@@ -6129,7 +6097,7 @@
       "value": "medium",
       "cost": "S",
       "cluster": "docs",
-      "title": "DESIGN.md is at the fix-loop brake (cycle 36, a round-2 previous-fix in the security.deps.paths row): the row is one hand-written line of what the gate refuses, says and does not see, and each gate change adds a clause that drifts from the code; the held-link-target gap went in wider than measured (said when a package.json is staged, read when the target is itself a lock path: c36-t1-correctness-r2-01). Cycle 37 added one more: the Not-seen sentence on npm_config_* says only entries with no resolved can be sent to another registry, where npm 10.9.9 also fetches a registry.npmjs.org-resolved tarball from an overriding registry (environment or a user's registry=; integrity still binds the bytes) (c37-t1-correctness-r2-01). Decide on the top two rungs: a test that holds each listed shape to a cell of test/verdicts/deps.json (a construct that refuses a sentence it cannot tie to a cell), or remove the need (the said/refused lists written from the verdict corpus); or say the limit and decline the rest. No patch nodes Cycle 38 adds the security.ci.paths row: three of the cycle's five claim-outruns-evidence rows were its sentences (a whole object as JSON, a held hand-off, then the reach clause naming 'a file that callee reaches' where only the CI files of the walk count: c38-t1-security-r2-01, round 2 previous-fix). The cycle-38 run bound each new ci sentence to a cell of test/verdicts/ci.json by hand (Fable's rule): the decision covers both rows Cycle 39 adds principle 7: its new sentence 'A throw of the message's shape check (a git that fails, a skipSubjects pattern that does not compile) costs the shape alone, said' is narrower than the code, since the same failed git config read also refuses an approved loosening (shape.looseningNoComment; c39-t1-correctness-r2-01, round 2 previous-fix): the decision covers principle 7's sentences on the commit-msg hook too",
+      "title": "DESIGN.md is at the fix-loop brake (cycle 36, a round-2 previous-fix in the security.deps.paths row): the row is one hand-written line of what the gate refuses, says and does not see, and each gate change adds a clause that drifts from the code; the held-link-target gap went in wider than measured (said when a package.json is staged, read when the target is itself a lock path: c36-t1-correctness-r2-01). Cycle 37 added one more: the Not-seen sentence on npm_config_* says only entries with no resolved can be sent to another registry, where npm 10.9.9 also fetches a registry.npmjs.org-resolved tarball from an overriding registry (environment or a user's registry=; integrity still binds the bytes) (c37-t1-correctness-r2-01). Decide on the top two rungs: a test that holds each listed shape to a cell of test/verdicts/deps.json (a construct that refuses a sentence it cannot tie to a cell), or remove the need (the said/refused lists written from the verdict corpus); or say the limit and decline the rest. No patch nodes Cycle 38 adds the security.ci.paths row: three of the cycle's five claim-outruns-evidence rows were its sentences (a whole object as JSON, a held hand-off, then the reach clause naming 'a file that callee reaches' where only the CI files of the walk count: c38-t1-security-r2-01, round 2 previous-fix). The cycle-38 run bound each new ci sentence to a cell of test/verdicts/ci.json by hand (Fable's rule): the decision covers both rows Cycle 39 adds principle 7: its new sentence 'A throw of the message's shape check (a git that fails, a skipSubjects pattern that does not compile) costs the shape alone, said' is narrower than the code, since the same failed git config read also refuses an approved loosening (shape.looseningNoComment; c39-t1-correctness-r2-01, round 2 previous-fix): the decision covers principle 7's sentences on the commit-msg hook too Cycle 58: DESIGN.md reached rung 2 again for claim-outruns-evidence (cycles 56 and 58: a hand-written sentence restating what code and tests decide, e.g. the empty advisories origin called unmeasured); the decision covers those rows too: a row names its verdict cell or test, or is refused.",
       "source": "cycle 2026-11-15 (36) convergence: fix-loop brake, skills/cycle/report-formats.md; amended cycle 2026-11-16 (37) convergence; amended cycle 2026-11-16 (38) convergence; amended cycle 2026-11-17 (39) convergence"
     },
     {
@@ -7113,17 +7081,6 @@
       "status": "planned",
       "needs": [],
       "since": 56,
-      "id": "readme-says-what-runs",
-      "title": "README.md and README.tr.md say everything Ennyn runs, sends, fetches and writes, as the plugin directory's checklist asks, and agree with SECURITY.md. README.md:33 says network requests happen in two cases only; the code has more: clone-setup asks api.github.com for a login's public signing keys (setup/clone-setup.mjs:20, no token), push-check fetches from the branch's remote, the closing pushes there (asked unless push.mode is after-closing), git itself fetches objects in a partial clone, and while a lock file sits in the plugin's folder the install downloads the development dependencies. The Setup row says that /ennyn:init, on a yes, writes ask rules and the no-bypass block into the project's .claude/settings.json; one line says the session-start hook adds two ENNYN_ variables to the session's environment file. Each destination with what is sent and its off switch where there is one. It lands with network-claim-test, whose list becomes the README's Cycle 57: with the plugin in plugin/ there is no lock file in the plugin's folder, so the install downloads nothing (measured on 2.1.310 and 2.1.330); the README says so instead of naming a download.",
-      "value": "high",
-      "cost": "S",
-      "cluster": "distribution",
-      "source": "the directory's pre-submission checklist, read 2026-11-26: 'Describe in the README everything the plugin runs, sends, or fetches'; 'A first submission that fails the security scan is rejected'"
-    },
-    {
-      "status": "planned",
-      "needs": [],
-      "since": 56,
       "id": "doctor-ok-keys-read",
       "value": "medium",
       "cost": "M",
@@ -7201,6 +7158,63 @@
       "gate": "user",
       "title": "Remove the eight globs in .ennyn/config.json's review.impactRequiredGlobs and review.cochange that name the paths from before the plugin moved to plugin/ (doctor warns that they match nothing; their plugin/ forms stand beside them). Removing them is a loosening of those two keys: it waits for the user's yes, or for loosening-renamed-globs",
       "source": "cycle 2026-11-26 (57) plugin-root-dev-deps"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 58,
+      "id": "readme-says-what-runs-lows",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "distribution",
+      "title": "readme-says-what-runs lows (cycle 58), before the directory submission: clone-setup's request also goes without --login when a GitHub noreply address is in commits.addresses, and only with commits.signed, which the README leaves out; the README names .claude/settings.json for init's no-bypass settings, not .claude/settings.local.json, which SECURITY.md names; 'installing the plugin downloads nothing' while the marketplace add fetches the repository (say no npm and no dependencies, only the plugin's files); the write list leaves out that worktrees --remove deletes the cycle's marked worktree folders; the Setup row does not name init's settings writes",
+      "source": "cycle 2026-11-26 (58) readme-says-what-runs, review round 1"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 58,
+      "id": "network-claim-skill-steps",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "title": "Hold the command lines of plugin/skills and plugin/agents to the README's network list as the code is held: each line that starts with a listed network program (git push or fetch, gh, npm, npx, curl, wget, ssh) maps to a README entry, through an allow list, not a shape scan; the closing's ennyn deps reached OSV unsaid because skill text is not scanned",
+      "source": "cycle 2026-11-26 (58) network-claim-test, author and security review round 1"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 58,
+      "id": "network-claim-refuses-unread",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "security",
+      "mechanization": true,
+      "sourceClass": "unreadable-shape-passes",
+      "title": "test/network-claim.test.mjs reached rung 2 in cycle 58 (7 previous-fix rows: each round found another ordinary shape of a call). Cause: it recognises calls by text shape, and JavaScript has unbounded shapes. Action one rung up: a child_process or fetch name used in any shape the scan does not read (passed as a value, aliased past what it traces, computed) fails the test instead of passing unseen; no further shape patches",
+      "source": "cycle 2026-11-26 (58) network-claim-test, convergence rung 2"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 58,
+      "id": "cycle-start-in-repo",
+      "value": "low",
+      "cost": "S",
+      "cluster": "metrics",
+      "title": "test/evidence-history.mjs and its test reached rung 2 in cycle 58 (12 previous-fix rows). Cause: the script infers cycle boundaries from history and ledger shape because no record states them. Action: the closing writes each cycle's start and closing commit to a tracked record, and the script reads only that and refuses a cycle without one; its fixtures become records",
+      "source": "cycle 2026-11-26 (58) evidence-does-it-work, author and convergence rung 2"
+    },
+    {
+      "status": "planned",
+      "needs": [],
+      "since": 58,
+      "id": "scan-tr-word-once",
+      "value": "low",
+      "cost": "S",
+      "cluster": "init",
+      "title": "init-scan's commit-language guess counts English words as Turkish: TR_WORD in plugin/setup/scan.mjs lists once (for önce without diacritics) and her; hold it with an English reject corpus so a subject like '... at once' reads English",
+      "source": "cycle 2026-11-26 (58) launch-demo, measurement"
     }
   ],
   "done": [
@@ -8479,6 +8493,34 @@
       "status": "done",
       "finished": "2026-11-26",
       "cluster": "distribution"
+    },
+    {
+      "id": "launch-demo",
+      "title": "Closed in cycle 58 (552964f): the image at the top of both READMEs, docs/assets/demo.svg, is generated by test/demo/make.mjs from the CLI's own output on a made-up sample repository built in a temporary directory with a fixed identity, dates, locale and an environment built from scratch: init-scan before setup, then core and convergence after one cycle; doctor runs and must report no problem or warning but is not shown. test/demo.test.mjs regenerates the image and compares it byte for byte (it matched on macOS and in node:22 with git 2.39), and hygiene's scan reads the SVG. The image shows init-scan, not the init skill itself, since running the skill needs a paid model call; the captions say it is the CLI's output, not a recording of a session. Leftover declined: control characters would pass the SVG escape (writer input only).",
+      "status": "done",
+      "finished": "2026-11-26",
+      "cluster": "distribution"
+    },
+    {
+      "id": "readme-says-what-runs",
+      "title": "Closed in cycle 58 (ecff417) with network-claim-test: README.md and README.tr.md list each case Ennyn goes on the network with its off switch (the commit hook's registry lookups, ennyn deps to OSV when run and at each cycle's closing, push-check's fetch and the closing push, clone-setup reading api.github.com, gh at init, git's own fetch in a partial clone), what it runs and what it writes outside the project; SECURITY.md says a plugin install runs no npm. Leftovers: readme-says-what-runs-lows.",
+      "status": "done",
+      "finished": "2026-11-26",
+      "cluster": "distribution"
+    },
+    {
+      "id": "network-claim-test",
+      "title": "Closed in cycle 58 (ecff417): test/network-claim.test.mjs holds the network call sites of the code git lists outside test/ (fetch, network module imports, child-process programs incl. namespace, renamed and promisified forms, shell files line by line, plugin manifest commands, HTTP hooks and MCP servers) to an allow list both ways; each that reaches the network names a claim whose words stand in both READMEs and SECURITY.md; the OSV body is exactly name, ecosystem and version; security.deps.advisories empty sends no OSV query and security.deps.online false no registry request, against a loopback server with a control. Leftovers: network-claim-refuses-unread, network-claim-skill-steps.",
+      "status": "done",
+      "finished": "2026-11-26",
+      "cluster": "security"
+    },
+    {
+      "id": "evidence-does-it-work",
+      "title": "Closed in cycle 58 (329b13c): docs/evidence.md answers Does it work yet? with partly, from the ledger of cycles 16 to 57 and the second project; every figure stands in one block test/evidence-history.mjs prints (escapes in the cycle and later in code the loop landed, how those were repaired, fixes' share of new code's defects, rounds, classes that came back after a gate), the prose holds no figure by test, rework is said unmeasured, and the README evidence line links the section. Leftover: cycle-start-in-repo.",
+      "status": "done",
+      "finished": "2026-11-26",
+      "cluster": "evidence"
     }
   ],
   "declined": [
