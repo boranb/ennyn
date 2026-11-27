@@ -7288,14 +7288,14 @@
       "since": 59
     },
     {
-      "id": "reference-after-closing-bare-push",
-      "title": "Release step 3 for v0.1.2 (2026-11-27) is red on test/reference/pretooluse.json's real cell push-mode-after-closing-a-bare-push-runs-with-no-rule: under an approved after-closing config with a green whole run recorded, Claude Code 2.1.310 now has the push hook stop a bare git push (calls hook, the push never reached git) where the record (2026-11-23, ec4fc2b) says it ran; red alone too. Since the record: the hook's after-closing pass reads push-check's verdict (cycle 52) and the plugin moved to plugin/ (cycle 57, 8706e8d). Find which, by measurement, and fix the product or the cell; the release waits on it",
+      "id": "reference-cells-rerun-on-verdict-change",
+      "title": "A change to the push hook's verdict (plugin/checks/push-mode.mjs, plugin/adapters/claude-code/hooks/push-spellings.mjs) also reruns the real PreToolUse reference cells (node test/reference/pretooluse.mjs check) before it lands: 5967c8e changed the cell's lab without rerunning it, and the cell stayed red unseen from 2026-11-23 to the v0.1.2 Release step 3",
       "status": "planned",
-      "value": "high",
+      "value": "medium",
       "cost": "S",
-      "cluster": "distribution",
+      "cluster": "tests",
       "needs": [],
-      "source": "cycle 2026-11-27 (59) Release step 3, test:reference",
+      "source": "cycle 2026-11-27 (60) reference-after-closing-bare-push, author",
       "since": 60
     }
   ],
@@ -8631,6 +8631,13 @@
       "status": "done",
       "finished": "2026-11-27",
       "cluster": "gates"
+    },
+    {
+      "id": "reference-after-closing-bare-push",
+      "title": "Closed in cycle 60 (b11df8a): the real reference cell push-mode-after-closing-a-bare-push-runs-with-no-rule was red because its lab left .claude/settings.json untracked and the push hook's after-closing pass reads push-check's verdict, which refuses an unclean tree (since 5967c8e); the lab now writes the settings files first and commits .claude/settings.json with the config, the record stands, all 70 PreToolUse cells read as recorded on Claude Code 2.1.310. The product was right. Leftover: reference-cells-rerun-on-verdict-change.",
+      "status": "done",
+      "finished": "2026-11-27",
+      "cluster": "distribution"
     }
   ],
   "declined": [

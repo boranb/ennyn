@@ -48,7 +48,8 @@
         "new: new skill file not linked from SKILL.md",
         "new: doc of a changed exit left stale",
         "new: stated limit made false by a new path",
-        "new: count in prose outrun by an added case"
+        "new: count in prose outrun by an added case",
+        "new: test fixture misses a precondition the gate added"
       ],
       "judged": "Research of 2026-10-31, about 30% either way: not stopped, no catch since it landed. Named in cycle 1. Counting the doc twin of cycle 4 here is this reconstruction's merge."
     },
