@@ -88,8 +88,8 @@ const ENTRIES = { crash: 'node "${CLAUDE_PLUGIN_ROOT}/crash.mjs"', missing: 'nod
  * @typedef {{ hook?: string, entry?: string, real?: true, noConfig?: true, config?: string, closing?: "approved" | "unapproved", command?: string, then?: string, tool?: string, input?: object, matcher?: string, rules?: object, localRules?: object, settings?: object, env?: Record<string, string>, timeout?: number, skipFlag?: true, install?: true, subagent?: true, keeps?: string[] }} Cell
  *   `then`: a second call, what an agent writes after a refusal; `keeps`: the input's fields, which the cell records;
  *   `localRules`: rules held only in .claude/settings.local.json; `config`: the Ennyn config's text in a `real` cell (`{}` else); `closing`: that config committed, with or without
- *   the approval line, and the branch given an upstream one commit behind and a green whole run recorded on HEAD's
- *   tree, as the closing's push needs
+ *   the approval line and with .claude/settings.json, so nothing is left untracked, and the branch given an upstream one
+ *   commit behind and a green whole run recorded on HEAD's tree, as the closing's push needs
  */
 
 /** @type {Record<string, Cell>} */
@@ -216,12 +216,15 @@ export async function reading(c, bin) {
     writeFileSync(join(PLUGIN, "crash.mjs"), "throw new Error('stand-in crash');\n");
     const command = c.entry ? ENTRIES[c.entry] : 'sh "${CLAUDE_PLUGIN_ROOT}/hook.sh"';
     writeFileSync(join(PLUGIN, "hooks", "hooks.json"), JSON.stringify({ hooks: { PreToolUse: [{ matcher: c.matcher ?? SHELL_TOOLS, hooks: [{ type: "command", command, ...(c.timeout ? { timeout: c.timeout } : {}) }] }] } }));
+    // Written first, so a closing commits them: push-check's verdict needs a work tree with nothing untracked.
+    writeFileSync(join(P, ".claude", "settings.json"), JSON.stringify({ ...(c.rules ? { permissions: c.rules } : {}), ...c.settings }));
+    if (c.localRules) writeFileSync(join(P, ".claude", "settings.local.json"), JSON.stringify({ permissions: c.localRules }));
     if (c.real && !c.noConfig) {
       mkdirSync(join(P, ".ennyn"));
       writeFileSync(join(P, ".ennyn", "config.json"), c.config ?? "{}\n");
       if (c.closing) {
         const at = { cwd: P, env: { ...git, ...IDENTITY } };
-        execFileSync("git", [...quiet, "add", ".ennyn/config.json"], at);
+        execFileSync("git", [...quiet, "add", ".ennyn/config.json", ".claude/settings.json"], at);
         execFileSync("git", [...quiet, "commit", "-qm", `chore: mode${c.closing === "approved" ? "\n\nUser-Approved-Loosening: push.mode" : ""}`, "--no-verify"], at);
         const branch = execFileSync("git", [...quiet, "symbolic-ref", "--short", "HEAD"], { ...at, encoding: "utf8" }).trim();
         for (const [k, v] of [["remote.origin.url", join(R, "remote.git")], ["remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*"], [`branch.${branch}.remote`, "origin"], [`branch.${branch}.merge`, `refs/heads/${branch}`]]) execFileSync("git", [...quiet, "config", k, v], at);
@@ -233,8 +236,6 @@ export async function reading(c, bin) {
         recordRun(P, DEFAULTS, { v: 1, kind: "whole", tree, head, exit: 0, start: now, end: now });
       }
     }
-    writeFileSync(join(P, ".claude", "settings.json"), JSON.stringify({ ...(c.rules ? { permissions: c.rules } : {}), ...c.settings }));
-    if (c.localRules) writeFileSync(join(P, ".claude", "settings.local.json"), JSON.stringify({ permissions: c.localRules }));
     writeFileSync(join(R, "cfg", ".claude.json"), JSON.stringify({ customApiKeyResponses: { approved: [KEY.slice(-20)], rejected: [] }, hasCompletedOnboarding: true }));
     const calls = callsOf(c);
     /** @type {string[]} */
