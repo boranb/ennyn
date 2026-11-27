@@ -7286,6 +7286,17 @@
       "needs": [],
       "source": "the user, 2026-11-26: a request",
       "since": 59
+    },
+    {
+      "id": "reference-after-closing-bare-push",
+      "title": "Release step 3 for v0.1.2 (2026-11-27) is red on test/reference/pretooluse.json's real cell push-mode-after-closing-a-bare-push-runs-with-no-rule: under an approved after-closing config with a green whole run recorded, Claude Code 2.1.310 now has the push hook stop a bare git push (calls hook, the push never reached git) where the record (2026-11-23, ec4fc2b) says it ran; red alone too. Since the record: the hook's after-closing pass reads push-check's verdict (cycle 52) and the plugin moved to plugin/ (cycle 57, 8706e8d). Find which, by measurement, and fix the product or the cell; the release waits on it",
+      "status": "planned",
+      "value": "high",
+      "cost": "S",
+      "cluster": "distribution",
+      "needs": [],
+      "source": "cycle 2026-11-27 (59) Release step 3, test:reference",
+      "since": 60
     }
   ],
   "done": [
