@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.1.2 (2026-11-28)
+
 - README and SECURITY.md say what installing fetches (a clone of the repository, no npm, no dependencies), when clone-setup asks GitHub, that `worktrees --remove` deletes the cycle's marked worktree folders, and which settings file each of `/ennyn:init`'s writes goes to.
 - Security: the release workflow's publish job runs Node 24.22.3, an exact release bundling npm 11.19.1, instead of whatever Node 24 the runner caches. SECURITY.md names the npm package and how a release reaches it from `v0.1.2` on: a `v*` tag on main, the owner's approval in the `npm` environment, npm trusted publishing and provenance; it says 0.1.1 was published by hand without an attestation and how to check it against its tag.
 - `test/network-claim.test.mjs` holds the commands the skills and agents give the agent to the README's network list, also behind `env`, `timeout` and `ennyn lock`; the list now says that a new project's scaffold and install download from the package manager's registry, and that init's npm checks can let npm's update check ask its registry (`update-notifier=false` turns that off).
