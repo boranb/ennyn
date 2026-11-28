@@ -7297,6 +7297,28 @@
       "needs": [],
       "source": "cycle 2026-11-27 (60) reference-after-closing-bare-push, author",
       "since": 60
+    },
+    {
+      "id": "lock-proc-stat-esrch",
+      "title": "plugin/core/heavy-lock.mjs processStart throws when /proc/<pid>/stat is opened and the process ends before the read (ESRCH on Linux): a holder that exits at that moment breaks a waiter instead of reading as gone; the same race failed test/mutation.test.mjs's procStart on the floor image in the v0.1.2 Release step 3",
+      "status": "planned",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "method",
+      "needs": [],
+      "source": "cycle 2026-11-28 (61) release step 3, orchestrator",
+      "since": 61
+    },
+    {
+      "id": "linux-run-room-check",
+      "title": "test/linux-run.mjs checks free space and inodes inside the container before the suite and names them when short: the floor run failed nine fault-matrix cells with ENOSPC on ennyn-ci's 15G containerd partition (colima reports 100GiB); also say when a colima disk was not grown to its configured size",
+      "status": "planned",
+      "value": "medium",
+      "cost": "S",
+      "cluster": "tests",
+      "needs": [],
+      "source": "cycle 2026-11-28 (61) release step 3, orchestrator",
+      "since": 61
     }
   ],
   "done": [
