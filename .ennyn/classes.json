@@ -671,7 +671,8 @@
         "new: message states an outcome it does not know",
         "new: wrong cause named in a comment",
         "new: closed word list read as widening",
-        "new: doc states a broader condition than the code checks"
+        "new: doc states a broader condition than the code checks",
+        "new: impact table omits a newly accepted input"
       ],
       "judged": "This closing's reading of cycle 16's rows, one reader sorting by what the mistake was, not the research and no measurement. The gate landed this cycle and has shown nothing yet.",
       "nodes": [
@@ -1117,7 +1118,8 @@
       "says": "A value of a new kind reaches code whose branches were written for the kinds before it, and an older branch takes it and decides wrong.",
       "state": "open",
       "linked": [
-        "new: a new value kind meets an older branch for its kind"
+        "new: a new value kind meets an older branch for its kind",
+        "new: process end race read as running"
       ],
       "judged": "the orchestrator of cycle 20, reading the rows"
     },

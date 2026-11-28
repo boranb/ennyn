@@ -7299,17 +7299,6 @@
       "since": 60
     },
     {
-      "id": "lock-proc-stat-esrch",
-      "title": "plugin/core/heavy-lock.mjs processStart throws when /proc/<pid>/stat is opened and the process ends before the read (ESRCH on Linux): a holder that exits at that moment breaks a waiter instead of reading as gone; the same race failed test/mutation.test.mjs's procStart on the floor image in the v0.1.2 Release step 3",
-      "status": "planned",
-      "value": "medium",
-      "cost": "S",
-      "cluster": "method",
-      "needs": [],
-      "source": "cycle 2026-11-28 (61) release step 3, orchestrator",
-      "since": 61
-    },
-    {
       "id": "linux-run-room-check",
       "title": "test/linux-run.mjs checks free space and inodes inside the container before the suite and names them when short: the floor run failed nine fault-matrix cells with ENOSPC on ennyn-ci's 15G containerd partition (colima reports 100GiB); also say when a colima disk was not grown to its configured size",
       "status": "planned",
@@ -7319,6 +7308,31 @@
       "needs": [],
       "source": "cycle 2026-11-28 (61) release step 3, orchestrator",
       "since": 61
+    },
+    {
+      "id": "lock-proc-stat-esrch-lows",
+      "title": "lock-proc-stat-esrch lows (cycle 61): c61-t1-code-r1-01, test/mutation.test.mjs procStart still judges only Z as gone, so a process read in state X while it is reaped reads as running and the ended-process assertion can flake (also the author proposal mutation-procstart-dead-x); c61-t1-sec-r1-01, the task impact table named only ESRCH as newly gone, not state X",
+      "status": "planned",
+      "value": "low",
+      "cost": "S",
+      "cluster": "method",
+      "needs": [],
+      "gate": "beside",
+      "source": "cycle 2026-11-28 (61) lock-proc-stat-esrch, author and review round 1",
+      "since": 61
+    },
+    {
+      "id": "errno-branches-injected",
+      "title": "A reader that decides on an error code (e.code compared to a literal, as in plugin/core/heavy-lock.mjs statStart) gets each code it names, and one it does not, injected by a test, so a new code reaching an old branch is seen before a platform run finds it (new-kind-old-branch, 3 rows in cycle 61: ESRCH and state X fell into the branch written for the codes before them); first measurement: the e.code comparisons in plugin/ and how many have an injecting test",
+      "status": "planned",
+      "value": "medium",
+      "cost": "M",
+      "cluster": "method",
+      "needs": [],
+      "source": "cycle 2026-11-28 (61) convergence, orchestrator",
+      "since": 61,
+      "mechanization": true,
+      "sourceClass": "new-kind-old-branch"
     }
   ],
   "done": [
@@ -8660,6 +8674,13 @@
       "status": "done",
       "finished": "2026-11-27",
       "cluster": "distribution"
+    },
+    {
+      "id": "lock-proc-stat-esrch",
+      "title": "Closed in cycle 61 (2266b1b): on Linux the lock start reader (now statStart in plugin/core/heavy-lock.mjs) reads ESRCH (the process reaped between the open and the read of /proc/<pid>/stat) and state X (being reaped) as gone; a start that cannot be read (ENOENT for a pid that answers, EACCES) still throws. Measured in node:22 and the floor image: ESRCH comes only after a reap, and a pid given again gets a new /proc entry, so no re-read. No throw reached a waiter: lives and safeStart caught it, so a reaped holder or ticket read as running one look longer. Leftover: lock-proc-stat-esrch-lows.",
+      "status": "done",
+      "finished": "2026-11-28",
+      "cluster": "method"
     }
   ],
   "declined": [

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- On Linux the heavy-job lock reads a process reaped while its /proc stat is read (ESRCH, or state X) as gone instead of running; before, such a holder or waiter held its place one look longer, and a queue ticket could be kept by a later process given its pid.
+
 ## 0.1.2 (2026-11-28)
 
 - README and SECURITY.md say what installing fetches (a clone of the repository, no npm, no dependencies), when clone-setup asks GitHub, that `worktrees --remove` deletes the cycle's marked worktree folders, and which settings file each of `/ennyn:init`'s writes goes to.
