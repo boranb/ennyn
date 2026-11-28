@@ -33,7 +33,7 @@
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
-import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { availableParallelism, tmpdir } from "node:os";
 import { delimiter, dirname, join, sep } from "node:path";
@@ -722,6 +722,8 @@ function run(c, fault) {
       } catch {
         // Killed before its exit handler.
       }
+      // Each cell's copy goes with it: kept to the file's end, the matrix's copies fill a small container disk.
+      rmSync(box, { recursive: true, force: true, maxRetries: 5 });
       done({ code, signal, stdout: norm(stdout), stderr: norm(stderr), calls, reads: norm(reads).split("\n").filter(Boolean), hung });
     });
   });
