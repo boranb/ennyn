@@ -292,7 +292,8 @@ function procStart(pid, { proc = existsSync("/proc/self/stat"), ps = "ps" } = {}
     try {
       stat = readFileSync(`/proc/${pid}/stat`, "utf8");
     } catch (e) {
-      if (/** @type {NodeJS.ErrnoException} */ (e).code === "ENOENT") return null;
+      /* ESRCH: the process ended between the open and the read. */
+      if (["ENOENT", "ESRCH"].includes(/** @type {NodeJS.ErrnoException} */ (e).code ?? "")) return null;
       throw e;
     }
     const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
