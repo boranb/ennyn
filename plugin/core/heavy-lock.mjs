@@ -244,24 +244,35 @@ export const lockDir = (env = process.env) => resolve(env.ENNYN_LOCK_DIR || join
  */
 export function processStart(pid) {
   if (process.platform === "win32") return alive(pid) ? "" : null;
-  if (process.platform === "linux") {
-    let stat;
-    try {
-      stat = readFileSync(`/proc/${pid}/stat`, "utf8");
-    } catch (e) {
-      // No entry for a pid that still answers (no /proc mounted): its start cannot be read.
-      if (/** @type {NodeJS.ErrnoException} */ (e).code === "ENOENT" && !alive(pid)) return null;
-      throw e;
-    }
-    const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
-    return fields[0] === "Z" ? null : fields[19];
-  }
+  if (process.platform === "linux") return statStart(pid);
   const out = spawnSync("ps", ["-o", "stat=,lstart=", "-p", String(pid)], { encoding: "utf8", env: { ...process.env, LC_ALL: "C", TZ: "UTC" }, timeout: PS_LIMIT_MS, killSignal: "SIGKILL" });
   // A pid that is gone: exit 1 and nothing said.
   if (out.status === 1 && out.stdout === "" && out.stderr === "") return null;
   const [state, ...start] = out.status === 0 ? out.stdout.trim().split(/\s+/) : [];
   if (!state || start.length === 0) throw new Error(`the start of pid ${pid} could not be read: ps ${out.error ? out.error.message : `exit ${out.status}`}`);
   return state.startsWith("Z") ? null : start.join(" ");
+}
+
+/**
+ * processStart's Linux way: field 22 of /proc/<pid>/stat, null once the process is gone, a zombie (Z) or dead (X, while
+ * it is reaped). ESRCH: the entry was opened and its process reaped before the read; a pid given again gets an entry of
+ * its own, so the process this pid named is gone, whatever answers at the pid now. @param {number} pid
+ * @param {(path: string) => string} [read] a test gives one that fails as the kernel does
+ * @returns {string | null}
+ */
+export function statStart(pid, read = (path) => readFileSync(path, "utf8")) {
+  let stat;
+  try {
+    stat = read(`/proc/${pid}/stat`);
+  } catch (e) {
+    const code = /** @type {NodeJS.ErrnoException} */ (e).code;
+    if (code === "ESRCH") return null;
+    // No entry for a pid that still answers (no /proc mounted): its start cannot be read.
+    if (code === "ENOENT" && !alive(pid)) return null;
+    throw e;
+  }
+  const fields = stat.slice(stat.lastIndexOf(")") + 2).split(" ");
+  return fields[0] === "Z" || fields[0] === "X" ? null : fields[19];
 }
 
 /**

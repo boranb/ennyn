@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpath
 import { cpus, tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { LOG_MAX, OLD_LOCK_MS, ROOM_DEFAULTS, deadLock, dropRecorded, judgeRoom, processStart, readRoom, roomThresholds, runLocked } from "../plugin/core/heavy-lock.mjs";
+import { LOG_MAX, OLD_LOCK_MS, ROOM_DEFAULTS, deadLock, dropRecorded, judgeRoom, processStart, readRoom, roomThresholds, runLocked, statStart } from "../plugin/core/heavy-lock.mjs";
 
 const CLI = fileURLToPath(new URL("../plugin/scripts/ennyn.mjs", import.meta.url));
 const LOCKED_SH = fileURLToPath(new URL("__fixtures__/locked.sh", import.meta.url));
@@ -298,6 +298,39 @@ test("lock: a dead lock is read by fact: the holder's pid and start, the run's g
   assert.equal(deadLock(dir, holderPath), null);
   writeFileSync(holderPath, "{not json");
   assert.equal(deadLock(dir, holderPath), null);
+});
+
+test("lock: a process reaped between the open and the read of its /proc stat reads as gone; a start that cannot be read still throws", async (t) => {
+  /** An error as readFileSync gives it, its errno and syscall as Node 22 printed them on Linux. @param {string} code */
+  const failing = (code) => () => {
+    throw Object.assign(new Error(`${code}: ${code === "ESRCH" ? "no such process, read" : "no such file or directory, open"}`), { code, errno: code === "ESRCH" ? -3 : -2, syscall: code === "ESRCH" ? "read" : "open" });
+  };
+  // A pid that answers now: ESRCH says the process the entry was opened for is gone, whatever answers at the pid.
+  assert.equal(statStart(process.pid, failing("ESRCH")), null);
+  // No entry for a pid that answers (no /proc mounted): its start cannot be read.
+  assert.throws(() => statStart(process.pid, failing("ENOENT")), { code: "ENOENT" });
+  assert.throws(() => statStart(process.pid, failing("EACCES")), { code: "EACCES" });
+  const at = box(t);
+  const gone = run(process.execPath, ["-e", ""], { cwd: at.dir, lock: at.lock });
+  await gone.ended;
+  assert.equal(statStart(gone.child.pid ?? 0, failing("ENOENT")), null, "no entry and no process");
+  // The stat line as the kernel prints it: a name with spaces and a ")" in it, the start in field 22; a zombie and a
+  // dead process being reaped (X, read on Linux in this race) are gone.
+  const line = (/** @type {string} */ state) => `${process.pid} (a b) c) ${state} 1 2 2 0 -1 4194560 10 0 0 0 1 2 0 0 20 0 1 0 98765 1000 50\n`;
+  assert.equal(statStart(process.pid, () => line("S")), "98765");
+  assert.equal(statStart(process.pid, () => line("Z")), null);
+  assert.equal(statStart(process.pid, () => line("X")), null);
+  // Linux reads the start this way, and only Linux: elsewhere there is no /proc entry for a pid that answers.
+  if (process.platform === "linux") assert.equal(processStart(process.pid), statStart(process.pid));
+  else assert.throws(() => statStart(process.pid), { code: "ENOENT" });
+  // A holder reaped at the read is a dead holder's lock, not a living one's.
+  const dir = join(at.lock, "suite.lock");
+  const holderPath = join(at.lock, "suite.lock.holder");
+  mkdirSync(dir, { recursive: true });
+  const st = statSync(dir, { bigint: true });
+  writeFileSync(holderPath, JSON.stringify({ v: 1, holder: { pid: process.pid, start: "98765" }, runner: null, group: null, deadline: Date.now() + 60_000, lock: `${st.ino}-${st.mtimeNs}` }));
+  assert.equal(deadLock(dir, holderPath, Date.now(), undefined, { startOf: (pid) => statStart(pid, () => line("S")) }), null, "read: living");
+  assert.equal(deadLock(dir, holderPath, Date.now(), undefined, { startOf: (pid) => statStart(pid, failing("ESRCH")) })?.why, "holder");
 });
 
 test("lock: a signal to the lock stops its run's group and releases the lock; one to a waiter takes its ticket away", async (t) => {
